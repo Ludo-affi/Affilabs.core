@@ -3,6 +3,11 @@ Centralized styling for consistent UI appearance across the application.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QGraphicsDropShadowEffect
+
 
 # ============================================================================
 # COLOR PALETTE
@@ -17,6 +22,7 @@ class Colors:
     SECONDARY_TEXT = "#86868B"
     BACKGROUND_WHITE = "#FFFFFF"
     BACKGROUND_LIGHT = "#F5F5F7"
+    TRANSPARENT = "transparent"
 
     # Semantic colors
     SUCCESS = "#34C759"
@@ -52,6 +58,12 @@ class Fonts:
     DISPLAY = "-apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif"
     MONOSPACE = "-apple-system, 'SF Mono', 'Menlo', monospace"
 
+    # Font weights
+    WEIGHT_NORMAL = "400"
+    WEIGHT_MEDIUM = "500"
+    WEIGHT_SEMIBOLD = "600"
+    WEIGHT_BOLD = "700"
+
 
 # ============================================================================
 # COMMON DIMENSIONS
@@ -68,6 +80,24 @@ class Dimensions:
     BUTTON_HEIGHT_SM = "32px"
     BUTTON_HEIGHT_MD = "36px"
     BUTTON_HEIGHT_LG = "44px"
+
+    # Layout margins (for setContentsMargins)
+    MARGIN_SM = 12
+    MARGIN_MD = 16
+    MARGIN_LG = 20
+
+    # Layout spacing (for setSpacing)
+    SPACING_SM = 8
+    SPACING_MD = 12
+    SPACING_LG = 16
+
+    # Widget heights (for setFixedHeight)
+    HEIGHT_BUTTON_SM = 24
+    HEIGHT_BUTTON_MD = 28
+    HEIGHT_BUTTON_STD = 32
+    HEIGHT_BUTTON_LG = 36
+    HEIGHT_BUTTON_XL = 40
+    HEIGHT_INPUT = 36
 
 
 # ============================================================================
@@ -293,6 +323,21 @@ def slider_style() -> str:
         f"}}"
     )
 
+def create_card_shadow() -> QGraphicsDropShadowEffect:
+    """Create standard drop shadow effect for cards and panels.
+
+    Returns:
+        Configured QGraphicsDropShadowEffect with standard settings
+        (blur=8, color=QColor(0,0,0,20), offset=(0,2))
+    """
+    from PySide6.QtWidgets import QGraphicsDropShadowEffect
+    from PySide6.QtGui import QColor
+
+    shadow = QGraphicsDropShadowEffect()
+    shadow.setBlurRadius(8)
+    shadow.setColor(QColor(0, 0, 0, 20))
+    shadow.setOffset(0, 2)
+    return shadow
 
 def scrollbar_style() -> str:
     """Generate scrollbar stylesheet for scroll areas.

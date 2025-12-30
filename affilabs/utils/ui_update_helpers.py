@@ -207,7 +207,7 @@ class UIUpdateHelpers:
             app: Application instance
 
         """
-        from affilabs.utils.profiling import measure
+        from affilabs.utils.performance_profiler import measure
 
         with measure("ui_update_timer"):
             # Skip updates during tab transitions to prevent UI freezing
@@ -266,6 +266,8 @@ class UIUpdateHelpers:
                     # Skip first point and shift time axis so displayed data starts at t=0
                     if len(display_time) > 1:
                         first_time = display_time[1]
+                        # Store offset for cursor synchronization
+                        app._display_time_offset = first_time
                         display_time = display_time[1:] - first_time
                         display_wavelength = display_wavelength[1:]
 

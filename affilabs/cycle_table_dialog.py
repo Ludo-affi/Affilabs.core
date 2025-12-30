@@ -149,16 +149,13 @@ class CycleTableDialog(QDialog):
         table_layout.setContentsMargins(0, 0, 0, 0)
         table_layout.setSpacing(0)
 
-        # Create table with SegmentDataFrame columns + Flags column (15 visible columns)
-        self.cycle_table = QTableWidget(0, 15)
+        # Create table with Cycle-aligned columns (removed Ref Ch, Unit, and ID)
+        self.cycle_table = QTableWidget(0, 13)
         self.cycle_table.setHorizontalHeaderLabels(
             [
-                "ID",
-                "Name",
+                "Cycle",
                 "Start",
                 "End",
-                "Ref Ch",
-                "Unit",
                 "Shift A",
                 "Shift B",
                 "Shift C",
@@ -168,6 +165,7 @@ class CycleTableDialog(QDialog):
                 "Note",
                 "Flags",
                 "Error",
+                "Run",
             ],
         )
 
@@ -175,25 +173,23 @@ class CycleTableDialog(QDialog):
         header = self.cycle_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
-        # Set column widths matching SegmentDataFrame schema + Flags
-        self.cycle_table.setColumnWidth(0, 50)  # ID
-        self.cycle_table.setColumnWidth(1, 80)  # Name
-        self.cycle_table.setColumnWidth(2, 100)  # Start
-        self.cycle_table.setColumnWidth(3, 100)  # End
-        self.cycle_table.setColumnWidth(4, 60)  # Ref Ch
-        self.cycle_table.setColumnWidth(5, 60)  # Unit
-        self.cycle_table.setColumnWidth(6, 80)  # Shift A
-        self.cycle_table.setColumnWidth(7, 80)  # Shift B
-        self.cycle_table.setColumnWidth(8, 80)  # Shift C
-        self.cycle_table.setColumnWidth(9, 80)  # Shift D
-        self.cycle_table.setColumnWidth(10, 140)  # Cycle Type
-        self.cycle_table.setColumnWidth(11, 90)  # Cycle Time
-        self.cycle_table.setColumnWidth(12, 250)  # Note
-        self.cycle_table.setColumnWidth(13, 120)  # Flags
-        self.cycle_table.setColumnWidth(14, 100)  # Error
+        # Set column widths (13 columns total)
+        self.cycle_table.setColumnWidth(0, 80)   # Cycle
+        self.cycle_table.setColumnWidth(1, 100)  # Start
+        self.cycle_table.setColumnWidth(2, 100)  # End
+        self.cycle_table.setColumnWidth(3, 80)   # Shift A
+        self.cycle_table.setColumnWidth(4, 80)   # Shift B
+        self.cycle_table.setColumnWidth(5, 80)   # Shift C
+        self.cycle_table.setColumnWidth(6, 80)   # Shift D
+        self.cycle_table.setColumnWidth(7, 140)  # Cycle Type
+        self.cycle_table.setColumnWidth(8, 90)   # Cycle Time
+        self.cycle_table.setColumnWidth(9, 250)  # Note
+        self.cycle_table.setColumnWidth(10, 120) # Flags
+        self.cycle_table.setColumnWidth(11, 100) # Error
+        self.cycle_table.setColumnWidth(12, 50)  # Run
 
         # Make Cycle Type column use fixed resize mode for dropdown
-        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
 
         self.cycle_table.verticalHeader().setVisible(True)
         self.cycle_table.setAlternatingRowColors(True)
@@ -404,7 +400,7 @@ class CycleTableDialog(QDialog):
         """Load cycle data into the table.
 
         Args:
-            cycles_data: List of dicts or Segment objects matching SegmentDataFrame schema
+            cycles_data: List of dicts or Cycle objects
 
         """
         self.cycle_table.setRowCount(0)
@@ -420,37 +416,23 @@ class CycleTableDialog(QDialog):
                     return val if val is not None else default
                 return getattr(obj, key, default)
 
-            # Column 0: ID (seg_id)
-            id_item = QTableWidgetItem(str(get_val(cycle, "seg_id", row)))
-            id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.cycle_table.setItem(row, 0, id_item)
+            # Column 0: Cycle (name or number)
+            name = get_val(cycle, "name", f"{row + 1}")
+            cycle_item = QTableWidgetItem(str(name))
+            cycle_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.cycle_table.setItem(row, 0, cycle_item)
 
-            # Column 1: Name
-            name_item = QTableWidgetItem(str(get_val(cycle, "name", f"{row + 1}")))
-            self.cycle_table.setItem(row, 1, name_item)
-
-            # Column 2: Start Time
+            # Column 1: Start Time
             start_val = get_val(cycle, "start", 0.0)
             start_item = QTableWidgetItem(f"{float(start_val):.2f}")
-            self.cycle_table.setItem(row, 2, start_item)
+            self.cycle_table.setItem(row, 1, start_item)
 
-            # Column 3: End Time
+            # Column 2: End Time
             end_val = get_val(cycle, "end", 0.0)
             end_item = QTableWidgetItem(f"{float(end_val):.2f}")
-            self.cycle_table.setItem(row, 3, end_item)
+            self.cycle_table.setItem(row, 2, end_item)
 
-            # Column 4: Ref Channel
-            ref_ch = get_val(cycle, "ref_ch", "")
-            ref_item = QTableWidgetItem(str(ref_ch) if ref_ch else "")
-            ref_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.cycle_table.setItem(row, 4, ref_item)
-
-            # Column 5: Unit
-            unit_item = QTableWidgetItem(str(get_val(cycle, "unit", "RU")))
-            unit_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.cycle_table.setItem(row, 5, unit_item)
-
-            # Columns 6-9: Shift A, B, C, D
+            # Columns 3-6: Shift A, B, C, D (all in nm)
             # Check if shift is a dict or get individual shift_a, shift_b, etc.
             shift = get_val(cycle, "shift", None)
             if shift and isinstance(shift, dict):
@@ -458,32 +440,32 @@ class CycleTableDialog(QDialog):
                     shift_val = shift.get(ch, 0.0)
                     shift_item = QTableWidgetItem(f"{float(shift_val):.3f}")
                     shift_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    self.cycle_table.setItem(row, 6 + i, shift_item)
+                    self.cycle_table.setItem(row, 3 + i, shift_item)
             else:
                 # Try individual columns (SegmentDataFrame format)
                 for i, ch in enumerate(["a", "b", "c", "d"]):
                     shift_val = get_val(cycle, f"shift_{ch}", 0.0)
                     shift_item = QTableWidgetItem(f"{float(shift_val):.3f}")
                     shift_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    self.cycle_table.setItem(row, 6 + i, shift_item)
+                    self.cycle_table.setItem(row, 3 + i, shift_item)
 
-            # Column 10: Cycle Type (editable with dropdown)
+            # Column 7: Cycle Type (editable with dropdown)
             cycle_type = str(get_val(cycle, "cycle_type", "Auto-read"))
             type_item = QTableWidgetItem(cycle_type)
-            self.cycle_table.setItem(row, 10, type_item)
+            self.cycle_table.setItem(row, 7, type_item)
 
-            # Column 11: Cycle Time
+            # Column 8: Cycle Time
             cycle_time = get_val(cycle, "cycle_time", None)
             time_str = str(cycle_time) if cycle_time is not None else ""
             time_item = QTableWidgetItem(time_str)
             time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.cycle_table.setItem(row, 11, time_item)
+            self.cycle_table.setItem(row, 8, time_item)
 
-            # Column 12: Note
+            # Column 9: Note
             note_item = QTableWidgetItem(str(get_val(cycle, "note", "")))
-            self.cycle_table.setItem(row, 12, note_item)
+            self.cycle_table.setItem(row, 9, note_item)
 
-            # Column 13: Flags (summary of channel flags)
+            # Column 10: Flags (summary of channel flags)
             flags = get_val(cycle, "flags", None)
             if flags:
                 # Format: "ChA: 2, ChC: 1" or similar
@@ -494,17 +476,20 @@ class CycleTableDialog(QDialog):
             flags_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if flags_str:
                 flags_item.setForeground(QColor("#FF9500"))  # Orange for flag indicator
-            self.cycle_table.setItem(row, 13, flags_item)
+            self.cycle_table.setItem(row, 10, flags_item)
 
-            # Column 14: Error
+            # Column 11: Error
             error = get_val(cycle, "error", None)
             error_str = str(error) if error else ""
             error_item = QTableWidgetItem(error_str)
             if error:
                 error_item.setForeground(QColor("#FF3B30"))  # Red color for errors
-            self.cycle_table.setItem(row, 14, error_item)
+            self.cycle_table.setItem(row, 11, error_item)
 
-        self._update_count()
+            # Column 12: Run (placeholder for future run/analysis button)
+            run_item = QTableWidgetItem("")
+            run_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.cycle_table.setItem(row, 12, run_item)
 
         self._update_count()
 

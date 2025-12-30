@@ -400,6 +400,21 @@ class DataBufferManager:
             return None
         return buffer.wavelength[-1]
 
+    def get_latest_time(self, channel: str) -> float | None:
+        """Get most recent elapsed time for a channel.
+
+        Args:
+            channel: Channel letter ('a', 'b', 'c', 'd')
+
+        Returns:
+            Latest elapsed time or None if no data
+
+        """
+        buffer = self.timeline_data[channel]
+        if len(buffer.time) == 0:
+            return None
+        return buffer.time[-1]
+
     def trim_timeline_memory(self, channel: str, max_points: int, trim_to: int) -> int:
         """Trim old data from timeline buffer when memory limit reached.
 

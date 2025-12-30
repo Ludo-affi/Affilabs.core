@@ -133,19 +133,6 @@ class FlowTabBuilder:
         )
         intel_bar_layout.addWidget(self.sidebar.flow_intel_message_label)
 
-        # Countdown timer
-        self.sidebar.flow_countdown_label = QLabel("00:30")
-        self.sidebar.flow_countdown_label.setStyleSheet(
-            "font-size: 11px;"
-            "color: #1D1D1F;"
-            "background: rgba(0, 0, 0, 0.06);"
-            "padding: 2px 8px;"
-            "border-radius: 4px;"
-            "font-weight: 700;"
-            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;",
-        )
-        intel_bar_layout.addWidget(self.sidebar.flow_countdown_label)
-
         intel_bar_layout.addStretch()
 
         tab_layout.addWidget(intel_bar)

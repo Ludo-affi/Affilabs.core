@@ -900,6 +900,18 @@ class DataAcquisitionManager(QObject):
                     batch_success = False
                     spectra_acquired = 0
 
+                    # Overnight mode: Add delay before starting cycle
+                    try:
+                        import settings as root_settings
+
+                        if getattr(root_settings, "OVERNIGHT_MODE", False):
+                            delay_s = getattr(root_settings, "OVERNIGHT_DELAY_SECONDS", 15.0)
+                            # Only delay after first cycle to avoid initial startup delay
+                            if cycle_count > 1:
+                                time.sleep(delay_s)
+                    except Exception:
+                        pass  # Continue normal acquisition if settings unavailable
+
                     # Start cycle timing (detector window to detector window)
                     cycle_start = (
                         time.perf_counter() if self._enable_timing_instrumentation else None

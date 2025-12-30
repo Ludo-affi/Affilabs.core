@@ -125,17 +125,18 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QFormLayout,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSlider,
     QSplitter,
     QTextEdit,
     QVBoxLayout,
@@ -150,10 +151,10 @@ from typing import Any
 
 from affilabs.affilabs_sidebar import AffilabsSidebar
 from affilabs.core.system_intelligence import SystemState, get_system_intelligence
-from affilabs.dialogs import AdvancedSettingsDialog
 from affilabs.inspector import ElementInspector
 from affilabs.plot_helpers import add_channel_curves, create_time_plot
-from affilabs.ui_styles import Colors, Fonts
+from affilabs.tabs.edits_tab import EditsTab  # Extracted tab content
+from affilabs.ui_styles import Colors, Fonts, Dimensions, create_card_shadow
 from affilabs.utils.logger import logger
 
 
@@ -210,8 +211,8 @@ class StartupCalibProgressDialog(QDialog):
 
         # Style with border and rounded corners
         self.setStyleSheet(
-            "QDialog { background: #FFFFFF; border: 2px solid #007AFF; border-radius: 12px; }"
-            "QLabel { font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; color: #1D1D1F; }",
+            "QDialog { background: {Colors.BACKGROUND_WHITE}; border: 2px solid #007AFF; border-radius: {Dimensions.BORDER_RADIUS_LG}; }"
+            "QLabel { font-family: {Fonts.SYSTEM}; color: {Colors.PRIMARY_TEXT}; }",
         )
 
         # Main layout
@@ -222,7 +223,7 @@ class StartupCalibProgressDialog(QDialog):
         # Title
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(
-            "font-size: 18px;font-weight: 700;color: #1D1D1F;",
+            "font-size: 18px;font-weight: {Fonts.WEIGHT_BOLD};color: {Colors.PRIMARY_TEXT};",
         )
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.title_label)
@@ -232,7 +233,7 @@ class StartupCalibProgressDialog(QDialog):
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(0)  # Start in indeterminate mode
         self.progress_bar.setTextVisible(True)
-        self.progress_bar.setFixedHeight(24)
+        self.progress_bar.setFixedHeight(Dimensions.HEIGHT_BUTTON_SM)
         self.progress_bar.setVisible(False)  # Hidden initially for checklist
         self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.progress_bar.setStyleSheet(
@@ -240,9 +241,9 @@ class StartupCalibProgressDialog(QDialog):
             "  background: rgba(0, 0, 0, 0.06);"
             "  border-radius: 4px;"
             "  border: 1px solid #D1D1D6;"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "  font-size: 12px;"
-            "  font-weight: 700;"
+            "  font-weight: {Fonts.WEIGHT_BOLD};"
             "  text-align: center;"
             "}"
             "QProgressBar::chunk {"
@@ -255,7 +256,7 @@ class StartupCalibProgressDialog(QDialog):
         # Status message
         self.status_label = QLabel(message)
         self.status_label.setStyleSheet(
-            "font-size: 14px;color: #86868B;padding: 0px;",
+            "font-size: 14px;color: {Colors.SECONDARY_TEXT};padding: 0px;",
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
@@ -299,7 +300,7 @@ class StartupCalibProgressDialog(QDialog):
                 "}"
                 "QPushButton:disabled {"
                 "  background: #E5E5EA;"
-                "  color: #86868B;"
+                "  color: {Colors.SECONDARY_TEXT};"
                 "}",
             )
             self.start_button.clicked.connect(self._on_start_clicked)
@@ -417,9 +418,9 @@ class StartupCalibProgressDialog(QDialog):
             try:
                 self.status_label.setText(message)
             except RuntimeError as e:
-                print(f"🔴 ERROR: RuntimeError in _do_update_status: {e}")
+                logger.error(f"RuntimeError in _do_update_status: {e}")
             except Exception as e:
-                print(f"🔴 ERROR: Exception in _do_update_status: {e}")
+                logger.error(f"Exception in _do_update_status: {e}")
                 import traceback
 
                 try:
@@ -438,9 +439,9 @@ class StartupCalibProgressDialog(QDialog):
                 self.title_label.setText(title)
                 self.setWindowTitle(title)
             except RuntimeError as e:
-                print(f"🔴 ERROR: RuntimeError in _do_update_title: {e}")
+                logger.error(f"RuntimeError in _do_update_title: {e}")
             except Exception as e:
-                print(f"🔴 ERROR: Exception in _do_update_title: {e}")
+                logger.error(f"Exception in _do_update_title: {e}")
                 import traceback
 
                 try:
@@ -492,9 +493,9 @@ class StartupCalibProgressDialog(QDialog):
             try:
                 self.progress_bar.hide()
             except RuntimeError as e:
-                print(f"🔴 ERROR: RuntimeError in _do_hide_progress: {e}")
+                logger.error(f"RuntimeError in _do_hide_progress: {e}")
             except Exception as e:
-                print(f"🔴 ERROR: Exception in _do_hide_progress: {e}")
+                logger.error(f"Exception in _do_hide_progress: {e}")
                 import traceback
 
                 try:
@@ -534,25 +535,19 @@ class StartupCalibProgressDialog(QDialog):
 
     def enable_start_button(self) -> None:
         """Enable the Start button when calibration is complete (thread-safe via signal)."""
-        print("DEBUG: enable_start_button() called")
         self._enable_start_signal.emit()
-        print("DEBUG: enable_start_button signal emitted")
 
     def _do_enable_start(self) -> None:
         """Actually enable start button (runs in main thread)."""
-        print("DEBUG: _do_enable_start() executing in main thread")
         if not self._is_closing and self.isVisible() and self.start_button:
             try:
-                print("DEBUG: Setting _is_complete = True...")
                 self._is_complete = True
                 self._is_error_state = False
-                print("DEBUG: Enabling start button...")
                 self.start_button.setEnabled(True)
-                print("DEBUG: Start button enabled")
             except RuntimeError as e:
-                print(f"🔴 ERROR: RuntimeError in _do_enable_start: {e}")
+                logger.error(f"RuntimeError in _do_enable_start: {e}")
             except Exception as e:
-                print(f"🔴 ERROR: Exception in _do_enable_start: {e}")
+                logger.error(f"Exception in _do_enable_start: {e}")
                 import traceback
 
                 try:
@@ -585,7 +580,7 @@ class StartupCalibProgressDialog(QDialog):
             self.title_label.setText("⚠️ Calibration Failed")
             self.title_label.setStyleSheet(
                 "font-size: 18px;"
-                "font-weight: 700;"
+                "font-weight: {Fonts.WEIGHT_BOLD};"
                 "color: #FF3B30;",  # Red color for error
             )
 
@@ -703,7 +698,7 @@ class StartupCalibProgressDialog(QDialog):
 
             # Reset title color
             self.title_label.setStyleSheet(
-                "font-size: 18px;font-weight: 700;color: #1D1D1F;",
+                "font-size: 18px;font-weight: {Fonts.WEIGHT_BOLD};color: {Colors.PRIMARY_TEXT};",
             )
 
             # Hide error buttons
@@ -751,12 +746,12 @@ class DeviceConfigDialog(QDialog):
         # Apply modern styling
         self.setStyleSheet(
             "QDialog {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: 2px solid #007AFF;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}"
             "QLabel {"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "  font-size: 13px;"
             "}",
         )
@@ -768,7 +763,7 @@ class DeviceConfigDialog(QDialog):
         # Title
         title = QLabel("⚙️ Device Configuration")
         title.setStyleSheet(
-            "font-size: 20px;font-weight: 600;color: #1D1D1F;",
+            "font-size: 20px;font-weight: 600;color: {Colors.PRIMARY_TEXT};",
         )
         layout.addWidget(title)
 
@@ -778,7 +773,7 @@ class DeviceConfigDialog(QDialog):
         )
         desc.setTextFormat(Qt.TextFormat.RichText)  # Enable HTML formatting
         desc.setStyleSheet(
-            "font-size: 13px;color: #86868B;",
+            "font-size: 13px;color: {Colors.SECONDARY_TEXT};",
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -787,7 +782,7 @@ class DeviceConfigDialog(QDialog):
         self.config_source_label = QLabel()
         self.config_source_label.setStyleSheet(
             "font-size: 12px;"
-            "color: #86868B;"
+            "color: {Colors.SECONDARY_TEXT};"
             "padding: 8px 12px;"
             "background: #F5F5F7;"
             "border-radius: 6px;",
@@ -806,9 +801,9 @@ class DeviceConfigDialog(QDialog):
             "  padding: 8px 12px;"
             "  border: 1px solid #D1D1D6;"
             "  border-radius: 6px;"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  font-size: 13px;"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "  min-height: 20px;"
             "}"
             "QComboBox:hover {"
@@ -819,7 +814,7 @@ class DeviceConfigDialog(QDialog):
             "}"
             "QComboBox:disabled {"
             "  background: #F5F5F7;"
-            "  color: #86868B;"
+            "  color: {Colors.SECONDARY_TEXT};"
             "}"
             "QComboBox::drop-down {"
             "  border: none;"
@@ -838,7 +833,7 @@ class DeviceConfigDialog(QDialog):
             "QComboBox QAbstractItemView {"
             "  border: 1px solid #D1D1D6;"
             "  border-radius: 6px;"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  selection-background-color: #007AFF;"
             "  selection-color: #FFFFFF;"
             "  padding: 4px;"
@@ -847,7 +842,7 @@ class DeviceConfigDialog(QDialog):
             "QComboBox QAbstractItemView::item {"
             "  padding: 8px 12px;"
             "  border-radius: 4px;"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "  min-height: 24px;"
             "}"
             "QComboBox QAbstractItemView::item:hover {"
@@ -865,7 +860,7 @@ class DeviceConfigDialog(QDialog):
             "  padding: 6px 12px;"
             "  border: 1px solid #D1D1D6;"
             "  border-radius: 6px;"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  font-size: 13px;"
             "}"
             "QLineEdit:focus {"
@@ -934,7 +929,7 @@ class DeviceConfigDialog(QDialog):
             "  border-radius: 6px;"
             "  font-size: 13px;"
             "  font-weight: 500;"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "}"
             "QPushButton:hover {"
             "  background: #E5E5E7;"
@@ -961,7 +956,7 @@ class DeviceConfigDialog(QDialog):
                 "}"
                 "QPushButton:disabled {"
                 "  background: #E5E5E7;"
-                "  color: #86868B;"
+                "  color: {Colors.SECONDARY_TEXT};"
                 "}",
             )
             eeprom_btn.setToolTip(
@@ -1418,8 +1413,8 @@ class AffilabsMainWindow(QMainWindow):
         )
 
         content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(16, 16, 16, 16)
-        content_layout.setSpacing(8)
+        content_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        content_layout.setSpacing(Dimensions.SPACING_SM)
 
         # Graph header with controls
         header = self._create_graph_header()
@@ -1434,7 +1429,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Top graph (Navigation/Overview) - 30%
         self.full_timeline_graph, top_graph = self._create_graph_container(
-            "Full Sensorgram",
+            "Live Sensorgram",
             height=200,
             show_delta_spr=False,
         )
@@ -1601,11 +1596,11 @@ class AffilabsMainWindow(QMainWindow):
         so the transition is seamless when real graphs load.
         """
         placeholder = QFrame()
-        placeholder.setStyleSheet("QFrame { background: #FFFFFF; border: none; }")
+        placeholder.setStyleSheet("QFrame { background: {Colors.BACKGROUND_WHITE}; border: none; }")
 
         layout = QVBoxLayout(placeholder)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(16)
+        layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        layout.setSpacing(Dimensions.SPACING_LG)
 
         # Timeline section skeleton
         timeline_card = QFrame()
@@ -1613,7 +1608,7 @@ class AffilabsMainWindow(QMainWindow):
             QFrame {{
                 background: {Colors.BACKGROUND_WHITE};
                 border: 1px solid {Colors.OVERLAY_LIGHT_10};
-                border-radius: 12px;
+                border-radius: {Dimensions.BORDER_RADIUS_LG};
             }}
         """)
         timeline_layout = QVBoxLayout(timeline_card)
@@ -1626,7 +1621,7 @@ class AffilabsMainWindow(QMainWindow):
                 font-size: 14px;
                 font-weight: 600;
                 color: {Colors.PRIMARY_TEXT};
-                background: transparent;
+                background: {Colors.TRANSPARENT};
             }}
         """)
         timeline_layout.addWidget(timeline_title)
@@ -1644,7 +1639,7 @@ class AffilabsMainWindow(QMainWindow):
         skeleton_layout = QVBoxLayout(timeline_skeleton)
         skeleton_label = QLabel("Loading graph...")
         skeleton_label.setStyleSheet(
-            f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: transparent;",
+            f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: {Colors.TRANSPARENT};",
         )
         skeleton_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         skeleton_layout.addWidget(skeleton_label)
@@ -1658,7 +1653,7 @@ class AffilabsMainWindow(QMainWindow):
             QFrame {{
                 background: {Colors.BACKGROUND_WHITE};
                 border: 1px solid {Colors.OVERLAY_LIGHT_10};
-                border-radius: 12px;
+                border-radius: {Dimensions.BORDER_RADIUS_LG};
             }}
         """)
         cycle_layout = QVBoxLayout(cycle_card)
@@ -1671,7 +1666,7 @@ class AffilabsMainWindow(QMainWindow):
                 font-size: 14px;
                 font-weight: 600;
                 color: {Colors.PRIMARY_TEXT};
-                background: transparent;
+                background: {Colors.TRANSPARENT};
             }}
         """)
         cycle_layout.addWidget(cycle_title)
@@ -1688,7 +1683,7 @@ class AffilabsMainWindow(QMainWindow):
         cycle_skeleton_layout = QVBoxLayout(cycle_skeleton)
         cycle_skeleton_label = QLabel("Loading graph...")
         cycle_skeleton_label.setStyleSheet(
-            f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: transparent;",
+            f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; background: {Colors.TRANSPARENT};",
         )
         cycle_skeleton_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cycle_skeleton_layout.addWidget(cycle_skeleton_label)
@@ -1705,6 +1700,7 @@ class AffilabsMainWindow(QMainWindow):
         Replaces placeholder with real sensorgram graphs.
         """
         if self._deferred_ui_loaded:
+            logger.debug("Deferred graphs already loaded, skipping")
             return  # Already loaded
 
         try:
@@ -1722,7 +1718,7 @@ class AffilabsMainWindow(QMainWindow):
             self.navigation_presenter.switch_page(0)
 
             self._deferred_ui_loaded = True
-            logger.debug("✓ Sensorgram graphs loaded")
+            logger.info("✓ Sensorgram graphs loaded successfully")
 
         except Exception as e:
             logger.error(f"❌ Failed to load deferred graphs: {e}", exc_info=True)
@@ -1742,7 +1738,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # ===== First Row: Channel toggles, Live Data, Clear Graph =====
         first_row = QWidget()
-        first_row.setFixedHeight(40)
+        first_row.setFixedHeight(Dimensions.HEIGHT_BUTTON_XL)
         first_row_layout = QHBoxLayout(first_row)
         first_row_layout.setContentsMargins(0, 0, 0, 0)
         first_row_layout.setSpacing(8)
@@ -1805,7 +1801,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Clear Graph button
         self.clear_graph_btn = QPushButton("Clear Graph")
-        self.clear_graph_btn.setFixedHeight(32)
+        self.clear_graph_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_STD)
         self.clear_graph_btn.setToolTip(
             "Clear all timeline data and reset graphs\n"
             "• Clears all channel data (A, B, C, D)\n"
@@ -1815,12 +1811,13 @@ class AffilabsMainWindow(QMainWindow):
         self.clear_graph_btn.setStyleSheet(
             UIStyleManager.get_clear_button_style("neutral"),
         )
-        self.clear_graph_btn.clicked.connect(self._clear_graph_data)
+        # Connect to DataWindow's reset_graphs() method (triggers proper clear chain)
+        self.clear_graph_btn.clicked.connect(self._on_clear_graph_clicked)
         first_row_layout.addWidget(self.clear_graph_btn)
 
         # Clear Flags button
         self.clear_flags_btn = QPushButton("Clear Flags")
-        self.clear_flags_btn.setFixedHeight(32)
+        self.clear_flags_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_STD)
         self.clear_flags_btn.setToolTip(
             "Remove all flag markers from Cycle of Interest graph\n"
             "• Clears visual flag indicators\n"
@@ -1865,7 +1862,7 @@ class AffilabsMainWindow(QMainWindow):
         panel = QFrame()
         panel.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: 1px solid rgba(0, 0, 0, 0.1);"
             "  border-radius: 8px;"
             "  padding: 6px;"
@@ -1881,10 +1878,10 @@ class AffilabsMainWindow(QMainWindow):
         presets_label.setStyleSheet(
             "QLabel {"
             "  font-size: 12px;"
-            "  color: #86868B;"
+            "  color: {Colors.SECONDARY_TEXT};"
             "  font-weight: 500;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         presets_label.setToolTip("Quickly select common time ranges")
@@ -1900,17 +1897,17 @@ class AffilabsMainWindow(QMainWindow):
 
         for label, seconds, tooltip in preset_buttons:
             btn = QPushButton(label)
-            btn.setFixedHeight(28)
+            btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_MD)
             btn.setToolTip(tooltip)
             btn.setStyleSheet(
                 "QPushButton {"
                 "  background: #F8F9FA;"
-                "  color: #1D1D1F;"
+                "  color: {Colors.PRIMARY_TEXT};"
                 "  border: 1px solid rgba(0, 0, 0, 0.1);"
                 "  border-radius: 6px;"
                 "  font-size: 11px;"
                 "  font-weight: 500;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "  font-family: {Fonts.SYSTEM};"
                 "  padding: 0px 12px;"
                 "}"
                 "QPushButton:hover {"
@@ -1933,7 +1930,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Export selected range button
         export_btn = QPushButton("📤 Export Range")
-        export_btn.setFixedHeight(28)
+        export_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_MD)
         export_btn.setToolTip("Export data from selected cursor range to CSV")
         export_btn.setStyleSheet(
             "QPushButton {"
@@ -1943,7 +1940,7 @@ class AffilabsMainWindow(QMainWindow):
             "  border-radius: 6px;"
             "  font-size: 11px;"
             "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "  padding: 0px 16px;"
             "}"
             "QPushButton:hover {"
@@ -1991,7 +1988,7 @@ class AffilabsMainWindow(QMainWindow):
                 f"Selected range: {start_time:.1f}s to {stop_time:.1f}s ({abs(seconds_from_end)}s duration)",
             )
         except Exception as e:
-            print(f"Error selecting time range: {e}")
+            logger.error(f"Error selecting time range: {e}")
 
     def _select_all_data(self):
         """Select entire timeline from 0 to latest data."""
@@ -2010,9 +2007,9 @@ class AffilabsMainWindow(QMainWindow):
             # Update spinboxes
             self._update_cursor_inputs()
 
-            print(f"Selected all data: 0s to {stop_time:.1f}s")
+            logger.debug(f"Selected all data: 0s to {stop_time:.1f}s")
         except Exception as e:
-            print(f"Error selecting all data: {e}")
+            logger.error(f"Error selecting all data: {e}")
 
     def _on_start_input_changed(self, value):
         """Update start cursor when spinbox changes."""
@@ -2029,7 +2026,7 @@ class AffilabsMainWindow(QMainWindow):
             self.full_timeline_graph.start_cursor.setValue(value)
             self._update_duration_label()
         except Exception as e:
-            print(f"Error updating start cursor: {e}")
+            logger.error(f"Error updating start cursor: {e}")
 
     def _on_stop_input_changed(self, value):
         """Update stop cursor when spinbox changes."""
@@ -2046,7 +2043,7 @@ class AffilabsMainWindow(QMainWindow):
             self.full_timeline_graph.stop_cursor.setValue(value)
             self._update_duration_label()
         except Exception as e:
-            print(f"Error updating stop cursor: {e}")
+            logger.error(f"Error updating stop cursor: {e}")
 
     def _update_cursor_inputs(self):
         """Update spinboxes to match cursor positions."""
@@ -2069,7 +2066,7 @@ class AffilabsMainWindow(QMainWindow):
 
             self._update_duration_label()
         except Exception as e:
-            print(f"Error updating cursor inputs: {e}")
+            logger.error(f"Error updating cursor inputs: {e}")
         finally:
             self._updating_cursor_inputs = False
 
@@ -2091,7 +2088,7 @@ class AffilabsMainWindow(QMainWindow):
     def _export_cursor_range(self):
         """Export data from selected cursor range to CSV."""
         if not hasattr(self, "app") or not self.app:
-            print("Application not initialized")
+            logger.warning("Application not initialized")
             return
 
         try:
@@ -2101,11 +2098,11 @@ class AffilabsMainWindow(QMainWindow):
             # Forward to application's export cycle method
             if hasattr(self.app, "export_cycle_data"):
                 self.app.export_cycle_data()
-                print(f"Exporting range: {start_time:.1f}s to {stop_time:.1f}s")
+                logger.debug(f"Exporting range: {start_time:.1f}s to {stop_time:.1f}s")
             else:
-                print("Export function not available")
+                logger.warning("Export function not available")
         except Exception as e:
-            print(f"Error exporting cursor range: {e}")
+            logger.error(f"Error exporting cursor range: {e}")
 
     def _on_cursor_dragged(self, evt):
         """Handle cursor being dragged - update inputs in real-time."""
@@ -2152,7 +2149,7 @@ class AffilabsMainWindow(QMainWindow):
             if min_distance < float("inf"):
                 cursor.setValue(float(nearest_time))
         except Exception as e:
-            print(f"Error applying snap: {e}")
+            logger.error(f"Error applying snap: {e}")
 
     def _toggle_live_data(self, enabled: bool) -> None:
         """Toggle live data updates for graphs."""
@@ -2192,32 +2189,12 @@ class AffilabsMainWindow(QMainWindow):
                 else self.cycle_of_interest_graph.curves[channel_idx].hide()
             )
 
-    def _clear_graph_data(self):
-        """Clear all timeline data and reset graphs."""
+    def _on_clear_graph_clicked(self):
+        """Handle Clear Graph button click - call app's clear handler directly."""
         if hasattr(self, "app") and self.app:
-            try:
-                # Clear all buffers
-                self.app.buffer_mgr.clear_all()
-
-                # Clear plot curves in full timeline graph
-                if hasattr(self, "full_timeline_graph"):
-                    for curve in self.full_timeline_graph.curves:
-                        curve.setData([], [])
-
-                # Clear plot curves in cycle of interest graph
-                if hasattr(self, "cycle_of_interest_graph"):
-                    for curve in self.cycle_of_interest_graph.curves:
-                        curve.setData([], [])
-
-                # Reset cursors to initial position
-                if hasattr(self, "start_cursor"):
-                    self.start_cursor.setValue(0)
-                if hasattr(self, "stop_cursor"):
-                    self.stop_cursor.setValue(0)
-
-                print("✅ Graph data cleared")
-            except Exception as e:
-                print(f"❌ Error clearing graph data: {e}")
+            # Call the main clear handler directly (same as DataWindow signal does)
+            if hasattr(self.app, '_on_clear_graphs_requested'):
+                self.app._on_clear_graphs_requested()
 
     def _clear_all_flags(self):
         """Remove all flag markers from the cycle of interest graph."""
@@ -2287,21 +2264,17 @@ class AffilabsMainWindow(QMainWindow):
         container.setMinimumHeight(height)
         container.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
         # Add shadow
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        container.setGraphicsEffect(shadow)
+        container.setGraphicsEffect(create_card_shadow())
 
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        layout.setSpacing(Dimensions.SPACING_MD)
 
         # Title row with controls
         title_row = QHBoxLayout()
@@ -2312,9 +2285,9 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         title_row.addWidget(title_label)
@@ -2334,7 +2307,7 @@ class AffilabsMainWindow(QMainWindow):
                 "  border-radius: 6px;"
                 "  padding: 8px 14px;"
                 "  font-size: 12px;"
-                "  color: #1D1D1F;"
+                "  color: {Colors.PRIMARY_TEXT};"
                 f"  font-family: {Fonts.MONOSPACE};"
                 "  font-weight: 600;"
                 "}",
@@ -2352,21 +2325,26 @@ class AffilabsMainWindow(QMainWindow):
 
         # Create plot curves for 4 channels with distinct colors
         # Ch A: Black, Ch B: Red, Ch C: Blue, Ch D: Green
-        # Standard colors (will be updated if colorblind mode enabled)
-        # Clickable only for Live Sensorgram (top graph) for channel selection/flagging
-        curves = add_channel_curves(plot_widget, clickable=not show_delta_spr, width=2)
-        if not show_delta_spr:  # Live Sensorgram - enable curve click to select channel
-            for i, curve in enumerate(curves):
-                try:
-                    curve.sigClicked.connect(lambda _, ch=i: self._on_curve_clicked(ch))
-                except Exception:
-                    pass
+        curves = add_channel_curves(plot_widget, clickable=False, width=2)
 
         # Add Start/Stop cursors for Full Experiment Timeline (top graph)
         # Navigation concept: Live Sensorgram is the navigation space, cursors define cycle of interest region
         start_cursor = None
         stop_cursor = None
         if not show_delta_spr:  # Only for Live Sensorgram (top graph)
+            # Enable curve clicking for channel selection
+            for i, curve in enumerate(curves):
+                try:
+                    # Make curve clickable
+                    curve.setCurveClickable(True, width=10)
+                    # Connect click signal
+                    curve.sigClicked.connect(lambda _, ch=i: self._on_curve_clicked(ch))
+                    logger.debug(f"[LIVE] Connected click handler for curve {i}")
+                except AttributeError as e:
+                    logger.warning(f"[LIVE] Could not make curve {i} clickable: {e}")
+                except Exception as e:
+                    logger.warning(f"[LIVE] Error connecting curve {i} click: {e}")
+
             # Start cursor - thicker line (3px) for easier interaction
             start_cursor = pg.InfiniteLine(
                 pos=0,
@@ -2388,7 +2366,7 @@ class AffilabsMainWindow(QMainWindow):
 
             # Stop cursor - thicker line (3px) for easier interaction
             stop_cursor = pg.InfiniteLine(
-                pos=100,
+                pos=0,  # Start at 0, will auto-follow as data comes in
                 angle=90,
                 pen=pg.mkPen(color="#1D1D1F", width=3),  # 3px for easier click target
                 movable=True,
@@ -2644,6 +2622,63 @@ class AffilabsMainWindow(QMainWindow):
                 f"Removed {removed_count} flag(s) from Channel {channel_letter} near x={x_pos:.2f}",
             )
 
+    def add_event_marker(self, time_pos: float, event_name: str, color: str = "#00C853"):
+        """Add a visual event marker to the full timeline graph.
+
+        Args:
+            time_pos: Time position in seconds where the event occurred
+            event_name: Name/description of the event
+            color: Hex color code for the marker (default green)
+        """
+        if not hasattr(self, "full_timeline_graph"):
+            return
+
+        import pyqtgraph as pg
+
+        # Create vertical line marker
+        event_line = pg.InfiniteLine(
+            pos=time_pos,
+            angle=90,
+            pen=pg.mkPen(color=color, width=2, style=pg.QtCore.Qt.PenStyle.DashDotLine),
+            movable=False,
+        )
+
+        # Create text label
+        # Truncate event name if too long
+        display_text = event_name if len(event_name) <= 30 else event_name[:27] + "..."
+        event_text = pg.TextItem(
+            text=f"📍 {display_text}",
+            color=color,
+            anchor=(0.5, 1),  # Center, bottom - anchor at bottom so text hangs from top of graph
+        )
+
+        # Get y-axis range to position text at top of graph
+        view_range = self.full_timeline_graph.getPlotItem().getViewBox().viewRange()
+        y_max = view_range[1][1]  # Top of y-axis
+        event_text.setPos(time_pos, y_max)
+
+        # Add to graph
+        self.full_timeline_graph.addItem(event_line)
+        self.full_timeline_graph.addItem(event_text)
+
+        # Store reference (in flag_markers list for now, could create separate event_markers list)
+        event_marker = {
+            "type": "event",
+            "time": time_pos,
+            "event": event_name,
+            "line": event_line,
+            "text": event_text,
+            "color": color,
+        }
+
+        # Initialize event_markers list if it doesn't exist
+        if not hasattr(self.full_timeline_graph, 'event_markers'):
+            self.full_timeline_graph.event_markers = []
+
+        self.full_timeline_graph.event_markers.append(event_marker)
+
+        logger.info(f"Event marker added at t={time_pos:.2f}s: {event_name}")
+
     def _update_flags_table(self):
         """Update the Flags column in the cycle data table with current flags."""
         if not hasattr(self, "cycle_data_table") or not hasattr(
@@ -2775,7 +2810,7 @@ class AffilabsMainWindow(QMainWindow):
         # Empty state message
         empty_icon = QLabel("📑")
         empty_icon.setStyleSheet(
-            "QLabel {  font-size: 64px;  background: transparent;}",
+            "QLabel {  font-size: 64px;  background: {Colors.TRANSPARENT};}",
         )
         empty_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(empty_icon)
@@ -2785,8 +2820,8 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 24px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
             "  margin-top: 16px;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
             "}",
@@ -2798,10 +2833,10 @@ class AffilabsMainWindow(QMainWindow):
         empty_desc.setStyleSheet(
             "QLabel {"
             "  font-size: 14px;"
-            "  color: #86868B;"
-            "  background: transparent;"
+            "  color: {Colors.SECONDARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
             "  margin-top: 8px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         empty_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2810,245 +2845,41 @@ class AffilabsMainWindow(QMainWindow):
         return content_widget
 
     def _create_edits_content(self):
-        """Create the Edits tab content with cycle data table and graph editing tools."""
-        content_widget = QFrame()
-        content_widget.setStyleSheet(
-            "QFrame {  background: #F8F9FA;  border: none;}",
-        )
+        """Create the Edits tab content (delegated to EditsTab class)."""
+        self.edits_tab = EditsTab(self)
+        return self.edits_tab.create_content()
 
-        content_layout = QHBoxLayout(content_widget)
-        content_layout.setContentsMargins(16, 16, 16, 16)
-        content_layout.setSpacing(12)
+    # Edits tab helper methods - delegate to EditsTab instance
+    def _update_edits_selection_view(self):
+        """Update edits selection view (delegates to EditsTab)."""
+        if hasattr(self, 'edits_tab'):
+            self.edits_tab._update_selection_view()
 
-        # Left side: Cycle Data Table + Tools
-        left_panel = self._create_edits_left_panel()
-        content_layout.addWidget(left_panel, 2)
+    def _toggle_edits_channel(self, ch_idx, visible):
+        """Toggle edits channel visibility (delegates to EditsTab)."""
+        if hasattr(self, 'edits_tab'):
+            self.edits_tab._toggle_channel(ch_idx, visible)
 
-        # Right side: Primary Graph + Thumbnail Selector
-        right_panel = self._create_edits_right_panel()
-        content_layout.addWidget(right_panel, 3)
+    def _export_edits_selection(self):
+        """Export edits selection (delegates to EditsTab)."""
+        if hasattr(self, 'edits_tab'):
+            self.edits_tab._export_selection()
 
-        return content_widget
+    def _load_data_from_excel(self):
+        """Alias for _load_previous_data for the new Edits tab."""
+        self._load_previous_data()
 
-    def _create_edits_left_panel(self):
-        """Create left panel with cycle data table and editing tools."""
-        panel = QFrame()
-        panel.setStyleSheet(
-            "QFrame {  background: transparent;  border: none;}",
-        )
-
-        panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(0, 0, 0, 0)
-        panel_layout.setSpacing(12)
-
-        # Cycle Data Table
-        table_container = QFrame()
-        table_container.setStyleSheet(
-            "QFrame {"
-            "  background: #FFFFFF;"
-            "  border: none;"
-            "  border-radius: 12px;"
-            "}",
-        )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        table_container.setGraphicsEffect(shadow)
-
-        table_layout = QVBoxLayout(table_container)
-        table_layout.setContentsMargins(16, 16, 16, 16)
-        table_layout.setSpacing(12)
-
-        # Table header
-        table_header = QHBoxLayout()
-        table_title = QLabel("Cycle Data")
-        table_title.setStyleSheet(
-            "QLabel {"
-            "  font-size: 15px;"
-            "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}",
-        )
-        table_header.addWidget(table_title)
-        table_header.addStretch()
-
-        # Search/Filter button
-        filter_btn = QPushButton("🔍 Filter")
-        filter_btn.setFixedHeight(28)
-        filter_btn.setMinimumWidth(80)
-        filter_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: rgba(0, 0, 0, 0.06);"
-            "  color: #1D1D1F;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  font-size: 12px;"
-            "  font-weight: 500;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "}",
-        )
-        table_header.addWidget(filter_btn)
-
-        table_layout.addLayout(table_header)
-
-        # Master-Detail Pattern: Top table (Master) + Bottom detail panel
-        # Temporarily simplified for debugging
-        from PySide6.QtWidgets import QHeaderView, QTableWidget
-
-        self.cycle_data_table = QTableWidget(10, 6)
-        self.cycle_data_table.setHorizontalHeaderLabels(
-            ["Type", "Start", "End", "Units", "Notes", "Flags"],
-        )
-        self.cycle_data_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch,
-        )
-        self.cycle_data_table.setColumnWidth(3, 80)  # Fixed width for Units column
-        self.cycle_data_table.verticalHeader().setVisible(
-            True,
-        )  # Show row numbers as ID
-        self.cycle_data_table.setStyleSheet(
-            "QTableWidget {"
-            "  background: #FFFFFF;"
-            "  border: 1px solid rgba(0, 0, 0, 0.08);"
-            "  border-radius: 8px;"
-            "  font-size: 12px;"
-            "}",
-        )
-
-        table_layout.addWidget(self.cycle_data_table, 1)
-
-        panel_layout.addWidget(table_container, 3)
-
-        # Editing Tools Box
-        tools_container = QFrame()
-        tools_container.setStyleSheet(
-            "QFrame {"
-            "  background: #FFFFFF;"
-            "  border: none;"
-            "  border-radius: 12px;"
-            "}",
-        )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        tools_container.setGraphicsEffect(shadow)
-
-        tools_layout = QVBoxLayout(tools_container)
-        tools_layout.setContentsMargins(16, 16, 16, 16)
-        tools_layout.setSpacing(12)
-
-        # Tools header
-        tools_title = QLabel("Editing Tools")
-        tools_title.setStyleSheet(
-            "QLabel {"
-            "  font-size: 15px;"
-            "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}",
-        )
-        tools_layout.addWidget(tools_title)
-
-        # Tool buttons grid
-        tools_grid = QHBoxLayout()
-        tools_grid.setSpacing(8)
-
-        tool_buttons = [
-            ("Cut Spikes", "✂️"),
-            ("Align", "⇄"),
-            ("Redefine Segment", "⬚"),
-            ("Smooth", "〰"),
-        ]
-
-        for tool_name, icon in tool_buttons:
-            tool_btn = QPushButton(f"{icon} {tool_name}")
-            tool_btn.setFixedHeight(36)
-            tool_btn.setMinimumWidth(100)
-            tool_btn.setStyleSheet(
-                "QPushButton {"
-                "  background: rgba(0, 0, 0, 0.04);"
-                "  color: #1D1D1F;"
-                "  border: none;"
-                "  border-radius: 8px;"
-                "  font-size: 12px;"
-                "  font-weight: 500;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                "}"
-                "QPushButton:hover {"
-                "  background: rgba(0, 0, 0, 0.08);"
-                "}"
-                "QPushButton:pressed {"
-                "  background: rgba(0, 0, 0, 0.12);"
-                "}",
-            )
-            tools_grid.addWidget(tool_btn)
-
-        tools_layout.addLayout(tools_grid)
-
-        # Action buttons
-        action_buttons = QHBoxLayout()
-        action_buttons.setSpacing(8)
-
-        apply_btn = QPushButton("Apply Changes")
-        apply_btn.setFixedHeight(36)
-        apply_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #1D1D1F;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  padding: 0px 16px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #3A3A3C;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #48484A;"
-            "}",
-        )
-        action_buttons.addWidget(apply_btn)
-
-        reset_btn = QPushButton("Reset")
-        reset_btn.setFixedHeight(36)
-        reset_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: rgba(0, 0, 0, 0.04);"
-            "  color: #1D1D1F;"
-            "  border: none;"
-            "  border-radius: 8px;"
-            "  font-size: 13px;"
-            "  font-weight: 500;"
-            "  padding: 0px 16px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(0, 0, 0, 0.08);"
-            "}",
-        )
-        action_buttons.addWidget(reset_btn)
-
-        tools_layout.addLayout(action_buttons)
-
-        panel_layout.addWidget(tools_container, 1)
-
-        return panel
+    # Dead code removed (lines 2848-3223):
+    # - Stub _create_segment_from_selection (real implementation at line ~6451)
+    # - Duplicate _create_edits_right_panel (367 lines)
+    # - Duplicate _create_analyze_left_panel
+    # Active definitions are below
 
     def _create_edits_right_panel(self):
         """Create right panel with primary graph and thumbnail selectors."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: transparent;  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3059,20 +2890,16 @@ class AffilabsMainWindow(QMainWindow):
         primary_graph = QFrame()
         primary_graph.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        primary_graph.setGraphicsEffect(shadow)
+        primary_graph.setGraphicsEffect(create_card_shadow())
 
         primary_layout = QVBoxLayout(primary_graph)
-        primary_layout.setContentsMargins(16, 16, 16, 16)
-        primary_layout.setSpacing(12)
+        primary_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        primary_layout.setSpacing(Dimensions.SPACING_MD)
 
         # Graph header
         graph_header = QHBoxLayout()
@@ -3081,9 +2908,9 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         graph_header.addWidget(graph_title)
@@ -3091,10 +2918,10 @@ class AffilabsMainWindow(QMainWindow):
 
         # Channel toggles (compact)
         for ch, color in [
-            ("A", "#1D1D1F"),
-            ("B", "#FF3B30"),
-            ("C", "#1D1D1F"),
-            ("D", "#34C759"),
+            ("A", "#000000"),  # Black
+            ("B", "#FF0000"),  # Red
+            ("C", "#0000FF"),  # Blue
+            ("D", "#00AA00"),  # Green (0, 170, 0)
         ]:
             ch_btn = QPushButton(f"Ch {ch}")
             ch_btn.setCheckable(True)
@@ -3108,110 +2935,162 @@ class AffilabsMainWindow(QMainWindow):
                 "  border-radius: 4px;"
                 "  font-size: 11px;"
                 "  font-weight: 600;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "  font-family: {Fonts.SYSTEM};"
                 "}"
                 "QPushButton:!checked {"
                 "  background: rgba(0, 0, 0, 0.06);"
-                "  color: #86868B;"
+                "  color: {Colors.SECONDARY_TEXT};"
                 "}",
             )
             graph_header.addWidget(ch_btn)
 
         primary_layout.addLayout(graph_header)
 
-        # Graph canvas placeholder
-        graph_canvas = QFrame()
-        graph_canvas.setStyleSheet(
-            "QFrame {"
-            "  background: #FFFFFF;"
-            "  border: 1px solid rgba(0, 0, 0, 0.08);"
-            "  border-radius: 8px;"
-            "}",
-        )
-        graph_canvas_layout = QVBoxLayout(graph_canvas)
-        graph_placeholder = QLabel(
-            "[Primary Graph Canvas]\n\n"
-            "Selected cycle data displayed here\n"
-            "Interactive editing enabled",
-        )
-        graph_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        graph_placeholder.setStyleSheet(
-            "QLabel {"
-            "  font-size: 12px;"
-            "  color: #C7C7CC;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}",
-        )
-        graph_canvas_layout.addWidget(graph_placeholder)
+        # Create actual PyQtGraph widget for cycle display
+        import pyqtgraph as pg
+        self.edits_primary_graph = pg.PlotWidget()
+        self.edits_primary_graph.setBackground('w')
+        self.edits_primary_graph.showGrid(x=True, y=True, alpha=0.3)
+        self.edits_primary_graph.setLabel('left', 'Response (RU)')
+        self.edits_primary_graph.setLabel('bottom', 'Time (s)')
+        self.edits_primary_graph.setMinimumHeight(400)
 
-        primary_layout.addWidget(graph_canvas, 1)
+        # Create curves for each channel (matching main window colors)
+        self.edits_graph_curves = [
+            self.edits_primary_graph.plot(pen=pg.mkPen(color=(0, 0, 0), width=2)),       # Channel A: Black
+            self.edits_primary_graph.plot(pen=pg.mkPen(color=(255, 0, 0), width=2)),     # Channel B: Red
+            self.edits_primary_graph.plot(pen=pg.mkPen(color=(0, 0, 255), width=2)),     # Channel C: Blue
+            self.edits_primary_graph.plot(pen=pg.mkPen(color=(0, 170, 0), width=2)),     # Channel D: Green
+        ]
+
+        primary_layout.addWidget(self.edits_primary_graph)
 
         panel_layout.addWidget(primary_graph, 4)
 
-        # Thumbnail Graph Selector
-        thumbnails_container = QFrame()
-        thumbnails_container.setStyleSheet(
+        # Reference Graphs Container (Phase 3)
+        references_container = QFrame()
+        references_container.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        thumbnails_container.setGraphicsEffect(shadow)
+        references_container.setGraphicsEffect(create_card_shadow())
 
-        thumbnails_layout = QVBoxLayout(thumbnails_container)
-        thumbnails_layout.setContentsMargins(12, 12, 12, 12)
-        thumbnails_layout.setSpacing(8)
+        references_layout = QVBoxLayout(references_container)
+        references_layout.setContentsMargins(Dimensions.MARGIN_SM, Dimensions.MARGIN_SM, Dimensions.MARGIN_SM, Dimensions.MARGIN_SM)
+        references_layout.setSpacing(Dimensions.SPACING_SM)
 
-        # Thumbnails label
-        thumb_label = QLabel("Quick View")
-        thumb_label.setStyleSheet(
+        # References label
+        ref_header = QHBoxLayout()
+        ref_label = QLabel("Reference Graphs")
+        ref_label.setStyleSheet(
             "QLabel {"
             "  font-size: 13px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
-        thumbnails_layout.addWidget(thumb_label)
+        ref_header.addWidget(ref_label)
 
-        # Three thumbnail placeholders
-        thumb_grid = QHBoxLayout()
-        thumb_grid.setSpacing(8)
+        # Clear all button
+        clear_refs_btn = QPushButton("Clear All")
+        clear_refs_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_SM)
+        clear_refs_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(0, 0, 0, 0.04);"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  border: none;"
+            "  border-radius: 4px;"
+            "  font-size: 11px;"
+            "  font-weight: 500;"
+            "  padding: 0px 8px;"
+            "  font-family: {Fonts.SYSTEM};"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(0, 0, 0, 0.08);"
+            "}",
+        )
+        clear_refs_btn.clicked.connect(self._clear_reference_graphs)
+        ref_header.addWidget(clear_refs_btn)
+        references_layout.addLayout(ref_header)
+
+        # Three reference graph widgets
+        ref_graphs_layout = QHBoxLayout()
+        ref_graphs_layout.setSpacing(8)
+
+        import pyqtgraph as pg
+        self.edits_reference_graphs = []
+        self.edits_reference_curves = []
+        self.edits_reference_cycle_data = [None, None, None]  # Store which cycle is loaded
 
         for i in range(3):
-            thumb = QPushButton(f"Cycle {i + 2}")
-            thumb.setFixedHeight(80)
-            thumb.setStyleSheet(
-                "QPushButton {"
-                "  background: rgba(0, 0, 0, 0.03);"
-                "  color: #86868B;"
-                "  border: 1px solid rgba(0, 0, 0, 0.08);"
-                "  border-radius: 8px;"
-                "  font-size: 11px;"
-                "  font-weight: 500;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                "}"
-                "QPushButton:hover {"
-                "  background: rgba(0, 0, 0, 0.06);"
-                "  border-color: #1D1D1F;"
-                "  color: #1D1D1F;"
-                "}"
-                "QPushButton:pressed {"
-                "  background: rgba(0, 122, 255, 0.2);"
+            # Create container for each reference
+            ref_frame = QFrame()
+            ref_frame.setStyleSheet(
+                "QFrame {"
+                "  background: rgba(0, 0, 0, 0.02);"
+                "  border: 1px dashed rgba(0, 0, 0, 0.15);"
+                "  border-radius: 6px;"
                 "}",
             )
-            thumb_grid.addWidget(thumb)
+            ref_frame.setAcceptDrops(True)
 
-        thumbnails_layout.addLayout(thumb_grid)
+            ref_layout = QVBoxLayout(ref_frame)
+            ref_layout.setContentsMargins(4, 4, 4, 4)
+            ref_layout.setSpacing(2)
 
-        panel_layout.addWidget(thumbnails_container, 1)
+            # Label
+            ref_name_label = QLabel(f"Drag cycle here")
+            ref_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            ref_name_label.setStyleSheet(
+                "QLabel {"
+                "  font-size: 10px;"
+                "  color: {Colors.SECONDARY_TEXT};"
+                "  background: {Colors.TRANSPARENT};"
+                "  font-family: {Fonts.SYSTEM};"
+                "}",
+            )
+            ref_layout.addWidget(ref_name_label)
+
+            # Mini graph
+            ref_graph = pg.PlotWidget()
+            ref_graph.setBackground('w')
+            ref_graph.setFixedHeight(120)
+            ref_graph.hideAxis('left')
+            ref_graph.hideAxis('bottom')
+            ref_graph.setMouseEnabled(x=False, y=False)
+
+            # Create curves for 4 channels (matching main window colors)
+            ref_curves = [
+                ref_graph.plot(pen=pg.mkPen(color=(0, 0, 0), width=1)),       # Channel A: Black
+                ref_graph.plot(pen=pg.mkPen(color=(255, 0, 0), width=1)),     # Channel B: Red
+                ref_graph.plot(pen=pg.mkPen(color=(0, 0, 255), width=1)),     # Channel C: Blue
+                ref_graph.plot(pen=pg.mkPen(color=(0, 170, 0), width=1)),     # Channel D: Green
+            ]
+
+            ref_layout.addWidget(ref_graph)
+
+            # Store references
+            self.edits_reference_graphs.append(ref_graph)
+            self.edits_reference_curves.append(ref_curves)
+
+            # Add to layout
+            ref_graphs_layout.addWidget(ref_frame)
+
+            # Store frame and label for later updates
+            if not hasattr(self, 'edits_reference_frames'):
+                self.edits_reference_frames = []
+                self.edits_reference_labels = []
+            self.edits_reference_frames.append(ref_frame)
+            self.edits_reference_labels.append(ref_name_label)
+
+        references_layout.addLayout(ref_graphs_layout)
+
+        panel_layout.addWidget(references_container, 2)
 
         return panel
 
@@ -3223,8 +3102,8 @@ class AffilabsMainWindow(QMainWindow):
         )
 
         content_layout = QHBoxLayout(content_widget)
-        content_layout.setContentsMargins(16, 16, 16, 16)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        content_layout.setSpacing(Dimensions.SPACING_MD)
 
         # Left side: Graphs (Processed Data + Statistics)
         left_panel = self._create_analyze_left_panel()
@@ -3240,7 +3119,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create left panel with processed data and statistics graphs."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: transparent;  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3251,20 +3130,16 @@ class AffilabsMainWindow(QMainWindow):
         main_graph = QFrame()
         main_graph.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        main_graph.setGraphicsEffect(shadow)
+        main_graph.setGraphicsEffect(create_card_shadow())
 
         main_graph_layout = QVBoxLayout(main_graph)
-        main_graph_layout.setContentsMargins(16, 16, 16, 16)
-        main_graph_layout.setSpacing(12)
+        main_graph_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        main_graph_layout.setSpacing(Dimensions.SPACING_MD)
 
         # Header
         graph_header = QHBoxLayout()
@@ -3273,9 +3148,9 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         graph_header.addWidget(graph_title)
@@ -3287,17 +3162,17 @@ class AffilabsMainWindow(QMainWindow):
             view_btn = QPushButton(btn_text)
             view_btn.setCheckable(True)
             view_btn.setChecked(i == 0)
-            view_btn.setFixedHeight(28)
+            view_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_MD)
             view_btn.setMinimumWidth(72)
             view_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
-                "  color: #86868B;"
+                "  color: {Colors.SECONDARY_TEXT};"
                 "  border: none;"
                 "  border-radius: 6px;"
                 "  font-size: 12px;"
                 "  font-weight: 500;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "  font-family: {Fonts.SYSTEM};"
                 "}"
                 "QPushButton:checked {"
                 "  background: #1D1D1F;"
@@ -3316,7 +3191,7 @@ class AffilabsMainWindow(QMainWindow):
         graph_canvas = QFrame()
         graph_canvas.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
             "}",
@@ -3332,8 +3207,8 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 12px;"
             "  color: #C7C7CC;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         canvas_layout.addWidget(canvas_placeholder)
@@ -3345,20 +3220,16 @@ class AffilabsMainWindow(QMainWindow):
         stats_graph = QFrame()
         stats_graph.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        stats_graph.setGraphicsEffect(shadow)
+        stats_graph.setGraphicsEffect(create_card_shadow())
 
         stats_layout = QVBoxLayout(stats_graph)
-        stats_layout.setContentsMargins(16, 16, 16, 16)
-        stats_layout.setSpacing(12)
+        stats_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        stats_layout.setSpacing(Dimensions.SPACING_MD)
 
         # Header
         stats_header = QHBoxLayout()
@@ -3367,9 +3238,9 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         stats_header.addWidget(stats_title)
@@ -3397,7 +3268,7 @@ class AffilabsMainWindow(QMainWindow):
         stats_canvas = QFrame()
         stats_canvas.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
             "}",
@@ -3413,8 +3284,8 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 12px;"
             "  color: #C7C7CC;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         stats_canvas_layout.addWidget(stats_placeholder)
@@ -3428,7 +3299,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create right panel with model selection, data table, and export options."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: transparent;  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3439,20 +3310,16 @@ class AffilabsMainWindow(QMainWindow):
         model_container = QFrame()
         model_container.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        model_container.setGraphicsEffect(shadow)
+        model_container.setGraphicsEffect(create_card_shadow())
 
         model_layout = QVBoxLayout(model_container)
-        model_layout.setContentsMargins(16, 16, 16, 16)
-        model_layout.setSpacing(12)
+        model_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        model_layout.setSpacing(Dimensions.SPACING_MD)
 
         # Header
         model_title = QLabel("Mathematical Model")
@@ -3460,9 +3327,9 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         model_layout.addWidget(model_title)
@@ -3481,17 +3348,17 @@ class AffilabsMainWindow(QMainWindow):
                 "Custom Model",
             ],
         )
-        model_dropdown.setFixedHeight(36)
+        model_dropdown.setFixedHeight(Dimensions.HEIGHT_BUTTON_LG)
         model_dropdown.setStyleSheet(
             "QComboBox {"
             "  background: rgba(0, 0, 0, 0.04);"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "  border: none;"
             "  border-radius: 8px;"
             "  padding: 8px 12px;"
             "  font-size: 13px;"
             "  font-weight: 500;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}"
             "QComboBox:hover {"
             "  background: rgba(0, 0, 0, 0.08);"
@@ -3509,7 +3376,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Fit button
         fit_btn = QPushButton("Run Fitting Analysis")
-        fit_btn.setFixedHeight(36)
+        fit_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_LG)
         fit_btn.setStyleSheet(
             "QPushButton {"
             "  background: #1D1D1F;"
@@ -3518,7 +3385,7 @@ class AffilabsMainWindow(QMainWindow):
             "  border-radius: 8px;"
             "  font-size: 13px;"
             "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}"
             "QPushButton:hover {"
             "  background: #3A3A3C;"
@@ -3535,10 +3402,10 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 13px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
             "  margin-top: 8px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         model_layout.addWidget(params_label)
@@ -3552,10 +3419,10 @@ class AffilabsMainWindow(QMainWindow):
         params_info.setStyleSheet(
             "QLabel {"
             "  font-size: 11px;"
-            "  color: #86868B;"
-            "  background: transparent;"
+            "  color: {Colors.SECONDARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
             "  line-height: 1.6;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         model_layout.addWidget(params_info)
@@ -3566,20 +3433,16 @@ class AffilabsMainWindow(QMainWindow):
         data_container = QFrame()
         data_container.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        data_container.setGraphicsEffect(shadow)
+        data_container.setGraphicsEffect(create_card_shadow())
 
         data_layout = QVBoxLayout(data_container)
-        data_layout.setContentsMargins(16, 16, 16, 16)
-        data_layout.setSpacing(12)
+        data_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        data_layout.setSpacing(Dimensions.SPACING_MD)
 
         # Header
         data_header = QHBoxLayout()
@@ -3588,26 +3451,26 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         data_header.addWidget(data_title)
         data_header.addStretch()
 
         copy_btn = QPushButton("📋 Copy")
-        copy_btn.setFixedHeight(28)
+        copy_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_MD)
         copy_btn.setMinimumWidth(72)
         copy_btn.setStyleSheet(
             "QPushButton {"
             "  background: rgba(0, 0, 0, 0.06);"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "  border: none;"
             "  border-radius: 6px;"
             "  font-size: 12px;"
             "  font-weight: 500;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.1);"
@@ -3632,20 +3495,20 @@ class AffilabsMainWindow(QMainWindow):
         )
         data_table.setStyleSheet(
             "QTableWidget {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 8px;"
             "  gridline-color: rgba(0, 0, 0, 0.06);"
             "  font-size: 12px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}"
             "QTableWidget::item {"
             "  padding: 8px;"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "}"
             "QHeaderView::section {"
             "  background: rgba(0, 0, 0, 0.03);"
-            "  color: #86868B;"
+            "  color: {Colors.SECONDARY_TEXT};"
             "  padding: 8px;"
             "  border: none;"
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
@@ -3676,29 +3539,25 @@ class AffilabsMainWindow(QMainWindow):
         export_container = QFrame()
         export_container.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        export_container.setGraphicsEffect(shadow)
+        export_container.setGraphicsEffect(create_card_shadow())
 
         export_layout = QVBoxLayout(export_container)
-        export_layout.setContentsMargins(16, 16, 16, 16)
-        export_layout.setSpacing(12)
+        export_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        export_layout.setSpacing(Dimensions.SPACING_MD)
 
         export_title = QLabel("Export Data")
         export_title.setStyleSheet(
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         export_layout.addWidget(export_title)
@@ -3708,16 +3567,16 @@ class AffilabsMainWindow(QMainWindow):
         export_btns.setSpacing(8)
 
         csv_btn = QPushButton("Save CSV")
-        csv_btn.setFixedHeight(36)
+        csv_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_LG)
         csv_btn.setStyleSheet(
             "QPushButton {"
             "  background: rgba(0, 0, 0, 0.04);"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "  border: none;"
             "  border-radius: 8px;"
             "  font-size: 13px;"
             "  font-weight: 500;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}"
             "QPushButton:hover {"
             "  background: rgba(0, 0, 0, 0.08);"
@@ -3726,7 +3585,7 @@ class AffilabsMainWindow(QMainWindow):
         export_btns.addWidget(csv_btn)
 
         json_btn = QPushButton("Save JSON")
-        json_btn.setFixedHeight(36)
+        json_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_LG)
         json_btn.setStyleSheet(csv_btn.styleSheet())
         export_btns.addWidget(json_btn)
 
@@ -3746,8 +3605,8 @@ class AffilabsMainWindow(QMainWindow):
         )
 
         content_layout = QHBoxLayout(content_widget)
-        content_layout.setContentsMargins(16, 16, 16, 16)
-        content_layout.setSpacing(12)
+        content_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        content_layout.setSpacing(Dimensions.SPACING_MD)
 
         # Left side: Report Canvas/Preview
         left_panel = self._create_report_left_panel()
@@ -3763,7 +3622,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create left panel with report preview canvas."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: transparent;  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3778,8 +3637,8 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 17px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
             "}",
         )
@@ -3788,7 +3647,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Generate PDF button
         pdf_btn = QPushButton("📄 Generate PDF")
-        pdf_btn.setFixedHeight(40)
+        pdf_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_XL)
         pdf_btn.setMinimumWidth(140)
         pdf_btn.setStyleSheet(
             "QPushButton {"
@@ -3799,7 +3658,7 @@ class AffilabsMainWindow(QMainWindow):
             "  font-size: 13px;"
             "  font-weight: 600;"
             "  padding: 0px 20px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}"
             "QPushButton:hover {"
             "  background: #E6342A;"
@@ -3816,9 +3675,9 @@ class AffilabsMainWindow(QMainWindow):
         canvas = QFrame()
         canvas.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
         shadow = QGraphicsDropShadowEffect()
@@ -3835,12 +3694,12 @@ class AffilabsMainWindow(QMainWindow):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet(
-            "QScrollArea {  border: none;  background: transparent;}",
+            "QScrollArea {  border: none;  background: {Colors.TRANSPARENT};}",
         )
 
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(16, 16, 16, 16)
+        scroll_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
         scroll_layout.setSpacing(20)
 
         # Sample report elements
@@ -3849,9 +3708,9 @@ class AffilabsMainWindow(QMainWindow):
         title_edit.setStyleSheet(
             "QLabel {"
             "  font-size: 24px;"
-            "  font-weight: 700;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
+            "  font-weight: {Fonts.WEIGHT_BOLD};"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
             "  padding: 8px;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
             "}",
@@ -3863,11 +3722,11 @@ class AffilabsMainWindow(QMainWindow):
         info_label.setStyleSheet(
             "QLabel {"
             "  font-size: 12px;"
-            "  color: #86868B;"
-            "  background: transparent;"
+            "  color: {Colors.SECONDARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
             "  padding: 4px 8px;"
             "  line-height: 1.6;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         scroll_layout.addWidget(info_label)
@@ -3887,10 +3746,10 @@ class AffilabsMainWindow(QMainWindow):
         graph_label.setStyleSheet(
             "QLabel {"
             "  font-size: 13px;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
             "  border: none;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         graph_layout = QVBoxLayout(graph_placeholder)
@@ -3903,10 +3762,10 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
             "  padding: 8px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         scroll_layout.addWidget(notes_label)
@@ -3923,8 +3782,8 @@ class AffilabsMainWindow(QMainWindow):
             "  border-radius: 8px;"
             "  padding: 12px;"
             "  font-size: 13px;"
-            "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         scroll_layout.addWidget(notes_edit)
@@ -3945,9 +3804,9 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  font-size: 13px;"
             "  color: #34C759;"
-            "  background: transparent;"
+            "  background: {Colors.TRANSPARENT};"
             "  border: none;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         table_layout = QVBoxLayout(table_placeholder)
@@ -3967,7 +3826,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create right panel with report tools and content library."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: transparent;  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3978,29 +3837,25 @@ class AffilabsMainWindow(QMainWindow):
         elements_container = QFrame()
         elements_container.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        elements_container.setGraphicsEffect(shadow)
+        elements_container.setGraphicsEffect(create_card_shadow())
 
         elements_layout = QVBoxLayout(elements_container)
-        elements_layout.setContentsMargins(16, 16, 16, 16)
-        elements_layout.setSpacing(12)
+        elements_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        elements_layout.setSpacing(Dimensions.SPACING_MD)
 
         elements_title = QLabel("Insert Elements")
         elements_title.setStyleSheet(
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         elements_layout.addWidget(elements_title)
@@ -4016,19 +3871,19 @@ class AffilabsMainWindow(QMainWindow):
 
         for icon_text, tooltip in element_btns:
             elem_btn = QPushButton(icon_text)
-            elem_btn.setFixedHeight(36)
+            elem_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_LG)
             elem_btn.setToolTip(tooltip)
             elem_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.04);"
-                "  color: #1D1D1F;"
+                "  color: {Colors.PRIMARY_TEXT};"
                 "  border: none;"
                 "  border-radius: 8px;"
                 "  font-size: 13px;"
                 "  font-weight: 500;"
                 "  text-align: left;"
                 "  padding-left: 12px;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "  font-family: {Fonts.SYSTEM};"
                 "}"
                 "QPushButton:hover {"
                 "  background: rgba(0, 0, 0, 0.08);"
@@ -4045,29 +3900,25 @@ class AffilabsMainWindow(QMainWindow):
         chart_container = QFrame()
         chart_container.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        chart_container.setGraphicsEffect(shadow)
+        chart_container.setGraphicsEffect(create_card_shadow())
 
         chart_layout = QVBoxLayout(chart_container)
-        chart_layout.setContentsMargins(16, 16, 16, 16)
-        chart_layout.setSpacing(12)
+        chart_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        chart_layout.setSpacing(Dimensions.SPACING_MD)
 
         chart_title = QLabel("Chart Builder")
         chart_title.setStyleSheet(
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         chart_layout.addWidget(chart_title)
@@ -4080,16 +3931,16 @@ class AffilabsMainWindow(QMainWindow):
             type_btn = QPushButton(chart_type)
             type_btn.setCheckable(True)
             type_btn.setChecked(chart_type == "Bar")
-            type_btn.setFixedHeight(32)
+            type_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_STD)
             type_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
-                "  color: #86868B;"
+                "  color: {Colors.SECONDARY_TEXT};"
                 "  border: none;"
                 "  border-radius: 6px;"
                 "  font-size: 12px;"
                 "  font-weight: 500;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "  font-family: {Fonts.SYSTEM};"
                 "}"
                 "QPushButton:checked {"
                 "  background: #1D1D1F;"
@@ -4106,9 +3957,9 @@ class AffilabsMainWindow(QMainWindow):
         source_label.setStyleSheet(
             "QLabel {"
             "  font-size: 12px;"
-            "  color: #86868B;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.SECONDARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         chart_layout.addWidget(source_label)
@@ -4123,23 +3974,23 @@ class AffilabsMainWindow(QMainWindow):
                 "Custom Data",
             ],
         )
-        source_dropdown.setFixedHeight(32)
+        source_dropdown.setFixedHeight(Dimensions.HEIGHT_BUTTON_STD)
         source_dropdown.setStyleSheet(
             "QComboBox {"
             "  background: rgba(0, 0, 0, 0.04);"
-            "  color: #1D1D1F;"
+            "  color: {Colors.PRIMARY_TEXT};"
             "  border: none;"
             "  border-radius: 6px;"
             "  padding: 6px 10px;"
             "  font-size: 12px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         chart_layout.addWidget(source_dropdown)
 
         # Create chart button
         create_chart_btn = QPushButton("Create Chart")
-        create_chart_btn.setFixedHeight(36)
+        create_chart_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_LG)
         create_chart_btn.setStyleSheet(
             "QPushButton {"
             "  background: #1D1D1F;"
@@ -4148,7 +3999,7 @@ class AffilabsMainWindow(QMainWindow):
             "  border-radius: 8px;"
             "  font-size: 13px;"
             "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: {Fonts.SYSTEM};"
             "}"
             "QPushButton:hover {"
             "  background: #3A3A3C;"
@@ -4162,29 +4013,25 @@ class AffilabsMainWindow(QMainWindow):
         library_container = QFrame()
         library_container.setStyleSheet(
             "QFrame {"
-            "  background: #FFFFFF;"
+            "  background: {Colors.BACKGROUND_WHITE};"
             "  border: none;"
-            "  border-radius: 12px;"
+            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
             "}",
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        library_container.setGraphicsEffect(shadow)
+        library_container.setGraphicsEffect(create_card_shadow())
 
         library_layout = QVBoxLayout(library_container)
-        library_layout.setContentsMargins(16, 16, 16, 16)
-        library_layout.setSpacing(12)
+        library_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        library_layout.setSpacing(Dimensions.SPACING_MD)
 
         library_title = QLabel("Content Library")
         library_title.setStyleSheet(
             "QLabel {"
             "  font-size: 15px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  color: {Colors.PRIMARY_TEXT};"
+            "  background: {Colors.TRANSPARENT};"
+            "  font-family: {Fonts.SYSTEM};"
             "}",
         )
         library_layout.addWidget(library_title)
@@ -4198,18 +4045,18 @@ class AffilabsMainWindow(QMainWindow):
 
         for item in saved_items:
             item_btn = QPushButton(item)
-            item_btn.setFixedHeight(32)
+            item_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_STD)
             item_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.03);"
-                "  color: #1D1D1F;"
+                "  color: {Colors.PRIMARY_TEXT};"
                 "  border: none;"
                 "  border-radius: 6px;"
                 "  font-size: 12px;"
                 "  font-weight: 400;"
                 "  text-align: left;"
                 "  padding-left: 12px;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "  font-family: {Fonts.SYSTEM};"
                 "}"
                 "QPushButton:hover {"
                 "  background: rgba(0, 0, 0, 0.06);"
@@ -4345,16 +4192,16 @@ class AffilabsMainWindow(QMainWindow):
             # Style the warning dialog
             warning.setStyleSheet(
                 "QMessageBox {"
-                "  background: #FFFFFF;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "  background: {Colors.BACKGROUND_WHITE};"
+                "  font-family: {Fonts.SYSTEM};"
                 "}"
                 "QLabel {"
-                "  color: #1D1D1F;"
+                "  color: {Colors.PRIMARY_TEXT};"
                 "  font-size: 13px;"
                 "}"
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
-                "  color: #1D1D1F;"
+                "  color: {Colors.PRIMARY_TEXT};"
                 "  border: none;"
                 "  border-radius: 6px;"
                 "  padding: 6px 16px;"
@@ -4441,16 +4288,16 @@ class AffilabsMainWindow(QMainWindow):
                 # Gray indicator and "Not Ready" text
                 indicator.setStyleSheet(
                     "font-size: 10px;"
-                    "color: #86868B;"  # Gray
-                    "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                    "color: {Colors.SECONDARY_TEXT};"  # Gray
+                    "background: {Colors.TRANSPARENT};"
+                    "font-family: {Fonts.SYSTEM};",
                 )
                 status_label.setText("Not Ready")
                 status_label.setStyleSheet(
                     "font-size: 13px;"
-                    "color: #86868B;"  # Gray
-                    "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                    "color: {Colors.SECONDARY_TEXT};"  # Gray
+                    "background: {Colors.TRANSPARENT};"
+                    "font-family: {Fonts.SYSTEM};",
                 )
 
         # Also disable all operation modes when disconnecting
@@ -4644,15 +4491,15 @@ class AffilabsMainWindow(QMainWindow):
                 indicator.setStyleSheet(
                     "font-size: 14px;"
                     "color: #34C759;"  # Green
-                    "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                    "background: {Colors.TRANSPARENT};"
+                    "font-family: {Fonts.SYSTEM};",
                 )
                 status_label.setText("Ready")
                 status_label.setStyleSheet(
                     "font-size: 12px;"
                     "color: #34C759;"  # Green
-                    "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                    "background: {Colors.TRANSPARENT};"
+                    "font-family: {Fonts.SYSTEM};",
                 )
                 # Clear optics warning if it was active
                 if subunit_name == "Optics" and hasattr(self, "_optics_warning_active"):
@@ -4663,15 +4510,15 @@ class AffilabsMainWindow(QMainWindow):
                 indicator.setStyleSheet(
                     "font-size: 14px;"
                     f"color: {color};"
-                    "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                    "background: {Colors.TRANSPARENT};"
+                    "font-family: {Fonts.SYSTEM};",
                 )
                 status_label.setText("Not Ready")
                 status_label.setStyleSheet(
                     "font-size: 12px;"
                     f"color: {color};"
-                    "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                    "background: {Colors.TRANSPARENT};"
+                    "font-family: {Fonts.SYSTEM};",
                 )
                 # Store optics status details for warning message
                 if subunit_name == "Optics" and details:
@@ -4864,11 +4711,11 @@ End of Debug Log
                 msg.setStandardButtons(QMessageBox.StandardButton.Ok)
                 msg.setStyleSheet(
                     "QMessageBox {"
-                    "  background: #FFFFFF;"
-                    "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "  background: {Colors.BACKGROUND_WHITE};"
+                    "  font-family: {Fonts.SYSTEM};"
                     "}"
                     "QLabel {"
-                    "  color: #1D1D1F;"
+                    "  color: {Colors.PRIMARY_TEXT};"
                     "  font-size: 13px;"
                     "}"
                     "QPushButton {"
@@ -4900,7 +4747,7 @@ End of Debug Log
                 error_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
                 error_msg.setStyleSheet(
                     "QMessageBox {"
-                    "  background: #FFFFFF;"
+                    "  background: {Colors.BACKGROUND_WHITE};"
                     "}"
                     "QPushButton {"
                     "  background: #FF3B30;"
@@ -4976,48 +4823,56 @@ End of Debug Log
                 f"Stop Recording\n(Recording to: {display_name})",
             )
 
-            # Recording indicator still hidden, but update internally for compatibility
-            self.rec_status_dot.setStyleSheet(
-                "QLabel {"
-                "  color: #FF3B30;"
-                "  font-size: 16px;"
-                "  background: transparent;"
-                "}",
-            )
-            display_name = Path(filename).name if filename else "data.csv"
-            self.rec_status_text.setText(f"Recording to: {display_name}")
-            self.rec_status_text.setStyleSheet(
-                "QLabel {"
-                "  font-size: 12px;"
-                "  color: #FF3B30;"
-                "  background: transparent;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                "  font-weight: 600;"
-                "}",
-            )
-            self.recording_indicator.setStyleSheet(
-                "QFrame {"
-                "  background: rgba(255, 59, 48, 0.1);"
-                "  border: 1px solid rgba(255, 59, 48, 0.3);"
-                "  border-radius: 6px;"
-                "}",
-            )
+            # Recording indicator - update if it exists
+            if hasattr(self, 'rec_status_dot'):
+                self.rec_status_dot.setStyleSheet(
+                    "QLabel {"
+                    "  color: #FF3B30;"
+                    "  font-size: 16px;"
+                    "  background: {Colors.TRANSPARENT};"
+                    "}",
+                )
+
+            if hasattr(self, 'rec_status_text'):
+                display_name = Path(filename).name if filename else "data.csv"
+                self.rec_status_text.setText(f"Recording to: {display_name}")
+                self.rec_status_text.setStyleSheet(
+                    "QLabel {"
+                    "  font-size: 12px;"
+                    "  color: #FF3B30;"
+                    "  background: {Colors.TRANSPARENT};"
+                    "  font-family: {Fonts.SYSTEM};"
+                    "  font-weight: 600;"
+                    "}",
+                )
+
+            if hasattr(self, 'recording_indicator'):
+                self.recording_indicator.setStyleSheet(
+                    "QFrame {"
+                    "  background: rgba(255, 59, 48, 0.1);"
+                    "  border: 1px solid rgba(255, 59, 48, 0.3);"
+                    "  border-radius: 6px;"
+                    "}",
+                )
         else:
             # Update button tooltip back to viewing mode
             self.record_btn.setToolTip(
                 "Start Recording\n(Currently viewing - not saved)",
             )
 
-            # Update recording indicator back to viewing mode (hidden but kept for compatibility)
-            self.rec_status_dot.setStyleSheet(
-                "QLabel {"
-                "  color: #86868B;"
-                "  font-size: 16px;"
-                "  background: transparent;"
-                "}",
-            )
-            self.recording_indicator.setStyleSheet(
-                "QFrame {"
+            # Update recording indicator back to viewing mode (if exists)
+            if hasattr(self, 'rec_status_dot'):
+                self.rec_status_dot.setStyleSheet(
+                    "QLabel {"
+                    "  color: {Colors.SECONDARY_TEXT};"
+                    "  font-size: 16px;"
+                    "  background: {Colors.TRANSPARENT};"
+                    "}",
+                )
+
+            if hasattr(self, 'recording_indicator'):
+                self.recording_indicator.setStyleSheet(
+                    "QFrame {"
                 "  background: rgba(0, 0, 0, 0.04);"
                 "  border-radius: 6px;"
                 "}",
@@ -5126,19 +4981,19 @@ End of Debug Log
                 self.next_maintenance_value.setStyleSheet(
                     "font-size: 13px;"
                     "color: #FF3B30;"  # Red for urgent
-                    "background: transparent;"
-                    "font-weight: 700;"
+                    "background: {Colors.TRANSPARENT};"
+                    "font-weight: {Fonts.WEIGHT_BOLD};"
                     "margin-top: 6px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                    "font-family: {Fonts.SYSTEM};",
                 )
             else:
                 self.next_maintenance_value.setStyleSheet(
                     "font-size: 13px;"
                     "color: #FF9500;"  # Orange for scheduled
-                    "background: transparent;"
+                    "background: {Colors.TRANSPARENT};"
                     "font-weight: 600;"
                     "margin-top: 6px;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                    "font-family: {Fonts.SYSTEM};",
                 )
         except Exception as e:
             logger.error(f"Failed to update maintenance display: {e}")
@@ -5286,7 +5141,8 @@ End of Debug Log
 
         # Disable Add to Queue if at capacity
         if len(self.cycle_queue) >= self.max_queue_size:
-            self.add_to_queue_btn.setEnabled(False)
+            if hasattr(self, 'add_to_queue_btn'):
+                self.add_to_queue_btn.setEnabled(False)
 
     def start_cycle(self):
         """Start next cycle from queue or use current form values."""
@@ -5295,16 +5151,20 @@ End of Debug Log
             cycle_data = self.cycle_queue.pop(0)
             cycle_data["state"] = "completed"
 
-            # TODO: Create actual cycle/segment object here
-            # For now, just update display
-            print(f"Starting cycle: {cycle_data}")
+            # Log cycle start event for graph marker
+            if hasattr(self, 'app') and hasattr(self.app, 'recording_mgr'):
+                event_name = f"Cycle Start: {cycle_data['type']}"
+                if cycle_data.get('notes') and cycle_data['notes'] != 'No notes':
+                    event_name += f" - {cycle_data['notes']}"
+                self.app.recording_mgr.log_event(event_name)
 
             # Update queue display to show next item as ready
             self._update_queue_display()
 
             # Re-enable Add to Queue button
             if len(self.cycle_queue) < self.max_queue_size:
-                self.add_to_queue_btn.setEnabled(True)
+                if hasattr(self, 'add_to_queue_btn'):
+                    self.add_to_queue_btn.setEnabled(True)
         else:
             # No queue items - use current form values
             # TODO: Extract form values and create cycle
@@ -5543,18 +5403,18 @@ End of Debug Log
             self.sidebar.intel_status_label.setStyleSheet(
                 f"font-size: 12px;"
                 f"color: {status_color};"
-                f"background: transparent;"
-                f"font-weight: 700;"
-                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                f"background: {Colors.TRANSPARENT};"
+                f"font-weight: {Fonts.WEIGHT_BOLD};"
+                f"font-family: {Fonts.SYSTEM};",
             )
 
             self.sidebar.intel_message_label.setText(message_text)
             self.sidebar.intel_message_label.setStyleSheet(
                 f"font-size: 12px;"
                 f"color: {message_color};"
-                f"background: transparent;"
+                f"background: {Colors.TRANSPARENT};"
                 f"font-weight: 600;"
-                f"font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                f"font-family: {Fonts.SYSTEM};",
             )
 
         except Exception as e:
@@ -5562,14 +5422,17 @@ End of Debug Log
 
     def _update_queue_display(self):
         """Update the summary table to reflect current queue state."""
+        if not hasattr(self.sidebar, 'summary_table'):
+            return
+
         from PySide6.QtGui import QColor
         from PySide6.QtWidgets import QTableWidgetItem
 
         # Clear table
         for row in range(5):
             for col in range(4):
-                self.summary_table.setItem(row, col, QTableWidgetItem(""))
-                self.summary_table.item(row, col).setBackground(QColor(255, 255, 255))
+                self.sidebar.summary_table.setItem(row, col, QTableWidgetItem(""))
+                self.sidebar.summary_table.item(row, col).setBackground(QColor(255, 255, 255))
 
         # Populate with queue data
         for row, cycle in enumerate(self.cycle_queue[:5]):
@@ -5594,15 +5457,15 @@ End of Debug Log
             # Set cell values
             state_item = QTableWidgetItem(state_text)
             state_item.setBackground(state_color)
-            self.summary_table.setItem(row, 0, state_item)
+            self.sidebar.summary_table.setItem(row, 0, state_item)
 
-            self.summary_table.setItem(row, 1, QTableWidgetItem(cycle["type"]))
-            self.summary_table.setItem(row, 2, QTableWidgetItem(cycle["start"]))
-            self.summary_table.setItem(row, 3, QTableWidgetItem(cycle["notes"]))
+            self.sidebar.summary_table.setItem(row, 1, QTableWidgetItem(cycle["type"]))
+            self.sidebar.summary_table.setItem(row, 2, QTableWidgetItem(cycle["start"]))
+            self.sidebar.summary_table.setItem(row, 3, QTableWidgetItem(cycle["notes"]))
 
             # Apply background color to entire row
             for col in range(1, 4):
-                self.summary_table.item(row, col).setBackground(state_color)
+                self.sidebar.summary_table.item(row, col).setBackground(state_color)
 
     def _on_unit_changed(self, checked: bool):
         """Toggle between RU and nm units."""
@@ -5975,7 +5838,7 @@ End of Debug Log
                 "  padding: 8px 16px;"
                 "  font-size: 13px;"
                 "  font-weight: 600;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "  font-family: {Fonts.SYSTEM};"
                 "}"
                 "QPushButton:hover {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF4D42, stop:1 #F03030);"
@@ -5985,7 +5848,7 @@ End of Debug Log
                 "}"
                 "QPushButton:disabled {"
                 "  background: #D1D1D6;"
-                "  color: #86868B;"
+                "  color: {Colors.SECONDARY_TEXT};"
                 "}",
             )
 
@@ -6066,6 +5929,1175 @@ End of Debug Log
         # Install element inspector for right-click inspection
         # DISABLED: Conflicts with Ctrl+Click flagging system
         # ElementInspector.install_inspector(self)
+
+    def _load_previous_data(self):
+        """Load previously saved experiment data from Excel file.
+
+        Opens a file dialog to select .xlsx files and loads the data
+        into the application for viewing and analysis.
+        """
+        from pathlib import Path
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+        try:
+            # Check if app instance is available
+            if not hasattr(self, "app") or self.app is None:
+                QMessageBox.warning(
+                    self,
+                    "Load Data Unavailable",
+                    "Data loading requires full application initialization.\n\n"
+                    "Please ensure the application is running properly.",
+                )
+                return
+
+            # Check if recording manager is available
+            if not hasattr(self.app, "recording_mgr") or self.app.recording_mgr is None:
+                QMessageBox.warning(
+                    self,
+                    "Recording Manager Unavailable",
+                    "Data loading requires the recording manager.\n\n"
+                    "Please check that the application initialized correctly.",
+                )
+                return
+
+            # Open file dialog to select Excel file
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Load Experiment Data",
+                str(Path.home() / "Documents"),  # Default to Documents folder
+                "Excel Files (*.xlsx);;All Files (*.*)",
+            )
+
+            if not file_path:
+                # User cancelled
+                return
+
+            file_path = Path(file_path)
+
+            # Validate file exists
+            if not file_path.exists():
+                QMessageBox.critical(
+                    self,
+                    "File Not Found",
+                    f"The selected file does not exist:\n{file_path}",
+                )
+                return
+
+            # Load data using recording manager
+            from affilabs.utils.logger import logger
+            logger.info(f"Loading data from: {file_path}")
+
+            loaded_data = self.app.recording_mgr.load_from_excel(file_path)
+
+            if loaded_data is None:
+                QMessageBox.critical(
+                    self,
+                    "Load Failed",
+                    f"Failed to load data from:\n{file_path}\n\n"
+                    "Please check the file format and try again.",
+                )
+                return
+
+            # Extract summary information
+            num_raw_rows = len(loaded_data.get('raw_data', []))
+            num_cycles = len(loaded_data.get('cycles', []))
+            num_flags = len(loaded_data.get('flags', []))
+            num_events = len(loaded_data.get('events', []))
+            num_analysis = len(loaded_data.get('analysis', []))
+            metadata = loaded_data.get('metadata', {})
+
+            # Show success message with summary
+            summary_text = f"Data loaded successfully!\n\n"
+            summary_text += f"📊 Raw data points: {num_raw_rows}\n"
+            summary_text += f"🔄 Cycles: {num_cycles}\n"
+            summary_text += f"🚩 Flags: {num_flags}\n"
+            summary_text += f"📝 Events: {num_events}\n"
+            summary_text += f"📈 Analysis results: {num_analysis}\n"
+
+            if metadata:
+                summary_text += f"\n📌 Metadata fields: {len(metadata)}"
+
+            QMessageBox.information(
+                self,
+                "Data Loaded",
+                summary_text,
+            )
+
+            logger.info(f"✓ Data loaded: {num_cycles} cycles, {num_raw_rows} data points")
+
+            # Store raw data in data_collector for graph display
+            if self.app.recording_mgr and self.app.recording_mgr.data_collector:
+                raw_data_list = loaded_data.get('raw_data', [])
+                self.app.recording_mgr.data_collector.raw_data_rows = raw_data_list
+                logger.info(f"✓ Stored {len(raw_data_list)} raw data rows in data_collector")
+                if len(raw_data_list) > 0:
+                    logger.debug(f"  First row keys: {list(raw_data_list[0].keys())}")
+            else:
+                logger.warning("⚠ Recording manager or data collector not available for raw data storage")
+
+            # Populate the cycle data table with loaded cycles
+            self._populate_cycle_table_from_loaded_data(loaded_data.get('cycles', []))
+
+            # Store cycles data for cycle markers
+            self._loaded_cycles_data = loaded_data.get('cycles', [])
+            self._loaded_raw_data = loaded_data.get('raw_data', [])
+
+            # Populate timeline graph with loaded raw data
+            if num_raw_rows > 0:
+                self._populate_edits_timeline_from_loaded_data(loaded_data.get('raw_data', []))
+                logger.info(f"✓ Populated timeline graph with {num_raw_rows} data points")
+
+                # Add cycle markers with colored backgrounds to timeline
+                if num_cycles > 0 and hasattr(self, 'edits_tab'):
+                    self.edits_tab.add_cycle_markers_to_timeline(self._loaded_cycles_data)
+                    logger.info(f"✓ Added cycle markers to timeline")
+
+            # TODO: Additional UI population tasks:
+            # 2. Restoring flags and events
+
+        except Exception as e:
+            from affilabs.utils.logger import logger
+            logger.exception(f"Error loading data: {e}")
+
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "Load Error",
+                f"An error occurred while loading data:\n\n{str(e)}",
+            )
+
+    def _populate_cycle_table_from_loaded_data(self, cycles_data: list):
+        """Populate the cycle data table with loaded cycle information.
+
+        Args:
+            cycles_data: List of cycle dictionaries from loaded Excel data
+        """
+        from PySide6.QtWidgets import QTableWidgetItem
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self, 'cycle_data_table'):
+                logger.warning("Cycle data table not found - cannot populate")
+                return
+
+            # Clear existing table data
+            self.cycle_data_table.setRowCount(0)
+
+            if not cycles_data:
+                logger.info("No cycles to display in table")
+                return
+
+            # Set row count to match number of cycles
+            self.cycle_data_table.setRowCount(len(cycles_data))
+
+            # Count occurrences of each type for numbering
+            type_counts = {}
+
+            # Populate each row with cycle data
+            for row_idx, cycle in enumerate(cycles_data):
+                # Get cycle type and format with numbering
+                cycle_type = cycle.get('type', 'Unknown')
+
+                # Abbreviate "Concentration" to "Conc."
+                if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
+                    cycle_type = 'Conc.'
+
+                # Count this type occurrence
+                if cycle_type not in type_counts:
+                    type_counts[cycle_type] = 0
+                type_counts[cycle_type] += 1
+
+                # Format type with number (e.g., "Baseline 1", "Conc. 2")
+                type_with_number = f"{cycle_type} {type_counts[cycle_type]}"
+
+                # Column 0: Type (with automatic numbering)
+                self.cycle_data_table.setItem(row_idx, 0, QTableWidgetItem(type_with_number))
+
+                # Column 1: Duration (minutes)
+                duration = cycle.get('duration_minutes', cycle.get('length_minutes', ''))
+                if isinstance(duration, (int, float)):
+                    duration = f"{duration:.2f}"
+                self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(str(duration)))
+
+                # Column 2: Start time (seconds)
+                start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time', ''))
+                if isinstance(start_time, (int, float)):
+                    start_time = f"{start_time:.2f}"
+                self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(start_time)))
+
+                # Column 3: Concentration value
+                conc_value = cycle.get('concentration_value', '')
+                if isinstance(conc_value, (int, float)):
+                    conc_value = f"{conc_value:.2f}"
+                self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(str(conc_value)))
+
+                # Column 4: Concentration units
+                conc_units = cycle.get('concentration_units', '')
+                self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(str(conc_units)))
+
+                # Column 5: Notes
+                notes = cycle.get('note', cycle.get('notes', ''))
+                self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(str(notes)))
+
+                # Column 6: Channel selector (dropdown)
+                from PySide6.QtWidgets import QComboBox
+                channel_combo = QComboBox()
+                channel_combo.addItems(["All", "A", "B", "C", "D"])
+                channel_combo.setCurrentText("All")
+                channel_combo.setStyleSheet("""
+                    QComboBox {
+                        background: white;
+                        border: 1px solid #D1D1D6;
+                        border-radius: 4px;
+                        padding: 2px 8px;
+                        font-size: 12px;
+                    }
+                    QComboBox::drop-down {
+                        border: none;
+                    }
+                    QComboBox:hover {
+                        border: 1px solid #007AFF;
+                    }
+                """)
+                # Store cycle index in widget
+                channel_combo.setProperty('cycle_index', row_idx)
+                channel_combo.currentTextChanged.connect(self._on_cycle_channel_changed)
+                self.cycle_data_table.setCellWidget(row_idx, 6, channel_combo)
+
+                # Column 7: Time shift (spinbox in seconds)
+                from PySide6.QtWidgets import QDoubleSpinBox
+                shift_spinbox = QDoubleSpinBox()
+                shift_spinbox.setRange(-1000.0, 1000.0)
+                shift_spinbox.setValue(0.0)
+                shift_spinbox.setSuffix(" s")
+                shift_spinbox.setDecimals(2)
+                shift_spinbox.setSingleStep(0.1)
+                shift_spinbox.setStyleSheet("""
+                    QDoubleSpinBox {
+                        background: white;
+                        border: 1px solid #D1D1D6;
+                        border-radius: 4px;
+                        padding: 2px 4px;
+                        font-size: 12px;
+                    }
+                    QDoubleSpinBox:hover {
+                        border: 1px solid #007AFF;
+                    }
+                """)
+                # Store cycle index in widget
+                shift_spinbox.setProperty('cycle_index', row_idx)
+                shift_spinbox.valueChanged.connect(self._on_cycle_shift_changed)
+                self.cycle_data_table.setCellWidget(row_idx, 7, shift_spinbox)
+
+            # Store cycles data for graph loading
+            self._loaded_cycles_data = cycles_data
+
+            # Initialize cycle alignment settings (channel and shift per cycle)
+            if not hasattr(self, '_cycle_alignment'):
+                self._cycle_alignment = {}
+            for idx in range(len(cycles_data)):
+                self._cycle_alignment[idx] = {'channel': 'All', 'shift': 0.0}
+
+            logger.info(f"✓ Populated cycle table with {len(cycles_data)} cycles")
+
+        except Exception as e:
+            logger.exception(f"Error populating cycle table: {e}")
+
+    def _populate_edits_timeline_from_loaded_data(self, raw_data: list):
+        """Populate the timeline navigator graph with loaded raw data.
+
+        Args:
+            raw_data: List of raw data dictionaries with 'time', 'channel', 'value'
+        """
+        import numpy as np
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self, 'edits_timeline_graph'):
+                logger.warning("Timeline graph not found - cannot populate")
+                return
+
+            if not raw_data:
+                logger.info("No raw data to display in timeline")
+                return
+
+            # Separate data by channel
+            channel_data = {'a': [], 'b': [], 'c': [], 'd': []}
+
+            for row in raw_data:
+                channel = row.get('channel', '')
+                time = row.get('time')
+                value = row.get('value')
+
+                if channel in channel_data and time is not None and value is not None:
+                    channel_data[channel].append((time, value))
+
+            # Plot each channel
+            for ch_idx, ch in enumerate(['a', 'b', 'c', 'd']):
+                if channel_data[ch]:
+                    # Sort by time
+                    channel_data[ch].sort(key=lambda x: x[0])
+                    times = np.array([t for t, v in channel_data[ch]])
+                    values = np.array([v for t, v in channel_data[ch]])
+
+                    # Plot on timeline graph
+                    self.edits_timeline_curves[ch_idx].setData(times, values)
+                    logger.debug(f"  Timeline: Plotted {len(times)} points for channel {ch}")
+                else:
+                    self.edits_timeline_curves[ch_idx].setData([], [])
+
+            # Set cursor range to span the data
+            if any(channel_data.values()):
+                all_times = []
+                for ch_data in channel_data.values():
+                    all_times.extend([t for t, v in ch_data])
+
+                if all_times:
+                    min_time = min(all_times)
+                    max_time = max(all_times)
+
+                    # Set cursor positions to span data
+                    self.edits_timeline_cursors['left'].setValue(min_time)
+                    self.edits_timeline_cursors['right'].setValue(max_time)
+
+                    # Trigger selection view update
+                    self._update_edits_selection_view()
+
+            logger.info(f"✓ Populated timeline graph with data from {len(raw_data)} rows")
+
+        except Exception as e:
+            logger.exception(f"Error populating timeline graph: {e}")
+
+    def _on_cycle_selected_in_table(self):
+        """Handle cycle selection in table - load cycle data on graph.
+
+        Supports multi-cycle selection for blending:
+        - Single selection: Shows one cycle with baseline cursors
+        - Multi-selection: Overlays all selected cycles
+        - No selection: Clears the graph
+        """
+        from affilabs.utils.logger import logger
+
+        try:
+            # Get all selected rows
+            selected_rows = sorted(set(item.row() for item in self.cycle_data_table.selectedItems()))
+
+            if not selected_rows:
+                # Clear graph when nothing is selected
+                logger.info("[GRAPH] No cycles selected - clearing graph")
+                for i in range(4):
+                    self.edits_graph_curves[i].setData([], [])
+                # Hide alignment panel when nothing selected
+                if hasattr(self, 'edits_tab'):
+                    self.edits_tab.alignment_panel.hide()
+                return
+
+            # Show alignment panel for single selection
+            if len(selected_rows) == 1 and hasattr(self, 'edits_tab'):
+                row_idx = selected_rows[0]
+                self.edits_tab.alignment_panel.show()
+
+                # Update title with cycle number
+                cycle_num = row_idx + 1  # 1-indexed for display
+                self.edits_tab.alignment_title.setText(f"Cycle {cycle_num} Alignment")
+
+                # Populate alignment controls from stored data
+                alignment_data = self.edits_tab._cycle_alignment.get(row_idx, {'channel': 'All', 'shift': 0.0})
+                self.edits_tab.alignment_channel_combo.blockSignals(True)
+                self.edits_tab.alignment_shift_spinbox.blockSignals(True)
+                self.edits_tab.alignment_channel_combo.setCurrentText(alignment_data['channel'])
+                self.edits_tab.alignment_shift_spinbox.setValue(alignment_data['shift'])
+                self.edits_tab.alignment_channel_combo.blockSignals(False)
+                self.edits_tab.alignment_shift_spinbox.blockSignals(False)
+            elif hasattr(self, 'edits_tab'):
+                # Hide for multi-selection (no alignment controls for multiple cycles)
+                self.edits_tab.alignment_panel.hide()
+
+            # Get cycle data
+            if not hasattr(self, '_loaded_cycles_data') or not self._loaded_cycles_data:
+                logger.warning("No loaded cycle data available")
+                return
+
+            # Update channel source combos with selected cycle numbers
+            self._update_channel_source_combos(selected_rows)
+
+            # Collect all data from selected cycles
+            all_cycle_data = {
+                'a': {'time': [], 'wavelength': []},
+                'b': {'time': [], 'wavelength': []},
+                'c': {'time': [], 'wavelength': []},
+                'd': {'time': [], 'wavelength': []},
+            }
+
+            valid_cycles_loaded = 0
+
+            for row in selected_rows:
+                if row >= len(self._loaded_cycles_data):
+                    continue
+
+                cycle = self._loaded_cycles_data[row]
+
+                # Get time range for this cycle
+                start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time'))
+                end_time = cycle.get('end_time_sensorgram')
+
+                # Handle NaN values from pandas (convert to None)
+                import math
+                try:
+                    if start_time is not None and isinstance(start_time, float) and math.isnan(start_time):
+                        start_time = None
+                    if end_time is not None and isinstance(end_time, float) and math.isnan(end_time):
+                        end_time = None
+                except (TypeError, ValueError):
+                    pass  # Not a number, keep as is
+
+                if start_time is None:
+                    logger.warning(f"Cycle {row} has no start time - skipping")
+                    continue
+
+                logger.info(f"[GRAPH] Loading cycle {row}: start={start_time}s, end={end_time}s")
+
+                # If no end time, use start time + duration
+                if end_time is None:
+                    duration_min = cycle.get('duration_minutes', cycle.get('length_minutes', 5))
+                    if duration_min is not None:
+                        end_time = start_time + (duration_min * 60)
+                    else:
+                        logger.warning(f"Cycle {row} has no duration - using 5 min default")
+                        end_time = start_time + 300  # 5 minutes
+
+                # Load raw data from loaded Excel
+                if not hasattr(self.app, 'recording_mgr') or self.app.recording_mgr is None:
+                    logger.warning("Recording manager not available")
+                    continue
+
+                # Get raw data from data collector
+                raw_data = self.app.recording_mgr.data_collector.raw_data_rows
+
+                if not raw_data:
+                    logger.warning("No raw data available to display")
+                    continue
+
+                logger.info(f"[GRAPH] Filtering {len(raw_data)} raw data rows for time range {start_time}-{end_time}")
+
+                # Get alignment settings for this cycle
+                cycle_channel = 'All'
+                cycle_shift = 0.0
+                if hasattr(self, '_cycle_alignment') and row in self._cycle_alignment:
+                    cycle_channel = self._cycle_alignment[row]['channel']
+                    cycle_shift = self._cycle_alignment[row]['shift']
+                    logger.info(f"[GRAPH] Cycle {row} alignment: channel={cycle_channel}, shift={cycle_shift:.2f}s")
+
+                # Filter data for this cycle's time range and accumulate
+                points_found = 0
+                for row_data in raw_data:
+                    time = row_data.get('elapsed', row_data.get('time', 0))
+                    if start_time <= time <= end_time:
+                        points_found += 1
+                        # Convert to relative time (time since cycle start) + apply shift
+                        relative_time = time - start_time + cycle_shift
+
+                        # Handle two data formats:
+                        # Format 1 (new): {'time': X, 'channel': 'a', 'value': Y}
+                        # Format 2 (legacy): {'time': X, 'channel_a': Y, 'channel_b': Z, ...}
+
+                        if 'channel' in row_data and 'value' in row_data:
+                            # Format 1: One row per channel measurement
+                            ch = row_data.get('channel')
+                            value = row_data.get('value')
+                            # Apply channel filter
+                            if cycle_channel != 'All' and ch != cycle_channel.lower():
+                                continue  # Skip this channel
+                            if ch in ['a', 'b', 'c', 'd'] and value is not None:
+                                all_cycle_data[ch]['time'].append(relative_time)
+                                all_cycle_data[ch]['wavelength'].append(value)
+                        else:
+                            # Format 2: All channels in one row
+                            for ch in ['a', 'b', 'c', 'd']:
+                                # Apply channel filter
+                                if cycle_channel != 'All' and ch != cycle_channel.lower():
+                                    continue  # Skip this channel
+                                # Try both naming conventions: channel_X or wavelength_X
+                                wavelength = row_data.get(f'channel_{ch}', row_data.get(f'wavelength_{ch}'))
+                                if wavelength is not None:
+                                    all_cycle_data[ch]['time'].append(relative_time)
+                                    all_cycle_data[ch]['wavelength'].append(wavelength)
+
+                logger.info(f"[GRAPH] Found {points_found} data points in time range for cycle {row}")
+                valid_cycles_loaded += 1
+
+            # Check if any valid cycles were loaded
+            if valid_cycles_loaded == 0:
+                logger.warning("No valid cycles could be loaded - all cycles missing start time")
+                QMessageBox.warning(
+                    self,
+                    "No Valid Cycles",
+                    "Selected cycles are missing start time information.\n\n"
+                    "This usually means the data was not recorded properly."
+                )
+                return
+
+            # Plot the collected data on the graph
+            import numpy as np
+
+            # Conversion factor: 1 nm wavelength shift = 355 RU
+            WAVELENGTH_TO_RU = 355.0
+
+            for i, ch in enumerate(['a', 'b', 'c', 'd']):
+                time_data = np.array(all_cycle_data[ch]['time'])
+                wavelength_data = np.array(all_cycle_data[ch]['wavelength'])
+
+                if len(time_data) > 0:
+                    # Sort by time (important for proper line plotting!)
+                    sort_indices = np.argsort(time_data)
+                    time_data = time_data[sort_indices]
+                    wavelength_data = wavelength_data[sort_indices]
+
+                    # Apply baseline correction (subtract first point) and convert to RU
+                    baseline = wavelength_data[0]
+                    delta_wavelength = wavelength_data - baseline
+                    spr_data = delta_wavelength * WAVELENGTH_TO_RU
+
+                    self.edits_graph_curves[i].setData(time_data, spr_data)
+                    logger.info(f"[GRAPH] Ch {ch.upper()}: {len(time_data)} pts, time {time_data.min():.1f}-{time_data.max():.1f}s, baseline={baseline:.3f}nm, RU range {spr_data.min():.1f} to {spr_data.max():.1f}")
+                else:
+                    # Clear curve if no data
+                    self.edits_graph_curves[i].setData([], [])
+                    logger.info(f"[GRAPH] No data for channel {ch.upper()}")
+
+            # Auto-scale the graph to show all data
+            self.edits_primary_graph.autoRange()
+            # Update Y-axis label to show RU
+            self.edits_primary_graph.setLabel('left', 'Response (RU)')
+            logger.info("[GRAPH] Auto-scaled graph to fit data")
+
+            logger.info(f"✓ Loaded {valid_cycles_loaded} cycle(s) to edits graph")
+
+            # Handle baseline cursors (only for single selection)
+            if len(selected_rows) == 1:
+                row = selected_rows[0]
+                cycle = self._loaded_cycles_data[row]
+                start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time'))
+                end_time = cycle.get('end_time_sensorgram')
+
+                # Skip cursor creation if no valid start time
+                if start_time is None:
+                    logger.warning(f"Cycle {row} has no start time - skipping cursor creation")
+                else:
+                    if end_time is None:
+                        duration_min = cycle.get('duration_minutes', cycle.get('length_minutes', 5))
+                        if duration_min is not None:
+                            end_time = start_time + (duration_min * 60)
+                        else:
+                            end_time = start_time + 300  # 5 minutes default
+
+        except Exception as e:
+            logger.exception(f"Error loading cycle data to edits graph: {e}")
+
+    def _on_cycle_channel_changed(self, channel_text):
+        """Handle channel selector change for a cycle row.
+
+        Args:
+            channel_text: Selected channel ("All", "A", "B", "C", or "D")
+        """
+        from affilabs.utils.logger import logger
+
+        try:
+            # Get the cycle index from the sender widget
+            sender = self.sender()
+            if not sender:
+                return
+
+            cycle_idx = sender.property('cycle_index')
+            if cycle_idx is None:
+                return
+
+            # Update alignment settings
+            if not hasattr(self, '_cycle_alignment'):
+                self._cycle_alignment = {}
+
+            if cycle_idx not in self._cycle_alignment:
+                self._cycle_alignment[cycle_idx] = {'channel': 'All', 'shift': 0.0}
+
+            self._cycle_alignment[cycle_idx]['channel'] = channel_text
+            logger.info(f"[ALIGNMENT] Cycle {cycle_idx} channel set to: {channel_text}")
+
+            # Refresh the graph if this cycle is selected
+            self._on_cycle_selected_in_table()
+
+        except Exception as e:
+            logger.exception(f"Error handling cycle channel change: {e}")
+
+    def _on_cycle_shift_changed(self, shift_value):
+        """Handle time shift change for a cycle row.
+
+        Args:
+            shift_value: Time shift in seconds
+        """
+        from affilabs.utils.logger import logger
+
+        try:
+            # Get the cycle index from the sender widget
+            sender = self.sender()
+            if not sender:
+                return
+
+            cycle_idx = sender.property('cycle_index')
+            if cycle_idx is None:
+                return
+
+            # Update alignment settings
+            if not hasattr(self, '_cycle_alignment'):
+                self._cycle_alignment = {}
+
+            if cycle_idx not in self._cycle_alignment:
+                self._cycle_alignment[cycle_idx] = {'channel': 'All', 'shift': 0.0}
+
+            self._cycle_alignment[cycle_idx]['shift'] = shift_value
+            logger.info(f"[ALIGNMENT] Cycle {cycle_idx} shift set to: {shift_value:.2f}s")
+
+            # Refresh the graph if this cycle is selected
+            self._on_cycle_selected_in_table()
+
+        except Exception as e:
+            logger.exception(f"Error handling cycle shift change: {e}")
+
+    def _update_channel_source_combos(self, selected_rows: list):
+        """Update channel source dropdown options based on selected cycles.
+
+        Args:
+            selected_rows: List of selected table row indices
+        """
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self, 'channel_source_combos'):
+                return
+
+            # Clear and repopulate all channel combos
+            for ch_idx in range(4):
+                combo = self.channel_source_combos[ch_idx]
+                combo.clear()
+                combo.addItem("Auto")  # Default option
+
+                # Add each selected cycle as an option
+                for row in selected_rows:
+                    if row < len(self._loaded_cycles_data):
+                        cycle = self._loaded_cycles_data[row]
+                        cycle_type = cycle.get('type', 'Unknown')
+                        combo.addItem(f"Cycle {row + 1} ({cycle_type})", row)
+
+            logger.debug(f"Updated channel source combos with {len(selected_rows)} cycles")
+
+        except Exception as e:
+            logger.exception(f"Error updating channel source combos: {e}")
+
+    def _create_segment_from_selection(self):
+        """Create an EditableSegment from currently selected cycles.
+
+        Uses channel source combos to determine which cycle contributes to each channel.
+        """
+        from PySide6.QtWidgets import QMessageBox, QInputDialog
+        from affilabs.utils.logger import logger
+        from affilabs.domain import Cycle
+
+        try:
+            # Get selected cycles
+            selected_rows = sorted(set(item.row() for item in self.cycle_data_table.selectedItems()))
+
+            if not selected_rows:
+                QMessageBox.warning(
+                    self,
+                    "No Selection",
+                    "Please select one or more cycles to create a segment."
+                )
+                return
+
+            if not hasattr(self, '_loaded_cycles_data') or not self._loaded_cycles_data:
+                QMessageBox.warning(
+                    self,
+                    "No Data",
+                    "No cycle data loaded."
+                )
+                return
+
+            # Get cycle data (keep as dictionaries)
+            source_cycles = []
+            for row in selected_rows:
+                if row < len(self._loaded_cycles_data):
+                    cycle_dict = self._loaded_cycles_data[row]
+                    source_cycles.append(cycle_dict)
+
+            if not source_cycles:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Selection",
+                    "Selected cycles could not be loaded."
+                )
+                return
+
+            # Get channel sources from combos
+            channel_sources = {}
+            for ch_idx in range(4):
+                combo = self.channel_source_combos[ch_idx]
+                selected_index = combo.currentIndex()
+
+                if selected_index == 0:  # "Auto"
+                    # Use first selected cycle for this channel
+                    channel_sources[ch_idx] = selected_rows[0]
+                else:
+                    # Use the cycle selected in combo
+                    cycle_row = combo.currentData()
+                    if cycle_row is not None:
+                        channel_sources[ch_idx] = cycle_row
+                    else:
+                        channel_sources[ch_idx] = selected_rows[0]
+
+            # Ask user for segment name
+            segment_name, ok = QInputDialog.getText(
+                self,
+                "Create Segment",
+                "Enter segment name:",
+                text=f"Segment_{len(source_cycles)}_cycles"
+            )
+
+            if not ok or not segment_name:
+                return
+
+            # Create segment using SegmentManager
+            if not hasattr(self.app, 'segment_mgr'):
+                QMessageBox.warning(
+                    self,
+                    "Not Ready",
+                    "Segment manager not initialized."
+                )
+                return
+
+            # Determine time range (union of all selected cycles)
+            min_start = min(c.get('start_time_sensorgram', c.get('sensorgram_time', 0)) for c in source_cycles)
+            max_end = max(c.get('end_time_sensorgram', min_start + 300) for c in source_cycles)
+            time_range = (min_start, max_end)
+
+            # Create segment
+            segment = self.app.segment_mgr.create_segment(
+                name=segment_name,
+                source_cycles=source_cycles,
+                time_range=time_range,
+                channel_sources=channel_sources
+            )
+
+            # Refresh segment list
+            self._refresh_segment_list()
+
+            QMessageBox.information(
+                self,
+                "Segment Created",
+                f"Created segment '{segment_name}' from {len(source_cycles)} cycle(s).\n\n"
+                f"Time range: {min_start:.1f}s - {max_end:.1f}s"
+            )
+
+            logger.info(f"✓ Created segment '{segment_name}' from {len(source_cycles)} cycles")
+
+        except Exception as e:
+            logger.exception(f"Error creating segment: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create segment: {str(e)}"
+            )
+
+    def _clear_reference_graphs(self):
+        """Clear all reference graphs."""
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self, 'edits_reference_curves'):
+                return
+
+            for i in range(3):
+                # Clear all curves
+                for curve in self.edits_reference_curves[i]:
+                    curve.setData([], [])
+
+                # Reset label
+                self.edits_reference_labels[i].setText("Drag cycle here")
+                self.edits_reference_labels[i].setStyleSheet(
+                    "QLabel {"
+                    "  font-size: 10px;"
+                    "  color: {Colors.SECONDARY_TEXT};"
+                    "  background: {Colors.TRANSPARENT};"
+                    "  font-family: {Fonts.SYSTEM};"
+                    "}",
+                )
+
+                # Reset stored data
+                self.edits_reference_cycle_data[i] = None
+
+            logger.info("✓ Cleared all reference graphs")
+
+        except Exception as e:
+            logger.exception(f"Error clearing reference graphs: {e}")
+
+    def _load_cycle_to_reference(self, cycle_row: int, ref_index: int):
+        """Load a cycle to a specific reference graph.
+
+        Args:
+            cycle_row: Row index of cycle in table
+            ref_index: Index of reference graph (0-2)
+        """
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self, '_loaded_cycles_data') or not self._loaded_cycles_data:
+                logger.warning("No loaded cycle data available")
+                return
+
+            if cycle_row >= len(self._loaded_cycles_data):
+                return
+
+            if ref_index < 0 or ref_index >= 3:
+                logger.warning(f"Invalid reference index: {ref_index}")
+                return
+
+            cycle = self._loaded_cycles_data[cycle_row]
+
+            # Get time range for this cycle
+            start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time'))
+            end_time = cycle.get('end_time_sensorgram')
+
+            if start_time is None:
+                logger.warning(f"Cycle {cycle_row} has no start time - cannot load to reference")
+                QMessageBox.warning(
+                    self,
+                    "Invalid Cycle",
+                    f"Cycle {cycle_row + 1} is missing start time information and cannot be displayed."
+                )
+                return
+
+            # If no end time, use start time + duration
+            if end_time is None:
+                duration_min = cycle.get('duration_minutes', cycle.get('length_minutes', 5))
+                if duration_min is not None:
+                    end_time = start_time + (duration_min * 60)
+                else:
+                    end_time = start_time + 300  # 5 minutes default
+
+            # Load raw data from loaded Excel
+            if not hasattr(self.app, 'recording_mgr') or self.app.recording_mgr is None:
+                logger.warning("Recording manager not available")
+                return
+
+            # Get raw data from data collector
+            raw_data = self.app.recording_mgr.data_collector.raw_data_rows
+
+            if not raw_data:
+                logger.warning("No raw data available to display")
+                return
+
+            # Filter data for this cycle's time range
+            cycle_data = {
+                'a': {'time': [], 'wavelength': []},
+                'b': {'time': [], 'wavelength': []},
+                'c': {'time': [], 'wavelength': []},
+                'd': {'time': [], 'wavelength': []},
+            }
+
+            for row_data in raw_data:
+                time = row_data.get('elapsed', row_data.get('time', 0))
+                if start_time <= time <= end_time:
+                    for ch in ['a', 'b', 'c', 'd']:
+                        wavelength = row_data.get(f'wavelength_{ch}')
+                        if wavelength is not None:
+                            cycle_data[ch]['time'].append(time)
+                            cycle_data[ch]['wavelength'].append(wavelength)
+
+            # Update reference graph
+            for ch_idx, ch in enumerate(['a', 'b', 'c', 'd']):
+                if cycle_data[ch]['time']:
+                    self.edits_reference_curves[ref_index][ch_idx].setData(
+                        cycle_data[ch]['time'],
+                        cycle_data[ch]['wavelength']
+                    )
+                else:
+                    self.edits_reference_curves[ref_index][ch_idx].setData([], [])
+
+            # Update label
+            cycle_type = cycle.get('type', 'Unknown')
+            self.edits_reference_labels[ref_index].setText(f"{cycle_type} {cycle_row + 1}")
+            self.edits_reference_labels[ref_index].setStyleSheet(
+                "QLabel {"
+                "  font-size: 10px;"
+                "  color: {Colors.PRIMARY_TEXT};"
+                "  font-weight: 600;"
+                "  background: {Colors.TRANSPARENT};"
+                "  font-family: {Fonts.SYSTEM};"
+                "}",
+            )
+
+            # Store cycle data
+            self.edits_reference_cycle_data[ref_index] = cycle_row
+
+            logger.info(f"✓ Loaded {cycle_type} cycle {cycle_row + 1} to reference {ref_index + 1}")
+
+        except Exception as e:
+            logger.exception(f"Error loading cycle to reference: {e}")
+
+    def _export_segment_to_tracedrawer(self, segment_name: str):
+        """Export a segment to TraceDrawer CSV format.
+
+        Args:
+            segment_name: Name of segment to export
+        """
+        from PySide6.QtWidgets import QFileDialog
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self.app, 'segment_mgr'):
+                QMessageBox.warning(
+                    self,
+                    "Not Ready",
+                    "Segment manager not initialized."
+                )
+                return
+
+            # Get segment
+            segment = self.app.segment_mgr.get_segment(segment_name)
+            if segment is None:
+                QMessageBox.warning(
+                    self,
+                    "Not Found",
+                    f"Segment '{segment_name}' not found."
+                )
+                return
+
+            # Ask for save location
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export to TraceDrawer CSV",
+                f"{segment_name}.csv",
+                "CSV Files (*.csv)"
+            )
+
+            if not file_path:
+                return
+
+            # Export using segment's method
+            segment.export_to_tracedrawer_csv(file_path)
+
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Exported segment '{segment_name}' to:\n{file_path}"
+            )
+
+            logger.info(f"✓ Exported segment '{segment_name}' to TraceDrawer CSV")
+
+        except Exception as e:
+            logger.exception(f"Error exporting segment: {e}")
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"Failed to export segment: {str(e)}"
+            )
+
+    def _export_segment_to_json(self, segment_name: str):
+        """Export a segment to JSON format for re-import.
+
+        Args:
+            segment_name: Name of segment to export
+        """
+        from PySide6.QtWidgets import QFileDialog
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self.app, 'segment_mgr'):
+                QMessageBox.warning(
+                    self,
+                    "Not Ready",
+                    "Segment manager not initialized."
+                )
+                return
+
+            # Ask for save location
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Segment to JSON",
+                f"{segment_name}.json",
+                "JSON Files (*.json)"
+            )
+
+            if not file_path:
+                return
+
+            # Export using manager's method
+            self.app.segment_mgr.export_segment(segment_name, file_path)
+
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Exported segment '{segment_name}' to:\n{file_path}"
+            )
+
+            logger.info(f"✓ Exported segment '{segment_name}' to JSON")
+
+        except Exception as e:
+            logger.exception(f"Error exporting segment to JSON: {e}")
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"Failed to export segment: {str(e)}"
+            )
+
+    def _export_selected_segment_csv(self):
+        """Export currently selected segment to TraceDrawer CSV format."""
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self, 'segment_list_combo'):
+                return
+
+            segment_name = self.segment_list_combo.currentText()
+
+            if segment_name == "(no segments yet)" or not segment_name:
+                QMessageBox.warning(
+                    self,
+                    "No Selection",
+                    "Please select a segment to export."
+                )
+                return
+
+            self._export_segment_to_tracedrawer(segment_name)
+
+        except Exception as e:
+            logger.exception(f"Error exporting selected segment to CSV: {e}")
+
+    def _export_selected_segment_json(self):
+        """Export currently selected segment to JSON format."""
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self, 'segment_list_combo'):
+                return
+
+            segment_name = self.segment_list_combo.currentText()
+
+            if segment_name == "(no segments yet)" or not segment_name:
+                QMessageBox.warning(
+                    self,
+                    "No Selection",
+                    "Please select a segment to export."
+                )
+                return
+
+            self._export_segment_to_json(segment_name)
+
+        except Exception as e:
+            logger.exception(f"Error exporting selected segment to JSON: {e}")
+
+    def _delete_selected_segment(self):
+        """Delete currently selected segment."""
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self, 'segment_list_combo'):
+                return
+
+            segment_name = self.segment_list_combo.currentText()
+
+            if segment_name == "(no segments yet)" or not segment_name:
+                QMessageBox.warning(
+                    self,
+                    "No Selection",
+                    "Please select a segment to delete."
+                )
+                return
+
+            # Confirm deletion
+            reply = QMessageBox.question(
+                self,
+                "Confirm Delete",
+                f"Are you sure you want to delete segment '{segment_name}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            # Delete segment
+            if hasattr(self.app, 'segment_mgr'):
+                self.app.segment_mgr.delete_segment(segment_name)
+
+                # Update segment list
+                self._refresh_segment_list()
+
+                QMessageBox.information(
+                    self,
+                    "Segment Deleted",
+                    f"Deleted segment '{segment_name}'."
+                )
+
+                logger.info(f"✓ Deleted segment '{segment_name}'")
+
+        except Exception as e:
+            logger.exception(f"Error deleting segment: {e}")
+            QMessageBox.critical(
+                self,
+                "Delete Error",
+                f"Failed to delete segment: {str(e)}"
+            )
+
+    def _refresh_segment_list(self):
+        """Refresh the segment list dropdown with current segments."""
+        from affilabs.utils.logger import logger
+
+        try:
+            if not hasattr(self, 'segment_list_combo'):
+                return
+
+            if not hasattr(self.app, 'segment_mgr'):
+                return
+
+            # Clear current list
+            self.segment_list_combo.clear()
+
+            # Get all segments
+            segments = self.app.segment_mgr.list_segments()
+
+            if segments:
+                for segment_name in segments:
+                    self.segment_list_combo.addItem(segment_name)
+            else:
+                self.segment_list_combo.addItem("(no segments yet)")
+
+            logger.debug(f"Refreshed segment list: {len(segments)} segments")
+
+        except Exception as e:
+            logger.exception(f"Error refreshing segment list: {e}")
+
+    def _find_nearest_index(self, time_list: list, target_time: float) -> int | None:
+        """Find index of time value nearest to target time.
+
+        Args:
+            time_list: List of time values
+            target_time: Target time to find
+
+        Returns:
+            Index of nearest time value, or None if list is empty
+        """
+        if not time_list:
+            return None
+
+        min_diff = float('inf')
+        nearest_idx = 0
+
+        for idx, time_val in enumerate(time_list):
+            diff = abs(time_val - target_time)
+            if diff < min_diff:
+                min_diff = diff
+                nearest_idx = idx
+
+        return nearest_idx
 
     def _load_demo_data(self):
         """Load demo SPR kinetics data for promotional screenshots.

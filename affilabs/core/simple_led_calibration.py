@@ -65,9 +65,7 @@ def run_simple_led_calibration(
         # Get detector serial and device type
         detector_serial = getattr(usb, "serial_number", "UNKNOWN")
         device_type = (
-            ctrl.get_device_type()
-            if hasattr(ctrl, "get_device_type")
-            else type(ctrl).__name__
+            ctrl.get_device_type() if hasattr(ctrl, "get_device_type") else type(ctrl).__name__
         )
 
         logger.info("=" * 80)
@@ -101,20 +99,22 @@ def run_simple_led_calibration(
                 "c": device_config.led_c_s,
                 "d": device_config.led_d_s,
             }
-            
+
             current_leds_p = {
                 "a": device_config.led_a_p,
                 "b": device_config.led_b_p,
                 "c": device_config.led_c_p,
                 "d": device_config.led_d_p,
             }
-            
+
             current_integration_s = device_config.integration_time_s
             current_integration_p = device_config.integration_time_p
 
             logger.info(f"[OK] Current S-mode LEDs: {current_leds_s}")
             logger.info(f"     Current P-mode LEDs: {current_leds_p}")
-            logger.info(f"     Integration times: S={current_integration_s:.2f}ms, P={current_integration_p:.2f}ms")
+            logger.info(
+                f"     Integration times: S={current_integration_s:.2f}ms, P={current_integration_p:.2f}ms"
+            )
 
         except Exception as e:
             logger.error(f"Failed to load device config: {e}")
@@ -136,7 +136,11 @@ def run_simple_led_calibration(
         try:
             # Move servo to S position (if device has servo)
             if hasattr(ctrl, "servo_set"):
-                s_pos = device_config.s_servo_position if hasattr(device_config, "s_servo_position") else 90
+                s_pos = (
+                    device_config.s_servo_position
+                    if hasattr(device_config, "s_servo_position")
+                    else 90
+                )
                 logger.info(f"Moving servo to S position: {s_pos}")
                 ctrl.servo_set(s=s_pos, p=s_pos)
                 time.sleep(0.3)
@@ -144,7 +148,7 @@ def run_simple_led_calibration(
             # Set integration time and turn on LEDs with current values
             usb.set_integration(current_integration_s)
             time.sleep(0.05)
-            
+
             for ch, intensity in current_leds_s.items():
                 ctrl.set_intensity(ch, intensity)
             time.sleep(0.1)  # Let LEDs stabilize
@@ -152,7 +156,7 @@ def run_simple_led_calibration(
             # Measure spectrum
             spectrum = usb.read_intensity()
             max_intensity = float(spectrum.max())
-            
+
             logger.info(f"[MEASURED] S-mode max intensity: {max_intensity:.0f} counts")
 
             # Target range: 40k-55k counts (safe operating range, no saturation)
@@ -189,7 +193,7 @@ def run_simple_led_calibration(
                 for ch, intensity in adjusted_leds_s.items():
                     ctrl.set_intensity(ch, intensity)
                 time.sleep(0.1)
-                
+
                 verify_spectrum = usb.read_intensity()
                 verify_max = float(verify_spectrum.max())
                 logger.info(f"[VERIFY] New S-mode intensity: {verify_max:.0f} counts ✓")
@@ -210,7 +214,11 @@ def run_simple_led_calibration(
         try:
             # Move servo to P position (if device has servo)
             if hasattr(ctrl, "servo_set"):
-                p_pos = device_config.p_servo_position if hasattr(device_config, "p_servo_position") else 0
+                p_pos = (
+                    device_config.p_servo_position
+                    if hasattr(device_config, "p_servo_position")
+                    else 0
+                )
                 logger.info(f"Moving servo to P position: {p_pos}")
                 ctrl.servo_set(s=p_pos, p=p_pos)
                 time.sleep(0.3)
@@ -218,7 +226,7 @@ def run_simple_led_calibration(
             # Set integration time and turn on LEDs with current P-mode values
             usb.set_integration(current_integration_p)
             time.sleep(0.05)
-            
+
             for ch, intensity in current_leds_p.items():
                 ctrl.set_intensity(ch, intensity)
             time.sleep(0.1)  # Let LEDs stabilize
@@ -226,7 +234,7 @@ def run_simple_led_calibration(
             # Measure spectrum
             spectrum = usb.read_intensity()
             max_intensity = float(spectrum.max())
-            
+
             logger.info(f"[MEASURED] P-mode max intensity: {max_intensity:.0f} counts")
 
             # Target range: 40k-55k counts (safe operating range, no saturation)
@@ -263,7 +271,7 @@ def run_simple_led_calibration(
                 for ch, intensity in adjusted_leds_p.items():
                     ctrl.set_intensity(ch, intensity)
                 time.sleep(0.1)
-                
+
                 verify_spectrum = usb.read_intensity()
                 verify_max = float(verify_spectrum.max())
                 logger.info(f"[VERIFY] New P-mode intensity: {verify_max:.0f} counts ✓")

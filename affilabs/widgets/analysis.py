@@ -75,7 +75,7 @@ class AnalysisWindow(QWidget):
 
     export_error_signal = Signal()
 
-    def __init__(self: Self) -> None:
+    def __init__(self: Self, recording_mgr=None) -> None:
         """Make widget for doing data analysis."""
         super().__init__()
         self.ui = Ui_FormAnalysis()
@@ -85,6 +85,7 @@ class AnalysisWindow(QWidget):
         self.auto_segments: list[AnalysisSegment] = []
         self.unit = "RU"
         self.updating_table = False
+        self.recording_mgr = recording_mgr  # Reference to recording manager
         self.ui.seg_select.currentIndexChanged.connect(self.display_segment)
         delegate = NumericDelegate(self.ui.data_table)
         self.ui.data_table.setItemDelegate(delegate)
@@ -315,6 +316,7 @@ class AnalysisWindow(QWidget):
                 seg.assoc_end[ch] = end
                 self.update_table()
                 self.on_analysis_table_edited()
+                self._export_analysis_result(seg, ch)  # Export to Excel
             except Exception as e:
                 logger.debug(f"error {e} when trying to update dissociation marker")
 
@@ -327,8 +329,30 @@ class AnalysisWindow(QWidget):
                 seg.dissoc_end[ch] = end
                 self.update_table()
                 self.on_analysis_table_edited()
+                self._export_analysis_result(seg, ch)  # Export to Excel
             except Exception as e:
                 logger.debug(f"error {e} when trying to update dissociation marker")
+
+    def _export_analysis_result(self: Self, seg, ch: str) -> None:
+        """Export analysis measurement to recording if active."""
+        if self.recording_mgr and self.recording_mgr.is_recording:
+            try:
+                result_data = {
+                    'segment': seg.name,
+                    'channel': ch.upper(),
+                    'concentration': seg.conc.get(ch, 0.0),
+                    'assoc_shift': seg.assoc_shift.get(ch, 0.0),
+                    'assoc_start': seg.assoc_start.get(ch, 0.0),
+                    'assoc_end': seg.assoc_end.get(ch, 0.0),
+                    'dissoc_shift': seg.dissoc_shift.get(ch, 0.0),
+                    'dissoc_start': seg.dissoc_start.get(ch, 0.0),
+                    'dissoc_end': seg.dissoc_end.get(ch, 0.0),
+                    'ref_channel': seg.ref_ch,
+                    'units': self.unit,
+                }
+                self.recording_mgr.add_analysis_result(result_data)
+            except Exception as e:
+                logger.debug(f"Could not export analysis result: {e}")
 
     def display_segment(self: Self) -> None:
         """Display a segment."""
@@ -783,7 +807,7 @@ class AnalysisWindow(QWidget):
             self.export_error_signal.emit()
 
     def import_analysis_data(self: Self) -> None:
-        """Import data for data analysis."""
+        """Import data for data analysis from JSON or Excel files."""
         try:
             proceed = True
             if len(self.auto_segments) > 0 and not show_message(
@@ -794,73 +818,139 @@ class AnalysisWindow(QWidget):
             ):
                 proceed = False
             if proceed:
-                json_file = QFileDialog.getOpenFileName(
+                # Allow both JSON and Excel files
+                import_file = QFileDialog.getOpenFileName(
                     self,
                     "Open File",
                     "",
-                    "JSON Files (*.json)",
+                    "Excel Files (*.xlsx);;JSON Files (*.json);;All Files (*.*)",
                 )[0]
-                try:
-                    file = Path(json_file).open()
-                except Exception as e:
-                    logger.debug(f"file open error: {e}")
-                    logger.debug("File name error")
-                    return
 
-                self.clear_analysis_segments()
-                analysis_data = json.load(file)
-                self.unit = analysis_data[0]
-                self.ui.stack_graph.setLabel(
-                    axis="left",
-                    text=f"Shift ({self.unit})",
-                )
-                self.ui.data_table.horizontalHeaderItem(1).setText(
-                    f"Assoc.\nShift ({self.unit})",
-                )
-                self.ui.data_table.horizontalHeaderItem(4).setText(
-                    f"Dissoc.\nShift ({self.unit})",
-                )
-                self.auto_segments = []
-                dropdown = []
-                for i in range(len(analysis_data) - 1):
-                    self.auto_segments.append(
-                        AnalysisSegment(
-                            None,
-                            json_load=True,
-                            json_data=analysis_data[i + 1],
-                        ),
+                if not import_file:
+                    return  # User cancelled
+
+                file_path = Path(import_file)
+
+                # Check file extension to determine import type
+                if file_path.suffix.lower() == '.xlsx':
+                    self._import_from_excel(file_path)
+                elif file_path.suffix.lower() == '.json':
+                    self._import_from_json(file_path)
+                else:
+                    show_message(
+                        msg_type="Error",
+                        msg="Unsupported file format. Please select a .xlsx or .json file.",
                     )
-                    j = max(0, (len(self.auto_segments) - 1)) % len(SEGMENT_COLORS)
-                    plt = self.ui.stack_graph.plot(
-                        pen=mkPen(SEGMENT_COLORS[j], width=2),
-                        name=f"Segment {self.auto_segments[-1].name}",
-                    )
-                    self.assoc_plots.append(plt)
-                    d_mrk = InfiniteLine(
-                        pos=0,
-                        pen=mkPen(
-                            SEGMENT_COLORS[j],
-                            width=2,
-                            style=Qt.PenStyle.DotLine,
-                        ),
-                        movable=False,
-                    )
-                    self.ui.stack_graph.addItem(d_mrk)
-                    self.dissoc_markers.append(d_mrk)
-                    dropdown.append(f"Segment {self.auto_segments[-1].name}")
-                self.ui.seg_select.clear()
-                self.ui.seg_select.addItems(dropdown)
-                self.ui.data_table.clearContents()
-                self.update_table()
-                self.analysis_SOI_view.reset_segment_graph(unit=self.unit)
-                if len(self.auto_segments) > 0:
-                    self.analysis_SOI_view.update_display(
-                        self.auto_segments[0],
-                        use_data=True,
-                    )
-                self._on_stack_channel_changed(ch=self.curr_ch, active=True)
         except Exception as e:
             logger.exception(f"import analysis data error: {e}")
+
+    def _import_from_excel(self: Self, file_path: Path) -> None:
+        """Import analysis data from Excel file (recorded experiment)."""
+        try:
+            if not self.recording_mgr:
+                show_message(
+                    msg_type="Error",
+                    msg="Excel import requires recording manager connection.",
+                )
+                return
+
+            logger.info(f"Loading Excel file: {file_path}")
+
+            # Load all sheets from Excel
+            loaded_data = self.recording_mgr.load_from_excel(file_path)
+
+            # Clear existing analysis
+            self.clear_analysis_segments()
+
+            # TODO: Implement full Excel data loading into analysis view
+            # This would require:
+            # 1. Loading raw data into data dict format
+            # 2. Reconstructing segments from cycle sheet
+            # 3. Populating analysis results if present
+
+            # For now, show success message
+            num_cycles = len(loaded_data.get('cycles', []))
+            num_analysis = len(loaded_data.get('analysis', []))
+
+            show_message(
+                msg_type="Information",
+                msg=f"Excel file loaded successfully!\n"
+                    f"Cycles: {num_cycles}\n"
+                    f"Analysis results: {num_analysis}\n\n"
+                    f"Note: Full data visualization requires additional implementation.",
+                auto_close_time=10,
+            )
+
+            logger.info(f"✓ Excel loaded: {num_cycles} cycles, {num_analysis} analysis results")
+
+        except Exception as e:
+            logger.exception(f"Error loading Excel file: {e}")
+            show_message(
+                msg_type="Error",
+                msg=f"Failed to load Excel file:\n{e}",
+            )
+
+    def _import_from_json(self: Self, file_path: Path) -> None:
+        """Import analysis data from JSON file (legacy format)."""
+        try:
+            file = file_path.open()
+        except Exception as e:
+            logger.debug(f"file open error: {e}")
+            logger.debug("File name error")
+            return
+
+        self.clear_analysis_segments()
+        analysis_data = json.load(file)
+        self.unit = analysis_data[0]
+        self.ui.stack_graph.setLabel(
+            axis="left",
+            text=f"Shift ({self.unit})",
+        )
+        self.ui.data_table.horizontalHeaderItem(1).setText(
+            f"Assoc.\nShift ({self.unit})",
+        )
+        self.ui.data_table.horizontalHeaderItem(4).setText(
+            f"Dissoc.\nShift ({self.unit})",
+        )
+        self.auto_segments = []
+        dropdown = []
+        for i in range(len(analysis_data) - 1):
+            self.auto_segments.append(
+                AnalysisSegment(
+                    None,
+                    json_load=True,
+                    json_data=analysis_data[i + 1],
+                ),
+            )
+            j = max(0, (len(self.auto_segments) - 1)) % len(SEGMENT_COLORS)
+            plt = self.ui.stack_graph.plot(
+                pen=mkPen(SEGMENT_COLORS[j], width=2),
+                name=f"Segment {self.auto_segments[-1].name}",
+            )
+            self.assoc_plots.append(plt)
+            d_mrk = InfiniteLine(
+                pos=0,
+                pen=mkPen(
+                    SEGMENT_COLORS[j],
+                    width=2,
+                    style=Qt.PenStyle.DotLine,
+                ),
+                movable=False,
+            )
+            self.ui.stack_graph.addItem(d_mrk)
+            self.dissoc_markers.append(d_mrk)
+            dropdown.append(f"Segment {self.auto_segments[-1].name}")
+        self.ui.seg_select.clear()
+        self.ui.seg_select.addItems(dropdown)
+        self.ui.data_table.clearContents()
+        self.update_table()
+        self.analysis_SOI_view.reset_segment_graph(unit=self.unit)
+        if len(self.auto_segments) > 0:
+            self.analysis_SOI_view.update_display(
+                self.auto_segments[0],
+                use_data=True,
+            )
+        self._on_stack_channel_changed(ch=self.curr_ch, active=True)
 
     def en_assoc_cursors(self: Self) -> None:
         """Enable association cursors."""

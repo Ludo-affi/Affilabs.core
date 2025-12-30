@@ -15,7 +15,7 @@ Created a complete **device history tracking system** that records per-device ca
      - `get_device_statistics()`: Calculate aggregates for a device
      - `import_from_csv()`: Bulk import from parser
      - `export_device_features_for_ml()`: Export features for ML training
-   
+
 2. **record_calibration_result.py** (200 lines)
    - `extract_metrics_from_calibration_json()`: Parse quality metrics from JSON
    - `extract_metrics_from_debug_log()`: Parse convergence metrics from logs
@@ -69,7 +69,7 @@ Created a complete **device history tracking system** that records per-device ca
 | signal_stability_s | REAL | Signal variance metric |
 | oscillation_detected_s | INTEGER | 1 if oscillations detected |
 
-**Indices**: 
+**Indices**:
 - `idx_detector_serial` (fast per-device queries)
 - `idx_timestamp` (time-range queries)
 - `idx_success` (success rate calculations)

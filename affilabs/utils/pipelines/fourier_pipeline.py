@@ -128,9 +128,7 @@ class FourierPipeline(ProcessingPipeline):
             snr_strength = kwargs.get("snr_strength", 0.3)
             snr_weights = self._calculate_snr_weights(spr_s_reference, snr_strength)
             spectrum = spr_transmission * snr_weights
-            logger.debug(
-                f"Applied SNR weighting (strength={snr_strength:.2f}) to SPR region",
-            )
+            # Applied SNR weighting (strength={snr_strength:.2f})
 
             # Find minimum hint within SPR region
             # Use simple minimum - no triangulation needed as spectrum is already baseline-corrected

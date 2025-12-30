@@ -12,6 +12,8 @@ Architecture:
 
 from .baseline_corrector import BaselineCorrector
 from .calibration_validator import CalibrationValidator
+from .data_collector import DataCollector
+from .excel_exporter import ExcelExporter
 from .spectrum_processor import SpectrumProcessor
 from .transmission_calculator import TransmissionCalculator
 
@@ -20,4 +22,6 @@ __all__ = [
     "CalibrationValidator",
     "TransmissionCalculator",
     "BaselineCorrector",
+    "DataCollector",
+    "ExcelExporter",
 ]

@@ -6,9 +6,12 @@ Extracted from AffilabsMainWindow to follow Presenter Pattern and improve testab
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from affilabs_core_ui import AffilabsMainWindow
@@ -307,3 +310,27 @@ class SensogramPresenter:
             logger.debug("Live data updates enabled")
         else:
             logger.debug("Live data updates disabled - graph frozen")
+
+    def clear_all_graphs(self) -> None:
+        """Clear all visual graph data (timeline and cycle views).
+
+        This clears the displayed curves but doesn't affect the data buffers.
+        Call this when clearing the experiment to remove old visual data.
+        """
+        try:
+            # Clear timeline graph
+            if hasattr(self.window, 'full_timeline_graph'):
+                if hasattr(self.window.full_timeline_graph, 'curves'):
+                    for curve in self.window.full_timeline_graph.curves:
+                        curve.setData([], [])
+                    logger.debug("✓ Timeline graph curves cleared")
+
+            # Clear cycle of interest graph
+            if hasattr(self.window, 'cycle_of_interest_graph'):
+                if hasattr(self.window.cycle_of_interest_graph, 'curves'):
+                    for curve in self.window.cycle_of_interest_graph.curves:
+                        curve.setData([], [])
+                    logger.debug("✓ Cycle of interest graph curves cleared")
+
+        except Exception as e:
+            logger.error(f"Error clearing graphs: {e}", exc_info=True)

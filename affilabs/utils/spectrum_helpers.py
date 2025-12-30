@@ -38,6 +38,10 @@ class SpectrumHelpers:
         from affilabs.utils.logger import logger
 
         try:
+            # Skip data from old sessions (before most recent clear)
+            if data.get("_epoch", 0) < app._session_epoch:
+                return  # Silently discard - stale data from previous session
+
             channel = data["channel"]
             intensity = data.get("intensity", 0)
             timestamp = data["timestamp"]
@@ -69,10 +73,8 @@ class SpectrumHelpers:
 
             # QC POLICY: Always update sidebar if we have ANY data (raw or transmission)
             # Sidebar is a diagnostic tool and must show data regardless of processing issues
-            logger.debug(f"[QUEUE] Ch {channel}: has_raw={has_raw_data}, has_trans={has_transmission}")
             if has_raw_data or has_transmission:
                 try:
-                    logger.debug(f"[QUEUE] Ch {channel}: Calling queue_transmission_update")
                     SpectrumHelpers.queue_transmission_update(app, channel, data)
 
                     # Update Sensor IQ display if available
@@ -82,12 +84,13 @@ class SpectrumHelpers:
                 except Exception as e:
                     logger.error(f"[QUEUE] Ch {channel}: FAILED to queue update: {e}", exc_info=True)
 
-            # Cursor auto-follow (thread-safe via signal)
-            # Emit signal to update cursor on main thread
+            # Update cursor position (via signal to main thread)
+            # Apply display offset to match graph shift (graph skips first point)
             try:
-                app.cursor_update_signal.emit(elapsed_time)
-            except Exception as e:
-                pass  # Silently skip cursor update errors
+                display_elapsed = elapsed_time - app._display_time_offset
+                app.cursor_update_signal.emit(display_elapsed)
+            except Exception:
+                pass
 
         except Exception as e:
             # TOP-LEVEL CATCH: Prevent any exception from killing the processing thread
@@ -121,13 +124,12 @@ class SpectrumHelpers:
         # Record data point if recording is active
         try:
             if app.recording_mgr.is_recording:
-                # Build data point with all channels (use latest value for each)
-                data_point = {}
-                for ch in app._idx_to_channel:
-                    latest_value = app.buffer_mgr.get_latest_value(ch)
-                    data_point[f"channel_{ch}"] = latest_value if latest_value is not None else ""
-
-                app.recording_mgr.record_data_point(data_point)
+                # Record this channel's measurement immediately (simple sequential format)
+                app.recording_mgr.record_data_point({
+                    'time': elapsed_time,
+                    'channel': channel,
+                    'value': wavelength
+                })
         except Exception as e:
             pass  # Silently skip recording errors
 

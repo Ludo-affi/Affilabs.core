@@ -16,6 +16,13 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict
 
+# Python 3.11+ has UTC, older versions use timezone.utc
+try:
+    from datetime import UTC
+except ImportError:
+    from datetime import timezone
+    UTC = timezone.utc
+
 if TYPE_CHECKING:
     from typing_extensions import Self
 else:
@@ -68,7 +75,7 @@ from affilabs.widgets.segment_dataframe import SegmentDataFrame
 from affilabs.widgets.table_manager import CycleTableManager
 from settings import CH_LIST, CYCLE_TIME, MED_FILT_WIN, SW_VERSION, UNIT_LIST
 
-TIME_ZONE = datetime.datetime.now(datetime.UTC).astimezone().tzinfo
+TIME_ZONE = datetime.datetime.now(UTC).astimezone().tzinfo
 # Tab 1 (default): Shows ID, Start, Cycle Type, Note (columns 0, 1, 8, 9)
 # Tab 2: Shows ID, Start, Shift A-D (columns 0, 1, 3, 4, 5, 6)
 # COLUMNS_TO_TOGGLE and CYCLE_TYPES now imported from widgets.ui_constants
@@ -2698,93 +2705,51 @@ class DataWindow(QWidget):
             l_val_data = deepcopy(self.data["lambda_values"])
             l_time_data = deepcopy(self.data["lambda_times"])
 
-            # Find reference index
-            reference_index = bisect_left(l_time_data[CH_LIST[0]], 0)
+            # Check if data is available
             min_array_len = min(len(l_val_data[ch]) for ch in CH_LIST)
             if min_array_len == 0:
                 logger.error("Cannot export: no data available")
                 show_message("No data to export", "Warning")
                 return
-            reference_index = min(reference_index, min_array_len - 1)
-            references = [l_val_data[ch][reference_index] for ch in CH_LIST]
 
-            row_count = min(len(x) for x in l_time_data.values())
+            # Create raw data in LONG format (each channel has its own timestamp)
+            # CRITICAL: Channels are measured in SERIES not PARALLEL
+            raw_data_rows = []
+            for ch in CH_LIST:
+                ch_times = l_time_data[ch]
+                ch_wavelengths = l_val_data[ch]
+                for t, w in zip(ch_times, ch_wavelengths):
+                    raw_data_rows.append({
+                        'time': round(t, 4),
+                        'channel': ch,
+                        'value': round(w, 4)
+                    })
 
-            # Create DataFrame for raw data
-            raw_data = {
-                "Time_A (s)": [round(l_time_data["a"][i], 4) for i in range(row_count)],
-                "Channel_A (RU)": [
-                    round((l_val_data["a"][i] - references[0]) * 355, 4)
-                    for i in range(row_count)
-                ],
-                "Time_B (s)": [round(l_time_data["b"][i], 4) for i in range(row_count)],
-                "Channel_B (RU)": [
-                    round((l_val_data["b"][i] - references[1]) * 355, 4)
-                    for i in range(row_count)
-                ],
-                "Time_C (s)": [round(l_time_data["c"][i], 4) for i in range(row_count)],
-                "Channel_C (RU)": [
-                    round((l_val_data["c"][i] - references[2]) * 355, 4)
-                    for i in range(row_count)
-                ],
-                "Time_D (s)": [round(l_time_data["d"][i], 4) for i in range(row_count)],
-                "Channel_D (RU)": [
-                    round((l_val_data["d"][i] - references[3]) * 355, 4)
-                    for i in range(row_count)
-                ],
-            }
-            df_raw = pd.DataFrame(raw_data)
+            df_raw = pd.DataFrame(raw_data_rows)
 
             # Create Excel writer
             with pd.ExcelWriter(file_name, engine="openpyxl") as writer:
                 # Write raw data
                 df_raw.to_excel(writer, sheet_name="Raw Data", index=False)
 
-                # Add filtered data if available
+                # Add filtered data if available (also in long format)
                 if self.data["filt"]:
                     l_val_filt = deepcopy(self.data["filtered_lambda_values"])
                     l_time_filt = deepcopy(self.data["buffered_lambda_times"])
-                    filt_count = min(len(x) for x in l_time_filt.values())
 
-                    filtered_data = {
-                        "Time_A (s)": [
-                            round(l_time_filt["a"][i], 4) for i in range(filt_count)
-                        ],
-                        "Channel_A (RU)": [
-                            round(l_val_filt["a"][i], 4) for i in range(filt_count)
-                        ],
-                        "Time_B (s)": [
-                            round(l_time_filt["b"][i], 4) for i in range(filt_count)
-                        ],
-                        "Channel_B (RU)": [
-                            round(l_val_filt["b"][i], 4) for i in range(filt_count)
-                        ],
-                        "Time_C (s)": [
-                            round(l_time_filt["c"][i], 4) for i in range(filt_count)
-                        ],
-                        "Channel_C (RU)": [
-                            round(l_val_filt["c"][i], 4) for i in range(filt_count)
-                        ],
-                        "Time_D (s)": [
-                            round(l_time_filt["d"][i], 4) for i in range(filt_count)
-                        ],
-                        "Channel_D (RU)": [
-                            round(l_val_filt["d"][i], 4) for i in range(filt_count)
-                        ],
-                    }
-                    df_filt = pd.DataFrame(filtered_data)
+                    filtered_data_rows = []
+                    for ch in CH_LIST:
+                        ch_times = l_time_filt[ch]
+                        ch_wavelengths = l_val_filt[ch]
+                        for t, w in zip(ch_times, ch_wavelengths):
+                            filtered_data_rows.append({
+                                'time': round(t, 4),
+                                'channel': ch,
+                                'value': round(w, 4)
+                            })
+
+                    df_filt = pd.DataFrame(filtered_data_rows)
                     df_filt.to_excel(writer, sheet_name="Filtered Data", index=False)
-
-                # Add statistics summary
-                stats = df_raw[
-                    [
-                        "Channel_A (RU)",
-                        "Channel_B (RU)",
-                        "Channel_C (RU)",
-                        "Channel_D (RU)",
-                    ]
-                ].describe()
-                stats.to_excel(writer, sheet_name="Statistics")
 
             show_message(
                 msg=f"Data exported to Excel:\n{Path(file_name).name}",

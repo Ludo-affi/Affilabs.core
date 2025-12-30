@@ -86,10 +86,9 @@ class AcquisitionEventCoordinator:
         """User clicked Start button - begin live data acquisition."""
         logger.info("User requested start - beginning acquisition")
 
-        # Check if already acquiring - if so, just open the live data dialog
+        # Check if already acquiring - just return (no need to open duplicate dialog)
         if self._data_mgr and self._data_mgr._acquiring:
-            logger.info("Acquisition already running - opening live data dialog")
-            self._open_live_data_dialog()
+            logger.info("Acquisition already running")
             return
 
         # PHASE 1: Validate hardware
@@ -103,10 +102,7 @@ class AcquisitionEventCoordinator:
         if not self._start_acquisition():
             return
 
-        # PHASE 4: Open live data dialog
-        self._open_live_data_dialog()
-
-        # PHASE 5: Update UI
+        # PHASE 4: Update UI
         self._update_ui_after_start()
 
         logger.info("=" * 80)
@@ -348,36 +344,8 @@ class AcquisitionEventCoordinator:
             show_message(f"Failed to start acquisition:\n{e}", msg_type="Error")
             return False
 
-    def _open_live_data_dialog(self):
-        """Open live data dialog."""
-        logger.info("Opening live data dialog...")
-        try:
-            from live_data_dialog import LiveDataDialog
-
-            if self._live_data_dialog is None:
-                self._live_data_dialog = LiveDataDialog(parent=self._main_window)
-
-            # Load reference spectra
-            cd = getattr(self._data_mgr, "calibration_data", None)
-            if (
-                cd
-                and getattr(cd, "s_pol_ref", None)
-                and getattr(cd, "wavelengths", None) is not None
-            ):
-                self._live_data_dialog.set_reference_spectra(
-                    cd.s_pol_ref,
-                    cd.wavelengths,
-                )
-                logger.info(
-                    f"[OK] Loaded S-mode reference spectra: {list(cd.s_pol_ref.keys())}"
-                )
-
-            self._live_data_dialog.show()
-            self._live_data_dialog.raise_()
-            self._live_data_dialog.activateWindow()
-            logger.info("[OK] Live data dialog opened")
-        except Exception as e:
-            logger.exception(f"Failed to open live data dialog: {e}")
+    # REMOVED: _open_live_data_dialog() - duplicate LiveDataDialog window not needed
+    # The main UI already has live data visualization capabilities
 
     def _update_ui_after_start(self):
         """Update UI state after acquisition starts."""

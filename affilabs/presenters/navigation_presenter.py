@@ -42,7 +42,7 @@ class NavigationPresenter:
 
         # Navigation buttons
         nav_button_configs = [
-            ("Sensorgram", 0, "Real-time data visualization and cycle monitoring"),
+            ("Live", 0, "Real-time data visualization and cycle monitoring"),
             ("Edits", 1, "Edit and annotate experiment data"),
             ("Analyze", 2, "Analyze results and generate reports"),
             ("Report", 3, "Export and share experiment reports"),

@@ -173,6 +173,11 @@ LED_OFF_TIME_MS = None  # LED OFF duration override (None = use default 0ms)
 # This helps visually confirm LED activation and avoids flat spectra during bring-up.
 LED_FORCE_255_TEST_CYCLE: bool = False
 
+# Overnight Mode - Slow acquisition for long-term stability monitoring
+# When enabled, adds delay between channels for 1 data point per minute
+OVERNIGHT_MODE: bool = False  # Enable/disable overnight mode
+OVERNIGHT_DELAY_SECONDS: float = 15.0  # Delay between channels (15s × 4 = 60s per cycle)
+
 # ==========================================
 # TIMING CALCULATION FORMULAS
 # ==========================================

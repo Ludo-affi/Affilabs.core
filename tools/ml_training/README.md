@@ -142,7 +142,7 @@ device_days_since_last_cal      # Drift indicator
 ### Convergence Predictor (With Device History) ⭐
 - **Test Accuracy**: 92-95% (projected)
 - **Cross-Validation**: 88-92% (projected)
-- **Top Features**: 
+- **Top Features**:
   - `device_success_rate` (22-25%)
   - `signal_stability` (15-18%)
   - `device_avg_s_iterations` (12-15%)

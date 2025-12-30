@@ -450,21 +450,56 @@ class TransmissionProcessor:
                 fwhm = fwhm_wavelengths[-1] - fwhm_wavelengths[0]
                 qc["fwhm"] = float(fwhm)
 
-                # FWHM Quality Assessment
-                if fwhm < 30:
-                    qc["fwhm_quality"] = "excellent"
-                elif fwhm < 50:
-                    qc["fwhm_quality"] = "good"
-                elif fwhm < 60:
-                    qc["fwhm_quality"] = "acceptable"
-                    qc["warnings"].append(
-                        f"Broad FWHM ({fwhm:.1f}nm) - acceptable but not optimal",
-                    )
-                else:
-                    qc["fwhm_quality"] = "poor"
-                    qc["warnings"].append(
-                        f"Wide FWHM ({fwhm:.1f}nm) - poor sensor contact or degradation",
-                    )
+                # FWHM Quality Assessment - normalized by dip depth
+                # Rationale: Deep dip + wider FWHM (70-75nm) = GOOD
+                #           Shallow dip + wide FWHM = BAD
+                # Deep dips allow wider FWHM because strong SPR signal dominates
+                if dip_depth > 70:  # Very deep dip (>70% depth)
+                    # Deep dips are very forgiving - even 75nm FWHM is good
+                    if fwhm < 80:
+                        qc["fwhm_quality"] = "excellent"
+                    else:
+                        qc["fwhm_quality"] = "acceptable"
+                        qc["warnings"].append(
+                            f"Wide FWHM ({fwhm:.1f}nm) despite deep dip - check sensor",
+                        )
+                elif dip_depth > 50:  # Deep dip (50-70% depth)
+                    # Moderate tolerance for wider FWHM
+                    if fwhm < 75:
+                        qc["fwhm_quality"] = "excellent"
+                    elif fwhm < 85:
+                        qc["fwhm_quality"] = "good"
+                    else:
+                        qc["fwhm_quality"] = "acceptable"
+                        qc["warnings"].append(
+                            f"FWHM ({fwhm:.1f}nm) slightly wide for dip depth ({dip_depth:.1f}%)",
+                        )
+                elif dip_depth > 30:  # Moderate dip (30-50% depth)
+                    # Stricter FWHM requirements
+                    if fwhm < 60:
+                        qc["fwhm_quality"] = "good"
+                    elif fwhm < 70:
+                        qc["fwhm_quality"] = "acceptable"
+                        qc["warnings"].append(
+                            f"FWHM ({fwhm:.1f}nm) borderline for dip depth ({dip_depth:.1f}%)",
+                        )
+                    else:
+                        qc["fwhm_quality"] = "poor"
+                        qc["warnings"].append(
+                            f"Wide FWHM ({fwhm:.1f}nm) + shallow dip ({dip_depth:.1f}%) = poor quality",
+                        )
+                else:  # Shallow dip (<30% depth)
+                    # Very strict - shallow + wide = failure
+                    if fwhm < 50:
+                        qc["fwhm_quality"] = "acceptable"
+                        qc["warnings"].append(
+                            f"Shallow dip ({dip_depth:.1f}%) - check sensor hydration",
+                        )
+                    else:
+                        qc["fwhm_quality"] = "poor"
+                        qc["warnings"].append(
+                            f"FAIL: Shallow dip ({dip_depth:.1f}%) + wide FWHM ({fwhm:.1f}nm) - sensor degraded",
+                        )
             else:
                 qc["warnings"].append("Cannot calculate FWHM - no clear SPR dip")
 

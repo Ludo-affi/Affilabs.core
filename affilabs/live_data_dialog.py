@@ -190,6 +190,18 @@ class LiveDataDialog(QDialog):
 
         return container
 
+    def set_reference_spectra(self, ref_sig: dict, wavelengths):
+        """Set reference spectra for all channels (currently unused but required by coordinator).
+
+        Args:
+            ref_sig: Dictionary of reference signal arrays per channel
+            wavelengths: Wavelength array
+
+        """
+        # Store for potential future use
+        self._reference_spectra = ref_sig
+        self._wavelengths = wavelengths
+
     def update_transmission_plot(self, channel: str, wavelength, transmission_spectrum):
         """Update transmission plot with live data.
 

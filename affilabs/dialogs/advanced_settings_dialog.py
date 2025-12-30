@@ -14,6 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -213,6 +214,21 @@ class AdvancedSettingsDialog(QDialog):
         self.pipeline_combo.setVisible(False)  # Hide from UI
         # form.addRow(pipeline_label, self.pipeline_combo)  # Not added to UI
 
+        # Overnight Mode - Slow acquisition for long-term monitoring
+        overnight_label = QLabel("Overnight Mode:")
+        overnight_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
+        self.overnight_checkbox = QCheckBox("Enable (1 point/minute)")
+        self.overnight_checkbox.setStyleSheet(
+            "QCheckBox { font-size: 13px; }"
+            f"QCheckBox::indicator {{ width: 18px; height: 18px; border-radius: 4px; border: 1px solid {Colors.OVERLAY_LIGHT_10}; }}"
+            f"QCheckBox::indicator:checked {{ background: {Colors.PRIMARY_TEXT}; }}"
+        )
+        self.overnight_checkbox.setToolTip(
+            "Slow acquisition mode: 15 seconds between channels = 1 data point per minute.\n"
+            "Ideal for overnight stability monitoring with minimal data collection."
+        )
+        form.addRow(overnight_label, self.overnight_checkbox)
+
         main_layout.addLayout(form)
 
         # Separator
@@ -328,6 +344,16 @@ class AdvancedSettingsDialog(QDialog):
 
     def accept(self):
         """Apply settings when OK is clicked."""
+        # Save overnight mode setting
+        try:
+            import settings
+            settings.OVERNIGHT_MODE = self.overnight_checkbox.isChecked()
+            if settings.OVERNIGHT_MODE:
+                logger.info("🌙 Overnight mode ENABLED (1 point/minute)")
+            else:
+                logger.info("☀️ Overnight mode DISABLED (normal acquisition)")
+        except Exception as e:
+            logger.warning(f"Could not save overnight mode setting: {e}")
         try:
             import settings
             from affilabs.utils.processing_pipeline import get_pipeline_registry

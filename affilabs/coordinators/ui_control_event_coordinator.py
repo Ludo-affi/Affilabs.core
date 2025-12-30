@@ -54,19 +54,25 @@ class UIControlEventCoordinator:
             page_index: Index of the page being switched to (0 = Live Data)
 
         """
-        # Page 0 is Live Data (sensorgram)
-        if page_index == 0:
-            # Show live data dialog if acquisition is running
-            if (
-                self.app.data_mgr
-                and self.app.data_mgr._acquiring
-                and self.app._live_data_dialog is not None
-            ):
-                self.app._live_data_dialog.show()
-                self.app._live_data_dialog.raise_()
-        # Hide dialog when switching away from Live Data page
-        elif self.app._live_data_dialog is not None:
-            self.app._live_data_dialog.hide()
+        # DISABLED: Auto-showing spectroscopy dialog on Live tab click
+        # This was causing unwanted popups when navigating to Live tab
+        # Users can manually open spectroscopy dialog from Settings sidebar if needed
+
+        # # Page 0 is Live Data (sensorgram)
+        # if page_index == 0:
+        #     # Show live data dialog if acquisition is running
+        #     if (
+        #         self.app.data_mgr
+        #         and self.app.data_mgr._acquiring
+        #         and self.app.live_data_dialog is not None
+        #     ):
+        #         self.app.live_data_dialog.show()
+        #         self.app.live_data_dialog.raise_()
+        # # Hide dialog when switching away from Live Data page
+        # elif self.app.live_data_dialog is not None:
+        #     self.app.live_data_dialog.hide()
+
+        pass  # Page navigation no longer auto-shows dialogs
 
     # =========================================================================
     # POLARIZER CONTROL

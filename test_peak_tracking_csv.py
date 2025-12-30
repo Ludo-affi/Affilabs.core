@@ -20,7 +20,7 @@ def load_baseline_from_xlsx(xlsx_file: Path, channel: str):
 
     # Read the Excel file - each channel has its own sheet
     sheet_name = f"Channel_{channel.upper()}"
-    
+
     try:
         df = pd.read_excel(xlsx_file, sheet_name=sheet_name)
     except Exception as e:
@@ -158,7 +158,7 @@ def main():
 
     # Use the specific baseline file from today at 5pm
     baseline_file = baseline_dir / "baseline_recording_20251219_182111.xlsx"
-    
+
     if not baseline_file.exists():
         print(f"\nBaseline file not found: {baseline_file.absolute()}")
         return

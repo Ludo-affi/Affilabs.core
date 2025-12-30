@@ -10,7 +10,7 @@ Builds the Static Control tab with:
 Extracted from sidebar.py to improve modularity.
 """
 
-from PySide6.QtCore import QRegularExpression
+from PySide6.QtCore import Qt, QRegularExpression
 from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
 from PySide6.QtWidgets import (
     QComboBox,
@@ -135,19 +135,6 @@ class StaticTabBuilder:
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         intel_bar_layout.addWidget(self.sidebar.intel_message_label)
-
-        # Countdown timer
-        self.sidebar.countdown_label = QLabel("00:30")
-        self.sidebar.countdown_label.setStyleSheet(
-            "font-size: 11px;"
-            "color: #1D1D1F;"
-            "background: rgba(0, 0, 0, 0.06);"
-            "padding: 2px 8px;"
-            "border-radius: 4px;"
-            "font-weight: 700;"
-            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;",
-        )
-        intel_bar_layout.addWidget(self.sidebar.countdown_label)
 
         intel_bar_layout.addStretch()
 
@@ -599,6 +586,9 @@ class StaticTabBuilder:
         for row in range(5):
             for col in range(4):
                 self.sidebar.summary_table.setItem(row, col, QTableWidgetItem(""))
+
+        # Enable right-click context menu for deleting cycles
+        self.sidebar.summary_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
         summary_card_layout.addWidget(self.sidebar.summary_table)
 

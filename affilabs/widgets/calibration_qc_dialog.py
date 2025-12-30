@@ -526,11 +526,10 @@ class CalibrationQCDialog(QDialog):
         layout.setSpacing(8)
 
         table = QTableWidget()
-        table.setColumnCount(8)
+        table.setColumnCount(7)
         table.setHorizontalHeaderLabels(
             [
                 "Ch",
-                "Polarity",
                 "Min Trans%",
                 "P/S Ratio",
                 "Dip",
@@ -558,7 +557,6 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        orientation_data = self.calibration_data.get("orientation_validation", {})
         transmission_validation = self.calibration_data.get(
             "transmission_validation",
             {},
@@ -567,7 +565,6 @@ class CalibrationQCDialog(QDialog):
         channels = ["a", "b", "c", "d"]
         table.setRowCount(4)
 
-        global_pass_orientation = False
         global_pass_transmission = False
 
         for idx, ch in enumerate(channels):
@@ -576,37 +573,7 @@ class CalibrationQCDialog(QDialog):
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 0, ch_item)
 
-            # === ORIENTATION DATA (Column 1) ===
-            if ch in orientation_data:
-                if isinstance(orientation_data[ch], dict):
-                    passed = orientation_data[ch].get("passed", None)
-                    reason = orientation_data[ch].get("reason", "Unknown")
-                else:
-                    fwhm = orientation_data[ch]
-                    passed = True
-                    if fwhm < 30:
-                        reason = f"Good: {fwhm:.1f}nm"
-                    elif fwhm < 50:
-                        reason = f"OK: {fwhm:.1f}nm"
-                    else:
-                        reason = f"Poor: {fwhm:.1f}nm"
-                        passed = None
-
-                if passed is True:
-                    orient_text = "[OK]"
-                    global_pass_orientation = True
-                elif passed is False:
-                    orient_text = "[ERROR]"
-                else:
-                    orient_text = "[WARN]"
-
-                orient_item = QTableWidgetItem(orient_text)
-                orient_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                table.setItem(idx, 1, orient_item)
-            else:
-                table.setItem(idx, 1, QTableWidgetItem("N/A"))
-
-            # === TRANSMISSION DATA (Columns 2-6) ===
+            # === TRANSMISSION DATA (Columns 1-5) ===
             if ch in transmission_validation:
                 ch_data = transmission_validation[ch]
 
@@ -621,9 +588,9 @@ class CalibrationQCDialog(QDialog):
                         trans_item.setForeground(QColor("#FF9500"))
                     else:
                         trans_item.setForeground(QColor("#FF3B30"))
-                    table.setItem(idx, 2, trans_item)
+                    table.setItem(idx, 1, trans_item)
                 else:
-                    table.setItem(idx, 2, QTableWidgetItem("N/A"))
+                    table.setItem(idx, 1, QTableWidgetItem("N/A"))
 
                 # P/S Ratio
                 ratio = ch_data.get("ratio")
@@ -634,16 +601,16 @@ class CalibrationQCDialog(QDialog):
                         ratio_item.setForeground(QColor("#34C759"))
                     else:
                         ratio_item.setForeground(QColor("#FF9500"))
-                    table.setItem(idx, 3, ratio_item)
+                    table.setItem(idx, 2, ratio_item)
                 else:
-                    table.setItem(idx, 3, QTableWidgetItem("N/A"))
+                    table.setItem(idx, 2, QTableWidgetItem("N/A"))
 
                 # Dip Detected
                 dip_detected = ch_data.get("dip_detected", False)
                 dip_text = "[OK]" if dip_detected else "[ERROR]"
                 dip_item = QTableWidgetItem(dip_text)
                 dip_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                table.setItem(idx, 4, dip_item)
+                table.setItem(idx, 3, dip_item)
 
                 # FWHM
                 fwhm = ch_data.get("fwhm")
@@ -658,18 +625,15 @@ class CalibrationQCDialog(QDialog):
                         )  # Orange (acceptable)
                     else:
                         fwhm_item.setForeground(QColor("#FF3B30"))
-                    table.setItem(idx, 5, fwhm_item)
+                    table.setItem(idx, 4, fwhm_item)
                 else:
-                    table.setItem(idx, 5, QTableWidgetItem("N/A"))
+                    table.setItem(idx, 4, QTableWidgetItem("N/A"))
 
-                # Diagnostic reason (combined from both)
-                diagnostic = ch_data.get(
-                    "reason",
-                    reason if ch in orientation_data else "N/A",
-                )
+                # Diagnostic reason
+                diagnostic = ch_data.get("reason", "N/A")
                 diag_item = QTableWidgetItem(diagnostic)
                 diag_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-                table.setItem(idx, 6, diag_item)
+                table.setItem(idx, 5, diag_item)
 
                 # Status
                 status = ch_data.get("status", "INDETERMINATE")
@@ -686,43 +650,35 @@ class CalibrationQCDialog(QDialog):
                     status_item.setForeground(QColor("#FF3B30"))
                 else:
                     status_item.setForeground(QColor("#FF9500"))
-                table.setItem(idx, 7, status_item)
+                table.setItem(idx, 6, status_item)
             else:
                 # No transmission data
-                for col in range(2, 8):
+                for col in range(1, 7):
                     item = QTableWidgetItem("N/A")
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     table.setItem(idx, col, item)
 
         # Optimize column widths
         table.setColumnWidth(0, 40)  # Ch
-        table.setColumnWidth(1, 60)  # Polarity
-        table.setColumnWidth(2, 80)  # Min Trans%
-        table.setColumnWidth(3, 70)  # P/S Ratio
-        table.setColumnWidth(4, 50)  # Dip
-        table.setColumnWidth(5, 60)  # FWHM
-        table.setColumnWidth(6, 280)  # Diagnostic
+        table.setColumnWidth(1, 90)  # Min Trans%
+        table.setColumnWidth(2, 80)  # P/S Ratio
+        table.setColumnWidth(3, 50)  # Dip
+        table.setColumnWidth(4, 60)  # FWHM
+        table.setColumnWidth(5, 320)  # Diagnostic
         table.horizontalHeader().setSectionResizeMode(
-            7,
+            6,
             table.horizontalHeader().ResizeMode.Stretch,
         )  # Status
         table.setMaximumHeight(160)
         layout.addWidget(table)
 
-        # Combined status summary
-        if global_pass_orientation and global_pass_transmission:
-            result_text = "[OK] ALL CHECKS PASSED: Polarizer orientation correct, SPR dip detected"
+        # Status summary
+        if global_pass_transmission:
+            result_text = "[OK] ALL CHECKS PASSED: SPR dip detected with good transmission"
             result_color = "#34C759"
-        elif not global_pass_orientation and not global_pass_transmission:
-            result_text = (
-                "[ERROR] CALIBRATION ISSUES: Check polarizer and sensor hydration"
-            )
-            result_color = "#FF3B30"
         else:
-            result_text = (
-                "[WARN] PARTIAL VALIDATION: Some checks passed, review diagnostics"
-            )
-            result_color = "#FF9500"
+            result_text = "[ERROR] CALIBRATION ISSUES: Check sensor hydration and peak quality"
+            result_color = "#FF3B30"
 
         result_label = QLabel(result_text)
         result_label.setWordWrap(True)

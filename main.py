@@ -187,9 +187,14 @@ from affilabs.affilabs_core_ui import AffilabsMainWindow
 from affilabs.core.calibration_service import CalibrationService
 from affilabs.core.cycle_coordinator import CycleCoordinator
 
+# Domain Models
+from affilabs.domain.cycle import Cycle
+
 # Layer 2: Core Business Logic (Managers)
 from affilabs.core.data_acquisition_manager import DataAcquisitionManager
 from affilabs.core.data_buffer_manager import DataBufferManager
+from affilabs.managers.flag_manager import FlagManager
+from affilabs.managers.segment_manager import SegmentManager
 
 # Layer 1: Hardware (HAL)
 from affilabs.core.hardware_manager import HardwareManager
@@ -587,8 +592,10 @@ class Application(QApplication):
 
         # Experiment tracking
         self.experiment_start_time = None
+        self._display_time_offset = 0.0  # Offset between real time and displayed time (graph skips first point)
         self._last_cycle_bounds = None
         self._session_cycles_dir = None
+        self._session_epoch = 0  # Increments on clear to invalidate old data
 
         # Calibration state
         self._calibration_retry_count = 0
@@ -602,10 +609,11 @@ class Application(QApplication):
         self._reference_channel = None
         self._ref_subtraction_enabled = False
         self._ref_channel = None
-        
-        # Flag system - selected channel for Active Cycle graph
-        self._selected_flag_channel = 'a'  # Default to Channel A
-        
+        self._selected_flag_channel = 'a'  # Default channel for flag placement (used by UI)
+
+        # Flag system - legacy storage (for backward compatibility)
+        # NOTE: Flag logic now delegated to FlagManager
+
         # Channel time shifts for injection alignment (Phase 2)
         self._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
 
@@ -649,10 +657,12 @@ class Application(QApplication):
         # UI update management
         self._pending_graph_updates = {"a": None, "b": None, "c": None, "d": None}
         self._skip_graph_updates = False
-        self._has_stop_cursor = False
 
         # Baseline data recording
         self._baseline_recorder = None
+
+        # Analysis window (created on demand)
+        self.analysis_window = None
 
     def _init_managers(self):
         """Initialize business layer managers (no UI dependencies).
@@ -696,6 +706,9 @@ class Application(QApplication):
         self.recording_mgr = RecordingManager(self.data_mgr)
         if self.recording_mgr is None:
             raise RuntimeError("RecordingManager initialization failed")
+
+        # Flag manager (must be after main_window is created)
+        # Will be initialized in _init_coordinators() phase
 
         # Kinetic operations manager
         self.kinetic_mgr = KineticManager(self.hardware_mgr)
@@ -799,6 +812,14 @@ class Application(QApplication):
     def _init_coordinators(self):
         """Initialize UI coordinators (require main window)."""
         logger.debug("Initializing coordinators...")
+
+        # Initialize Flag Manager (requires main_window to exist)
+        self.flag_mgr = FlagManager(self)
+        logger.debug("✓ FlagManager")
+
+        # Initialize Segment Manager for multi-cycle analysis
+        self.segment_mgr = SegmentManager(self)
+        logger.debug("✓ SegmentManager")
 
         # Hardware event coordinator
         from affilabs.coordinators.hardware_event_coordinator import (
@@ -965,6 +986,15 @@ class Application(QApplication):
                 f"  Profiling enabled - stats every {PROFILING_REPORT_INTERVAL}s",
             )
 
+        # Cycle management system (simple, safe implementation)
+        self._current_cycle: Cycle | None = None  # Currently running cycle (Cycle dataclass)
+        self._cycle_end_time = None  # Exact time when cycle should end
+        self._completed_cycles: list[Cycle] = []  # List of completed Cycle instances
+        self._cycle_markers = {}  # Track cycle markers on Full Sensorgram timeline
+        self._cycle_timer = QTimer()
+        self._cycle_timer.timeout.connect(self._update_cycle_display)
+        logger.debug("✓ Cycle management initialized")
+
         # Show window FIRST (before loading heavy widgets)
         logger.debug("Showing main window...")
         if hasattr(self, "update_splash_message"):
@@ -1017,19 +1047,7 @@ class Application(QApplication):
 
             # Connect cursor auto-follow signal (thread-safe)
             self.cursor_update_signal.connect(self._update_stop_cursor_position)
-            logger.debug("✓ Cursor auto-follow")
-
-            # [Timeframe Mode removed - using legacy cursor system]
-
-            # Update cached attribute checks now that graphs are loaded
-            self._has_stop_cursor = (
-                hasattr(self.main_window, "full_timeline_graph")
-                and hasattr(self.main_window.full_timeline_graph, "stop_cursor")
-                and self.main_window.full_timeline_graph.stop_cursor is not None
-            )
-            logger.debug(
-                f"\u2713 Stop cursor available: {self._has_stop_cursor}",
-            )
+            logger.debug("✓ Cursor update signal connected")
 
             # Connect polarizer toggle button to servo control
             if hasattr(self.main_window, "polarizer_toggle_btn"):
@@ -1042,7 +1060,7 @@ class Application(QApplication):
             if hasattr(self.main_window, "cycle_of_interest_graph"):
                 # Disable default PyQtGraph context menu (conflicts with flag system)
                 self.main_window.cycle_of_interest_graph.setMenuEnabled(False)
-                
+
                 self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
                     self._on_graph_clicked,
                 )
@@ -1172,6 +1190,26 @@ class Application(QApplication):
         except Exception as e:
             logger.error(f"[X] Failed to show QC report: {e}", exc_info=True)
 
+    def open_analysis_window(self):
+        """Open the data analysis window for post-processing."""
+        try:
+            from affilabs.widgets.analysis import AnalysisWindow
+
+            # Create window if it doesn't exist
+            if self.analysis_window is None:
+                self.analysis_window = AnalysisWindow(recording_mgr=self.recording_mgr)
+                self.analysis_window.setWindowTitle("AffiLabs Data Analysis")
+                logger.info("✓ Analysis window created")
+
+            # Show the window
+            self.analysis_window.show()
+            self.analysis_window.raise_()
+            self.analysis_window.activateWindow()
+            logger.info("Analysis window opened")
+
+        except Exception as e:
+            logger.error(f"Failed to open analysis window: {e}", exc_info=True)
+
     def _connect_ui_signals(self):
         """Connect UI signals after handler method is defined."""
         # === UI SIGNALS (user requests) ===
@@ -1187,7 +1225,7 @@ class Application(QApplication):
         self.main_window.recording_stop_requested.connect(
             self._on_recording_stop_requested,
         )
-        
+
         # Connect Clear Graph signal from sensorgram graphs
         # This signal is emitted when user clicks Clear Graph button
         if hasattr(self.main_window, 'full_timeline_graph'):
@@ -1199,7 +1237,7 @@ class Application(QApplication):
                     widget.reset_graphs_sig.connect(self._on_clear_graphs_requested)
                     logger.debug("✓ Connected: DataWindow.reset_graphs_sig -> _on_clear_graphs_requested")
                     break
-        
+
         # NOTE: These signals not yet implemented in main window
         # self.main_window.clear_flags_requested.connect(self._on_clear_flags_requested)
         # self.main_window.pipeline_changed.connect(self._on_pipeline_changed)
@@ -1299,18 +1337,18 @@ class Application(QApplication):
             logger.debug(f"[DEBUG] Button object name: {ui.baseline_capture_btn.objectName()}")
             logger.debug(f"[DEBUG] Button is enabled: {ui.baseline_capture_btn.isEnabled()}")
             logger.debug(f"[DEBUG] Button is visible: {ui.baseline_capture_btn.isVisible()}")
-            
+
             # Disconnect any existing connections first
             try:
                 ui.baseline_capture_btn.clicked.disconnect()
                 logger.debug("[DEBUG] Disconnected existing button connections")
             except:
                 logger.debug("[DEBUG] No existing connections to disconnect")
-            
+
             # Connect to handler
             ui.baseline_capture_btn.clicked.connect(self._on_record_baseline_clicked)
             logger.info("[OK] ✓ Connected Baseline Capture button to handler")
-            
+
             # Test connection
             logger.debug(f"[DEBUG] Button has {ui.baseline_capture_btn.receivers('clicked()')} receivers")
         else:
@@ -1344,6 +1382,13 @@ class Application(QApplication):
             )
         else:
             logger.warning("[WARN] add_to_queue_btn NOT found in UI")
+
+        # Summary table context menu (right-click to delete cycles)
+        if hasattr(ui.sidebar, "summary_table"):
+            ui.sidebar.summary_table.customContextMenuRequested.connect(
+                self._on_queue_table_context_menu
+            )
+            logger.debug("✓ summary_table context menu connected")
 
     def _connect_viewmodel_signals(self):
         """Connect ViewModel signals to handlers (Phase 4 refactoring).
@@ -1403,6 +1448,9 @@ class Application(QApplication):
                 self._on_cal_vm_validation_complete,
             )
             logger.debug("✓ CalibrationViewModel signals")
+
+        # Install keyboard event filter for flag movement
+        self._setup_keyboard_event_filter()
 
     def _connect_manager_signals(self):
         """Connect manager/service signals to handlers (Phase 4 refactoring).
@@ -1493,8 +1541,281 @@ class Application(QApplication):
         self.acquisition_events.on_detector_wait_changed(value)
 
     def _on_start_button_clicked(self):
-        """User clicked Start button - begin live data acquisition."""
-        self.acquisition_events.on_start_button_clicked()
+        """Start the next cycle from queue or auto-read mode."""
+        import time
+
+        logger.info("▶ Start Cycle button clicked")
+
+        # If no cycles in queue, start auto-read mode
+        if not self.segment_queue:
+            logger.info("No cycles in queue - starting auto-read mode")
+            if not self.data_mgr._acquiring:
+                self.acquisition_events.on_start_button_clicked()
+            return
+
+        # Pop first cycle from queue
+        cycle = self.segment_queue.pop(0)
+        cycle_type = cycle.type
+        duration_min = cycle.length_minutes
+
+        # Calculate cycle numbers
+        cycle_num = len(self._completed_cycles) + 1
+        total_cycles = cycle_num + len(self.segment_queue)
+
+        logger.info(f"Starting Cycle {cycle_num}/{total_cycles}: {cycle_type}, {duration_min} min")
+
+        # Start acquisition if not already running
+        if not self.data_mgr._acquiring:
+            logger.info("Starting data acquisition...")
+            self.acquisition_events.on_start_button_clicked()
+
+        # Initialize cycle tracking using Cycle.start() method
+        self._current_cycle = cycle
+        self._current_cycle.start(
+            cycle_num=cycle_num,
+            total_cycles=total_cycles,
+            sensorgram_time=0.0  # Will be updated when first data arrives
+        )
+        self._cycle_end_time = time.time() + (duration_min * 60)
+
+        # Reset Active Cycle view: move start cursor to end cursor position (start fresh at t=0)
+        try:
+            if hasattr(self.main_window, 'full_timeline_graph'):
+                timeline = self.main_window.full_timeline_graph
+                if hasattr(timeline, 'start_cursor') and hasattr(timeline, 'stop_cursor'):
+                    # Get current end cursor position
+                    end_pos = timeline.stop_cursor.value()
+                    # Move start cursor to end position (resets Active Cycle to t=0)
+                    timeline.start_cursor.setValue(end_pos)
+                    logger.info(f"✓ Active Cycle reset: cursors at t={end_pos:.1f}s (starting fresh)")
+        except Exception as e:
+            logger.debug(f"Could not reset cursors: {e}")
+
+        # Update intelligence bar to show cycle started
+        if hasattr(self.main_window.sidebar, "intel_message_label"):
+            self.main_window.sidebar.intel_message_label.setText(
+                f"⏱ Running: {cycle_type} (Cycle {cycle_num}/{total_cycles}) - {duration_min} min",
+            )
+            self.main_window.sidebar.intel_message_label.setStyleSheet(
+                "font-size: 12px;"
+                "color: #007AFF;"  # Blue for active
+                "background: transparent;"
+                "font-weight: 600;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+            )
+
+        # Start cycle display timer (1 Hz)
+        self._cycle_timer.start(1000)
+        logger.info(f"✓ Cycle timer started (updates every 1 second)")
+
+        # Add cycle marker to Full Sensorgram timeline
+        self._add_cycle_marker()
+
+        # Update overlay immediately
+        self._update_cycle_display()
+
+        # Schedule cycle completion
+        QTimer.singleShot(duration_min * 60 * 1000, self._on_cycle_completed)
+
+        logger.info(f"✓ Cycle started - will auto-complete in {duration_min} min")
+        logger.info(f"   Watch the Active Cycle graph for overlay timer")
+
+    def _update_cycle_display(self):
+        """Update Active Cycle overlay with cycle progress."""
+        import time
+
+        if not self._current_cycle or not self._cycle_end_time:
+            return
+
+        # Calculate elapsed and total time
+        now = time.time()
+        total_sec = self._current_cycle.get_duration_seconds()
+        elapsed_sec = total_sec - max(0, self._cycle_end_time - now)
+
+        cycle_type = self._current_cycle.type
+        cycle_num = self._current_cycle.cycle_num
+        total_cycles = self._current_cycle.total_cycles
+
+        # Format time for display
+        elapsed_min = int(elapsed_sec // 60)
+        elapsed_sec_rem = int(elapsed_sec % 60)
+        total_min = int(total_sec // 60)
+        total_sec_rem = int(total_sec % 60)
+
+        # Update intelligence bar with countdown
+        if hasattr(self.main_window.sidebar, "intel_message_label"):
+            self.main_window.sidebar.intel_message_label.setText(
+                f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) - {elapsed_min:02d}:{elapsed_sec_rem:02d}/{total_min:02d}:{total_sec_rem:02d}",
+            )
+
+        # Update overlay using graph's update method
+        try:
+            if hasattr(self.main_window, 'cycle_of_interest_graph'):
+                graph = self.main_window.cycle_of_interest_graph
+                if hasattr(graph, 'update_delta_overlay'):
+                    graph.update_delta_overlay(
+                        cycle_type=f"{cycle_type} (Cycle {cycle_num}/{total_cycles})",
+                        elapsed_sec=elapsed_sec,
+                        total_sec=total_sec
+                    )
+                    # Log first update only
+                    if elapsed_sec < 2:
+                        logger.info(f"✓ Overlay updated: {cycle_type} {elapsed_min:02d}:{elapsed_sec_rem:02d}/{total_min:02d}:{total_sec_rem:02d}")
+        except Exception as e:
+            logger.warning(f"Could not update cycle overlay: {e}")
+
+    def _on_cycle_completed(self):
+        """Handle cycle completion - auto-start next or switch to auto-read."""
+        if not self._current_cycle:
+            return
+
+        cycle_type = self._current_cycle.type
+        cycle_num = self._current_cycle.cycle_num
+
+        logger.info(f"✓ Cycle {cycle_num} completed: {cycle_type}")
+
+        # Stop cycle timer
+        self._cycle_timer.stop()
+
+        # Clear all flags for clean start of next cycle
+        self.flag_mgr.clear_flags_for_new_cycle()
+
+        # Calculate end time in sensorgram time (not Unix timestamp!)
+        end_sensorgram_time = None
+        if hasattr(self.main_window, 'full_timeline_graph'):
+            timeline = self.main_window.full_timeline_graph
+            if hasattr(timeline, 'stop_cursor'):
+                # End time is current stop cursor position (sensorgram seconds)
+                end_sensorgram_time = timeline.stop_cursor.value()
+
+        # Mark cycle as completed using Cycle.complete() method
+        self._current_cycle.complete(end_time_sensorgram=end_sensorgram_time or 0.0)
+
+        self._completed_cycles.append(self._current_cycle)
+
+        # Export cycle to recording manager
+        if self.recording_mgr.is_recording:
+            cycle_export_data = self._current_cycle.to_export_dict()
+            self.recording_mgr.add_cycle(cycle_export_data)
+
+        # Clear current cycle
+        self._current_cycle = None
+        self._cycle_end_time = None
+
+        # Update summary table
+        try:
+            self._update_summary_table()
+        except:
+            pass
+
+        # Auto-start next cycle or switch to auto-read
+        if self.segment_queue:
+            next_cycle = self.segment_queue[0]
+            logger.info(f"Auto-starting next cycle: {next_cycle.type}")
+            QTimer.singleShot(1000, self._on_start_button_clicked)
+        else:
+            # No more cycles in queue - create and start an auto-read cycle
+            logger.info("All cycles complete - starting auto-read cycle")
+
+            import time
+
+            # Create an auto-read cycle (continuous monitoring, 999 hours)
+            autoread_cycle = Cycle(
+                type="Auto-read",
+                length_minutes=999 * 60,  # Very long duration
+                name="Auto-read",
+                note="Automatic continuous monitoring after cycle queue completion",
+                status="pending",
+            )
+            autoread_cycle._units = "RU"  # Temp attribute
+            autoread_cycle._timestamp = time.time()  # Temp attribute
+
+            # Add to queue and start
+            self.segment_queue.append(autoread_cycle)
+            logger.info("✓ Auto-read cycle created and queued")
+
+            # Start the auto-read cycle after 1 second
+            QTimer.singleShot(1000, self._on_start_button_clicked)
+
+    # ==================== FLAG METHODS - MOVED TO FlagManager ====================
+    # _clear_flags_for_new_cycle() → flag_mgr.clear_flags_for_new_cycle()
+    # _show_flag_type_menu() → flag_mgr.show_flag_type_menu()
+    # _add_flag_marker() → flag_mgr.add_flag_marker()
+    # _remove_flag_near_click() → flag_mgr.remove_flag_near_click()
+    # _try_select_flag_for_movement() → flag_mgr.try_select_flag_for_movement()
+    # _highlight_selected_flag() → flag_mgr._highlight_selected_flag()
+    # _move_selected_flag() → flag_mgr.move_selected_flag()
+    # _deselect_flag() → flag_mgr.deselect_flag()
+    # All flag methods extracted to affilabs/managers/flag_manager.py
+    # ================================================================================
+
+    def _add_cycle_marker(self):
+        """Add vertical marker on Full Sensorgram timeline at cycle start.
+
+        Creates a single marker with label showing cycle type only.
+        """
+        try:
+            from pyqtgraph import InfiniteLine, TextItem
+
+            if not hasattr(self.main_window, 'full_timeline_graph'):
+                return
+
+            timeline = self.main_window.full_timeline_graph
+
+            # Get current time from stop cursor position (where we just moved start cursor to)
+            if hasattr(timeline, 'stop_cursor'):
+                current_time = timeline.stop_cursor.value()
+            else:
+                # Fallback to latest data point
+                if not self.data_mgr.cycle_time:
+                    return
+                current_time = self.data_mgr.cycle_time[-1]
+
+            # Get cycle type only
+            cycle_type = self._current_cycle.type
+
+            # Store sensorgram time in cycle data for table display
+            self._current_cycle.sensorgram_time = current_time
+
+            # Create vertical line marker (blue, solid)
+            marker = InfiniteLine(
+                pos=current_time,
+                angle=90,
+                pen={'color': '#007AFF', 'width': 2},
+                movable=False
+            )
+
+            # Create text label to the right of marker - just the type
+            # Anchor to left-bottom so text appears to right and below top of line
+            label = TextItem(
+                text=cycle_type,
+                color=(0, 122, 255),
+                anchor=(0, 1.0)  # Left-bottom anchor
+            )
+
+            # Position label to the right of the marker line, near top
+            try:
+                y_range = timeline.viewRange()[1]
+                x_range = timeline.viewRange()[0]
+                # Offset label to the right by 2% of visible range
+                x_offset = (x_range[1] - x_range[0]) * 0.01
+                label.setPos(current_time + x_offset, y_range[1] * 0.95)
+            except:
+                label.setPos(current_time + 5, 100)  # Fallback position with offset
+
+            # Add to timeline
+            timeline.addItem(marker)
+            timeline.addItem(label)
+
+            # Store reference
+            cycle_num = self._current_cycle.cycle_num if self._current_cycle.cycle_num > 0 else len(self._cycle_markers) + 1
+            cycle_id = f"cycle_{cycle_num}"
+            self._cycle_markers[cycle_id] = {'line': marker, 'label': label, 'time': current_time}
+
+            logger.info(f"✓ Cycle marker added at t={current_time:.1f}s: {cycle_type}")
+
+        except Exception as e:
+            logger.debug(f"Could not add cycle marker: {e}")
 
     # =========================================================================
     # SEGMENT QUEUE MANAGEMENT (TEST MODE - Minimal Implementation)
@@ -1521,23 +1842,26 @@ class Application(QApplication):
                 0
             ]  # Extract unit from "nM (Nanomolar)"
 
-            # Create segment definition
-            segment = {
-                "name": f"Cycle {len(self.segment_queue) + 1}",
-                "type": cycle_type,
-                "length_minutes": length_minutes,
-                "note": note,
-                "units": units,
-                "timestamp": time.time(),
-                "status": "pending",
-            }
+            # Create segment definition using Cycle domain model
+            segment = Cycle(
+                type=cycle_type,
+                length_minutes=length_minutes,
+                name=f"Cycle {len(self.segment_queue) + 1}",
+                note=note,
+                status="pending",
+            )
+
+            # Store additional metadata (units, timestamp, concentrations) as temp dict
+            # TODO: Move to separate metadata structure or extend Cycle model
+            segment._units = units
+            segment._timestamp = time.time()
 
             # Parse concentration tags from note
             tags = re.findall(r"\[([A-D]|ALL):(\d+\.?\d*)\]", note)
             if tags:
-                segment["concentrations"] = dict(tags)
+                segment._concentrations = dict(tags)  # Store as temp attribute
                 logger.debug(
-                    f"Parsed concentrations: {segment['concentrations']} {units}",
+                    f"Parsed concentrations: {segment._concentrations} {units}",
                 )
 
             # Add to queue
@@ -1545,15 +1869,15 @@ class Application(QApplication):
 
             # Log success
             logger.info(f"✓ Added cycle {len(self.segment_queue)}: {cycle_type}, {length_minutes}min")
-            logger.debug(f"   Name: {segment['name']}")
-            logger.debug(f"   Note: {segment['note'][:100]}...") if len(
-                segment["note"],
-            ) > 100 else logger.debug(f"   Note: {segment['note']}")
+            logger.debug(f"   Name: {segment.name}")
+            logger.debug(f"   Note: {segment.note[:100]}...") if len(
+                segment.note,
+            ) > 100 else logger.debug(f"   Note: {segment.note}")
 
             # Update intelligence bar
             if hasattr(self.main_window.sidebar, "intel_message_label"):
                 self.main_window.sidebar.intel_message_label.setText(
-                    f"ΓåÆ Added {segment['name']} to queue ({len(self.segment_queue)} total)",
+                    f"✓ Added {segment.name} to queue ({len(self.segment_queue)} total)",
                 )
                 self.main_window.sidebar.intel_message_label.setStyleSheet(
                     "font-size: 12px;"
@@ -1601,9 +1925,9 @@ class Application(QApplication):
             "Concentration": QColor(255, 243, 224),  # Light orange
         }
 
-        # Get last 5 segments (most recent first)
-        recent_segments = self.segment_queue[-5:] if len(self.segment_queue) > 0 else []
-        recent_segments.reverse()  # Show newest at top
+        # Get first 5 segments (FIFO order - first in, first out)
+        recent_segments = self.segment_queue[:5] if len(self.segment_queue) > 0 else []
+        # No reverse - show in queue order (oldest/next at top)
 
         # Clear table and populate with segments
         for row in range(5):
@@ -1611,7 +1935,8 @@ class Application(QApplication):
                 segment = recent_segments[row]
 
                 # State column with color coding
-                status = segment.get("status", "pending")
+                # Access as object attribute, not dict key
+                status = getattr(segment, 'status', 'pending')
                 if status == "pending":
                     state_text = "⏳ Queued"
                     state_color = QColor(255, 249, 196)  # Light yellow
@@ -1630,24 +1955,25 @@ class Application(QApplication):
                 self.main_window.sidebar.summary_table.setItem(row, 0, state_item)
 
                 # Type column with type-specific color
-                cycle_type = segment.get("type", "")
+                cycle_type = getattr(segment, 'type', '')
                 type_item = QTableWidgetItem(cycle_type)
                 type_color = type_colors.get(cycle_type, QColor(242, 242, 247))
                 type_item.setBackground(type_color)
                 self.main_window.sidebar.summary_table.setItem(row, 1, type_item)
 
-                # Start time column
-                timestamp = segment.get("timestamp", 0)
-                if timestamp > 0:
-                    start_time = datetime.fromtimestamp(timestamp).strftime("%H:%M")
+                # Start time column (sensorgram time in seconds)
+                sensorgram_time = getattr(segment, 'sensorgram_time', None)
+                if sensorgram_time is not None:
+                    # Format as seconds with 1 decimal place
+                    start_time = f"{sensorgram_time:.1f}s"
                 else:
-                    start_time = "--:--"
+                    start_time = "--"
                 start_item = QTableWidgetItem(start_time)
                 start_item.setBackground(state_color)
                 self.main_window.sidebar.summary_table.setItem(row, 2, start_item)
 
                 # Notes column (truncated)
-                note = segment.get("note", "")
+                note = getattr(segment, 'note', '')
                 note_display = note[:40] + "..." if len(note) > 40 else note
                 note_item = QTableWidgetItem(note_display)
                 note_item.setBackground(state_color)
@@ -1675,26 +2001,88 @@ class Application(QApplication):
         logger.debug("")
 
         for i, seg in enumerate(self.segment_queue):
-            logger.debug(f"[{i + 1}] {seg['name']}")
-            logger.debug(f"    Type: {seg['type']}")
-            logger.debug(f"    Length: {seg['length_minutes']} minutes")
-            logger.debug(f"    Status: {seg['status']}")
+            # Access Cycle object attributes, not dict keys
+            logger.debug(f"[{i + 1}] {seg.name}")
+            logger.debug(f"    Type: {seg.type}")
+            logger.debug(f"    Length: {seg.length_minutes} minutes")
+            logger.debug(f"    Status: {seg.status}")
 
-            if "concentrations" in seg:
+            # Check for temporary attributes (set in _on_add_to_queue)
+            if hasattr(seg, '_concentrations'):
+                units = getattr(seg, '_units', 'nM')
                 logger.debug(
-                    f"    Concentrations: {seg['concentrations']} {seg['units']}",
+                    f"    Concentrations: {seg._concentrations} {units}",
                 )
 
-            if seg["note"]:
-                logger.debug(f"    Note: {seg['note'][:80]}...") if len(
-                    seg["note"],
-                ) > 80 else logger.debug(f"    Note: {seg['note']}")
+            if seg.note:
+                logger.debug(f"    Note: {seg.note[:80]}...") if len(
+                    seg.note,
+                ) > 80 else logger.debug(f"    Note: {seg.note}")
 
             logger.debug("")
 
         logger.debug("=" * 80)
-        logger.debug("[OK] Queue validation complete")
+        logger.debug("✓ Queue validation complete")
         logger.debug("=" * 80)
+
+    def _on_queue_table_context_menu(self, position):
+        """Show context menu for queue table (right-click to delete cycles)."""
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction
+
+        # Get the row that was clicked
+        table = self.main_window.sidebar.summary_table
+        row = table.rowAt(position.y())
+
+        # Check if row is valid and has data
+        if row < 0 or row >= len(self.segment_queue):
+            return
+
+        # Create context menu
+        menu = QMenu(table)
+
+        # Delete action
+        delete_action = QAction("🗑️ Delete Cycle", table)
+        delete_action.triggered.connect(lambda: self._delete_cycle_from_queue(row))
+        menu.addAction(delete_action)
+
+        # Show menu at cursor position
+        menu.exec(table.viewport().mapToGlobal(position))
+
+    def _delete_cycle_from_queue(self, row_index: int):
+        """Delete a cycle from the queue.
+
+        Args:
+            row_index: Index of the row in the summary table (0-4)
+        """
+        if row_index < 0 or row_index >= len(self.segment_queue):
+            logger.warning(f"Invalid row index: {row_index}")
+            return
+
+        # Get cycle info before deleting
+        cycle = self.segment_queue[row_index]
+        cycle_name = cycle.name
+
+        # Remove from queue
+        del self.segment_queue[row_index]
+
+        logger.info(f"🗑️ Deleted cycle from queue: {cycle_name}")
+
+        # Update UI
+        if hasattr(self.main_window.sidebar, "intel_message_label"):
+            self.main_window.sidebar.intel_message_label.setText(
+                f"🗑️ Deleted {cycle_name} ({len(self.segment_queue)} remaining)",
+            )
+            self.main_window.sidebar.intel_message_label.setStyleSheet(
+                "font-size: 12px;"
+                "color: #FF9500;"  # Orange for deletion
+                "background: transparent;"
+                "font-weight: 600;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+            )
+
+        # Refresh table
+        self._update_summary_table()
 
     def _on_scan_requested(self):
         """User clicked Scan button in UI."""
@@ -1900,6 +2288,9 @@ class Application(QApplication):
 
             # Calculate elapsed time (minimal work in acquisition thread)
             data["elapsed_time"] = data["timestamp"] - self.experiment_start_time
+            
+            # Tag with current session epoch for invalidation on clear
+            data["_epoch"] = self._session_epoch
 
             # Queue for processing thread (non-blocking)
             if not self._safe_queue_put(data):
@@ -1942,7 +2333,6 @@ class Application(QApplication):
         """Process spectrum data in dedicated worker thread."""
         try:
             from affilabs.utils.spectrum_helpers import SpectrumHelpers
-            logger.debug(f"[MAIN] About to process spectrum for channel {data.get('channel', 'UNKNOWN')}")
             SpectrumHelpers.process_spectrum_data(self, data)
         except Exception as e:
             logger.error(f"[MAIN] Failed to process spectrum: {e}", exc_info=True)
@@ -2046,52 +2436,32 @@ class Application(QApplication):
         UIUpdateHelpers.process_pending_ui_updates(self)
 
     def _update_stop_cursor_position(self, elapsed_time: float):
-        """Update stop cursor position on main thread (thread-safe).
-
-        This slot is called from the cursor_update_signal emitted by the
-        processing thread. It safely updates the cursor on the main Qt thread.
-
-        Behavior:
-        - Only updates cursor if "Live Data" checkbox is enabled
-        - Respects user drag interaction (pauses during drag)
-        - Cycle of interest graph always updates regardless of checkbox state
-
+        """Update stop cursor position (thread-safe).
+        
+        Called from processing thread via signal. Only updates if:
+        - Live Data checkbox is enabled
+        - User is not currently dragging the cursor
+        
         Args:
             elapsed_time: Time value to set cursor to
-
         """
         try:
-            # Check if graph and cursor exist
-            if not hasattr(self.main_window, "full_timeline_graph"):
+            # Quick check: Live Data enabled?
+            if not getattr(self.main_window, "live_data_enabled", False):
                 return
-            if not hasattr(self.main_window.full_timeline_graph, "stop_cursor"):
-                return
-
+            
+            # Get cursor
             stop_cursor = self.main_window.full_timeline_graph.stop_cursor
-            if stop_cursor is None:
+            
+            # Don't interrupt user drag
+            if getattr(stop_cursor, "moving", False):
                 return
-
-            # Check if "Live Data" checkbox is enabled (controls cursor auto-follow)
-            if not hasattr(self.main_window, "live_data_enabled"):
-                return
-            if not self.main_window.live_data_enabled:
-                return  # Checkbox disabled - stop cursor updates but keep recording
-
-            # Check if user is currently dragging the cursor
-            is_moving = getattr(stop_cursor, "moving", False)
-            if is_moving:
-                return  # Don't auto-move while user is dragging
-
-            # Update cursor position (only when checkbox enabled)
+            
+            # Update position
             stop_cursor.setValue(elapsed_time)
-
-            # Update label if it exists
-            if hasattr(stop_cursor, "label") and stop_cursor.label:
-                stop_cursor.label.setFormat(f"Stop: {elapsed_time:.1f}s")
-
+            
         except (AttributeError, RuntimeError):
-            # Cursor not ready yet, skip this update silently
-            pass
+            pass  # Cursor not ready, skip silently
 
     def _update_cycle_of_interest_graph(self):
         """Update the cycle of interest graph based on cursor positions."""
@@ -2101,7 +2471,7 @@ class Application(QApplication):
 
     def _update_delta_display(self):
         """Update the Δ SPR display label with delta values BETWEEN start and stop cursors.
-        
+
         Uses average of 5 points around each cursor position for more stable measurements.
         """
         if self.main_window.cycle_of_interest_graph.delta_display is None:
@@ -2123,7 +2493,7 @@ class Application(QApplication):
                 # Find indices closest to start and stop times
                 start_idx = np.argmin(np.abs(time_data - start_time))
                 stop_idx = np.argmin(np.abs(time_data - stop_time))
-                
+
                 # Average 5 points around each cursor (2 before, center, 2 after)
                 # This reduces noise and provides more stable delta measurements
                 def get_averaged_value(center_idx, data):
@@ -2131,10 +2501,10 @@ class Application(QApplication):
                     start = max(0, center_idx - 2)
                     end = min(len(data), center_idx + 3)
                     return np.mean(data[start:end])
-                
+
                 start_value = get_averaged_value(start_idx, spr_data)
                 stop_value = get_averaged_value(stop_idx, spr_data)
-                
+
                 # Calculate delta: stop_value - start_value
                 delta_values[ch] = stop_value - start_value
             else:
@@ -2157,8 +2527,62 @@ class Application(QApplication):
     # === Recording Callbacks ===
 
     def _on_recording_started(self, filename: str):
-        """Recording started."""
+        """Recording started - export current experiment state to metadata."""
         self.recording_events.on_recording_started(filename)
+
+        # Log recording start event for graph marker
+        self.recording_mgr.log_event("Recording Started")
+
+        # Export initial metadata
+        if self.recording_mgr.is_recording:
+            # Add device information
+            device_id = getattr(self.hardware_mgr, 'device_id', 'Unknown')
+            self.recording_mgr.update_metadata('device_id', device_id)
+
+            # Save sensorgram offset (critical for cycle reconstruction)
+            # This is the sensorgram time when recording started
+            if hasattr(self.main_window, 'full_timeline_graph'):
+                timeline = self.main_window.full_timeline_graph
+                if hasattr(timeline, 'stop_cursor'):
+                    sensorgram_offset = timeline.stop_cursor.value()
+                    self.recording_mgr.update_metadata('sensorgram_offset_seconds', sensorgram_offset)
+                    logger.info(f"📊 Recording offset: sensorgram t={sensorgram_offset:.1f}s")
+
+            # Add channel time shifts
+            for ch in ['a', 'b', 'c', 'd']:
+                shift = self._channel_time_shifts.get(ch, 0.0)
+                self.recording_mgr.update_metadata(f'channel_{ch}_time_shift', shift)
+
+            # Export any existing completed cycles
+            for cycle in self._completed_cycles:
+                cycle_export_data = cycle.to_export_dict()
+                # Note: Cycle.to_export_dict() uses 'start_time_sensorgram', but this code expects 'start_time'
+                # Creating compatible format for legacy code
+                legacy_export_data = {
+                    'cycle_num': cycle.cycle_num,
+                    'type': cycle.type,
+                    'name': cycle.name,
+                    'start_time': cycle.sensorgram_time or '',
+                    'end_time': cycle.end_time_sensorgram or '',
+                    'duration_minutes': cycle.length_minutes,
+                    'status': cycle.status,
+                    'note': cycle.note,
+                }
+                self.recording_mgr.add_cycle(legacy_export_data)
+
+            # Export any existing flags
+            if hasattr(self, '_flag_markers'):
+                for flag in self._flag_markers:
+                    flag_export_data = {
+                        'type': flag.get('type', ''),
+                        'channel': flag.get('channel', ''),
+                        'time': flag.get('time', ''),
+                        'spr': flag.get('spr', ''),
+                        'timestamp': time.time(),
+                    }
+                    self.recording_mgr.add_flag(flag_export_data)
+
+            logger.info(f"✓ Initial experiment state exported to recording")
 
     def _on_recording_stopped(self):
         """Recording stopped."""
@@ -2168,9 +2592,35 @@ class Application(QApplication):
         """Recording error occurred."""
         self.recording_events.on_recording_error(error)
 
-    def _on_event_logged(self, event: str):
+    def _on_event_logged(self, event: str, timestamp: float):
         """Event logged to recording."""
         logger.info(f"Event: {event}")
+        
+        # Add visual marker to timeline graph
+        if hasattr(self, 'main_window') and hasattr(self.main_window, 'full_timeline_graph'):
+            try:
+                # Calculate elapsed time from acquisition start
+                elapsed_time = None
+                if hasattr(self, 'get_elapsed_time'):
+                    elapsed_time = self.get_elapsed_time()
+                
+                # Only add marker if we have a valid elapsed time
+                if elapsed_time is None:
+                    logger.warning(f"Skipping event marker - acquisition not started yet: {event}")
+                    return
+                
+                # Determine marker color based on event type
+                if "Recording Started" in event:
+                    color = "#00C853"  # Green for recording start
+                elif "Cycle Start" in event:
+                    color = "#2979FF"  # Blue for cycle start
+                else:
+                    color = "#FF9800"  # Orange for other events
+                
+                # Add marker to graph
+                self.main_window.add_event_marker(elapsed_time, event, color)
+            except Exception as e:
+                logger.error(f"Failed to add event marker to graph: {e}")
 
     def _on_acquisition_pause_requested(self, pause: bool):
         """Handle acquisition pause/resume request from UI."""
@@ -2723,16 +3173,16 @@ class Application(QApplication):
         Right-Click: Remove flag marker near cursor
         """
         from PySide6.QtCore import Qt
-        
+
         # Get click position in scene coordinates
         pos = event.scenePos()
-        
+
         # Map scene position to data coordinates
         view_box = self.main_window.cycle_of_interest_graph.plotItem.vb
         mouse_point = view_box.mapSceneToView(pos)
         time_clicked = mouse_point.x()
         spr_clicked = mouse_point.y()
-        
+
         # Check if double-click (select nearest channel)
         if event.double():
             logger.debug(f"Double-click detected at t={time_clicked:.2f}, SPR={spr_clicked:.2f}")
@@ -2743,42 +3193,47 @@ class Application(QApplication):
             else:
                 logger.warning("Double-click: No channel found near click position")
             return
-        
+
         # Check if Ctrl key is pressed (add flag)
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             # Use the selected flag channel instead of auto-detecting
-            selected_channel = self._selected_flag_channel
-            
+            # Default to 'a' if not yet initialized (defensive)
+            selected_channel = getattr(self, '_selected_flag_channel', 'a')
+
             # CRITICAL: Get DISPLAY data (time rebased to 0, skipping first point)
             # The cycle_of_interest_graph shows rebased time: cycle_time[1:] - cycle_time[1]
             # So we need to work with the displayed/rebased data to match what's shown
             cycle_time_raw = self.buffer_mgr.cycle_data[selected_channel].time
             cycle_spr_raw = self.buffer_mgr.cycle_data[selected_channel].spr
-            
+
             if len(cycle_time_raw) < 2 or len(cycle_spr_raw) < 2:
                 logger.warning(f"Not enough data for Channel {selected_channel.upper()} (need at least 2 points)")
                 return
-            
+
             # Match ui_update_helpers.py logic: skip first point and rebase
             first_time = cycle_time_raw[1]
             cycle_time_display = cycle_time_raw[1:] - first_time  # Rebased to 0
             cycle_spr_display = cycle_spr_raw[1:]
-            
+
             # Find NEAREST DATA POINT in DISPLAY coordinates
             time_idx = np.argmin(np.abs(cycle_time_display - time_clicked))
             time_at_point = cycle_time_display[time_idx]  # Display time (rebased)
             spr_at_time = cycle_spr_display[time_idx]
-            
+
             # Show flag type selection menu (use display time for alignment)
-            self._show_flag_type_menu(event, selected_channel, time_at_point, spr_at_time)
-            
+            self.flag_mgr.show_flag_type_menu(event, selected_channel, time_at_point, spr_at_time)
+
         # Check if right-click (remove flag)
         elif event.button() == Qt.MouseButton.RightButton:
-            self._remove_flag_near_click(time_clicked, spr_clicked)
+            self.flag_mgr.remove_flag_near_click(time_clicked, spr_clicked)
+
+        # Check if left-click near a flag (select for keyboard movement)
+        elif event.button() == Qt.MouseButton.LeftButton:
+            self.flag_mgr.try_select_flag_for_movement(time_clicked, spr_clicked)
 
     def _show_flag_type_menu(self, event, channel: str, time_val: float, spr_val: float):
         """Show dropdown menu to select flag type.
-        
+
         Args:
             event: Mouse event
             channel: Channel identifier
@@ -2787,99 +3242,99 @@ class Application(QApplication):
         """
         from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QAction, QCursor
-        
+
         menu = QMenu()
-        
+
         # Create flag type actions
         injection_action = QAction("▲ Injection", menu)
         injection_action.triggered.connect(
             lambda: self._add_flag_marker(channel, time_val, spr_val, 'injection')
         )
-        
+
         wash_action = QAction("■ Wash", menu)
         wash_action.triggered.connect(
             lambda: self._add_flag_marker(channel, time_val, spr_val, 'wash')
         )
-        
+
         spike_action = QAction("★ Spike", menu)
         spike_action.triggered.connect(
             lambda: self._add_flag_marker(channel, time_val, spr_val, 'spike')
         )
-        
+
         menu.addAction(injection_action)
         menu.addAction(wash_action)
         menu.addAction(spike_action)
-        
+
         # Show menu at cursor position
         menu.exec(QCursor.pos())
-    
+
     def _find_nearest_channel_at_click(self, time_clicked: float, spr_clicked: float) -> str | None:
         """Find which channel curve is closest to the click position.
-        
+
         CRITICAL: Works with DISPLAY coordinates (time rebased to 0, first point skipped)
         to match what's actually shown on the cycle_of_interest_graph.
-        
+
         Args:
             time_clicked: Time coordinate of click (in display/rebased time)
             spr_clicked: SPR coordinate of click
-            
+
         Returns:
             Channel identifier ('a', 'b', 'c', 'd') or None if no data
         """
         min_distance = float('inf')
         nearest_channel = None
-        
+
         # Check all 4 channels
         for ch in ['a', 'b', 'c', 'd']:
             # Get RAW cycle data
             cycle_time_raw = self.buffer_mgr.cycle_data[ch].time
             cycle_spr_raw = self.buffer_mgr.cycle_data[ch].spr
-            
+
             if len(cycle_time_raw) < 2 or len(cycle_spr_raw) < 2:
                 logger.debug(f"Channel {ch.upper()}: Insufficient data (need at least 2 points)")
                 continue
-            
+
             # Match ui_update_helpers.py: skip first point and rebase to 0
             first_time = cycle_time_raw[1]
             cycle_time_display = cycle_time_raw[1:] - first_time
             cycle_spr_display = cycle_spr_raw[1:]
-            
+
             # Find the data point closest to clicked time IN DISPLAY COORDINATES
             time_idx = np.argmin(np.abs(cycle_time_display - time_clicked))
-            
+
             if time_idx < len(cycle_spr_display):
                 # Calculate distance from click to this channel's curve at that time
                 spr_at_time = cycle_spr_display[time_idx]
                 distance = abs(spr_at_time - spr_clicked)
-                
+
                 logger.debug(f"Channel {ch.upper()}: SPR at t={time_clicked:.2f} is {spr_at_time:.2f}, distance={distance:.2f}")
-                
+
                 if distance < min_distance:
                     min_distance = distance
                     nearest_channel = ch
-        
+
         if nearest_channel:
             logger.debug(f"Nearest channel: {nearest_channel.upper()} (distance={min_distance:.2f})")
         else:
             logger.debug("No nearest channel found (all channels have insufficient data)")
-        
+
         return nearest_channel
-    
+
     def _select_flag_channel_visual(self, channel: str):
         """Select a channel for flagging and update visual highlighting.
-        
+
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
         """
         # Store the selected channel
         self._selected_flag_channel = channel
-        
+
         # Update visual highlighting through UI
         self.main_window._on_flag_channel_selected(channel)
-    
+
     def _add_flag_marker(self, channel: str, time_val: float, spr_val: float, flag_type: str):
         """Add a visual flag marker to the cycle graph.
-        
+
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
             time_val: Time position for flag
@@ -2887,27 +3342,27 @@ class Application(QApplication):
             flag_type: Type of flag ('injection', 'wash', 'spike')
         """
         import pyqtgraph as pg
-        
+
         # Initialize flag storage if needed
         if not hasattr(self, '_flag_markers'):
             self._flag_markers = []
-        
+
         # Injection alignment (Phase 2)
         if not hasattr(self, '_injection_reference_time'):
             self._injection_reference_time = None
             self._injection_reference_channel = None
             self._injection_alignment_line = None
             self._injection_snap_tolerance = 10.0  # Seconds
-        
+
         # Define flag appearance based on type (Phase 2)
         flag_styles = {
             'injection': {'symbol': 't', 'size': 15, 'color': (255, 50, 50, 230)},    # Red triangle
             'wash': {'symbol': 's', 'size': 12, 'color': (50, 150, 255, 230)},        # Blue square
             'spike': {'symbol': 'star', 'size': 18, 'color': (255, 200, 0, 230)}      # Yellow star
         }
-        
+
         style = flag_styles.get(flag_type, flag_styles['injection'])
-        
+
         # INJECTION ALIGNMENT LOGIC (Phase 2)
         if flag_type == 'injection':
             if self._injection_reference_time is None:
@@ -2919,19 +3374,23 @@ class Application(QApplication):
             else:
                 # Subsequent injection - ALWAYS align channel data to reference
                 time_diff = time_val - self._injection_reference_time
-                
+
                 # Shift this channel's data to align with reference
                 shift_amount = -time_diff  # Negative because we shift left to align
                 self._channel_time_shifts[channel] = shift_amount
-                
+
                 logger.info(f"→ Aligning Channel {channel.upper()}: shifting {shift_amount:+.2f}s to match reference (diff was {time_diff:.2f}s)")
-                
+
+                # Export time shift to recording metadata
+                if self.recording_mgr.is_recording:
+                    self.recording_mgr.update_metadata(f'channel_{channel}_time_shift', shift_amount)
+
                 # Trigger graph update to show shifted data
                 self._update_cycle_of_interest_graph()
-                
+
                 # Snap flag marker to reference position
                 time_val = self._injection_reference_time
-        
+
         # Create flag marker with type-specific appearance
         marker = pg.ScatterPlotItem(
             [time_val],
@@ -2941,10 +3400,10 @@ class Application(QApplication):
             brush=pg.mkBrush(*style['color']),
             pen=pg.mkPen('w', width=2)  # White border
         )
-        
+
         # Add marker to graph
         self.main_window.cycle_of_interest_graph.addItem(marker)
-        
+
         # Store marker reference
         self._flag_markers.append({
             'channel': channel,
@@ -2953,14 +3412,25 @@ class Application(QApplication):
             'marker': marker,
             'type': flag_type
         })
-        
+
+        # Export flag to recording manager
+        if self.recording_mgr.is_recording:
+            flag_export_data = {
+                'type': flag_type,
+                'channel': channel,
+                'time': time_val,
+                'spr': spr_val,
+                'timestamp': time.time(),
+            }
+            self.recording_mgr.add_flag(flag_export_data)
+
         logger.info(f"🚩 {flag_type.capitalize()} flag added: Channel {channel.upper()} at t={time_val:.2f}s")
-    
+
     def _create_injection_alignment_line(self, time_val: float):
         """Create vertical line at injection reference time for alignment."""
         import pyqtgraph as pg
         from PySide6.QtCore import Qt
-        
+
         # Create vertical line spanning the graph
         self._injection_alignment_line = pg.InfiniteLine(
             pos=time_val,
@@ -2970,10 +3440,10 @@ class Application(QApplication):
             label='Injection Reference'
         )
         self.main_window.cycle_of_interest_graph.addItem(self._injection_alignment_line)
-    
+
     def _remove_flag_near_click(self, time_clicked: float, spr_clicked: float, tolerance: float = 2.0):
         """Remove flag marker near the click position using 2D distance.
-        
+
         Args:
             time_clicked: Time coordinate of click
             spr_clicked: SPR coordinate of click
@@ -2981,36 +3451,36 @@ class Application(QApplication):
         """
         if not hasattr(self, '_flag_markers') or not self._flag_markers:
             return
-        
+
         # Find flag closest to click position using 2D distance
         min_distance = float('inf')
         closest_flag_idx = None
-        
+
         # Get view range for normalization
         view_range = self.main_window.cycle_of_interest_graph.viewRange()
         time_range = view_range[0][1] - view_range[0][0]
         spr_range = view_range[1][1] - view_range[1][0]
-        
+
         for idx, flag in enumerate(self._flag_markers):
             # Calculate normalized 2D distance
             time_dist = abs(flag['time'] - time_clicked) / time_range
             spr_dist = abs(flag['spr'] - spr_clicked) / spr_range
             distance = np.sqrt(time_dist**2 + spr_dist**2)
-            
+
             if distance < min_distance:
                 min_distance = distance
                 closest_flag_idx = idx
-        
+
         # Remove the closest flag if within tolerance (2% of screen diagonal)
         if closest_flag_idx is not None and min_distance < 0.02:
             flag = self._flag_markers[closest_flag_idx]
-            
+
             # Remove from graph
             self.main_window.cycle_of_interest_graph.removeItem(flag['marker'])
-            
+
             # Remove from storage
             self._flag_markers.pop(closest_flag_idx)
-            
+
             # If we removed an injection flag, check if we need to clear alignment
             if flag['type'] == 'injection':
                 # Count remaining injection flags
@@ -3022,9 +3492,196 @@ class Application(QApplication):
                         self._injection_alignment_line = None
                     self._injection_reference_time = None
                     logger.info("✓ Injection alignment cleared")
-            
+
             logger.info(f"🚩 {flag['type'].capitalize()} flag removed: Channel {flag['channel'].upper()} at t={flag['time']:.2f}s")
-    
+
+    def _try_select_flag_for_movement(self, time_clicked: float, spr_clicked: float):
+        """Check if click is near a flag and select it for keyboard movement."""
+        if not hasattr(self, '_flag_markers') or not self._flag_markers:
+            return
+
+        # Find flag closest to click
+        min_distance = float('inf')
+        closest_flag_idx = None
+
+        # Get view range for normalization
+        view_range = self.main_window.cycle_of_interest_graph.viewRange()
+        time_range = view_range[0][1] - view_range[0][0]
+        spr_range = view_range[1][1] - view_range[1][0]
+
+        for idx, flag in enumerate(self._flag_markers):
+            # Calculate normalized 2D distance
+            time_dist = abs(flag['time'] - time_clicked) / time_range
+            spr_dist = abs(flag['spr'] - spr_clicked) / spr_range
+            distance = np.sqrt(time_dist**2 + spr_dist**2)
+
+            if distance < min_distance:
+                min_distance = distance
+                closest_flag_idx = idx
+
+        # Select flag if within tolerance (3% of screen diagonal)
+        if closest_flag_idx is not None and min_distance < 0.03:
+            self._selected_flag_idx = closest_flag_idx
+            flag = self._flag_markers[closest_flag_idx]
+
+            # Visual feedback: highlight selected flag
+            self._highlight_selected_flag(closest_flag_idx)
+
+            logger.info(f"🎯 Selected {flag['type']} flag at t={flag['time']:.2f}s (use arrow keys ← → to move, ESC to deselect)")
+
+    def _highlight_selected_flag(self, flag_idx: int):
+        """Highlight the selected flag with a yellow ring."""
+        # Remove previous highlight if any
+        if self._flag_highlight_ring is not None:
+            self.main_window.cycle_of_interest_graph.removeItem(self._flag_highlight_ring)
+
+        import pyqtgraph as pg
+
+        flag = self._flag_markers[flag_idx]
+
+        # Create a ring around the selected flag
+        self._flag_highlight_ring = pg.ScatterPlotItem(
+            [flag['time']],
+            [flag['spr']],
+            symbol='o',
+            size=25,
+            pen=pg.mkPen('y', width=3),  # Yellow ring
+            brush=None
+        )
+        self.main_window.cycle_of_interest_graph.addItem(self._flag_highlight_ring)
+
+    def _setup_keyboard_event_filter(self):
+        """Install event filter on main window to capture keyboard events for flag movement."""
+        from PySide6.QtCore import QObject, QEvent, Qt
+
+        class KeyboardEventFilter(QObject):
+            def __init__(self, app_instance):
+                super().__init__()
+                self.app = app_instance
+
+            def eventFilter(self, obj, event):
+                if event.type() == QEvent.Type.KeyPress:
+                    # Check if a flag is selected
+                    if hasattr(self.app, '_selected_flag_idx') and self.app._selected_flag_idx is not None:
+                        key = event.key()
+
+                        # Arrow keys move flag
+                        if key == Qt.Key.Key_Left:
+                            self.app._move_selected_flag(-1)  # Move left by 1 data point
+                            return True
+                        elif key == Qt.Key.Key_Right:
+                            self.app._move_selected_flag(1)  # Move right by 1 data point
+                            return True
+                        elif key == Qt.Key.Key_Escape:
+                            self.app._deselect_flag()  # Deselect flag
+                            return True
+
+                return super().eventFilter(obj, event)
+
+        self._keyboard_filter = KeyboardEventFilter(self)
+        self.main_window.installEventFilter(self._keyboard_filter)
+        logger.debug("✓ Keyboard event filter installed for flag movement")
+
+    def _move_selected_flag(self, direction: int):
+        """Move the selected flag left (-1) or right (+1) by one data point.
+
+        Args:
+            direction: -1 for left, +1 for right
+        """
+        if self._selected_flag_idx is None or self._selected_flag_idx >= len(self._flag_markers):
+            return
+
+        flag = self._flag_markers[self._selected_flag_idx]
+        channel = flag['channel']
+
+        # Get DISPLAY data (rebased time)
+        cycle_time_raw = self.buffer_mgr.cycle_data[channel].time
+        cycle_spr_raw = self.buffer_mgr.cycle_data[channel].spr
+
+        if len(cycle_time_raw) < 2:
+            return
+
+        # Match display logic: skip first point and rebase
+        first_time = cycle_time_raw[1]
+        cycle_time_display = cycle_time_raw[1:] - first_time
+        cycle_spr_display = cycle_spr_raw[1:]
+
+        # Find current flag position in data array
+        current_idx = np.argmin(np.abs(cycle_time_display - flag['time']))
+
+        # Move to adjacent data point
+        new_idx = current_idx + direction
+        new_idx = max(0, min(len(cycle_time_display) - 1, new_idx))  # Clamp to valid range
+
+        # Update flag position
+        new_time = cycle_time_display[new_idx]
+        new_spr = cycle_spr_display[new_idx]
+
+        # Remove old marker
+        self.main_window.cycle_of_interest_graph.removeItem(flag['marker'])
+
+        # Create new marker at new position
+        import pyqtgraph as pg
+        flag_styles = {
+            'injection': {'symbol': 't', 'size': 15, 'color': (255, 50, 50, 230)},
+            'wash': {'symbol': 's', 'size': 12, 'color': (50, 150, 255, 230)},
+            'spike': {'symbol': 'star', 'size': 18, 'color': (255, 200, 0, 230)}
+        }
+        style = flag_styles.get(flag['type'], flag_styles['injection'])
+
+        new_marker = pg.ScatterPlotItem(
+            [new_time],
+            [new_spr],
+            symbol=style['symbol'],
+            size=style['size'],
+            brush=pg.mkBrush(*style['color']),
+            pen=pg.mkPen('w', width=2)
+        )
+        self.main_window.cycle_of_interest_graph.addItem(new_marker)
+
+        # Update flag data
+        flag['time'] = new_time
+        flag['spr'] = new_spr
+        flag['marker'] = new_marker
+
+        # Update highlight ring position
+        self._highlight_selected_flag(self._selected_flag_idx)
+
+        # If this is an injection flag and NOT the reference, recalculate alignment
+        if flag['type'] == 'injection' and self._injection_reference_time is not None:
+            if flag['channel'] != self._injection_reference_channel:
+                time_diff = new_time - self._injection_reference_time
+                shift_amount = -time_diff
+                self._channel_time_shifts[channel] = shift_amount
+
+                # Export updated time shift to recording metadata
+                if self.recording_mgr.is_recording:
+                    self.recording_mgr.update_metadata(f'channel_{channel}_time_shift', shift_amount)
+
+                self._update_cycle_of_interest_graph()
+                logger.info(f"→ Moved & realigned Channel {channel.upper()}: shift={shift_amount:+.2f}s")
+            else:
+                # Moving the reference flag - update reference time
+                old_ref = self._injection_reference_time
+                self._injection_reference_time = new_time
+
+                # Update alignment line
+                if self._injection_alignment_line is not None:
+                    self._injection_alignment_line.setPos(new_time)
+
+                logger.info(f"→ Moved reference flag: {old_ref:.2f}s → {new_time:.2f}s")
+        else:
+            logger.debug(f"Flag moved: t={new_time:.2f}s, SPR={new_spr:.2f} RU")
+
+    def _deselect_flag(self):
+        """Deselect currently selected flag."""
+        if self._flag_highlight_ring is not None:
+            self.main_window.cycle_of_interest_graph.removeItem(self._flag_highlight_ring)
+            self._flag_highlight_ring = None
+
+        self._selected_flag_idx = None
+        logger.debug("Flag deselected")
+
     def _select_nearest_channel(self, click_time: float, click_value: float):
         """Select the channel whose curve is nearest to the click position."""
         pass  # graph_events removed
@@ -3237,7 +3894,7 @@ class Application(QApplication):
     def _on_simple_led_calibration(self):
         """Run simple LED intensity adjustment (quick, for sensor swaps)."""
         logger.info("Starting Simple LED Calibration...")
-        
+
         # Check if hardware is connected
         if not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
             ui_error(
@@ -3247,7 +3904,7 @@ class Application(QApplication):
                 "Use the power button to connect to the device.",
             )
             return
-        
+
         # Import simple calibration function
         try:
             from affilabs.core.simple_led_calibration import run_simple_led_calibration
@@ -3259,10 +3916,10 @@ class Application(QApplication):
                 f"Could not load simple calibration module.\n\n{e}",
             )
             return
-        
+
         # Show progress dialog
         from affilabs_core_ui import StartupCalibProgressDialog
-        
+
         message = (
             "Simple LED Calibration - Quick Intensity Adjustment\n\n"
             "This calibration quickly adjusts LED intensities for sensor swaps:\n\n"
@@ -3276,7 +3933,7 @@ class Application(QApplication):
             "  ✓ Prism installed with water/buffer\n"
             "  ✓ No air bubbles"
         )
-        
+
         dialog = StartupCalibProgressDialog(
             parent=self.main_window,
             title="Simple LED Calibration",
@@ -3284,14 +3941,14 @@ class Application(QApplication):
             show_start_button=False,  # Auto-start (quick operation, ~10-20 seconds)
         )
         dialog.show()
-        
+
         # Run calibration in thread
         import threading
-        
+
         def progress_callback(msg, percent):
             """Update progress dialog."""
             dialog.update_status(msg, percent)
-        
+
         def run_calibration():
             """Thread worker for simple calibration."""
             try:
@@ -3299,19 +3956,19 @@ class Application(QApplication):
                     self.hardware_mgr,
                     progress_callback=progress_callback,
                 )
-                
+
                 if success:
                     dialog.update_status("✅ Simple calibration complete!", 100)
                     logger.info("✅ Simple LED calibration completed successfully")
                 else:
                     dialog.update_status("❌ Simple calibration failed", 100)
                     logger.error("❌ Simple LED calibration failed")
-                
+
                 # Auto-close after 2 seconds
                 import time
                 time.sleep(2)
                 dialog.close_from_thread()
-                
+
             except Exception as e:
                 logger.error(f"Simple calibration error: {e}")
                 import traceback
@@ -3320,14 +3977,14 @@ class Application(QApplication):
                 import time
                 time.sleep(3)
                 dialog.close_from_thread()
-        
+
         thread = threading.Thread(target=run_calibration, daemon=True, name="SimpleCalibration")
         thread.start()
 
     def _on_polarizer_calibration(self):
         """Run servo polarizer calibration using existing hardware connection."""
         logger.info("Starting Polarizer Calibration...")
-        
+
         # Check if hardware is connected
         if not self.hardware_mgr or not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
             from affilabs.ui.ui_message import error as ui_error
@@ -3339,7 +3996,7 @@ class Application(QApplication):
             )
             logger.error("Cannot run polarizer calibration - hardware not connected")
             return
-        
+
         # Stop live data if running
         if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
             logger.info("🛑 Stopping live data acquisition before polarizer calibration...")
@@ -3347,11 +4004,11 @@ class Application(QApplication):
             import time
             time.sleep(0.2)
             logger.info("[OK] Live data stopped")
-        
+
         # Create progress dialog
         from PySide6.QtWidgets import QProgressDialog
         from PySide6.QtCore import Qt
-        
+
         progress = QProgressDialog(
             "Initializing polarizer calibration...",
             "Cancel",
@@ -3364,7 +4021,7 @@ class Application(QApplication):
         progress.setMinimumDuration(0)
         progress.setValue(0)
         progress.show()
-        
+
         # Progress callback to update dialog
         def update_progress(message, value):
             if progress.wasCanceled():
@@ -3373,19 +4030,19 @@ class Application(QApplication):
             progress.setValue(int(value))
             from PySide6.QtWidgets import QApplication
             QApplication.processEvents()
-        
+
         # Import and run the servo calibration with existing hardware
         try:
             from servo_polarizer_calibration.calibrate_polarizer import run_calibration_with_hardware
-            
+
             # Run calibration using existing hardware manager
             logger.info("Running polarizer calibration with connected hardware...")
             update_progress("Running polarizer calibration...", 10)
-            
+
             success = run_calibration_with_hardware(self.hardware_mgr, progress_callback=update_progress)
-            
+
             progress.close()
-            
+
             if success:
                 # Load the newly calibrated P position from device_config.json
                 try:
@@ -3394,9 +4051,9 @@ class Application(QApplication):
                     config_path = Path(__file__).parent / "affilabs" / "config" / "device_config.json"
                     with open(config_path) as f:
                         config = json.load(f)
-                    
+
                     p_position = config.get("oem_calibration", {}).get("polarizer_p_position")
-                    
+
                     if p_position is not None:
                         # Move servo to P position
                         logger.info(f"Moving servo to P position ({p_position})...")
@@ -3406,20 +4063,20 @@ class Application(QApplication):
                         logger.warning("⚠️ No P position found in device_config.json")
                 except Exception as e:
                     logger.error(f"Failed to load P position: {e}")
-                
+
                 # Restart live data
                 logger.info("Restarting live data acquisition...")
                 if hasattr(self, 'data_mgr') and self.data_mgr:
                     self.data_mgr.start_acquisition()
                     logger.info("✅ Live data restarted")
-                    
+
                     # Give UI time to update before showing completion dialog
                     from PySide6.QtWidgets import QApplication
                     import time
                     QApplication.processEvents()
                     time.sleep(0.3)
                     QApplication.processEvents()
-                
+
                 from affilabs.ui.ui_message import info as ui_info
                 ui_info(
                     self.main_window,
@@ -3435,7 +4092,7 @@ class Application(QApplication):
                     "Polarizer calibration completed with warnings.\n"
                     "Please check the logs for details."
                 )
-            
+
         except Exception as e:
             progress.close()
             logger.error(f"Polarizer calibration failed: {e}")
@@ -3584,21 +4241,21 @@ class Application(QApplication):
                 self._device_config_initialized = False
                 self._initial_connection_done = False
                 self._calibration_completed = False
-                
+
                 # Clear data buffers
                 if hasattr(self, 'buffer_mgr') and self.buffer_mgr:
                     self.buffer_mgr.clear_all()
                     logger.debug("  ✓ Data buffers cleared")
-                
+
                 # Reset data manager calibration state
                 if self.data_mgr:
                     self.data_mgr.calibrated = False
                     logger.debug("  ✓ Data manager calibration flag reset")
-                
+
                 # Reset experiment timing
                 self.experiment_start_time = None
                 logger.debug("  ✓ Experiment timing reset")
-                
+
                 logger.info("[OK] Application state reset complete")
             except Exception as e:
                 logger.error(f"Error resetting application state: {e}")
@@ -3619,57 +4276,65 @@ class Application(QApplication):
             show_message(f"Power off completed with errors: {e}", "Warning")
 
     def _on_recording_start_requested(self):
-        """User requested to start recording."""
-        logger.info(
-            "[RECORD-HANDLER] Recording start requested by user (button clicked)",
-        )
-
-        # Show file dialog to select recording location
-        # Get default filename with timestamp
-
-        from PySide6.QtWidgets import QFileDialog
-
+        """User requested to start recording - show confirmation popup first."""
+        from PySide6.QtWidgets import QMessageBox
         from affilabs.utils.time_utils import for_filename
+        from pathlib import Path
+        
+        logger.info("[RECORD-HANDLER] Recording start requested - showing confirmation")
 
+        # Prepare filename and destination
         timestamp = for_filename().replace(".", "_")
-        default_filename = f"AffiLabs_data_{timestamp}.csv"
-
-        logger.info(
-            f"[RECORD-HANDLER] Showing save dialog with default: {default_filename}",
-        )
-
-        # Show save dialog
-        file_path, _ = QFileDialog.getSaveFileName(
-            self.main_window,
-            "Save Recording As",
-            default_filename,
-            "CSV Files (*.csv);;All Files (*.*)",
-        )
-
-        if file_path:
-            # User selected a file - start recording
-            logger.info(f"[RECORD-HANDLER] User selected file: {file_path}")
-            logger.info(
-                "[RECORD-HANDLER] Starting recording via recording_mgr.start_recording()",
-            )
-            self.recording_mgr.start_recording(file_path)
-
-            # Populate export fields with recording information
-            path_obj = Path(file_path)
-            filename = path_obj.stem  # Name without extension
-            directory = str(path_obj.parent)
-
-            self.main_window.sidebar.export_filename_input.setText(filename)
-            self.main_window.sidebar.export_dest_input.setText(directory)
-            logger.info(
-                f"📋 [RECORD-HANDLER] Export fields populated: {filename} in {directory}",
-            )
+        default_filename = f"AffiLabs_data_{timestamp}"
+        default_directory = self.recording_mgr.output_directory
+        
+        # Get current export settings
+        filename = self.main_window.sidebar.export_filename_input.text() or default_filename
+        destination = self.main_window.sidebar.export_dest_input.text() or str(default_directory)
+        
+        # Get format
+        if self.main_window.sidebar.excel_radio.isChecked():
+            extension = ".xlsx"
+        elif self.main_window.sidebar.csv_radio.isChecked():
+            extension = ".csv"
+        elif self.main_window.sidebar.json_radio.isChecked():
+            extension = ".json"
+        elif self.main_window.sidebar.hdf5_radio.isChecked():
+            extension = ".h5"
         else:
-            # User cancelled - revert button state
-            logger.info(
-                "[RECORD-HANDLER] User cancelled file dialog - reverting button state",
-            )
-            self.main_window.record_btn.setChecked(False)
+            extension = ".xlsx"
+        
+        # Ensure filename has extension
+        if not any(filename.endswith(ext) for ext in ['.xlsx', '.csv', '.json', '.h5']):
+            filename = filename + extension
+        
+        full_path = Path(destination) / filename
+        
+        # Show confirmation dialog
+        msg = QMessageBox(self.main_window)
+        msg.setIcon(QMessageBox.Question)
+        msg.setWindowTitle("Start Recording")
+        msg.setText(f"Data will be recorded as:\n\n{filename}\n\nIn folder:\n{destination}")
+        msg.setInformativeText("Change settings in Export tab if needed, or start live recording now.")
+        
+        start_btn = msg.addButton("▶️ Start Recording", QMessageBox.AcceptRole)
+        cancel_btn = msg.addButton("Cancel", QMessageBox.RejectRole)
+        msg.setDefaultButton(start_btn)
+        
+        msg.exec()
+        
+        if msg.clickedButton() == cancel_btn:
+            logger.info("Recording cancelled by user")
+            # Reset button state since recording didn't start
+            self.main_window.set_recording_state(is_recording=False)
+            return
+        
+        # User confirmed - start recording with file
+        logger.info(f"Starting recording to file: {full_path}")
+        self.recording_mgr.start_recording(filename=str(full_path))
+        
+        # Update UI state
+        self.main_window.set_recording_state(is_recording=True, filename=filename)
 
     def _on_recording_stop_requested(self):
         """User requested to stop recording."""
@@ -3677,11 +4342,34 @@ class Application(QApplication):
 
         # Stop the recording
         self.recording_mgr.stop_recording()
+        
+        # Update UI state to reflect recording stopped
+        self.main_window.set_recording_state(is_recording=False)
 
     def _on_clear_graphs_requested(self):
         """Handle clear graphs button click - clear all buffer data and reset timeline."""
         logger.info("[UI] Clear graphs requested")
         try:
+            # Increment session epoch - invalidates all old data in one atomic operation
+            self._session_epoch += 1
+            
+            # Reset experiment start time and display offset
+            self.experiment_start_time = None
+            self._display_time_offset = 0.0
+            
+            # Clear processing queue to remove old data with old timestamps
+            if hasattr(self, "_spectrum_queue") and self._spectrum_queue:
+                # Drain the queue
+                cleared_count = 0
+                try:
+                    while not self._spectrum_queue.empty():
+                        self._spectrum_queue.get_nowait()
+                        cleared_count += 1
+                except:
+                    pass
+                if cleared_count > 0:
+                    logger.info(f"[OK] Cleared {cleared_count} items from processing queue")
+            
             # Clear all data buffers
             if hasattr(self, "buffer_mgr") and self.buffer_mgr:
                 self.buffer_mgr.clear_all()
@@ -3689,9 +4377,27 @@ class Application(QApplication):
             else:
                 logger.warning("[WARN] Buffer manager not available")
 
-            # Reset experiment start time so timeline starts at zero
-            self.experiment_start_time = None
-            logger.info("≡ƒöä Timeline reset - next data point will start at t=0")
+            # Clear visual graph data
+            if hasattr(self, "sensogram_presenter") and self.sensogram_presenter:
+                self.sensogram_presenter.clear_all_graphs()
+                logger.info("[OK] Graph visual data cleared")
+
+            # Reset cursors to position 0 AFTER clearing graphs
+            if hasattr(self.main_window, 'full_timeline_graph'):
+                timeline = self.main_window.full_timeline_graph
+                if hasattr(timeline, 'start_cursor') and timeline.start_cursor:
+                    logger.info(f"[CLEAR] Start cursor before reset: {timeline.start_cursor.value()}")
+                    timeline.start_cursor.setValue(0)
+                    timeline.start_cursor.setPos(0)  # Force position update
+                    logger.info(f"[CLEAR] Start cursor after reset: {timeline.start_cursor.value()}")
+                if hasattr(timeline, 'stop_cursor') and timeline.stop_cursor:
+                    logger.info(f"[CLEAR] Stop cursor before reset: {timeline.stop_cursor.value()}")
+                    timeline.stop_cursor.setValue(0)
+                    timeline.stop_cursor.setPos(0)  # Force position update
+                    logger.info(f"[CLEAR] Stop cursor after reset: {timeline.stop_cursor.value()}")
+                logger.info("✓ Cursors reset to t=0")
+            
+            logger.info("🔄 Timeline reset complete - next data point will start at t=0")
 
         except Exception as e:
             logger.error(f"[ERROR] Error clearing buffer data: {e}", exc_info=True)
@@ -3700,11 +4406,12 @@ class Application(QApplication):
         """Handle clear flags button click - clear all flag data."""
         logger.info("[UI] Clear flags requested")
         try:
+            # Delegate to FlagManager
+            self.flag_mgr.clear_all_flags()
+
+            # Also clear legacy _flag_data for backward compatibility
             if hasattr(self, "_flag_data"):
                 self._flag_data.clear()
-                logger.info("[OK] Flag data cleared successfully")
-            else:
-                logger.warning("[WARN] Flag data not available")
         except Exception as e:
             logger.error(f"[ERROR] Error clearing flag data: {e}", exc_info=True)
 
@@ -3848,11 +4555,8 @@ class Application(QApplication):
             transmission: Processed transmission spectrum
 
         """
-        logger.debug(f"[SIGNAL] _on_spectrum_updated called: ch={channel}, {len(wavelengths)} pts, trans range {np.min(transmission):.1f}-{np.max(transmission):.1f}%")
-        
         # Update via UI coordinator if available
         if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-            logger.debug(f"[SIGNAL] Using ui_updates.queue_transmission_update for {channel}")
             self.ui_updates.queue_transmission_update(
                 channel,
                 wavelengths,
@@ -3869,8 +4573,6 @@ class Application(QApplication):
                 )
             except Exception as e:
                 logger.error(f"Failed to update transmission spectrum: {e}")
-        
-        logger.debug(f"[ViewModel] Spectrum updated for channel {channel}")
 
     def _on_peak_updated(
         self,
@@ -3894,11 +4596,6 @@ class Application(QApplication):
             self._latest_peaks = {}
         self._latest_peaks[channel] = peak_wavelength
 
-        logger.debug(
-            f"[Peak] Channel {channel}: {peak_wavelength:.2f} nm "
-            f"(pipeline: {metadata.get('pipeline_id', 'unknown')})"
-        )
-
     def _on_raw_spectrum_updated(
         self,
         channel: str,
@@ -3913,13 +4610,10 @@ class Application(QApplication):
             raw_spectrum: Raw intensity data
 
         """
-        logger.debug(f"[SIGNAL] _on_raw_spectrum_updated called: ch={channel}, {len(wavelengths)} pts, raw range {np.min(raw_spectrum):.0f}-{np.max(raw_spectrum):.0f}")
-        
         # DIRECT UPDATE - don't queue, update immediately
         # Timer-based updates weren't firing during heavy acquisition load
         try:
             if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-                logger.debug(f"[SIGNAL] Using ui_updates.spectroscopy_presenter for {channel}")
                 if self.ui_updates.spectroscopy_presenter and self.ui_updates._raw_spectrum_updates_enabled:
                     self.ui_updates.spectroscopy_presenter.update_raw_spectrum(
                         channel,

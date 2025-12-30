@@ -152,8 +152,7 @@ class GraphicControlTabBuilder:
         tab_layout.addWidget(gc_card)
         tab_layout.addSpacing(16)
 
-        # PHASE 1: Live Cycle Timeframe controls (non-functional, visual only)
-        self._build_live_cycle_timeframe(tab_layout)
+        # [Live Cycle Timeframe controls removed]
 
     def _build_live_cycle_timeframe(self, tab_layout: QVBoxLayout):
         """PHASE 1: Build Live Cycle timeframe controls (parallel to cursors)."""

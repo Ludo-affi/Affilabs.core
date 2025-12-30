@@ -295,7 +295,9 @@ class CurveMetadata(NamedTuple):
         self.concentrations.from_string(concentrations)
 
 
-class CurveTableOutput(NamedTuple, Generic[KeyType]):
+# Cannot use NamedTuple with Generic through multiple inheritance in Python <3.11
+# Use a regular class instead
+class CurveTableOutput(Generic[KeyType]):
     """Iterable object holding dictionaries wwith the metadata for curves."""
 
     number: dict[KeyType, str]
@@ -321,6 +323,26 @@ class CurveTableOutput(NamedTuple, Generic[KeyType]):
 
     header: dict[KeyType, str]
     """Header for each curve, is always "X\tY"."""
+
+    def __init__(
+        self,
+        number: dict[KeyType, str],
+        name: dict[KeyType, str],
+        kind: dict[KeyType, str],
+        ligand: dict[KeyType, str],
+        concentrations: dict[KeyType, str],
+        target: dict[KeyType, str],
+        description: dict[KeyType, str],
+        header: dict[KeyType, str],
+    ):
+        self.number = number
+        self.name = name
+        self.kind = kind
+        self.ligand = ligand
+        self.concentrations = concentrations
+        self.target = target
+        self.description = description
+        self.header = header
 
 
 class CurveTable(QWidget):

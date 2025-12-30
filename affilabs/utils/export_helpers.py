@@ -304,6 +304,9 @@ class ExportHelpers:
     def export_requested(app: Application, config: dict) -> None:
         """Handle comprehensive export request from Export tab.
 
+        This is the GATEWAY to saving recorded data to file.
+        Shows confirmation dialog with filename/location before saving.
+
         Args:
             app: Application instance
             config: Export configuration dict with keys:
@@ -319,7 +322,7 @@ class ExportHelpers:
                 - preset: str or None ('quick_csv', 'analysis', 'publication')
 
         """
-        from PySide6.QtWidgets import QFileDialog
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
 
         try:
             print(f"Export requested with config: {config.get('preset', 'custom')}")
@@ -335,23 +338,22 @@ class ExportHelpers:
                 from affilabs.widgets.message import show_message
 
                 show_message(
-                    "No cycle data available to export. Start acquisition and record some data first.",
+                    "No data available to export. Start recording some data first.",
                     msg_type="Warning",
                     title="No Data",
                 )
                 return
 
-            # Determine filename and path
+            # Get filename and path from config (pre-populated by Record button)
             filename = config.get("filename", "")
             if not filename:
                 from affilabs.utils.time_utils import for_filename
-
                 timestamp = for_filename().replace(".", "_")
-                filename = f"AffiLabs_Export_{timestamp}"
+                filename = f"AffiLabs_data_{timestamp}"
 
             destination = config.get("destination", "")
             if not destination:
-                destination = str(Path.home() / "Documents")
+                destination = str(Path.home() / "Documents" / "Affilabs Data")
 
             # Add appropriate extension
             format_type = config.get("format", "excel")
@@ -363,69 +365,90 @@ class ExportHelpers:
             }
             extension = extension_map.get(format_type, ".xlsx")
 
-            # Show save dialog
-            default_path = str(Path(destination) / f"{filename}{extension}")
-            file_filter = {
-                "excel": "Excel Files (*.xlsx);;All Files (*.*)",
-                "csv": "CSV Files (*.csv);;All Files (*.*)",
-                "json": "JSON Files (*.json);;All Files (*.*)",
-                "hdf5": "HDF5 Files (*.h5);;All Files (*.*)",
-            }.get(format_type, "All Files (*.*)")
+            # Ensure extension is on filename
+            if not filename.endswith(extension):
+                filename += extension
 
-            file_path, _ = QFileDialog.getSaveFileName(
-                app.main_window,
-                "Export Data",
-                default_path,
-                file_filter,
-            )
+            full_path = Path(destination) / filename
 
-            if not file_path:
+            # Show confirmation dialog BEFORE saving
+            msg = QMessageBox(app.main_window)
+            msg.setIcon(QMessageBox.Question)
+            msg.setWindowTitle("Export Data")
+            msg.setText(f"Ready to save recorded data.\n\nFile: {filename}\nLocation: {destination}")
+            msg.setInformativeText("Click SAVE to export data, or CANCEL to adjust the filename/location.")
+
+            save_btn = msg.addButton("SAVE", QMessageBox.AcceptRole)
+            cancel_btn = msg.addButton("Cancel", QMessageBox.RejectRole)
+            msg.setDefaultButton(save_btn)
+
+            msg.exec()
+
+            if msg.clickedButton() == cancel_btn:
                 print("Export cancelled by user")
                 return
 
-            # Collect data based on configuration
+            # User clicked SAVE - proceed with export
             channels = config.get("channels", ["a", "b", "c", "d"])
             data_types = config.get("data_types", {})
             precision = config.get("precision", 4)
 
-            # Build export data structure
-            export_data = {}
+            # Build raw data in LONG format (each channel has its own timestamp)
+            # This is critical because channels are measured in SERIES not PARALLEL
+            raw_data_rows = []
 
             for ch in channels:
                 if ch not in app._idx_to_channel:
                     continue
 
-                ch_data = {}
+                # Get channel-specific time and wavelength arrays
+                cycle_time = app.buffer_mgr.cycle_data[ch].time
+                wavelength = app.buffer_mgr.cycle_data[ch].wavelength
 
-                # Raw data
-                if data_types.get("raw", True):
-                    cycle_time = app.buffer_mgr.cycle_data[ch].time
-                    delta_spr = app.buffer_mgr.cycle_data[ch].spr
-                    if len(cycle_time) > 0:
-                        ch_data["raw"] = pd.DataFrame(
-                            {
-                                "Time (s)": cycle_time,
-                                f"Channel_{ch.upper()}_SPR (RU)": delta_spr,
-                            },
-                        ).round(precision)
+                if len(cycle_time) > 0:
+                    # Create one row per measurement (long format)
+                    for t, w in zip(cycle_time, wavelength):
+                        raw_data_rows.append({
+                            'time': round(t, precision),
+                            'channel': ch,
+                            'value': round(w, precision)
+                        })
 
-                # Processed data (if available)
-                if data_types.get("processed", True):
-                    # Use same data for now (filtering happens in display)
-                    if len(app.buffer_mgr.cycle_data[ch].time) > 0:
-                        ch_data["processed"] = ch_data.get("raw", pd.DataFrame()).copy()
+            # Create DataFrame from long format data
+            if raw_data_rows:
+                df_raw = pd.DataFrame(raw_data_rows)
 
-                export_data[ch] = ch_data
+                # Get cycle metadata from recording manager if available
+                cycles_data = []
+                if hasattr(app, 'recording_mgr') and app.recording_mgr.data_collector:
+                    cycles_data = app.recording_mgr.data_collector.cycles
 
-            # Export using strategy pattern
-            exporter = ExportHelpers._get_export_strategy(format_type)
-            exporter.export(file_path, export_data, config)
+                # Ensure destination directory exists
+                Path(destination).mkdir(parents=True, exist_ok=True)
 
-            print(f"[OK] Data exported successfully to: {file_path}")
+                # Export using format-specific logic
+                if format_type == "excel":
+                    with pd.ExcelWriter(str(full_path), engine='openpyxl') as writer:
+                        # Sheet 1: Raw Data
+                        df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
+
+                        # Sheet 2: Cycles (if available)
+                        if cycles_data:
+                            df_cycles = pd.DataFrame(cycles_data)
+                            df_cycles.to_excel(writer, sheet_name='Cycles', index=False)
+                elif format_type == "csv":
+                    df_raw.to_csv(str(full_path), index=False)
+                elif format_type == "json":
+                    df_raw.to_json(str(full_path), orient='records', indent=2)
+                else:
+                    # Fallback to CSV
+                    df_raw.to_csv(str(full_path), index=False)
+
+            print(f"[OK] Data exported successfully to: {full_path}")
             from affilabs.widgets.message import show_message
 
             show_message(
-                f"Data exported successfully to:\n{file_path}",
+                f"Data exported successfully to:\n{full_path}",
                 msg_type="Information",
                 title="Export Complete",
             )

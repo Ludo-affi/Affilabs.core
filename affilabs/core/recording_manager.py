@@ -4,34 +4,33 @@ from __future__ import annotations
 
 This class manages:
 - Starting/stopping recording sessions
-- Data logging to CSV/Excel formats
+- Data logging to Excel format with comprehensive metadata
 - Experiment metadata tracking
 - File management and auto-save
 - Event logging (injections, valve switches, etc.)
+- Cycle tracking and flag markers
 
 All file operations are handled safely to avoid blocking the UI.
 """
 
-import builtins
-import contextlib
-import csv
-import datetime as dt
 import time
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
+from affilabs.services.data_collector import DataCollector
+from affilabs.services.excel_exporter import ExcelExporter
 from affilabs.utils.logger import logger
 
 
 class RecordingManager(QObject):
-    """Manages data recording and export."""
+    """Manages data recording and export to Excel with comprehensive metadata."""
 
     # Signals for recording state
     recording_started = Signal(str)  # filename
     recording_stopped = Signal()
     recording_error = Signal(str)  # Error message
-    event_logged = Signal(str)  # Event description
+    event_logged = Signal(str, float)  # Event description, timestamp
 
     def __init__(self, data_mgr) -> None:
         super().__init__()
@@ -39,64 +38,53 @@ class RecordingManager(QObject):
         # Reference to data acquisition manager
         self.data_mgr = data_mgr
 
+        # Delegate services (Separation of Concerns)
+        self.data_collector = DataCollector()  # Handles in-memory data accumulation
+        self.excel_exporter = ExcelExporter()  # Handles Excel file I/O
+
         # Recording state
         self.is_recording = False
-        self.recording_start_time = None
         self.current_file = None
-        self.csv_writer = None
-        self.file_handle = None
-
-        # Event log
-        self.events = []  # List of (timestamp, event_description)
 
         # Recording settings
-        self.output_directory = Path.home() / "Documents" / "ezControl Data"
+        self.output_directory = Path.home() / "Documents" / "Affilabs Data"
         self.auto_save_interval = 60  # seconds
         self.last_save_time = 0
 
         # Initialized silently
 
     def start_recording(self, filename: str | None = None) -> None:
-        """Start recording data to file."""
+        """Start recording data to file (if filename provided) or memory only.
+
+        Args:
+            filename: Full path to file for saving. If provided, creates file immediately.
+                     If None, records to memory only until export.
+        """
         if self.is_recording:
             logger.warning("Recording already in progress")
             return
 
         try:
-            # Generate filename if not provided
-            if filename is None:
-                timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"AffiLabs_data_{timestamp}.csv"
-
-            # Ensure output directory exists
-            self.output_directory.mkdir(parents=True, exist_ok=True)
-
-            # Create file path
-            filepath = self.output_directory / filename
-
-            # Open file for writing
-            self.file_handle = open(filepath, "w", newline="", encoding="utf-8")
-            self.csv_writer = csv.writer(self.file_handle)
-
-            # Write header
-            header = [
-                "Timestamp",
-                "Time_Elapsed",
-                "Channel_A",
-                "Channel_B",
-                "Channel_C",
-                "Channel_D",
-            ]
-            self.csv_writer.writerow(header)
-
             # Update state
             self.is_recording = True
-            self.recording_start_time = time.time()
-            self.current_file = filepath
+            self.current_file = filename  # Store filename if provided
             self.last_save_time = time.time()
 
-            logger.info(f"Recording started: {filepath}")
-            self.recording_started.emit(str(filepath))
+            # Start data collection
+            self.data_collector.start_collection(start_time=time.time())
+
+            if filename:
+                # Create file immediately for live recording
+                from pathlib import Path
+
+                filepath = Path(filename)
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+
+                logger.info(f"Recording started - saving to file: {filename}")
+                self.recording_started.emit(filename)
+            else:
+                logger.info("Recording started (data collecting to memory - will save on Export)")
+                self.recording_started.emit("memory")
 
         except Exception as e:
             logger.exception(f"Failed to start recording: {e}")
@@ -104,24 +92,21 @@ class RecordingManager(QObject):
             self._cleanup_recording()
 
     def stop_recording(self) -> None:
-        """Stop recording and close file."""
+        """Stop recording and perform final save if recording to file."""
         if not self.is_recording:
             return
 
         try:
-            # Write event log as footer
-            if self.events:
-                self.csv_writer.writerow([])
-                self.csv_writer.writerow(["Event Log"])
-                self.csv_writer.writerow(["Timestamp", "Event"])
-                for timestamp, event in self.events:
-                    elapsed = timestamp - self.recording_start_time
-                    self.csv_writer.writerow([elapsed, event])
+            # Final save if recording to file
+            if self.current_file:
+                self._save_to_file()
+                logger.info(f"Recording stopped - final save to: {self.current_file}")
+            else:
+                logger.info("Recording stopped (data in memory - click Export to save)")
 
-            # Close file
-            self._cleanup_recording()
-
-            logger.info("Recording stopped")
+            # Stop recording
+            self.is_recording = False
+            self.current_file = None
             self.recording_stopped.emit()
 
         except Exception as e:
@@ -129,50 +114,108 @@ class RecordingManager(QObject):
             self.recording_error.emit(f"Error stopping recording: {e}")
             self._cleanup_recording()
 
+    def _save_to_file(self) -> None:
+        """Save collected data to the current file."""
+        if not self.current_file:
+            return
+
+        try:
+            import pandas as pd
+            from pathlib import Path
+
+            # Get raw data from collector
+            raw_data = self.data_collector.raw_data_rows
+            if not raw_data:
+                logger.warning("No data to save")
+                return
+
+            # Create DataFrame
+            df_raw = pd.DataFrame(raw_data)
+
+            # Sort by time then channel for consistent output
+            if "time" in df_raw.columns and "channel" in df_raw.columns:
+                df_raw = df_raw.sort_values(["time", "channel"])
+
+            # Determine file format from extension
+            filepath = Path(self.current_file)
+
+            if filepath.suffix == ".xlsx":
+                # Create Excel with multiple sheets
+                with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
+                    # Raw data sheet
+                    df_raw.to_excel(writer, sheet_name="Raw Data", index=False)
+
+                    # Cycles sheet if available
+                    if self.data_collector.cycles:
+                        df_cycles = pd.DataFrame(self.data_collector.cycles)
+                        df_cycles.to_excel(writer, sheet_name="Cycles", index=False)
+
+                    # Events sheet if available
+                    if self.data_collector.events:
+                        df_events = pd.DataFrame(self.data_collector.events)
+                        df_events.to_excel(writer, sheet_name="Events", index=False)
+
+                    # Metadata sheet
+                    if self.data_collector.metadata:
+                        df_meta = pd.DataFrame([self.data_collector.metadata])
+                        df_meta.to_excel(writer, sheet_name="Metadata", index=False)
+
+            elif filepath.suffix == ".csv":
+                # CSV only saves raw data
+                df_raw.to_csv(filepath, index=False)
+
+            elif filepath.suffix == ".json":
+                # JSON saves everything
+                data_export = {
+                    "raw_data": raw_data,
+                    "cycles": self.data_collector.cycles,
+                    "events": self.data_collector.events,
+                    "metadata": self.data_collector.metadata,
+                }
+                import json
+
+                with open(filepath, "w") as f:
+                    json.dump(data_export, f, indent=2)
+
+            logger.info(f"Data saved to {filepath} ({len(raw_data)} rows)")
+
+        except Exception as e:
+            logger.exception(f"Failed to save to file: {e}")
+            self.recording_error.emit(f"Failed to save: {e}")
+
     def _cleanup_recording(self) -> None:
         """Clean up recording resources."""
-        if self.file_handle:
-            with contextlib.suppress(builtins.BaseException):
-                self.file_handle.close()
-            self.file_handle = None
-
-        self.csv_writer = None
         self.is_recording = False
         self.current_file = None
-        self.events.clear()
+        self.data_collector.clear_all()
 
     def record_data_point(self, data: dict) -> None:
-        """Record a single data point to file.
+        """Record a single channel measurement to memory for later Excel export.
 
         Args:
-            data: Dictionary with keys 'channel_a', 'channel_b', 'channel_c', 'channel_d'
-                  Each value should be a wavelength (float)
+            data: Dictionary with keys 'time', 'channel', 'value'
+                  Example: {'time': 0.123, 'channel': 'a', 'value': 680.5}
 
         """
         if not self.is_recording:
             return
 
         try:
-            timestamp = time.time()
-            elapsed = timestamp - self.recording_start_time
+            # Store simple measurement row
+            row_data = {
+                "time": data.get("time", None),
+                "channel": data.get("channel", ""),
+                "value": data.get("value", None),
+            }
 
-            # Write row: timestamp, elapsed, ch_a, ch_b, ch_c, ch_d
-            row = [
-                timestamp,
-                elapsed,
-                data.get("channel_a", ""),
-                data.get("channel_b", ""),
-                data.get("channel_c", ""),
-                data.get("channel_d", ""),
-            ]
+            self.data_collector.add_data_point(row_data)
 
-            self.csv_writer.writerow(row)
-
-            # Auto-save periodically
-            current_time = time.time()
-            if current_time - self.last_save_time > self.auto_save_interval:
-                self.file_handle.flush()
-                self.last_save_time = current_time
+            # Auto-save to file if filename was provided (live recording mode)
+            if self.current_file:
+                current_time = time.time()
+                if current_time - self.last_save_time >= self.auto_save_interval:
+                    self._save_to_file()
+                    self.last_save_time = current_time
 
         except Exception as e:
             logger.error(f"Failed to record data point: {e}")
@@ -207,17 +250,17 @@ class RecordingManager(QObject):
 
             event_str = " | ".join(event_parts)
 
-            # Add to event log
-            self.events.append((timestamp, event_str))
+            # Log to data collector
+            self.data_collector.add_event(event_str, timestamp)
 
             logger.info(f"Event logged: {event_str}")
-            self.event_logged.emit(event_str)
+            self.event_logged.emit(event_str, timestamp)
 
         except Exception as e:
             logger.error(f"Failed to log event: {e}")
 
     def export_to_excel(self, csv_path: Path, excel_path: Path | None = None) -> None:
-        """Export CSV data to Excel format.
+        """Export CSV data to Excel format (legacy method for compatibility).
 
         Args:
             csv_path: Path to CSV file
@@ -242,6 +285,77 @@ class RecordingManager(QObject):
             logger.exception(f"Failed to export to Excel: {e}")
             self.recording_error.emit(f"Failed to export to Excel: {e}")
 
+    def add_cycle(self, cycle_data: dict) -> None:
+        """Add cycle information to recording.
+
+        Args:
+            cycle_data: Dictionary with cycle information (type, start_time, end_time, etc.)
+        """
+        if not self.is_recording:
+            return
+
+        try:
+            # Add to data collector
+            self.data_collector.add_cycle(cycle_data)
+        except Exception as e:
+            logger.error(f"Failed to add cycle to recording: {e}")
+
+    def add_flag(self, flag_data: dict) -> None:
+        """Add flag marker to recording.
+
+        Args:
+            flag_data: Dictionary with flag information (type, channel, time, spr, timestamp, etc.)
+        """
+        if not self.is_recording:
+            return
+
+        try:
+            # Add to data collector
+            self.data_collector.add_flag(flag_data)
+        except Exception as e:
+            logger.error(f"Failed to add flag to recording: {e}")
+
+    def update_metadata(self, key: str, value: any) -> None:
+        """Update metadata for recording.
+
+        Args:
+            key: Metadata key
+            value: Metadata value
+        """
+        if not self.is_recording:
+            return
+
+        try:
+            self.data_collector.update_metadata(key, value)
+        except Exception as e:
+            logger.error(f"Failed to update metadata: {e}")
+
+    def add_analysis_result(self, result_data: dict) -> None:
+        """Add analysis measurement result to recording.
+
+        Args:
+            result_data: Dictionary with analysis results (segment, channel, assoc_shift, dissoc_shift, etc.)
+        """
+        if not self.is_recording:
+            return
+
+        try:
+            # Add to data collector
+            self.data_collector.add_analysis_result(result_data)
+        except Exception as e:
+            logger.error(f"Failed to add analysis result: {e}")
+
+    def load_from_excel(self, filepath: Path) -> dict:
+        """Load recorded data from Excel file.
+
+        Args:
+            filepath: Path to Excel file
+
+        Returns:
+            Dictionary with all loaded data sheets
+        """
+        return self.excel_exporter.load_from_excel(filepath)
+
     def set_output_directory(self, directory: Path) -> None:
         """Set the output directory for recordings."""
         try:
@@ -263,11 +377,11 @@ class RecordingManager(QObject):
                 "event_count": 0,
             }
 
-        elapsed = time.time() - self.recording_start_time if self.recording_start_time else 0
+        summary = self.data_collector.get_summary()
 
         return {
             "recording": True,
             "filename": str(self.current_file) if self.current_file else None,
-            "elapsed_time": elapsed,
-            "event_count": len(self.events),
+            "elapsed_time": self.data_collector.get_elapsed_time(),
+            "event_count": summary["events"],
         }
