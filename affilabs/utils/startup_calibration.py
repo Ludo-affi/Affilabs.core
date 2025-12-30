@@ -1914,9 +1914,17 @@ def _step6d_comprehensive_qc_validation(
             and not qc["p_saturated"]
         )
 
+        # Debug: Show why channel passed or failed
+        logger.info(f"\n{'=' * 40}")
+        logger.info("📋 PASS/FAIL Criteria:")
+        logger.info(f"   Dip detected: {qc['dip_detected']} (required: True)")
+        logger.info(f"   FWHM pass: {fwhm_pass} (required: True, FWHM={qc['fwhm']:.1f if qc['fwhm'] else 0}nm < 100nm)")
+        logger.info(f"   Orientation: {qc['orientation_correct']} (required: not False)")
+        logger.info(f"   S saturated: {qc['s_saturated']} (required: False)")
+        logger.info(f"   P saturated: {qc['p_saturated']} (required: False)")
         logger.info(f"\n{'=' * 40}")
         logger.info(
-            f"Channel {ch.upper()}: {'[OK] PASS' if channel_pass else '[ERROR] FAIL'}",
+            f"Channel {ch.upper()}: {'[OK] PASS ✓' if channel_pass else '[ERROR] FAIL ✗'}",
         )
         logger.info(f"{'=' * 40}")
 

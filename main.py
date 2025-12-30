@@ -37,6 +37,7 @@ if __name__ == "__main__":
 
 import atexit
 import threading
+import time
 import warnings
 from pathlib import Path
 
@@ -393,6 +394,13 @@ class Application(QApplication):
         super().__init__(argv)
         self.setApplicationName("AffiLabs.core")
         self.setOrganizationName("Affinite Instruments")
+        
+        # Set application icon for taskbar
+        from PySide6.QtGui import QIcon
+        from pathlib import Path
+        icon_path = Path(__file__).parent / "affilabs" / "ui" / "img" / "affinite2.ico"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         # ============================================================
         # PHASE 2: Validation - Fail Fast on Critical Import Failures
@@ -1304,6 +1312,12 @@ class Application(QApplication):
         ui.max_input.editingFinished.connect(self._on_manual_range_changed)
         ui.x_axis_btn.toggled.connect(self._on_axis_selected)
         ui.y_axis_btn.toggled.connect(self._on_axis_selected)
+
+        # --- Channel and Marker Controls ---
+        if hasattr(ui.sidebar, 'channel_combo'):
+            ui.sidebar.channel_combo.currentTextChanged.connect(self._on_channel_filter_changed)
+        if hasattr(ui.sidebar, 'marker_combo'):
+            ui.sidebar.marker_combo.currentTextChanged.connect(self._on_marker_style_changed)
 
         # --- Data Filtering Controls (moved to Graphic Display tab) ---
         # EMA filter controls are in sidebar, connected in _connect_sidebar_signals()
@@ -2957,19 +2971,112 @@ class Application(QApplication):
 
     def _on_autoscale_toggled(self, checked: bool):
         """Autoscale radio button toggled."""
-        pass  # graph_events removed
+        if not checked:  # Radio button was unchecked (manual selected)
+            return
+
+        logger.info(f"Autoscale enabled for {self._selected_axis.upper()}-axis")
+
+        # Enable autoscale for selected axis
+        if self._selected_axis == "x":
+            self.main_window.cycle_of_interest_graph.enableAutoRange(axis="x")
+        else:
+            self.main_window.cycle_of_interest_graph.enableAutoRange(axis="y")
 
     def _on_manual_scale_toggled(self, checked: bool):
         """Manual radio button toggled."""
-        pass  # graph_events removed
+        if not checked:  # Radio button was unchecked (auto selected)
+            return
+
+        logger.info(f"Manual scale enabled for {self._selected_axis.upper()}-axis")
+
+        # Disable autoscale and enable manual inputs
+        self.main_window.min_input.setEnabled(True)
+        self.main_window.max_input.setEnabled(True)
+
+        # Apply current manual range values if any
+        self._on_manual_range_changed()
 
     def _on_manual_range_changed(self):
         """Manual range input values changed."""
-        pass  # graph_events removed
+        # Only apply if manual mode is selected
+        if not self.main_window.manual_radio.isChecked():
+            return
+
+        try:
+            min_text = self.main_window.min_input.text()
+            max_text = self.main_window.max_input.text()
+
+            # Parse values
+            if not min_text or not max_text:
+                return  # Need both values
+
+            min_val = float(min_text)
+            max_val = float(max_text)
+
+            if min_val >= max_val:
+                logger.warning(f"Invalid range: min ({min_val}) >= max ({max_val})")
+                return
+
+            logger.info(
+                f"Setting {self._selected_axis.upper()}-axis range: [{min_val}, {max_val}]",
+            )
+
+            # Apply range to selected axis
+            if self._selected_axis == "x":
+                self.main_window.cycle_of_interest_graph.setXRange(
+                    min_val,
+                    max_val,
+                    padding=0,
+                )
+            else:
+                self.main_window.cycle_of_interest_graph.setYRange(
+                    min_val,
+                    max_val,
+                    padding=0,
+                )
+
+        except ValueError as e:
+            logger.warning(f"Invalid manual range input: {e}")
 
     def _on_axis_selected(self, checked: bool):
         """Axis selector button toggled."""
-        pass  # graph_events removed
+        if not checked:  # Button was unchecked
+            return
+
+        # Determine which axis is now selected
+        if self.main_window.x_axis_btn.isChecked():
+            self._selected_axis = "x"
+            logger.info("X-axis selected for scaling controls")
+        else:
+            self._selected_axis = "y"
+            logger.info("Y-axis selected for scaling controls")
+
+        # Re-apply current mode to new axis
+        if self.main_window.auto_radio.isChecked():
+            self._on_autoscale_toggled(True)
+        else:
+            self._on_manual_range_changed()
+
+    def _on_channel_filter_changed(self, channel: str):
+        """Channel combo selection changed - filter which channels are displayed."""
+        logger.info(f"Channel filter changed to: {channel}")
+        # Update cycle of interest graph to show/hide channels
+        # This affects which channel curves are visible
+        self._update_cycle_of_interest_graph()
+
+    def _on_marker_style_changed(self, marker: str):
+        """Marker combo selection changed - update data point symbols."""
+        logger.info(f"Marker style changed to: {marker}")
+        # Map marker name to pyqtgraph symbol
+        marker_map = {
+            'Circle': 'o',
+            'Triangle': 't',
+            'Square': 's',
+            'Star': 'star'
+        }
+        symbol = marker_map.get(marker, 'o')
+        # Note: Would update plot item symbols here if we store references
+        # For now just log the change
 
     def _on_filter_toggled(self, checked: bool):
         """Data filtering checkbox toggled."""

@@ -515,6 +515,12 @@ class TransmissionProcessor:
                     s_roi_mean = np.mean(s_roi)
                     p_roi_mean = np.mean(p_roi)
 
+                    logger.debug(
+                        f"Ch {channel.upper()} P/S ROI: SPR={spr_wavelength:.1f}nm, "
+                        f"S_mean={s_roi_mean:.1f}, P_mean={p_roi_mean:.1f}, "
+                        f"ROI_points={np.sum(roi_mask)}"
+                    )
+
                     if s_roi_mean > 0:
                         qc["ratio"] = float(p_roi_mean / s_roi_mean)
 
@@ -537,6 +543,20 @@ class TransmissionProcessor:
                             qc["warnings"].append(
                                 f"P/S ratio ({qc['ratio']:.2f}) < 0.10 - unusual, verify sensor",
                             )
+                    else:
+                        qc["warnings"].append(
+                            f"Cannot calculate P/S ratio - S-pol ROI mean is {s_roi_mean:.1f} (<= 0)"
+                        )
+                        logger.warning(
+                            f"Ch {channel.upper()}: S-pol ROI mean is zero or negative, cannot calculate P/S ratio"
+                        )
+                else:
+                    qc["warnings"].append(
+                        f"Cannot calculate P/S ratio - no wavelength points in ROI around {spr_wavelength:.1f}nm"
+                    )
+                    logger.warning(
+                        f"Ch {channel.upper()}: No ROI points found around SPR wavelength {spr_wavelength:.1f}nm"
+                    )
 
             # 4. Overall Status Assessment
             passed = (
@@ -558,10 +578,13 @@ class TransmissionProcessor:
 
             if passed:
                 qc["status"] = "[OK] PASS"
+                qc["overall_pass"] = True
             elif failed:
                 qc["status"] = "[ERROR] FAIL"
+                qc["overall_pass"] = False
             else:
                 qc["status"] = "[WARN] WARNING"
+                qc["overall_pass"] = False
 
             logger.debug(
                 f"Ch {channel.upper()} QC: {qc['status']} | FWHM={qc['fwhm']:.1f}nm | Dip={qc['dip_depth']:.1f}% @ {qc['dip_wavelength']:.1f}nm",

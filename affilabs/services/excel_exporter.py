@@ -49,6 +49,7 @@ class ExcelExporter:
         analysis_results: list[dict],
         metadata: dict,
         recording_start_time: float,
+        alignment_data: dict | None = None,
     ) -> None:
         """Export all data to Excel file with multiple sheets.
 
@@ -61,6 +62,7 @@ class ExcelExporter:
             analysis_results: List of analysis measurement dicts
             metadata: Dictionary of metadata key-value pairs
             recording_start_time: Unix timestamp of recording start
+            alignment_data: Dict mapping cycle_index -> {'channel': str, 'shift': float}
 
         Raises:
             ImportError: If pandas/openpyxl not installed
@@ -121,6 +123,21 @@ class ExcelExporter:
                     df_meta.to_excel(writer, sheet_name="Metadata", index=False)
                     logger.debug(f"Exported {len(metadata)} metadata items")
 
+                # Sheet 7: Alignment (Edits tab settings)
+                if alignment_data:
+                    alignment_rows = []
+                    for cycle_idx, settings in alignment_data.items():
+                        alignment_rows.append(
+                            {
+                                "Cycle_Index": cycle_idx,
+                                "Channel_Filter": settings.get("channel", "All"),
+                                "Time_Shift_s": settings.get("shift", 0.0),
+                            }
+                        )
+                    df_alignment = pd.DataFrame(alignment_rows)
+                    df_alignment.to_excel(writer, sheet_name="Alignment", index=False)
+                    logger.debug(f"Exported alignment settings for {len(alignment_rows)} cycles")
+
             logger.info(f"✓ Exported to Excel: {filepath}")
 
         except ImportError:
@@ -180,6 +197,11 @@ class ExcelExporter:
                 "analysis": (
                     excel_data.get("Analysis", pd.DataFrame()).to_dict("records")
                     if "Analysis" in excel_data
+                    else []
+                ),
+                "alignment": (
+                    excel_data.get("Alignment", pd.DataFrame()).to_dict("records")
+                    if "Alignment" in excel_data
                     else []
                 ),
                 "metadata": {},

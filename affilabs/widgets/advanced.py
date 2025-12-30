@@ -29,7 +29,6 @@ class P4SPRAdvMenu(QDialog):
 
     new_parameter_sig = Signal(dict)
     get_parameter_sig = Signal()
-    measure_afterglow_sig = Signal()
     quality_monitoring_toggled = Signal(bool)
 
     def __init__(self: Self, parent: QWidget | None = None) -> None:
@@ -43,24 +42,7 @@ class P4SPRAdvMenu(QDialog):
         # Add session quality monitoring UI section
         self._setup_quality_monitoring_ui()
 
-        # Hidden OEM/factory feature: optical calibration (LED afterglow characterization)
-        # NOT exposed to end-users - this is factory/service terminology
-        self.measure_afterglow_btn = QPushButton("Run Optical Calibration…", self)
-        self.measure_afterglow_btn.setToolTip(
-            "[OEM/Factory Only] Characterize optical system response across integration times.\n"
-            "This measures LED phosphor decay characteristics for correction algorithms.",
-        )
-        # Add next to Update Settings button at the bottom
-        try:
-            self.ui.horizontalLayout.addWidget(self.measure_afterglow_btn)
-        except Exception:
-            # Fallback: place in dialog if layout not exposed
-            self.measure_afterglow_btn.setParent(self)
-        self.measure_afterglow_btn.clicked.connect(self._emit_measure_afterglow)
-        # Hidden by default; shown only when enabled by host app
-        self.measure_afterglow_btn.setVisible(False)
-
-        # Small status line for LED/post delays and afterglow file
+        # Small status line for LED/post delays
         self.delay_status = QLabel(self)
         self.delay_status.setObjectName("delay_status")
         try:
@@ -78,14 +60,6 @@ class P4SPRAdvMenu(QDialog):
         )
         # Hide delay status by default (shown only in DEV mode)
         self.delay_status.setVisible(False)
-
-    def enable_afterglow_button(self: Self, visible: bool) -> None:
-        """Show or hide the optical calibration button (OEM/factory feature only).
-
-        Note: Despite method name 'afterglow', the button text is 'Optical Calibration'
-        to use customer-facing terminology instead of internal technical terms.
-        """
-        self.measure_afterglow_btn.setVisible(bool(visible))
 
     def enable_delay_status(self: Self, visible: bool) -> None:
         """Show or hide the delay status label."""
@@ -155,15 +129,6 @@ class P4SPRAdvMenu(QDialog):
             self.quality_monitoring_checkbox.blockSignals(False)
         except Exception:
             pass
-
-    def _emit_measure_afterglow(self: Self) -> None:
-        # Give immediate local feedback in the dialog
-        try:
-            if hasattr(self, "delay_status"):
-                self.delay_status.setText("Starting afterglow calibration…")
-        except Exception:
-            pass
-        self.measure_afterglow_sig.emit()
 
     def set_delay_status(
         self: Self,

@@ -526,15 +526,12 @@ class CalibrationQCDialog(QDialog):
         layout.setSpacing(8)
 
         table = QTableWidget()
-        table.setColumnCount(7)
+        table.setColumnCount(4)
         table.setHorizontalHeaderLabels(
             [
                 "Ch",
                 "Min Trans%",
-                "P/S Ratio",
-                "Dip",
-                "FWHM",
-                "Diagnostic",
+                "FWHM (nm)",
                 "Status",
             ],
         )
@@ -592,109 +589,88 @@ class CalibrationQCDialog(QDialog):
                 else:
                     table.setItem(idx, 1, QTableWidgetItem("N/A"))
 
-                # P/S Ratio
-                ratio = ch_data.get("ratio")
-                if ratio is not None:
-                    ratio_item = QTableWidgetItem(f"{ratio:.2f}")
-                    ratio_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    if 0.10 <= ratio <= 0.95:
-                        ratio_item.setForeground(QColor("#34C759"))
-                    else:
-                        ratio_item.setForeground(QColor("#FF9500"))
-                    table.setItem(idx, 2, ratio_item)
-                else:
-                    table.setItem(idx, 2, QTableWidgetItem("N/A"))
-
-                # Dip Detected
-                dip_detected = ch_data.get("dip_detected", False)
-                dip_text = "[OK]" if dip_detected else "[ERROR]"
-                dip_item = QTableWidgetItem(dip_text)
-                dip_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                table.setItem(idx, 3, dip_item)
-
-                # FWHM
+                # FWHM (moved to column 2)
                 fwhm = ch_data.get("fwhm")
                 if fwhm is not None:
                     fwhm_item = QTableWidgetItem(f"{fwhm:.1f}")
                     fwhm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    if fwhm < 60:
-                        fwhm_item.setForeground(QColor("#34C759"))  # Green (good)
-                    elif fwhm < 70:
-                        fwhm_item.setForeground(
-                            QColor("#FF9500"),
-                        )  # Orange (acceptable)
+                    # Color code: green < 80nm, yellow 80-100nm, red > 100nm
+                    if fwhm < 80:
+                        fwhm_item.setForeground(QColor("#34C759"))
+                    elif fwhm < 100:
+                        fwhm_item.setForeground(QColor("#FF9500"))
                     else:
                         fwhm_item.setForeground(QColor("#FF3B30"))
-                    table.setItem(idx, 4, fwhm_item)
+                    table.setItem(idx, 2, fwhm_item)
                 else:
-                    table.setItem(idx, 4, QTableWidgetItem("N/A"))
+                    table.setItem(idx, 2, QTableWidgetItem("N/A"))
 
-                # Diagnostic reason
-                diagnostic = ch_data.get("reason", "N/A")
-                diag_item = QTableWidgetItem(diagnostic)
-                diag_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-                table.setItem(idx, 5, diag_item)
-
-                # Status
+                # Status (column 3)
                 status = ch_data.get("status", "INDETERMINATE")
-                status_item = QTableWidgetItem(
-                    status.replace("[OK] ", "")
-                    .replace("[ERROR] ", "")
-                    .replace("[WARN] ", ""),
-                )
-                status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                # Convert status to user-friendly display
                 if "[OK]" in status or "PASS" in status:
-                    status_item.setForeground(QColor("#34C759"))
+                    display_status = "GOOD"
+                    status_color = QColor("#34C759")
                     global_pass_transmission = True
                 elif "[ERROR]" in status or "FAIL" in status:
-                    status_item.setForeground(QColor("#FF3B30"))
+                    display_status = "BAD"
+                    status_color = QColor("#FF3B30")
                 else:
-                    status_item.setForeground(QColor("#FF9500"))
-                table.setItem(idx, 6, status_item)
+                    display_status = "CHECK"
+                    status_color = QColor("#FF9500")
+
+                status_item = QTableWidgetItem(display_status)
+                status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                status_item.setForeground(status_color)
+                table.setItem(idx, 3, status_item)
             else:
                 # No transmission data
-                for col in range(1, 7):
+                for col in range(1, 4):
                     item = QTableWidgetItem("N/A")
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     table.setItem(idx, col, item)
 
         # Optimize column widths
-        table.setColumnWidth(0, 40)  # Ch
-        table.setColumnWidth(1, 90)  # Min Trans%
-        table.setColumnWidth(2, 80)  # P/S Ratio
-        table.setColumnWidth(3, 50)  # Dip
-        table.setColumnWidth(4, 60)  # FWHM
-        table.setColumnWidth(5, 320)  # Diagnostic
+        table.setColumnWidth(0, 60)  # Ch
+        table.setColumnWidth(1, 110)  # Min Trans%
+        table.setColumnWidth(2, 100)  # FWHM
         table.horizontalHeader().setSectionResizeMode(
-            6,
+            3,
             table.horizontalHeader().ResizeMode.Stretch,
         )  # Status
         table.setMaximumHeight(160)
-        layout.addWidget(table)
 
-        # Status summary
+        # Create horizontal layout for table and message
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(12)
+        content_layout.addWidget(table, stretch=2)
+
+        # Status summary box (next to table)
         if global_pass_transmission:
-            result_text = "[OK] ALL CHECKS PASSED: SPR dip detected with good transmission"
+            result_text = "✓ SENSOR QUALITY: EXCELLENT - All channels calibrated successfully"
             result_color = "#34C759"
         else:
-            result_text = "[ERROR] CALIBRATION ISSUES: Check sensor hydration and peak quality"
+            result_text = "⚠ SENSOR QUALITY: POOR - Check sensor hydration and peak quality"
             result_color = "#FF3B30"
 
         result_label = QLabel(result_text)
         result_label.setWordWrap(True)
+        result_label.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         result_label.setStyleSheet(f"""
             QLabel {{
                 color: {result_color};
                 font-weight: 600;
-                padding: 8px;
+                padding: 12px;
                 background: #F5F5F7;
                 border-radius: 4px;
-                border: 1px solid {result_color};
-                font-size: 11px;
+                border: 2px solid {result_color};
+                font-size: 12px;
             }}
         """)
-        layout.addWidget(result_label)
+        result_label.setMinimumHeight(140)
+        content_layout.addWidget(result_label, stretch=1)
 
+        layout.addLayout(content_layout)
         container_layout.addWidget(frame)
 
         return container
@@ -1028,13 +1004,11 @@ class CalibrationQCDialog(QDialog):
         layout.addWidget(title)
 
         table = QTableWidget()
-        table.setColumnCount(6)
+        table.setColumnCount(4)
         table.setHorizontalHeaderLabels(
             [
                 "Channel",
                 "Min Trans %",
-                "P/S Ratio",
-                "Dip Detected",
                 "FWHM (nm)",
                 "Status",
             ],
@@ -1100,63 +1074,42 @@ class CalibrationQCDialog(QDialog):
                 else:
                     table.setItem(idx, 1, QTableWidgetItem("N/A"))
 
-                # P/S Ratio
-                ratio = ch_data.get("ratio")
-                if ratio is not None:
-                    ratio_item = QTableWidgetItem(f"{ratio:.3f}")
-                    ratio_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    # Color code: green if valid (0.1-0.95), yellow if borderline, red if out of range
-                    if 0.10 <= ratio <= 0.95:
-                        ratio_item.setForeground(QColor("#34C759"))
-                    elif 0.95 < ratio < 1.15:
-                        ratio_item.setForeground(QColor("#FF9500"))
-                    else:
-                        ratio_item.setForeground(QColor("#FF3B30"))
-                    table.setItem(idx, 2, ratio_item)
-                else:
-                    table.setItem(idx, 2, QTableWidgetItem("N/A"))
-
-                # Dip Detected
-                dip_detected = ch_data.get("dip_detected", False)
-                dip_text = "[OK] YES" if dip_detected else "[ERROR] NO"
-                dip_item = QTableWidgetItem(dip_text)
-                dip_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if dip_detected:
-                    dip_item.setForeground(QColor("#34C759"))
-                else:
-                    dip_item.setForeground(QColor("#FF3B30"))
-                table.setItem(idx, 3, dip_item)
-
-                # FWHM
+                # FWHM (moved to column 2)
                 fwhm = ch_data.get("fwhm")
                 if fwhm is not None:
                     fwhm_item = QTableWidgetItem(f"{fwhm:.1f}")
                     fwhm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    # Color code FWHM quality
-                    if fwhm < 30:
+                    # Color code FWHM quality: green < 80nm, yellow 80-100nm, red > 100nm
+                    if fwhm < 80:
                         fwhm_item.setForeground(QColor("#34C759"))
-                    elif fwhm < 50:
+                    elif fwhm < 100:
                         fwhm_item.setForeground(QColor("#FF9500"))
                     else:
                         fwhm_item.setForeground(QColor("#FF3B30"))
-                    table.setItem(idx, 4, fwhm_item)
+                    table.setItem(idx, 2, fwhm_item)
                 else:
-                    table.setItem(idx, 4, QTableWidgetItem("N/A"))
+                    table.setItem(idx, 2, QTableWidgetItem("N/A"))
 
-                # Status (now column 5 after adding Min Trans %)
+                # Status (now column 3)
                 status = ch_data.get("status", "INDETERMINATE")
-                status_item = QTableWidgetItem(status)
-                status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if "[OK] PASS" in status:
-                    status_item.setForeground(QColor("#34C759"))
-                elif "[ERROR] FAIL" in status:
-                    status_item.setForeground(QColor("#FF3B30"))
+                # Convert status to user-friendly display
+                if "[OK] PASS" in status or "PASS" in status:
+                    display_status = "GOOD"
+                    status_color = QColor("#34C759")
+                elif "[ERROR] FAIL" in status or "FAIL" in status:
+                    display_status = "BAD"
+                    status_color = QColor("#FF3B30")
                 else:
-                    status_item.setForeground(QColor("#FF9500"))
-                table.setItem(idx, 5, status_item)
+                    display_status = "CHECK"
+                    status_color = QColor("#FF9500")
+
+                status_item = QTableWidgetItem(display_status)
+                status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                status_item.setForeground(status_color)
+                table.setItem(idx, 3, status_item)
             else:
                 # No data for this channel
-                for col in range(1, 6):
+                for col in range(1, 4):
                     item = QTableWidgetItem("N/A")
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     table.setItem(idx, col, item)
@@ -1165,17 +1118,19 @@ class CalibrationQCDialog(QDialog):
         table.resizeColumnsToContents()
         table.horizontalHeader().setStretchLastSection(False)
         table.setColumnWidth(0, 100)  # Channel
-        table.setColumnWidth(1, 100)  # Min Trans %
-        table.setColumnWidth(2, 100)  # P/S Ratio
-        table.setColumnWidth(3, 120)  # Dip Detected
-        table.setColumnWidth(4, 100)  # FWHM
+        table.setColumnWidth(1, 120)  # Min Trans %
+        table.setColumnWidth(2, 100)  # FWHM
         table.horizontalHeader().setSectionResizeMode(
-            5,
+            3,
             table.horizontalHeader().ResizeMode.Stretch,
         )  # Status
         table.setMinimumHeight(180)
         table.setMaximumHeight(220)
-        layout.addWidget(table)
+
+        # Create horizontal layout for table and message
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(12)
+        content_layout.addWidget(table, stretch=2)
 
         # Overall result - check if all channels passed
         passed_channels = [
@@ -1190,10 +1145,10 @@ class CalibrationQCDialog(QDialog):
         ]
 
         if len(passed_channels) == len(channels) and len(failed_channels) == 0:
-            result_text = "[OK] TRANSMISSION VALIDATION: ALL CHANNELS PASSED (SPR dip detected, P/S ratio valid)"
+            result_text = "✓ SENSOR QUALITY: EXCELLENT - All channels calibrated successfully"
             result_color = "#34C759"
         elif len(failed_channels) > 0:
-            result_text = f"[ERROR] TRANSMISSION VALIDATION: {len(failed_channels)} CHANNEL(S) FAILED (check sensor hydration)"
+            result_text = f"⚠ SENSOR QUALITY: POOR - {len(failed_channels)} channel(s) need attention (check hydration)"
             result_color = "#FF3B30"
         else:
             result_text = (
@@ -1203,6 +1158,7 @@ class CalibrationQCDialog(QDialog):
 
         result_label = QLabel(result_text)
         result_label.setWordWrap(True)
+        result_label.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
         result_label.setStyleSheet(f"""
             QLabel {{
                 color: {result_color};
@@ -1210,11 +1166,14 @@ class CalibrationQCDialog(QDialog):
                 padding: 12px;
                 background: #F5F5F7;
                 border-radius: 6px;
-                border: 1px solid {result_color};
+                border: 2px solid {result_color};
                 font-size: 12px;
             }}
         """)
-        layout.addWidget(result_label)
+        result_label.setMinimumHeight(200)
+        content_layout.addWidget(result_label, stretch=1)
+
+        layout.addLayout(content_layout)
 
         return frame
 

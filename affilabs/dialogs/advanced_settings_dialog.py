@@ -254,13 +254,6 @@ class AdvancedSettingsDialog(QDialog):
         self.serial_value.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 500))
         device_info.addRow(serial_label, self.serial_value)
 
-        # Afterglow Calibration Status
-        afterglow_label = QLabel("Afterglow Calibration:")
-        afterglow_label.setStyleSheet(label_style(13, Colors.SECONDARY_TEXT))
-        self.afterglow_value = QLabel("Not calibrated")
-        self.afterglow_value.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 500))
-        device_info.addRow(afterglow_label, self.afterglow_value)
-
         # Calibration Date
         cal_date_label = QLabel("Calibration Date:")
         cal_date_label.setStyleSheet(label_style(13, Colors.SECONDARY_TEXT))
@@ -414,7 +407,9 @@ class AdvancedSettingsDialog(QDialog):
             if pipeline_idx in pipeline_map:
                 pipeline_id = pipeline_map[pipeline_idx]
                 registry.set_active_pipeline(pipeline_id)
-                logger.info(f"  Pipeline: {registry.get_active_pipeline().name}")
+                active_pipeline = registry.get_active_pipeline()
+                pipeline_name = getattr(active_pipeline, 'pipeline_id', pipeline_id)
+                logger.info(f"  Pipeline: {pipeline_name}")
 
             logger.info("✅ Settings applied successfully!")
 
@@ -465,29 +460,16 @@ class AdvancedSettingsDialog(QDialog):
     def load_device_info(
         self,
         serial="Not detected",
-        afterglow_cal=False,
         cal_date=None,
     ):
         """Load device information into the dialog.
 
         Args:
             serial: Device serial number
-            afterglow_cal: Whether afterglow calibration is present
             cal_date: Calibration date (string or datetime)
 
         """
         self.serial_value.setText(serial if serial else "Not detected")
-
-        if afterglow_cal:
-            self.afterglow_value.setText("✓ Calibrated")
-            self.afterglow_value.setStyleSheet(
-                "font-size: 13px; color: #34C759; font-weight: 600;",
-            )
-        else:
-            self.afterglow_value.setText("Not calibrated")
-            self.afterglow_value.setStyleSheet(
-                "font-size: 13px; color: #FF9500; font-weight: 600;",
-            )
 
         if cal_date:
             if isinstance(cal_date, str):

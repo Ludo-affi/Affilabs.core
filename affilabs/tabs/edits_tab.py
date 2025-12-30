@@ -268,6 +268,73 @@ class EditsTab:
         shift_layout.addWidget(self.alignment_shift_spinbox, 1)
         layout.addLayout(shift_layout)
 
+        # Divider
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+        divider.setStyleSheet("background: #D1D1D6;")
+        layout.addWidget(divider)
+
+        # Cycle boundaries header
+        boundaries_label = QLabel("Cycle Boundaries")
+        boundaries_label.setStyleSheet("font-size: 12px; font-weight: 600; color: #1D1D1F; margin-top: 4px;")
+        layout.addWidget(boundaries_label)
+
+        # Start time editor
+        start_layout = QHBoxLayout()
+        start_label = QLabel("Start Time:")
+        start_label.setStyleSheet("font-size: 12px; color: #1D1D1F;")
+        start_layout.addWidget(start_label)
+
+        self.cycle_start_spinbox = QDoubleSpinBox()
+        self.cycle_start_spinbox.setRange(0.0, 999999.0)
+        self.cycle_start_spinbox.setValue(0.0)
+        self.cycle_start_spinbox.setSuffix(" s")
+        self.cycle_start_spinbox.setDecimals(2)
+        self.cycle_start_spinbox.setSingleStep(1.0)
+        self.cycle_start_spinbox.setStyleSheet("""
+            QDoubleSpinBox {
+                background: white;
+                border: 1px solid #D1D1D6;
+                border-radius: 4px;
+                padding: 4px;
+                font-size: 12px;
+            }
+            QDoubleSpinBox:hover {
+                border: 1px solid #007AFF;
+            }
+        """)
+        self.cycle_start_spinbox.valueChanged.connect(self._on_cycle_start_changed)
+        start_layout.addWidget(self.cycle_start_spinbox, 1)
+        layout.addLayout(start_layout)
+
+        # End time editor
+        end_layout = QHBoxLayout()
+        end_label = QLabel("End Time:")
+        end_label.setStyleSheet("font-size: 12px; color: #1D1D1F;")
+        end_layout.addWidget(end_label)
+
+        self.cycle_end_spinbox = QDoubleSpinBox()
+        self.cycle_end_spinbox.setRange(0.0, 999999.0)
+        self.cycle_end_spinbox.setValue(0.0)
+        self.cycle_end_spinbox.setSuffix(" s")
+        self.cycle_end_spinbox.setDecimals(2)
+        self.cycle_end_spinbox.setSingleStep(1.0)
+        self.cycle_end_spinbox.setStyleSheet("""
+            QDoubleSpinBox {
+                background: white;
+                border: 1px solid #D1D1D6;
+                border-radius: 4px;
+                padding: 4px;
+                font-size: 12px;
+            }
+            QDoubleSpinBox:hover {
+                border: 1px solid #007AFF;
+            }
+        """)
+        self.cycle_end_spinbox.valueChanged.connect(self._on_cycle_end_changed)
+        end_layout.addWidget(self.cycle_end_spinbox, 1)
+        layout.addLayout(end_layout)
+
         return panel
 
     def _create_timeline_navigator(self):
@@ -409,21 +476,25 @@ class EditsTab:
 
         layout.addStretch()
 
-        # Create Segment button
-        create_segment_btn = QPushButton("� Build Analysis Cycle")
-        create_segment_btn.setToolTip(
-            "Combine selected cycles into a new processable sensorgram for Analysis window.\n\n"
-            "Select multiple cycles, choose channels and apply time shifts, then click to create\n"
-            "a unified cycle that can be loaded in the Analysis tab for peak tracking and reporting."
+        # Create Processing Cycle button
+        create_processing_btn = QPushButton("📊 Create Processing Cycle")
+        create_processing_btn.setToolTip(
+            "Extract and combine selected channels from multiple cycles.\n\n"
+            "1. Select cycles in table\n"
+            "2. Set Channel filter for each cycle (A/B/C/D or All)\n"
+            "3. Click to extract and merge only those channels\n\n"
+            "Perfect for creating single-channel datasets across multiple cycles."
         )
-        create_segment_btn.setFixedHeight(32)
-        create_segment_btn.setStyleSheet(
-            "QPushButton { background: #007AFF; color: white; border-radius: 8px; "
+        create_processing_btn.setFixedHeight(32)
+        create_processing_btn.setStyleSheet(
+            "QPushButton { background: #34C759; color: white; border-radius: 8px; "
             "font-size: 13px; font-weight: 600; padding: 4px 16px; }"
-            "QPushButton:hover { background: #0051D5; }"
+            "QPushButton:hover { background: #28A745; }"
         )
-        create_segment_btn.clicked.connect(self._create_segment_from_selection)
-        layout.addWidget(create_segment_btn)
+        create_processing_btn.clicked.connect(self._create_processing_cycle)
+        layout.addWidget(create_processing_btn)
+
+        layout.addSpacing(8)
 
         # Export button
         export_btn = QPushButton("📥 Export")
@@ -673,7 +744,31 @@ class EditsTab:
                 df_meta = pd.DataFrame(metadata)
                 df_meta.to_excel(writer, sheet_name='Cycle Metadata', index=False)
 
-                # Sheet 3: Export info
+                # Sheet 3: Alignment settings (for re-loading)
+                if self._cycle_alignment:
+                    alignment_rows = []
+                    for cycle_idx, settings in self._cycle_alignment.items():
+                        if cycle_idx in selected_rows:
+                            alignment_rows.append({
+                                'Cycle_Index': cycle_idx,
+                                'Channel_Filter': settings.get('channel', 'All'),
+                                'Time_Shift_s': settings.get('shift', 0.0)
+                            })
+                    if alignment_rows:
+                        df_alignment = pd.DataFrame(alignment_rows)
+                        df_alignment.to_excel(writer, sheet_name='Alignment', index=False)
+
+                # Sheet 4: Flags (if any)
+                if self._edits_flags:
+                    flag_rows = []
+                    for flag in self._edits_flags:
+                        flag_rows.append(flag.to_export_dict())
+                    if flag_rows:
+                        df_flags = pd.DataFrame(flag_rows)
+                        df_flags.to_excel(writer, sheet_name='Flags', index=False)
+                        logger.debug(f"Exported {len(flag_rows)} flags")
+
+                # Sheet 5: Export info
                 export_info = pd.DataFrame([{
                     'Export_Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'Total_Cycles': len(selected_rows),
@@ -747,6 +842,96 @@ class EditsTab:
         if hasattr(self.main_window, '_on_cycle_selected_in_table'):
             self.main_window._on_cycle_selected_in_table()
 
+    def _on_cycle_start_changed(self, start_time):
+        """Handle cycle start time change."""
+        from affilabs.utils.logger import logger
+
+        # Get selected row
+        selected_items = self.cycle_data_table.selectedItems()
+        if not selected_items:
+            return
+
+        row_idx = selected_items[0].row()
+
+        # Update cycle data
+        if row_idx < len(self.main_window._loaded_cycles_data):
+            cycle = self.main_window._loaded_cycles_data[row_idx]
+            old_start = cycle.get('start_time_sensorgram', 0)
+            cycle['start_time_sensorgram'] = start_time
+
+            # Ensure end time is after start time
+            end_time = cycle.get('end_time_sensorgram', start_time + 300)
+            if end_time <= start_time:
+                end_time = start_time + 300
+                cycle['end_time_sensorgram'] = end_time
+                self.cycle_end_spinbox.blockSignals(True)
+                self.cycle_end_spinbox.setValue(end_time)
+                self.cycle_end_spinbox.blockSignals(False)
+
+            # Update duration
+            duration_min = (end_time - start_time) / 60.0
+            cycle['duration_minutes'] = duration_min
+
+            logger.info(f"Cycle {row_idx + 1} start time: {old_start:.2f}s → {start_time:.2f}s")
+
+            # Update table
+            self._update_cycle_table_row(row_idx, cycle)
+
+            # Trigger graph update
+            if hasattr(self.main_window, '_on_cycle_selected_in_table'):
+                self.main_window._on_cycle_selected_in_table()
+
+    def _on_cycle_end_changed(self, end_time):
+        """Handle cycle end time change."""
+        from affilabs.utils.logger import logger
+
+        # Get selected row
+        selected_items = self.cycle_data_table.selectedItems()
+        if not selected_items:
+            return
+
+        row_idx = selected_items[0].row()
+
+        # Update cycle data
+        if row_idx < len(self.main_window._loaded_cycles_data):
+            cycle = self.main_window._loaded_cycles_data[row_idx]
+            start_time = cycle.get('start_time_sensorgram', 0)
+
+            # Ensure end time is after start time
+            if end_time <= start_time:
+                end_time = start_time + 300
+                self.cycle_end_spinbox.blockSignals(True)
+                self.cycle_end_spinbox.setValue(end_time)
+                self.cycle_end_spinbox.blockSignals(False)
+
+            old_end = cycle.get('end_time_sensorgram', end_time)
+            cycle['end_time_sensorgram'] = end_time
+
+            # Update duration
+            duration_min = (end_time - start_time) / 60.0
+            cycle['duration_minutes'] = duration_min
+
+            logger.info(f"Cycle {row_idx + 1} end time: {old_end:.2f}s → {end_time:.2f}s")
+
+            # Update table
+            self._update_cycle_table_row(row_idx, cycle)
+
+            # Trigger graph update
+            if hasattr(self.main_window, '_on_cycle_selected_in_table'):
+                self.main_window._on_cycle_selected_in_table()
+
+    def _update_cycle_table_row(self, row_idx, cycle):
+        """Update a single row in the cycle table."""
+        from PySide6.QtWidgets import QTableWidgetItem
+
+        # Update table cells
+        self.cycle_data_table.setItem(row_idx, 0, QTableWidgetItem(str(cycle.get('cycle_number', row_idx + 1))))
+        self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(cycle.get('type', 'Unknown')))
+        self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(cycle.get('duration_minutes', ''))))
+        self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(str(cycle.get('concentration_value', ''))))
+        self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(cycle.get('concentration_units', '')))
+        self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(cycle.get('notes', '')))
+
     def _select_cycle_by_index(self, cycle_idx):
         """Select a cycle by index and move cursors to its bounds.
 
@@ -762,12 +947,12 @@ class EditsTab:
         # The table selection change will trigger _on_cycle_selected_in_table
         # which updates the cursors and graph
 
+    def _create_processing_cycle(self):
+        """Create a processing cycle by extracting selected channels from multiple cycles.
 
-    def _create_segment_from_selection(self):
-        """Create a NEW combined cycle from selected channels of different cycles.
-
-        Extracts actual data from selected cycles, applies channel filters and time shifts,
-        and saves as a new processable cycle for Analysis window.
+        Uses the channel filter settings from the alignment panel to determine which
+        channel to extract from each cycle. Concatenates the extracted data into a
+        new synthetic cycle for data processing.
         """
         from affilabs.utils.logger import logger
         from PySide6.QtWidgets import QInputDialog, QMessageBox
@@ -783,194 +968,170 @@ class EditsTab:
                 QMessageBox.information(
                     self.main_window,
                     "No Selection",
-                    "Please select one or more cycles to create a segment."
+                    "Please select one or more cycles to create a processing cycle."
                 )
                 return
 
-            # Ask user for segment name
-            segment_name, ok = QInputDialog.getText(
+            # Ask user for cycle name
+            cycle_name, ok = QInputDialog.getText(
                 self.main_window,
-                "Create New Cycle Segment",
-                "Enter a name for this new combined cycle:",
-                text=f"Combined_Cycle_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                "Create Processing Cycle",
+                "Enter a name for this processing cycle:",
+                text=f"Processing_Cycle_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
 
-            if not ok or not segment_name:
+            if not ok or not cycle_name:
                 return  # User cancelled
 
-            logger.info(f"[SEGMENT] Creating new combined cycle: {segment_name}")
-            logger.info(f"[SEGMENT] Creating new combined cycle: {segment_name}")
+            logger.info(f"📊 Creating processing cycle: {cycle_name}")
+            logger.info(f"   Extracting from {len(selected_rows)} source cycle(s)")
 
-            # Collect combined data from all selected cycles
-            combined_raw_data = []
-            segment_metadata = {
-                'name': segment_name,
+            # Collect extracted channel data
+            combined_data = []
+            current_time = 0.0
+
+            metadata = {
+                'name': cycle_name,
                 'created': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'source_cycles': [],
-                'type': 'combined',
-                'description': f"Combined cycle from {len(selected_rows)} source cycle(s)"
+                'type': 'processing',
+                'description': f"Channel-filtered processing cycle from {len(selected_rows)} source(s)"
             }
 
             WAVELENGTH_TO_RU = 355.0
-            current_time_offset = 0.0  # Running time to concatenate cycles
 
             for row in selected_rows:
                 if row >= len(self.main_window._loaded_cycles_data):
                     continue
 
                 cycle = self.main_window._loaded_cycles_data[row]
+                cycle_name_src = cycle.get('name', f'Cycle {row}')
+                start_time = cycle.get('start_time_sensorgram', 0.0)
+                end_time = cycle.get('end_time_sensorgram', 0.0)
 
-                # Get alignment settings
-                channel_filter = 'All'
-                cycle_shift = 0.0
-                if hasattr(self.main_window, '_cycle_alignment') and row in self.main_window._cycle_alignment:
-                    channel_filter = self.main_window._cycle_alignment[row]['channel']
-                    cycle_shift = self.main_window._cycle_alignment[row]['shift']
+                # Get alignment settings for this cycle (determines which channel to extract)
+                alignment = self._cycle_alignment.get(row, {'channel': 'All', 'shift': 0.0})
+                channel_filter = alignment.get('channel', 'All')
+                time_shift = alignment.get('shift', 0.0)
 
-                # Get cycle time range
-                start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time'))
-                end_time = cycle.get('end_time_sensorgram')
+                logger.info(f"   Cycle {row} ({cycle_name_src}): Extracting channel {channel_filter}, shift={time_shift}s")
 
-                if start_time is None:
-                    continue
-
-                if end_time is None:
-                    duration_min = cycle.get('duration_minutes', cycle.get('length_minutes', 5))
-                    end_time = start_time + (duration_min * 60) if duration_min else start_time + 300
-
-                # Record source cycle info
-                segment_metadata['source_cycles'].append({
-                    'cycle_index': row,
-                    'cycle_type': cycle.get('type', 'Unknown'),
-                    'channel_used': channel_filter,
-                    'time_shift': cycle_shift,
-                    'original_start': start_time,
-                    'original_end': end_time
+                # Record metadata
+                metadata['source_cycles'].append({
+                    'index': row,
+                    'name': cycle_name_src,
+                    'channel': channel_filter,
+                    'time_shift': time_shift,
+                    'duration_s': end_time - start_time
                 })
 
                 # Get raw data
-                raw_data = self.main_window.app.recording_mgr.data_collector.raw_data_rows
+                raw_data = self.main_window._loaded_raw_data
+                if raw_data is None or raw_data.empty:
+                    logger.warning(f"      No raw data available")
+                    continue
 
-                # Extract and process data points
-                for row_data in raw_data:
-                    time = row_data.get('elapsed', row_data.get('time', 0))
-                    if start_time <= time <= end_time:
-                        # Convert to relative time with shift, then add to running total
-                        relative_time = (time - start_time + cycle_shift) + current_time_offset
+                # Filter to cycle time range
+                cycle_mask = (raw_data['Time_s'] >= start_time) & (raw_data['Time_s'] <= end_time)
+                cycle_data = raw_data[cycle_mask].copy()
 
-                        # Handle both data formats
-                        if 'channel' in row_data and 'value' in row_data:
-                            ch = row_data.get('channel')
-                            value = row_data.get('value')
+                if cycle_data.empty:
+                    logger.warning(f"      No data in time range {start_time:.1f}-{end_time:.1f}s")
+                    continue
 
-                            # Apply channel filter
-                            if channel_filter != 'All' and ch != channel_filter.lower():
-                                continue
+                # Normalize time to start at current_time
+                cycle_data['Time_s'] = cycle_data['Time_s'] - start_time + time_shift + current_time
 
-                            if ch in ['a', 'b', 'c', 'd'] and value is not None:
-                                combined_raw_data.append({
-                                    'time': relative_time,
-                                    'channel': ch,
-                                    'value': value,
-                                    'source_cycle': row,
-                                    'source_type': cycle.get('type', 'Unknown')
-                                })
-                        else:
-                            # Wide format
-                            for ch in ['a', 'b', 'c', 'd']:
-                                if channel_filter != 'All' and ch != channel_filter.lower():
-                                    continue
+                # Extract only the selected channel(s)
+                channels_to_extract = ['A', 'B', 'C', 'D'] if channel_filter == 'All' else [channel_filter]
 
-                                wavelength = row_data.get(f'channel_{ch}', row_data.get(f'wavelength_{ch}'))
-                                if wavelength is not None:
-                                    combined_raw_data.append({
-                                        'time': relative_time,
-                                        'channel': ch,
-                                        'value': wavelength,
-                                        'source_cycle': row,
-                                        'source_type': cycle.get('type', 'Unknown')
-                                    })
+                for ch in channels_to_extract:
+                    wavelength_col = f'Wavelength_{ch}_nm'
+                    ru_col = f'Response_{ch}_RU'
 
-                # Update time offset for next cycle (concatenate cycles end-to-end)
-                cycle_duration = end_time - start_time + cycle_shift
-                current_time_offset += cycle_duration
+                    # Convert wavelength to RU if needed
+                    if wavelength_col in cycle_data.columns and ru_col not in cycle_data.columns:
+                        cycle_data[ru_col] = cycle_data[wavelength_col] * WAVELENGTH_TO_RU
 
-                logger.info(f"[SEGMENT] Extracted cycle {row}: {len([d for d in combined_raw_data if d['source_cycle'] == row])} points")
+                    # Extract channel data
+                    if ru_col in cycle_data.columns:
+                        for _, row_data in cycle_data.iterrows():
+                            combined_data.append({
+                                'Time_s': row_data['Time_s'],
+                                'Channel': ch.lower(),
+                                'Response_RU': row_data[ru_col]
+                            })
 
-            if not combined_raw_data:
+                # Update time offset
+                cycle_duration = end_time - start_time
+                current_time += cycle_duration
+
+                logger.info(f"      Extracted {len(cycle_data)} time points, total duration now: {current_time:.1f}s")
+
+            if not combined_data:
                 QMessageBox.warning(
                     self.main_window,
                     "No Data",
-                    "No data points were extracted from selected cycles.\n\n"
-                    "Check that cycles have valid time ranges."
+                    "No data was extracted from selected cycles.\n\n"
+                    "Check that cycles have valid data and channel filters are set."
                 )
                 return
 
-            # Save as Excel file (compatible with Analysis window)
-            segments_dir = Path('data_results/segments')
-            segments_dir.mkdir(parents=True, exist_ok=True)
+            # Save to Excel
+            output_dir = Path('data_results/processing_cycles')
+            output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create filename-safe name
-            safe_name = "".join(c for c in segment_name if c.isalnum() or c in (' ', '-', '_')).strip()
-            segment_file = segments_dir / f"{safe_name}.xlsx"
+            safe_name = "".join(c for c in cycle_name if c.isalnum() or c in (' ', '-', '_')).strip()
+            output_file = output_dir / f"{safe_name}.xlsx"
 
-            # Check if file exists
-            if segment_file.exists():
+            # Check if exists
+            if output_file.exists():
                 reply = QMessageBox.question(
                     self.main_window,
-                    "Segment Exists",
-                    f"A segment named '{segment_name}' already exists.\n\nOverwrite it?",
+                    "File Exists",
+                    f"Processing cycle '{cycle_name}' already exists.\n\nOverwrite?",
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
                 )
                 if reply == QMessageBox.No:
                     return
 
-            # Create Excel file with cycle data
-            with pd.ExcelWriter(segment_file, engine='openpyxl') as writer:
-                # Sheet 1: Raw Data (in long format for compatibility)
-                df_raw = pd.DataFrame(combined_raw_data)
-                df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
+            # Write Excel file
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                # Sheet 1: Extracted data in long format
+                df_data = pd.DataFrame(combined_data)
+                df_data.to_excel(writer, sheet_name='Data', index=False)
 
-                # Sheet 2: Cycles metadata (single combined cycle)
-                cycle_meta = pd.DataFrame([{
-                    'name': segment_name,
-                    'type': 'combined',
-                    'start_time_sensorgram': 0.0,
-                    'end_time_sensorgram': current_time_offset,
-                    'duration_minutes': current_time_offset / 60.0,
-                    'concentration_value': '',
-                    'concentration_units': '',
-                    'note': f"Combined from {len(selected_rows)} source cycles"
-                }])
-                cycle_meta.to_excel(writer, sheet_name='Cycles', index=False)
+                # Sheet 2: Metadata
+                df_meta = pd.DataFrame([metadata])
+                df_meta.to_excel(writer, sheet_name='Metadata', index=False)
 
-                # Sheet 3: Segment metadata
-                df_meta = pd.DataFrame([segment_metadata])
-                df_meta.to_excel(writer, sheet_name='Segment Info', index=False)
+                # Sheet 3: Source details
+                df_sources = pd.DataFrame(metadata['source_cycles'])
+                df_sources.to_excel(writer, sheet_name='Source_Cycles', index=False)
 
-            logger.info(f"✓ Created combined cycle segment: {segment_name}")
-            logger.info(f"  Total data points: {len(combined_raw_data)}")
-            logger.info(f"  Total duration: {current_time_offset:.1f}s")
-            logger.info(f"  Saved to: {segment_file}")
+            logger.info(f"✓ Created processing cycle: {cycle_name}")
+            logger.info(f"   Total data points: {len(combined_data)}")
+            logger.info(f"   Total duration: {current_time:.1f}s")
+            logger.info(f"   Saved to: {output_file}")
 
             QMessageBox.information(
                 self.main_window,
-                "Segment Created",
-                f"New combined cycle '{segment_name}' created!\n\n"
+                "Processing Cycle Created",
+                f"Processing cycle '{cycle_name}' created!\n\n"
                 f"Source cycles: {len(selected_rows)}\n"
-                f"Data points: {len(combined_raw_data)}\n"
-                f"Duration: {current_time_offset/60:.1f} min\n\n"
-                f"Saved to: {segment_file}\n\n"
-                f"You can load this in the Analysis window for kinetic fitting."
+                f"Data points: {len(combined_data)}\n"
+                f"Duration: {current_time/60:.1f} min\n\n"
+                f"Saved to:\n{output_file}\n\n"
+                f"This file contains only the selected channel(s) from each cycle."
             )
 
         except Exception as e:
-            logger.exception(f"Error creating segment: {e}")
+            logger.exception(f"Error creating processing cycle: {e}")
             QMessageBox.critical(
                 self.main_window,
-                "Segment Error",
-                f"Failed to create segment:\n{str(e)}"
+                "Processing Cycle Error",
+                f"Failed to create processing cycle:\n\n{str(e)}"
             )
 
     def add_cycle_markers_to_timeline(self, cycles_data):

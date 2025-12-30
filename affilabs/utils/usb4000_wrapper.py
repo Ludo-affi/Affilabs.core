@@ -50,6 +50,8 @@ _usb_device_lock = threading.RLock()
 class USB4000:
     def __init__(self, parent=None) -> None:
         self._device = None
+        self._device_handle = None  # Strong reference to prevent GC
+        self._usb_device = None  # Keep device descriptor alive
         self.opened = False
         self.serial_number = None
         self.spec = None
@@ -275,6 +277,12 @@ class USB4000:
             self.serial_number = target_serial
             self.spec = self._device
 
+            # Keep strong reference to prevent garbage collection
+            # Seabreeze uses weak references internally which can cause
+            # "weakly-referenced object no longer exists" errors
+            self._device_handle = self._device
+            self._usb_device = dev0  # Keep device descriptor alive
+
             try:
                 self._wavelengths = self._device.wavelengths()
                 self._num_pixels = len(self._wavelengths)
@@ -313,6 +321,8 @@ class USB4000:
         finally:
             self.opened = False
             self._device = None
+            self._device_handle = None  # Clear strong reference
+            self._usb_device = None  # Clear device descriptor
             self.spec = None
 
     def __del__(self) -> None:

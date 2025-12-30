@@ -115,15 +115,6 @@ class UIAdapter(QObject):
         """
         self.ui.status_presenter.set_subunit_status(subunit, ready, details)
 
-    def update_afterglow_status(self, afterglow_seconds: float) -> None:
-        """Update afterglow correction status display.
-
-        Args:
-            afterglow_seconds: Afterglow time in seconds
-
-        """
-        self.ui.update_afterglow_status(afterglow_seconds)
-
     def update_hardware_status(self, status: dict[str, Any]) -> None:
         """Update hardware status display with real hardware information.
 

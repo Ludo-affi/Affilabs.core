@@ -70,7 +70,6 @@ INTEGRATION REFERENCE:
 
    Status Updates:
    - _set_subunit_status(subunit: str, ready: bool, details: dict): Update device status
-   - update_afterglow_status(afterglow_sec: float): Update afterglow display
 
    Data Display:
    - Graph updates via curve.setData() on self.full_timeline_graph.curves[idx]
@@ -122,11 +121,16 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
+    QFormLayout,
     QFrame,
     QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -135,9 +139,12 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSlider,
+    QSpinBox,
     QSplitter,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -151,10 +158,22 @@ from typing import Any
 
 from affilabs.affilabs_sidebar import AffilabsSidebar
 from affilabs.core.system_intelligence import SystemState, get_system_intelligence
+from affilabs.dialogs.advanced_settings_dialog import AdvancedSettingsDialog
 from affilabs.inspector import ElementInspector
 from affilabs.plot_helpers import add_channel_curves, create_time_plot
 from affilabs.tabs.edits_tab import EditsTab  # Extracted tab content
-from affilabs.ui_styles import Colors, Fonts, Dimensions, create_card_shadow
+from affilabs.ui_styles import (
+    Colors,
+    Fonts,
+    Dimensions,
+    create_card_shadow,
+    segmented_button_style,
+    spinbox_style,
+    label_style,
+    title_style,
+    divider_style,
+    group_box_style,
+)
 from affilabs.utils.logger import logger
 
 
@@ -2955,6 +2974,57 @@ class AffilabsMainWindow(QMainWindow):
         self.edits_primary_graph.setLabel('bottom', 'Time (s)')
         self.edits_primary_graph.setMinimumHeight(400)
 
+        # Enable right-click menu for adding flags
+        self.edits_primary_graph.scene().sigMouseClicked.connect(self._on_edits_graph_clicked)
+
+        # Install keyboard event filter for flag movement
+        from PySide6.QtCore import QObject, QEvent, Qt
+
+        class EditsKeyboardFilter(QObject):
+            def __init__(self, main_window):
+                super().__init__()
+                self.main_window = main_window
+
+            def eventFilter(self, obj, event):
+                if event.type() == QEvent.Type.KeyPress:
+                    key = event.key()
+
+                    # Check if we have a selected flag
+                    if not hasattr(self.main_window, 'edits_tab'):
+                        return False
+
+                    selected_idx = self.main_window.edits_tab._selected_flag_idx
+                    if selected_idx is None or selected_idx >= len(self.main_window.edits_tab._edits_flags):
+                        return False
+
+                    flag = self.main_window.edits_tab._edits_flags[selected_idx]
+
+                    # Move flag left/right with arrow keys
+                    if key == Qt.Key.Key_Left:
+                        flag.time -= 1.0  # Move 1 second left
+                        flag.marker.setData([flag.time], [flag.spr])
+                        return True
+                    elif key == Qt.Key.Key_Right:
+                        flag.time += 1.0  # Move 1 second right
+                        flag.marker.setData([flag.time], [flag.spr])
+                        return True
+                    elif key == Qt.Key.Key_Escape:
+                        # Deselect flag
+                        flag.marker.setPen(pg.mkPen('w', width=2))
+                        self.main_window.edits_tab._selected_flag_idx = None
+                        return True
+                    elif key == Qt.Key.Key_Delete:
+                        # Delete flag
+                        self.main_window.edits_primary_graph.removeItem(flag.marker)
+                        self.main_window.edits_tab._edits_flags.pop(selected_idx)
+                        self.main_window.edits_tab._selected_flag_idx = None
+                        return True
+
+                return False
+
+        self._edits_keyboard_filter = EditsKeyboardFilter(self)
+        self.edits_primary_graph.installEventFilter(self._edits_keyboard_filter)
+
         # Create curves for each channel (matching main window colors)
         self.edits_graph_curves = [
             self.edits_primary_graph.plot(pen=pg.mkPen(color=(0, 0, 0), width=2)),       # Channel A: Black
@@ -5625,32 +5695,6 @@ End of Debug Log
                 self.nm_btn.isChecked() if hasattr(self, "nm_btn") else False,
             )
 
-        # OLD LED delay loading removed - replaced by new timing architecture
-        # All timing now controlled by: LED_ON_TIME_MS, DETECTOR_WAIT_MS, NUM_SCANS, SAFETY_BUFFER_MS
-
-        # Load current pipeline selection
-        try:
-            from affilabs.utils.processing_pipeline import get_pipeline_registry
-
-            registry = get_pipeline_registry()
-            active_pipeline = registry.get_active_pipeline()
-            pipeline_id = active_pipeline.pipeline_id
-
-            # Map pipeline IDs to combo box indices
-            pipeline_index_map = {
-                "fourier": 0,
-                "hybrid_original": 1,
-                "hybrid": 2,
-            }
-
-            if pipeline_id in pipeline_index_map and hasattr(dialog, "pipeline_combo"):
-                dialog.pipeline_combo.setCurrentIndex(pipeline_index_map[pipeline_id])
-                logger.debug(
-                    f"Loaded pipeline: {pipeline_id} -> index {pipeline_index_map[pipeline_id]}",
-                )
-        except Exception as e:
-            logger.warning(f"Could not load pipeline selection: {e}")
-
         # Show dialog
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Apply settings
@@ -6052,8 +6096,54 @@ End of Debug Log
                     self.edits_tab.add_cycle_markers_to_timeline(self._loaded_cycles_data)
                     logger.info(f"✓ Added cycle markers to timeline")
 
-            # TODO: Additional UI population tasks:
-            # 2. Restoring flags and events
+            # Restore alignment settings if available
+            if hasattr(self, 'edits_tab') and 'alignment' in loaded_data:
+                alignment_list = loaded_data.get('alignment', [])
+                for alignment_row in alignment_list:
+                    cycle_idx = alignment_row.get('Cycle_Index')
+                    if cycle_idx is not None:
+                        self.edits_tab._cycle_alignment[cycle_idx] = {
+                            'channel': alignment_row.get('Channel_Filter', 'All'),
+                            'shift': alignment_row.get('Time_Shift_s', 0.0)
+                        }
+                if alignment_list:
+                    logger.info(f"✓ Restored alignment settings for {len(alignment_list)} cycles")
+
+            # Restore flags if available
+            if hasattr(self, 'edits_tab') and 'flags' in loaded_data:
+                from affilabs.domain import flag_from_dict
+                import pyqtgraph as pg
+
+                flags_list = loaded_data.get('flags', [])
+                self.edits_tab._edits_flags.clear()
+
+                for flag_data in flags_list:
+                    try:
+                        # Create Flag instance from dict
+                        flag = flag_from_dict(flag_data)
+
+                        # Create visual marker
+                        marker = pg.ScatterPlotItem(
+                            [flag.time],
+                            [flag.spr],
+                            symbol=flag.marker_symbol,
+                            size=flag.marker_size,
+                            brush=pg.mkBrush(flag.marker_color),
+                            pen=pg.mkPen('w', width=2),
+                        )
+                        marker.setZValue(100)  # Draw on top
+
+                        # Add to graph
+                        self.edits_primary_graph.addItem(marker)
+                        flag.marker = marker
+
+                        # Store flag
+                        self.edits_tab._edits_flags.append(flag)
+                    except Exception as e:
+                        logger.warning(f"Failed to restore flag: {e}")
+
+                if flags_list:
+                    logger.info(f"✓ Restored {len(flags_list)} flags to Edits graph")
 
         except Exception as e:
             from affilabs.utils.logger import logger
@@ -6268,6 +6358,139 @@ End of Debug Log
         except Exception as e:
             logger.exception(f"Error populating timeline graph: {e}")
 
+    def _on_edits_graph_clicked(self, event):
+        """Handle mouse clicks on Edits graph for flag management."""
+        from PySide6.QtCore import Qt
+        from affilabs.utils.logger import logger
+        import pyqtgraph as pg
+
+        # Get click position in data coordinates
+        view_box = self.edits_primary_graph.plotItem.vb
+        mouse_point = view_box.mapSceneToView(event.scenePos())
+        time_val = mouse_point.x()
+        spr_val = mouse_point.y()
+
+        # Handle left-click for flag selection
+        if event.button() == Qt.MouseButton.LeftButton:
+            if not hasattr(self, 'edits_tab'):
+                return
+
+            # Check if we clicked near a flag (within 10 pixels)
+            min_dist = float('inf')
+            closest_idx = None
+
+            for idx, flag in enumerate(self.edits_tab._edits_flags):
+                # Calculate distance in pixel space
+                flag_pos = view_box.mapViewToScene(pg.Point(flag.time, flag.spr))
+                click_pos = event.scenePos()
+                dist = ((flag_pos.x() - click_pos.x())**2 + (flag_pos.y() - click_pos.y())**2)**0.5
+
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_idx = idx
+
+            # If clicked within 15 pixels of a flag, select it
+            if closest_idx is not None and min_dist < 15:
+                # Deselect previous flag
+                if self.edits_tab._selected_flag_idx is not None:
+                    prev_flag = self.edits_tab._edits_flags[self.edits_tab._selected_flag_idx]
+                    prev_flag.marker.setPen(pg.mkPen('w', width=2))
+
+                # Select new flag
+                self.edits_tab._selected_flag_idx = closest_idx
+                flag = self.edits_tab._edits_flags[closest_idx]
+                flag.marker.setPen(pg.mkPen('cyan', width=3))  # Highlight selected
+                logger.debug(f"Selected {flag.flag_type} flag at t={flag.time:.2f}s")
+                return
+            else:
+                # Clicked empty space - deselect
+                if self.edits_tab._selected_flag_idx is not None:
+                    prev_flag = self.edits_tab._edits_flags[self.edits_tab._selected_flag_idx]
+                    prev_flag.marker.setPen(pg.mkPen('w', width=2))
+                    self.edits_tab._selected_flag_idx = None
+                return
+
+        # Handle right-click (context menu)
+        if event.button() != Qt.MouseButton.RightButton:
+            return
+
+        # Check if we have cycle data loaded
+        if not hasattr(self, '_loaded_cycles_data') or not self._loaded_cycles_data:
+            logger.warning("No cycle data loaded - cannot add flags")
+            return
+
+        # Determine which channel to assign (use first visible channel or A)
+        channel = 'A'
+
+        # Show flag type menu
+        from affilabs.domain import create_flag
+        from PySide6.QtWidgets import QMenu, QAction
+        from PySide6.QtGui import QCursor
+
+        menu = QMenu()
+
+        # Create flag type actions
+        injection_action = QAction("▲ Injection", menu)
+        injection_action.triggered.connect(
+            lambda: self._add_edits_flag(channel, time_val, spr_val, "injection")
+        )
+
+        wash_action = QAction("■ Wash", menu)
+        wash_action.triggered.connect(
+            lambda: self._add_edits_flag(channel, time_val, spr_val, "wash")
+        )
+
+        spike_action = QAction("★ Spike", menu)
+        spike_action.triggered.connect(
+            lambda: self._add_edits_flag(channel, time_val, spr_val, "spike")
+        )
+
+        menu.addAction(injection_action)
+        menu.addAction(wash_action)
+        menu.addAction(spike_action)
+
+        # Show menu at cursor position
+        menu.exec(QCursor.pos())
+
+    def _add_edits_flag(self, channel: str, time_val: float, spr_val: float, flag_type: str):
+        """Add a flag to the Edits graph."""
+        from affilabs.domain import create_flag
+        from affilabs.utils.logger import logger
+        import pyqtgraph as pg
+
+        try:
+            # Create Flag instance
+            flag = create_flag(
+                flag_type=flag_type,
+                channel=channel.upper(),
+                time=time_val,
+                spr=spr_val,
+            )
+
+            # Create visual marker
+            marker = pg.ScatterPlotItem(
+                [flag.time],
+                [flag.spr],
+                symbol=flag.marker_symbol,
+                size=flag.marker_size,
+                brush=pg.mkBrush(flag.marker_color),
+                pen=pg.mkPen('w', width=2),
+            )
+            marker.setZValue(100)  # Draw on top
+
+            # Add to graph
+            self.edits_primary_graph.addItem(marker)
+            flag.marker = marker
+
+            # Store flag
+            if hasattr(self, 'edits_tab'):
+                self.edits_tab._edits_flags.append(flag)
+
+            logger.info(f"🚩 Added {flag_type} flag in Edits at t={time_val:.2f}s")
+
+        except Exception as e:
+            logger.error(f"Failed to add flag in Edits: {e}")
+
     def _on_cycle_selected_in_table(self):
         """Handle cycle selection in table - load cycle data on graph.
 
@@ -6309,6 +6532,18 @@ End of Debug Log
                 self.edits_tab.alignment_shift_spinbox.setValue(alignment_data['shift'])
                 self.edits_tab.alignment_channel_combo.blockSignals(False)
                 self.edits_tab.alignment_shift_spinbox.blockSignals(False)
+
+                # Populate cycle boundary controls
+                if row_idx < len(self._loaded_cycles_data):
+                    cycle = self._loaded_cycles_data[row_idx]
+                    start_time = cycle.get('start_time_sensorgram', 0)
+                    end_time = cycle.get('end_time_sensorgram', start_time + 300)
+                    self.edits_tab.cycle_start_spinbox.blockSignals(True)
+                    self.edits_tab.cycle_end_spinbox.blockSignals(True)
+                    self.edits_tab.cycle_start_spinbox.setValue(start_time)
+                    self.edits_tab.cycle_end_spinbox.setValue(end_time)
+                    self.edits_tab.cycle_start_spinbox.blockSignals(False)
+                    self.edits_tab.cycle_end_spinbox.blockSignals(False)
             elif hasattr(self, 'edits_tab'):
                 # Hide for multi-selection (no alignment controls for multiple cycles)
                 self.edits_tab.alignment_panel.hide()

@@ -367,7 +367,7 @@ class CalibrationData:
                                 "dip_depth",
                                 0.0,
                             ),  # Negative because it's a dip
-                            "ratio": qc_metrics.get("p_s_ratio", 0.0),
+                            "ratio": qc_metrics.get("p_s_ratio"),  # None if not calculated
                             "dip_detected": qc_metrics.get("dip_detected", False),
                             "fwhm": qc_metrics.get("fwhm", 0.0),
                             "reason": ", ".join(qc_metrics.get("warnings", []))

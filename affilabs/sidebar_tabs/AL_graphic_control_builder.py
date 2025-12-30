@@ -743,14 +743,26 @@ class GraphicControlTabBuilder:
 
         # Colorblind palette toggle logic
         def _toggle_colorblind(checked: bool):
+            from affilabs.utils.logger import logger
             palette = (
                 COLORBLIND_PALETTE
                 if checked
                 else ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
             )
-            # Note: Plot references removed - this would apply to main window plots
-            print(f"Colorblind palette toggled: {checked}")
+            logger.info(f"Colorblind palette {'enabled' if checked else 'disabled'}")
+            # Store the palette choice in sidebar for access by graph updates
+            self.sidebar.current_color_palette = palette
+            # Trigger a redraw of the cycle of interest graph if it exists
+            if hasattr(self.sidebar, 'app') and hasattr(self.sidebar.app, 'main_window'):
+                # Refresh the graph with new colors
+                if hasattr(self.sidebar.app, '_update_cycle_of_interest_graph'):
+                    try:
+                        self.sidebar.app._update_cycle_of_interest_graph()
+                    except Exception as e:
+                        logger.warning(f"Could not update graph colors: {e}")
 
         self.sidebar.colorblind_check.toggled.connect(_toggle_colorblind)
+        # Initialize default palette
+        self.sidebar.current_color_palette = ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
 
         tab_layout.addWidget(accessibility_card)
