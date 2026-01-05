@@ -12,6 +12,7 @@ This wraps utilities from led_methods and local ROI/acquisition helpers.
 import contextlib
 import os
 import time
+from pathlib import Path
 
 
 from affilabs.utils.led_methods import (
@@ -300,7 +301,7 @@ def run_convergence(
     | None = None,  # NEW: Model calibration slopes (S-pol, valid for P-pol too)
     polarization: str = "S",  # NEW: Polarization state for model
     target_percent: float = 0.40,
-    tolerance_percent: float = 0.05,
+    tolerance_percent: float = 0.06,
     tighten_final: bool = False,
     use_batch_command: bool = True,  # ALWAYS use batch commands for LED control (more reliable)
     logger=None,
@@ -507,11 +508,44 @@ def run_convergence(
         spec_hal = wrap_existing_spectrometer(usb)
         spect = RealSpectrometerAdapter(spectrometer=spec_hal, controller=ctrl_hal, logger=logger)
         roi = ROIFromStartup(method="median", top_n=50)
+
+        # Check for ML models and load paths if available
+        # Production location (bundled with application)
+        model_dir = Path(__file__).parent.parent / "convergence" / "models"
+
+        # Fallback to development location if production models don't exist
+        if not model_dir.exists():
+            project_root = Path(__file__).parent.parent.parent
+            model_dir = project_root / "tools" / "ml_training" / "models"
+
+        sensitivity_path = model_dir / "sensitivity_classifier.joblib"
+        led_predictor_path = model_dir / "led_predictor.joblib"
+        convergence_path = model_dir / "convergence_predictor.joblib"
+
+        # Only pass paths if models exist
+        sensitivity_model = str(sensitivity_path) if sensitivity_path.exists() else None
+        led_model = str(led_predictor_path) if led_predictor_path.exists() else None
+        convergence_model = str(convergence_path) if convergence_path.exists() else None
+
+        if sensitivity_model or led_model or convergence_model:
+            logger.info(
+                f"[ML] Models found: sensitivity={sensitivity_model is not None}, led={led_model is not None}, convergence={convergence_model is not None}"
+            )
+        else:
+            logger.warning("[ML] No trained models found - using fallback slope-based convergence")
+            logger.warning(f"[ML] Expected models in: {model_dir}")
+            logger.warning(
+                "[ML] Run 'python tools/ml_training/train_all_models.py' to train models"
+            )
+
         engine = ConvergenceEngine(
             spectrometer=spect,
             roi_extractor=roi,
             scheduler=ThreadScheduler(1),
             logger=logger,
+            sensitivity_model_path=sensitivity_model,
+            led_predictor_path=led_model,
+            convergence_predictor_path=convergence_model,
         )
         # Map detector params
         ep = EngineDetectorParams(

@@ -102,6 +102,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
         # Smart downsampling: track cycle boundaries for selective downsampling
         self.cycle_start_time = None  # When current cycle started
         self.cycle_end_time = None  # When current cycle ended (if completed)
+        self.cycle_warning_region = None  # Yellow warning region for cycle nearing end
 
         setConfigOptions(antialias=True)
 
@@ -633,7 +634,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.plot.getViewBox().update()
 
     def _create_shaded_region(self, start_time: float, end_time: float) -> None:
-        """Create shaded region for cycle window."""
+        """Create shaded region for cycle window with yellow warning for last portion."""
         self.cycle_time_region = LinearRegionItem(
             values=[start_time, end_time],
             orientation="vertical",
@@ -645,6 +646,23 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.cycle_time_region.setVisible(True)
 
         self.plot.addItem(self.cycle_time_region)
+
+        # Add yellow warning region for last 60 seconds (or 10% of cycle, whichever is smaller)
+        cycle_duration = end_time - start_time
+        warning_duration = min(60, cycle_duration * 0.1)  # Last 60s or 10%
+        warning_start = end_time - warning_duration
+
+        self.cycle_warning_region = LinearRegionItem(
+            values=[warning_start, end_time],
+            orientation="vertical",
+            brush=QBrush(QColor(255, 200, 0, 100)),  # Bright yellow, more opaque
+            movable=False,
+            pen=None,
+        )
+        self.cycle_warning_region.setZValue(-5)  # Above cycle region but below data
+        self.cycle_warning_region.setVisible(True)
+
+        self.plot.addItem(self.cycle_warning_region)
         self.plot.getViewBox().update()
 
     def hide_cycle_time_region(self):
@@ -655,6 +673,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
             (self.cycle_time_region, "cycle_time_region"),
             (self.cycle_start_line, "cycle_start_line"),
             (self.cycle_end_line, "cycle_end_line"),
+            (self.cycle_warning_region, "cycle_warning_region"),
         ]
 
         for marker, attr_name in markers:
@@ -677,6 +696,14 @@ class SensorgramGraph(GraphicsLayoutWidget):
         # Update existing markers or create new ones
         if self.cycle_time_region is not None:
             self.cycle_time_region.setRegion([start_time, end_time])
+
+            # Update warning region too
+            if self.cycle_warning_region is not None:
+                cycle_duration = end_time - start_time
+                warning_duration = min(60, cycle_duration * 0.1)
+                warning_start = end_time - warning_duration
+                self.cycle_warning_region.setRegion([warning_start, end_time])
+
         elif self.cycle_start_line is not None and self.cycle_end_line is not None:
             self.cycle_start_line.setPos(start_time)
             self.cycle_end_line.setPos(end_time)

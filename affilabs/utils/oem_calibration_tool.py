@@ -200,16 +200,16 @@ class PolarizerCalibrator:
                 self.ctrl.servo_move_calibration_only(s=s_angle, p=p_angle)
             else:
                 self.ctrl.servo_set(s=s_angle, p=p_angle)
-            time.sleep(0.3)  # Servo settling time
+            time.sleep(0.15)  # Servo settling time (reduced from 0.3s)
 
             # Measure S position
             self.ctrl.set_mode("s")
-            time.sleep(0.2)
+            time.sleep(0.1)  # Reduced from 0.2s
             max_intensities[i] = self.spec.intensities().max()
 
             # Measure P position
             self.ctrl.set_mode("p")
-            time.sleep(0.2)
+            time.sleep(0.1)  # Reduced from 0.2s
             max_intensities[i + steps + 1] = self.spec.intensities().max()
 
             if (i + 1) % 5 == 0:
@@ -274,10 +274,10 @@ class PolarizerCalibrator:
                 self.ctrl.servo_move_calibration_only(s=pos, p=pos)
             else:
                 self.ctrl.servo_set(s=pos, p=pos)
-            time.sleep(0.3)
+            time.sleep(0.15)  # Reduced from 0.3s for faster calibration
 
             self.ctrl.set_mode("s")
-            time.sleep(0.2)
+            time.sleep(0.1)  # Reduced from 0.2s
             intensity = self.spec.intensities().max()
 
             coarse_angles.append(pos)
@@ -339,10 +339,10 @@ class PolarizerCalibrator:
                     self.ctrl.servo_move_calibration_only(s=pos, p=pos)
                 else:
                     self.ctrl.servo_set(s=pos, p=pos)
-                time.sleep(0.25)
+                time.sleep(0.15)  # Reduced from 0.25s
 
                 self.ctrl.set_mode("s")
-                time.sleep(0.15)
+                time.sleep(0.1)  # Reduced from 0.15s
                 intensity = self.spec.intensities().max()
 
                 all_angles.append(pos)

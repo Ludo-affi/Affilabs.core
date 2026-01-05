@@ -203,22 +203,37 @@ def train_model(features_df: pd.DataFrame, use_device_features: bool = True) -> 
 
     # Classification report
     y_pred = model.predict(X_test)
-    y_pred_proba = model.predict_proba(X_test)[:, 1]
-
+    
     print(f"\n=== Test Set Classification Report ===")
-    print(classification_report(y_test, y_pred, target_names=['FAIL', 'SUCCESS']))
+    
+    # Check if we have both classes
+    unique_classes = sorted(set(y_test) | set(y_pred))
+    if len(unique_classes) > 1:
+        y_pred_proba = model.predict_proba(X_test)[:, 1]
+        print(classification_report(y_test, y_pred, target_names=['FAIL', 'SUCCESS']))
 
-    print(f"\n=== Confusion Matrix ===")
-    cm = confusion_matrix(y_test, y_pred)
-    print(cm)
-    print(f"  True Negatives: {cm[0,0]}")
-    print(f"  False Positives: {cm[0,1]} (predicted success but failed)")
-    print(f"  False Negatives: {cm[1,0]} (predicted fail but succeeded)")
-    print(f"  True Positives: {cm[1,1]}")
+        print(f"\n=== Confusion Matrix ===")
+        cm = confusion_matrix(y_test, y_pred)
+        print(cm)
+        print(f"  True Negatives: {cm[0,0]}")
+        print(f"  False Positives: {cm[0,1]} (predicted success but failed)")
+        print(f"  False Negatives: {cm[1,0]} (predicted fail but succeeded)")
+        print(f"  True Positives: {cm[1,1]}")
 
-    # ROC-AUC
-    auc = roc_auc_score(y_test, y_pred_proba)
-    print(f"\nROC-AUC Score: {auc:.3f}")
+        # ROC-AUC
+        auc = roc_auc_score(y_test, y_pred_proba)
+    else:
+        # Only one class
+        from sklearn.metrics import accuracy_score
+        print(f"Only one class present: {'SUCCESS' if unique_classes[0] == 1 else 'FAIL'}")
+        print(f"Accuracy: {accuracy_score(y_test, y_pred):.3f}")
+        auc = None
+
+    if auc is not None:
+        print(f"\nROC-AUC Score: {auc:.3f}")
+    else:
+        print(f"\nROC-AUC Score: N/A (only one class)")
+
 
     # Feature importance
     print(f"\n=== Feature Importance ===")

@@ -53,19 +53,26 @@ class CalibrationService(QObject):
         self._calibration_dialog: object | None = None
         self._calibration_completed: bool = False
         self._current_calibration_data: CalibrationData | None = None
+        self._force_oem_retrain: bool = False  # Track if OEM button requested retrain
 
         # ML QC Intelligence (initialized lazily when device connects)
         self._ml_intelligence: MLQCIntelligence | None = None
 
-    def start_calibration(self) -> bool:
+    def start_calibration(self, force_oem_retrain: bool = False) -> bool:
         """Start calibration dialog (does NOT start calibration thread).
 
         The actual calibration begins when user clicks Start button in dialog.
+
+        Args:
+            force_oem_retrain: If True, always rebuild optical model (OEM calibration mode)
 
         Returns:
             True if dialog shown, False if already running
 
         """
+        # Store retrain flag for use when calibration actually runs
+        self._force_oem_retrain = force_oem_retrain
+
         if self._running:
             logger.warning("Calibration already in progress")
             return False
@@ -136,21 +143,46 @@ class CalibrationService(QObject):
         """Show calibration progress dialog."""
         from affilabs_core_ui import StartupCalibProgressDialog
 
+        # Check if pump is detected
+        has_pump = self.app.hardware_mgr.pump is not None
+
+        pump_instruction = ""
+        if has_pump:
+            pump_instruction = "  ✓  Buffer loaded in pump reservoir (for priming)\n"
+
         message = (
             "Please verify before calibrating:\n\n"
             "  ✓  Prism installed in sensor holder\n"
             "  ✓  Water or buffer applied to prism\n"
             "  ✓  No air bubbles visible\n"
+            f"{pump_instruction}"
             "  ✓  Temperature stabilized (10 min after power-on)\n\n"
-            "6-Step Calibration Process:\n"
-            "  1. Hardware Validation & LED Verification\n"
-            "  2. Wavelength Calibration\n"
-            "  3. LED Brightness Measurement & 3-Stage Model Load\n"
-            "  4. S-Mode LED Convergence + Reference Capture\n"
-            "  5. P-Mode LED Convergence + Reference + Dark Capture\n"
-            "  6. QC Validation & Result Packaging\n\n"
-            "Takes approximately 30-60 seconds."
         )
+
+        if has_pump:
+            message += (
+                "Calibration Process:\n"
+                "  0. Pump Priming (6 cycles, ~60s)\n"
+                "     → Optical calibration starts during cycle 3\n"
+                "  1. Hardware Validation & LED Verification\n"
+                "  2. Wavelength Calibration\n"
+                "  3. LED Brightness Measurement & 3-Stage Model Load\n"
+                "  4. S-Mode LED Convergence + Reference Capture\n"
+                "  5. P-Mode LED Convergence + Reference + Dark Capture\n"
+                "  6. QC Validation & Result Packaging\n\n"
+                "Takes approximately 2 minutes (pump + optics)."
+            )
+        else:
+            message += (
+                "6-Step Calibration Process:\n"
+                "  1. Hardware Validation & LED Verification\n"
+                "  2. Wavelength Calibration\n"
+                "  3. LED Brightness Measurement & 3-Stage Model Load\n"
+                "  4. S-Mode LED Convergence + Reference Capture\n"
+                "  5. P-Mode LED Convergence + Reference + Dark Capture\n"
+                "  6. QC Validation & Result Packaging\n\n"
+                "Takes approximately 30-60 seconds."
+            )
 
         self._calibration_dialog = StartupCalibProgressDialog(
             parent=self.app.main_window,
@@ -426,6 +458,7 @@ class CalibrationService(QObject):
             hardware_mgr = self.app.hardware_mgr
             ctrl = hardware_mgr.ctrl
             usb = hardware_mgr.usb
+            pump = hardware_mgr.pump  # Get pump if available
 
             if not ctrl:
                 msg = "Controller not connected"
@@ -434,37 +467,212 @@ class CalibrationService(QObject):
                 msg = "Spectrometer not connected"
                 raise RuntimeError(msg)
 
-            # CRITICAL FIX: Clear USB device buffer with dummy reads
-            # [Errno 10060] Operation timed out = USB buffer has stale data from hardware scan
-            # Solution: Perform 2-3 dummy reads to flush the buffer before calibration
-            logger.info("🔄 Clearing USB buffer with dummy reads...")
-            try:
-                # Set short integration time for fast dummy reads
-                usb.set_integration(10)  # 10ms minimum
-                time.sleep(0.1)
+            # === PUMP PRIMING (if available) + PARALLEL OPTICAL CALIBRATION ===
+            # Auto-prime enabled - pump will be primed during startup calibration
+            cal_result = None
 
-                # Perform 3 dummy reads to flush any stale data
-                for i in range(3):
-                    dummy = usb.read_intensity()
-                    if dummy is not None:
-                        logger.info(
-                            f"   Dummy read {i + 1}/3: Success ({len(dummy)} pixels)",
-                        )
-                    else:
-                        logger.warning(
-                            f"   Dummy read {i + 1}/3: No data (continuing...)",
-                        )
-                    time.sleep(0.05)
-
-                logger.info("[OK] USB buffer cleared")
-            except Exception as e:
-                logger.warning(
-                    f"[WARN] USB buffer clear had issues (continuing anyway): {e}",
+            if pump:  # ENABLED
+                logger.info(
+                    "🌊 Pump detected - starting prime sequence with parallel optical calibration..."
                 )
+                self.calibration_progress.emit("Pump Priming: Initializing", 8)
+
+                import asyncio
+                import threading
+
+                # Track optical calibration state
+                optical_cal_complete = threading.Event()
+                optical_cal_result = None
+                optical_cal_error = None
+                optical_cal_thread = None
+
+                # Define optical calibration function to run in parallel
+                def run_optical_calibration():
+                    nonlocal optical_cal_result, optical_cal_error
+                    try:
+                        logger.info(
+                            "🔬 Starting optical calibration (parallel with pump priming)..."
+                        )
+
+                        # USB buffer clear
+                        logger.info("🔄 Clearing USB buffer with dummy reads...")
+                        try:
+                            usb.set_integration(10)
+                            time.sleep(0.1)
+                            for i in range(3):
+                                dummy = usb.read_intensity()
+                                if dummy is not None:
+                                    logger.info(f"   Dummy read {i + 1}/3: Success")
+                                time.sleep(0.05)
+                            logger.info("[OK] USB buffer cleared")
+                        except Exception as e:
+                            logger.warning(f"USB buffer clear issues: {e}")
+
+                        # Load configuration
+                        from affilabs.utils.device_configuration import DeviceConfiguration
+
+                        device_serial = getattr(usb, "serial_number", None)
+                        device_config = DeviceConfiguration(device_serial=device_serial)
+
+                        # Run optical calibration
+                        from affilabs.core.calibration_orchestrator import run_startup_calibration
+
+                        device_type = (
+                            ctrl.get_device_type()
+                        )  # Use HAL method, not Python class name
+
+                        # Progress callback that maps to overall progress (pump uses 8-40%, optical uses 40-95%)
+                        def optical_progress(msg, pct):
+                            adjusted_pct = 40 + int(pct * 0.55)
+                            self.calibration_progress.emit(f"Optical: {msg}", adjusted_pct)
+
+                        optical_cal_result = run_startup_calibration(
+                            usb=usb,
+                            ctrl=ctrl,
+                            device_type=device_type,
+                            device_config=device_config,
+                            detector_serial=device_serial,
+                            progress_callback=optical_progress,
+                            use_convergence_engine=True,
+                            force_oem_retrain=self._force_oem_retrain,
+                        )
+
+                        logger.info("✅ Optical calibration complete")
+
+                    except Exception as e:
+                        optical_cal_error = e
+                        logger.exception("❌ Optical calibration failed")
+                    finally:
+                        optical_cal_complete.set()
+
+                # Pump priming with optical cal trigger on cycle 3
+                async def prime_with_optical_cal():
+                    nonlocal optical_cal_thread
+
+                    try:
+                        aspirate_speed_ul_s = 24000.0 / 60.0
+                        dispense_speed_ul_s = 5000.0 / 60.0
+                        volume_ul = 1000.0
+
+                        for cycle in range(1, 7):  # 6 cycles
+                            progress = 8 + int((cycle - 1) / 6 * 32)  # 8-40%
+                            self.calibration_progress.emit(
+                                f"Pump Priming: Cycle {cycle}/6", progress
+                            )
+
+                            logger.info(f"\n🔄 Pump Cycle {cycle}/6")
+
+                            # Valve operations (same as prime-pump.py)
+                            if cycle == 3:
+                                logger.info("  🔧 Opening BOTH load valves (6-port)...")
+                                if ctrl:
+                                    ctrl.knx_six_both(1)
+                                await asyncio.sleep(0.5)
+
+                            elif cycle == 4:
+                                # === START OPTICAL CALIBRATION IN PARALLEL ===
+                                if not optical_cal_thread:
+                                    logger.info(
+                                        "🚀 Starting optical calibration in parallel (cycle 4)..."
+                                    )
+                                    optical_cal_thread = threading.Thread(
+                                        target=run_optical_calibration,
+                                        daemon=True,
+                                        name="OpticalCalibration",
+                                    )
+                                    optical_cal_thread.start()
+
+                            elif cycle == 5:
+                                logger.info("  🔧 Opening BOTH channel valves (3-way)...")
+                                if ctrl:
+                                    ctrl.knx_three_both(1)
+                                await asyncio.sleep(0.5)
+
+                            # Aspirate
+                            pump._pump.pump.aspirate_both(volume_ul, aspirate_speed_ul_s)
+                            (
+                                p1_ready,
+                                p2_ready,
+                                _,
+                                _,
+                                _,
+                            ) = await asyncio.get_event_loop().run_in_executor(
+                                None, pump._pump.pump.wait_until_both_ready, 60.0
+                            )
+
+                            if not (p1_ready and p2_ready):
+                                raise RuntimeError("Pump aspirate failed")
+
+                            await asyncio.sleep(0.5)
+
+                            # Dispense
+                            pump._pump.pump.dispense_both(volume_ul, dispense_speed_ul_s)
+                            (
+                                p1_ready,
+                                p2_ready,
+                                _,
+                                _,
+                                _,
+                            ) = await asyncio.get_event_loop().run_in_executor(
+                                None, pump._pump.pump.wait_until_both_ready, 60.0
+                            )
+
+                            if not (p1_ready and p2_ready):
+                                raise RuntimeError("Pump dispense failed")
+
+                            logger.info("  ✅ Cycle completed")
+
+                        logger.info("✅ Pump priming complete - waiting for optical calibration...")
+
+                    except Exception as e:
+                        logger.exception(f"❌ Pump priming failed: {e}")
+                        raise
+
+                # Run pump priming in asyncio loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(prime_with_optical_cal())
+                finally:
+                    loop.close()
+
+                # Wait for optical calibration to complete
+                self.calibration_progress.emit("Waiting for optical calibration...", 95)
+                optical_cal_complete.wait(
+                    timeout=300
+                )  # 5 minute timeout (servo cal can take 2-3 min)
+
+                if optical_cal_error:
+                    raise optical_cal_error
+
+                if optical_cal_result is None:
+                    raise RuntimeError("Optical calibration timed out or failed to start")
+
+                cal_result = optical_cal_result
+
+            else:
+                # === NO PUMP - Run optical calibration directly ===
+                logger.info("No pump detected - running optical calibration only...")
+
+                # CRITICAL FIX: Clear USB device buffer with dummy reads
+                logger.info("🔄 Clearing USB buffer with dummy reads...")
+                try:
+                    usb.set_integration(10)
+                    time.sleep(0.1)
+                    for i in range(3):
+                        dummy = usb.read_intensity()
+                        if dummy is not None:
+                            logger.info(f"   Dummy read {i + 1}/3: Success ({len(dummy)} pixels)")
+                        else:
+                            logger.warning(f"   Dummy read {i + 1}/3: No data (continuing...)")
+                        time.sleep(0.05)
+                    logger.info("[OK] USB buffer cleared")
+                except Exception as e:
+                    logger.warning(f"[WARN] USB buffer clear had issues (continuing anyway): {e}")
 
             logger.info("[OK] Hardware ready")
 
-            # Load configuration
+            # Load configuration and run calibration (no-pump path)
             self.calibration_progress.emit("Loading configuration...", 10)
             from affilabs.utils.device_configuration import DeviceConfiguration
 
@@ -474,22 +682,37 @@ class CalibrationService(QObject):
             # Run calibration
             from affilabs.core.calibration_orchestrator import run_startup_calibration
 
-            logger.info(
-                "🚀 Starting 6-step calibration...",
-            )
+            logger.info("🚀 Starting 6-step calibration...")
+            device_type = ctrl.get_device_type()  # Use HAL method, not Python class name
 
-            # Get device type from controller
-            device_type = type(ctrl).__name__
+            try:
+                cal_result = run_startup_calibration(
+                    usb=usb,
+                    ctrl=ctrl,
+                    device_type=device_type,
+                    device_config=device_config,
+                    detector_serial=device_serial,
+                    progress_callback=self._progress_callback,
+                    use_convergence_engine=True,
+                    force_oem_retrain=self._force_oem_retrain,
+                )
+            except RuntimeError as e:
+                if (
+                    "Servo positions not found" in str(e)
+                    or "ServoCalibrationRequired" in type(e).__name__
+                ):
+                    logger.warning("⚠️ LED calibration requires servo calibration first")
+                    error_msg = (
+                        "Servo calibration required before LED calibration.\n\n"
+                        "The servo calibration should have started automatically when hardware connected.\n"
+                        "Please ensure servo calibration completes successfully before starting LED calibration.\n\n"
+                        "To manually calibrate servo positions, go to Tools > Polarizer Calibration."
+                    )
+                    raise RuntimeError(error_msg)
+                else:
+                    raise
 
-            cal_result = run_startup_calibration(
-                usb=usb,
-                ctrl=ctrl,
-                device_type=device_type,
-                device_config=device_config,
-                detector_serial=device_serial,
-                progress_callback=self._progress_callback,
-                use_convergence_engine=True,  # EXPERIMENTAL: Enable new convergence engine
-            )
+            # Validate calibration result (common for both pump and no-pump paths)
 
             if not cal_result or not cal_result.success:
                 error_msg = "Calibration failed"

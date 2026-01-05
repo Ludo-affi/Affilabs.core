@@ -76,16 +76,67 @@ def measure_with_spectral_analysis(hm, wavelengths, method="max"):
     return float(spectrum.max())
 
 
-def move_to_position(hm, target_pwm, settle_time=1.5):
-    """Move to position and settle using HAL."""
-    # Use HAL method for raw PWM positioning
-    success = hm.ctrl.servo_move_raw_pwm(target_pwm)
-    if success:
-        # Confirm with ss command (set S-mode to current position)
-        hm.ctrl._ser.write(b"ss\n")
-        hm.ctrl._ser.readline()
-    time.sleep(settle_time)
-    return success
+def move_to_position(hm, target_pwm, settle_time=0.1):
+    """Move to position and settle using direct servo command."""
+    try:
+        if target_pwm < 0 or target_pwm > 255:
+            print(f"❌ Invalid PWM value: {target_pwm}")
+            return False
+
+        ctrl = hm.ctrl
+        pwm_val = int(target_pwm)
+
+        # Use servo_move_raw_pwm() method which handles P4PRO firmware v2.1 correctly
+        # This uses the servo:ANGLE,DURATION command (RAM-only, no flash writes)
+        if hasattr(ctrl, 'servo_move_raw_pwm'):
+            # PicoP4PRO class has optimized servo move with correct timing
+            success = ctrl.servo_move_raw_pwm(pwm_val)
+            if success:
+                time.sleep(settle_time)
+                return True
+            else:
+                print(f"❌ Failed to move servo to PWM {pwm_val}")
+                return False
+        
+        # Fallback for other controller types
+        # Detect if this is P4PRO firmware
+        is_p4pro = hasattr(ctrl, 'firmware_id') and 'P4PRO' in ctrl.firmware_id
+        
+        if is_p4pro:
+            # P4PRO firmware v2.1: Use servo:ANGLE,DURATION format (RAM-only)
+            # CRITICAL: Requires 500ms duration + 600ms wait for reliable operation
+            angle = int((pwm_val / 255.0) * 170.0) + 5  # Map 0-255 PWM to 5-175 degrees
+            cmd = f"servo:{angle},500\n"
+        else:
+            # P4SPR firmware: Use servo:ANGLE,DURATION format
+            angle = int((pwm_val / 255.0) * 180.0)
+            cmd = f"servo:{angle},150\n"
+
+        if ctrl._ser is not None:
+            ctrl._ser.reset_input_buffer()
+            ctrl._ser.write(cmd.encode())
+            
+            if is_p4pro:
+                # P4PRO firmware v2.1 requires 600ms wait for reliable response
+                time.sleep(0.6)
+                response = ctrl._ser.read(10)
+            else:
+                # P4SPR firmware
+                time.sleep(0.05)
+                response = ctrl._ser.read(10)
+                # Wait for physical movement (firmware does 150ms)
+                time.sleep(0.20)  # 150ms movement + 50ms settle
+
+            # Additional settle time for stable measurement
+            time.sleep(settle_time)
+            return True
+        else:
+            print("❌ Serial port not available")
+            return False
+
+    except Exception as e:
+        print(f"❌ Servo movement failed: {e}")
+        return False
 
 
 def stage1_bidirectional_sweep(hm):
@@ -176,57 +227,124 @@ def detect_polarizer_type(hm, sweep_data):
         return "SATURATED", {"max_signal": max_signal}
 
     # BARREL detection: 2 transmission windows separated by ~80-100 PWM
-    # Both windows are clearly above dark (3000 counts)
+    # With all 4 LEDs ON at 20%, bright windows should be 10,000+ counts
     DETECTOR_DARK_CURRENT = 3000
+    NEAR_DARK_THRESHOLD = 500  # Positions within 500 counts of dark = BARREL
+    BRIGHT_THRESHOLD = 6000  # Bright window must be above 6000 counts (all LEDs on)
 
-    # Count how many positions are clearly above dark
-    n_above_dark = np.sum(intensities > (DETECTOR_DARK_CURRENT + 2000))
+    # Count positions at different thresholds
+    n_above_dark = np.sum(intensities > BRIGHT_THRESHOLD)
+    n_near_dark = np.sum(intensities < (DETECTOR_DARK_CURRENT + NEAR_DARK_THRESHOLD))
     n_total = len(intensities)
 
-    # BARREL: High dynamic range and some positions clearly above dark
-    is_barrel = (dynamic_range > 4.0) and (n_above_dark >= 2)
+    # BARREL indicators:
+    # 1. Min signal very close to dark threshold (< 500 counts above)
+    # 2. Dynamic range > 3.5 (bright windows vs dark regions)
+    # 3. Has positions near dark threshold (some < 3500 counts)
+    min_above_dark = min_signal - DETECTOR_DARK_CURRENT
+
+    is_barrel = (
+        (min_above_dark < NEAR_DARK_THRESHOLD) or  # Min signal barely above dark
+        (dynamic_range > 3.5 and n_near_dark >= 2) or  # High dynamic range + dark positions
+        (n_above_dark >= 2 and n_near_dark >= 3)  # Bright windows + dark regions
+    )
 
     if is_barrel:
         polarizer_type = "BARREL"
         print("Polarizer Type: BARREL")
-        print(f"  {n_above_dark} positions above dark")
-        print(f"  Dynamic range: {dynamic_range:.1f}× (min={min_signal:.1f}, max={max_signal:.1f})")
+        print(f"  Min signal: {min_signal:.1f} counts ({min_above_dark:.1f} above dark threshold)")
+        print(f"  Max signal: {max_signal:.1f} counts")
+        print(f"  Dynamic range: {dynamic_range:.1f}×")
+        print(f"  {n_near_dark} positions near dark (< {DETECTOR_DARK_CURRENT + NEAR_DARK_THRESHOLD})")
+        print(f"  {n_above_dark} positions clearly bright (> {BRIGHT_THRESHOLD})")
 
         # Find 2 SEPARATE transmission windows (spatially separated)
         fwd_intensities = np.array([d["intensity"] for d in sweep_data["forward"]])
         fwd_positions = np.array([d["pwm"] for d in sweep_data["forward"]])
 
-        # Find all positions above dark
-        above_dark_mask = fwd_intensities > (DETECTOR_DARK_CURRENT + 2000)
+        # Find all positions above bright threshold (with all LEDs on)
+        above_dark_mask = fwd_intensities > BRIGHT_THRESHOLD
         above_dark_pwm = fwd_positions[above_dark_mask]
         above_dark_signal = fwd_intensities[above_dark_mask]
 
+        # CRITICAL: MINIMUM SEPARATION for barrel windows
+        # Windows must be at least 60 PWM apart (60 degrees) - ideally 80-100 PWM
+        MIN_WINDOW_SEPARATION_PWM = 60
+
         if len(above_dark_pwm) >= 2:
-            # Found 2+ windows - use spatially separated ones
+            # Found 2+ bright positions - CHECK if they're on SEPARATE windows
             sorted_indices = np.argsort(above_dark_pwm)
             window1_pwm = int(above_dark_pwm[sorted_indices[0]])
             window1_signal = above_dark_signal[sorted_indices[0]]
             window2_pwm = int(above_dark_pwm[sorted_indices[-1]])
             window2_signal = above_dark_signal[sorted_indices[-1]]
 
-            # Assign S (STRONGER) and P (WEAKER)
-            if window1_signal > window2_signal:
-                s_pwm = window1_pwm
-                p_pwm = window2_pwm
-                s_intensity = window1_signal
-                p_intensity = window2_signal
+            separation_pwm = abs(window2_pwm - window1_pwm)
+
+            # CHECK: Are these positions far enough apart to be SEPARATE windows?
+            if separation_pwm >= MIN_WINDOW_SEPARATION_PWM:
+                # YES - Found TWO SEPARATE windows!
+                print(f"  ✅ Found 2 SEPARATE windows (separation: {separation_pwm} PWM)")
+
+                # Assign S (STRONGER) and P (WEAKER)
+                if window1_signal > window2_signal:
+                    s_pwm = window1_pwm
+                    p_pwm = window2_pwm
+                    s_intensity = window1_signal
+                    p_intensity = window2_signal
+                else:
+                    s_pwm = window2_pwm
+                    p_pwm = window1_pwm
+                    s_intensity = window2_signal
+                    p_intensity = window1_signal
+
+                print(f"  S window (STRONGER) at PWM {s_pwm}: {s_intensity:.1f} counts")
+                print(f"  P window (WEAKER) at PWM {p_pwm}: {p_intensity:.1f} counts")
+                print(f"  Angular separation: {separation_pwm} PWM units ({separation_pwm * 180 / 255:.0f}°)")
+
+                alternate_s = p_pwm
+                alternate_p = s_pwm
             else:
-                s_pwm = window2_pwm
-                p_pwm = window1_pwm
-                s_intensity = window2_signal
-                p_intensity = window1_signal
+                # NO - Both positions are on the SAME window!
+                print(f"  ⚠️  Found 2 positions only {separation_pwm} PWM apart - SAME WINDOW!")
+                print(f"  Treating as 1 window found (other window in blind spot)")
 
-            print(f"  S window (STRONGER) at PWM {s_pwm}: {s_intensity:.1f} counts")
-            print(f"  P window (WEAKER) at PWM {p_pwm}: {p_intensity:.1f} counts")
-            print(f"  Angular separation: {abs(p_pwm - s_pwm)} PWM units")
+                # Use the STRONGER signal as the found window
+                if window1_signal > window2_signal:
+                    found_pwm = window1_pwm
+                    found_signal = window1_signal
+                else:
+                    found_pwm = window2_pwm
+                    found_signal = window2_signal
 
-            alternate_s = p_pwm
-            alternate_p = s_pwm
+                print(f"  Found window at PWM {found_pwm}: {found_signal:.1f} counts")
+                print(f"  Other window is in BLIND SPOT - calculating position...")
+
+                # Barrel windows separated by ~90 PWM (average of 80-100)
+                candidate1_pwm = (found_pwm + 90) % 256
+                candidate2_pwm = (found_pwm - 90 + 256) % 256
+
+                print(f"  Candidates: PWM {candidate1_pwm} or PWM {candidate2_pwm}")
+
+                # Choose candidate further from sparse sampling points
+                sparse_points = [1, 65, 128, 191, 255]
+                dist1 = min(abs(candidate1_pwm - sp) for sp in sparse_points)
+                dist2 = min(abs(candidate2_pwm - sp) for sp in sparse_points)
+
+                if dist1 > dist2:
+                    p_pwm = candidate1_pwm
+                    alternate_p = candidate2_pwm
+                else:
+                    p_pwm = candidate2_pwm
+                    alternate_p = candidate1_pwm
+
+                print(f"  Choosing P at PWM {p_pwm} (dist from sparse: {max(dist1, dist2)})")
+                print(f"  Alternate P at PWM {alternate_p}")
+
+                s_pwm = found_pwm
+                s_intensity = found_signal
+                p_intensity = 0
+                alternate_s = found_pwm
 
         elif len(above_dark_pwm) == 1:
             # Found only 1 window - the other is in a BLIND SPOT!
@@ -274,20 +392,53 @@ def detect_polarizer_type(hm, sweep_data):
             print(f"  Alternate P at PWM {alternate_p}")
 
         else:
-            # Found 0 windows - use max as S, calculate blind spot as P
-            print("  WARNING: No bright windows found above 5000")
-            s_idx = np.argmax(fwd_intensities)
-            s_pwm = int(fwd_positions[s_idx])
-            s_intensity = fwd_intensities[s_idx]
+            # Found 0 windows - BOTH windows in blind spots!
+            # Need FULL SWEEP to find transmission windows
+            print("  ⚠️  NO bright windows found in sparse sweep!")
+            print("  Both transmission windows are in BLIND SPOTS")
+            print("  Running FAST SWEEP to locate windows...")
 
-            # Calculate blind spot
-            p_pwm = (s_pwm + 90) % 256
-            alternate_p = (s_pwm - 90) % 256
-            alternate_s = s_pwm
-            p_intensity = 0
+            # Fast sweep every 15 PWM positions (17 total positions)
+            full_sweep_data = []
+            for pwm in range(1, 256, 15):
+                move_to_position(hm, pwm, settle_time=0.2)  # Faster settle
+                signal = measure_signal(hm)
+                full_sweep_data.append({"pwm": pwm, "intensity": signal})
+                if signal > 8000:  # Found a window!
+                    print(f"    PWM {pwm:3d}: {signal:7.1f} counts ✓ WINDOW")
+                else:
+                    print(f"    PWM {pwm:3d}: {signal:7.1f} counts")
 
-            print(f"  S (brightest) at PWM {s_pwm}: {s_intensity:.1f} counts")
-            print(f"  P (blind spot) estimated at PWM {p_pwm}")
+            # Find windows from full sweep
+            full_intensities = np.array([d["intensity"] for d in full_sweep_data])
+            full_positions = np.array([d["pwm"] for d in full_sweep_data])
+
+            # Find positions above 5000 (transmission windows)
+            window_mask = full_intensities > 5000
+            window_pwm = full_positions[window_mask]
+            window_signal = full_intensities[window_mask]
+
+            if len(window_pwm) >= 2:
+                # Found 2+ windows
+                sorted_idx = np.argsort(window_pwm)
+                s_pwm = int(window_pwm[sorted_idx[np.argmax(window_signal[sorted_idx])]])
+                # Find second window (spatially separated)
+                remaining_idx = [i for i in sorted_idx if abs(window_pwm[i] - s_pwm) > 60]
+                if remaining_idx:
+                    p_pwm = int(window_pwm[remaining_idx[0]])
+                else:
+                    p_pwm = (s_pwm + 90) % 256
+                alternate_p = (s_pwm - 90 + 256) % 256
+                alternate_s = p_pwm
+                print(f"  ✅ Found S at PWM {s_pwm}, P at PWM {p_pwm}")
+            else:
+                # Still couldn't find windows - use brightest from full sweep
+                s_idx = np.argmax(full_intensities)
+                s_pwm = int(full_positions[s_idx])
+                p_pwm = (s_pwm + 90) % 256
+                alternate_p = (s_pwm - 90 + 256) % 256
+                alternate_s = s_pwm
+                print(f"  Using brightest from full sweep: S at PWM {s_pwm}")
 
         info = {
             "p_region_center": p_pwm,
@@ -362,31 +513,31 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
 
     print(f"P region: PWM {max(1, p_center-10)} to {min(255, p_center+10)}")
     print(f"S region: PWM {max(1, s_center-10)} to {min(255, s_center+10)}")
-    print("10 scans per position with spectral analysis\n")
+    print("2 scans per position with spectral analysis (optimized for speed)\n")
 
     # === Refine P region ===
-    print("Refining P region (approaching from high, 3 PWM steps)...")
+    print("Refining P region (3 PWM steps)...")
     p_results = []
 
     # DON'T skip positions for BARREL - we might be scanning a blind spot!
     # Scan full ±10 range to characterize window width and stability
     # Use 3 PWM steps for faster scanning
 
-    for pwm in range(max(1, p_center - 10), min(256, p_center + 11), 3):
-        # Approach from high (PWM 255)
-        move_to_position(hm, 255, settle_time=0.5)
-        move_to_position(hm, pwm, settle_time=1.5)
+    for idx, pwm in enumerate(range(max(1, p_center - 10), min(256, p_center + 11), 3)):
+        # Approach from high only on first position to establish reference
+        if idx == 0:
+            move_to_position(hm, 255, settle_time=0.2)
+        move_to_position(hm, pwm, settle_time=0.1)
 
-        # 10 scans
+        # 2 scans (reduced for speed)
         measurements = []
-        for _ in range(10):
+        for _ in range(2):
             intensity = measure_with_spectral_analysis(
                 hm,
                 wavelengths,
                 method="min_spr",
             )
             measurements.append(intensity)
-            time.sleep(0.05)
 
         mean_val = np.mean(measurements)
         std_val = np.std(measurements)
@@ -409,15 +560,16 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
         print(f"\n⚠️  All positions dark! Trying alternate P window at PWM {alternate_p}")
         p_results = []  # Clear dark results
         p_center = alternate_p
-        for pwm in range(max(1, p_center - 10), min(256, p_center + 11), 3):
-            move_to_position(hm, 255, settle_time=0.5)
-            move_to_position(hm, pwm, settle_time=1.5)
+        for idx, pwm in enumerate(range(max(1, p_center - 10), min(256, p_center + 11), 3)):
+            # Approach from high only on first position
+            if idx == 0:
+                move_to_position(hm, 255, settle_time=0.2)
+            move_to_position(hm, pwm, settle_time=0.1)
 
             measurements = []
-            for _ in range(10):
+            for _ in range(2):
                 intensity = measure_with_spectral_analysis(hm, wavelengths, method="min_spr")
                 measurements.append(intensity)
-                time.sleep(0.05)
 
             mean_val = np.mean(measurements)
             std_val = np.std(measurements)
@@ -440,17 +592,18 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
     print(f"Selected P: PWM {p_optimal}")
 
     # === Refine S region ===
-    print("\nRefining S region (approaching from low, 3 PWM steps)...")
+    print("\nRefining S region (3 PWM steps)...")
     s_results = []
 
-    for pwm in range(max(1, s_center - 10), min(256, s_center + 11), 3):
-        # Approach from low (PWM 1)
-        move_to_position(hm, 1, settle_time=0.5)
-        move_to_position(hm, pwm, settle_time=1.5)
+    for idx, pwm in enumerate(range(max(1, s_center - 10), min(256, s_center + 11), 3)):
+        # Approach from low only on first position to establish reference
+        if idx == 0:
+            move_to_position(hm, 1, settle_time=0.2)
+        move_to_position(hm, pwm, settle_time=0.3)
 
-        # 10 scans
+        # 5 scans
         measurements = []
-        for _ in range(10):
+        for _ in range(5):
             intensity = measure_with_spectral_analysis(hm, wavelengths, method="max")
             measurements.append(intensity)
             time.sleep(0.05)
@@ -470,21 +623,22 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
 
         print(f"  PWM {pwm:3d}: {mean_val:7.1f} ± {std_val:5.1f} (CV: {cv:.2f}%)")
 
-    # BARREL: If all positions were dark (below 10000 for S), try alternate window
-    all_s_dark = all(r["mean"] < 10000 for r in s_results)
+    # BARREL: If all positions were dark (below 5000 for S), try alternate window
+    all_s_dark = all(r["mean"] < 5000 for r in s_results)
     if is_barrel and all_s_dark and alternate_s is not None:
         print(f"\n⚠️  All positions dark! Trying alternate S window at PWM {alternate_s}")
         s_results = []  # Clear dark results
         s_center = alternate_s
-        for pwm in range(max(1, s_center - 10), min(256, s_center + 11)):
-            move_to_position(hm, 1, settle_time=0.5)
-            move_to_position(hm, pwm, settle_time=1.5)
+        for idx, pwm in enumerate(range(max(1, s_center - 10), min(256, s_center + 11), 3)):
+            # Approach from low only on first position
+            if idx == 0:
+                move_to_position(hm, 1, settle_time=0.1)
+            move_to_position(hm, pwm, settle_time=0.1)
 
             measurements = []
-            for _ in range(10):
+            for _ in range(2):
                 intensity = measure_with_spectral_analysis(hm, wavelengths, method="max")
                 measurements.append(intensity)
-                time.sleep(0.05)
 
             mean_val = np.mean(measurements)
             std_val = np.std(measurements)
@@ -509,6 +663,33 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
     # Get final stats at optimal positions
     p_final = next(p for p in p_results if p["pwm"] == p_optimal)
     s_final = next(s for s in s_results if s["pwm"] == s_optimal)
+
+    # CRITICAL VALIDATION: Check separation (all polarizer types)
+    separation_pwm = abs(s_optimal - p_optimal)
+    separation_deg = (separation_pwm / 255.0) * 180.0
+
+    MIN_SEPARATION_PWM = 60  # 60 degrees minimum
+
+    if separation_pwm < MIN_SEPARATION_PWM:
+        print("\n" + "=" * 70)
+        print("❌ CRITICAL ERROR: POSITIONS TOO CLOSE TOGETHER")
+        print("=" * 70)
+        print(f"S position: PWM {s_optimal} ({(s_optimal/255.0)*180:.1f}°)")
+        print(f"P position: PWM {p_optimal} ({(p_optimal/255.0)*180:.1f}°)")
+        print(f"Separation: {separation_pwm} PWM ({separation_deg:.1f}°)")
+        print(f"MINIMUM REQUIRED: {MIN_SEPARATION_PWM} PWM (60°)")
+        print("")
+        print("This indicates:")
+        print("  1. Both positions may be on the SAME window")
+        print("  2. Mechanical coupling may be slipping")
+        print("  3. Polarizer may not be rotating with servo")
+        print("")
+        print("CALIBRATION CANNOT CONTINUE - FIX HARDWARE ISSUE")
+        print("=" * 70)
+        raise RuntimeError(
+            f"Stage 3 refinement failed: S and P positions only {separation_deg:.1f}° apart "
+            f"(minimum required: 60°). Check mechanical coupling."
+        )
 
     return {
         "p_pwm": p_optimal,
@@ -562,18 +743,39 @@ def main():
         print(f"Connected: {ctrl_name}, {serial_number}")
         print(f"Device Serial: {serial_number}\n")
 
-        # Try 20% first, fallback to 5% if saturated
-        led_intensity_percent = 20
+        # Detect if this is P4PRO firmware (requires channel enable before batch command)
+        is_p4pro = hasattr(hm.ctrl, 'firmware_id') and 'P4PRO' in hm.ctrl.firmware_id
+        
+        # P4PRO uses 40% initial intensity, others use 20%
+        led_intensity_percent = 40 if is_p4pro else 20
         max_attempts = 2
 
         for attempt in range(max_attempts):
             led_intensity = int(led_intensity_percent * 255 / 100)
+            
+            # Set all LEDs
+            print(f"Setting all 4 LEDs to {led_intensity_percent}% ({led_intensity}/255)...")
+            try:
+                if is_p4pro:
+                    # P4PRO: Enable channels first, then set batch intensity
+                    print("  (P4PRO detected - enabling channels before batch command)")
+                    for ch in ['a', 'b', 'c', 'd']:
+                        hm.ctrl.turn_on_channel(ch=ch)
+                    time.sleep(0.05)  # Allow channels to enable
 
-            # Set LED intensities
-            print(f"Setting LEDs to {led_intensity_percent}% ({led_intensity}/255)...")
-            hm.ctrl._ser.write(b"lm:A,B,C,D\n")
-            time.sleep(0.1)
-            hm.ctrl.set_batch_intensities(a=led_intensity, b=led_intensity, c=led_intensity, d=led_intensity)
+                # Set all intensities via batch command
+                hm.ctrl.set_batch_intensities(a=led_intensity, b=led_intensity, c=led_intensity, d=led_intensity)
+            except Exception as e:
+                print(f"  Warning: Batch LED setup failed: {e}")
+                # Fallback: Set individual LEDs
+                print("  (Using individual LED commands for compatibility)")
+                for ch in ['a', 'b', 'c', 'd']:
+                    try:
+                        hm.ctrl.turn_on_channel(ch=ch)
+                        hm.ctrl.set_intensity(ch=ch, raw_val=led_intensity)
+                    except Exception:
+                        pass  # Skip if channel doesn't exist
+            time.sleep(0.2)  # Allow LEDs to stabilize
 
             # Set integration time to 5ms
             print("Setting integration time to 5ms...")
@@ -774,18 +976,33 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
         serial_number = usb.serial_number
         print(f"Starting servo calibration for {serial_number}...")
 
-        # Try 20% first, fallback to 5% if saturated
-        led_intensity_percent = 20
-        max_attempts = 2
+        # Start with very low LED intensity to avoid saturation
+        # Try 20% first, fallback to 5%/2%/1% if saturated
+        led_intensity_options = [20, 5, 2, 1]
+        max_attempts = len(led_intensity_options)
 
         for attempt in range(max_attempts):
+            led_intensity_percent = led_intensity_options[attempt]
             led_intensity = int(led_intensity_percent * 255 / 100)
 
+            # Enable all 4 LEDs first (CRITICAL for P4PRO firmware)
+            print(f"\nAttempt {attempt+1}/{max_attempts}: Enabling LEDs with lm:ABCD...")
+            if hasattr(ctrl, 'enable_multi_led'):
+                result = ctrl.enable_multi_led(a=True, b=True, c=True, d=True)
+                print(f"  enable_multi_led() returned: {result}")
+            else:
+                print(f"  WARNING: Controller type {type(ctrl).__name__} has no enable_multi_led() method!")
+            
+            # Brief delay for LED enable to take effect
+            time.sleep(0.2)
+            
             # Set LED intensities
-            print(f"Setting LEDs to {led_intensity_percent}% ({led_intensity}/255)...")
-            ctrl._ser.write(b"lm:A,B,C,D\n")
-            time.sleep(0.1)
-            ctrl.set_batch_intensities(a=led_intensity, b=led_intensity, c=led_intensity, d=led_intensity)
+            print(f"Setting LEDs to {led_intensity_percent}% ({led_intensity}/255) using set_batch_intensities()...")
+            result = ctrl.set_batch_intensities(a=led_intensity, b=led_intensity, c=led_intensity, d=led_intensity)
+            print(f"  set_batch_intensities() returned: {result}")
+            
+            # Brief delay for intensity to settle
+            time.sleep(0.2)
 
             # Set integration time to 5ms
             print("Setting integration time to 5ms...")
@@ -896,11 +1113,16 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
         traceback.print_exc()
         return False
     finally:
-        # Cleanup
+        # CRITICAL: Always turn off LEDs on exit (graceful or crash)
+        print("\n[CLEANUP] Turning off all LEDs...")
         try:
-            ctrl._ser.write(b"lx\n")
-        except:
-            pass
+            if ctrl and ctrl._ser:
+                # Use lx command (turn off all LEDs)
+                ctrl._ser.write(b"lx\n")
+                time.sleep(0.1)
+                print("[CLEANUP] ✅ LEDs turned off")
+        except Exception as cleanup_err:
+            print(f"[CLEANUP] ⚠️  Failed to turn off LEDs: {cleanup_err}")
 
 
 def run_calibration_with_hardware(hardware_manager, progress_callback=None):
@@ -946,8 +1168,6 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
 
             # Set LED intensities
             logger.info(f"Setting LEDs to {led_intensity_percent}% ({led_intensity}/255)...")
-            ctrl._ser.write(b"lm:A,B,C,D\n")
-            time.sleep(0.1)
             ctrl.set_batch_intensities(a=led_intensity, b=led_intensity, c=led_intensity, d=led_intensity)
 
             # Set integration time to 5ms
@@ -1001,6 +1221,38 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
             alternate_s=type_info.get("alternate_s"),
         )
 
+        # ===== CRITICAL VALIDATION: DEGREE SEPARATION =====
+        # HS-65MG servo: PWM 0-255 maps to 0-180 degrees
+        def pwm_to_degrees(pwm):
+            return (pwm / 255.0) * 180.0
+
+        s_degrees = pwm_to_degrees(refinement['s_pwm'])
+        p_degrees = pwm_to_degrees(refinement['p_pwm'])
+        separation_degrees = abs(s_degrees - p_degrees)
+
+        # BARREL polarizers REQUIRE >60° separation (ideally 80-90°)
+        MIN_SEPARATION_DEGREES = 60.0
+
+        if is_barrel and separation_degrees < MIN_SEPARATION_DEGREES:
+            logger.error("\n" + "=" * 70)
+            logger.error("❌ CALIBRATION FAILED - INVALID SERVO POSITIONS")
+            logger.error("=" * 70)
+            logger.error(f"S Position: PWM {refinement['s_pwm']} = {s_degrees:.1f}°")
+            logger.error(f"P Position: PWM {refinement['p_pwm']} = {p_degrees:.1f}°")
+            logger.error(f"Separation: {separation_degrees:.1f}° (REQUIRED: >{MIN_SEPARATION_DEGREES}°)")
+            logger.error("")
+            logger.error("BARREL polarizers have two transmission windows that MUST be")
+            logger.error("separated by at least 60 degrees (ideally 80-90 degrees).")
+            logger.error("")
+            logger.error("Possible causes:")
+            logger.error("  1. Polarizer barrel not rotating with servo")
+            logger.error("  2. Mechanical slippage in coupling")
+            logger.error("  3. Wrong polarizer type detected")
+            logger.error("")
+            logger.error("ACTION REQUIRED: Check mechanical coupling and re-run calibration")
+            logger.error("=" * 70)
+            return False
+
         # Display results
         ratio = refinement["s_intensity"] / refinement["p_intensity"] if refinement["p_intensity"] > 0 else 0
 
@@ -1008,8 +1260,9 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
         logger.info("✅ CALIBRATION COMPLETE")
         logger.info("=" * 70)
         logger.info(f"Polarizer Type:    {polarizer_type}")
-        logger.info(f"S Position (PWM):  {refinement['s_pwm']}")
-        logger.info(f"P Position (PWM):  {refinement['p_pwm']}")
+        logger.info(f"S Position (PWM):  {refinement['s_pwm']} ({s_degrees:.1f}°)")
+        logger.info(f"P Position (PWM):  {refinement['p_pwm']} ({p_degrees:.1f}°)")
+        logger.info(f"Angular Separation: {separation_degrees:.1f}° {'✅' if separation_degrees > MIN_SEPARATION_DEGREES else '⚠️'}")
         logger.info(f"S/P Ratio:         {ratio:.2f}")
         logger.info(f"S Intensity:       {refinement['s_intensity']:.1f}")
         logger.info(f"P Intensity:       {refinement['p_intensity']:.1f}")

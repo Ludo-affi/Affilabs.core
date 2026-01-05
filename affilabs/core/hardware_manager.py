@@ -28,7 +28,7 @@ from affilabs.utils.logger import logger
 # ============================================================================
 # DEBUG FLAGS - Set to True for detailed troubleshooting output
 # ============================================================================
-HARDWARE_DEBUG = False  # Disable verbose logging for faster connection (was True)
+HARDWARE_DEBUG = True  # Enable verbose logging to debug P4PRO connection
 CONNECTION_TIMEOUT = 2.0  # Reduced from 8s to 2s for faster scans (still safe for WinUSB)
 CONNECTION_RETRY_COUNT = 1  # Single attempt only (no retries to avoid error cascade)
 
@@ -61,10 +61,12 @@ def _get_controller_classes():
                     PicoEZSPR,
                     PicoKNX2,
                     PicoP4SPR,
+                    PicoP4PRO,
                 )
 
                 _controller_classes_cache = {
                     "PicoP4SPR": PicoP4SPR,
+                    "PicoP4PRO": PicoP4PRO,
                     "PicoEZSPR": PicoEZSPR,
                     "KineticController": KineticController,
                     "PicoKNX2": PicoKNX2,
@@ -83,6 +85,7 @@ def _get_controller_classes():
 
                 _controller_classes_cache = {
                     "PicoP4SPR": StubController,
+                    "PicoP4PRO": StubController,
                     "PicoEZSPR": StubController,
                     "KineticController": StubController,
                     "PicoKNX2": StubController,
@@ -126,6 +129,7 @@ class HardwareManager(QObject):
     hardware_disconnected = Signal()
     connection_progress = Signal(str)  # Status messages during connection
     error_occurred = Signal(str)  # Error messages
+    servo_calibration_needed = Signal()  # Triggered when servo positions are missing
 
     # Quality thresholds for sensor/optics verification
     SENSOR_MIN_INTENSITY = 1000  # Minimum acceptable signal intensity
@@ -273,8 +277,9 @@ class HardwareManager(QObject):
                     self._ctrl_raw = ctrl
                     logger.info(f"[OK] Reconnected to {self._ctrl_type} via HAL")
 
-                    # Initialize servo after successful reconnection
-                    self._initialize_servo_polarizer()
+                    # DISABLED: Don't initialize servo during reconnection
+                    # Servo will be initialized during calibration workflow only
+                    # self._initialize_servo_polarizer()
                     return True
                 logger.debug(f"Fast reconnect failed for {self._ctrl_type}")
                 return False
@@ -359,6 +364,19 @@ class HardwareManager(QObject):
 
             # Get servo positions from device_config (single source of truth)
             servo_positions = self.device_config.get_servo_positions()
+
+            # If positions are not calibrated, trigger auto-calibration
+            if servo_positions is None:
+                logger.warning("=" * 60)
+                logger.warning("⚠️  SERVO POSITIONS NOT CALIBRATED")
+                logger.warning("=" * 60)
+                logger.warning("   No servo positions found in device config")
+                logger.warning("   Auto-triggering servo calibration...")
+                logger.warning("=" * 60)
+                # Signal that calibration is needed (will be handled by main app)
+                self.servo_calibration_needed.emit()
+                return
+
             s_position = servo_positions["s"]
             p_position = servo_positions["p"]
 
@@ -632,15 +650,22 @@ class HardwareManager(QObject):
                 # Step 1: Try to connect to SPR controller FIRST (priority order)
                 # This determines which main unit is plugged in
                 self.connection_progress.emit("Looking for SPR controller...")
+                print("=" * 80)
+                print("DEBUG: _connect_controller() about to be called")
+                print(f"DEBUG: self.ctrl before scan = {self.ctrl}")
+                print("=" * 80)
+                logger.info("🔍 Starting controller scan (PicoP4SPR → PicoP4PRO → PicoEZSPR)...")
                 t0 = time.time()
                 try:
                     self._connect_controller()
+                    print(f"DEBUG: _connect_controller() returned, self.ctrl = {self.ctrl}")
                 except Exception as ctrl_e:
-                    logger.error(f"Controller scan failed: {ctrl_e}")
+                    logger.error(f"❌ Controller scan crashed: {ctrl_e}")
+                    print(f"DEBUG: Exception in _connect_controller(): {ctrl_e}")
                     if HARDWARE_DEBUG:
                         import traceback
 
-                        logger.debug(traceback.format_exc())
+                        logger.error(traceback.format_exc())
                 if HARDWARE_DEBUG:
                     logger.info(f"Controller scan: {time.time() - t0:.2f}s")
 
@@ -671,9 +696,10 @@ class HardwareManager(QObject):
                             )
                             logger.info(f"Device configuration loaded for {self._spec_serial}")
 
-                            # NOW initialize servo polarizer (device_config is loaded)
-                            if self.ctrl:
-                                self._initialize_servo_polarizer()
+                            # DISABLED: Don't initialize servo during hardware scan
+                            # Servo will be initialized during calibration workflow only
+                            # if self.ctrl:
+                            #     self._initialize_servo_polarizer()
                 else:
                     logger.error("Detector initialization failed")
                     self.usb = None
@@ -789,8 +815,23 @@ class HardwareManager(QObject):
 
                     # Lock main unit (controller + detector) - no changes allowed until disconnect
                     if self.ctrl and self.usb and not self._hardware_locked:
-                        self._hardware_locked = True
-                        logger.info("=" * 60)
+                        # CRITICAL: Initialize valves to LOAD position (OFF) to prevent overheating
+                        # P4PRO firmware V2.1 has a bug where valves stay powered at 100% instead of using PWM
+                        # This workaround ensures valves are off until explicitly commanded
+                        if (
+                            hasattr(self._ctrl_raw, "firmware_id")
+                            and "P4PRO" in self._ctrl_raw.firmware_id
+                        ):
+                            logger.info(
+                                "Initializing P4PRO 6-port valves to LOAD position (OFF)..."
+                            )
+                            try:
+                                # Set both valves to LOAD (0 = OFF) to prevent overheating
+                                self._ctrl_raw.knx_six_both(0)
+                                logger.info("✓ 6-port valves initialized to LOAD (OFF)")
+                            except Exception as e:
+                                logger.warning(f"Failed to initialize valves: {e}")
+
                         logger.info("🔒 MAIN UNIT LOCKED (Controller + Detector)")
                         logger.info("   Configuration fixed until disconnect")
                         logger.info("   Peripherals (pump/kinetic) can still be added")
@@ -958,11 +999,12 @@ class HardwareManager(QObject):
             try:
                 controller_name = self.ctrl.get_device_type() if self.ctrl else None
                 logger.warning(
-                    f"Controller already connected ({controller_name}) - skipping scan",
+                    f"⚠️ Controller already connected ({controller_name}) - skipping scan",
                 )
                 logger.warning(
                     "  If this is unexpected, the previous connection did not properly clean up!"
                 )
+                logger.warning(f"  Current ctrl object: {self.ctrl}")
                 return
             except Exception as e:
                 # If we can't check name, proceed with connection attempt
@@ -1004,17 +1046,17 @@ class HardwareManager(QObject):
             classes = _get_controller_classes()
             settings = _get_settings()
 
-            # Try controllers in priority order: PicoP4SPR → PicoEZSPR → Arduino
-            # STOP at first controller found - ignore the other 2
+            # Try controllers in priority order: PicoP4SPR → PicoP4PRO → PicoEZSPR → Arduino
+            # STOP at first controller found - ignore the rest
 
             # Priority 1: Try PicoP4SPR first (most common modern controller)
             logger.info(
-                f"Trying PicoP4SPR (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
+                f"[1/3] Trying PicoP4SPR (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
             )
             pico_p4spr = classes["PicoP4SPR"]()
             open_result = pico_p4spr.open()
             if open_result:
-                logger.info(f"[OK] Controller connected: {pico_p4spr.name}")
+                logger.info(f"✅ [OK] Controller connected: {pico_p4spr.name}")
 
                 # Wrap with HAL for consistent interface
                 from affilabs.utils.hal.controller_hal import create_controller_hal
@@ -1033,15 +1075,40 @@ class HardwareManager(QObject):
                 # NOTE: Servo initialization moved to after device_config is loaded (after detector connection)
                 logger.info("[OK] Controller wrapped with HAL")
                 return  # Found controller - stop searching
-            logger.debug("PicoP4SPR open failed")
+            logger.info("   ❌ PicoP4SPR not found")
 
-            # Priority 2: Try PicoEZSPR (P4PRO hardware)
+            # Priority 2: Try PicoP4PRO (standalone P4PRO hardware)
             logger.info(
-                f"Trying PicoEZSPR (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
+                f"[2/3] Trying PicoP4PRO (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
+            )
+            pico_p4pro = classes["PicoP4PRO"]()
+            if pico_p4pro.open():
+                logger.info(f"✅ [OK] Controller connected: {pico_p4pro.name}")
+
+                # Wrap with HAL for consistent interface
+                from affilabs.utils.hal.controller_hal import create_controller_hal
+
+                hal_ctrl = create_controller_hal(pico_p4pro, self.device_config)
+
+                with self._connection_lock:
+                    self.ctrl = hal_ctrl
+                    self._ctrl_raw = pico_p4pro  # Keep raw reference for non-HAL methods
+                    self._ctrl_type = "PicoP4PRO"
+                    if hasattr(pico_p4pro, "_ser") and pico_p4pro._ser:
+                        self._ctrl_port = pico_p4pro._ser.port
+
+                # NOTE: Servo initialization moved to after device_config is loaded (after detector connection)
+                logger.info("[OK] Controller wrapped with HAL")
+                return  # Found controller - stop searching
+            logger.info("   ❌ PicoP4PRO not found")
+
+            # Priority 3: Try PicoEZSPR (EZSPR/AFFINITE hardware)
+            logger.info(
+                f"[3/3] Trying PicoEZSPR (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
             )
             pico_ezspr = classes["PicoEZSPR"]()
             if pico_ezspr.open():
-                logger.info(f"[OK] Controller connected: {pico_ezspr.name}")
+                logger.info(f"✅ [OK] Controller connected: {pico_ezspr.name}")
 
                 # Wrap with HAL for consistent interface
                 from affilabs.utils.hal.controller_hal import create_controller_hal
@@ -1058,9 +1125,10 @@ class HardwareManager(QObject):
                 # NOTE: Servo initialization moved to after device_config is loaded (after detector connection)
                 logger.info("[OK] Controller wrapped with HAL")
                 return  # Found controller - stop searching
+            logger.info("   ❌ PicoEZSPR not found")
 
             # Arduino controller DELETED - obsolete hardware
-            # Only PicoP4SPR and PicoEZSPR are supported
+            # Only PicoP4SPR, PicoP4PRO, and PicoEZSPR are supported
 
             logger.warning("No SPR controller found")
             settings = _get_settings()
@@ -1130,51 +1198,69 @@ class HardwareManager(QObject):
     def _connect_pump(self) -> None:
         """Attempt to connect to AffiPump (Tecan Cavro Centris dual syringe pumps)."""
         try:
+            logger.info("🔍 Scanning for AffiPump via FTDI...")
             from affipump import CavroPumpManager, PumpController
 
             from affilabs.utils.hal.pump_hal import create_pump_hal
 
             # First, connect to FTDI serial interface
+            logger.debug("   Calling PumpController.from_first_available()...")
             controller = PumpController.from_first_available()
             if not controller:
-                logger.debug("No FTDI pump controller found")
+                logger.info("   ❌ No FTDI pump controller found")
+                logger.info("   Check: FTDI driver installed, USB cable, pump power")
                 self.pump = None
                 return
 
+            logger.info(f"   ✅ FTDI controller found: {controller}")
+
             # Create pump manager with hardware controller
+            logger.debug("   Creating CavroPumpManager...")
             pump_manager = CavroPumpManager(controller)
 
-            # Initialize both pumps
-            if pump_manager.initialize_pumps():
-                # Wrap with HAL for consistent interface
-                self.pump = create_pump_hal(pump_manager)
-                logger.info(
-                    "AffiPump connected and initialized via HAL (2x Tecan Cavro Centris pumps)",
-                )
-            else:
-                logger.warning(
-                    "AffiPump found but initialization failed - pump may be powered off",
-                )
-                controller.close()
-                self.pump = None
+            # Initialize both pumps (DISABLED - prevents initial prime cycle)
+            logger.debug("   Skipping pump initialization (disabled per user request)...")
+            # DISABLED: Prevents automatic prime cycle on connection
+            # if pump_manager.initialize_pumps():
+            #     # Wrap with HAL for consistent interface
+            #     self.pump = create_pump_hal(pump_manager)
+            #     logger.info(
+            #         "✅ AffiPump connected and initialized via HAL (2x Tecan Cavro Centris pumps)",
+            #     )
+            # else:
+            #     logger.warning(
+            #         "⚠️ AffiPump found but initialization failed - pump may be powered off",
+            #     )
+            #     controller.close()
+            #     self.pump = None
+
+            # Connect pump without initialization
+            self.pump = create_pump_hal(pump_manager)
+            logger.info(
+                "✅ AffiPump connected (initialization skipped) - 2x Tecan Cavro Centris pumps",
+            )
 
         except ImportError as e:
-            logger.debug(f"AffiPump module not available: {e}")
+            logger.info(f"   ❌ AffiPump module not available: {e}")
+            logger.info("   AffiPump package may not be installed")
             self.pump = None
         except Exception as e:
-            logger.error(f"Pump connection failed: {e}")
+            logger.error(f"❌ Pump connection failed: {e}")
+            if HARDWARE_DEBUG:
+                logger.exception("Full pump detection error:")
             self.pump = None
 
     def _get_controller_type(self) -> str:
         """Get the type of connected controller based on plugged hardware.
 
         Returns standardized hardware names for UI display:
-        - P4SPR: Basic SPR controller (Arduino or PicoP4SPR)
-        - P4PRO: Advanced SPR controller (PicoEZSPR hardware)
-        - ezSPR: Standalone easy-to-use SPR controller
+        - P4SPR: Basic SPR controller (PicoP4SPR)
+        - P4PRO: Advanced SPR controller with servo polarizer (PicoP4PRO)
+        - ezSPR: Standalone easy-to-use SPR controller (PicoEZSPR)
+        - AFFINITE: Integrated SPR with pump (PicoAFFINITE)
 
-        Note: P4PRO is often paired with AffiPump.
-              P4SPR is often paired with KNX.
+        Note: P4PRO is often paired with AffiPump for fluidics.
+              P4SPR is often paired with KNX for kinetics.
         """
         if self.ctrl is None:
             return ""  # No controller = no device type
@@ -1185,10 +1271,14 @@ class HardwareManager(QObject):
         # Map internal device type to product name
         if device_type == "PicoP4SPR":
             return "P4SPR"
-        elif device_type == "PicoEZSPR":
+        elif device_type == "PicoP4PRO":
             return "P4PRO"
+        elif device_type == "PicoEZSPR":
+            return "ezSPR"
+        elif device_type == "PicoAFFINITE":
+            return "AFFINITE"
         elif device_type == "Arduino":
-            return "P4SPR"
+            return "P4SPR"  # Legacy
 
         return ""
 

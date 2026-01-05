@@ -33,6 +33,10 @@ class EditsTab:
         # Per-cycle editing state
         self._cycle_alignment = {}  # {row_idx: {'channel': str, 'shift': float}}
 
+        # Flags system for marking/annotating graph points
+        self._edits_flags = []
+        self._selected_flag_idx = None
+
         # UI elements (will be created in create_content)
         self.cycle_data_table = None
         self.edits_timeline_graph = None
@@ -76,9 +80,15 @@ class EditsTab:
         self.cycle_data_table.setColumnWidth(4, 70)   # Start time
         self.cycle_data_table.setColumnWidth(5, 70)   # End time
         self.cycle_data_table.verticalHeader().setVisible(False)  # Hide row numbers
+        self.cycle_data_table.setShowGrid(True)  # Show grid lines
+        self.cycle_data_table.setGridStyle(Qt.PenStyle.SolidLine)  # Solid grid lines
         self.cycle_data_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.cycle_data_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.cycle_data_table.itemSelectionChanged.connect(self.main_window._on_cycle_selected_in_table)
+
+        # Enable context menu for loading cycles to reference graphs
+        self.cycle_data_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.cycle_data_table.customContextMenuRequested.connect(self._on_table_context_menu)
 
         # Initialize primary graph (needed by selection panel)
         self.edits_primary_graph = pg.PlotWidget()
@@ -363,8 +373,8 @@ class EditsTab:
         # Timeline graph
         self.edits_timeline_graph = pg.PlotWidget()
         self.edits_timeline_graph.setBackground('w')
-        self.edits_timeline_graph.setLabel('left', 'Response (RU)', color='#1D1D1F')
-        self.edits_timeline_graph.setLabel('bottom', 'Time (s)', color='#1D1D1F')
+        self.edits_timeline_graph.setLabel('left', 'Response', units='RU', color='#1D1D1F')
+        self.edits_timeline_graph.setLabel('bottom', 'Time', units='s', color='#1D1D1F')
         self.edits_timeline_graph.showGrid(x=True, y=True, alpha=0.2)
 
         # Create curves for 4 channels
@@ -591,12 +601,11 @@ class EditsTab:
             self.edits_graph_curves[ch_idx].setVisible(visible)
 
     def _export_selection(self):
-        """Export combined sensorgram with selected cycles to Excel.
+        """Export data from Edits tab to Excel.
 
-        Creates a new Excel file with:
-        - Combined sensorgram data respecting channel selections and time shifts
-        - Metadata about which cycles/channels were used
-        - Alignment settings applied
+        Two modes:
+        1. If cycles exist and are selected: Export combined sensorgram with cycles
+        2. If no cycles (live data): Export raw data directly
         """
         from affilabs.utils.logger import logger
         from PySide6.QtWidgets import QFileDialog, QMessageBox
@@ -604,6 +613,30 @@ class EditsTab:
         from datetime import datetime
 
         try:
+            # Check if we have raw data available (either from Send to Edits or loaded file)
+            raw_data = None
+
+            # Option 1: Data from Send to Edits (stored in main_window._edits_raw_data)
+            if hasattr(self.main_window, '_edits_raw_data') and self.main_window._edits_raw_data is not None:
+                raw_data = self.main_window._edits_raw_data
+
+            # Option 2: Data loaded from file (stored in recording_mgr.data_collector.raw_data_rows)
+            elif hasattr(self.main_window, 'app') and hasattr(self.main_window.app, 'recording_mgr'):
+                if hasattr(self.main_window.app.recording_mgr, 'data_collector'):
+                    if hasattr(self.main_window.app.recording_mgr.data_collector, 'raw_data_rows'):
+                        raw_rows = self.main_window.app.recording_mgr.data_collector.raw_data_rows
+                        if raw_rows and len(raw_rows) > 0:
+                            # Keep raw data in original format (don't pivot)
+                            # Just pass the raw_rows list directly for long format export
+                            self._export_raw_data_long_format(raw_rows)
+                            return
+
+            # If we have raw data, export it directly
+            if raw_data is not None and len(raw_data) > 0:
+                self._export_raw_data_direct(raw_data)
+                return
+
+            # Otherwise, export selected cycles (original behavior)
             # Get selected cycles
             selected_rows = sorted(set(item.row() for item in self.cycle_data_table.selectedItems()))
 
@@ -735,16 +768,57 @@ class EditsTab:
 
             # Create Excel file with multiple sheets
             with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                # Sheet 1: Combined data
-                df_data = pd.DataFrame(export_data)
-                df_data = df_data.sort_values(['Time_s', 'Channel'])
-                df_data.to_excel(writer, sheet_name='Combined Data', index=False)
+                # Sheet 1: Combined data in long format (original format)
+                df_data_long = pd.DataFrame(export_data)
+                df_data_long = df_data_long.sort_values(['Time_s', 'Channel'])
+                df_data_long.to_excel(writer, sheet_name='Combined Data (Long)', index=False)
 
-                # Sheet 2: Metadata
+                # Sheet 2: Per-channel format (Time_A, A, Time_B, B, Time_C, C, Time_D, D)
+                # Convert long format to wide per-channel format
+                per_channel_data = {}
+                for item in export_data:
+                    ch = item['Channel']
+                    time = item['Time_s']
+                    ru = item['Response_RU']
+
+                    if ch not in per_channel_data:
+                        per_channel_data[ch] = {'times': [], 'values': []}
+
+                    per_channel_data[ch]['times'].append(time)
+                    per_channel_data[ch]['values'].append(ru)
+
+                # Find max length for padding
+                max_len = max((len(per_channel_data[ch]['times']) for ch in ['A', 'B', 'C', 'D'] if ch in per_channel_data), default=0)
+
+                # Build per-channel DataFrame
+                per_channel_dict = {}
+                for ch in ['A', 'B', 'C', 'D']:
+                    if ch in per_channel_data:
+                        times = per_channel_data[ch]['times']
+                        values = per_channel_data[ch]['values']
+                        # Pad to max length with NaN
+                        times += [None] * (max_len - len(times))
+                        values += [None] * (max_len - len(values))
+                        per_channel_dict[f'Time_{ch}'] = times
+                        per_channel_dict[ch] = values
+                    else:
+                        per_channel_dict[f'Time_{ch}'] = [None] * max_len
+                        per_channel_dict[ch] = [None] * max_len
+
+                # Create DataFrame with column order: Time_A, A, Time_B, B, Time_C, C, Time_D, D
+                column_order = []
+                for ch in ['A', 'B', 'C', 'D']:
+                    column_order.append(f'Time_{ch}')
+                    column_order.append(ch)
+
+                df_per_channel = pd.DataFrame(per_channel_dict)[column_order]
+                df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+
+                # Sheet 3: Metadata
                 df_meta = pd.DataFrame(metadata)
                 df_meta.to_excel(writer, sheet_name='Cycle Metadata', index=False)
 
-                # Sheet 3: Alignment settings (for re-loading)
+                # Sheet 4: Alignment settings (for re-loading)
                 if self._cycle_alignment:
                     alignment_rows = []
                     for cycle_idx, settings in self._cycle_alignment.items():
@@ -758,7 +832,7 @@ class EditsTab:
                         df_alignment = pd.DataFrame(alignment_rows)
                         df_alignment.to_excel(writer, sheet_name='Alignment', index=False)
 
-                # Sheet 4: Flags (if any)
+                # Sheet 5: Flags (if any)
                 if self._edits_flags:
                     flag_rows = []
                     for flag in self._edits_flags:
@@ -768,7 +842,7 @@ class EditsTab:
                         df_flags.to_excel(writer, sheet_name='Flags', index=False)
                         logger.debug(f"Exported {len(flag_rows)} flags")
 
-                # Sheet 5: Export info
+                # Sheet 6: Export info
                 export_info = pd.DataFrame([{
                     'Export_Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'Total_Cycles': len(selected_rows),
@@ -794,6 +868,336 @@ class EditsTab:
                 self.main_window,
                 "Export Error",
                 f"Failed to export combined sensorgram:\n{str(e)}"
+            )
+
+    def _export_raw_data_long_format(self, raw_rows):
+        """
+        Export raw data in LONG format (Time, Channel, Value) and also create per-channel format.
+        This avoids the sparse wide-format with lots of NaN values.
+        """
+        import pandas as pd
+        from datetime import datetime
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from affilabs.utils.logger import logger
+
+        # Ask user for save location
+        default_filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self.main_window,
+            "Export Raw Data",
+            default_filename,
+            "Excel Files (*.xlsx)"
+        )
+
+        if not file_path:
+            return
+
+        # Convert raw_rows to long format DataFrame
+        rows_list = []
+        for row in raw_rows:
+            time_key = 'elapsed' if 'elapsed' in row else 'time'
+            rows_list.append({
+                'Time': row[time_key],
+                'Channel': row['channel'].upper(),
+                'Value': row['value']
+            })
+
+        df_long = pd.DataFrame(rows_list)
+
+        # Also create wide format for per-channel extraction
+        df_wide = df_long.pivot_table(
+            index='Time',
+            columns='Channel',
+            values='Value',
+            aggfunc='first'
+        ).reset_index()
+
+        # Get cycle table data if available
+        cycles_table = []
+        if hasattr(self.main_window, '_loaded_cycles_data') and self.main_window._loaded_cycles_data:
+            for idx, cycle in enumerate(self.main_window._loaded_cycles_data):
+                cycles_table.append({
+                    'Cycle #': cycle.get('cycle_number', idx + 1),
+                    'Type': cycle.get('type', 'Unknown'),
+                    'Duration (min)': cycle.get('duration_minutes', ''),
+                    'Concentration': cycle.get('concentration_value', ''),
+                    'Units': cycle.get('concentration_units', ''),
+                    'Notes': cycle.get('notes', '')
+                })
+
+        # Export to Excel with multiple sheets
+        with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+            # Sheet 1: Raw data in LONG format (Time, Channel, Value - no NaNs!)
+            df_long.to_excel(writer, sheet_name='Raw Data', index=False)
+
+            # Sheet 2: Per-channel format (Time_A, A, Time_B, B, Time_C, C, Time_D, D)
+            per_channel_dict = {}
+            for ch in ['A', 'B', 'C', 'D']:
+                if ch in df_wide.columns:
+                    # Get non-null values and their corresponding times
+                    valid_mask = df_wide[ch].notna()
+                    times = df_wide.loc[valid_mask, 'Time'].values
+                    values = df_wide.loc[valid_mask, ch].values
+                    per_channel_dict[f'Time_{ch}'] = list(times)
+                    per_channel_dict[ch] = list(values)
+                else:
+                    per_channel_dict[f'Time_{ch}'] = []
+                    per_channel_dict[ch] = []
+
+            # Pad all lists to the same length
+            max_len = max(len(v) for v in per_channel_dict.values()) if per_channel_dict else 0
+            for key in per_channel_dict:
+                while len(per_channel_dict[key]) < max_len:
+                    per_channel_dict[key].append(None)
+
+            df_per_channel = pd.DataFrame(per_channel_dict)
+            df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+
+            # Sheet 3: Cycle Table
+            if cycles_table:
+                df_cycles = pd.DataFrame(cycles_table)
+                df_cycles.to_excel(writer, sheet_name='Cycle Table', index=False)
+
+            # Sheet 4: Export info
+            info_dict = {
+                'Property': ['Export Date', 'Data Points', 'Channels', 'Cycles'],
+                'Value': [
+                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    str(len(df_long)),
+                    ', '.join(df_long['Channel'].unique()),
+                    str(len(cycles_table)) if cycles_table else '0'
+                ]
+            }
+            df_info = pd.DataFrame(info_dict)
+            df_info.to_excel(writer, sheet_name='Export Info', index=False)
+
+        logger.info(f"[EXPORT] Exported {len(df_long)} rows to: {file_path}")
+
+        metadata_text = f"Exported to:\n{file_path}\n\n"
+        metadata_text += f"Raw Data: {len(df_long)} rows (long format)\n"
+        metadata_text += f"Per-Channel Format: {max_len} rows\n"
+        metadata_text += f"Channels: {', '.join(df_long['Channel'].unique())}"
+
+        QMessageBox.information(self.main_window, "Export Complete", metadata_text)
+
+    def _export_raw_data_direct(self, df_raw):
+        """Export raw data DataFrame directly to Excel in per-channel format.
+
+        Args:
+            df_raw: DataFrame with columns Time, A, B, C, D
+        """
+        from affilabs.utils.logger import logger
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        import pandas as pd
+        from datetime import datetime
+
+        try:
+            if df_raw is None or len(df_raw) == 0:
+                QMessageBox.warning(
+                    self.main_window,
+                    "No Data",
+                    "No data available to export."
+                )
+                return
+
+            # Get filename from user
+            default_name = f"Edits_Data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self.main_window,
+                "Export Data",
+                default_name,
+                "Excel Files (*.xlsx);;All Files (*)"
+            )
+
+            if not file_path:
+                return  # User cancelled
+
+            logger.info(f"[EXPORT] Exporting data to: {file_path}")
+
+            # Create Excel file with multiple sheets
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                # Sheet 1: Raw data (Time, A, B, C, D format)
+                df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
+
+                # Sheet 2: Per-channel format (Time_A, A, Time_B, B, Time_C, C, Time_D, D)
+                per_channel_dict = {}
+                for ch in ['A', 'B', 'C', 'D']:
+                    if ch in df_raw.columns:
+                        # Get non-null values and their corresponding times
+                        valid_mask = df_raw[ch].notna()
+                        times = df_raw.loc[valid_mask, 'Time'].values
+                        values = df_raw.loc[valid_mask, ch].values
+                        per_channel_dict[f'Time_{ch}'] = list(times)
+                        per_channel_dict[ch] = list(values)
+                    else:
+                        per_channel_dict[f'Time_{ch}'] = []
+                        per_channel_dict[ch] = []
+
+                # Find max length for padding
+                max_len = max((len(per_channel_dict[f'Time_{ch}']) for ch in ['A', 'B', 'C', 'D']), default=0)
+
+                # Pad all to same length
+                for ch in ['A', 'B', 'C', 'D']:
+                    current_len = len(per_channel_dict[f'Time_{ch}'])
+                    if current_len < max_len:
+                        per_channel_dict[f'Time_{ch}'].extend([None] * (max_len - current_len))
+                        per_channel_dict[ch].extend([None] * (max_len - current_len))
+
+                # Create DataFrame with column order: Time_A, A, Time_B, B, Time_C, C, Time_D, D
+                column_order = []
+                for ch in ['A', 'B', 'C', 'D']:
+                    column_order.append(f'Time_{ch}')
+                    column_order.append(ch)
+
+                df_per_channel = pd.DataFrame(per_channel_dict)[column_order]
+                df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+
+                # Sheet 3: Cycle Table
+                cycles_table = []
+                if hasattr(self.main_window, '_loaded_cycles_data') and self.main_window._loaded_cycles_data:
+                    for idx, cycle in enumerate(self.main_window._loaded_cycles_data):
+                        cycles_table.append({
+                            'Cycle #': cycle.get('cycle_number', idx + 1),
+                            'Type': cycle.get('type', 'Unknown'),
+                            'Duration (min)': cycle.get('duration_minutes', ''),
+                            'Concentration': cycle.get('concentration_value', ''),
+                            'Units': cycle.get('concentration_units', ''),
+                            'Notes': cycle.get('notes', '')
+                        })
+
+                if cycles_table:
+                    df_cycles = pd.DataFrame(cycles_table)
+                    df_cycles.to_excel(writer, sheet_name='Cycle Table', index=False)
+
+                # Sheet 4: Export info
+                source_file = getattr(self.main_window, '_edits_source_file', 'Unknown')
+                export_info = pd.DataFrame([{
+                    'Export_Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'Source': source_file,
+                    'Total_Data_Points': len(df_raw),
+                    'Time_Range_s': f"{df_raw['Time'].min():.1f} - {df_raw['Time'].max():.1f}",
+                    'Cycles': str(len(cycles_table)) if cycles_table else '0',
+                    'Description': 'Data exported from Edits tab'
+                }])
+                export_info.to_excel(writer, sheet_name='Export Info', index=False)
+
+            logger.info(f"✓ Exported {len(df_raw)} data points")
+
+            QMessageBox.information(
+                self.main_window,
+                "Export Complete",
+                f"Data exported successfully!\n\n"
+                f"File: {file_path}\n"
+                f"Data points: {len(df_raw)}\n"
+                f"Sheets: Raw Data + Per-Channel Format"
+            )
+
+        except Exception as e:
+            logger.exception(f"Error exporting data: {e}")
+            QMessageBox.critical(
+                self.main_window,
+                "Export Error",
+                f"Failed to export data:\n{str(e)}"
+            )
+
+    def _export_raw_data(self):
+        """Export raw data (from Send to Edits) to Excel in per-channel format."""
+        from affilabs.utils.logger import logger
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        import pandas as pd
+        from datetime import datetime
+
+        try:
+            # Get raw data DataFrame
+            df_raw = self.main_window._edits_raw_data
+
+            if df_raw is None or len(df_raw) == 0:
+                QMessageBox.warning(
+                    self.main_window,
+                    "No Data",
+                    "No data available to export."
+                )
+                return
+
+            # Get filename from user
+            default_name = f"Live_Data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self.main_window,
+                "Export Live Data",
+                default_name,
+                "Excel Files (*.xlsx);;All Files (*)"
+            )
+
+            if not file_path:
+                return  # User cancelled
+
+            logger.info(f"[EXPORT] Exporting raw data to: {file_path}")
+
+            # Create Excel file with multiple sheets
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                # Sheet 1: Raw data (Time, A, B, C, D format)
+                df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
+
+                # Sheet 2: Per-channel format (Time_A, A, Time_B, B, Time_C, C, Time_D, D)
+                per_channel_dict = {}
+                for ch in ['A', 'B', 'C', 'D']:
+                    if ch in df_raw.columns:
+                        # Get non-null values and their corresponding times
+                        valid_mask = df_raw[ch].notna()
+                        times = df_raw.loc[valid_mask, 'Time'].values
+                        values = df_raw.loc[valid_mask, ch].values
+                        per_channel_dict[f'Time_{ch}'] = list(times)
+                        per_channel_dict[ch] = list(values)
+                    else:
+                        per_channel_dict[f'Time_{ch}'] = []
+                        per_channel_dict[ch] = []
+
+                # Find max length for padding
+                max_len = max((len(per_channel_dict[f'Time_{ch}']) for ch in ['A', 'B', 'C', 'D']), default=0)
+
+                # Pad all to same length
+                for ch in ['A', 'B', 'C', 'D']:
+                    current_len = len(per_channel_dict[f'Time_{ch}'])
+                    if current_len < max_len:
+                        per_channel_dict[f'Time_{ch}'].extend([None] * (max_len - current_len))
+                        per_channel_dict[ch].extend([None] * (max_len - current_len))
+
+                # Create DataFrame with column order: Time_A, A, Time_B, B, Time_C, C, Time_D, D
+                column_order = []
+                for ch in ['A', 'B', 'C', 'D']:
+                    column_order.append(f'Time_{ch}')
+                    column_order.append(ch)
+
+                df_per_channel = pd.DataFrame(per_channel_dict)[column_order]
+                df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+
+                # Sheet 3: Export info
+                export_info = pd.DataFrame([{
+                    'Export_Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'Source': getattr(self.main_window, '_edits_source_file', 'Live Data'),
+                    'Total_Data_Points': len(df_raw),
+                    'Time_Range_s': f"{df_raw['Time'].min():.1f} - {df_raw['Time'].max():.1f}",
+                    'Description': 'Live data exported from Edits tab'
+                }])
+                export_info.to_excel(writer, sheet_name='Export Info', index=False)
+
+            logger.info(f"✓ Exported {len(df_raw)} data points")
+
+            QMessageBox.information(
+                self.main_window,
+                "Export Complete",
+                f"Data exported successfully!\n\n"
+                f"File: {file_path}\n"
+                f"Data points: {len(df_raw)}\n"
+                f"Format: Raw Data + Per-Channel sheets"
+            )
+
+        except Exception as e:
+            logger.exception(f"Error exporting raw data: {e}")
+            QMessageBox.critical(
+                self.main_window,
+                "Export Error",
+                f"Failed to export data:\n{str(e)}"
             )
 
     def _on_alignment_channel_changed(self, channel):
@@ -1025,48 +1429,39 @@ class EditsTab:
                     'duration_s': end_time - start_time
                 })
 
-                # Get raw data
-                raw_data = self.main_window._loaded_raw_data
-                if raw_data is None or raw_data.empty:
+                # Get raw data (list of dicts with 'time', 'channel', 'value')
+                raw_data_list = self.main_window._loaded_raw_data
+                if not raw_data_list:
                     logger.warning(f"      No raw data available")
                     continue
 
-                # Filter to cycle time range
-                cycle_mask = (raw_data['Time_s'] >= start_time) & (raw_data['Time_s'] <= end_time)
-                cycle_data = raw_data[cycle_mask].copy()
+                # Filter to cycle time range and extract selected channel(s)
+                channels_to_extract = ['a', 'b', 'c', 'd'] if channel_filter == 'All' else [channel_filter.lower()]
 
-                if cycle_data.empty:
-                    logger.warning(f"      No data in time range {start_time:.1f}-{end_time:.1f}s")
-                    continue
-
-                # Normalize time to start at current_time
-                cycle_data['Time_s'] = cycle_data['Time_s'] - start_time + time_shift + current_time
-
-                # Extract only the selected channel(s)
-                channels_to_extract = ['A', 'B', 'C', 'D'] if channel_filter == 'All' else [channel_filter]
-
+                points_before = len(combined_data)
                 for ch in channels_to_extract:
-                    wavelength_col = f'Wavelength_{ch}_nm'
-                    ru_col = f'Response_{ch}_RU'
+                    # Extract data for this channel in this time range
+                    for row_data in raw_data_list:
+                        if row_data.get('channel') == ch:
+                            time = row_data.get('time')
+                            value = row_data.get('value')
 
-                    # Convert wavelength to RU if needed
-                    if wavelength_col in cycle_data.columns and ru_col not in cycle_data.columns:
-                        cycle_data[ru_col] = cycle_data[wavelength_col] * WAVELENGTH_TO_RU
-
-                    # Extract channel data
-                    if ru_col in cycle_data.columns:
-                        for _, row_data in cycle_data.iterrows():
-                            combined_data.append({
-                                'Time_s': row_data['Time_s'],
-                                'Channel': ch.lower(),
-                                'Response_RU': row_data[ru_col]
-                            })
+                            if time is not None and value is not None:
+                                if start_time <= time <= end_time:
+                                    # Normalize time to start at current_time
+                                    adjusted_time = time - start_time + time_shift + current_time
+                                    combined_data.append({
+                                        'Time_s': adjusted_time,
+                                        'Channel': ch,
+                                        'Response_RU': value
+                                    })
 
                 # Update time offset
                 cycle_duration = end_time - start_time
                 current_time += cycle_duration
+                points_extracted = len(combined_data) - points_before
 
-                logger.info(f"      Extracted {len(cycle_data)} time points, total duration now: {current_time:.1f}s")
+                logger.info(f"      Extracted {points_extracted} time points, total duration now: {current_time:.1f}s")
 
             if not combined_data:
                 QMessageBox.warning(
@@ -1288,3 +1683,32 @@ class EditsTab:
             return (times[sort_idx], values[sort_idx])
 
         return ([], [])
+
+    def _on_table_context_menu(self, position):
+        """Show context menu for cycle table with option to load to reference graphs."""
+        from PySide6.QtWidgets import QMenu
+        from affilabs.utils.logger import logger
+
+        menu = QMenu()
+
+        # Get selected rows
+        selected_rows = sorted(set(item.row() for item in self.cycle_data_table.selectedItems()))
+
+        if len(selected_rows) == 1:
+            # Single cycle selected - offer to load to reference slots
+            ref_menu = menu.addMenu("Load to Reference Graph")
+
+            for i in range(3):
+                ref_label = f"Reference {i + 1}"
+                # Check if slot is already occupied
+                if hasattr(self.main_window, 'edits_reference_cycle_data'):
+                    existing_cycle = self.main_window.edits_reference_cycle_data[i]
+                    if existing_cycle is not None:
+                        ref_label += f" (Currently: Cycle {existing_cycle + 1})"
+
+                action = ref_menu.addAction(ref_label)
+                action.triggered.connect(lambda checked=False, row=selected_rows[0], idx=i:
+                                        self.main_window._load_cycle_to_reference(row, idx))
+
+        # Show menu at cursor position
+        menu.exec(self.cycle_data_table.viewport().mapToGlobal(position))

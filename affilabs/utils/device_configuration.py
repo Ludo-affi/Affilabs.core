@@ -104,8 +104,8 @@ class DeviceConfiguration:
             "polarizer_type": "barrel",  # 'barrel' (2 fixed windows) or 'round' (continuous rotation)
             # Hardware rule: Arduino and PicoP4SPR ALWAYS use 'round'
             "servo_model": "HS-55MG",  # Servo motor model: 'HS-55MG' (default) or 'Alternate'
-            "servo_s_position": 10,  # S-mode polarizer position (0-255, ~1°/step, covers ~250°)
-            "servo_p_position": 100,  # P-mode polarizer position (0-255, ~1°/step, covers ~250°)
+            "servo_s_position": None,  # S-mode polarizer position - MUST be calibrated, no defaults
+            "servo_p_position": None,  # P-mode polarizer position - MUST be calibrated, no defaults
         },
         "timing_parameters": {
             # Legacy timing (deprecated - for backward compatibility)
@@ -906,7 +906,7 @@ class DeviceConfiguration:
             msg = f"Invalid calibration type: {calibration_type}"
             raise ValueError(msg)
 
-    def get_servo_positions(self) -> dict[str, int]:
+    def get_servo_positions(self) -> dict[str, int] | None:
         """Get polarizer servo positions for S and P modes.
 
         CRITICAL: These values are in PWM UNITS (1-255), NOT degrees.
@@ -915,12 +915,20 @@ class DeviceConfiguration:
 
         Returns:
             Dict with keys 's' and 'p' containing servo positions in PWM units (1-255)
+            Returns None if positions are not calibrated (triggers auto-calibration)
 
         """
         hw = self.config["hardware"]
+        s_pos = hw.get("servo_s_position")
+        p_pos = hw.get("servo_p_position")
+
+        # If positions are missing or None, return None to trigger calibration
+        if s_pos is None or p_pos is None:
+            return None
+
         return {
-            "s": hw["servo_s_position"],
-            "p": hw["servo_p_position"],
+            "s": s_pos,
+            "p": p_pos,
         }
 
     def get_servo_s_position(self) -> int:

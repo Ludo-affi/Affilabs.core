@@ -32,7 +32,7 @@ from affilabs.sidebar_tabs.AL_export_builder import ExportTabBuilder
 from affilabs.sidebar_tabs.AL_flow_builder import FlowTabBuilder
 from affilabs.sidebar_tabs.AL_graphic_control_builder import GraphicControlTabBuilder
 from affilabs.sidebar_tabs.AL_settings_builder import SettingsTabBuilder
-from affilabs.sidebar_tabs.AL_static_builder import StaticTabBuilder
+from affilabs.sidebar_tabs.AL_method_builder import MethodTabBuilder
 from affilabs.ui_styles import (
     Colors,
     Fonts,
@@ -169,9 +169,9 @@ class AffilabsSidebar(QWidget):
                 border-radius: 6px;
             }}
             QTabBar::tab:selected {{
-                background: {Colors.BACKGROUND_WHITE};
+                background: rgba(0, 0, 0, 0.08);
                 color: {Colors.PRIMARY_TEXT};
-                font-weight: 600;
+                font-weight: 700;
             }}
             QTabBar::tab:hover:!selected {{
                 background: {Colors.OVERLAY_LIGHT_6};
@@ -181,8 +181,8 @@ class AffilabsSidebar(QWidget):
                 color: {Colors.OVERLAY_LIGHT_20};
             }}
             QTabBar::tab:selected:!disabled {{
-                border-left: 3px solid {Colors.PRIMARY_TEXT};
-                padding-left: 17px;
+                border-left: 4px solid #1D1D1F;
+                padding-left: 16px;
             }}
         """)
 
@@ -201,10 +201,10 @@ class AffilabsSidebar(QWidget):
                 self._build_graphic_control_tab,
             ),
             (
-                "Static",
-                "Cycle Control",
-                "Start and manage experiments",
-                self._build_static_tab,
+                "Method",
+                "Method Builder",
+                "Build and manage assay methods",
+                self._build_method_tab,
             ),
             ("Flow", "Flow Control", "Fluidics experiments", self._build_flow_tab),
             (
@@ -277,11 +277,6 @@ class AffilabsSidebar(QWidget):
         # Compatibility alias expected by main code
         self.tabs = self.tab_widget
         main_layout.addWidget(container)
-
-        # TEMPORARY: Hide Flow tab for v1.0 (no pump hardware yet)
-        if "Flow" in self.tab_indices:
-            flow_index = self.tab_indices["Flow"]
-            self.tab_widget.setTabVisible(flow_index, False)
 
         # Connect tab change to lazy-load Settings tab plots
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -405,27 +400,58 @@ class AffilabsSidebar(QWidget):
             self.polarizer_toggle_btn.setText(f"Current: {mode}-Mode")
 
     def set_operation_mode(self, mode: str):
-        """Set the active operation mode (static or flow) and update tab states."""
-        if mode.lower() == "static":
-            # Enable Static, disable Flow
-            self.tab_widget.setTabEnabled(self.tab_indices["Static"], True)
+        """Set the active operation mode (method or flow) and update tab states."""
+        if mode.lower() == "method":
+            # Enable Method, disable Flow
+            self.tab_widget.setTabEnabled(self.tab_indices["Method"], True)
             self.tab_widget.setTabEnabled(self.tab_indices["Flow"], False)
             self.tab_widget.setTabToolTip(
                 self.tab_indices["Flow"],
                 "Flow mode unavailable - requires pump hardware",
             )
         elif mode.lower() == "flow":
-            # Enable Flow, disable Static
+            # Enable Flow, disable Method
             self.tab_widget.setTabEnabled(self.tab_indices["Flow"], True)
-            self.tab_widget.setTabEnabled(self.tab_indices["Static"], False)
+            self.tab_widget.setTabEnabled(self.tab_indices["Method"], False)
             self.tab_widget.setTabToolTip(
-                self.tab_indices["Static"],
-                "Static mode unavailable - flow mode active",
+                self.tab_indices["Method"],
+                "Method mode unavailable - flow mode active",
             )
         else:
             # Enable both (default fallback)
-            self.tab_widget.setTabEnabled(self.tab_indices["Static"], True)
+            self.tab_widget.setTabEnabled(self.tab_indices["Method"], True)
             self.tab_widget.setTabEnabled(self.tab_indices["Flow"], True)
+
+    def set_operation_mode_availability(self, static_available: bool, flow_available: bool):
+        """Update operation mode indicators in Device Status tab.
+
+        Args:
+            static_available: True if static mode is available
+            flow_available: True if flow mode is available
+        """
+        if "static" in self.operation_modes:
+            indicator = self.operation_modes["static"]["indicator"]
+            status_label = self.operation_modes["static"]["status_label"]
+            if static_available:
+                indicator.setStyleSheet("color: #34C759; font-size: 16px;")
+                status_label.setText("Available")
+                status_label.setStyleSheet("font-size: 12px; color: #34C759;")
+            else:
+                indicator.setStyleSheet("color: #86868B; font-size: 16px;")
+                status_label.setText("Disabled")
+                status_label.setStyleSheet("font-size: 12px; color: #86868B;")
+
+        if "flow" in self.operation_modes:
+            indicator = self.operation_modes["flow"]["indicator"]
+            status_label = self.operation_modes["flow"]["status_label"]
+            if flow_available:
+                indicator.setStyleSheet("color: #34C759; font-size: 16px;")
+                status_label.setText("Available")
+                status_label.setStyleSheet("font-size: 12px; color: #34C759;")
+            else:
+                indicator.setStyleSheet("color: #86868B; font-size: 16px;")
+                status_label.setText("Disabled")
+                status_label.setStyleSheet("font-size: 12px; color: #86868B;")
 
     def _build_device_status_tab(self, tab_layout: QVBoxLayout):
         """Build Device Status tab with hardware and subunit indicators using builder."""
@@ -437,9 +463,9 @@ class AffilabsSidebar(QWidget):
         builder = GraphicControlTabBuilder(self)
         builder.build(tab_layout)
 
-    def _build_static_tab(self, tab_layout: QVBoxLayout):
-        """Build Static tab with cycle management using builder."""
-        builder = StaticTabBuilder(self)
+    def _build_method_tab(self, tab_layout: QVBoxLayout):
+        """Build Method tab with cycle management using builder."""
+        builder = MethodTabBuilder(self)
         builder.build(tab_layout)
 
     def _build_flow_tab(self, tab_layout: QVBoxLayout):

@@ -56,15 +56,5 @@ class CalibrationManager:
                 "Application not connected or polarizer calibration not available",
             )
 
-    def handle_oem_led_calibration(self) -> None:
-        """Handle OEM LED Calibration button click - full LED calibration with dialog."""
-        logger.info("OEM LED Calibration button clicked")
-        # Forward to application's OEM LED calibration handler (shows dialog with Start button)
-        if (
-            hasattr(self.main_window, "app")
-            and self.main_window.app
-            and hasattr(self.main_window.app, "_on_oem_led_calibration")
-        ):
-            self.main_window.app._on_oem_led_calibration()
-        else:
-            logger.warning("Application not connected - cannot start calibration")
+    # OEM LED Calibration: Button directly connected to Application._on_oem_led_calibration() in main.py
+    # No intermediate manager method needed - direct connection is cleaner

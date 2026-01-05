@@ -21,7 +21,7 @@ def create_time_plot(
     w.setBackground(Colors.BACKGROUND_WHITE)
     w.setLabel("left", left_label, color=AXIS_COLOR, size=left_size)
     w.setLabel("bottom", bottom_label, color=AXIS_COLOR, size=left_size)
-    w.showGrid(x=True, y=True, alpha=GRID_ALPHA)
+    w.showGrid(x=False, y=False, alpha=GRID_ALPHA)  # Grid OFF by default
     w.getPlotItem().getAxis("left").setPen(color=AXIS_PEN_COLOR, width=1)
     w.getPlotItem().getAxis("bottom").setPen(color=AXIS_PEN_COLOR, width=1)
     w.getPlotItem().getAxis("left").setTextPen(AXIS_COLOR)

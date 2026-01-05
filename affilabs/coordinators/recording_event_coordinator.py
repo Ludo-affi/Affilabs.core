@@ -165,9 +165,13 @@ class RecordingEventCoordinator:
             if not spectrum_viewmodels:
                 logger.warning("[WARN] spectrum_viewmodels not available - baseline recorder will use fallback mode")
 
+            # Get sidebar reference for export path
+            sidebar = getattr(self.app.main_window, 'sidebar', None)
+
             self.app._baseline_recorder = BaselineDataRecorder(
                 self.app.data_mgr,
                 spectrum_viewmodels=spectrum_viewmodels,
+                sidebar=sidebar,
                 parent=self.app.main_window,
             )
 

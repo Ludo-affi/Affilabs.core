@@ -37,11 +37,12 @@ class BaselineDataRecorder(QObject):
     recording_complete = Signal(str)  # filepath
     recording_error = Signal(str)
 
-    def __init__(self, data_acquisition_mgr, spectrum_viewmodels=None, parent=None) -> None:
+    def __init__(self, data_acquisition_mgr, spectrum_viewmodels=None, sidebar=None, parent=None) -> None:
         super().__init__(parent)
 
         self.data_mgr = data_acquisition_mgr
         self.spectrum_viewmodels = spectrum_viewmodels  # Dict of SpectrumViewModel (one per channel)
+        self.sidebar = sidebar  # Reference to sidebar for export path
         self.recording = False
         self.duration_seconds = 300  # 5 minutes default
 
@@ -338,39 +339,47 @@ class BaselineDataRecorder(QObject):
 
         logger.info("⏹ Stopping baseline data recording...")
 
-        # Stop timer and disconnect signals
+        # Stop timer first
         self.progress_timer.stop()
+
+        # Mark as not recording BEFORE disconnecting
+        self.recording = False
 
         # Disconnect from spectrum viewmodels if connected
         if self.spectrum_viewmodels and isinstance(self.spectrum_viewmodels, dict):
             for channel, vm in self.spectrum_viewmodels.items():
                 if channel in ["a", "b", "c", "d"]:
                     try:
+                        # CRITICAL: Only disconnect OUR specific slot, not all connections
                         vm.spectrum_updated.disconnect(self._on_transmission_spectrum)
-                    except:
-                        pass  # Already disconnected
+                    except (TypeError, RuntimeError):
+                        pass  # Already disconnected or not connected
                     try:
                         vm.peak_updated.disconnect(self._on_peak_updated)
-                    except:
-                        pass  # Already disconnected
+                    except (TypeError, RuntimeError):
+                        pass  # Already disconnected or not connected
         else:
             # Disconnect from fallback signal
             try:
                 self.data_mgr.spectrum_acquired.disconnect(self._on_spectrum_acquired)
-            except:
-                pass  # Already disconnected
+            except (TypeError, RuntimeError):
+                pass  # Already disconnected or not connected
 
-        self.recording = False
+        # Save data in background thread to avoid blocking live acquisition
+        import threading
+        def save_in_background():
+            try:
+                filepath = self._save_data()
+                logger.info(f"[OK] Baseline data saved: {filepath}")
+                self.recording_complete.emit(str(filepath))
+            except Exception as e:
+                error_msg = f"Failed to save baseline data: {e}"
+                logger.error(error_msg)
+                self.recording_error.emit(error_msg)
 
-        # Save data to file
-        try:
-            filepath = self._save_data()
-            logger.info(f"[OK] Baseline data saved: {filepath}")
-            self.recording_complete.emit(str(filepath))
-        except Exception as e:
-            error_msg = f"Failed to save baseline data: {e}"
-            logger.error(error_msg)
-            self.recording_error.emit(error_msg)
+        save_thread = threading.Thread(target=save_in_background, daemon=True, name="BaselineSave")
+        save_thread.start()
+        logger.info("💾 Saving baseline data in background thread (won't block live acquisition)...")
 
     def _save_data(self) -> Path:
         """Save recorded data to single Excel file with multiple tabs.
@@ -380,8 +389,16 @@ class BaselineDataRecorder(QObject):
 
         """
         try:
-            # Create output directory
-            output_dir = Path("baseline_data")
+            # Get export directory from sidebar, fallback to baseline_data
+            if self.sidebar and hasattr(self.sidebar, 'export_dest_input'):
+                export_path = self.sidebar.export_dest_input.text().strip()
+                if export_path:
+                    output_dir = Path(export_path)
+                else:
+                    output_dir = Path("baseline_data")
+            else:
+                output_dir = Path("baseline_data")
+
             output_dir.mkdir(exist_ok=True)
 
             timestamp_str = self.start_time.strftime("%Y%m%d_%H%M%S")

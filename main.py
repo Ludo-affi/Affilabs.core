@@ -394,7 +394,7 @@ class Application(QApplication):
         super().__init__(argv)
         self.setApplicationName("AffiLabs.core")
         self.setOrganizationName("Affinite Instruments")
-        
+
         # Set application icon for taskbar
         from PySide6.QtGui import QIcon
         from pathlib import Path
@@ -672,6 +672,9 @@ class Application(QApplication):
         # Analysis window (created on demand)
         self.analysis_window = None
 
+        # Next cycle warning line for active cycle graph
+        self._next_cycle_warning_line = None
+
     def _init_managers(self):
         """Initialize business layer managers (no UI dependencies).
 
@@ -722,6 +725,13 @@ class Application(QApplication):
         self.kinetic_mgr = KineticManager(self.hardware_mgr)
         if self.kinetic_mgr is None:
             raise RuntimeError("KineticManager initialization failed")
+
+        # Pump operations manager
+        from affilabs.managers import PumpManager
+        self.pump_mgr = PumpManager(self.hardware_mgr)
+        if self.pump_mgr is None:
+            raise RuntimeError("PumpManager initialization failed")
+        logger.debug("✓ PumpManager")
 
         # Data buffer manager
         self.buffer_mgr = DataBufferManager()
@@ -804,7 +814,14 @@ class Application(QApplication):
 
         # Store app reference for CalibrationManager to access calibration methods
         self.main_window.app = self
-        # All UIΓåÆApp communication happens through Qt signals
+        # All UI→App communication happens through Qt signals
+
+        # Set default export path in sidebar
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'export_dest_input'):
+            default_path = str(self.recording_mgr.output_directory)
+            self.main_window.sidebar.export_dest_input.setText(default_path)
+            self.main_window.sidebar.export_dest_input.setPlaceholderText(default_path)
+            logger.debug(f"✓ Export path initialized: {default_path}")
 
         # Verify spectroscopy plots availability
         if not hasattr(self.main_window, "transmission_curves"):
@@ -1121,6 +1138,10 @@ class Application(QApplication):
             self._on_hardware_error,
             Qt.QueuedConnection,
         )
+        self.hardware_mgr.servo_calibration_needed.connect(
+            self._on_servo_calibration_needed,
+            Qt.QueuedConnection,
+        )
 
         # === DATA ACQUISITION MANAGER SIGNALS ===
         # Queued connections for thread safety (data manager runs in worker thread)
@@ -1169,6 +1190,31 @@ class Application(QApplication):
         from affilabs.utils.settings_helpers import SettingsHelpers
 
         SettingsHelpers.on_calibration_complete(self, calibration_data)
+        
+        # Automatically log calibration to database for ML training
+        self._log_calibration_to_database(calibration_data)
+        
+        # Clear graph and resume live data after OEM calibration
+        logger.info("📊 Clearing graph and resuming live data after calibration...")
+        
+        # Clear the graph
+        if hasattr(self, 'graph') and self.graph:
+            self.graph.clear_plot()
+            logger.info("   Graph cleared")
+        
+        # Resume live acquisition if hardware is ready
+        if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+            try:
+                # Use acquisition_mgr to start live data
+                if hasattr(self, 'acquisition_mgr') and self.acquisition_mgr:
+                    self.acquisition_mgr.start_acquisition()
+                    logger.info("   Live acquisition started")
+                else:
+                    logger.warning("   Acquisition manager not available")
+            except Exception as e:
+                logger.warning(f"   Could not start live acquisition: {e}")
+        
+        logger.info("✓ Post-calibration cleanup complete")
 
     def _show_qc_dialog(self, calibration_data):
         """Show QC dialog with calibration results (Layer 1 - UI responsibility).
@@ -1185,12 +1231,11 @@ class Application(QApplication):
 
             logger.info("Showing QC report dialog (modal)...")
 
-            # Create and show dialog (modal, blocks until closed)
-            self._qc_dialog = CalibrationQCDialog(
+            # Use static method to show QC dialog (ensures proper modal behavior and pre-export)
+            self._qc_dialog = CalibrationQCDialog.show_qc_report(
                 parent=self.main_window,
                 calibration_data=qc_data,
             )
-            self._qc_dialog.exec()
 
             logger.info("QC report displayed and closed (modal)")
             logger.info("System ready - Click START button to begin live acquisition")
@@ -1287,6 +1332,7 @@ class Application(QApplication):
             self._on_acquisition_pause_requested,
         )
         self.main_window.export_requested.connect(self._on_export_requested)
+        self.main_window.send_to_edits_requested.connect(self._on_send_to_edits_requested)
 
         # === TIMEFRAME MODE SIGNALS (Phase 2 - Cursor Replacement) ===
         logger.debug("[Timeframe Mode removed]")
@@ -1306,18 +1352,34 @@ class Application(QApplication):
 
         # --- Graph Controls ---
         ui.grid_check.toggled.connect(self._on_grid_toggled)
-        ui.auto_radio.toggled.connect(self._on_autoscale_toggled)
-        ui.manual_radio.toggled.connect(self._on_manual_scale_toggled)
+        ui.autoscale_check.toggled.connect(self._on_autoscale_toggled)
         ui.min_input.editingFinished.connect(self._on_manual_range_changed)
         ui.max_input.editingFinished.connect(self._on_manual_range_changed)
         ui.x_axis_btn.toggled.connect(self._on_axis_selected)
         ui.y_axis_btn.toggled.connect(self._on_axis_selected)
+        ui.colorblind_check.toggled.connect(self._on_colorblind_toggled)
 
         # --- Channel and Marker Controls ---
         if hasattr(ui.sidebar, 'channel_combo'):
             ui.sidebar.channel_combo.currentTextChanged.connect(self._on_channel_filter_changed)
         if hasattr(ui.sidebar, 'marker_combo'):
             ui.sidebar.marker_combo.currentTextChanged.connect(self._on_marker_style_changed)
+
+        # --- Reference Channel Selection ---
+        if hasattr(ui.sidebar, 'ref_combo'):
+            ui.sidebar.ref_combo.currentTextChanged.connect(self._on_reference_changed)
+
+        # --- Export Controls ---
+        if hasattr(ui, 'export_image_btn'):
+            ui.export_image_btn.clicked.connect(self._on_quick_export_image)
+        if hasattr(ui.sidebar, 'copy_graph_btn'):
+            ui.sidebar.copy_graph_btn.clicked.connect(self._on_copy_graph_to_clipboard)
+
+        # --- Settings Tab Controls ---
+        if hasattr(ui.sidebar, 'load_current_settings_btn'):
+            ui.sidebar.load_current_settings_btn.clicked.connect(self._on_load_current_settings)
+        if hasattr(ui.sidebar, 'apply_settings_btn'):
+            ui.sidebar.apply_settings_btn.clicked.connect(self._on_apply_settings)
 
         # --- Data Filtering Controls (moved to Graphic Display tab) ---
         # EMA filter controls are in sidebar, connected in _connect_sidebar_signals()
@@ -1344,6 +1406,9 @@ class Application(QApplication):
 
         # OEM Calibration button (direct connection)
         ui.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
+        
+        # LED Model Training button (direct connection)
+        ui.led_model_training_btn.clicked.connect(self._on_led_model_training)
 
         # Baseline Capture button (REBUILT - direct connection, no lambda)
         if hasattr(ui, "baseline_capture_btn"):
@@ -1385,6 +1450,76 @@ class Application(QApplication):
             "✓ start_cycle_btn connected",
         )
 
+        # --- Flow Tab Controls ---
+        # Pump operations buttons
+        if hasattr(ui.sidebar, 'pump_prime_btn'):
+            ui.sidebar.pump_prime_btn.clicked.connect(self._on_pump_prime_clicked)
+            logger.debug("✓ pump_prime_btn connected")
+        if hasattr(ui.sidebar, 'pump_cleanup_btn'):
+            ui.sidebar.pump_cleanup_btn.clicked.connect(self._on_pump_cleanup_clicked)
+            logger.debug("✓ pump_cleanup_btn connected")
+
+        # Valve sync button
+        if hasattr(ui.sidebar, 'sync_valve_btn'):
+            ui.sidebar.sync_valve_btn.clicked.connect(
+                lambda checked: self._on_valve_sync_toggled(checked)
+            )
+            logger.debug("✓ sync_valve_btn connected")
+
+        # Valve controls (Loop valves - 6-port)
+        if hasattr(ui.sidebar, 'kc1_loop_switch'):
+            ui.sidebar.kc1_loop_switch.clicked.connect(
+                lambda checked: self._on_loop_valve_switched(1, checked)
+            )
+            logger.debug("✓ kc1_loop_switch connected")
+        if hasattr(ui.sidebar, 'kc2_loop_switch'):
+            ui.sidebar.kc2_loop_switch.clicked.connect(
+                lambda checked: self._on_loop_valve_switched(2, checked)
+            )
+            logger.debug("✓ kc2_loop_switch connected")
+
+        # Valve controls (Channel valves - 3-way)
+        if hasattr(ui.sidebar, 'kc1_channel_btn_a'):
+            ui.sidebar.kc1_channel_btn_a.clicked.connect(
+                lambda: self._on_channel_valve_switched(1, 'A')
+            )
+            logger.debug("✓ kc1_channel_btn_a connected")
+        if hasattr(ui.sidebar, 'kc1_channel_btn_b'):
+            ui.sidebar.kc1_channel_btn_b.clicked.connect(
+                lambda: self._on_channel_valve_switched(1, 'B')
+            )
+            logger.debug("✓ kc1_channel_btn_b connected")
+        if hasattr(ui.sidebar, 'kc2_channel_btn_c'):
+            ui.sidebar.kc2_channel_btn_c.clicked.connect(
+                lambda: self._on_channel_valve_switched(2, 'C')
+            )
+            logger.debug("✓ kc2_channel_btn_c connected")
+        if hasattr(ui.sidebar, 'kc2_channel_btn_d'):
+            ui.sidebar.kc2_channel_btn_d.clicked.connect(
+                lambda: self._on_channel_valve_switched(2, 'D')
+            )
+            logger.debug("✓ kc2_channel_btn_d connected")
+
+        # Internal Pump controls (RPi peristaltic pumps - separate from AffiPump)
+        if hasattr(ui.sidebar, 'internal_pump_sync_btn'):
+            ui.sidebar.internal_pump_sync_btn.clicked.connect(
+                lambda checked: self._on_internal_pump_sync_toggled(checked)
+            )
+            logger.debug("✓ internal_pump_sync_btn connected")
+        
+        if hasattr(ui.sidebar, 'internal_pump_calibrate_btn'):
+            ui.sidebar.internal_pump_calibrate_btn.clicked.connect(
+                self._on_internal_pump_calibrate_clicked
+            )
+            logger.debug("✓ internal_pump_calibrate_btn connected")
+        
+        # Internal pump flowrate changes
+        if hasattr(ui.sidebar, 'internal_pump_flowrate_combo'):
+            ui.sidebar.internal_pump_flowrate_combo.currentTextChanged.connect(
+                self._on_internal_pump_flowrate_changed
+            )
+            logger.debug("✓ internal_pump_flowrate_combo connected")
+
         # NOTE: Detector wait time and pipeline selector are in Advanced Settings dialog
         # Values are applied when dialog is accepted
 
@@ -1402,6 +1537,8 @@ class Application(QApplication):
             ui.sidebar.summary_table.customContextMenuRequested.connect(
                 self._on_queue_table_context_menu
             )
+            # Connect item changed signal to save edited notes
+            ui.sidebar.summary_table.itemChanged.connect(self._on_queue_note_edited)
             logger.debug("✓ summary_table context menu connected")
 
     def _connect_viewmodel_signals(self):
@@ -1645,6 +1782,7 @@ class Application(QApplication):
         now = time.time()
         total_sec = self._current_cycle.get_duration_seconds()
         elapsed_sec = total_sec - max(0, self._cycle_end_time - now)
+        remaining_sec = max(0, self._cycle_end_time - now)
 
         cycle_type = self._current_cycle.type
         cycle_num = self._current_cycle.cycle_num
@@ -1656,19 +1794,62 @@ class Application(QApplication):
         total_min = int(total_sec // 60)
         total_sec_rem = int(total_sec % 60)
 
-        # Update intelligence bar with countdown
+        # Check if there's a next cycle and we're within 10 seconds
+        next_cycle_warning = ""
+        if remaining_sec <= 10 and remaining_sec > 0 and self.segment_queue:
+            next_cycle = self.segment_queue[0]
+            next_type = next_cycle.type
+            # Shorten "Concentration" to "Conc."
+            if next_type == "Concentration":
+                next_type = "Conc."
+
+            # Add concentration if available
+            if hasattr(next_cycle, '_concentrations') and next_cycle._concentrations:
+                if 'ALL' in next_cycle._concentrations:
+                    conc_value = next_cycle._concentrations['ALL']
+                    units = getattr(next_cycle, '_units', 'nM')
+                    next_type = f"{next_type} {conc_value}{units}"
+
+            next_cycle_warning = f" → Next: {next_type} in {int(remaining_sec)}s"
+
+        # Update intelligence bar with countdown and next cycle warning
         if hasattr(self.main_window.sidebar, "intel_message_label"):
-            self.main_window.sidebar.intel_message_label.setText(
-                f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) - {elapsed_min:02d}:{elapsed_sec_rem:02d}/{total_min:02d}:{total_sec_rem:02d}",
-            )
+            message_text = f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) - {elapsed_min:02d}:{elapsed_sec_rem:02d}/{total_min:02d}:{total_sec_rem:02d}{next_cycle_warning}"
+            self.main_window.sidebar.intel_message_label.setText(message_text)
+
+            # Change color to orange when <10s to next cycle
+            if next_cycle_warning:
+                self.main_window.sidebar.intel_message_label.setStyleSheet(
+                    "font-size: 12px;"
+                    "color: #FF9500;"  # Orange warning
+                    "background: transparent;"
+                    "font-weight: 600;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                )
+            else:
+                self.main_window.sidebar.intel_message_label.setStyleSheet(
+                    "font-size: 12px;"
+                    "color: #007AFF;"  # Blue normal
+                    "background: transparent;"
+                    "font-weight: 600;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                )
+
+        # Show/hide warning line on active cycle graph when <10s to next cycle
+        self._update_next_cycle_warning_visual(remaining_sec, total_sec)
 
         # Update overlay using graph's update method
         try:
             if hasattr(self.main_window, 'cycle_of_interest_graph'):
                 graph = self.main_window.cycle_of_interest_graph
                 if hasattr(graph, 'update_delta_overlay'):
+                    # Add next cycle info to overlay if within 10 seconds
+                    overlay_type = f"{cycle_type} (Cycle {cycle_num}/{total_cycles})"
+                    if next_cycle_warning:
+                        overlay_type += next_cycle_warning
+
                     graph.update_delta_overlay(
-                        cycle_type=f"{cycle_type} (Cycle {cycle_num}/{total_cycles})",
+                        cycle_type=overlay_type,
                         elapsed_sec=elapsed_sec,
                         total_sec=total_sec
                     )
@@ -1677,6 +1858,75 @@ class Application(QApplication):
                         logger.info(f"✓ Overlay updated: {cycle_type} {elapsed_min:02d}:{elapsed_sec_rem:02d}/{total_min:02d}:{total_sec_rem:02d}")
         except Exception as e:
             logger.warning(f"Could not update cycle overlay: {e}")
+
+    def _update_next_cycle_warning_visual(self, remaining_sec: float, total_sec: float):
+        """Show/hide orange warning line on active cycle graph when <10s to next cycle.
+
+        Args:
+            remaining_sec: Seconds remaining in current cycle
+            total_sec: Total cycle duration in seconds
+        """
+        try:
+            if not hasattr(self.main_window, 'cycle_of_interest_graph'):
+                return
+
+            # Validate inputs to avoid overflow
+            if not isinstance(remaining_sec, (int, float)) or not isinstance(total_sec, (int, float)):
+                return
+            if remaining_sec < 0 or total_sec <= 0:
+                return
+            if remaining_sec > 1e6 or total_sec > 1e6:  # Sanity check for huge values
+                return
+
+            graph = self.main_window.cycle_of_interest_graph
+
+            # Calculate time position for warning (total - 10 seconds)
+            warning_time = total_sec - 10.0
+            if warning_time < 0:
+                warning_time = 0
+
+            # Show warning line when we're within 10s of cycle end AND there's a next cycle
+            show_warning = remaining_sec <= 10 and remaining_sec > 0 and self.segment_queue
+
+            if show_warning:
+                # Create warning line if it doesn't exist
+                if self._next_cycle_warning_line is None:
+                    import pyqtgraph as pg
+                    from PySide6.QtGui import QFont
+                    self._next_cycle_warning_line = pg.InfiniteLine(
+                        pos=warning_time,
+                        angle=90,  # Vertical line
+                        pen=pg.mkPen(color='#FF1493', width=3, style=pg.QtCore.Qt.DashLine),  # Hot pink, thicker
+                        movable=False,
+                        label=f'Next: {int(remaining_sec)}s',
+                        labelOpts={
+                            'position': 0.95,
+                            'color': (255, 20, 147),  # Hot pink
+                            'fill': (255, 20, 147, 80),  # More opaque background
+                            'movable': False,
+                            'anchors': [(0, 0), (0, 0)]
+                        }
+                    )
+                    # Make label font bold and larger
+                    if hasattr(self._next_cycle_warning_line, 'label') and hasattr(self._next_cycle_warning_line.label, 'setFont'):
+                        font = QFont()
+                        font.setPointSize(11)
+                        font.setBold(True)
+                        self._next_cycle_warning_line.label.setFont(font)
+                    graph.addItem(self._next_cycle_warning_line)
+
+                # Update position and label text
+                self._next_cycle_warning_line.setPos(warning_time)
+                if hasattr(self._next_cycle_warning_line, 'label'):
+                    self._next_cycle_warning_line.label.setText(f'Next: {int(remaining_sec)}s')
+                self._next_cycle_warning_line.show()
+            else:
+                # Hide warning line when not needed
+                if self._next_cycle_warning_line is not None:
+                    self._next_cycle_warning_line.hide()
+
+        except Exception as e:
+            logger.error(f"Error updating next cycle warning visual: {e}", exc_info=True)
 
     def _on_cycle_completed(self):
         """Handle cycle completion - auto-start next or switch to auto-read."""
@@ -1766,7 +2016,7 @@ class Application(QApplication):
     def _add_cycle_marker(self):
         """Add vertical marker on Full Sensorgram timeline at cycle start.
 
-        Creates a single marker with label showing cycle type only.
+        Creates a single marker with label showing cycle type and concentration if available.
         """
         try:
             from pyqtgraph import InfiniteLine, TextItem
@@ -1785,8 +2035,32 @@ class Application(QApplication):
                     return
                 current_time = self.data_mgr.cycle_time[-1]
 
-            # Get cycle type only
+            # Get cycle type and shorten "Concentration" to "Conc."
             cycle_type = self._current_cycle.type
+            if cycle_type == "Concentration":
+                cycle_type = "Conc."
+
+            # Build label text with concentration if available
+            label_text = cycle_type
+
+            # Check for concentration data (stored as temp attribute from _on_add_to_queue)
+            if hasattr(self._current_cycle, '_concentrations') and self._current_cycle._concentrations:
+                concentrations = self._current_cycle._concentrations
+                # Get units if available
+                units = getattr(self._current_cycle, '_units', 'nM')
+
+                # If ALL channels have the same concentration, show that value
+                if 'ALL' in concentrations:
+                    conc_value = concentrations['ALL']
+                    label_text = f"{cycle_type} {conc_value}{units}"
+                else:
+                    # Otherwise, show all individual channel concentrations
+                    conc_list = []
+                    for ch in ['A', 'B', 'C', 'D']:
+                        if ch in concentrations:
+                            conc_list.append(f"{ch}:{concentrations[ch]}")
+                    if conc_list:
+                        label_text = f"{cycle_type} {','.join(conc_list)}{units}"
 
             # Store sensorgram time in cycle data for table display
             self._current_cycle.sensorgram_time = current_time
@@ -1799,10 +2073,10 @@ class Application(QApplication):
                 movable=False
             )
 
-            # Create text label to the right of marker - just the type
+            # Create text label to the right of marker with cycle type and concentration
             # Anchor to left-bottom so text appears to right and below top of line
             label = TextItem(
-                text=cycle_type,
+                text=label_text,
                 color=(0, 122, 255),
                 anchor=(0, 1.0)  # Left-bottom anchor
             )
@@ -1826,7 +2100,7 @@ class Application(QApplication):
             cycle_id = f"cycle_{cycle_num}"
             self._cycle_markers[cycle_id] = {'line': marker, 'label': label, 'time': current_time}
 
-            logger.info(f"✓ Cycle marker added at t={current_time:.1f}s: {cycle_type}")
+            logger.info(f"✓ Cycle marker added at t={current_time:.1f}s: {label_text}")
 
         except Exception as e:
             logger.debug(f"Could not add cycle marker: {e}")
@@ -1881,6 +2155,9 @@ class Application(QApplication):
             # Add to queue
             self.segment_queue.append(segment)
 
+            # Renumber all cycles to keep sequential numbering
+            self._renumber_cycles()
+
             # Log success
             logger.info(f"✓ Added cycle {len(self.segment_queue)}: {cycle_type}, {length_minutes}min")
             logger.debug(f"   Name: {segment.name}")
@@ -1921,6 +2198,21 @@ class Application(QApplication):
                     "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
 
+    def _renumber_cycles(self):
+        """Renumber all cycles in queue to maintain sequential numbering.
+
+        Ensures cycles are always numbered 1, 2, 3, ... based on their
+        current position in the queue, regardless of add/delete operations.
+        """
+        for i, cycle in enumerate(self.segment_queue):
+            cycle.name = f"Cycle {i + 1}"
+            # Also update cycle_num if it exists
+            if hasattr(cycle, 'cycle_num'):
+                cycle.cycle_num = i + 1
+
+        if len(self.segment_queue) > 0:
+            logger.debug(f"🔢 Renumbered {len(self.segment_queue)} cycles (1-{len(self.segment_queue)})")
+
     def _update_summary_table(self):
         """Update summary table with last 5 cycles from segment queue.
 
@@ -1930,6 +2222,9 @@ class Application(QApplication):
         from PySide6.QtGui import QColor
         from PySide6.QtWidgets import QTableWidgetItem
         from datetime import datetime
+
+        # Block signals to prevent triggering itemChanged during programmatic updates
+        self.main_window.sidebar.summary_table.blockSignals(True)
 
         # Define color scheme for cycle types
         type_colors = {
@@ -1986,11 +2281,18 @@ class Application(QApplication):
                 start_item.setBackground(state_color)
                 self.main_window.sidebar.summary_table.setItem(row, 2, start_item)
 
-                # Notes column (truncated)
+                # Notes column (truncated for display, but full text is preserved)
                 note = getattr(segment, 'note', '')
                 note_display = note[:40] + "..." if len(note) > 40 else note
                 note_item = QTableWidgetItem(note_display)
                 note_item.setBackground(state_color)
+                # Make notes column editable
+                from PySide6.QtCore import Qt
+                note_item.setFlags(note_item.flags() | Qt.ItemFlag.ItemIsEditable)
+                # Store full note as tooltip
+                note_item.setToolTip(note if note else "Click to edit note")
+                # Store row index as data for later retrieval
+                note_item.setData(Qt.ItemDataRole.UserRole, row)
                 self.main_window.sidebar.summary_table.setItem(row, 3, note_item)
 
             else:
@@ -1999,6 +2301,17 @@ class Application(QApplication):
                     empty_item = QTableWidgetItem("")
                     empty_item.setBackground(QColor(255, 255, 255))  # White
                     self.main_window.sidebar.summary_table.setItem(row, col, empty_item)
+
+        # Update queue size label to show actual count
+        if hasattr(self.main_window.sidebar, 'queue_size_label'):
+            total = len(self.segment_queue)
+            shown = min(5, total)
+            self.main_window.sidebar.queue_size_label.setText(
+                f"Showing {shown} of {total} cycles" if total > 0 else "No cycles in queue"
+            )
+
+        # Unblock signals now that update is complete
+        self.main_window.sidebar.summary_table.blockSignals(False)
 
         logger.debug(f"✓ Summary table updated ({len(recent_segments)} cycles)")
 
@@ -2039,24 +2352,85 @@ class Application(QApplication):
         logger.debug("✓ Queue validation complete")
         logger.debug("=" * 80)
 
+    def _on_queue_note_edited(self, item):
+        """Handle when user edits a note in the queue table.
+
+        Args:
+            item: QTableWidgetItem that was edited
+        """
+        # Only handle notes column (column 3)
+        if item.column() != 3:
+            return
+
+        row = item.row()
+
+        # Verify row is valid and has a cycle
+        if row < 0 or row >= len(self.segment_queue):
+            logger.debug(f"Note edited in empty row {row}, ignoring")
+            return
+
+        # Get new note text from item
+        new_note = item.text()
+
+        # Remove "..." suffix if present (from truncation)
+        if new_note.endswith("..."):
+            new_note = new_note[:-3]
+
+        # Update the cycle's note
+        cycle = self.segment_queue[row]
+        old_note = cycle.note
+        cycle.note = new_note
+
+        # Update tooltip to show full note
+        item.setToolTip(new_note if new_note else "Click to edit note")
+
+        logger.info(f"📝 Updated note for {cycle.name}: '{new_note[:50]}{'...' if len(new_note) > 50 else ''}'")
+
     def _on_queue_table_context_menu(self, position):
         """Show context menu for queue table (right-click to delete cycles)."""
-        from PySide6.QtWidgets import QMenu
+        from PySide6.QtWidgets import QMenu, QMessageBox
         from PySide6.QtGui import QAction
 
         # Get the row that was clicked
         table = self.main_window.sidebar.summary_table
         row = table.rowAt(position.y())
 
-        # Check if row is valid and has data
-        if row < 0 or row >= len(self.segment_queue):
+        logger.debug(f"Right-click at position {position}, row: {row}, queue length: {len(self.segment_queue)}")
+
+        # Check if row is valid
+        if row < 0 or row >= table.rowCount():
+            logger.debug(f"Invalid row clicked: {row}")
             return
+
+        # Check if this row actually has a cycle (row must be < queue length)
+        if row >= len(self.segment_queue):
+            logger.debug(f"Empty row clicked (row {row}, queue length {len(self.segment_queue)})")
+            QMessageBox.information(
+                self.main_window,
+                "No Cycle",
+                "This row is empty. No cycle to delete."
+            )
+            return
+
+        # Verify the row contains data by checking the cell content
+        state_item = table.item(row, 0)
+        if not state_item or not state_item.text() or state_item.text() == "":
+            logger.debug(f"Row {row} has no data in cells")
+            QMessageBox.information(
+                self.main_window,
+                "No Cycle",
+                "This row is empty. No cycle to delete."
+            )
+            return
+
+        logger.debug(f"✓ Showing right-click menu for row {row} (queue has {len(self.segment_queue)} cycles)")
 
         # Create context menu
         menu = QMenu(table)
 
         # Delete action
-        delete_action = QAction("🗑️ Delete Cycle", table)
+        cycle = self.segment_queue[row]
+        delete_action = QAction(f"🗑️ Delete '{cycle.name}'", table)
         delete_action.triggered.connect(lambda: self._delete_cycle_from_queue(row))
         menu.addAction(delete_action)
 
@@ -2070,22 +2444,27 @@ class Application(QApplication):
             row_index: Index of the row in the summary table (0-4)
         """
         if row_index < 0 or row_index >= len(self.segment_queue):
-            logger.warning(f"Invalid row index: {row_index}")
+            logger.warning(f"❌ Invalid row index: {row_index} (queue has {len(self.segment_queue)} cycles)")
             return
 
         # Get cycle info before deleting
         cycle = self.segment_queue[row_index]
         cycle_name = cycle.name
+        cycle_type = cycle.type
 
         # Remove from queue
         del self.segment_queue[row_index]
 
-        logger.info(f"🗑️ Deleted cycle from queue: {cycle_name}")
+        # Renumber all cycles to keep sequential numbering
+        self._renumber_cycles()
 
-        # Update UI
+        logger.info(f"🗑️ Deleted cycle from queue: {cycle_name} ({cycle_type})")
+
+        # Update UI intelligence bar
         if hasattr(self.main_window.sidebar, "intel_message_label"):
+            remaining = len(self.segment_queue)
             self.main_window.sidebar.intel_message_label.setText(
-                f"🗑️ Deleted {cycle_name} ({len(self.segment_queue)} remaining)",
+                f"🗑️ Deleted {cycle_name} ({remaining} {'cycle' if remaining == 1 else 'cycles'} remaining)",
             )
             self.main_window.sidebar.intel_message_label.setStyleSheet(
                 "font-size: 12px;"
@@ -2095,8 +2474,19 @@ class Application(QApplication):
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
 
-        # Refresh table
+        # Update queue status label
+        if hasattr(self.main_window.sidebar, "queue_status_label"):
+            remaining = len(self.segment_queue)
+            if remaining == 0:
+                status_text = "Queue: 0 cycles | Click 'Add to Queue' to plan batch runs"
+            else:
+                status_text = f"Queue: {remaining} {'cycle' if remaining == 1 else 'cycles'} | Right-click to delete"
+            self.main_window.sidebar.queue_status_label.setText(status_text)
+
+        # Refresh table display
         self._update_summary_table()
+
+        logger.info(f"✓ Queue updated - {len(self.segment_queue)} cycles remaining")
 
     def _on_scan_requested(self):
         """User clicked Scan button in UI."""
@@ -2196,6 +2586,34 @@ class Application(QApplication):
             logger.info("Resetting power button state after connection error")
             self.main_window._set_power_button_state("disconnected")
             self.main_window._update_power_button_style()
+
+    def _on_servo_calibration_needed(self):
+        """Servo positions not found - trigger auto-calibration."""
+        logger.info("🔧 Servo calibration needed signal received")
+        logger.info("   Starting automatic servo calibration...")
+        
+        # Use QTimer to delay calibration start (allow connection to complete)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1000, self._run_servo_auto_calibration)
+
+    def _log_calibration_to_database(self, calibration_data):
+        """Automatically log calibration results to SQL database for ML training.
+        
+        NOTE: This feature requires proper calibration log files to be saved first.
+        Currently disabled until log file saving is implemented.
+        
+        Args:
+            calibration_data: CalibrationData instance with results
+        """
+        # Skip database logging - requires timestamped debug log files
+        # The record_calibration_to_database() function expects:
+        #   - debug_log_path: Path to timestamped debug log (e.g., debug_20251220_143022.log)
+        #   - calibration_json_path: Optional path to calibration results JSON
+        # 
+        # This integration will be enabled once calibration orchestrator
+        # saves these files automatically during calibration runs.
+        logger.debug("📊 Database logging skipped - awaiting log file integration")
+        return
 
     @property
     def transmission_dialog(self):
@@ -2302,7 +2720,7 @@ class Application(QApplication):
 
             # Calculate elapsed time (minimal work in acquisition thread)
             data["elapsed_time"] = data["timestamp"] - self.experiment_start_time
-            
+
             # Tag with current session epoch for invalidation on clear
             data["_epoch"] = self._session_epoch
 
@@ -2451,11 +2869,11 @@ class Application(QApplication):
 
     def _update_stop_cursor_position(self, elapsed_time: float):
         """Update stop cursor position (thread-safe).
-        
+
         Called from processing thread via signal. Only updates if:
         - Live Data checkbox is enabled
         - User is not currently dragging the cursor
-        
+
         Args:
             elapsed_time: Time value to set cursor to
         """
@@ -2463,17 +2881,17 @@ class Application(QApplication):
             # Quick check: Live Data enabled?
             if not getattr(self.main_window, "live_data_enabled", False):
                 return
-            
+
             # Get cursor
             stop_cursor = self.main_window.full_timeline_graph.stop_cursor
-            
+
             # Don't interrupt user drag
             if getattr(stop_cursor, "moving", False):
                 return
-            
+
             # Update position
             stop_cursor.setValue(elapsed_time)
-            
+
         except (AttributeError, RuntimeError):
             pass  # Cursor not ready, skip silently
 
@@ -2609,7 +3027,7 @@ class Application(QApplication):
     def _on_event_logged(self, event: str, timestamp: float):
         """Event logged to recording."""
         logger.info(f"Event: {event}")
-        
+
         # Add visual marker to timeline graph
         if hasattr(self, 'main_window') and hasattr(self.main_window, 'full_timeline_graph'):
             try:
@@ -2617,12 +3035,12 @@ class Application(QApplication):
                 elapsed_time = None
                 if hasattr(self, 'get_elapsed_time'):
                     elapsed_time = self.get_elapsed_time()
-                
+
                 # Only add marker if we have a valid elapsed time
                 if elapsed_time is None:
                     logger.warning(f"Skipping event marker - acquisition not started yet: {event}")
                     return
-                
+
                 # Determine marker color based on event type
                 if "Recording Started" in event:
                     color = "#00C853"  # Green for recording start
@@ -2630,7 +3048,7 @@ class Application(QApplication):
                     color = "#2979FF"  # Blue for cycle start
                 else:
                     color = "#FF9800"  # Orange for other events
-                
+
                 # Add marker to graph
                 self.main_window.add_event_marker(elapsed_time, event, color)
             except Exception as e:
@@ -2769,6 +3187,234 @@ class Application(QApplication):
     def _on_valve_switched(self, valve_info: dict):
         """Valve position changed."""
         self.peripheral_events.on_valve_switched(valve_info)
+
+    # === FLOW TAB HANDLERS ===
+
+    def _on_pump_prime_clicked(self):
+        """User clicked Prime Pump button - run prime sequence via PumpManager."""
+        logger.info("🔧 Prime Pump requested")
+        
+        if not self.pump_mgr.is_available:
+            from affilabs.widgets.message import show_message
+            show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
+            return
+        
+        if not self.pump_mgr.is_idle:
+            from affilabs.widgets.message import show_message
+            show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
+            return
+        
+        # Run prime pump in background
+        import asyncio
+        asyncio.create_task(self.pump_mgr.prime_pump())
+        
+    def _on_pump_cleanup_clicked(self):
+        """User clicked Clean Pump button - run cleanup sequence via PumpManager."""
+        logger.info("🧹 Pump Cleanup requested")
+        
+        if not self.pump_mgr.is_available:
+            from affilabs.widgets.message import show_message
+            show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
+            return
+        
+        if not self.pump_mgr.is_idle:
+            from affilabs.widgets.message import show_message
+            show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
+            return
+        
+        # Run cleanup in background
+        import asyncio
+        asyncio.create_task(self.pump_mgr.cleanup_pump())
+
+    def _on_valve_sync_toggled(self, checked: bool):
+        """User toggled valve synchronization.
+        
+        When enabled, KC1 and KC2 valve switches mirror each other.
+        
+        Args:
+            checked: True = sync enabled, False = independent control
+        """
+        mode = "SYNCHRONIZED" if checked else "INDEPENDENT"
+        logger.info(f"🔄 Valve control mode → {mode}")
+        
+        # If sync is enabled, mirror current KC1 state to KC2
+        if checked:
+            if hasattr(self.main_window.sidebar, 'kc1_loop_switch') and hasattr(self.main_window.sidebar, 'kc2_loop_switch'):
+                kc1_state = self.main_window.sidebar.kc1_loop_switch.isChecked()
+                self.main_window.sidebar.kc2_loop_switch.setChecked(kc1_state)
+                logger.info(f"✓ Synced KC2 loop valve to match KC1 ({kc1_state})")
+    
+    def _on_loop_valve_switched(self, channel: int, checked: bool):
+        """User toggled loop valve (6-port valve) - LOAD (unchecked) or TO SENSOR (checked).
+        
+        Args:
+            channel: 1 for KC1, 2 for KC2
+            checked: True = To Sensor (inject), False = Load
+        """
+        state = 1 if checked else 0  # 1 = inject/to sensor, 0 = load
+        state_name = "TO SENSOR" if checked else "LOAD"
+        
+        logger.info(f"🔄 KC{channel} Loop Valve → {state_name} (6-port state={state})")
+        
+        ctrl = self.hardware_mgr.controller
+        if not ctrl:
+            logger.warning("Controller not connected - cannot switch valve")
+            return
+        
+        try:
+            # Use controller's 6-port valve control
+            ctrl.knx_six(channel, state)
+            logger.info(f"✓ KC{channel} 6-port valve switched to {state_name}")
+            
+            # If sync is enabled, mirror to other channel
+            if hasattr(self.main_window.sidebar, 'sync_valve_btn'):
+                if self.main_window.sidebar.sync_valve_btn.isChecked():
+                    other_channel = 2 if channel == 1 else 1
+                    other_switch = self.main_window.sidebar.kc2_loop_switch if channel == 1 else self.main_window.sidebar.kc1_loop_switch
+                    
+                    # Update UI
+                    other_switch.blockSignals(True)
+                    other_switch.setChecked(checked)
+                    other_switch.blockSignals(False)
+                    
+                    # Update hardware
+                    ctrl.knx_six(other_channel, state)
+                    logger.info(f"✓ Synced KC{other_channel} 6-port valve to {state_name}")
+        except Exception as e:
+            logger.error(f"Failed to switch KC{channel} loop valve: {e}")
+            from affilabs.widgets.message import show_message
+            show_message(f"Failed to switch valve: {e}", "Error")
+
+    def _on_channel_valve_switched(self, channel: int, selected_channel: str):
+        """User selected channel on 3-way valve - A/B for KC1, C/D for KC2.
+        
+        Args:
+            channel: 1 for KC1, 2 for KC2
+            selected_channel: 'A', 'B', 'C', or 'D'
+        """
+        # Map A/B/C/D to valve state: A/C = 0, B/D = 1
+        state = 1 if selected_channel in ['B', 'D'] else 0
+        
+        logger.info(f"🔄 KC{channel} Channel Valve → {selected_channel} (3-way state={state})")
+        
+        ctrl = self.hardware_mgr.controller
+        if not ctrl:
+            logger.warning("Controller not connected - cannot switch valve")
+            return
+        
+        try:
+            # Use controller's 3-way valve control
+            ctrl.knx_three_both(state)  # Controls both channels together
+            logger.info(f"✓ KC{channel} 3-way valve switched to channel {selected_channel}")
+        except Exception as e:
+            logger.error(f"Failed to switch KC{channel} channel valve: {e}")
+            from affilabs.widgets.message import show_message
+            show_message(f"Failed to switch valve: {e}", "Error")
+
+    # === INTERNAL PUMP HANDLERS (RPi Peristaltic Pumps - Separate from AffiPump) ===
+
+    def _on_internal_pump_sync_toggled(self, checked: bool):
+        """User toggled internal pump synchronization.
+        
+        When enabled, both KC1 and KC2 pumps run together at same flow rate.
+        
+        Args:
+            checked: True = sync enabled (both pumps), False = single channel control
+        """
+        mode = "SYNCHRONIZED (Both KC1 & KC2)" if checked else "INDEPENDENT (Single Channel)"
+        logger.info(f"🔄 Internal pump mode → {mode}")
+        
+        # Apply current flow rate to both pumps if sync enabled
+        if checked:
+            if hasattr(self.main_window.sidebar, 'internal_pump_flowrate_combo'):
+                flowrate_text = self.main_window.sidebar.internal_pump_flowrate_combo.currentText()
+                logger.info(f"✓ Sync enabled - applying flow rate '{flowrate_text}' to both pumps")
+                # Trigger flow rate change which will handle synced operation
+                self._on_internal_pump_flowrate_changed(flowrate_text)
+
+    def _on_internal_pump_calibrate_clicked(self):
+        """User clicked Calibrate Speed button for internal peristaltic pumps."""
+        logger.info("🔧 Internal pump calibration requested")
+        
+        ctrl = self.hardware_mgr.controller
+        if not ctrl:
+            from affilabs.widgets.message import show_message
+            show_message("Controller not connected. Connect P4PRO/EZSPR to use internal pumps.", "Warning")
+            return
+        
+        # Get selected channel (1 or 2)
+        channel = 1
+        if hasattr(self.main_window.sidebar, 'internal_pump_channel_btn_2'):
+            if self.main_window.sidebar.internal_pump_channel_btn_2.isChecked():
+                channel = 2
+        
+        # TODO: Implement pump calibration procedure
+        # This would involve:
+        # 1. Running pump at known flow rate
+        # 2. Measuring actual volume delivered
+        # 3. Calculating calibration factor
+        # 4. Storing calibration in settings
+        
+        from affilabs.widgets.message import show_message
+        show_message(
+            f"Internal pump calibration for KC{channel}\\n\\n"
+            "Calibration procedure not yet implemented.\\n"
+            "This will measure actual flow rate and adjust pump speed accordingly.",
+            "Info"
+        )
+        logger.info(f"Internal pump KC{channel} calibration - feature pending implementation")
+
+    def _on_internal_pump_flowrate_changed(self, flowrate_text: str):
+        """User changed internal pump flow rate.
+        
+        Args:
+            flowrate_text: Selected flow rate ('50', '100', '200', or 'Flush')
+        """
+        ctrl = self.hardware_mgr.controller
+        if not ctrl:
+            return
+        
+        # Parse flow rate
+        if flowrate_text == "Flush":
+            rate = 500  # Flush rate
+        else:
+            try:
+                rate = int(flowrate_text)
+            except ValueError:
+                logger.warning(f"Invalid flow rate: {flowrate_text}")
+                return
+        
+        # Get selected channel (1 or 2) or both if sync is on
+        sync_enabled = False
+        if hasattr(self.main_window.sidebar, 'internal_pump_sync_btn'):
+            sync_enabled = self.main_window.sidebar.internal_pump_sync_btn.isChecked()
+        
+        if sync_enabled:
+            # Control both channels together
+            logger.info(f"🔄 Internal pumps (both KC1 & KC2) → {rate} µL/min (synced)")
+            try:
+                ctrl.knx_start(rate, 1)  # KC1
+                ctrl.knx_start(rate, 2)  # KC2
+                logger.info(f"✓ Both internal pumps started at {rate} µL/min")
+            except Exception as e:
+                logger.error(f"Failed to start synced pumps: {e}")
+                from affilabs.widgets.message import show_message
+                show_message(f"Failed to start pumps: {e}", "Error")
+        else:
+            # Control only selected channel
+            channel = 1
+            if hasattr(self.main_window.sidebar, 'internal_pump_channel_btn_2'):
+                if self.main_window.sidebar.internal_pump_channel_btn_2.isChecked():
+                    channel = 2
+            
+            logger.info(f"🔄 Internal pump KC{channel} → {rate} µL/min")
+            try:
+                ctrl.knx_start(rate, channel)
+                logger.info(f"✓ Internal pump KC{channel} started at {rate} µL/min")
+            except Exception as e:
+                logger.error(f"Failed to start pump KC{channel}: {e}")
+                from affilabs.widgets.message import show_message
+                show_message(f"Failed to start pump: {e}", "Error")
 
     def _cleanup_resources(self, emergency: bool = False):
         """Consolidated cleanup logic for all shutdown paths."""
@@ -2965,41 +3611,41 @@ class Application(QApplication):
     # === Graphic Control Callbacks ===
 
     def _on_grid_toggled(self, checked: bool):
-        """Grid checkbox toggled."""
-        logger.info(f"Grid toggled: {checked}")
-        self.main_window.cycle_of_interest_graph.showGrid(x=checked, y=checked)
+        """Grid checkbox toggled - applies to Active Cycle graph only."""
+        from affilabs.plot_helpers import GRID_ALPHA
+        logger.info(f"Grid toggled: {checked} (Active Cycle graph)")
+        # Only apply to Active Cycle graph (bottom graph), not timeline
+        try:
+            self.main_window.cycle_of_interest_graph.showGrid(x=checked, y=checked, alpha=GRID_ALPHA)
+            logger.info(f"✓ Grid {'shown' if checked else 'hidden'} on Active Cycle graph")
+        except Exception as e:
+            logger.error(f"Failed to toggle grid: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_autoscale_toggled(self, checked: bool):
-        """Autoscale radio button toggled."""
-        if not checked:  # Radio button was unchecked (manual selected)
-            return
-
-        logger.info(f"Autoscale enabled for {self._selected_axis.upper()}-axis")
-
-        # Enable autoscale for selected axis
-        if self._selected_axis == "x":
-            self.main_window.cycle_of_interest_graph.enableAutoRange(axis="x")
+        """Autoscale checkbox toggled."""
+        if checked:
+            logger.info(f"Autoscale enabled for {self._selected_axis.upper()}-axis")
+            # Enable autoscale for selected axis
+            if self._selected_axis == "x":
+                self.main_window.cycle_of_interest_graph.enableAutoRange(axis="x")
+            else:
+                self.main_window.cycle_of_interest_graph.enableAutoRange(axis="y")
         else:
-            self.main_window.cycle_of_interest_graph.enableAutoRange(axis="y")
-
-    def _on_manual_scale_toggled(self, checked: bool):
-        """Manual radio button toggled."""
-        if not checked:  # Radio button was unchecked (auto selected)
-            return
-
-        logger.info(f"Manual scale enabled for {self._selected_axis.upper()}-axis")
-
-        # Disable autoscale and enable manual inputs
-        self.main_window.min_input.setEnabled(True)
-        self.main_window.max_input.setEnabled(True)
-
-        # Apply current manual range values if any
-        self._on_manual_range_changed()
+            logger.info(f"Manual scale enabled for {self._selected_axis.upper()}-axis")
+            # Disable autoscale for selected axis
+            if self._selected_axis == "x":
+                self.main_window.cycle_of_interest_graph.disableAutoRange(axis="x")
+            else:
+                self.main_window.cycle_of_interest_graph.disableAutoRange(axis="y")
+            # Apply current manual range values if any
+            self._on_manual_range_changed()
 
     def _on_manual_range_changed(self):
         """Manual range input values changed."""
-        # Only apply if manual mode is selected
-        if not self.main_window.manual_radio.isChecked():
+        # Only apply if autoscale is disabled (manual mode)
+        if self.main_window.autoscale_check.isChecked():
             return
 
         try:
@@ -3052,7 +3698,7 @@ class Application(QApplication):
             logger.info("Y-axis selected for scaling controls")
 
         # Re-apply current mode to new axis
-        if self.main_window.auto_radio.isChecked():
+        if self.main_window.autoscale_check.isChecked():
             self._on_autoscale_toggled(True)
         else:
             self._on_manual_range_changed()
@@ -3060,13 +3706,30 @@ class Application(QApplication):
     def _on_channel_filter_changed(self, channel: str):
         """Channel combo selection changed - filter which channels are displayed."""
         logger.info(f"Channel filter changed to: {channel}")
-        # Update cycle of interest graph to show/hide channels
-        # This affects which channel curves are visible
-        self._update_cycle_of_interest_graph()
+
+        # Show/hide channels on cycle of interest graph
+        graph = self.main_window.cycle_of_interest_graph
+        if not hasattr(graph, 'curves') or not graph.curves:
+            return
+
+        channel_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3}
+
+        if channel == "All":
+            # Show all channels
+            for curve in graph.curves:
+                curve.setVisible(True)
+            logger.info("All channels visible")
+        else:
+            # Hide all except selected channel
+            selected_idx = channel_map.get(channel)
+            for idx, curve in enumerate(graph.curves):
+                curve.setVisible(idx == selected_idx)
+            logger.info(f"Only Channel {channel} visible")
 
     def _on_marker_style_changed(self, marker: str):
         """Marker combo selection changed - update data point symbols."""
         logger.info(f"Marker style changed to: {marker}")
+
         # Map marker name to pyqtgraph symbol
         marker_map = {
             'Circle': 'o',
@@ -3075,8 +3738,21 @@ class Application(QApplication):
             'Star': 'star'
         }
         symbol = marker_map.get(marker, 'o')
-        # Note: Would update plot item symbols here if we store references
-        # For now just log the change
+
+        # Update all curve symbols on cycle of interest graph
+        graph = self.main_window.cycle_of_interest_graph
+        if hasattr(graph, 'curves') and graph.curves:
+            import pyqtgraph as pg
+            for curve in graph.curves:
+                # Get current pen style and update symbol
+                current_pen = curve.opts.get('pen')
+                current_brush = curve.opts.get('symbolBrush')
+                curve.setSymbol(symbol)
+                curve.setSymbolSize(6)
+                if current_brush:
+                    curve.setSymbolBrush(current_brush)
+                curve.setSymbolPen(pg.mkPen('w', width=1))  # White outline
+            logger.info(f"Updated markers to {marker} ({symbol})")
 
     def _on_filter_toggled(self, checked: bool):
         """Data filtering checkbox toggled."""
@@ -3091,11 +3767,7 @@ class Application(QApplication):
         import os
         import sys
 
-        # Add utils to path
-        utils_path = os.path.join(os.path.dirname(__file__), "..")
-        if utils_path not in sys.path:
-            sys.path.insert(0, utils_path)
-
+        # Path already added at module initialization - no need to re-add
         from affilabs.utils.spr_data_processor import KalmanFilter
 
         # Map strength to Kalman noise parameters
@@ -3381,15 +4053,35 @@ class Application(QApplication):
         CRITICAL: Works with DISPLAY coordinates (time rebased to 0, first point skipped)
         to match what's actually shown on the cycle_of_interest_graph.
 
+        Uses normalized distance calculation to handle different time/SPR scales.
+        Has a tolerance threshold - won't select if click is too far from any curve.
+
         Args:
             time_clicked: Time coordinate of click (in display/rebased time)
             spr_clicked: SPR coordinate of click
 
         Returns:
-            Channel identifier ('a', 'b', 'c', 'd') or None if no data
+            Channel identifier ('a', 'b', 'c', 'd') or None if no data or too far
         """
         min_distance = float('inf')
         nearest_channel = None
+
+        # Get current view ranges for normalization
+        try:
+            view_box = self.main_window.cycle_of_interest_graph.plotItem.vb
+            view_ranges = view_box.viewRange()
+            time_range = view_ranges[0][1] - view_ranges[0][0]  # x-axis range
+            spr_range = view_ranges[1][1] - view_ranges[1][0]   # y-axis range
+
+            # Avoid division by zero
+            if time_range <= 0:
+                time_range = 1.0
+            if spr_range <= 0:
+                spr_range = 1.0
+        except:
+            # Fallback to default normalization
+            time_range = 100.0
+            spr_range = 100.0
 
         # Check all 4 channels
         for ch in ['a', 'b', 'c', 'd']:
@@ -3410,22 +4102,35 @@ class Application(QApplication):
             time_idx = np.argmin(np.abs(cycle_time_display - time_clicked))
 
             if time_idx < len(cycle_spr_display):
-                # Calculate distance from click to this channel's curve at that time
+                # Calculate NORMALIZED distance from click to this channel's curve
                 spr_at_time = cycle_spr_display[time_idx]
-                distance = abs(spr_at_time - spr_clicked)
 
-                logger.debug(f"Channel {ch.upper()}: SPR at t={time_clicked:.2f} is {spr_at_time:.2f}, distance={distance:.2f}")
+                # Normalize by view range to make distance scale-independent
+                time_diff_normalized = 0.0  # Already at exact time point
+                spr_diff_normalized = abs(spr_at_time - spr_clicked) / spr_range
+
+                # Euclidean distance in normalized space
+                distance = np.sqrt(time_diff_normalized**2 + spr_diff_normalized**2)
+
+                logger.debug(f"Channel {ch.upper()}: SPR at t={time_clicked:.2f} is {spr_at_time:.2f}, normalized distance={distance:.4f}")
 
                 if distance < min_distance:
                     min_distance = distance
                     nearest_channel = ch
 
-        if nearest_channel:
-            logger.debug(f"Nearest channel: {nearest_channel.upper()} (distance={min_distance:.2f})")
-        else:
-            logger.debug("No nearest channel found (all channels have insufficient data)")
+        # Only return channel if it's reasonably close (within 15% of view range)
+        # This prevents selecting curves that are very far from the click
+        TOLERANCE = 0.15  # 15% of vertical view range
 
-        return nearest_channel
+        if nearest_channel and min_distance < TOLERANCE:
+            logger.debug(f"✓ Nearest channel: {nearest_channel.upper()} (normalized distance={min_distance:.4f})")
+            return nearest_channel
+        else:
+            if nearest_channel:
+                logger.debug(f"✗ Click too far from curves (distance={min_distance:.4f} > tolerance={TOLERANCE})")
+            else:
+                logger.debug("✗ No nearest channel found (all channels have insufficient data)")
+            return None
 
     def _select_flag_channel_visual(self, channel: str):
         """Select a channel for flagging and update visual highlighting.
@@ -3464,8 +4169,8 @@ class Application(QApplication):
         # Define flag appearance based on type (Phase 2)
         flag_styles = {
             'injection': {'symbol': 't', 'size': 15, 'color': (255, 50, 50, 230)},    # Red triangle
-            'wash': {'symbol': 's', 'size': 12, 'color': (50, 150, 255, 230)},        # Blue square
-            'spike': {'symbol': 'star', 'size': 18, 'color': (255, 200, 0, 230)}      # Yellow star
+            'wash': {'symbol': 's', 'size': 18, 'color': (50, 150, 255, 255)},        # Blue square - larger, fully opaque
+            'spike': {'symbol': 'star', 'size': 24, 'color': (255, 200, 0, 255)}      # Yellow star - larger, fully opaque
         }
 
         style = flag_styles.get(flag_type, flag_styles['injection'])
@@ -3933,10 +4638,7 @@ class Application(QApplication):
         import sys
 
         # Add settings to path if not already there
-        settings_path = os.path.join(os.path.dirname(__file__), "..")
-        if settings_path not in sys.path:
-            sys.path.insert(0, settings_path)
-
+        # Path already added at module initialization - no need to re-add
         from settings import settings
 
         if checked:
@@ -3994,6 +4696,24 @@ class Application(QApplication):
                         "}",
                     )
 
+        # Update edits tab graphs (primary and timeline)
+        if hasattr(self.main_window, 'edits_tab'):
+            # Update primary graph curves
+            if hasattr(self.main_window.edits_tab, 'edits_graph_curves'):
+                for i, color in enumerate(color_list):
+                    if i < len(self.main_window.edits_tab.edits_graph_curves):
+                        self.main_window.edits_tab.edits_graph_curves[i].setPen(
+                            pg.mkPen(color=color, width=2),
+                        )
+
+            # Update timeline graph curves
+            if hasattr(self.main_window.edits_tab, 'edits_timeline_curves'):
+                for i, color in enumerate(color_list):
+                    if i < len(self.main_window.edits_tab.edits_timeline_curves):
+                        self.main_window.edits_tab.edits_timeline_curves[i].setPen(
+                            pg.mkPen(color=color, width=2),
+                        )
+
         logger.info("[OK] Graph colors updated successfully")
 
     # === CALIBRATION WORKFLOWS ===
@@ -4025,7 +4745,7 @@ class Application(QApplication):
             return
 
         # Show progress dialog
-        from affilabs_core_ui import StartupCalibProgressDialog
+        from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
 
         message = (
             "Simple LED Calibration - Quick Intensity Adjustment\n\n"
@@ -4054,7 +4774,8 @@ class Application(QApplication):
 
         def progress_callback(msg, percent):
             """Update progress dialog."""
-            dialog.update_status(msg, percent)
+            dialog.update_status(msg)
+            dialog.set_progress(percent, 100)
 
         def run_calibration():
             """Thread worker for simple calibration."""
@@ -4065,10 +4786,17 @@ class Application(QApplication):
                 )
 
                 if success:
-                    dialog.update_status("✅ Simple calibration complete!", 100)
+                    dialog.update_status("✅ Simple calibration complete!")
+                    dialog.set_progress(100, 100)
                     logger.info("✅ Simple LED calibration completed successfully")
+
+                    # Clear graphs and restart sensorgram at t=0 (must be on main thread)
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(0, self._on_clear_graphs_requested)
+                    logger.info("✓ Scheduled sensorgram reset on main thread")
                 else:
-                    dialog.update_status("❌ Simple calibration failed", 100)
+                    dialog.update_status("❌ Simple calibration failed")
+                    dialog.set_progress(100, 100)
                     logger.error("❌ Simple LED calibration failed")
 
                 # Auto-close after 2 seconds
@@ -4080,11 +4808,14 @@ class Application(QApplication):
                 logger.error(f"Simple calibration error: {e}")
                 import traceback
                 traceback.print_exc()
-                dialog.update_status(f"❌ Error: {e}", 100)
+                dialog.update_status(f"❌ Error: {e}")
+                dialog.set_progress(100, 100)
                 import time
                 time.sleep(3)
                 dialog.close_from_thread()
 
+        # Show progress bar and start thread
+        dialog.show_progress_bar()
         thread = threading.Thread(target=run_calibration, daemon=True, name="SimpleCalibration")
         thread.start()
 
@@ -4151,7 +4882,7 @@ class Application(QApplication):
             progress.close()
 
             if success:
-                # Load the newly calibrated P position from device_config.json
+                # Load the newly calibrated S and P positions from device_config.json
                 try:
                     import json
                     from pathlib import Path
@@ -4159,23 +4890,27 @@ class Application(QApplication):
                     with open(config_path) as f:
                         config = json.load(f)
 
+                    s_position = config.get("oem_calibration", {}).get("polarizer_s_position")
                     p_position = config.get("oem_calibration", {}).get("polarizer_p_position")
 
-                    if p_position is not None:
-                        # Move servo to P position
-                        logger.info(f"Moving servo to P position ({p_position})...")
-                        if self.hardware_mgr.ctrl.servo_set(p=p_position):
-                            logger.info("✅ Servo moved to P position")
+                    if s_position is not None and p_position is not None:
+                        # Positions loaded - servo will move during convergence, not here
+                        logger.info(f"Servo positions available: S={s_position}°, P={p_position}°")
                     else:
-                        logger.warning("⚠️ No P position found in device_config.json")
+                        logger.warning("⚠️ Servo positions not found in device_config.json")
                 except Exception as e:
-                    logger.error(f"Failed to load P position: {e}")
+                    logger.error(f"Failed to load servo positions: {e}")
 
-                # Restart live data
-                logger.info("Restarting live data acquisition...")
+                # Restart live data acquisition
+                logger.info("🔄 Restarting live data acquisition...")
                 if hasattr(self, 'data_mgr') and self.data_mgr:
-                    self.data_mgr.start_acquisition()
-                    logger.info("✅ Live data restarted")
+                    try:
+                        self.data_mgr.start_acquisition()
+                        logger.info("✅ Live data acquisition restarted")
+                    except Exception as e:
+                        logger.error(f"Failed to restart live data: {e}")
+                else:
+                    logger.warning("⚠️ Data manager not available - cannot restart live data")
 
                     # Give UI time to update before showing completion dialog
                     from PySide6.QtWidgets import QApplication
@@ -4212,9 +4947,164 @@ class Application(QApplication):
             )
 
     def _on_oem_led_calibration(self):
-        """Run full OEM calibration (servo + LED) via CalibrationService."""
-        logger.info("Starting Full LED Calibration via CalibrationService...")
-        self.calibration.start_calibration()
+        """Run full OEM calibration (servo + LED) via CalibrationService.
+        
+        This ALWAYS rebuilds the optical model, regardless of whether one exists.
+        Shows dialog with "Start" button BEFORE beginning calibration.
+        """
+        from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
+        
+        # Show pre-calibration dialog with Start button
+        dialog = StartupCalibProgressDialog(
+            parent=self.main_window,
+            title="OEM Calibration",
+            message=(
+                "OEM Calibration Process:\n\n"
+                "  STEP 1: Servo Polarizer Calibration\n"
+                "    • Finds optimal S and P positions\n"
+                "    • Takes ~2-5 minutes\n\n"
+                "  STEP 2: LED Model Training\n"
+                "    • Measures LED response at 10-60ms\n"
+                "    • Creates 3-stage linear model\n"
+                "    • Takes ~2 minutes\n\n"
+                "  STEP 3: Full 6-Step Calibration\n"
+                "    • LED convergence for S and P modes\n"
+                "    • Reference spectrum capture\n"
+                "    • Takes ~3-5 minutes\n\n"
+                "Total time: ~10-15 minutes\n\n"
+                "Click Start to begin."
+            ),
+            show_start_button=True,
+        )
+        
+        def on_start():
+            """Called when user clicks Start button."""
+            logger.info("=" * 80)
+            logger.info("Starting OEM Calibration (will rebuild optical model)...")
+            logger.info("=" * 80)
+            dialog.hide_start_button()
+            dialog.show_progress_bar()
+            self.calibration.start_calibration(force_oem_retrain=True)
+        
+        dialog.start_requested.connect(on_start)
+        dialog.show()
+
+    def _on_led_model_training(self):
+        """Run LED model training only (no full calibration).
+        
+        Directly trains the 3-stage linear LED model without running the full
+        6-step calibration. Useful for quickly rebuilding the optical model.
+        """
+        logger.info("=" * 80)
+        logger.info("Starting LED Model Training (optical model only)...")
+        logger.info("=" * 80)
+        
+        # Import required modules
+        from affilabs.core.oem_model_training import run_oem_model_training_workflow
+        from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
+        import threading
+        
+        # Check hardware
+        if not self.hardware_mgr or not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
+            from affilabs.ui.ui_message import error as ui_error
+            ui_error(
+                self.main_window,
+                "Hardware Not Ready",
+                "Please connect hardware before training the LED model."
+            )
+            return
+        
+        # Show progress dialog
+        dialog = StartupCalibProgressDialog(
+            parent=self.main_window,
+            title="Training LED Model",
+            message=(
+                "LED Model Training Process:\n\n"
+                "  1. Servo Polarizer Calibration (if P4SPR)\n"
+                "  2. LED Response Measurement (10-60ms)\n"
+                "  3. 3-Stage Linear Model Fitting\n"
+                "  4. Model File Creation\n\n"
+                "This will take approximately 2-5 minutes.\n\n"
+                "Click Start to begin."
+            ),
+            show_start_button=True,
+        )
+        
+        def progress_callback(message: str, percent: int):
+            """Update progress dialog."""
+            dialog.update_status(message)
+            dialog.set_progress(percent, 100)
+            if not dialog.progress_bar.isVisible():
+                dialog.show_progress_bar()
+        
+        def run_training():
+            """Run training in background thread."""
+            try:
+                logger.info("🔬 LED Model Training thread started...")
+                
+                # Run OEM model training workflow
+                success = run_oem_model_training_workflow(
+                    hardware_mgr=self.hardware_mgr,
+                    progress_callback=progress_callback,
+                )
+                
+                if success:
+                    logger.info("[OK] LED model training completed successfully")
+                    dialog.update_title("LED Model Training Complete")
+                    dialog.update_status("✓ Model created successfully!")
+                    dialog.hide_progress_bar()
+                    
+                    from affilabs.ui.ui_message import info as ui_info
+                    from PySide6.QtCore import QTimer
+                    
+                    def show_success():
+                        dialog.close()
+                        ui_info(
+                            self.main_window,
+                            "Training Complete",
+                            "LED calibration model created successfully!\n\n"
+                            "The new model is now active and will be used for all calibrations."
+                        )
+                    
+                    QTimer.singleShot(500, show_success)
+                else:
+                    logger.error("[ERROR] LED model training failed")
+                    dialog.update_title("Training Failed")
+                    dialog.update_status("❌ Model training encountered errors")
+                    dialog.hide_progress_bar()
+                    
+                    from affilabs.ui.ui_message import error as ui_error
+                    from PySide6.QtCore import QTimer
+                    
+                    def show_error():
+                        dialog.close()
+                        ui_error(
+                            self.main_window,
+                            "Training Failed",
+                            "LED model training failed.\n\nPlease check the logs for details."
+                        )
+                    
+                    QTimer.singleShot(500, show_error)
+                    
+            except Exception as e:
+                logger.error(f"LED model training error: {e}", exc_info=True)
+                dialog.update_title("Training Error")
+                dialog.update_status(f"Error: {str(e)}")
+                dialog.hide_progress_bar()
+        
+        def on_start_clicked():
+            """Handle Start button click."""
+            dialog.start_button.setEnabled(False)
+            dialog.show_progress_bar()
+            dialog.update_status("Initializing LED model training...")
+            
+            # Start training thread
+            thread = threading.Thread(target=run_training, daemon=True, name="LEDModelTraining")
+            thread.start()
+        
+        # Connect start button
+        dialog.start_clicked.connect(on_start_clicked)
+        dialog.show()
 
     def _on_record_baseline_clicked(self):
         """Handle Record Baseline Data button click."""
@@ -4387,59 +5277,70 @@ class Application(QApplication):
         from PySide6.QtWidgets import QMessageBox
         from affilabs.utils.time_utils import for_filename
         from pathlib import Path
-        
+
         logger.info("[RECORD-HANDLER] Recording start requested - showing confirmation")
 
         # Prepare filename and destination
         timestamp = for_filename().replace(".", "_")
         default_filename = f"AffiLabs_data_{timestamp}"
         default_directory = self.recording_mgr.output_directory
-        
+
         # Get current export settings
         filename = self.main_window.sidebar.export_filename_input.text() or default_filename
         destination = self.main_window.sidebar.export_dest_input.text() or str(default_directory)
-        
-        # Get format
-        if self.main_window.sidebar.excel_radio.isChecked():
+
+        # Get format from dropdown
+        format_text = self.main_window.sidebar.format_combo.currentText()
+        if "Excel" in format_text:
             extension = ".xlsx"
-        elif self.main_window.sidebar.csv_radio.isChecked():
+        elif "CSV" in format_text:
             extension = ".csv"
-        elif self.main_window.sidebar.json_radio.isChecked():
+        elif "JSON" in format_text:
             extension = ".json"
-        elif self.main_window.sidebar.hdf5_radio.isChecked():
-            extension = ".h5"
         else:
             extension = ".xlsx"
-        
+
         # Ensure filename has extension
         if not any(filename.endswith(ext) for ext in ['.xlsx', '.csv', '.json', '.h5']):
             filename = filename + extension
-        
+
         full_path = Path(destination) / filename
-        
+
         # Show confirmation dialog
         msg = QMessageBox(self.main_window)
         msg.setIcon(QMessageBox.Question)
         msg.setWindowTitle("Start Recording")
-        msg.setText(f"Data will be recorded as:\n\n{filename}\n\nIn folder:\n{destination}")
+
+        # Format message with prominent path styling
+        message_html = (
+            "<p style='font-size: 13px;'>Data will be recorded as:</p>"
+            f"<p style='font-size: 14px; font-weight: bold; color: #1D1D1F; background: #F5F5F7; padding: 8px; border-radius: 4px;'>"
+            f"{filename}</p>"
+            "<p style='font-size: 13px; margin-top: 12px;'>In folder:</p>"
+            f"<p style='font-size: 13px; font-weight: 600; color: #007AFF; background: #F0F6FF; padding: 8px; border-radius: 4px; font-family: monospace;'>"
+            f"{destination}</p>"
+        )
+
+        msg.setText(message_html)
+        msg.setTextFormat(Qt.TextFormat.RichText)
         msg.setInformativeText("Change settings in Export tab if needed, or start live recording now.")
-        
+
         start_btn = msg.addButton("▶️ Start Recording", QMessageBox.AcceptRole)
         cancel_btn = msg.addButton("Cancel", QMessageBox.RejectRole)
         msg.setDefaultButton(start_btn)
-        
+
         msg.exec()
-        
+
         if msg.clickedButton() == cancel_btn:
             logger.info("Recording cancelled by user")
             # Reset button state since recording didn't start
             self.main_window.set_recording_state(is_recording=False)
             return
-        
+
         # User confirmed - start recording with file
         logger.info(f"Starting recording to file: {full_path}")
         self.recording_mgr.start_recording(filename=str(full_path))
-        
+
         # Update UI state
         self.main_window.set_recording_state(is_recording=True, filename=filename)
 
@@ -4449,7 +5350,7 @@ class Application(QApplication):
 
         # Stop the recording
         self.recording_mgr.stop_recording()
-        
+
         # Update UI state to reflect recording stopped
         self.main_window.set_recording_state(is_recording=False)
 
@@ -4459,11 +5360,11 @@ class Application(QApplication):
         try:
             # Increment session epoch - invalidates all old data in one atomic operation
             self._session_epoch += 1
-            
+
             # Reset experiment start time and display offset
             self.experiment_start_time = None
             self._display_time_offset = 0.0
-            
+
             # Clear processing queue to remove old data with old timestamps
             if hasattr(self, "_spectrum_queue") and self._spectrum_queue:
                 # Drain the queue
@@ -4476,7 +5377,7 @@ class Application(QApplication):
                     pass
                 if cleared_count > 0:
                     logger.info(f"[OK] Cleared {cleared_count} items from processing queue")
-            
+
             # Clear all data buffers
             if hasattr(self, "buffer_mgr") and self.buffer_mgr:
                 self.buffer_mgr.clear_all()
@@ -4503,7 +5404,7 @@ class Application(QApplication):
                     timeline.stop_cursor.setPos(0)  # Force position update
                     logger.info(f"[CLEAR] Stop cursor after reset: {timeline.stop_cursor.value()}")
                 logger.info("✓ Cursors reset to t=0")
-            
+
             logger.info("🔄 Timeline reset complete - next data point will start at t=0")
 
         except Exception as e:
@@ -4887,8 +5788,9 @@ class Application(QApplication):
         SettingsHelpers.load_device_settings(self)
 
     def _run_servo_auto_calibration(self):
-        """Delegate to calibration service."""
-        self.calibration.start_calibration()
+        """Run servo polarizer calibration automatically."""
+        logger.info("🔧 Auto-triggering servo polarizer calibration...")
+        self._on_polarizer_calibration()
 
     def _update_led_intensities_for_integration_time(
         self,
@@ -4989,11 +5891,241 @@ class Application(QApplication):
 
         ExportHelpers.export_requested(self, config)
 
+    def _on_send_to_edits_requested(self):
+        """Transfer live buffer data to Edits tab for review/modification."""
+        from PySide6.QtWidgets import QMessageBox
+        import pandas as pd
+        import numpy as np
+
+        # Check if we have live data in buffer
+        has_data = False
+        for ch in ['a', 'b', 'c', 'd']:
+            if len(self.buffer_mgr.cycle_data[ch].time) > 0:
+                has_data = True
+                break
+
+        if not has_data:
+            QMessageBox.warning(
+                self.main_window,
+                "No Data",
+                "No live data available to send to Edits.\n\n"
+                "Start live acquisition to capture data first."
+            )
+            return
+
+        # Stop recording if active
+        if self.recording_mgr.is_recording:
+            self.recording_mgr.stop_recording()
+            logger.info("🔴 Stopped recording before sending to Edits")
+
+        # Convert buffer data to CSV-compatible format
+        logger.info("📤 Converting live buffer data to edits format...")
+
+        # Collect all data points from all channels
+        all_rows = []
+        for ch in ['a', 'b', 'c', 'd']:
+            time_data = self.buffer_mgr.cycle_data[ch].time
+            spr_data = self.buffer_mgr.cycle_data[ch].spr
+
+            for t, spr in zip(time_data, spr_data):
+                all_rows.append({
+                    'Time': t,
+                    'Channel': ch.upper(),
+                    'SPR': spr
+                })
+
+        if not all_rows:
+            QMessageBox.warning(
+                self.main_window,
+                "No Data",
+                "No data points found in live buffers."
+            )
+            return
+
+        # Create DataFrame and pivot to wide format (Time, A, B, C, D)
+        df = pd.DataFrame(all_rows)
+        df_wide = df.pivot(index='Time', columns='Channel', values='SPR').reset_index()
+        df_wide = df_wide.sort_values('Time')
+
+        # Ensure all channel columns exist
+        for ch in ['A', 'B', 'C', 'D']:
+            if ch not in df_wide.columns:
+                df_wide[ch] = np.nan
+
+        # Reorder columns: Time, A, B, C, D
+        df_wide = df_wide[['Time', 'A', 'B', 'C', 'D']]
+
+        # Store in main window for edits tab to access
+        self.main_window._edits_raw_data = df_wide
+        self.main_window._edits_cycles = []  # No cycle data from live buffer
+        self.main_window._edits_source_file = "Live Data (Unsaved)"
+
+        logger.info(f"✓ Converted {len(df_wide)} time points to edits format")
+
+        # Access Edits tab directly
+        if not hasattr(self.main_window, 'edits_tab'):
+            QMessageBox.warning(
+                self.main_window,
+                "Error",
+                "Edits tab not available."
+            )
+            return
+
+        edits_tab = self.main_window.edits_tab
+
+        # Plot data on timeline
+        for ch_idx, ch in enumerate(['A', 'B', 'C', 'D']):
+            curve = edits_tab.edits_timeline_curves[ch_idx]
+            if ch in df_wide.columns:
+                valid_data = df_wide[['Time', ch]].dropna()
+                if len(valid_data) > 0:
+                    curve.setData(valid_data['Time'].values, valid_data[ch].values)
+                else:
+                    curve.setData([], [])
+            else:
+                curve.setData([], [])
+
+        # Set cursor range to full data
+        if len(df_wide) > 0:
+            time_min = df_wide['Time'].min()
+            time_max = df_wide['Time'].max()
+            edits_tab.edits_timeline_cursors['left'].setValue(time_min)
+            edits_tab.edits_timeline_cursors['right'].setValue(time_max)
+
+        # Update selection view
+        edits_tab._update_selection_view()
+
+        logger.info(f"📤 Transferred {len(df_wide)} time points of live data to Edits tab")
+
+        # Show confirmation
+        QMessageBox.information(
+            self.main_window,
+            "Data Transferred",
+            f"Successfully transferred {len(df_wide)} data points to Edits tab.\n\n"
+            "You can now review the data before exporting."
+        )
+
     def _on_quick_export_image(self):
         """Quick export cycle of interest graph as image with metadata."""
         from affilabs.utils.export_helpers import ExportHelpers
 
         ExportHelpers.quick_export_image(self)
+
+    def _on_copy_graph_to_clipboard(self):
+        """Copy active cycle graph to clipboard."""
+        from PySide6.QtCore import QBuffer, QIODevice
+        from PySide6.QtGui import QImage
+        from PySide6.QtWidgets import QApplication
+
+        try:
+            # Check if there's data to copy
+            has_data = False
+            for ch in self._idx_to_channel:
+                if len(self.buffer_mgr.cycle_data[ch].time) > 0:
+                    has_data = True
+                    break
+
+            if not has_data:
+                from affilabs.widgets.message import show_message
+                show_message("No cycle data to copy", "Warning")
+                return
+
+            # Get graph widget
+            graph_widget = self.main_window.cycle_of_interest_graph
+
+            # Export graph to image
+            exporter = graph_widget.grab()
+
+            # Copy to clipboard
+            clipboard = QApplication.clipboard()
+            clipboard.setPixmap(exporter)
+
+            logger.info("✓ Active cycle graph copied to clipboard")
+            from affilabs.widgets.message import show_message
+            show_message("Graph copied to clipboard!\nYou can now paste it into documents.", "Information")
+
+        except Exception as e:
+            logger.error(f"Failed to copy graph to clipboard: {e}")
+            from affilabs.widgets.message import show_message
+            show_message(f"Failed to copy graph:\n{e}", "Error")
+
+    def _on_load_current_settings(self):
+        """Load current hardware settings from device_config into UI inputs."""
+        try:
+            if not self.main_window.device_config:
+                from affilabs.widgets.message import show_message
+                show_message("No device configuration loaded", "Warning")
+                return
+
+            # Get servo positions
+            positions = self.main_window.device_config.get_servo_positions()
+            if positions:
+                s_pos, p_pos = positions
+                self.main_window.sidebar.s_position_input.setText(str(s_pos))
+                self.main_window.sidebar.p_position_input.setText(str(p_pos))
+
+            # Get LED intensities
+            intensities = self.main_window.device_config.get_led_intensities()
+            if intensities:
+                self.main_window.sidebar.led_a_input.setText(str(intensities.get('a', 0)))
+                self.main_window.sidebar.led_b_input.setText(str(intensities.get('b', 0)))
+                self.main_window.sidebar.led_c_input.setText(str(intensities.get('c', 0)))
+                self.main_window.sidebar.led_d_input.setText(str(intensities.get('d', 0)))
+
+            logger.info("✓ Current settings loaded into UI")
+            from affilabs.widgets.message import show_message
+            show_message("Settings loaded successfully", "Information")
+
+        except Exception as e:
+            logger.error(f"Failed to load current settings: {e}")
+            from affilabs.widgets.message import show_message
+            show_message(f"Failed to load settings:\n{e}", "Error")
+
+    def _on_apply_settings(self):
+        """Apply settings from UI inputs to device_config and hardware."""
+        try:
+            if not self.main_window.device_config:
+                from affilabs.widgets.message import show_message
+                show_message("No device configuration loaded", "Warning")
+                return
+
+            # Get values from UI
+            try:
+                s_pos = int(self.main_window.sidebar.s_position_input.text())
+                p_pos = int(self.main_window.sidebar.p_position_input.text())
+                led_a = int(self.main_window.sidebar.led_a_input.text())
+                led_b = int(self.main_window.sidebar.led_b_input.text())
+                led_c = int(self.main_window.sidebar.led_c_input.text())
+                led_d = int(self.main_window.sidebar.led_d_input.text())
+            except ValueError as e:
+                from affilabs.widgets.message import show_message
+                show_message("Invalid input values. Please enter numbers only.", "Error")
+                return
+
+            # Validate ranges
+            if not (0 <= s_pos <= 180) or not (0 <= p_pos <= 180):
+                from affilabs.widgets.message import show_message
+                show_message("Polarizer positions must be between 0-180 degrees", "Error")
+                return
+
+            if not all(0 <= val <= 255 for val in [led_a, led_b, led_c, led_d]):
+                from affilabs.widgets.message import show_message
+                show_message("LED intensities must be between 0-255", "Error")
+                return
+
+            # Save to device config
+            self.main_window.device_config.set_servo_positions(s_pos, p_pos)
+            self.main_window.device_config.set_led_intensities(led_a, led_b, led_c, led_d)
+            self.main_window.device_config.save()
+
+            logger.info(f"✓ Settings saved: S={s_pos}, P={p_pos}, LEDs=[{led_a}, {led_b}, {led_c}, {led_d}]")
+            from affilabs.widgets.message import show_message
+            show_message("Settings saved to device configuration", "Information")
+
+        except Exception as e:
+            logger.error(f"Failed to apply settings: {e}")
+            from affilabs.widgets.message import show_message
+            show_message(f"Failed to apply settings:\n{e}", "Error")
 
     def _print_profiling_stats(self):
         """Print profiling statistics (called periodically by timer)."""
@@ -5128,42 +6260,48 @@ def main():
     from PySide6.QtWidgets import QSplashScreen
 
     splash = QSplashScreen()
-    splash.setFixedSize(400, 250)
+    splash.setFixedSize(480, 300)
 
-    # Create custom splash with gradient background
-    splash_pixmap = QPixmap(400, 250)
+    # Create custom splash with clean minimal design matching app theme
+    splash_pixmap = QPixmap(480, 300)
     splash_pixmap.fill(Qt.transparent)
 
     painter = QPainter(splash_pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    # Draw rounded rectangle with gradient
+    # Draw rounded rectangle with subtle gradient (white to light gray)
     from PySide6.QtGui import QPainterPath
 
-    gradient = QLinearGradient(0, 0, 0, 250)
-    gradient.setColorAt(0, QColor(46, 48, 227))  # Primary blue
-    gradient.setColorAt(1, QColor(36, 38, 180))  # Darker blue
+    gradient = QLinearGradient(0, 0, 0, 300)
+    gradient.setColorAt(0, QColor(255, 255, 255))  # White
+    gradient.setColorAt(1, QColor(245, 245, 247))  # Light background
 
     path = QPainterPath()
-    path.addRoundedRect(QRect(0, 0, 400, 250), 12, 12)
+    path.addRoundedRect(QRect(0, 0, 480, 300), 16, 16)
     painter.fillPath(path, QBrush(gradient))
 
-    # Draw app name
-    painter.setPen(QColor(255, 255, 255))
+    # Draw subtle border
+    painter.setPen(QColor(0, 0, 0, 8))
+    painter.drawRoundedRect(QRect(1, 1, 478, 298), 16, 16)
+
+    # Draw app name (large, clean)
+    painter.setPen(QColor(29, 29, 31))  # PRIMARY_TEXT
     from PySide6.QtGui import QFont
 
-    font = painter.font()
-    font.setPointSize(24)
+    font = QFont("-apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif")
+    font.setPointSize(32)
     font.setWeight(QFont.Weight.Bold)
+    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, -0.5)
     painter.setFont(font)
-    painter.drawText(QRect(0, 80, 400, 40), Qt.AlignCenter, "AffiLabs.core")
+    painter.drawText(QRect(0, 100, 480, 50), Qt.AlignCenter, "AffiLabs.core")
 
-    # Draw version/status
-    font.setPointSize(12)
+    # Draw version/status (lighter, smaller)
+    font.setPointSize(13)
     font.setWeight(QFont.Weight.Normal)
+    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0)
     painter.setFont(font)
-    painter.setPen(QColor(255, 255, 255, 180))
-    painter.drawText(QRect(0, 130, 400, 30), Qt.AlignCenter, "Loading components...")
+    painter.setPen(QColor(134, 134, 139))  # SECONDARY_TEXT
+    painter.drawText(QRect(0, 160, 480, 30), Qt.AlignCenter, "Loading components...")
 
     painter.end()
 
@@ -5178,22 +6316,23 @@ def main():
             painter = QPainter(splash_pixmap)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-            # Clear message area
+            # Clear message area (redraw background)
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            gradient = QLinearGradient(0, 120, 0, 170)
-            gradient.setColorAt(0, QColor(46, 48, 227))
-            gradient.setColorAt(1, QColor(36, 38, 180))
-            painter.fillRect(QRect(0, 120, 400, 50), QBrush(gradient))
+            gradient = QLinearGradient(0, 150, 0, 200)
+            gradient.setColorAt(0, QColor(255, 255, 255))
+            gradient.setColorAt(1, QColor(245, 245, 247))
+            painter.fillRect(QRect(0, 150, 480, 50), QBrush(gradient))
 
             # Draw new message
             painter.setCompositionMode(
                 QPainter.CompositionMode.CompositionMode_SourceOver,
             )
-            painter.setPen(QColor(255, 255, 255, 180))
-            font = painter.font()
-            font.setPointSize(12)
+            painter.setPen(QColor(134, 134, 139))  # SECONDARY_TEXT
+            font = QFont("-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif")
+            font.setPointSize(13)
+            font.setWeight(QFont.Weight.Normal)
             painter.setFont(font)
-            painter.drawText(QRect(0, 130, 400, 30), Qt.AlignCenter, message)
+            painter.drawText(QRect(0, 160, 480, 30), Qt.AlignCenter, message)
             painter.end()
 
             splash.setPixmap(splash_pixmap)

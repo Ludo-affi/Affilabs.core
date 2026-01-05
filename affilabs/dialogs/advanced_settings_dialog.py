@@ -301,8 +301,7 @@ class AdvancedSettingsDialog(QDialog):
         if not dev_mode and not self.advanced_params_unlocked:
             return  # Don't create diagnostics tab in user mode
 
-        # Add diagnostics button
-        self._setup_diagnostics_button()
+        # Diagnostics button removed - no longer needed
 
     def _setup_diagnostics_button(self):
         """Add a diagnostics button to show the diagnostics window."""

@@ -586,6 +586,18 @@ class SettingsTabBuilder:
             primary=False,
         )
 
+        calibration_card_layout.addSpacing(12)
+
+        # LED Model Training Only
+        self._add_calibration_option(
+            calibration_card_layout,
+            title="LED Model Training",
+            description="Rebuild optical model only (10-60ms measurements, ~2 min)",
+            button_text="Train LED Model",
+            button_ref="led_model_training_btn",
+            primary=False,
+        )
+
         calibration_section.add_content_widget(calibration_card)
         tab_layout.addWidget(calibration_section)
 

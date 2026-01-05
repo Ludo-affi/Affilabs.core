@@ -85,36 +85,28 @@ def run_simple_led_calibration(
         logger.info("STEP 1: Loading current LED settings...")
         logger.info("-" * 80)
 
-        # Load device config (keep in outer scope for use in later steps)
-        device_config = hardware_mgr.get_device_config()
+        # Get device config object (NOT the dict from get_device_config())
+        device_config = hardware_mgr.device_config
         if not device_config:
             logger.error("No device configuration found")
             return False
 
         try:
-            # Get current LED intensities
-            current_leds_s = {
-                "a": device_config.led_a_s,
-                "b": device_config.led_b_s,
-                "c": device_config.led_c_s,
-                "d": device_config.led_d_s,
-            }
+            # Get current LED intensities using the correct method
+            current_leds = device_config.get_led_intensities()
 
-            current_leds_p = {
-                "a": device_config.led_a_p,
-                "b": device_config.led_b_p,
-                "c": device_config.led_c_p,
-                "d": device_config.led_d_p,
-            }
+            # Simple calibration uses same LEDs for both S and P modes
+            # (full calibration would have separate S/P optimization)
+            current_leds_s = current_leds.copy()
+            current_leds_p = current_leds.copy()
 
-            current_integration_s = device_config.integration_time_s
-            current_integration_p = device_config.integration_time_p
+            # Get integration times from calibration
+            cal = device_config.config.get("calibration", {})
+            current_integration_s = cal.get("integration_time_ms", 50.0)
+            current_integration_p = cal.get("integration_time_ms", 50.0)
 
-            logger.info(f"[OK] Current S-mode LEDs: {current_leds_s}")
-            logger.info(f"     Current P-mode LEDs: {current_leds_p}")
-            logger.info(
-                f"     Integration times: S={current_integration_s:.2f}ms, P={current_integration_p:.2f}ms"
-            )
+            logger.info(f"[OK] Current LED intensities: {current_leds}")
+            logger.info(f"     Integration time: {current_integration_s:.2f}ms")
 
         except Exception as e:
             logger.error(f"Failed to load device config: {e}")
@@ -136,11 +128,11 @@ def run_simple_led_calibration(
         try:
             # Move servo to S position (if device has servo)
             if hasattr(ctrl, "servo_set"):
-                s_pos = (
-                    device_config.s_servo_position
-                    if hasattr(device_config, "s_servo_position")
-                    else 90
-                )
+                positions = device_config.get_servo_positions()
+                if positions:
+                    s_pos, p_pos = positions
+                else:
+                    s_pos, p_pos = 90, 90  # Default positions
                 logger.info(f"Moving servo to S position: {s_pos}")
                 ctrl.servo_set(s=s_pos, p=s_pos)
                 time.sleep(0.3)
@@ -214,11 +206,11 @@ def run_simple_led_calibration(
         try:
             # Move servo to P position (if device has servo)
             if hasattr(ctrl, "servo_set"):
-                p_pos = (
-                    device_config.p_servo_position
-                    if hasattr(device_config, "p_servo_position")
-                    else 0
-                )
+                positions = device_config.get_servo_positions()
+                if positions:
+                    s_pos, p_pos = positions
+                else:
+                    s_pos, p_pos = 90, 0  # Default positions
                 logger.info(f"Moving servo to P position: {p_pos}")
                 ctrl.servo_set(s=p_pos, p=p_pos)
                 time.sleep(0.3)
@@ -292,27 +284,25 @@ def run_simple_led_calibration(
         logger.info("-" * 80)
 
         try:
-            device_config = hardware_mgr.get_device_config()
-            if device_config:
-                # Update LED intensities (keep integration times unchanged)
-                device_config.led_a_s = adjusted_leds_s.get("a", 128)
-                device_config.led_b_s = adjusted_leds_s.get("b", 128)
-                device_config.led_c_s = adjusted_leds_s.get("c", 128)
-                device_config.led_d_s = adjusted_leds_s.get("d", 128)
+            # Update LED intensities using proper method
+            # Simple calibration uses same values for both S and P modes
+            led_a = adjusted_leds_s.get("a", 128)
+            led_b = adjusted_leds_s.get("b", 128)
+            led_c = adjusted_leds_s.get("c", 128)
+            led_d = adjusted_leds_s.get("d", 128)
 
-                device_config.led_a_p = adjusted_leds_p.get("a", 128)
-                device_config.led_b_p = adjusted_leds_p.get("b", 128)
-                device_config.led_c_p = adjusted_leds_p.get("c", 128)
-                device_config.led_d_p = adjusted_leds_p.get("d", 128)
+            device_config.set_led_intensities(led_a, led_b, led_c, led_d)
 
-                # Save config
-                device_config.save()
-                logger.info("[OK] Device config updated and saved")
-                logger.info(f"     S-mode LEDs: {adjusted_leds_s}")
-                logger.info(f"     P-mode LEDs: {adjusted_leds_p}")
+            # Save config
+            device_config.save()
+            logger.info("[OK] Device config updated and saved")
+            logger.info(f"     LED intensities: A={led_a}, B={led_b}, C={led_c}, D={led_d}")
 
         except Exception as e:
             logger.error(f"Failed to update device config: {e}")
+            import traceback
+
+            traceback.print_exc()
             # Non-fatal - calibration still succeeded
 
         # Turn off LEDs

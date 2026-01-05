@@ -64,9 +64,7 @@ class ControllerBase:
                 self._ser.close()
             except Exception as e:
                 # Log but don't raise - we want cleanup to continue
-                import logging
-
-                logging.getLogger(__name__).exception(f"Error closing serial port: {e}")
+                logger.exception(f"Error closing serial port: {e}")
             finally:
                 self._ser = None
 
@@ -1153,6 +1151,72 @@ class PicoP4SPR(StaticController):
     # NEVER changed at runtime
     # =========================================================================
 
+    def servo_move_raw_pwm(self, target_pwm):
+        """Move servo to a specific PWM position (for calibration).
+
+        This is used during servo calibration to move the servo to test positions.
+        Firmware sends PWM pulse for 500ms (default), then waits 100ms.
+
+        Args:
+            target_pwm: PWM value 0-255
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if target_pwm < 0 or target_pwm > 255:
+                logger.error(f"Invalid PWM value: {target_pwm} (must be 0-255)")
+                return False
+
+            # Set both S and P to the same value (we're just testing one position)
+            pwm_val = int(target_pwm)
+
+            # Send sv command to set the position values
+            cmd = f"sv{pwm_val:03d}{pwm_val:03d}\n"
+            logger.info(f"🔧 Moving servo to PWM {pwm_val}: {cmd.strip()}")
+
+            if self._ser is not None or self.open():
+                with self._lock:
+                    try:
+                        self._ser.reset_input_buffer()
+                    except Exception:
+                        pass
+
+                    # Step 1: Set the position values
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.05)
+                    response = self._ser.read(1)
+
+                    if response != b"6":
+                        logger.error(f"❌ sv command failed: {response!r}")
+                        return False
+
+                    logger.debug(f"✅ Position set to PWM {pwm_val}")
+
+                    # Step 2: Move to that position using ss (S-mode)
+                    # Firmware will send PWM pulse for ~500ms then turn off
+                    self._ser.write(b"ss\n")
+                    time.sleep(0.05)
+                    response = self._ser.read(1)
+
+                    if response == b"6":
+                        # Wait for physical servo movement
+                        # Firmware: 500ms pulse + 100ms settle = 600ms total
+                        # Add extra margin for physical movement
+                        time.sleep(0.7)  # 700ms total wait
+                        logger.info(f"✅ Servo physically moved to PWM {pwm_val}")
+                        return True
+                    else:
+                        logger.error(f"❌ ss command failed: {response!r}")
+                        return False
+
+            logger.error("❌ Serial port not open")
+            return False
+
+        except Exception as e:
+            logger.error(f"❌ Error moving servo to PWM {target_pwm}: {e}")
+            return False
+
     def servo_move_calibration_only(self, s=10, p=100):
         """CALIBRATION ONLY: Move servo to test positions.
 
@@ -1492,8 +1556,10 @@ class PicoKNX2(FlowController):
     def knx_three(self, state, ch) -> bool | None:
         try:
             cmd = f"v3{ch}{state:1d}\n"
+            print(f"DEBUG knx_three: Sending command: {cmd.strip()!r} (ch={ch}, state={state})")
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
+                print(f"DEBUG knx_three: Command sent successfully")
                 return True
             logger.error("failed to send cmd knx_three")
             return False
@@ -1503,8 +1569,10 @@ class PicoKNX2(FlowController):
     def knx_six(self, state, ch) -> bool | None:
         try:
             cmd = f"v6{ch}{state:1d}\n"
+            print(f"DEBUG knx_six: Sending command: {cmd.strip()!r} (ch={ch}, state={state})")
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
+                print(f"DEBUG knx_six: Command sent successfully")
                 return True
             logger.error("failed to send cmd knx_six")
             return False
@@ -1550,20 +1618,49 @@ class PicoKNX2(FlowController):
 
 
 class PicoEZSPR(FlowController):
+    """EZSPR/AFFINITE controller with 2 LEDs, pump control, and valve control.
+
+    This class handles EZSPR and AFFINITE firmware variants only.
+    P4PRO hardware uses the separate PicoP4PRO class.
+
+    Hardware Features:
+    - 2 LED channels (A, B) - no batch command support
+    - Internal pump with flow rate control
+    - 6-port valves (2 channels) with cycle tracking and safety timeout
+    - 3-way valves (2 channels) with state monitoring
+
+    Firmware: EZSPR V1.3+, AFFINITE V1.4+
+    """
+
     UPDATABLE_VERSIONS: Final[set] = {"V1.3", "V1.4"}
     VERSIONS_WITH_PUMP_CORRECTION: Final[set] = {"V1.4", "V1.5"}
     PUMP_CORRECTION_MULTIPLIER: Final[int] = 100
+    VALVE_SAFETY_TIMEOUT_SECONDS: Final[int] = 300  # 5 minutes safety timeout
 
     def __init__(self) -> None:
         super().__init__(name="pico_ezspr")
         self._ser = None
         self.version = ""
+        self.firmware_id = ""  # Track firmware ID (EZSPR or AFFINITE only)
+
+        # Valve cycle tracking and state monitoring
+        self._valve_six_cycles = {1: 0, 2: 0}  # Total cycles per 6-port valve
+        self._valve_three_cycles = {1: 0, 2: 0}  # Total cycles per 3-way valve
+        self._valve_six_state = {1: None, 2: None}  # Current state (0=load, 1=inject)
+        self._valve_three_state = {1: None, 2: None}  # Current state (0=waste, 1=load)
+
+        # 6-port valve safety timeout tracking
+        self._valve_six_timers = {1: None, 2: None}  # Active timers for auto-shutoff
+        self._valve_six_lock = threading.Lock()  # Thread-safe timer management
 
     def valid(self):
         return (self._ser is not None and self._ser.is_open) or self.open()
 
     def open(self) -> bool:
-        """Open Pico EZSPR controller with VID/PID match + fallback to blind enumeration."""
+        """Open Pico EZSPR controller - accepts EZSPR or AFFINITE firmware only.
+
+        NOTE: P4PRO firmware is NOT handled by this class - use PicoP4PRO instead.
+        """
         # Try VID/PID match first (preferred method)
         for dev in serial.tools.list_ports.comports():
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
@@ -1576,13 +1673,18 @@ class PicoEZSPR(FlowController):
                     )
                     cmd = "id\n"
                     self._ser.write(cmd.encode())
-                    reply = self._ser.readline()[0:5].decode()
+                    reply = self._ser.readline().decode().strip()
                     logger.debug(f"Pico EZSPR reply - {reply}")
-                    if reply == "EZSPR":
+                    # Accept EZSPR or AFFINITE firmware only (NOT P4PRO)
+                    if reply in ("EZSPR", "AFFINITE") or "AFFINITE" in reply:
+                        self.firmware_id = reply  # Store for command format selection
                         cmd = "iv\n"
                         self._ser.write(cmd.encode())
                         self.version = self._ser.readline()[0:4].decode()
+                        logger.info(f"✅ Found Pico EZSPR/AFFINITE firmware: {reply} (version {self.version})")
                         return True
+                    elif "P4PRO" in reply:
+                        logger.debug("P4PRO firmware detected - skipping (use PicoP4PRO class)")
                     try:
                         self._ser.close()
                     except Exception as close_err:
@@ -1622,11 +1724,13 @@ class PicoEZSPR(FlowController):
                 import time
 
                 time.sleep(0.15)
-                reply = self._ser.readline()[0:5].decode()
+                reply = self._ser.readline().decode().strip()
 
-                if reply == "EZSPR":
+                # Accept multiple firmware IDs: EZSPR, P4PRO, AFFINITE
+                if reply in ("EZSPR", "P4PRO", "AFFINITE") or "AFFINITE" in reply or "P4PRO" in reply:
+                    self.firmware_id = reply  # Store for command format selection
                     logger.info(
-                        f"[OK] Found Pico EZSPR on {dev.device} (fallback method)",
+                        f"[OK] Found Pico EZSPR/P4PRO on {dev.device} (firmware: {reply}, fallback method)",
                     )
                     cmd = "iv\n"
                     self._ser.write(cmd.encode())
@@ -1839,14 +1943,59 @@ class PicoEZSPR(FlowController):
             return False
 
     def set_mode(self, mode="s"):
+        """Set polarizer mode for P4PRO using servo:ANGLE,DURATION format.
+
+        P4PRO firmware v2.0 uses servo:ANGLE,DURATION instead of ss/sp commands.
+        Requires servo positions to be loaded via set_servo_positions() first.
+        """
+        import time
+
         try:
             if self._ser is not None or self.open():
-                cmd = "ss\n" if mode == "s" else "sp\n"
+                # Check if servo positions are loaded
+                if self._servo_s_pos is None or self._servo_p_pos is None:
+                    logger.error("❌ Servo positions not loaded - cannot set polarizer mode")
+                    logger.error("   Call set_servo_positions(s, p) before set_mode()")
+                    return False
+
+                # Select target angle based on mode
+                target_angle = self._servo_s_pos if mode == "s" else self._servo_p_pos
+                duration_ms = 150  # Fast servo movement duration (was 500ms)
+
+                # P4PRO uses servo:ANGLE,DURATION format
+                cmd = f"servo:{target_angle},{duration_ms}\n"
+                logger.info(f"🔄 Setting P4PRO polarizer to {mode.upper()}-mode (angle {target_angle}°)")
+
+                self._ser.reset_input_buffer()
                 self._ser.write(cmd.encode())
-                return self._ser.read() == b"6"
+                time.sleep(0.05)
+
+                response = self._ser.read(10)
+
+                # P4PRO v2.0 responds with b'\x01\r\n' or b'1\r\n'
+                if len(response) > 0 and (b"\x01" in response or b"1" in response or b"6" in response):
+                    logger.info(f"✅ Polarizer set to {mode.upper()}-mode")
+                    # Wait for servo to physically move (reduced from 0.7s)
+                    time.sleep(0.25)
+                    return True
+                else:
+                    logger.error(f"❌ Failed to set mode: unexpected response {response!r}")
+                    return False
+
         except Exception as e:
             logger.debug(f"error moving polarizer {e}")
             return False
+
+    def set_servo_positions(self, s: int, p: int):
+        """Load servo S and P positions (degrees) for use by set_mode().
+
+        Args:
+            s: S-mode angle in degrees (5-175)
+            p: P-mode angle in degrees (5-175)
+        """
+        self._servo_s_pos = s
+        self._servo_p_pos = p
+        logger.info(f"📌 Servo positions loaded: S={s}°, P={p}°")
 
     def servo_get(self):
         cmd = "sr\n"
@@ -1941,6 +2090,68 @@ class PicoEZSPR(FlowController):
 
         return curr_pos
 
+    def servo_move_raw_pwm(self, target_pwm):
+        """Move servo to a specific PWM position (for calibration).
+
+        Uses sv command for FAST calibration moves (no EEPROM writes).
+        The servo:ANGLE,DURATION command writes to flash (~5s delay) - NOT suitable for calibration!
+
+        Args:
+            target_pwm: PWM value 0-255
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        import time
+
+        try:
+            if target_pwm < 0 or target_pwm > 255:
+                logger.error(f"Invalid PWM value: {target_pwm} (must be 0-255)")
+                return False
+
+            # P4PRO/EZSPR firmware uses sv command for RAM-only moves (no flash write)
+            # Format: sv{s:03d}{p:03d}\n where both s and p are the same for calibration sweep
+            # PWM range: 0-255
+            pwm_val = int(target_pwm)
+
+            # Use sv command (RAM only, no EEPROM write, <100ms response)
+            cmd = f"sv{pwm_val:03d}{pwm_val:03d}\n"
+            logger.debug(f"🔧 SERVO CALIB: {cmd.strip()} (PWM {target_pwm})")
+
+            if self._ser is not None or self.open():
+                try:
+                    self._ser.reset_input_buffer()
+                except Exception:
+                    pass
+
+                # Send servo command
+                self._ser.write(cmd.encode())
+                time.sleep(0.05)  # Wait for firmware to process
+
+                # Read response - sv command responds quickly with b'6'
+                response = self._ser.read(1)
+
+                if response == b"6":
+                    logger.debug(f"✅ Servo PWM {target_pwm} set (fast sv command)")
+                    time.sleep(0.1)  # Minimal servo movement delay
+                    return True
+                else:
+                    logger.warning(f"⚠️ Unexpected servo response: {response!r}")
+                    time.sleep(0.1)
+                    return True  # Continue anyway - servo likely moved
+
+            logger.error("❌ Serial port not open")
+            return False
+
+            logger.error("❌ Serial port not open")
+            return False
+
+        except Exception as e:
+            logger.error(f"❌ EXCEPTION in servo_move_raw_pwm: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+
     def servo_set(self, s=10, p=100):
         max_retries = 2
         for attempt in range(max_retries):
@@ -1948,11 +2159,34 @@ class PicoEZSPR(FlowController):
                 if (s < 0) or (p < 0) or (s > 180) or (p > 180):
                     msg = f"Invalid polarizer position given: {s}, {p}"
                     raise ValueError(msg)
+
+                # All Pico-based firmware (EZSPR, P4PRO, AFFINITE) use sv format
+                # Format: sv{s:03d}{p:03d}\n where values are 0-255 PWM or 0-180 degrees
                 cmd = f"sv{s:03d}{p:03d}\n"
+                logger.info(f"🔧 Sending servo command to {self.firmware_id}: {cmd.strip()} (s={s}, p={p})")
+
                 if self._ser is not None or self.open():
+                    # Clear input buffer before sending command
+                    try:
+                        self._ser.reset_input_buffer()
+                    except Exception:
+                        pass
+
                     self._ser.write(cmd.encode())
-                    return self._ser.read() == b"6"
-                logger.error("unable to update servo positions")
+                    time.sleep(0.05)  # Give firmware time to process
+
+                    # Read response - firmware sends ACK ('6')
+                    response = self._ser.read(1)
+                    logger.debug(f"Servo response: {response!r}")
+
+                    success = response == b"6"
+                    if success:
+                        logger.info(f"✅ Servo positions set successfully: s={s}, p={p}")
+                    else:
+                        logger.warning(f"⚠️ Unexpected servo response: {response!r} (expected b'6')")
+
+                    return success
+                logger.error("unable to update servo positions - port not open")
                 return False
             except Exception as e:
                 if attempt < max_retries - 1:
@@ -2053,25 +2287,245 @@ class PicoEZSPR(FlowController):
             cmd = f"v3{ch}{state:1d}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
-                return self._ser.read() == b"6"
+                response = self._ser.read()
+                return response == b"1"  # P4PRO firmware returns '1' for success
             logger.error("failed to send cmd knx_three")
             return False
         except Exception as e:
             logger.error(f"Error during knx_three {e}")
 
-    def knx_six(self, state, ch):
+    def _cancel_valve_timer(self, ch):
+        """Cancel existing safety timer for valve channel."""
+        with self._valve_six_lock:
+            if self._valve_six_timers[ch] is not None:
+                self._valve_six_timers[ch].cancel()
+                self._valve_six_timers[ch] = None
+                logger.debug(f"Cancelled safety timer for 6-port valve {ch}")
+
+    def _auto_shutoff_valve(self, ch):
+        """Auto-shutoff callback for 6-port valve safety timeout."""
+        logger.warning(f"⚠️ SAFETY TIMEOUT: 6-port valve {ch} auto-shutoff after {self.VALVE_SAFETY_TIMEOUT_SECONDS}s")
+        try:
+            if self._ser is not None or self.open():
+                cmd = f"v6{ch}0\n"  # Force to LOAD position (state=0)
+                self._ser.write(cmd.encode())
+                self._ser.read()
+                self._valve_six_state[ch] = 0
+                logger.info(f"✓ KC{ch} 6-port valve auto-closed (LOAD position)")
+        except Exception as e:
+            logger.error(f"Error during auto-shutoff for valve {ch}: {e}")
+        finally:
+            with self._valve_six_lock:
+                self._valve_six_timers[ch] = None
+
+    def _start_valve_safety_timer(self, ch):
+        """Start 5-minute safety timer for valve channel."""
+        with self._valve_six_lock:
+            # Cancel any existing timer
+            if self._valve_six_timers[ch] is not None:
+                self._valve_six_timers[ch].cancel()
+            # Start new timer
+            self._valve_six_timers[ch] = threading.Timer(
+                self.VALVE_SAFETY_TIMEOUT_SECONDS,
+                self._auto_shutoff_valve,
+                args=[ch]
+            )
+            self._valve_six_timers[ch].daemon = True
+            self._valve_six_timers[ch].start()
+            logger.debug(f"Started {self.VALVE_SAFETY_TIMEOUT_SECONDS}s safety timer for 6-port valve {ch}")
+
+    def knx_six(self, state, ch, timeout_seconds=None):
+        """Control individual 6-port valve with optional timeout.
+
+        Args:
+            ch: Channel (1 or 2)
+            state: 0=load, 1=inject
+            timeout_seconds: Optional timeout in seconds for safety fallback.
+                           - If None (default): NO automatic timeout - valve stays open
+                           - If specified (e.g., 300): Safety timeout for manual/unknown operations
+                           - Pass explicitly for manual valve control without calculated contact time
+        """
         try:
             cmd = f"v6{ch}{state:1d}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
-                return self._ser.read() == b"6"
+                response = self._ser.read()
+                success = response == b"1"  # P4PRO firmware returns '1' for success
+
+                if success:
+                    # Track state change and cycle count
+                    old_state = self._valve_six_state.get(ch)
+                    if old_state is not None and old_state != state:
+                        self._valve_six_cycles[ch] += 1
+                        logger.debug(f"6-port valve {ch}: cycle {self._valve_six_cycles[ch]} ({old_state}→{state})")
+                    self._valve_six_state[ch] = state
+
+                    # Safety timer management
+                    if state == 1:  # Valve turned ON (INJECT position)
+                        if timeout_seconds is not None and timeout_seconds > 0:
+                            # Safety timeout specified (for manual/unknown operations)
+                            with self._valve_six_lock:
+                                if self._valve_six_timers[ch] is not None:
+                                    self._valve_six_timers[ch].cancel()
+                                self._valve_six_timers[ch] = threading.Timer(
+                                    timeout_seconds,
+                                    self._auto_shutoff_valve,
+                                    args=[ch]
+                                )
+                                self._valve_six_timers[ch].daemon = True
+                                self._valve_six_timers[ch].start()
+                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (cycle {self._valve_six_cycles[ch]}) [Safety timeout: {timeout_seconds}s]")
+                        else:
+                            # No timeout - programmatic operation with calculated contact time
+                            self._cancel_valve_timer(ch)
+                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (cycle {self._valve_six_cycles[ch]})")
+                    else:  # Valve turned OFF (LOAD position)
+                        self._cancel_valve_timer(ch)
+                        logger.info(f"✓ KC{ch} 6-port valve → LOAD (cycle {self._valve_six_cycles[ch]})")
+
+                return success
             logger.error("failed to send cmd knx_six")
             return False
         except Exception as e:
             logger.error(f"Error during knx_six {e}")
+            return False
+
+    def knx_six_both(self, state, timeout_seconds=None):
+        """Set both 6-port valves simultaneously to same state with optional timeout.
+
+        Args:
+            state: 0=load, 1=inject
+            timeout_seconds: Optional timeout in seconds for safety fallback.
+                           - If None (default): NO automatic timeout - valves stay open
+                           - If specified (e.g., 300): Safety timeout for manual/unknown operations
+                           - Pass explicitly for manual valve control without calculated contact time
+
+        Returns:
+            True if both valves acknowledged, False otherwise
+        """
+        try:
+            if self._ser is not None or self.open():
+                # Send both commands back-to-back
+                self._ser.write(f"v61{state:1d}\n".encode())
+                resp1 = self._ser.read()
+                self._ser.write(f"v62{state:1d}\n".encode())
+                resp2 = self._ser.read()
+                success = resp1 == b"1" and resp2 == b"1"
+
+                if success:
+                    # Track state changes and cycles for both valves
+                    for ch in [1, 2]:
+                        old_state = self._valve_six_state.get(ch)
+                        if old_state is not None and old_state != state:
+                            self._valve_six_cycles[ch] += 1
+                            logger.debug(f"6-port valve {ch}: cycle {self._valve_six_cycles[ch]} ({old_state}→{state})")
+                        self._valve_six_state[ch] = state
+
+                    # Safety timer management for both valves
+                    if state == 1:  # Valves turned ON (INJECT position)
+                        if timeout_seconds is not None and timeout_seconds > 0:
+                            # Safety timeout specified (for manual/unknown operations)
+                            for ch in [1, 2]:
+                                with self._valve_six_lock:
+                                    if self._valve_six_timers[ch] is not None:
+                                        self._valve_six_timers[ch].cancel()
+                                    self._valve_six_timers[ch] = threading.Timer(
+                                        timeout_seconds,
+                                        self._auto_shutoff_valve,
+                                        args=[ch]
+                                    )
+                                    self._valve_six_timers[ch].daemon = True
+                                    self._valve_six_timers[ch].start()
+                            logger.info(f"✓ 6-port valves both set to INJECT (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]}) [Safety timeout: {timeout_seconds}s]")
+                        else:
+                            # No timeout - programmatic operation with calculated contact time
+                            for ch in [1, 2]:
+                                self._cancel_valve_timer(ch)
+                            logger.info(f"✓ 6-port valves both set to INJECT (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]})")
+                    else:  # Valves turned OFF (LOAD position)
+                        for ch in [1, 2]:
+                            self._cancel_valve_timer(ch)
+                        logger.info(f"✓ 6-port valves both set to LOAD (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]})")
+
+                return success
+            logger.error("failed to send cmd knx_six_both")
+            return False
+        except Exception as e:
+            logger.error(f"Error during knx_six_both {e}")
+            return False
+
+    def knx_three_both(self, state):
+        """Set both 3-way valves simultaneously to same state.
+
+        Args:
+            state: 0=waste, 1=load
+
+        Returns:
+            True if both valves acknowledged, False otherwise
+        """
+        try:
+            if self._ser is not None or self.open():
+                # Send both commands back-to-back
+                self._ser.write(f"v31{state:1d}\n".encode())
+                resp1 = self._ser.read()
+                self._ser.write(f"v32{state:1d}\n".encode())
+                resp2 = self._ser.read()
+                success = resp1 == b"1" and resp2 == b"1"
+
+                if success:
+                    # Track state changes and cycles for both valves
+                    for ch in [1, 2]:
+                        old_state = self._valve_three_state.get(ch)
+                        if old_state is not None and old_state != state:
+                            self._valve_three_cycles[ch] += 1
+                            logger.debug(f"3-way valve {ch}: cycle {self._valve_three_cycles[ch]} ({old_state}→{state})")
+                        self._valve_three_state[ch] = state
+                    logger.info(f"✓ 3-way valves both set to {'LOAD' if state == 1 else 'WASTE'} (cycles: V1={self._valve_three_cycles[1]}, V2={self._valve_three_cycles[2]})")
+
+                return success
+            logger.error("failed to send cmd knx_three_both")
+            return False
+        except Exception as e:
+            logger.error(f"Error during knx_three_both {e}")
+            return False
 
     def knx_led(self, led_state, ch) -> None:
         pass  # Green indicator LED for each ch controlled in FW
+
+    def knx_six_state(self, ch):
+        """Get current state of 6-port valve.
+
+        Args:
+            ch: Valve channel (1 or 2)
+
+        Returns:
+            0 (load), 1 (inject), or None if unknown
+        """
+        return self._valve_six_state.get(ch)
+
+    def knx_three_state(self, ch):
+        """Get current state of 3-way valve.
+
+        Args:
+            ch: Valve channel (1 or 2)
+
+        Returns:
+            0 (waste), 1 (load), or None if unknown
+        """
+        return self._valve_three_state.get(ch)
+
+    def get_valve_cycles(self):
+        """Get valve cycle counts for health monitoring.
+
+        Returns:
+            dict with cycle counts for all valves
+        """
+        return {
+            "six_port": dict(self._valve_six_cycles),
+            "three_way": dict(self._valve_three_cycles),
+            "total_six": sum(self._valve_six_cycles.values()),
+            "total_three": sum(self._valve_three_cycles.values()),
+        }
 
     def stop_kinetic(self) -> None:
         try:
@@ -2121,3 +2575,660 @@ class PicoEZSPR(FlowController):
 
     def __str__(self) -> str:
         return "Pico Carrier Board"
+
+
+# ============================================================================
+# PicoP4PRO - Standalone P4PRO Controller (4 LEDs + Servo + KNX Valves)
+# ============================================================================
+
+class PicoP4PRO(FlowController):
+    """P4PRO controller with 4-LED control, servo polarizer, and KNX valve control.
+
+    Hardware Features:
+    - 4 LED channels (A, B, C, D) with batch intensity control
+    - Servo polarizer (PWM 0-255, uses 'sv' RAM-only command for fast calibration)
+    - 6-port valves (2 channels) with cycle tracking and safety timeout
+    - 3-way valves (2 channels) with state monitoring
+
+    Firmware: P4PRO V2.1+
+    Command Protocol: Uses 'sv' for servo (not 'servo:' to avoid EEPROM writes)
+    """
+
+    VALVE_SAFETY_TIMEOUT_SECONDS: Final[int] = 300  # 5 minutes safety timeout
+
+    def __init__(self) -> None:
+        super().__init__(name="pico_p4pro")
+        self._ser = None
+        self._servo_s_pos = None  # Loaded from device_config
+        self._servo_p_pos = None  # Loaded from device_config
+        self.version = ""
+        self.firmware_id = "P4PRO"
+
+        # Valve cycle tracking and state monitoring
+        self._valve_six_cycles = {1: 0, 2: 0}
+        self._valve_three_cycles = {1: 0, 2: 0}
+        self._valve_six_state = {1: None, 2: None}
+        self._valve_three_state = {1: None, 2: None}
+
+        # 6-port valve safety timeout tracking
+        self._valve_six_timers = {1: None, 2: None}
+        self._valve_six_lock = threading.Lock()
+
+    def valid(self):
+        return (self._ser is not None and self._ser.is_open) or self.open()
+
+    def open(self) -> bool:
+        """Open P4PRO controller by scanning for P4PRO firmware ID."""
+        logger.info("PicoP4PRO.open() - Looking for VID=0x2e8a PID=0xa")
+
+        # Try VID/PID match first
+        for dev in serial.tools.list_ports.comports():
+            if dev.pid == PICO_PID and dev.vid == PICO_VID:
+                logger.info(f"MATCH! Trying PicoP4PRO on {dev.device}")
+                try:
+                    self._ser = serial.Serial(
+                        port=dev.device,
+                        baudrate=115200,
+                        timeout=1,  # 1 second timeout for fast servo/LED response
+                        write_timeout=1,
+                    )
+                    cmd = "id\n"
+                    self._ser.write(cmd.encode())
+                    reply = self._ser.readline().decode().strip()
+
+                    if reply == "P4PRO" or "P4PRO" in reply:
+                        self.firmware_id = reply
+                        cmd = "iv\n"
+                        self._ser.write(cmd.encode())
+                        self.version = self._ser.readline()[0:4].decode()
+                        logger.info(f"✅ Found Pico P4PRO firmware: {reply} (version {self.version})")
+                        return True
+                    else:
+                        logger.warning(f"ID mismatch - expected 'P4PRO', got '{reply}'")
+                        try:
+                            self._ser.close()
+                        except Exception:
+                            pass
+                        self._ser = None
+                except Exception as e:
+                    logger.error(f"Error connecting to {dev.device}: {e}")
+                    if self._ser:
+                        try:
+                            self._ser.close()
+                        except Exception:
+                            pass
+                        self._ser = None
+
+        logger.warning("No PicoP4PRO found with VID/PID match")
+        return False
+
+    def close(self) -> None:
+        """Close serial connection to P4PRO."""
+        if self._ser is not None:
+            try:
+                self._ser.close()
+            except Exception as e:
+                logger.error(f"Error closing P4PRO serial port: {e}")
+            finally:
+                self._ser = None
+
+    # ========================================================================
+    # LED Control (4 channels: A, B, C, D)
+    # ========================================================================
+
+    def enable_multi_led(self, a: bool = True, b: bool = True, c: bool = True, d: bool = True) -> bool:
+        """Enable multiple LEDs using lm:ABCD command.
+
+        CRITICAL: P4PRO firmware requires lm:ABCD command (letters, not numbers!)
+        before LEDs respond to intensity commands (la:X, lb:X, etc.).
+
+        Args:
+            a, b, c, d: Which channels to enable (True) or disable (False)
+
+        Returns:
+            True if command sent successfully
+        """
+        try:
+            if self._ser is not None or self.open():
+                # Build channel string: enabled channels use letter, disabled use nothing
+                # e.g., all enabled = "ABCD", only A and C = "AC"
+                channels = ""
+                if a: channels += "A"
+                if b: channels += "B"
+                if c: channels += "C"
+                if d: channels += "D"
+
+                cmd = f"lm:{channels}\n"
+                logger.debug(f"P4PRO LED enable: Sending {cmd.strip()!r}")
+                self._ser.write(cmd.encode())
+                time.sleep(0.05)
+                resp = self._ser.read(10)
+
+                # Check for success response
+                logger.debug(f"P4PRO LED enable response: {resp!r}")
+                if resp != b'1':
+                    logger.warning(f"LED enable command {cmd.strip()!r} returned: {resp!r} (expected b'1')")
+                    return False
+                logger.info(f"P4PRO LEDs enabled: {channels}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error enabling multi-LED: {e}")
+            return False
+
+    def turn_on_channel(self, ch: str) -> bool:
+        """Enable LED channel.
+
+        NOTE: For P4PRO, use enable_multi_led() instead for proper LED activation.
+        This method exists for HAL compatibility but may not work reliably alone.
+        """
+        return True  # P4PRO prefers enable_multi_led()
+
+    def turn_off_channels(self) -> bool:
+        """Turn off all LED channels using lx command."""
+        try:
+            if self._ser is not None or self.open():
+                cmd = "lx\n"
+                self._ser.write(cmd.encode())
+                time.sleep(0.01)
+                resp = self._ser.read(10)
+                return resp == b'1'
+            return False
+        except Exception as e:
+            logger.error(f"Error turning off channels: {e}")
+            return False
+
+    def set_intensity(self, ch: str, raw_val: int) -> bool:
+        """Set LED intensity for a single channel (0-255).
+
+        NOTE: P4PRO firmware may not send acknowledgment responses for LED commands.
+        Return True optimistically after sending command.
+        """
+        try:
+            if raw_val < 0 or raw_val > 255:
+                logger.error(f"Invalid intensity: {raw_val} (must be 0-255)")
+                return False
+
+            cmd = f"i{ch}{raw_val:03d}\n"
+            if self._ser is not None or self.open():
+                self._ser.write(cmd.encode())
+                # P4PRO firmware may not send acknowledgment - don't wait for response
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error setting intensity for channel {ch}: {e}")
+            return False
+
+    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+        """Set all 4 LED intensities.
+
+        P4PRO v2.2+: Uses atomic leds: command when all LEDs have same brightness (OEM calibration),
+        or sequential la:X commands for different brightness levels.
+
+        Atomic mode (same brightness): All LEDs turn on simultaneously
+        Sequential mode (different): LEDs turn on one-by-one (~40ms total)
+
+        NOTE: P4PRO firmware brightness control is non-linear. High values (50-255) appear
+        similar, only very low values (~10) appear noticeably dimmer.
+
+        Args:
+            a, b, c, d: Intensities 0-255 for each channel
+
+        Returns:
+            True if command succeeded, False otherwise
+        """
+        try:
+            # Clamp values to valid range
+            a = max(0, min(255, int(a)))
+            b = max(0, min(255, int(b)))
+            c = max(0, min(255, int(c)))
+            d = max(0, min(255, int(d)))
+
+            if self._ser is not None or self.open():
+                # Check if all non-zero values are equal (OEM calibration case)
+                non_zero_values = [v for v in [a, b, c, d] if v > 0]
+                all_same = len(set(non_zero_values)) <= 1 and len(non_zero_values) > 0
+
+                if all_same and a == b == c == d and a > 0:
+                    # All 4 LEDs same brightness - use atomic command for simultaneous turn-on
+                    cmd = f"leds:A:{a},B:{b},C:{c},D:{d}\n"
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.01)
+                    resp = self._ser.read(10)
+
+                    if resp != b'1':
+                        logger.warning(f"leds atomic command failed: {resp!r}")
+                        return False
+
+                    logger.debug(f"P4PRO LED batch set (atomic): A={a} B={b} C={c} D={d}")
+                else:
+                    # Different brightness or partial LEDs - use sequential commands
+                    for ch, val in [('a', a), ('b', b), ('c', c), ('d', d)]:
+                        if val > 0:
+                            cmd = f"l{ch}:{val}\n"
+                            self._ser.write(cmd.encode())
+                            time.sleep(0.01)
+                            resp = self._ser.read(10)
+                            if resp != b'1':
+                                logger.warning(f"l{ch}:{val} command failed: {resp!r}")
+
+                    logger.debug(f"P4PRO LED batch set (sequential): A={a} B={b} C={c} D={d}")
+
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error setting batch intensities: {e}")
+            return False
+
+    # ========================================================================
+    # Servo Polarizer Control
+    # ========================================================================
+
+    def servo_move_raw_pwm(self, target_pwm):
+        """Move servo using servo:ANGLE,DURATION format (RAM-only, no flash write).
+
+        P4PRO firmware v2.0 supports servo:ANGLE,DURATION command that moves
+        the servo directly without writing to EEPROM/flash.
+
+        Args:
+            target_pwm: PWM value 0-255 (converted to degrees 5-175)
+
+        Returns:
+            bool: True if successful
+        """
+        import time
+        try:
+            if target_pwm < 0 or target_pwm > 255:
+                logger.error(f"Invalid PWM value: {target_pwm} (must be 0-255)")
+                return False
+
+            # Convert PWM (0-255) to degrees (5-175)
+            degrees = int(5 + (target_pwm * 170 / 255))
+            degrees = max(5, min(175, degrees))
+
+            # P4PRO firmware v2.1: servo:ANGLE,DURATION format (no flash write)
+            # CRITICAL: Firmware requires 500ms duration minimum for reliable response
+            duration_ms = 500  # Minimum duration for stable operation
+            cmd = f"servo:{degrees},{duration_ms}\n"
+
+            if self._ser is not None or self.open():
+                self._ser.reset_input_buffer()
+                self._ser.write(cmd.encode())
+                time.sleep(0.6)  # Wait for servo movement + response (500ms + margin)
+                response = self._ser.read(10)
+
+                # P4PRO v2.1 responds with b'\x01\r\n' or b'1\r\n'
+                if len(response) > 0 and (b"\x01" in response or b"1" in response):
+                    return True
+                else:
+                    logger.error(f"[P4PRO-SERVO] Move to {degrees}° failed: response={response!r}")
+                    return False
+            return False
+        except Exception as e:
+            logger.error(f"Error moving servo: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error moving servo: {e}")
+            return False
+
+    def servo_move_calibration_only(self, s=10, p=100):
+        """Move servo for calibration purposes without writing to flash.
+
+        This method is called by the calibration system. It uses the RAM-only
+        servo:ANGLE,DURATION command (P4PRO firmware v2.1+).
+
+        Args:
+            s: S-mode target position (0-255 PWM, ignored - uses p for both)
+            p: P-mode target position (0-255 PWM, calibration uses this)
+
+        Returns:
+            bool: True if movement successful
+        """
+        # Calibration system passes PWM values (0-255)
+        # Use servo_move_raw_pwm() which handles the v2.1 command
+        return self.servo_move_raw_pwm(target_pwm=p)
+
+    def set_mode(self, mode: str) -> bool:
+        """Set polarizer mode (S or P) using ss/sp firmware commands.
+
+        P4PRO firmware v2.0 uses 'ss' and 'sp' commands to move to stored positions.
+        The servo positions must be pre-programmed to flash using the flash command.
+
+        Args:
+            mode: 'S' or 'P' (case insensitive)
+
+        Returns:
+            bool: True if successful
+        """
+        try:
+            mode = mode.upper()
+            if mode not in ('S', 'P'):
+                logger.error(f"Invalid mode: {mode} (must be 'S' or 'P')")
+                return False
+
+            # P4PRO firmware uses 'ss' for S-mode, 'sp' for P-mode
+            cmd = "ss\n" if mode == 'S' else "sp\n"
+
+            if self._ser is not None or self.open():
+                logger.info(f"🔄 Setting P4PRO polarizer to {mode}-mode")
+                self._ser.reset_input_buffer()
+                self._ser.write(cmd.encode())
+                time.sleep(0.05)
+                response = self._ser.read(10)
+
+                # P4PRO responds with b'1' for successful servo move
+                if response == b"1" or b"1" in response:
+                    logger.info(f"✅ Polarizer set to {mode}-mode")
+                    time.sleep(0.5)  # Wait for physical servo movement
+                    return True
+                else:
+                    logger.error(f"[P4PRO-SERVO] Failed to set {mode}-mode: response={response!r}")
+                    return False
+            return False
+
+        except Exception as e:
+            logger.error(f"Error setting polarizer mode: {e}")
+            return False
+
+    def set_servo_positions(self, s: int, p: int):
+        """Program servo S and P positions to P4PRO firmware flash memory.
+
+        Uses 'sv' command to write positions to EEPROM. These positions are then
+        used by 'ss' and 'sp' commands to move the polarizer.
+
+        Args:
+            s: S-mode position in degrees (5-175)
+            p: P-mode position in degrees (5-175)
+
+        Returns:
+            bool: True if flash write successful
+        """
+        try:
+            # Validate positions
+            if not (5 <= s <= 175) or not (5 <= p <= 175):
+                logger.error(f"Invalid servo positions: S={s}, P={p} (must be 5-175)")
+                return False
+
+            # Check if positions already match (avoid unnecessary flash writes and servo movement)
+            if hasattr(self, '_servo_s_pos') and hasattr(self, '_servo_p_pos'):
+                if self._servo_s_pos == s and self._servo_p_pos == p:
+                    logger.debug(f"Servo positions unchanged (S={s}°, P={p}°), skipping flash write")
+                    return True
+
+            # P4PRO firmware 'sv' command writes to flash: sv{s:03d}{p:03d}\n
+            cmd = f"sv{s:03d}{p:03d}\n"
+
+            if self._ser is not None or self.open():
+                logger.info(f"💾 Programming P4PRO servo positions to flash: S={s}°, P={p}°")
+                self._ser.reset_input_buffer()
+                self._ser.write(cmd.encode())
+                time.sleep(0.1)  # Flash write takes longer
+                response = self._ser.read(10)
+
+                if response == b"1" or b"1" in response:
+                    self._servo_s_pos = s
+                    self._servo_p_pos = p
+                    logger.info(f"✅ Servo positions programmed to P4PRO flash")
+                    return True
+                else:
+                    logger.error(f"[P4PRO-FLASH] Failed to program servo positions: response={response!r}")
+                    return False
+            return False
+
+        except Exception as e:
+            logger.error(f"Error programming servo positions: {e}")
+            return False
+
+    def write_config_to_eeprom(self, config: dict) -> bool:
+        """Write device configuration to P4PRO controller EEPROM.
+
+        P4PRO firmware v2.2 uses 'sv' command to store servo S/P positions in flash.
+        This enables 'ss' and 'sp' commands to move to the stored positions.
+
+        Args:
+            config: Dict with keys like:
+                - servo_s_position: PWM value 0-255 for S-mode
+                - servo_p_position: PWM value 0-255 for P-mode
+
+        Returns:
+            True if EEPROM write successful, False otherwise
+        """
+        try:
+            # Extract servo positions (in PWM units 0-255)
+            s_pwm = config.get("servo_s_position", 10)
+            p_pwm = config.get("servo_p_position", 100)
+
+            # Convert PWM (0-255) to degrees (5-175) for P4PRO sv command
+            s_deg = int(5 + (s_pwm * 170 / 255))
+            p_deg = int(5 + (p_pwm * 170 / 255))
+            s_deg = max(5, min(175, s_deg))
+            p_deg = max(5, min(175, p_deg))
+
+            logger.info(f"📝 Writing servo config to P4PRO EEPROM: S={s_pwm} PWM ({s_deg}°), P={p_pwm} PWM ({p_deg}°)")
+
+            # Use existing set_servo_positions method which sends 'sv' command
+            success = self.set_servo_positions(s=s_deg, p=p_deg)
+
+            if success:
+                logger.info("✅ P4PRO EEPROM config written successfully")
+            else:
+                logger.error("❌ P4PRO EEPROM config write FAILED")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error writing config to P4PRO EEPROM: {e}")
+            return False
+
+    # ========================================================================
+    # KNX Valve Control (6-port and 3-way valves)
+    # ========================================================================
+
+    def _cancel_valve_timer(self, ch):
+        """Cancel existing safety timer for valve channel."""
+        with self._valve_six_lock:
+            if self._valve_six_timers[ch] is not None:
+                self._valve_six_timers[ch].cancel()
+                self._valve_six_timers[ch] = None
+
+    def _auto_shutoff_valve(self, ch):
+        """Auto-shutoff callback for 6-port valve safety timeout."""
+        logger.warning(f"⚠️ SAFETY TIMEOUT: 6-port valve {ch} auto-shutoff after {self.VALVE_SAFETY_TIMEOUT_SECONDS}s")
+        try:
+            if self._ser is not None or self.open():
+                cmd = f"v6{ch}0\n"
+                self._ser.write(cmd.encode())
+                self._ser.read()
+                self._valve_six_state[ch] = 0
+                logger.info(f"✓ KC{ch} 6-port valve auto-closed (LOAD position)")
+        except Exception as e:
+            logger.error(f"Error during auto-shutoff for valve {ch}: {e}")
+        finally:
+            with self._valve_six_lock:
+                self._valve_six_timers[ch] = None
+
+    def knx_six(self, state, ch, timeout_seconds=None):
+        """Control individual 6-port valve with optional safety timeout.
+
+        Args:
+            ch: Channel (1 or 2)
+            state: 0=load, 1=inject
+            timeout_seconds: Optional safety timeout (None = no timeout)
+        """
+        try:
+            cmd = f"v6{ch}{state:1d}\n"
+            if self._ser is not None or self.open():
+                self._ser.write(cmd.encode())
+                response = self._ser.read()
+                success = response == b"1"
+
+                if success:
+                    # Track state and cycles
+                    old_state = self._valve_six_state.get(ch)
+                    if old_state is not None and old_state != state:
+                        self._valve_six_cycles[ch] += 1
+                    self._valve_six_state[ch] = state
+
+                    # Safety timer management
+                    if state == 1:  # INJECT
+                        if timeout_seconds is not None and timeout_seconds > 0:
+                            with self._valve_six_lock:
+                                if self._valve_six_timers[ch] is not None:
+                                    self._valve_six_timers[ch].cancel()
+                                self._valve_six_timers[ch] = threading.Timer(
+                                    timeout_seconds,
+                                    self._auto_shutoff_valve,
+                                    args=[ch]
+                                )
+                                self._valve_six_timers[ch].daemon = True
+                                self._valve_six_timers[ch].start()
+                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (cycle {self._valve_six_cycles[ch]}) [Timeout: {timeout_seconds}s]")
+                        else:
+                            self._cancel_valve_timer(ch)
+                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (cycle {self._valve_six_cycles[ch]})")
+                    else:  # LOAD
+                        self._cancel_valve_timer(ch)
+                        logger.info(f"✓ KC{ch} 6-port valve → LOAD (cycle {self._valve_six_cycles[ch]})")
+
+                return success
+            return False
+        except Exception as e:
+            logger.error(f"Error controlling 6-port valve {ch}: {e}")
+            return False
+
+    def knx_six_both(self, state, timeout_seconds=None):
+        """Control both 6-port valves simultaneously."""
+        try:
+            cmd = f"v6B{state:1d}\n"
+            if self._ser is not None or self.open():
+                self._ser.write(cmd.encode())
+                response = self._ser.read()
+                success = response == b"1"
+
+                if success:
+                    for ch in [1, 2]:
+                        old_state = self._valve_six_state.get(ch)
+                        if old_state is not None and old_state != state:
+                            self._valve_six_cycles[ch] += 1
+                        self._valve_six_state[ch] = state
+
+                        if state == 1 and timeout_seconds:
+                            with self._valve_six_lock:
+                                if self._valve_six_timers[ch] is not None:
+                                    self._valve_six_timers[ch].cancel()
+                                self._valve_six_timers[ch] = threading.Timer(
+                                    timeout_seconds,
+                                    self._auto_shutoff_valve,
+                                    args=[ch]
+                                )
+                                self._valve_six_timers[ch].daemon = True
+                                self._valve_six_timers[ch].start()
+                        else:
+                            self._cancel_valve_timer(ch)
+
+                    mode = "INJECT" if state == 1 else "LOAD"
+                    logger.info(f"✓ Both 6-port valves → {mode} (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]})")
+
+                return success
+            return False
+        except Exception as e:
+            logger.error(f"Error controlling both 6-port valves: {e}")
+            return False
+
+    def knx_three(self, state, ch):
+        """Control individual 3-way valve.
+
+        Args:
+            ch: Channel (1 or 2)
+            state: 0=waste, 1=load
+        """
+        try:
+            cmd = f"v3{ch}{state:1d}\n"
+            if self._ser is not None or self.open():
+                self._ser.write(cmd.encode())
+                response = self._ser.read()
+                success = response == b"1"
+
+                if success:
+                    old_state = self._valve_three_state.get(ch)
+                    if old_state is not None and old_state != state:
+                        self._valve_three_cycles[ch] += 1
+                    self._valve_three_state[ch] = state
+                    mode = "LOAD" if state == 1 else "WASTE"
+                    logger.info(f"✓ KC{ch} 3-way valve → {mode} (cycle {self._valve_three_cycles[ch]})")
+
+                return success
+            return False
+        except Exception as e:
+            logger.error(f"Error controlling 3-way valve {ch}: {e}")
+            return False
+
+    def knx_three_both(self, state):
+        """Control both 3-way valves simultaneously."""
+        try:
+            cmd = f"v3B{state:1d}\n"
+            if self._ser is not None or self.open():
+                self._ser.write(cmd.encode())
+                response = self._ser.read()
+                success = response == b"1"
+
+                if success:
+                    for ch in [1, 2]:
+                        old_state = self._valve_three_state.get(ch)
+                        if old_state is not None and old_state != state:
+                            self._valve_three_cycles[ch] += 1
+                        self._valve_three_state[ch] = state
+                    mode = "LOAD" if state == 1 else "WASTE"
+                    logger.info(f"✓ Both 3-way valves → {mode} (cycles: V1={self._valve_three_cycles[1]}, V2={self._valve_three_cycles[2]})")
+
+                return success
+            return False
+        except Exception as e:
+            logger.error(f"Error controlling both 3-way valves: {e}")
+            return False
+
+    def knx_six_state(self, ch):
+        """Get current state of 6-port valve (0=load, 1=inject, None=unknown)."""
+        return self._valve_six_state.get(ch)
+
+    def knx_three_state(self, ch):
+        """Get current state of 3-way valve (0=waste, 1=load, None=unknown)."""
+        return self._valve_three_state.get(ch)
+
+    def get_valve_cycles(self):
+        """Get valve cycle counts for health monitoring."""
+        return {
+            "six_port": dict(self._valve_six_cycles),
+            "three_way": dict(self._valve_three_cycles),
+            "total_six": sum(self._valve_six_cycles.values()),
+            "total_three": sum(self._valve_three_cycles.values()),
+        }
+
+    def stop_kinetic(self) -> None:
+        """Stop all kinetic operations (pumps and valves)."""
+        try:
+            cmds = ["ps3\n", "v330\n", "v630\n"]
+            if self._ser is not None or self.open():
+                for cmd in cmds:
+                    self._ser.write(cmd.encode())
+                    self._ser.read()
+                logger.info("P4PRO kinetics stopped")
+        except Exception as e:
+            logger.error(f"Error stopping kinetics: {e}")
+
+    def get_temp(self):
+        """Get controller temperature."""
+        try:
+            if self._ser is not None or self.open():
+                cmd = "it\n"
+                self._ser.write(cmd.encode())
+                temp = self._ser.readline().decode()
+                if len(temp) > 5:
+                    temp = temp[0:5]
+                return float(temp)
+        except Exception as e:
+            logger.debug(f"Temperature not readable: {e}")
+        return -1.0
+
+    def __str__(self) -> str:
+        return "Pico P4PRO Controller"

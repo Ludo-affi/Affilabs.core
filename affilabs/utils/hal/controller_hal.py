@@ -281,6 +281,70 @@ class ControllerHAL(Protocol):
         """
         ...
 
+    # Valve and Internal Pump Control (EZSPR-specific KNX methods)
+    def knx_six(self, ch: int, state: int, timeout_seconds: int | None = None) -> bool:
+        """Control 6-port valve for single channel with optional safety timeout (EZSPR only).
+
+        Args:
+            ch: Channel number (1 for KC1, 2 for KC2)
+            state: 0 for LOAD, 1 for TO SENSOR (inject)
+            timeout_seconds: Optional timeout for safety fallback.
+                           - If None (default): NO timeout - valve stays open (for calculated contact times)
+                           - If specified (e.g., 300): Safety timeout for manual/unknown operations
+
+        Returns:
+            True if command succeeded (False if not supported)
+        """
+        ...
+
+    def knx_six_both(self, state: int, timeout_seconds: int | None = None) -> bool:
+        """Control both 6-port valves simultaneously with optional safety timeout (EZSPR only).
+
+        Args:
+            state: 0 for LOAD, 1 for TO SENSOR (inject)
+            timeout_seconds: Optional timeout for safety fallback.
+                           - If None (default): NO timeout - valves stay open (for calculated contact times)
+                           - If specified (e.g., 300): Safety timeout for manual/unknown operations
+
+        Returns:
+            True if command succeeded (False if not supported)
+        """
+        ...
+
+    def knx_three_both(self, state: int) -> bool:
+        """Control both 3-way valves simultaneously (EZSPR only).
+
+        Args:
+            state: 0 for A/C channels, 1 for B/D channels
+
+        Returns:
+            True if command succeeded (False if not supported)
+        """
+        ...
+
+    def knx_start(self, rate: int, ch: int) -> bool:
+        """Start internal pump via RPi GPIO (EZSPR only).
+
+        Args:
+            rate: Flow rate in µL/min (50, 100, 200, or 500 for flush)
+            ch: Channel number (1 for KC1, 2 for KC2)
+
+        Returns:
+            True if command succeeded (False if not supported)
+        """
+        ...
+
+    def knx_stop(self, ch: int) -> bool:
+        """Stop internal pump via RPi GPIO (EZSPR only).
+
+        Args:
+            ch: Channel number (1 for KC1, 2 for KC2)
+
+        Returns:
+            True if command succeeded (False if not supported)
+        """
+        ...
+
     # Connection Management
     def open(self) -> bool:
         """Open connection to controller.
@@ -497,6 +561,22 @@ class PicoP4SPRAdapter:
     ) -> bool:
         return False
 
+    # Valve and Internal Pump Control (not supported on P4SPR)
+    def knx_six(self, ch: int, state: int, timeout_seconds: int | None = None) -> bool:
+        return False
+
+    def knx_six_both(self, state: int, timeout_seconds: int | None = None) -> bool:
+        return False
+
+    def knx_three_both(self, state: int) -> bool:
+        return False
+
+    def knx_start(self, rate: int, ch: int) -> bool:
+        return False
+
+    def knx_stop(self, ch: int) -> bool:
+        return False
+
     # Connection Management
     def open(self) -> bool:
         return self._ctrl.open()
@@ -509,7 +589,11 @@ class PicoP4SPRAdapter:
 
 
 class PicoEZSPRAdapter:
-    """Adapter wrapping PicoEZSPR controller to provide ControllerHAL interface."""
+    """Adapter wrapping PicoEZSPR controller to provide ControllerHAL interface.
+
+    PicoEZSPR handles EZSPR and AFFINITE firmware only (NOT P4PRO).
+    P4PRO uses the separate PicoP4PROAdapter.
+    """
 
     def __init__(self, controller):
         """Initialize adapter with existing PicoEZSPR controller instance.
@@ -519,7 +603,17 @@ class PicoEZSPRAdapter:
 
         """
         self._ctrl = controller
-        self._device_type = "PicoEZSPR"
+        # Use actual firmware ID to determine device type (EZSPR vs AFFINITE)
+        # P4PRO is NOT handled here - it uses PicoP4PRO class
+        if hasattr(controller, 'firmware_id') and controller.firmware_id:
+            fw_id = controller.firmware_id.upper()
+            if 'AFFINITE' in fw_id:
+                self._device_type = "PicoAFFINITE"  # Affinite has integrated kinetics
+            else:
+                self._device_type = "PicoEZSPR"  # Default EZSPR (2 LEDs)
+        else:
+            # Fallback if firmware_id not available
+            self._device_type = "PicoEZSPR"
 
     @property
     def _ser(self):
@@ -565,28 +659,34 @@ class PicoEZSPRAdapter:
         """EZSPR does not support firmware rank sequence - returns None."""
         return None
 
-    # Polarizer Control
+    # Polarizer Control (NOT SUPPORTED on EZSPR/AFFINITE)
     def set_mode(self, mode: str) -> bool:
-        return False  # EZSPR does not have polarizer
+        """Set polarizer mode - NOT SUPPORTED on EZSPR/AFFINITE (use P4PRO)."""
+        return False
 
     def get_polarizer_position(self) -> dict[str, Any]:
-        return {}  # No polarizer support
+        """Get current polarizer position - NOT SUPPORTED."""
+        return {}
 
     def servo_move_calibration_only(
         self,
         s: int | None = None,
         p: int | None = None,
     ) -> bool:
-        """EZSPR does not have polarizer/servo - always returns False."""
+        """Move servo - NOT SUPPORTED on EZSPR/AFFINITE."""
         return False
 
     def servo_move_raw_pwm(self, pwm: int) -> bool:
-        """EZSPR does not have polarizer/servo - always returns False."""
+        """Move servo - NOT SUPPORTED on EZSPR/AFFINITE."""
         return False
 
     def servo_set(self, s: int | None = None, p: int | None = None) -> bool:
-        """EZSPR does not have polarizer/servo - always returns False."""
+        """Set servo positions - NOT SUPPORTED on EZSPR/AFFINITE."""
         return False
+
+    def set_servo_positions(self, s: int, p: int) -> None:
+        """Load servo positions - NOT SUPPORTED on EZSPR/AFFINITE."""
+        pass
 
     # LED Query
     def get_all_led_intensities(self) -> dict[str, int] | None:
@@ -608,7 +708,8 @@ class PicoEZSPRAdapter:
     # Capability queries
     @property
     def supports_polarizer(self) -> bool:
-        return False  # EZSPR does not have polarizer
+        """EZSPR/AFFINITE do NOT have polarizer/servo support (P4PRO does)."""
+        return False  # EZSPR/AFFINITE have no servo
 
     @property
     def supports_batch_leds(self) -> bool:
@@ -628,7 +729,7 @@ class PicoEZSPRAdapter:
 
     @property
     def channel_count(self) -> int:
-        return 4
+        return 2  # EZSPR/AFFINITE have 2 LED channels (not 4 like P4PRO)
 
     # Pump Control
     def get_pump_corrections(self) -> tuple[float, float] | None:
@@ -640,6 +741,80 @@ class PicoEZSPRAdapter:
         pump_2_correction: float,
     ) -> bool:
         return self._ctrl.set_pump_corrections(pump_1_correction, pump_2_correction)
+
+    # Valve Control (KNX methods for pump/valve operations)
+    def knx_six(self, ch: int, state: int, timeout_seconds: int | None = None) -> bool:
+        """Control 6-port valve for single channel with optional safety timeout.
+
+        Args:
+            ch: Channel number (1 for KC1, 2 for KC2)
+            state: 0 for LOAD, 1 for TO SENSOR (inject)
+            timeout_seconds: Optional timeout for safety fallback.
+                           - If None (default): NO timeout - valve stays open (for calculated contact times)
+                           - If specified (e.g., 300): Safety timeout for manual/unknown operations
+
+        Returns:
+            True if command succeeded
+        """
+        if hasattr(self._ctrl, "knx_six"):
+            return self._ctrl.knx_six(state, ch, timeout_seconds=timeout_seconds)
+        return False
+
+    def knx_six_both(self, state: int, timeout_seconds: int | None = None) -> bool:
+        """Control both 6-port valves simultaneously with optional safety timeout.
+
+        Args:
+            state: 0 for LOAD, 1 for TO SENSOR (inject)
+            timeout_seconds: Optional timeout for safety fallback.
+                           - If None (default): NO timeout - valves stay open (for calculated contact times)
+                           - If specified (e.g., 300): Safety timeout for manual/unknown operations
+
+        Returns:
+            True if command succeeded
+        """
+        if hasattr(self._ctrl, "knx_six_both"):
+            return self._ctrl.knx_six_both(state, timeout_seconds=timeout_seconds)
+        return False
+
+    def knx_three_both(self, state: int) -> bool:
+        """Control both 3-way valves simultaneously.
+
+        Args:
+            state: 0 for A/C channels, 1 for B/D channels
+
+        Returns:
+            True if command succeeded
+        """
+        if hasattr(self._ctrl, "knx_three_both"):
+            return self._ctrl.knx_three_both(state)
+        return False
+
+    def knx_start(self, rate: int, ch: int) -> bool:
+        """Start internal pump (RPi GPIO).
+
+        Args:
+            rate: Flow rate in µL/min (50, 100, 200, or 500 for flush)
+            ch: Channel number (1 for KC1, 2 for KC2)
+
+        Returns:
+            True if command succeeded
+        """
+        if hasattr(self._ctrl, "knx_start"):
+            return self._ctrl.knx_start(rate, ch)
+        return False
+
+    def knx_stop(self, ch: int) -> bool:
+        """Stop internal pump (RPi GPIO).
+
+        Args:
+            ch: Channel number (1 for KC1, 2 for KC2)
+
+        Returns:
+            True if command succeeded
+        """
+        if hasattr(self._ctrl, "knx_stop"):
+            return self._ctrl.knx_stop(ch)
+        return False
 
     # Connection Management
     def open(self) -> bool:
@@ -653,8 +828,212 @@ class PicoEZSPRAdapter:
 
 
 # ============================================================================
+# PicoP4PRO Adapter - Standalone P4PRO with 4 LEDs + Servo
+# ============================================================================
+
+
+class PicoP4PROAdapter:
+    """Hardware Abstraction Layer for P4PRO controller.
+
+    P4PRO is a standalone controller with:
+    - 4 LED channels (A, B, C, D)
+    - Servo-controlled polarizer
+    - 6-port and 3-way valve control
+    - NO batch LED command support (use individual set_intensity)
+    - Uses 'sv' command for fast RAM-only servo moves
+    """
+
+    def __init__(self, ctrl, device_config):
+        """Initialize P4PRO adapter.
+
+        Args:
+            ctrl: PicoP4PRO controller instance
+            device_config: DeviceConfiguration instance
+        """
+        self._ctrl = ctrl
+        self._device_config = device_config
+        self._device_type = "PicoP4PRO"  # Fixed type, no firmware detection needed
+
+        # Load servo positions from device config if available
+        if device_config:
+            try:
+                hw_settings = device_config.get_hardware()
+                s_pos = hw_settings.get("servo_s_position")
+                p_pos = hw_settings.get("servo_p_position")
+                if s_pos is not None and p_pos is not None:
+                    self._ctrl.set_servo_positions(s_pos, p_pos)
+            except Exception:
+                pass
+
+    # LED Control
+    def enable_multi_led(self, a: bool = True, b: bool = True, c: bool = True, d: bool = True) -> bool:
+        """Enable multiple LEDs using lm:A,B,C,D command.
+
+        CRITICAL: P4PRO firmware requires this command before LEDs respond to intensity.
+        """
+        return self._ctrl.enable_multi_led(a, b, c, d)
+
+    def turn_on_channel(self, ch: str) -> bool:
+        """Enable LED channel before setting intensity."""
+        return self._ctrl.turn_on_channel(ch)
+
+    def turn_off_channels(self) -> bool:
+        """Turn off all LED channels."""
+        return self._ctrl.turn_off_channels()
+
+    def set_intensity(self, ch: str, raw_val: int) -> bool:
+        """Set LED intensity for a single channel."""
+        return self._ctrl.set_intensity(ch, raw_val)
+
+    def set_batch_intensities(self, a: int = 0, b: int = 0, c: int = 0, d: int = 0) -> bool:
+        """Set all 4 LED intensities using batch command.
+
+        CRITICAL: Channels must be enabled first with turn_on_channel() before
+        the batch command will work.
+        """
+        return self._ctrl.set_batch_intensities(a, b, c, d)
+
+    def led_rank_sequence(
+        self,
+        test_intensity: int = 128,
+        settling_ms: int = 45,
+        dark_ms: int = 5,
+        timeout_s: float = 10.0,
+    ):  # type: ignore
+        """P4PRO does not support firmware rank sequence - returns None."""
+        return None
+
+    # Polarizer Control
+    def set_mode(self, mode: str) -> bool:
+        """Set polarizer mode (S or P) using stored positions."""
+        return self._ctrl.set_mode(mode)
+
+    def get_polarizer_position(self) -> dict[str, Any]:
+        """Get current polarizer position."""
+        return {}  # P4PRO doesn't report position
+
+    def servo_move_calibration_only(
+        self,
+        s: int | None = None,
+        p: int | None = None,
+    ) -> bool:
+        """Move servo to S or P position."""
+        if s is not None:
+            return self._ctrl.servo_move_raw_pwm(s)
+        if p is not None:
+            return self._ctrl.servo_move_raw_pwm(p)
+        return False
+
+    def servo_move_raw_pwm(self, pwm: int) -> bool:
+        """Move servo to raw PWM position."""
+        return self._ctrl.servo_move_raw_pwm(pwm)
+
+    def servo_set(self, s: int | None = None, p: int | None = None) -> bool:
+        """Set servo positions (not applicable for P4PRO - use set_servo_positions)."""
+        return False
+
+    def set_servo_positions(self, s: int, p: int) -> None:
+        """Load servo positions into controller for set_mode() usage."""
+        self._ctrl.set_servo_positions(s, p)
+
+    # LED Query
+    def get_all_led_intensities(self) -> dict[str, int] | None:
+        """Query current LED intensities (P4PRO doesn't report state)."""
+        return None
+
+    # Device Info & Capabilities
+    def get_device_type(self) -> str:
+        return self._device_type
+
+    def get_firmware_version(self) -> str:
+        return getattr(self._ctrl, "version", "")
+
+    def get_temperature(self) -> float:
+        return self._ctrl.get_temp()
+
+    # Capability queries
+    @property
+    def supports_polarizer(self) -> bool:
+        """P4PRO has servo-controlled polarizer."""
+        return True
+
+    @property
+    def supports_batch_leds(self) -> bool:
+        """P4PRO has batch LED command support."""
+        return True
+
+    @property
+    def supports_rank_sequence(self) -> bool:
+        """P4PRO doesn't have firmware rank command."""
+        return False
+
+    @property
+    def supports_pump(self) -> bool:
+        """P4PRO doesn't have pump control."""
+        return False
+
+    @property
+    def supports_firmware_update(self) -> bool:
+        """P4PRO supports firmware updates."""
+        return True
+
+    @property
+    def channel_count(self) -> int:
+        """P4PRO has 4 LED channels."""
+        return 4
+
+    # Pump Control (NOT SUPPORTED on P4PRO)
+    def get_pump_corrections(self) -> tuple[float, float] | None:
+        return None
+
+    def set_pump_corrections(
+        self,
+        pump_1_correction: float,
+        pump_2_correction: float,
+    ) -> bool:
+        return False
+
+    # Valve Control
+    def knx_six(self, ch: int, state: int, timeout_seconds: int | None = None) -> bool:
+        """Control 6-port valve for single channel with optional safety timeout."""
+        return self._ctrl.knx_six(state, ch, timeout_seconds=timeout_seconds)
+
+    def knx_six_both(self, state: int, timeout_seconds: int | None = None) -> bool:
+        """Control both 6-port valves simultaneously with optional safety timeout."""
+        return self._ctrl.knx_six_both(state, timeout_seconds=timeout_seconds)
+
+    def knx_three_both(self, state: int) -> bool:
+        """Control both 3-way valves simultaneously."""
+        return self._ctrl.knx_three_both(state)
+
+    def knx_start(self, rate: int, ch: int) -> bool:
+        """Start internal pump (NOT SUPPORTED on P4PRO)."""
+        return False
+
+    def knx_stop(self, ch: int) -> bool:
+        """Stop internal pump (NOT SUPPORTED on P4PRO)."""
+        return False
+
+    # Connection Management
+    def open(self) -> bool:
+        return self._ctrl.open()
+
+    def close(self) -> None:
+        self._ctrl.close()
+
+    def is_connected(self) -> bool:
+        return self._ctrl.valid()
+
+    # Direct serial access for calibration
+    @property
+    def _ser(self):
+        """Expose serial port for low-level calibration commands."""
+        return self._ctrl._ser
+
+
+# ============================================================================
 # NOTE: ArduinoAdapter and KineticAdapter classes REMOVED
-# Only PicoP4SPR and PicoEZSPR controllers are supported.
+# Only PicoP4SPR, PicoP4PRO, and PicoEZSPR controllers are supported.
 # ============================================================================
 
 
@@ -667,11 +1046,12 @@ def create_controller_hal(controller, device_config=None) -> ControllerHAL:
 
     Supported Controllers:
         - PicoP4SPR (affinite_P4SPR) - 4-channel with polarizer control
-        - PicoEZSPR (affinite_P4PRO) - 4-channel with pump control
+        - PicoP4PRO (affinite_P4PRO) - 4-channel with servo polarizer + valves
+        - PicoEZSPR (ezSPR/AFFINITE) - 4-channel with pump control
 
     Args:
-        controller: Controller instance (PicoP4SPR or PicoEZSPR only)
-        device_config: Optional DeviceConfiguration for servo position management (P4SPR only)
+        controller: Controller instance (PicoP4SPR, PicoP4PRO, or PicoEZSPR)
+        device_config: Optional DeviceConfiguration for servo position management
 
     Returns:
         ControllerHAL adapter wrapping the controller
@@ -709,7 +1089,9 @@ def create_controller_hal(controller, device_config=None) -> ControllerHAL:
     adapter_map = {
         "pico_p4spr": PicoP4SPRAdapter,  # PicoP4SPR / affinite_P4SPR
         "PicoP4SPR": PicoP4SPRAdapter,
-        "pico_ezspr": PicoEZSPRAdapter,  # PicoEZSPR / affinite_P4PRO
+        "pico_p4pro": PicoP4PROAdapter,  # PicoP4PRO / standalone P4PRO
+        "PicoP4PRO": PicoP4PROAdapter,
+        "pico_ezspr": PicoEZSPRAdapter,  # PicoEZSPR / affinite_EZSPR/AFFINITE
         "PicoEZSPR": PicoEZSPRAdapter,
         "EZSPR": PicoEZSPRAdapter,  # Legacy EZSPR name
     }
@@ -718,7 +1100,7 @@ def create_controller_hal(controller, device_config=None) -> ControllerHAL:
     if adapter_class is None:
         raise ValueError(f"Unknown controller type: {controller_name}")
 
-    # PicoP4SPR adapter accepts device_config parameter
-    if adapter_class == PicoP4SPRAdapter:
+    # PicoP4SPR and PicoP4PRO adapters accept device_config parameter
+    if adapter_class in (PicoP4SPRAdapter, PicoP4PROAdapter):
         return adapter_class(controller, device_config=device_config)
     return adapter_class(controller)

@@ -329,12 +329,8 @@ class GraphicControlTabBuilder:
         )
         ref_layout.addWidget(ref_info)
 
-        # Wire reference combo
-        self.sidebar.ref_combo.currentIndexChanged.connect(
-            lambda idx: print(
-                f"Reference changed to: {self.sidebar.ref_combo.currentText()}",
-            ),
-        )
+        # NOTE: Connection is made in affilabs_core_ui.py after app is initialized
+        # self.sidebar.ref_combo.currentTextChanged.connect(self.app._on_reference_changed)
 
         tab_layout.addWidget(ref_card)
         tab_layout.addSpacing(16)
@@ -458,7 +454,7 @@ class GraphicControlTabBuilder:
 
         # Grid toggle next to axis selector
         self.sidebar.grid_check = QCheckBox("Grid")
-        self.sidebar.grid_check.setChecked(True)
+        self.sidebar.grid_check.setChecked(False)  # Start unchecked (no grid by default)
         self.sidebar.grid_check.setToolTip("Show/hide grid lines on plot background")
         self.sidebar.grid_check.setStyleSheet(
             f"QCheckBox {{"
@@ -488,77 +484,49 @@ class GraphicControlTabBuilder:
         parent_layout.addLayout(axis_selector_container)
 
     def _build_axis_scaling(self, parent_layout: QVBoxLayout):
-        """Build axis scaling controls (auto/manual)."""
-        scale_radio_group = QButtonGroup()
-        scale_radio_group.setExclusive(True)
-
-        self.sidebar.auto_radio = QRadioButton("Autoscale")
-        self.sidebar.auto_radio.setChecked(True)
-        self.sidebar.auto_radio.setToolTip(
+        """Build axis scaling controls (toggle button for autoscale)."""
+        # Autoscale toggle button
+        self.sidebar.autoscale_check = QCheckBox("Autoscale")
+        self.sidebar.autoscale_check.setChecked(True)
+        self.sidebar.autoscale_check.setToolTip(
             "Automatically adjust axis range to fit all data",
         )
-        self.sidebar.auto_radio.setStyleSheet(
-            f"QRadioButton {{"
+        self.sidebar.autoscale_check.setStyleSheet(
+            f"QCheckBox {{"
             f"  font-size: 13px;"
             f"  color: {Colors.PRIMARY_TEXT};"
             f"  background: transparent;"
             f"  spacing: 6px;"
             f"  font-family: {Fonts.SYSTEM};"
             f"}}"
-            f"QRadioButton::indicator {{"
+            f"QCheckBox::indicator {{"
             f"  width: 16px;"
             f"  height: 16px;"
             f"  border: 1px solid {Colors.OVERLAY_LIGHT_20};"
-            f"  border-radius: 8px;"
+            f"  border-radius: 3px;"
             f"  background: white;"
             f"}}"
-            f"QRadioButton::indicator:checked {{"
+            f"QCheckBox::indicator:checked {{"
             f"  background: {Colors.PRIMARY_TEXT};"
-            f"  border: 4px solid white;"
-            f"  outline: 1px solid {Colors.PRIMARY_TEXT};"
+            f"  border: 1px solid {Colors.PRIMARY_TEXT};"
+            f"  image: url(none);"
             f"}}",
         )
-        scale_radio_group.addButton(self.sidebar.auto_radio, 0)
-        parent_layout.addWidget(self.sidebar.auto_radio)
+        parent_layout.addWidget(self.sidebar.autoscale_check)
 
-        # Manual scaling container
+        # Manual input fields (shown when autoscale is off)
         manual_container = QWidget()
         manual_layout = QVBoxLayout(manual_container)
-        manual_layout.setContentsMargins(0, 0, 0, 0)
+        manual_layout.setContentsMargins(24, 6, 0, 0)
         manual_layout.setSpacing(6)
 
-        self.sidebar.manual_radio = QRadioButton("Manual")
-        self.sidebar.manual_radio.setToolTip(
-            "Set fixed axis range for consistent scaling",
-        )
-        self.sidebar.manual_radio.setStyleSheet(
-            f"QRadioButton {{"
-            f"  font-size: 13px;"
-            f"  color: {Colors.PRIMARY_TEXT};"
-            f"  background: transparent;"
-            f"  spacing: 6px;"
-            f"  font-family: {Fonts.SYSTEM};"
-            f"}}"
-            f"QRadioButton::indicator {{"
-            f"  width: 16px;"
-            f"  height: 16px;"
-            f"  border: 1px solid {Colors.OVERLAY_LIGHT_20};"
-            f"  border-radius: 8px;"
-            f"  background: white;"
-            f"}}"
-            f"QRadioButton::indicator:checked {{"
-            f"  background: {Colors.PRIMARY_TEXT};"
-            f"  border: 4px solid white;"
-            f"  outline: 1px solid {Colors.PRIMARY_TEXT};"
-            f"}}",
-        )
-        scale_radio_group.addButton(self.sidebar.manual_radio, 1)
-        manual_layout.addWidget(self.sidebar.manual_radio)
+        manual_label = QLabel("Manual Range:")
+        manual_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
+        manual_layout.addWidget(manual_label)
 
         # Manual input fields
         inputs_row = QHBoxLayout()
         inputs_row.setSpacing(8)
-        inputs_row.setContentsMargins(24, 0, 0, 0)
 
         min_label = QLabel("Min:")
         min_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
@@ -622,9 +590,13 @@ class GraphicControlTabBuilder:
         manual_layout.addLayout(inputs_row)
         parent_layout.addWidget(manual_container)
 
-        # Connect manual radio to enable inputs
-        self.sidebar.manual_radio.toggled.connect(self.sidebar.min_input.setEnabled)
-        self.sidebar.manual_radio.toggled.connect(self.sidebar.max_input.setEnabled)
+        # Connect autoscale toggle to enable/disable inputs (inverted logic)
+        self.sidebar.autoscale_check.toggled.connect(
+            lambda checked: self.sidebar.min_input.setDisabled(checked)
+        )
+        self.sidebar.autoscale_check.toggled.connect(
+            lambda checked: self.sidebar.max_input.setDisabled(checked)
+        )
 
     def _build_trace_options(self, parent_layout: QVBoxLayout):
         """Build trace style options (channel and marker selection)."""
@@ -707,6 +679,30 @@ class GraphicControlTabBuilder:
         options_row.addStretch()
 
         parent_layout.addLayout(options_row)
+
+        # Copy graph to clipboard button
+        copy_btn = QPushButton("📋 Copy Active Cycle to Clipboard")
+        copy_btn.setFixedHeight(36)
+        copy_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: rgba(0, 122, 255, 0.1);"
+            f"  color: #007AFF;"
+            f"  border: none;"
+            f"  border-radius: 6px;"
+            f"  font-size: 13px;"
+            f"  font-weight: 500;"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: rgba(0, 122, 255, 0.2);"
+            f"}}"
+            f"QPushButton:pressed {{"
+            f"  background: rgba(0, 122, 255, 0.3);"
+            f"}}"
+        )
+        copy_btn.setToolTip("Copy the active cycle graph to clipboard (can paste into documents, presentations, etc.)")
+        self.sidebar.copy_graph_btn = copy_btn
+        parent_layout.addWidget(copy_btn)
 
     def _build_visual_accessibility(self, tab_layout: QVBoxLayout):
         """Build visual accessibility section (colorblind palette)."""

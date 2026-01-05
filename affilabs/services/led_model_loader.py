@@ -302,21 +302,10 @@ class LEDCalibrationModelLoader:
                     validation_errors.append(
                         f"{prefix}: Invalid slope_10ms={slope_10ms:.4f} (must be > 0)",
                     )
-                    # 'a' is sensitivity slope (counts/intensity/ms) - typically small
-                    if abs(a) > 100:
-                        validation_warnings.append(
-                            f"{prefix}: Large 'a' coefficient ({a:.2f}) - verify calibration data",
-                        )
 
-                    # 'c' is dark slope (counts/ms) - typically 1-1000 range
-                    if abs(c) > 10000:
-                        validation_warnings.append(
-                            f"{prefix}: Large 'c' coefficient ({c:.2f}) - verify dark correction",
-                        )
-
-                    logger.info(
-                        f"   ✓ {prefix}: a={a:.4f}, b={b:.2f}, c={c:.2f}, d={d:.2f}, R²={r2:.4f}",
-                    )
+                logger.info(
+                    f"   ✓ {prefix}: slope_10ms={slope_10ms:.4f}, R²={r2:.4f}",
+                )
 
         # === FAIL HARD ON ERRORS ===
         if validation_errors:

@@ -153,6 +153,16 @@ class CalibrationQCDialog(QDialog):
         """)
         header_layout.addWidget(timestamp_label)
 
+        # Add software version
+        from version import __version__
+        version_label = QLabel(f"v{__version__}")
+        version_label.setStyleSheet("""
+            font-size: 12px;
+            color: #86868B;
+            padding: 5px 0px;
+        """)
+        header_layout.addWidget(version_label)
+
         layout.addWidget(header_widget)
 
         # Consolidated summary section (one row only)
@@ -1454,6 +1464,17 @@ class CalibrationQCDialog(QDialog):
                         name=f"Channel {channel.upper()}",
                     )
 
+        # Add pass region overlay for S-Pol (35,000-50,000 counts = acceptable range)
+        if data_type == "s_pol":
+            from pyqtgraph import LinearRegionItem
+            pass_region = LinearRegionItem(
+                values=[35000, 50000],
+                orientation='horizontal',
+                brush=(0, 255, 0, 30),  # Green with transparency
+                movable=False
+            )
+            plot_widget.addItem(pass_region)
+
         # Add legend
         plot_widget.addLegend(offset=(10, 10))
 
@@ -1866,7 +1887,7 @@ FAILURE DIAGNOSIS:
         plt.tight_layout()
 
     def _export_to_pdf(self):
-        """Export QC report to PDF file with graphs and tables."""
+        """Export QC report to PDF file with graphs and tables - SINGLE PAGE like the dialog."""
         try:
             from pathlib import Path
 
@@ -1887,91 +1908,139 @@ FAILURE DIAGNOSIS:
             )
 
             if file_path:
-                # Create multi-page PDF
+                # Create SINGLE-PAGE PDF matching the dialog layout
                 with PdfPages(file_path) as pdf:
-                    # Page 1: Title and metadata
-                    fig = plt.figure(figsize=(11, 8.5))
-                    fig.suptitle(f"Calibration QC Report - {device_serial}", fontsize=16, fontweight='bold')
+                    # Single page layout (landscape)
+                    fig = plt.figure(figsize=(17, 11))  # Landscape A3-like for better graph visibility
 
-                    # Add metadata
-                    metadata_text = f"""
-                    Timestamp: {self.calibration_data.get('timestamp', 'N/A')}
-                    Device: {self.calibration_data.get('device_type', 'N/A')}
-                    Firmware: {self.calibration_data.get('firmware_version', 'N/A')}
-                    Integration Time: {self.calibration_data.get('integration_time_ms', 'N/A')} ms
-                    """
-                    fig.text(0.1, 0.7, metadata_text, fontsize=12, family='monospace')
-                    pdf.savefig(fig)
-                    plt.close()
+                    # Use GridSpec for precise layout control
+                    import matplotlib.gridspec as gridspec
+                    gs = gridspec.GridSpec(3, 3, figure=fig, height_ratios=[0.8, 5, 2],
+                                          hspace=0.35, wspace=0.3,
+                                          left=0.06, right=0.97, top=0.95, bottom=0.06)
 
-                    # Page 2: Graphs (S-Pol, P-Pol, Transmission)
-                    fig, axes = plt.subplots(1, 3, figsize=(11, 8.5))
-                    fig.suptitle('Calibration Spectra', fontsize=14, fontweight='bold')
+                    # Header section (title and metadata)
+                    header_ax = fig.add_subplot(gs[0, :])
+                    header_ax.axis('off')
 
+                    # Title
+                    header_ax.text(0.01, 0.6, f"📊 Calibration QC Report - {device_serial}",
+                                  fontsize=18, fontweight='bold', va='center')
+
+                    # Metadata (right side)
+                    from version import __version__
+                    metadata = f"📅 {self.calibration_data.get('timestamp', 'N/A')}  |  " \
+                              f"Device: {self.calibration_data.get('device_type', 'N/A')}  |  " \
+                              f"FW: {self.calibration_data.get('firmware_version', 'N/A')}  |  " \
+                              f"Integration: {self.calibration_data.get('integration_time_ms', 'N/A')} ms  |  " \
+                              f"v{__version__}"
+                    header_ax.text(0.01, 0.1, metadata, fontsize=10, color='#666666', va='center')
+
+                    # Three graphs in one row (matching dialog layout)
                     wavelengths = self.calibration_data.get('wavelengths', [])
                     channels = ['a', 'b', 'c', 'd']
                     colors = ['black', 'red', 'blue', 'green']
 
                     # S-Pol graph
+                    ax1 = fig.add_subplot(gs[1, 0])
                     s_pol_data = self.calibration_data.get('s_pol_spectra', {})
+
                     for ch, color in zip(channels, colors):
                         if ch in s_pol_data:
-                            axes[0].plot(wavelengths, s_pol_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
-                    axes[0].set_title('S-Pol Spectra')
-                    axes[0].set_xlabel('Wavelength (nm)')
-                    axes[0].set_ylabel('Counts')
-                    axes[0].legend()
-                    axes[0].grid(True, alpha=0.3)
+                            ax1.plot(wavelengths, s_pol_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+
+                    # Add pass region overlay AFTER plotting data (35,000 - 50,000 counts = acceptable range)
+                    ax1.axhspan(35000, 50000, alpha=0.2, color='green', zorder=1, label='Pass Region (35k-50k)')
+
+                    ax1.set_title('S-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
+                    ax1.set_xlabel('Wavelength (nm)', fontsize=10)
+                    ax1.set_ylabel('Counts', fontsize=10)
+                    ax1.legend(fontsize=9, loc='best')
+                    ax1.grid(True, alpha=0.3)
 
                     # P-Pol graph
+                    ax2 = fig.add_subplot(gs[1, 1])
                     p_pol_data = self.calibration_data.get('p_pol_spectra', {})
                     for ch, color in zip(channels, colors):
                         if ch in p_pol_data:
-                            axes[1].plot(wavelengths, p_pol_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
-                    axes[1].set_title('P-Pol Spectra')
-                    axes[1].set_xlabel('Wavelength (nm)')
-                    axes[1].set_ylabel('Counts')
-                    axes[1].legend()
-                    axes[1].grid(True, alpha=0.3)
+                            ax2.plot(wavelengths, p_pol_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                    ax2.set_title('P-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
+                    ax2.set_xlabel('Wavelength (nm)', fontsize=10)
+                    ax2.set_ylabel('Counts', fontsize=10)
+                    ax2.legend(fontsize=9, loc='best')
+                    ax2.grid(True, alpha=0.3)
 
                     # Transmission graph
+                    ax3 = fig.add_subplot(gs[1, 2])
                     trans_data = self.calibration_data.get('transmission_spectra', {})
                     for ch, color in zip(channels, colors):
                         if ch in trans_data:
-                            axes[2].plot(wavelengths, trans_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
-                    axes[2].set_title('Transmission Spectra')
-                    axes[2].set_xlabel('Wavelength (nm)')
-                    axes[2].set_ylabel('Transmission %')
-                    axes[2].legend()
-                    axes[2].grid(True, alpha=0.3)
+                            ax3.plot(wavelengths, trans_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                    ax3.set_title('Transmission Spectra', fontsize=12, fontweight='bold', pad=8)
+                    ax3.set_xlabel('Wavelength (nm)', fontsize=10)
+                    ax3.set_ylabel('Transmission %', fontsize=10)
+                    ax3.legend(fontsize=9, loc='best')
+                    ax3.grid(True, alpha=0.3)
 
-                    plt.tight_layout()
-                    pdf.savefig(fig)
-                    plt.close()
+                    # QC Table section below graphs
+                    table_ax = fig.add_subplot(gs[2, :])
+                    table_ax.axis('off')
 
-                    # Page 3: QC Tables
-                    fig = plt.figure(figsize=(11, 8.5))
-                    fig.suptitle('QC Validation Results', fontsize=14, fontweight='bold')
-
-                    # Add convergence summary if available
+                    # Build two-column layout: LED Convergence | QC Validation
                     convergence_summary = self.calibration_data.get('convergence_summary', {})
+                    qc_results = self.calibration_data.get('qc_results', {})
+
+                    # Left column: LED Convergence Results
                     if convergence_summary:
-                        table_text = f"""LED Convergence Results:\n"""
+                        table_ax.text(0.01, 0.95, 'LED Convergence Results:',
+                                     fontsize=11, fontweight='bold', va='top')
+
                         channels_data = convergence_summary.get('channels', {})
+                        table_y = 0.70
                         for ch in ['a', 'b', 'c', 'd']:
                             if ch in channels_data:
                                 ch_data = channels_data[ch]
-                                table_text += f"  Ch {ch.upper()}: LED={ch_data.get('led', 'N/A')}, Signal={ch_data.get('signal', 'N/A')}\n"
-                        fig.text(0.1, 0.7, table_text, fontsize=10, family='monospace')
+                                led_val = ch_data.get('led', 'N/A')
+                                signal_val = ch_data.get('signal', 'N/A')
+                                table_ax.text(0.05, table_y, f"Ch {ch.upper()}:", fontsize=10, va='top', fontweight='bold')
+                                table_ax.text(0.15, table_y, f"LED: {led_val}", fontsize=10, va='top', family='monospace')
+                                table_ax.text(0.35, table_y, f"Signal: {signal_val}", fontsize=10, va='top', family='monospace')
+                                table_y -= 0.25
 
-                    pdf.savefig(fig)
+                    # Right column: QC Validation Results
+                    if qc_results:
+                        table_ax.text(0.52, 0.95, 'QC Validation Results:',
+                                     fontsize=11, fontweight='bold', va='top')
+
+                        table_y = 0.70
+                        for ch in ['a', 'b', 'c', 'd']:
+                            if ch in qc_results:
+                                ch_qc = qc_results[ch]
+                                s_max = ch_qc.get('s_max', 0)
+                                p_max = ch_qc.get('p_max', 0)
+                                trans_pass = ch_qc.get('transmission_pass', False)
+
+                                # Format values
+                                s_max_str = f"{s_max:,.0f}" if s_max else "N/A"
+                                p_max_str = f"{p_max:,.0f}" if p_max else "N/A"
+                                trans_status = "✓ PASS" if trans_pass else "✗ FAIL"
+                                trans_color = 'green' if trans_pass else 'red'
+
+                                table_ax.text(0.55, table_y, f"Ch {ch.upper()}:", fontsize=10, va='top', fontweight='bold')
+                                table_ax.text(0.63, table_y, f"S-Max: {s_max_str}", fontsize=9, va='top', family='monospace')
+                                table_ax.text(0.78, table_y, f"P-Max: {p_max_str}", fontsize=9, va='top', family='monospace')
+                                table_ax.text(0.92, table_y, trans_status, fontsize=9, va='top',
+                                            fontweight='bold', color=trans_color)
+                                table_y -= 0.25
+
+                    pdf.savefig(fig, dpi=150)  # Higher DPI for better quality
                     plt.close()
 
                 from affilabs.widgets.message import show_message
                 show_message(
                     f"PDF exported successfully to:\n{file_path}",
-                    "PDF Export",
-                    "Information",
+                    msg_type="Information",
+                    title="PDF Export",
                 )
                 logger.info(f"✅ PDF report exported: {file_path}")
 
@@ -1979,6 +2048,12 @@ FAILURE DIAGNOSIS:
             logger.error(f"Failed to export PDF: {e}")
             import traceback
             traceback.print_exc()
+            from affilabs.widgets.message import show_message
+            show_message(
+                f"Failed to export PDF:\n{str(e)}",
+                msg_type="Critical",
+                title="Export Error",
+            )
             from affilabs.widgets.message import show_message
             show_message(f"Failed to export PDF:\n{e!s}", "Export Error", "Error")
 

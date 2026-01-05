@@ -171,10 +171,15 @@ class UIUpdateHelpers:
                 curve = app.main_window.cycle_of_interest_graph.curves[ch_idx]
                 curve.setData(display_cycle_time, display_delta_spr)
 
-            # Set X-axis range to show only the cursor region and disable auto-ranging
+            # Set X-axis range to show only the cursor region
+            # Respect user's autoscale preference - only override if autoscale is enabled
             if max_cycle_time > 0:
-                app.main_window.cycle_of_interest_graph.setXRange(0, max_cycle_time, padding=0.02)
-                app.main_window.cycle_of_interest_graph.enableAutoRange(axis="x", enable=False)
+                if app.main_window.autoscale_check.isChecked():
+                    # User wants autoscale - let it handle the range
+                    app.main_window.cycle_of_interest_graph.setXRange(0, max_cycle_time, padding=0.02)
+                else:
+                    # User wants manual control - don't override their range
+                    pass
 
             # Update Δ SPR display with current cursor-based delta values
             app._update_delta_display()

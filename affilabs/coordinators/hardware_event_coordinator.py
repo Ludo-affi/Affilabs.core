@@ -622,18 +622,17 @@ class HardwareEventCoordinator:
             return
 
         logger.info("=" * 80)
-        logger.info("STARTING CALIBRATION WORKFLOW")
+        logger.info("HARDWARE CONNECTION SUCCESSFUL")
         logger.info("=" * 80)
         logger.info("   Hardware Detected:")
         logger.info(f"     Controller: {status.get('ctrl_type')}")
         logger.info("     Spectrometer: Connected")
-        logger.info(
-            "Loading servo positions from device_config (single source of truth)..."
-        )
+        logger.info("")
+        logger.info("✅ Hardware ready!")
+        logger.info("   Showing calibration dialog...")
+        logger.info("=" * 80)
 
-        # Check for optical calibration file
-        # Start LED calibration directly
-        logger.info("Starting LED calibration")
+        # Show calibration dialog with Start button (user must click to begin)
         self._app.calibration.start_calibration()
 
     def _update_led_status_display(self):

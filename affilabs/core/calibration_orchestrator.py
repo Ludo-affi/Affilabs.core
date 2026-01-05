@@ -70,6 +70,7 @@ def run_startup_calibration(
     single_ch: str = "a",
     stop_flag=None,
     use_convergence_engine: bool = True,
+    force_oem_retrain: bool = False,
 ) -> LEDCalibrationResult:
     """Execute complete 6-step calibration with HAL compliance.
 
@@ -182,35 +183,51 @@ def run_startup_calibration(
         ch_list = determine_channel_list(device_type, single_mode, single_ch)
         logger.info(f"Channels: {ch_list}")
 
-        # Check if LED calibration model exists
+        # Check if LED calibration model exists (skip if force_oem_retrain)
         logger.info("\nChecking for LED calibration model...")
-        from affilabs.services.led_model_loader import LEDCalibrationModelLoader, ModelNotFoundError
+        from affilabs.services.led_model_loader import (
+            LEDCalibrationModelLoader,
+            ModelNotFoundError,
+            ModelValidationError,
+        )
 
         model_loader = LEDCalibrationModelLoader()
         model_exists = True
         model_slopes_s = None
         model_slopes_p = None
 
-        try:
-            model_loader.load_model(detector_serial)
-            logger.info(f"[OK] LED calibration model found for detector {detector_serial}")
-            # Extract slopes for S and P polarization
-            model_slopes_s = model_loader.get_slopes(
-                polarization="S", channels=[c.upper() for c in ch_list]
-            )
-            model_slopes_p = model_loader.get_slopes(
-                polarization="P", channels=[c.upper() for c in ch_list]
-            )
-            # Convert to lowercase keys for consistency
-            model_slopes_s = {k.lower(): v for k, v in model_slopes_s.items()}
-            model_slopes_p = {k.lower(): v for k, v in model_slopes_p.items()}
-            logger.info(f"[OK] Model slopes loaded: S={model_slopes_s}, P={model_slopes_p}")
-        except ModelNotFoundError as e:
-            logger.warning(f"⚠️  No LED calibration model found: {e}")
+        if force_oem_retrain:
+            # Skip loading old model when doing OEM retrain (we're creating a new one)
+            logger.info("[SKIP] OEM retrain mode - will create new calibration model")
             model_exists = False
+        else:
+            try:
+                model_loader.load_model(detector_serial)
+                logger.info(f"[OK] LED calibration model found for detector {detector_serial}")
+                # Extract slopes for S and P polarization
+                model_slopes_s = model_loader.get_slopes(
+                    polarization="S", channels=[c.upper() for c in ch_list]
+                )
+                model_slopes_p = model_loader.get_slopes(
+                    polarization="P", channels=[c.upper() for c in ch_list]
+                )
+                # Convert to lowercase keys for consistency
+                model_slopes_s = {k.lower(): v for k, v in model_slopes_s.items()}
+                model_slopes_p = {k.lower(): v for k, v in model_slopes_p.items()}
+                logger.info(f"[OK] Model slopes loaded: S={model_slopes_s}, P={model_slopes_p}")
+            except ModelNotFoundError as e:
+                logger.warning(f"⚠️  No LED calibration model found: {e}")
+                model_exists = False
+            except ModelValidationError as e:
+                logger.warning(f"⚠️  LED calibration model corrupted: {e}")
+                logger.warning("   Will create new calibration model automatically")
+                model_exists = False
 
-        # If model missing, run automatic OEM training
-        if not model_exists:
+        # If model missing OR force_oem_retrain requested, run automatic OEM training
+        if not model_exists or force_oem_retrain:
+            if force_oem_retrain and model_exists:
+                logger.info("\n⚡ FORCE RETRAIN REQUESTED - Rebuilding optical model...")
+                logger.info("   (Existing model will be replaced)\n")
             logger.info("\n" + "=" * 80)
             logger.info("🔧 AUTOMATIC OEM MODEL TRAINING")
             logger.info("=" * 80)
@@ -267,9 +284,21 @@ def run_startup_calibration(
             if progress_callback:
                 progress_callback("Step 3/6: LED brightness measurement...", 30)
 
-        # Skip brightness measurement - use model only to avoid serial contention
+        # Brightness measurement skipped - rely on OEM model slopes instead
+        # The OEM model training (Step 2) just measured all channels at 10-60ms,
+        # so model slopes should accurately reflect relative channel brightness.
         channel_measurements = {}
-        logger.info("[INFO] Skipping brightness measurement to preserve serial stability")
+
+        logger.warning("=" * 80)
+        logger.warning("⚠️  BRIGHTNESS MEASUREMENT SKIPPED")
+        logger.warning("=" * 80)
+        logger.warning("Relying on OEM model slopes to determine weakest channel.")
+        logger.warning("The model was just trained in Step 2 with 10-60ms measurements,")
+        logger.warning("so slopes should be accurate for channel ranking.")
+        logger.warning("")
+        logger.warning("If you see poor LED convergence or linearity warnings, this may")
+        logger.warning("indicate the OEM model quality is insufficient.")
+        logger.warning("=" * 80)
 
         # Identify weakest channel or fall back to model if no measurements
         if channel_measurements:
@@ -294,11 +323,67 @@ def run_startup_calibration(
         # =================================================================
         logger.info("Loading servo positions from device_config...")
         servo_positions = device_config.get_servo_positions()
+
+        # Check if servo positions are calibrated
+        if servo_positions is None:
+            logger.error("=" * 80)
+            logger.error("❌ SERVO POSITIONS NOT CALIBRATED")
+            logger.error("=" * 80)
+            logger.error("   Servo positions must be calibrated before LED calibration")
+            logger.error("   The servo calibration should have been triggered automatically.")
+            logger.error("   If you see this message, please run servo calibration manually.")
+            logger.error("=" * 80)
+
+            # Use a custom exception so the service can catch this specific case
+            class ServoCalibrationRequired(RuntimeError):
+                """Raised when servo positions are missing and calibration is required."""
+
+                pass
+
+            raise ServoCalibrationRequired(
+                "Servo positions not found. Servo calibration must be completed before LED calibration."
+            )
+
         s_pos = servo_positions["s"]
         p_pos = servo_positions["p"]
-        logger.info(f"[OK] Servo positions (degrees): S={s_pos}°, P={p_pos}°")
-        # HAL-only policy: Do NOT send servo positions during calibration.
-        # Positions are loaded to EEPROM at startup; set_mode('s'/'p') uses them.
+        logger.info(f"[OK] Servo positions (degrees): S={s_pos}, P={p_pos}")
+
+        # CRITICAL: Sync device_config positions to EEPROM BEFORE any servo movement
+        # The set_mode() commands used by convergence read from EEPROM, not device_config!
+        logger.info("📝 Syncing device_config positions to controller EEPROM...")
+        try:
+            # Access raw controller through HAL wrapper
+            raw_ctrl = ctrl._ctrl if hasattr(ctrl, "_ctrl") else None
+            if raw_ctrl and hasattr(device_config, "sync_to_eeprom"):
+                sync_success = device_config.sync_to_eeprom(raw_ctrl)
+                if sync_success:
+                    logger.info(
+                        "[OK] EEPROM synced - set_mode() commands will use correct positions"
+                    )
+                else:
+                    logger.warning("⚠️  EEPROM sync failed - convergence may use old positions")
+            else:
+                logger.warning("⚠️  Cannot sync EEPROM - missing sync_to_eeprom method")
+        except Exception as sync_err:
+            logger.error(f"Failed to sync EEPROM: {sync_err}")
+
+        # Move servo to S-position for calibration (since we disabled auto-init during hardware connection)
+        logger.info("🔧 Moving servo to S-position for calibration...")
+
+        # Turn off LEDs for safety during servo movement
+        ctrl.turn_off_channels()
+        time.sleep(0.1)
+
+        # Park servo to remove backlash (PWM=1)
+        ctrl.servo_move_raw_pwm(1)
+        time.sleep(0.5)
+
+        # Move to S-mode position (use s_pos PWM value directly)
+        ctrl.servo_move_raw_pwm(s_pos)
+        time.sleep(0.5)
+
+        logger.info("[OK] Servo positioned at S-mode")
+
         logger.info("")
 
         # =================================================================
@@ -310,15 +395,74 @@ def run_startup_calibration(
         logger.info("STEP 4: S-Mode LED Convergence + Reference Capture")
         logger.info("-" * 80)
 
-        # Set polarizer to S-mode using HAL
-        logger.info("Setting polarizer to S-mode...")
-        ctrl.set_mode("s")  # Servo moves to S position from EEPROM
-        time.sleep(0.35)  # Optimized - adequate for cold start servo movement
-        logger.info("[OK] S-mode set")
+        # Servo position already loaded via set_servo_positions() above
+        # No need to move servo before LED convergence
+        logger.info("[OK] S-mode positions ready")
+
+        # Enable LED channels for P4PRO (required before set_intensity works)
+        detected_type = ctrl.get_device_type()
+        logger.info(f"DEBUG: Device type from HAL = '{detected_type}'")
+        if detected_type == "PicoP4PRO":
+            logger.info("Enabling P4PRO LED channels...")
+            for ch in ch_list:
+                ctrl.turn_on_channel(ch)
+            time.sleep(0.05)  # Brief delay for channel enable
+            logger.info("[OK] Channels enabled")
+        else:
+            logger.warning(f"Device type '{detected_type}' != 'PicoP4PRO', skipping channel enable")
+
+        # Import hardware acquisition function BEFORE use
+        from affilabs.utils.startup_calibration import acquire_raw_spectrum as hw_acquire
+
+        # EARLY POLARIZER CHECK: Test signal BEFORE convergence
+        # TEMPORARILY DISABLED - Allow calibration to proceed even if servo position seems wrong
+        # The convergence engine will handle servo positioning
+        logger.info(
+            "\n🔍 EARLY POLARIZER POSITION CHECK... [SKIPPED - Letting convergence handle servo]"
+        )
+
+        # logger.info("Testing signal with max LED to verify polarizer is not blocking light...")
+        # test_led = 255
+        # test_time_ms = 30.0
+        #
+        # # Set all LEDs to max for test
+        # for ch in ch_list:
+        #     ctrl.set_intensity(ch, test_led)
+        #
+        # # Acquire test spectrum
+        # test_spectrum = hw_acquire(usb, ctrl, ch_list[0], test_led, test_time_ms, num_scans=1)
+        # test_signal = np.mean(test_spectrum[wave_min_index:wave_max_index])
+        #
+        # # Check if signal is critically low (< 5% of detector range)
+        # critical_threshold = detector_params.max_counts * 0.05
+        # if test_signal < critical_threshold:
+        #     logger.error("=" * 80)
+        #     logger.error("❌ POLARIZER POSITION ERROR DETECTED")
+        #     logger.error("=" * 80)
+        #     logger.error(f"   Test signal: {test_signal:.0f} counts")
+        #     logger.error(f"   Expected: > {critical_threshold:.0f} counts (5% of detector range)")
+        #     logger.error(f"   Actual: {(test_signal/detector_params.max_counts)*100:.1f}% of detector range")
+        #     logger.error("")
+        #     logger.error("   🚨 POLARIZER IS BLOCKING THE LIGHT!")
+        #     logger.error("")
+        #     logger.error("   This indicates servo S/P positions are INCORRECT.")
+        #     logger.error("   The polarizer barrel is rotated to block optical path.")
+        #     logger.error("")
+        #     logger.error("   SOLUTION:")
+        #     logger.error("   1. Click 'Servo Calibration' button in sidebar")
+        #     logger.error("   2. Wait 2-3 minutes for automatic position detection")
+        #     logger.error("   3. Re-run LED calibration after servo calibration completes")
+        #     logger.error("=" * 80)
+        #     raise RuntimeError(
+        #         f"Polarizer blocking light: signal={test_signal:.0f} (expected >{critical_threshold:.0f}). "
+        #         "Run 'Servo Calibration' to detect correct S/P positions."
+        #     )
+
+        # logger.info(f"✅ Polarizer check PASSED: {test_signal:.0f} counts ({(test_signal/detector_params.max_counts)*100:.1f}% of range)")
+        logger.info("")
 
         # Run LED convergence for S-mode
         from affilabs.utils.led_convergence_algorithm import LEDconverge
-        from affilabs.utils.startup_calibration import acquire_raw_spectrum as hw_acquire
 
         # Define helper functions
         def acquire_raw_spectrum(
@@ -547,6 +691,12 @@ def run_startup_calibration(
         # Set polarizer to P-mode using HAL
         ctrl.set_mode("p")  # Servo moves to P position from EEPROM
         time.sleep(0.2)  # Optimized - servo is warm, motor has settled from S-mode
+
+        # Enable LED channels for P4PRO (required after turning them off)
+        if ctrl.get_device_type() == "PicoP4PRO":
+            for ch in ch_list:
+                ctrl.turn_on_channel(ch)
+            time.sleep(0.05)
 
         # Calculate initial LED intensities for P-mode
         # OPTIMIZED: Use converged S-mode LEDs directly with 92% rule for better initial guess

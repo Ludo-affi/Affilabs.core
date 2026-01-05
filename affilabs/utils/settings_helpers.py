@@ -366,7 +366,13 @@ class SettingsHelpers:
                     {"optics_ready": False, "sensor_ready": True}
                 )
 
-            # === PART 3: Show QC dialog ===
+            # === PART 3: Clear graphs and restart sensorgram at t=0 ===
+            if optics_ready:
+                print("Clearing graphs and restarting sensorgram at t=0...")
+                app._on_clear_graphs_requested()
+                print("✓ Sensorgram reset complete - ready for new data")
+
+            # === PART 4: Show QC dialog ===
             app._show_qc_dialog(calibration_data)
 
         except Exception as e:

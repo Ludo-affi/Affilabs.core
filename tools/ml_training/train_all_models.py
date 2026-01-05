@@ -9,6 +9,7 @@ Runs the complete pipeline:
 6. Train convergence predictor (with device features)
 """
 
+print("SCRIPT START - Imports beginning...")
 import sys
 from pathlib import Path
 
@@ -38,14 +39,15 @@ def main():
     # Navigate to root directory (2 levels up from tools/ml_training/)
     root_dir = Path(__file__).parent.parent.parent
     logs_dir = root_dir / "logs"
-    
+
     if not logs_dir.exists():
         print(f"ERROR: Logs directory not found: {logs_dir}")
         print(f"Looking in: {logs_dir.absolute()}")
         sys.exit(1)
 
     parser = CalibrationLogParser(logs_dir)
-    iterations_df, runs_df = parser.parse_all_logs()
+    # Only parse recent 200 logs - old logs don't have convergence format anyway
+    iterations_df, runs_df = parser.parse_all_logs(max_logs=200)
 
     # Save parsed data
     data_dir = Path("tools/ml_training/data")
@@ -82,6 +84,8 @@ def main():
     sensitivity_features = prep_sensitivity(iterations_df, runs_df)
     sensitivity_model = train_sensitivity(sensitivity_features)
 
+    # Save to development location (for testing/improvement)
+    # Production models are in affilabs/convergence/models/ (updated during releases)
     model_dir = Path("tools/ml_training/models")
     model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -94,7 +98,14 @@ def main():
     print("-" * 80)
 
     led_features = prep_led(iterations_df, runs_df)
-    led_model = train_led(led_features)
+    print(f"LED features shape: {led_features.shape}")
+    print(f"LED features columns: {led_features.columns.tolist()}")
+    
+    if len(led_features) == 0:
+        print("WARNING: No LED features generated - skipping LED predictor training")
+        led_model = None
+    else:
+        led_model = train_led(led_features)
 
     led_path = model_dir / "led_predictor.joblib"
     joblib.dump(led_model, led_path)

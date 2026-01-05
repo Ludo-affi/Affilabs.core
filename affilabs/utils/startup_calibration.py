@@ -864,7 +864,7 @@ def count_pixels_near_target(
     wave_min_index: int,
     wave_max_index: int,
     target_signal: float,
-    tolerance_pct: float = 0.10,
+    tolerance_pct: float = 0.06,
 ) -> tuple[int, float]:
     """Count how many pixels in ROI are near target signal (empirical validation).
 

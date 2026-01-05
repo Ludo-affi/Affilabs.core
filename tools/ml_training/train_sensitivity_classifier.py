@@ -9,7 +9,7 @@ import numpy as np
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 import joblib
 
 
@@ -123,10 +123,19 @@ def train_model(features_df: pd.DataFrame) -> RandomForestClassifier:
     # Classification report
     y_pred = model.predict(X_test)
     print(f"\n=== Test Set Classification Report ===")
-    print(classification_report(y_test, y_pred, target_names=['BASELINE', 'HIGH']))
+    
+    # Handle case where only one class is present
+    unique_classes = sorted(set(y_test) | set(y_pred))
+    target_names = ['BASELINE' if c == 0 else 'HIGH' for c in unique_classes]
+    
+    if len(unique_classes) > 1:
+        print(classification_report(y_test, y_pred, target_names=target_names, labels=unique_classes))
+        print(f"\n=== Confusion Matrix ===")
+        print(confusion_matrix(y_test, y_pred))
+    else:
+        print(f"Only one class present: {target_names[0]}")
+        print(f"Accuracy: {accuracy_score(y_test, y_pred):.3f}")
 
-    print(f"\n=== Confusion Matrix ===")
-    print(confusion_matrix(y_test, y_pred))
 
     # Feature importance
     print(f"\n=== Feature Importance ===")

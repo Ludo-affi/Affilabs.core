@@ -1,0 +1,6 @@
+{
+  "hardware": {
+    "servo_s_position": 127,
+    "servo_p_position": 4
+  }
+}

@@ -37,6 +37,7 @@ class StartupCalibProgressDialog(QDialog):
     _set_progress_signal = Signal(int, int)  # (value, maximum)
     _hide_progress_signal = Signal()
     _enable_start_signal = Signal()
+    _close_signal = Signal()  # Signal for thread-safe close
 
     def __init__(
         self,
@@ -137,6 +138,7 @@ class StartupCalibProgressDialog(QDialog):
         self.start_button = None
         self.retry_button = None
         self.continue_button = None
+        self.close_button = None
 
         # Button container for dynamic button switching
         self.button_container = QWidget()
@@ -172,6 +174,25 @@ class StartupCalibProgressDialog(QDialog):
             self.start_button.clicked.connect(self._on_start_clicked)
             self.button_layout.addWidget(self.start_button)
 
+        # Add Cancel/Close button (always available)
+        self.close_button = QPushButton("Cancel")
+        self.close_button.setFixedSize(100, 36)
+        self.close_button.setStyleSheet(
+            "QPushButton {"
+            "  background: #8E8E93;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #636366;"
+            "}"
+        )
+        self.close_button.clicked.connect(self.close)
+        self.button_layout.addWidget(self.close_button)
+
         self.button_layout.addStretch()
         main_layout.addWidget(self.button_container)
 
@@ -181,6 +202,7 @@ class StartupCalibProgressDialog(QDialog):
         self._set_progress_signal.connect(self._do_set_progress)
         self._hide_progress_signal.connect(self._do_hide_progress)
         self._enable_start_signal.connect(self._do_enable_start)
+        self._close_signal.connect(self._do_close)
 
         # Add shadow effect
         shadow = QGraphicsDropShadowEffect()
@@ -525,3 +547,15 @@ class StartupCalibProgressDialog(QDialog):
         """Handle continue anyway button click."""
         if not self._is_closing:
             self.continue_anyway_clicked.emit()
+
+    def close_from_thread(self) -> None:
+        """Close dialog from background thread (thread-safe via signal)."""
+        self._close_signal.emit()
+
+    def _do_close(self) -> None:
+        """Actually close dialog (runs in main thread)."""
+        if not self._is_closing:
+            try:
+                self.close()
+            except RuntimeError:
+                pass  # Widget already deleted

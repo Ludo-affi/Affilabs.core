@@ -7,6 +7,7 @@ This package contains manager classes that handle specific domains of functional
 - DeviceConfigManager: Device configuration and OEM calibration workflow
 - CalibrationManager: Calibration workflow delegation
 - SegmentManager: EditableSegment lifecycle management for multi-cycle analysis
+- PumpManager: Pump operations (prime, cleanup, run_buffer) for UI/calibration/coordinators
 """
 
 from .calibration_manager import CalibrationManager
@@ -14,6 +15,7 @@ from .cursor_manager import CursorManager
 from .device_config_manager import DeviceConfigManager
 from .export_manager import ExportManager
 from .flag_manager import FlagManager
+from .pump_manager import PumpManager
 from .segment_manager import SegmentManager
 
 __all__ = [
@@ -23,4 +25,5 @@ __all__ = [
     "DeviceConfigManager",
     "CalibrationManager",
     "SegmentManager",
+    "PumpManager",
 ]

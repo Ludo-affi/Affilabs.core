@@ -1,17 +1,18 @@
-"""Static Tab Builder for AffiLabs.core Sidebar
+"""Method Tab Builder for AffiLabs.core Sidebar
 
-Builds the Static Control tab with:
+Builds the Method (Assay Builder) tab with:
 - Intelligence Bar (real-time system status)
 - Cycle Configuration (type, length, notes with syntax highlighting, units)
 - Execution controls (Start Cycle, Add to Queue)
 - Cycle History & Queue table
 - Full cycle table dialog
 
+The Method sidebar is the main interface for building and managing SPR assays.
 Extracted from sidebar.py to improve modularity.
 """
 
-from PySide6.QtCore import Qt, QRegularExpression
-from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
+from PySide6.QtCore import Qt, QRegularExpression, QPoint
+from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QCursor
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -23,11 +24,67 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
+    QSizeGrip,
 )
 
 from affilabs.cycle_table_dialog import CycleTableDialog
 from affilabs.sections import CollapsibleSection
 from affilabs.ui_styles import card_style, section_header_style
+
+
+class ResizableTableWidget(QTableWidget):
+    """Table widget with resize handle at bottom for expanding/collapsing."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._min_height = 200
+        self._max_height = 600
+        self._is_resizing = False
+        self._resize_start_pos = None
+        self._resize_start_height = None
+
+    def mousePressEvent(self, event):
+        """Handle mouse press to start resize if near bottom edge."""
+        # Only intercept left-clicks near bottom edge for resizing
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Check if click is near bottom edge (within 10 pixels)
+            if abs(event.pos().y() - self.height()) <= 10:
+                self._is_resizing = True
+                self._resize_start_pos = event.globalPosition().toPoint()
+                self._resize_start_height = self.height()
+                self.setCursor(QCursor(Qt.CursorShape.SizeVerCursor))
+                event.accept()
+                return
+
+        # Pass all other events (including right-clicks) to parent
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for resizing or cursor change."""
+        if self._is_resizing:
+            # Calculate new height
+            delta = event.globalPosition().toPoint().y() - self._resize_start_pos.y()
+            new_height = max(self._min_height, min(self._max_height, self._resize_start_height + delta))
+            self.setMaximumHeight(new_height)
+            self.setMinimumHeight(new_height)
+            event.accept()
+            return
+        else:
+            # Change cursor when hovering near bottom edge
+            if abs(event.pos().y() - self.height()) <= 10:
+                self.setCursor(QCursor(Qt.CursorShape.SizeVerCursor))
+            else:
+                self.unsetCursor()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release to stop resizing."""
+        if self._is_resizing:
+            self._is_resizing = False
+            self.unsetCursor()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class ChannelTagHighlighter(QSyntaxHighlighter):
@@ -66,8 +123,8 @@ class ChannelTagHighlighter(QSyntaxHighlighter):
                 self.setFormat(start, match.capturedLength(), self.tag_format)
 
 
-class StaticTabBuilder:
-    """Builds the Static (Cycle Control) tab content."""
+class MethodTabBuilder:
+    """Builds the Method (Assay Builder) tab content."""
 
     def __init__(self, sidebar):
         """Initialize builder.
@@ -79,7 +136,7 @@ class StaticTabBuilder:
         self.sidebar = sidebar
 
     def build(self, tab_layout: QVBoxLayout):
-        """Build Static tab with cycle management and queue.
+        """Build Method tab with cycle management and queue.
 
         Args:
             tab_layout: QVBoxLayout to add widgets to
@@ -149,7 +206,7 @@ class StaticTabBuilder:
         )
 
         cycle_settings_card = QFrame()
-        cycle_settings_card.setStyleSheet(card_style(background="transparent"))
+        cycle_settings_card.setStyleSheet(card_style())
         cycle_settings_card_layout = QVBoxLayout(cycle_settings_card)
         cycle_settings_card_layout.setContentsMargins(10, 8, 10, 8)
         cycle_settings_card_layout.setSpacing(8)
@@ -176,7 +233,7 @@ class StaticTabBuilder:
         self.sidebar.cycle_type_combo.setToolTip(
             "Select experiment type: Auto-read (automatic), Baseline (reference), Immobilization (binding), or Concentration (dose-response)",
         )
-        self.sidebar.cycle_type_combo.setFixedWidth(140)
+        self.sidebar.cycle_type_combo.setFixedWidth(180)
         self.sidebar.cycle_type_combo.setStyleSheet(self._combo_style())
         type_row.addWidget(self.sidebar.cycle_type_combo)
         type_row.addStretch()
@@ -202,7 +259,7 @@ class StaticTabBuilder:
         )
         self.sidebar.cycle_length_combo.setCurrentIndex(1)
         self.sidebar.cycle_length_combo.setToolTip("Duration of the experiment cycle")
-        self.sidebar.cycle_length_combo.setFixedWidth(100)
+        self.sidebar.cycle_length_combo.setFixedWidth(70)
         self.sidebar.cycle_length_combo.setStyleSheet(self._combo_style())
         length_row.addWidget(self.sidebar.cycle_length_combo)
         length_row.addStretch()
@@ -330,7 +387,7 @@ class StaticTabBuilder:
         self.sidebar.units_combo.setToolTip(
             "Concentration units for tagged channels (applies to [A:10] style tags)",
         )
-        self.sidebar.units_combo.setFixedWidth(140)
+        self.sidebar.units_combo.setFixedWidth(120)
         self.sidebar.units_combo.setStyleSheet(self._combo_style())
         units_row.addWidget(self.sidebar.units_combo)
         units_row.addStretch()
@@ -544,8 +601,8 @@ class StaticTabBuilder:
         summary_card_layout.setContentsMargins(12, 8, 12, 8)
         summary_card_layout.setSpacing(8)
 
-        # Summary table
-        self.sidebar.summary_table = QTableWidget(5, 4)
+        # Summary table with resize capability
+        self.sidebar.summary_table = ResizableTableWidget(5, 4)
         self.sidebar.summary_table.setHorizontalHeaderLabels(
             ["State", "Type", "Start", "Notes"],
         )
@@ -554,6 +611,7 @@ class StaticTabBuilder:
         )
         self.sidebar.summary_table.setColumnWidth(0, 80)
         self.sidebar.summary_table.setMaximumHeight(200)
+        self.sidebar.summary_table.setMinimumHeight(200)
         self.sidebar.summary_table.setStyleSheet(
             "QTableWidget {"
             "  background: white;"
@@ -581,6 +639,9 @@ class StaticTabBuilder:
             "  font-size: 11px;"
             "}",
         )
+        self.sidebar.summary_table.setToolTip(
+            "Drag bottom edge to expand/collapse table • Right-click to delete cycles"
+        )
 
         # Populate with empty data
         for row in range(5):
@@ -596,14 +657,37 @@ class StaticTabBuilder:
         table_footer_row = QHBoxLayout()
         table_footer_row.setSpacing(10)
 
-        info_legend = QLabel("Showing last 5 cycles")
-        info_legend.setStyleSheet(
+        self.sidebar.queue_size_label = QLabel("Showing last 5 cycles")
+        self.sidebar.queue_size_label.setStyleSheet(
             "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
-        table_footer_row.addWidget(info_legend)
+        table_footer_row.addWidget(self.sidebar.queue_size_label)
+
+        # Expand Queue button
+        self.sidebar.expand_queue_btn = QPushButton("+5")
+        self.sidebar.expand_queue_btn.setFixedSize(32, 22)
+        self.sidebar.expand_queue_btn.setToolTip("Expand queue capacity by 5 cycles")
+        self.sidebar.expand_queue_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 4px;"
+            "  font-size: 11px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #0051D5;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #003D99;"
+            "}",
+        )
+        table_footer_row.addWidget(self.sidebar.expand_queue_btn)
         table_footer_row.addStretch()
 
         # View All Cycles Button

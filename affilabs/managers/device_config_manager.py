@@ -446,6 +446,11 @@ class DeviceConfigManager:
                 logger.info("Running servo auto-calibration...")
                 self.main_window.app._run_servo_auto_calibration()
 
+                # CRITICAL: Reload device config to get newly calibrated S/P positions
+                logger.info("Reloading device config to get updated servo positions...")
+                self.device_config.reload()
+                logger.info("✅ Device config reloaded")
+
                 # Step 2: Verify servo positions
                 s_pos = self.device_config.config["hardware"]["servo_s_position"]
                 p_pos = self.device_config.config["hardware"]["servo_p_position"]
@@ -607,6 +612,21 @@ class DeviceConfigManager:
                         msg_type="Information",
                         title="Calibration Success",
                     )
+
+                    # CRITICAL: Return to live view after OEM calibration
+                    logger.info("🔄 Returning to live view...")
+                    if hasattr(self.main_window.app, "data_mgr") and self.main_window.app.data_mgr:
+                        try:
+                            # NOTE: Removed auto-move to P position - servo should only move during calibration
+                            # User will start live view with servo in whatever position it ended at
+
+                            # Start live data acquisition
+                            self.main_window.app.data_mgr.start_acquisition()
+                            logger.info("✅ Live data acquisition started")
+                        except Exception as e:
+                            logger.error(f"Failed to return to live view: {e}")
+                    else:
+                        logger.warning("⚠️ Cannot return to live view - data manager not available")
                 else:
                     logger.error("Failed to push config to EEPROM")
                     show_message(

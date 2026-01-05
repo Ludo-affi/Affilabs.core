@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple, List
+import numpy as np
 
 from .config import ConvergenceRecipe, DetectorParams
 from .interfaces import Spectrometer, LEDActuator, ROIExtractor, Logger, Scheduler
@@ -507,7 +508,15 @@ class ConvergenceEngine:
 
             # Unlock channels that are THEMSELVES saturating OR drifted far from target (>10%)
             # OR are significantly above target while other channels are below
+            # OR are below target when ANY channel (including locked ones) is also below target
             locked = []
+
+            # Check if ANY channel is struggling (below target) - includes locked channels
+            any_channel_below_target = any(
+                signals.get(ch, 0.0) < target_signal * 0.95  # >5% below target
+                for ch in recipe.channels
+            )
+
             for ch in list(state.sticky_locked.keys()):
                 sat = saturation.get(ch, 0)
                 sig = signals.get(ch, 0.0)
@@ -530,6 +539,11 @@ class ConvergenceEngine:
                 elif has_lagging_channel and sig > target_signal * 1.10:
                     # Unlock if >10% over target while other channels lag significantly
                     self._log("info", f"  🔓 Unlocking {ch.upper()} (above target {(sig/target_signal-1)*100:.1f}% while others lag)")
+                    del state.sticky_locked[ch]
+                elif any_channel_below_target and sig < target_signal:
+                    # CRITICAL FIX: Unlock if this channel is below target when ANY channel is struggling
+                    # Prevents premature locking during recovery from saturation
+                    self._log("info", f"  🔓 Unlocking {ch.upper()} (below target {(sig/target_signal)*100:.1f}% while system converging)")
                     del state.sticky_locked[ch]
                 else:
                     locked.append(ch)
@@ -715,6 +729,52 @@ class ConvergenceEngine:
                             # ML TRAINING: LED decision reasoning
                             self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}→{new_led} (reason=saturation_reduction, sat_pixels={sat_pixels}, confidence=high)")
                             state.leds[ch] = new_led
+
+                    # CRITICAL FIX: Also boost non-saturated channels that are far below target
+                    # This prevents channels like B getting stuck at 60% while we handle saturation
+                    non_saturated = [ch for ch in recipe.channels if saturation.get(ch, 0) == 0 and ch not in locked]
+                    for ch in non_saturated:
+                        sig = signals.get(ch, 0.0)
+                        error_pct = abs(sig - target_signal) / target_signal if target_signal > 0 else 0.0
+
+                        # Only boost if significantly below target (>10% error)
+                        if sig < target_signal * 0.90:
+                            # Try ML prediction first
+                            if self.led_predictor:
+                                try:
+                                    sensitivity = sensitivity_encoded
+                                    predicted_led = self._predict_led_intensity(ch, target_signal, state.integration_ms, sensitivity)
+
+                                    if predicted_led is not None:
+                                        # Apply damping to avoid overcorrection
+                                        old_led = state.leds[ch]
+                                        delta = predicted_led - old_led
+                                        damping = 0.5  # Conservative 50% step
+                                        new_led = int(old_led + delta * damping)
+                                        new_led = max(10, min(255, new_led))
+
+                                        self._log("info", f"  🤖 {ch.upper()} LED {old_led}→{new_led} (+{new_led-old_led}, ML boost, {error_pct*100:.1f}% below target)")
+                                        self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}→{new_led} (reason=ml_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
+                                        state.leds[ch] = new_led
+                                        continue
+                                except Exception:
+                                    pass
+
+                            # Fallback to slope-based boost
+                            if model_slopes_at_10ms and ch in model_slopes_at_10ms:
+                                slope = model_slopes_at_10ms[ch] * (state.integration_ms / 10.0)
+                                if slope > 0:
+                                    needed_counts = target_signal - sig
+                                    led_increase = needed_counts / slope
+
+                                    # Apply damping
+                                    old_led = state.leds[ch]
+                                    new_led = int(old_led + led_increase * 0.5)  # 50% step
+                                    new_led = max(10, min(255, new_led))
+
+                                    self._log("info", f"  📈 {ch.upper()} LED {old_led}→{new_led} (+{new_led-old_led}, slope boost, {error_pct*100:.1f}% below target)")
+                                    self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}→{new_led} (reason=slope_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
+                                    state.leds[ch] = new_led
 
                     # Don't reduce integration time - we adjusted LEDs instead
                     # Continue to next iteration to re-measure with new LED values

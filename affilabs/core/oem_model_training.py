@@ -8,8 +8,15 @@ This workflow:
 3. Saves model to led_calibration_official/spr_calibration/data/
 4. Returns success/failure for automatic calibration continuation
 
+CRITICAL: Uses OFFICIAL LED calibration method intensities:
+- Base: [30, 60, 90, 120, 150] (NOT [10, 15, 20, 25, 30])
+- Matches led_calibration_official/1_create_model.py
+- Higher intensities = better SNR and dynamic range
+- Fixed 2025-01-04: Updated from incorrect low intensities
+
 Author: ezControl-AI System
 Date: December 17, 2025
+Updated: January 4, 2026 - Fixed intensity values to match official method
 """
 
 from __future__ import annotations
@@ -93,8 +100,10 @@ def train_led_model(
 
     logger.info("")
 
-    # Base intensities; per-stage list will be derived from these to avoid saturation at long times
-    base_intensities = [10, 15, 20, 25, 30]
+    # Base intensities - MATCH OFFICIAL LED CALIBRATION METHOD
+    # Official script: [30, 60, 90, 120, 150] for better SNR and dynamic range
+    # Previous (WRONG): [10, 15, 20, 25, 30] - too low, poor SNR
+    base_intensities = [30, 60, 90, 120, 150]
     detector_wait_ms = 50
 
     # Storage for model data
@@ -123,12 +132,13 @@ def train_led_model(
             total_leds = 4
 
             # Derive safe intensities for this stage to reduce saturation risk at long times
+            # Scale down from base_intensities [30, 60, 90, 120, 150] at longer integration times
             if time_ms >= 60:
-                intensities_for_stage = [5, 8, 10, 12, 15]
+                intensities_for_stage = [15, 30, 45, 60, 75]  # 50% of base
             elif time_ms >= 45:
-                intensities_for_stage = [6, 9, 12, 15, 18]
+                intensities_for_stage = [20, 40, 60, 80, 100]  # 67% of base
             elif time_ms >= 30:
-                intensities_for_stage = [8, 12, 16, 20, 24]
+                intensities_for_stage = [24, 48, 72, 96, 120]  # 80% of base
             else:
                 intensities_for_stage = base_intensities
 
@@ -343,19 +353,32 @@ def run_oem_model_training_workflow(
             raise ModelTrainingError(msg)
 
         # ====================================================================
-        # STEP 1: Servo Polarizer Calibration (runs FIRST per user request)
+        # STEP 1: Servo Polarizer Calibration (ALWAYS RUN FOR P4SPR)
         # ====================================================================
         device_type = (
             ctrl.get_device_type() if hasattr(ctrl, "get_device_type") else type(ctrl).__name__
         )
 
-        # Check if device has servo polarizer (PicoP4SPR only)
-        if "PicoP4SPR" in device_type or "picop4spr" in device_type.lower():
+        logger.info(f"\n[DEBUG] Device type detected: {device_type}")
+        logger.info(f"[DEBUG] Controller class: {type(ctrl).__name__}")
+
+        # ALWAYS run servo calibration for devices with servo polarizer
+        # Includes: PicoP4SPR, PicoP4PRO, PicoEZSPR, PicoAFFINITE
+        has_servo = any(
+            name in device_type for name in ["PicoP4SPR", "PicoP4PRO", "PicoEZSPR", "PicoAFFINITE"]
+        )
+        if (
+            has_servo
+            or "picop4spr" in device_type.lower()
+            or "picoezspr" in device_type.lower()
+            or "p4pro" in device_type.lower()
+        ):
             logger.info("\n" + "=" * 80)
-            logger.info("STEP 1: SERVO POLARIZER CALIBRATION")
+            logger.info("⚙️  STEP 1/2: SERVO POLARIZER CALIBRATION (RUNNING NOW)")
             logger.info("=" * 80)
-            logger.info("Detecting polarizer type and finding S/P positions...")
-            logger.info("This will take ~2-5 minutes depending on polarizer type.\n")
+            logger.info("🔄 Detecting polarizer type and finding S/P window positions...")
+            logger.info("⏱️  This will take ~2-5 minutes depending on polarizer type.")
+            logger.info("🔍 Watch for servo movement during sweep phase...\n")
 
             if progress_callback:
                 progress_callback("Step 1: Servo polarizer calibration...", 0)
@@ -378,8 +401,27 @@ def run_oem_model_training_workflow(
                 )
 
                 if not servo_success:
-                    logger.error("❌ Servo polarizer calibration failed")
-                    logger.error("Cannot proceed without valid S/P positions")
+                    logger.error("=" * 80)
+                    logger.error("❌ SERVO POLARIZER CALIBRATION FAILED")
+                    logger.error("=" * 80)
+                    logger.error("")
+                    logger.error(
+                        "The automatic servo position detection did not complete successfully."
+                    )
+                    logger.error("")
+                    logger.error("POSSIBLE CAUSES:")
+                    logger.error("  1. Servo not moving (check firmware v2.1+ loaded)")
+                    logger.error("  2. Signal too low (detector not receiving light)")
+                    logger.error("  3. Signal saturated (LED intensity too high)")
+                    logger.error("")
+                    logger.error("MANUAL WORKAROUND:")
+                    logger.error("  1. Click 'Servo Calibration' button in sidebar")
+                    logger.error("  2. Manually observe which PWM positions give HIGH signal")
+                    logger.error("  3. Edit affilabs/config/device_config.json:")
+                    logger.error("     - Set 'polarizer_s_position' to S degrees (5-175)")
+                    logger.error("     - Set 'polarizer_p_position' to P degrees (5-175)")
+                    logger.error("  4. Save file and restart calibration")
+                    logger.error("=" * 80)
                     return False
 
                 logger.info("\n[OK] Servo polarizer calibration complete")
@@ -388,12 +430,17 @@ def run_oem_model_training_workflow(
                 logger.warning(f"⚠️  Could not import servo calibration module: {e}")
                 logger.warning("Servo calibration will be skipped")
                 logger.warning("Ensure device_config.json has valid S/P positions")
+            except Exception as e:
+                logger.error(f"❌ Servo calibration crashed with error: {e}")
+                logger.exception("Full traceback:")
+                logger.error("Cannot proceed without valid S/P positions")
+                return False
         else:
             logger.info(f"\n[INFO] Device type '{device_type}' does not have servo polarizer")
             logger.info("Skipping servo calibration step\n")
 
         # ====================================================================
-        # STEP 2: LED Calibration Model Training
+        # STEP 2/2: LED Calibration Model Training
         # ====================================================================
         logger.info("\n" + "=" * 80)
         logger.info("STEP 2: LED CALIBRATION MODEL TRAINING")

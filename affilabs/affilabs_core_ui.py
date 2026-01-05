@@ -1194,6 +1194,7 @@ class AffilabsMainWindow(QMainWindow):
 
     # Signal for export operations
     export_requested = Signal(dict)  # Export configuration dict
+    send_to_edits_requested = Signal()  # Transfer live data to Edits tab
 
     def __init__(self):
         super().__init__()
@@ -1323,8 +1324,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Forward sidebar control references to main window for easy access
         self.grid_check = self.sidebar.grid_check
-        self.auto_radio = self.sidebar.auto_radio
-        self.manual_radio = self.sidebar.manual_radio
+        self.autoscale_check = self.sidebar.autoscale_check
         self.min_input = self.sidebar.min_input
         self.max_input = self.sidebar.max_input
         self.x_axis_btn = self.sidebar.x_axis_btn
@@ -1383,6 +1383,7 @@ class AffilabsMainWindow(QMainWindow):
         self.full_calibration_btn = self.sidebar.full_calibration_btn
         self.polarizer_calibration_btn = self.sidebar.polarizer_calibration_btn
         self.oem_led_calibration_btn = self.sidebar.oem_led_calibration_btn
+        self.led_model_training_btn = self.sidebar.led_model_training_btn
 
         # Forward baseline capture button (REBUILT)
         if hasattr(self.sidebar, "baseline_capture_btn"):
@@ -1838,14 +1839,14 @@ class AffilabsMainWindow(QMainWindow):
         self.clear_flags_btn = QPushButton("Clear Flags")
         self.clear_flags_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_STD)
         self.clear_flags_btn.setToolTip(
-            "Remove all flag markers from Cycle of Interest graph\n"
-            "• Clears visual flag indicators\n"
-            "• Does not affect data",
+            "Remove all cycle markers from Full Sensorgram timeline\n"
+            "• Clears vertical lines and labels showing cycle start times\n"
+            "• Does not affect recorded data or cycle table",
         )
         self.clear_flags_btn.setStyleSheet(
             UIStyleManager.get_clear_button_style("danger"),
         )
-        self.clear_flags_btn.clicked.connect(self._clear_all_flags)
+        self.clear_flags_btn.clicked.connect(self._clear_cycle_markers)
         first_row_layout.addWidget(self.clear_flags_btn)
 
         header_layout.addWidget(first_row)
@@ -2215,60 +2216,56 @@ class AffilabsMainWindow(QMainWindow):
             if hasattr(self.app, '_on_clear_graphs_requested'):
                 self.app._on_clear_graphs_requested()
 
-    def _clear_all_flags(self):
-        """Remove all flag markers from the cycle of interest graph."""
+    def _clear_cycle_markers(self):
+        """Remove all cycle markers from the Full Sensorgram timeline graph."""
         try:
-            if not hasattr(self, "cycle_of_interest_graph"):
+            logger.info("🗑️ Clear Flags button clicked")
+
+            if not hasattr(self, "full_timeline_graph"):
+                logger.warning("❌ Full timeline graph not found")
                 return
 
-            # Clear NEW flag system (injection alignment flags in main.py)
-            if hasattr(self, "app") and self.app:
-                if hasattr(self.app, "_flag_markers"):
-                    # Remove all markers from graph
-                    for flag in self.app._flag_markers:
-                        if "marker" in flag and flag["marker"] is not None:
-                            self.cycle_of_interest_graph.removeItem(flag["marker"])
-                    # Clear the list
-                    self.app._flag_markers.clear()
-                    print("✅ Cleared injection alignment flags")
+            if not hasattr(self, "app") or not self.app:
+                logger.warning("❌ App reference not found - cannot clear markers")
+                return
 
-                # Clear injection reference and alignment line
-                if hasattr(self.app, "_injection_reference_time"):
-                    self.app._injection_reference_time = None
-                    self.app._injection_reference_channel = None
+            # Get reference to app's cycle markers
+            if not hasattr(self.app, "_cycle_markers"):
+                logger.warning("⚠️ No _cycle_markers attribute on app")
+                return
 
-                if hasattr(self.app, "_injection_alignment_line") and self.app._injection_alignment_line:
-                    self.cycle_of_interest_graph.removeItem(self.app._injection_alignment_line)
-                    self.app._injection_alignment_line = None
-                    print("✅ Cleared injection reference line")
+            if not self.app._cycle_markers:
+                logger.info("ℹ️ No cycle markers to clear (dictionary is empty)")
+                return
 
-                # Reset time shifts for all channels
-                if hasattr(self.app, "_channel_time_shifts"):
-                    self.app._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
-                    # Trigger graph update to show unshifted data
-                    self.app._update_cycle_of_interest_graph()
-                    print("✅ Reset channel time shifts")
+            timeline = self.full_timeline_graph
+            markers_cleared = 0
 
-            # Remove all OLD flag markers from the graph (legacy system)
-            if hasattr(self.cycle_of_interest_graph, "flag_markers"):
-                for marker in self.cycle_of_interest_graph.flag_markers:
-                    # Remove line
-                    if "line" in marker and marker["line"] is not None:
-                        self.cycle_of_interest_graph.removeItem(marker["line"])
-                    # Remove symbol
-                    if "symbol" in marker and marker["symbol"] is not None:
-                        self.cycle_of_interest_graph.removeItem(marker["symbol"])
+            logger.debug(f"Found {len(self.app._cycle_markers)} cycle markers to remove")
 
-                # Clear the list
-                self.cycle_of_interest_graph.flag_markers.clear()
+            # Remove all cycle markers from timeline
+            for cycle_id, marker_data in list(self.app._cycle_markers.items()):
+                try:
+                    # Remove vertical line
+                    if 'line' in marker_data and marker_data['line'] is not None:
+                        timeline.removeItem(marker_data['line'])
+                        markers_cleared += 1
 
-            # Also clear flag data if stored in app
-            if hasattr(self, "app") and self.app and hasattr(self.app, "_flag_data"):
-                self.app._flag_data.clear()
+                    # Remove text label
+                    if 'label' in marker_data and marker_data['label'] is not None:
+                        timeline.removeItem(marker_data['label'])
+                except Exception as e:
+                    logger.debug(f"Error removing marker {cycle_id}: {e}")
 
-            print("✅ All flags cleared from Cycle of Interest graph")
+            # Clear the markers dictionary
+            self.app._cycle_markers.clear()
+
+            logger.info(f"✅ Cleared {markers_cleared} cycle markers from Full Sensorgram timeline")
+            print(f"✅ Cleared {markers_cleared} cycle markers from timeline")
+
         except Exception as e:
-            print(f"❌ Error clearing flags: {e}")
+            logger.error(f"❌ Error clearing cycle markers: {e}")
+            print(f"❌ Error clearing cycle markers: {e}")
 
     def _create_graph_container(
         self,
@@ -2723,46 +2720,6 @@ class AffilabsMainWindow(QMainWindow):
             )
             print(f"Flags summary: {flag_summary}")
             # In full implementation: update specific table cell in Flags column
-
-    def _clear_all_flags(self, channel_idx=None):
-        """Clear all flags, optionally for a specific channel only."""
-        if not hasattr(self, "full_timeline_graph"):
-            return
-
-        markers_to_remove = []
-
-        if channel_idx is None:
-            # Clear all flags
-            markers_to_remove = self.full_timeline_graph.flag_markers.copy()
-        else:
-            # Clear flags for specific channel
-            markers_to_remove = [
-                m
-                for m in self.full_timeline_graph.flag_markers
-                if m["channel"] == channel_idx
-            ]
-
-        # Remove visual elements
-        for marker in markers_to_remove:
-            self.full_timeline_graph.removeItem(marker["line"])
-            self.full_timeline_graph.removeItem(marker["text"])
-            self.full_timeline_graph.flag_markers.remove(marker)
-
-        # Clear channel_flags
-        if channel_idx is None:
-            for ch_idx in range(4):
-                self.full_timeline_graph.channel_flags[ch_idx] = []
-        else:
-            self.full_timeline_graph.channel_flags[channel_idx] = []
-
-        # Update table
-        self._update_flags_table()
-
-        if channel_idx is None:
-            print("All flags cleared")
-        else:
-            channel_letter = chr(65 + channel_idx)
-            print(f"All flags cleared for Channel {channel_letter}")
 
     def _on_cursor_dragged(self):
         """Handle cursor dragging - update label format dynamically."""
@@ -3658,6 +3615,29 @@ class AffilabsMainWindow(QMainWindow):
         json_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_LG)
         json_btn.setStyleSheet(csv_btn.styleSheet())
         export_btns.addWidget(json_btn)
+
+        export_layout.addLayout(export_btns)
+
+        # Export graph image button (full width)
+        image_btn = QPushButton("📸 Export Active Cycle Image")
+        image_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_LG)
+        image_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(0, 122, 255, 0.1);"
+            "  color: #007AFF;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "  font-family: {Fonts.SYSTEM};"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(0, 122, 255, 0.2);"
+            "}",
+        )
+        image_btn.setToolTip("Export the active cycle graph as a high-resolution PNG image")
+        self.export_image_btn = image_btn
+        export_layout.addWidget(image_btn)
 
         export_layout.addLayout(export_btns)
 
@@ -4662,14 +4642,21 @@ class AffilabsMainWindow(QMainWindow):
         """Update available operation modes based on hardware type."""
         ctrl_type = status.get("ctrl_type", "")
         has_pump = status.get("pump_connected", False)
+        detector_ready = status.get("sensor_ready", False)
+        pcb_ready = status.get("optics_ready", False)
 
         from affilabs.utils.logger import logger
 
+        # Determine if static mode should be available
+        # Static mode is available if we have detector AND PCB (regardless of pump)
+        static_available = detector_ready and pcb_ready
+
+        # Flow mode is available if we have static mode hardware AND pump
+        flow_available = static_available and has_pump
+
         # P4SPR static device - only Static mode
         if ctrl_type in ["P4SPR", "PicoP4SPR"]:
-            logger.info("P4SPR device detected - Static mode available")
-            # Static mode always available for P4SPR
-            # Flow mode only if pump is connected
+            logger.info(f"P4SPR device detected - Static mode: {'✅ Available' if static_available else '❌ Disabled'}")
             if has_pump:
                 logger.info("Pump detected - Flow mode also available")
             else:
@@ -4677,7 +4664,11 @@ class AffilabsMainWindow(QMainWindow):
 
         # EZSPR or other devices
         elif ctrl_type in ["EZSPR", "PicoEZSPR"]:
-            logger.info("EZSPR device detected - Static and Flow modes available")
+            logger.info(f"EZSPR device detected - Static mode: {'✅ Available' if static_available else '❌ Disabled'}, Flow mode: {'✅ Available' if flow_available else '❌ Disabled'}")
+
+        # Update UI indicators
+        if hasattr(self.sidebar, "set_operation_mode_availability"):
+            self.sidebar.set_operation_mode_availability(static_available, flow_available)
 
     def _update_scan_button_style(self) -> None:
         """Update scan button style based on scanning state.
@@ -5171,6 +5162,40 @@ End of Debug Log
             self._update_queue_display()
             self.sidebar.update_queue_status(0)
 
+    def _on_expand_queue(self):
+        """Expand queue capacity by 5 cycles and resize the table."""
+        # Increase max queue size
+        self.max_queue_size += 5
+
+        # Resize the summary table
+        current_rows = self.sidebar.summary_table.rowCount()
+        new_rows = current_rows + 5
+        self.sidebar.summary_table.setRowCount(new_rows)
+
+        # Initialize new rows with empty items
+        from PySide6.QtWidgets import QTableWidgetItem
+        from PySide6.QtGui import QColor
+
+        for row in range(current_rows, new_rows):
+            for col in range(4):
+                empty_item = QTableWidgetItem("")
+                empty_item.setBackground(QColor(255, 255, 255))
+                self.sidebar.summary_table.setItem(row, col, empty_item)
+
+        # Update table height (40px per row approximately)
+        new_height = min(new_rows * 40 + 40, 600)  # Cap at 600px
+        self.sidebar.summary_table.setMaximumHeight(new_height)
+
+        # Update footer label
+        if hasattr(self.sidebar, 'queue_size_label'):
+            self.sidebar.queue_size_label.setText(f"Showing last {new_rows} cycles")
+
+        logger.info(f"✓ Queue expanded: capacity now {self.max_queue_size}, table shows {new_rows} rows")
+
+        # Re-enable Add to Queue button if it was disabled
+        if hasattr(self, 'add_to_queue_btn'):
+            self.add_to_queue_btn.setEnabled(True)
+
     def open_full_cycle_table(self):
         """Open the full cycle data table in the Edits tab."""
         # Find the Edits tab and switch to it
@@ -5280,6 +5305,16 @@ End of Debug Log
         export_config = self._get_export_config()
         self.export_requested.emit(export_config)
 
+    def _on_send_to_edits_clicked(self):
+        """Transfer live recording data to Edits tab for review and modification."""
+        from PySide6.QtWidgets import QMessageBox
+
+        # Emit signal to application layer to handle data transfer
+        # The app has access to both recording manager and edits tab
+        self.send_to_edits_requested.emit()
+
+        logger.info("📤 Send to Edits requested - signal emitted")
+
     def _on_quick_csv_preset(self):
         """Quick CSV export preset - all data, all channels, CSV format."""
         config = self._get_export_config()
@@ -5351,23 +5386,16 @@ End of Debug Log
         else:
             channels = ["a", "b", "c", "d"]  # Default all channels
 
-        # Get format
+        # Get format from dropdown
         format_type = "excel"  # Default
-        if (
-            hasattr(self.sidebar, "excel_radio")
-            and self.sidebar.excel_radio.isChecked()
-        ):
-            format_type = "excel"
-        elif hasattr(self.sidebar, "csv_radio") and self.sidebar.csv_radio.isChecked():
-            format_type = "csv"
-        elif (
-            hasattr(self.sidebar, "json_radio") and self.sidebar.json_radio.isChecked()
-        ):
-            format_type = "json"
-        elif (
-            hasattr(self.sidebar, "hdf5_radio") and self.sidebar.hdf5_radio.isChecked()
-        ):
-            format_type = "hdf5"
+        if hasattr(self.sidebar, "format_combo"):
+            format_text = self.sidebar.format_combo.currentText()
+            if "Excel" in format_text:
+                format_type = "excel"
+            elif "CSV" in format_text:
+                format_type = "csv"
+            elif "JSON" in format_text:
+                format_type = "json"
 
         # Get options
         include_metadata = (
@@ -5431,41 +5459,59 @@ End of Debug Log
             intelligence = get_system_intelligence()
             system_state, active_issues = intelligence.diagnose_system()
 
+            # Determine operational context for more useful messaging
+            is_acquiring = hasattr(self.app, 'data_mgr') and getattr(self.app.data_mgr, '_acquiring', False)
+            is_calibrated = hasattr(self.app, 'data_mgr') and getattr(self.app.data_mgr, 'calibrated', False)
+            queue_count = len(self.segment_queue) if hasattr(self, 'segment_queue') else 0
+
             # Update status based on system state
             if system_state == SystemState.HEALTHY:
-                status_text = "✓ Good"
+                status_text = "✓"
                 status_color = "#34C759"  # Green
-                message_text = "→ System Ready"
-                message_color = "#007AFF"  # Blue
+
+                # Provide contextual messaging based on what's happening - use icons for brevity
+                if is_acquiring:
+                    message_text = "⚡ Acquiring"
+                    message_color = "#007AFF"  # Blue
+                elif queue_count > 0:
+                    message_text = f"📋 {queue_count} queued"
+                    message_color = "#007AFF"
+                elif is_calibrated:
+                    message_text = "✓ Calibrated"
+                    message_color = "#34C759"
+                else:
+                    message_text = "⚠ Cal needed"
+                    message_color = "#FF9500"
+
             elif system_state == SystemState.DEGRADED:
-                status_text = "⚠ Degraded"
+                status_text = "⚠"
                 status_color = "#FF9500"  # Orange
                 # Show most critical issue
                 if active_issues:
-                    message_text = f"→ {active_issues[0].title}"
+                    message_text = f"{active_issues[0].title}"
                 else:
-                    message_text = "→ Performance degraded"
+                    message_text = "Performance degraded"
                 message_color = "#FF9500"
             elif system_state == SystemState.WARNING:
-                status_text = "⚠ Warning"
+                status_text = "⚠"
                 status_color = "#FF9500"  # Orange
                 if active_issues:
-                    message_text = f"→ {active_issues[0].title}"
+                    message_text = f"{active_issues[0].title}"
                 else:
-                    message_text = "→ Attention required"
+                    message_text = "Attention required"
                 message_color = "#FF9500"
             elif system_state == SystemState.ERROR:
-                status_text = "❌ Error"
+                status_text = "❌"
                 status_color = "#FF3B30"  # Red
                 if active_issues:
-                    message_text = f"→ {active_issues[0].title}"
+                    message_text = f"{active_issues[0].title}"
                 else:
-                    message_text = "→ System error detected"
+                    message_text = "System error"
                 message_color = "#FF3B30"
             else:  # UNKNOWN
-                status_text = "? Unknown"
+                status_text = "●"
                 status_color = "#86868B"  # Gray
-                message_text = "→ Initializing..."
+                message_text = "Initializing..."
                 message_color = "#86868B"
 
             # Update the UI labels
@@ -5498,14 +5544,18 @@ End of Debug Log
         from PySide6.QtGui import QColor
         from PySide6.QtWidgets import QTableWidgetItem
 
+        # Get current table size (may have been expanded)
+        max_rows = self.sidebar.summary_table.rowCount()
+
         # Clear table
-        for row in range(5):
+        for row in range(max_rows):
             for col in range(4):
                 self.sidebar.summary_table.setItem(row, col, QTableWidgetItem(""))
                 self.sidebar.summary_table.item(row, col).setBackground(QColor(255, 255, 255))
 
-        # Populate with queue data
-        for row, cycle in enumerate(self.cycle_queue[:5]):
+        # Populate with queue data (up to table capacity)
+        display_count = min(len(self.cycle_queue), max_rows)
+        for row, cycle in enumerate(self.cycle_queue[:display_count]):
             state = cycle["state"]
 
             # State indicator with emoji
@@ -5849,9 +5899,9 @@ End of Debug Log
         """Handle Polarizer Calibration button click (delegates to CalibrationManager)."""
         self.calibration_manager.handle_polarizer_calibration()
 
-    def _handle_oem_led_calibration(self) -> None:
-        """Handle OEM LED Calibration button click (delegates to CalibrationManager)."""
-        self.calibration_manager.handle_oem_led_calibration()
+    # OEM LED Calibration button connected in Application layer (main.py)
+    # Connection: ui.oem_led_calibration_btn.clicked.connect(app._on_oem_led_calibration)
+    # Do NOT add duplicate handler here
 
     def _handle_record_baseline(self) -> None:
         """Handle Record Baseline Data button click (delegates to BaselineRecordingPresenter)."""
@@ -5922,13 +5972,12 @@ End of Debug Log
         self.sidebar.add_to_queue_btn.clicked.connect(self.add_cycle_to_queue)
         self.sidebar.start_run_btn.clicked.connect(self._on_start_queued_run)
         self.sidebar.clear_queue_btn.clicked.connect(self._on_clear_queue)
+        self.sidebar.expand_queue_btn.clicked.connect(self._on_expand_queue)
         self.sidebar.open_table_btn.clicked.connect(self.open_full_cycle_table)
 
         # Connect export buttons
         self.sidebar.export_data_btn.clicked.connect(self._on_export_data)
-        self.sidebar.quick_csv_btn.clicked.connect(self._on_quick_csv_preset)
-        self.sidebar.analysis_btn.clicked.connect(self._on_analysis_preset)
-        self.sidebar.publication_btn.clicked.connect(self._on_publication_preset)
+        self.sidebar.send_to_edits_btn.clicked.connect(self._on_send_to_edits_clicked)
 
         # Connect settings tab controls
         self.sidebar.advanced_settings_btn.clicked.connect(self.open_advanced_settings)
@@ -5937,6 +5986,9 @@ End of Debug Log
         )
         self.sidebar.apply_settings_btn.clicked.connect(self._apply_settings)
         self.sidebar.polarizer_toggle_btn.clicked.connect(self._toggle_polarizer_mode)
+
+        # NOTE: ref_combo connection is done in main.py Application class
+        # Cannot connect here because self.app is not available during UI init
 
         # Connect spectrum button if it exists (may be removed)
         if hasattr(self.sidebar, "spectrum_btn"):
@@ -5956,9 +6008,9 @@ End of Debug Log
             self.polarizer_calibration_btn.clicked.connect(
                 self._handle_polarizer_calibration,
             )
-        self.oem_led_calibration_btn.clicked.connect(self._handle_oem_led_calibration)
 
-        # NOTE: baseline_capture_btn is connected in Application layer (main-simplified.py)
+        # NOTE: OEM LED Calibration button connected in Application layer (main.py)
+        # NOTE: Baseline Capture button connected in Application layer (main.py)
         # Do NOT connect here - UI builder shouldn't have app logic
 
         # === Optional: Connect to sidebar's signal abstraction layer (Change #3) ===
@@ -5973,6 +6025,46 @@ End of Debug Log
         # Install element inspector for right-click inspection
         # DISABLED: Conflicts with Ctrl+Click flagging system
         # ElementInspector.install_inspector(self)
+
+    def closeEvent(self, event):
+        """Handle application close event - show unplug reminder if hardware connected."""
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
+        # Get the application instance to access hardware_mgr
+        app_instance = QApplication.instance()
+
+        # Check if P4PRO/EZSPR controller or AffiPump are connected
+        devices_to_unplug = []
+
+        if hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
+            hw_mgr = app_instance.hardware_mgr
+
+            # Check for P4PRO/EZSPR controller
+            if hasattr(hw_mgr, 'controller') and hw_mgr.controller is not None:
+                controller_name = getattr(hw_mgr.controller, 'name', 'P4PRO/EZSPR')
+                devices_to_unplug.append(controller_name)
+
+            # Check for AffiPump
+            if hasattr(hw_mgr, 'pump') and hw_mgr.pump is not None:
+                devices_to_unplug.append("AffiPump")
+
+        # Show unplug reminder if any devices are connected
+        if devices_to_unplug:
+            device_list = "\n  • ".join(devices_to_unplug)
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Hardware Shutdown Reminder")
+            msg.setText(
+                f"<b>Please unplug the following device(s):</b><br><br>"
+                f"  • {device_list}<br><br>"
+                f"These devices do not have power buttons and will remain on "
+                f"until unplugged from the power source."
+            )
+            msg.setStandardButtons(QMessageBox.Ok)
+            msg.exec()
+
+        # Accept the close event
+        event.accept()
 
     def _load_previous_data(self):
         """Load previously saved experiment data from Excel file.
@@ -7018,16 +7110,12 @@ End of Debug Log
                     end_time = start_time + 300  # 5 minutes default
 
             # Load raw data from loaded Excel
-            if not hasattr(self.app, 'recording_mgr') or self.app.recording_mgr is None:
-                logger.warning("Recording manager not available")
+            if not hasattr(self, '_loaded_raw_data') or not self._loaded_raw_data:
+                logger.warning("No loaded data available")
                 return
 
-            # Get raw data from data collector
-            raw_data = self.app.recording_mgr.data_collector.raw_data_rows
-
-            if not raw_data:
-                logger.warning("No raw data available to display")
-                return
+            # Get raw data (list of dicts with 'time', 'channel', 'value')
+            raw_data = self._loaded_raw_data
 
             # Filter data for this cycle's time range
             cycle_data = {
@@ -7038,13 +7126,14 @@ End of Debug Log
             }
 
             for row_data in raw_data:
-                time = row_data.get('elapsed', row_data.get('time', 0))
+                time = row_data.get('time', 0)
                 if start_time <= time <= end_time:
-                    for ch in ['a', 'b', 'c', 'd']:
-                        wavelength = row_data.get(f'wavelength_{ch}')
-                        if wavelength is not None:
+                    ch = row_data.get('channel', '')
+                    if ch in ['a', 'b', 'c', 'd']:
+                        value = row_data.get('value')
+                        if value is not None:
                             cycle_data[ch]['time'].append(time)
-                            cycle_data[ch]['wavelength'].append(wavelength)
+                            cycle_data[ch]['wavelength'].append(value)
 
             # Update reference graph
             for ch_idx, ch in enumerate(['a', 'b', 'c', 'd']):

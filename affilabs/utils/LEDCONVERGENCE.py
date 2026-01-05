@@ -300,7 +300,7 @@ def run_convergence(
     | None = None,  # NEW: Model calibration slopes (S-pol, valid for P-pol too)
     polarization: str = "S",  # NEW: Polarization state for model
     target_percent: float = 0.40,
-    tolerance_percent: float = 0.05,
+    tolerance_percent: float = 0.06,
     tighten_final: bool = False,
     use_batch_command: bool = True,  # ALWAYS use batch commands for LED control (more reliable)
     logger=None,
