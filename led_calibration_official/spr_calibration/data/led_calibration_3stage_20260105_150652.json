@@ -1,0 +1,218 @@
+{
+  "detector_serial": "FLMT09792",
+  "timestamp": "20260105_150652",
+  "model_type": "3-stage-linear",
+  "model_equation": "counts = slope_10ms \u00d7 intensity \u00d7 (time_ms / 10)",
+  "integration_times": [
+    10,
+    20,
+    30,
+    45,
+    60
+  ],
+  "dark_counts_per_time": {
+    "10": 2991.750781664798,
+    "20": 3027.1904312429942,
+    "30": 3032.345289363459,
+    "45": 3110.3125184354903,
+    "60": 3164.4385287003715
+  },
+  "led_models": {
+    "A": [
+      {
+        "time_ms": 10,
+        "slope": 112.02338502421418
+      },
+      {
+        "time_ms": 20,
+        "slope": 226.2833342025368
+      },
+      {
+        "time_ms": 30,
+        "slope": 340.52629238356815
+      },
+      {
+        "time_ms": 45,
+        "slope": 510.12108480780205
+      },
+      {
+        "time_ms": 60,
+        "slope": 677.5598053439098
+      }
+    ],
+    "B": [
+      {
+        "time_ms": 10,
+        "slope": 109.23148262460604
+      },
+      {
+        "time_ms": 20,
+        "slope": 220.94076949064078
+      },
+      {
+        "time_ms": 30,
+        "slope": 332.267560941421
+      },
+      {
+        "time_ms": 45,
+        "slope": 493.3371781623933
+      },
+      {
+        "time_ms": 60,
+        "slope": 649.9256942570064
+      }
+    ],
+    "C": [
+      {
+        "time_ms": 10,
+        "slope": 242.36295724932646
+      },
+      {
+        "time_ms": 20,
+        "slope": 486.8357181447588
+      },
+      {
+        "time_ms": 30,
+        "slope": 731.8849858959427
+      },
+      {
+        "time_ms": 45,
+        "slope": 1094.3949498895718
+      },
+      {
+        "time_ms": 60,
+        "slope": 1454.199007285706
+      }
+    ],
+    "D": [
+      {
+        "time_ms": 10,
+        "slope": 163.48140474415558
+      },
+      {
+        "time_ms": 20,
+        "slope": 328.401611647859
+      },
+      {
+        "time_ms": 30,
+        "slope": 492.2209480515859
+      },
+      {
+        "time_ms": 45,
+        "slope": 736.5848526722802
+      },
+      {
+        "time_ms": 60,
+        "slope": 978.1776226169001
+      }
+    ]
+  },
+  "quality_metrics": {
+    "A": {
+      "20ms": {
+        "linearity": 1.01,
+        "status": "good",
+        "slope": 226.28,
+        "expected_slope": 224.05
+      },
+      "30ms": {
+        "linearity": 1.0133,
+        "status": "good",
+        "slope": 340.53,
+        "expected_slope": 336.07
+      },
+      "45ms": {
+        "linearity": 1.0119,
+        "status": "good",
+        "slope": 510.12,
+        "expected_slope": 504.11
+      },
+      "60ms": {
+        "linearity": 1.0081,
+        "status": "good",
+        "slope": 677.56,
+        "expected_slope": 672.14
+      }
+    },
+    "B": {
+      "20ms": {
+        "linearity": 1.0113,
+        "status": "good",
+        "slope": 220.94,
+        "expected_slope": 218.46
+      },
+      "30ms": {
+        "linearity": 1.014,
+        "status": "good",
+        "slope": 332.27,
+        "expected_slope": 327.69
+      },
+      "45ms": {
+        "linearity": 1.0037,
+        "status": "good",
+        "slope": 493.34,
+        "expected_slope": 491.54
+      },
+      "60ms": {
+        "linearity": 0.9917,
+        "status": "good",
+        "slope": 649.93,
+        "expected_slope": 655.39
+      }
+    },
+    "C": {
+      "20ms": {
+        "linearity": 1.0044,
+        "status": "good",
+        "slope": 486.84,
+        "expected_slope": 484.73
+      },
+      "30ms": {
+        "linearity": 1.0066,
+        "status": "good",
+        "slope": 731.88,
+        "expected_slope": 727.09
+      },
+      "45ms": {
+        "linearity": 1.0034,
+        "status": "good",
+        "slope": 1094.39,
+        "expected_slope": 1090.63
+      },
+      "60ms": {
+        "linearity": 1.0,
+        "status": "good",
+        "slope": 1454.2,
+        "expected_slope": 1454.18
+      }
+    },
+    "D": {
+      "20ms": {
+        "linearity": 1.0044,
+        "status": "good",
+        "slope": 328.4,
+        "expected_slope": 326.96
+      },
+      "30ms": {
+        "linearity": 1.0036,
+        "status": "good",
+        "slope": 492.22,
+        "expected_slope": 490.44
+      },
+      "45ms": {
+        "linearity": 1.0012,
+        "status": "good",
+        "slope": 736.58,
+        "expected_slope": 735.67
+      },
+      "60ms": {
+        "linearity": 0.9972,
+        "status": "good",
+        "slope": 978.18,
+        "expected_slope": 980.89
+      }
+    }
+  },
+  "training_method": "automatic_oem_workflow",
+  "detector_wait_ms": 50
+}

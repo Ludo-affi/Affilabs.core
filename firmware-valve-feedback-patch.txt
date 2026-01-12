@@ -1,0 +1,637 @@
+================================================================================
+FIRMWARE MODIFICATION: Add Real Valve Feedback
+P4PRO Firmware V2.2 -> V2.3
+================================================================================
+
+PROBLEM:
+Valve commands always return ACK ('1') without verifying hardware state.
+Functions return void, cannot detect GPIO/PWM peripheral failures.
+
+SOLUTION:
+1. Change six_port() and three_way() to return bool
+2. Read back GPIO states after setting them
+3. For PWM outputs, verify PWM slice is enabled
+4. Update command handlers to check return values
+
+================================================================================
+PATCH 1: Modify six_port() function signature and add readback
+================================================================================
+
+FIND (around line 1056):
+void six_port(char ch, char state);
+
+REPLACE WITH:
+bool six_port(char ch, char state);
+
+
+FIND (around line 1163-1244):
+void six_port(char ch, char state){
+
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+
+    if (state == '1'){
+
+        if ((ch == '1')||(ch == '3')){
+            // Rate limiting protection - enforce 2 second minimum interval
+            uint32_t time_since_last = now - six_1_last_op;
+            if (six_1_last_op > 0 && time_since_last < SIX_PORT_MIN_INTERVAL){
+                // Too fast! Wait until safe interval has passed
+                uint32_t wait_time = SIX_PORT_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 1 6P rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+            gpio_put(SIX_PORT_1, 1);
+            six_1 = 1;
+            six_1_cycles++;  // Track cycles for maintenance
+            sleep_ms(200);
+            six_1_last_op = to_ms_since_boot(get_absolute_time());  // Update timestamp after operation
+            if (debug){
+                printf(" Ch 1 6P on\n");
+            }
+        }
+
+        if ((ch == '2')||(ch == '3')){
+            // Rate limiting protection - enforce 2 second minimum interval
+            uint32_t time_since_last = now - six_2_last_op;
+            if (six_2_last_op > 0 && time_since_last < SIX_PORT_MIN_INTERVAL){
+                // Too fast! Wait until safe interval has passed
+                uint32_t wait_time = SIX_PORT_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 2 6P rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+            gpio_put(SIX_PORT_2, 1);
+            six_2 = 1;
+            six_2_cycles++;  // Track cycles for maintenance
+            sleep_ms(200);
+            six_2_last_op = to_ms_since_boot(get_absolute_time());  // Update timestamp after operation
+            if (debug){
+                printf(" Ch 2 6P on\n");
+            }
+        }
+    }
+
+    else {
+
+        if (ch != '2'){
+            // Rate limiting protection - enforce 2 second minimum interval
+            uint32_t time_since_last = now - six_1_last_op;
+            if (six_1_last_op > 0 && time_since_last < SIX_PORT_MIN_INTERVAL){
+                // Too fast! Wait until safe interval has passed
+                uint32_t wait_time = SIX_PORT_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 1 6P rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+            gpio_put(SIX_PORT_1, 0);
+            six_1 = 0;
+            six_1_cycles++;  // Track cycles for maintenance (OFF is also a cycle)
+            sleep_ms(200);
+            six_1_last_op = to_ms_since_boot(get_absolute_time());  // Update timestamp after operation
+            if (debug){
+                printf(" Ch 1 6P off\n");
+            }
+        }
+
+        if (ch != '1'){
+            // Rate limiting protection - enforce 2 second minimum interval
+            uint32_t time_since_last = now - six_2_last_op;
+            if (six_2_last_op > 0 && time_since_last < SIX_PORT_MIN_INTERVAL){
+                // Too fast! Wait until safe interval has passed
+                uint32_t wait_time = SIX_PORT_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 2 6P rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+            gpio_put(SIX_PORT_2, 0);
+            six_2 = 0;
+            six_2_cycles++;  // Track cycles for maintenance (OFF is also a cycle)
+            sleep_ms(200);
+            six_2_last_op = to_ms_since_boot(get_absolute_time());  // Update timestamp after operation
+            if (debug){
+                printf(" Ch 2 6P off\n");
+            }
+        }
+
+    }
+
+}
+
+REPLACE WITH:
+bool six_port(char ch, char state){
+
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    bool success = true;
+
+    if (state == '1'){
+
+        if ((ch == '1')||(ch == '3')){
+            // Rate limiting protection - enforce 2 second minimum interval
+            uint32_t time_since_last = now - six_1_last_op;
+            if (six_1_last_op > 0 && time_since_last < SIX_PORT_MIN_INTERVAL){
+                // Too fast! Wait until safe interval has passed
+                uint32_t wait_time = SIX_PORT_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 1 6P rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+            gpio_put(SIX_PORT_1, 1);
+            sleep_ms(50);  // Wait for GPIO to settle
+            
+            // READBACK VERIFICATION
+            if (gpio_get_out_level(SIX_PORT_1) != 1) {
+                if (debug) printf(" Ch 1 6P READBACK FAILED\n");
+                success = false;
+            } else {
+                six_1 = 1;
+                six_1_cycles++;  // Track cycles for maintenance
+                six_1_last_op = to_ms_since_boot(get_absolute_time());
+                if (debug) printf(" Ch 1 6P on (verified)\n");
+            }
+            sleep_ms(150);  // Complete 200ms total delay
+        }
+
+        if ((ch == '2')||(ch == '3')){
+            // Rate limiting protection - enforce 2 second minimum interval
+            uint32_t time_since_last = now - six_2_last_op;
+            if (six_2_last_op > 0 && time_since_last < SIX_PORT_MIN_INTERVAL){
+                // Too fast! Wait until safe interval has passed
+                uint32_t wait_time = SIX_PORT_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 2 6P rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+            gpio_put(SIX_PORT_2, 1);
+            sleep_ms(50);  // Wait for GPIO to settle
+            
+            // READBACK VERIFICATION
+            if (gpio_get_out_level(SIX_PORT_2) != 1) {
+                if (debug) printf(" Ch 2 6P READBACK FAILED\n");
+                success = false;
+            } else {
+                six_2 = 1;
+                six_2_cycles++;  // Track cycles for maintenance
+                six_2_last_op = to_ms_since_boot(get_absolute_time());
+                if (debug) printf(" Ch 2 6P on (verified)\n");
+            }
+            sleep_ms(150);  // Complete 200ms total delay
+        }
+    }
+
+    else {
+
+        if (ch != '2'){
+            // Rate limiting protection - enforce 2 second minimum interval
+            uint32_t time_since_last = now - six_1_last_op;
+            if (six_1_last_op > 0 && time_since_last < SIX_PORT_MIN_INTERVAL){
+                // Too fast! Wait until safe interval has passed
+                uint32_t wait_time = SIX_PORT_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 1 6P rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+            gpio_put(SIX_PORT_1, 0);
+            sleep_ms(50);  // Wait for GPIO to settle
+            
+            // READBACK VERIFICATION
+            if (gpio_get_out_level(SIX_PORT_1) != 0) {
+                if (debug) printf(" Ch 1 6P READBACK FAILED\n");
+                success = false;
+            } else {
+                six_1 = 0;
+                six_1_cycles++;  // Track cycles for maintenance (OFF is also a cycle)
+                six_1_last_op = to_ms_since_boot(get_absolute_time());
+                if (debug) printf(" Ch 1 6P off (verified)\n");
+            }
+            sleep_ms(150);  // Complete 200ms total delay
+        }
+
+        if (ch != '1'){
+            // Rate limiting protection - enforce 2 second minimum interval
+            uint32_t time_since_last = now - six_2_last_op;
+            if (six_2_last_op > 0 && time_since_last < SIX_PORT_MIN_INTERVAL){
+                // Too fast! Wait until safe interval has passed
+                uint32_t wait_time = SIX_PORT_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 2 6P rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+            gpio_put(SIX_PORT_2, 0);
+            sleep_ms(50);  // Wait for GPIO to settle
+            
+            // READBACK VERIFICATION
+            if (gpio_get_out_level(SIX_PORT_2) != 0) {
+                if (debug) printf(" Ch 2 6P READBACK FAILED\n");
+                success = false;
+            } else {
+                six_2 = 0;
+                six_2_cycles++;  // Track cycles for maintenance (OFF is also a cycle)
+                six_2_last_op = to_ms_since_boot(get_absolute_time());
+                if (debug) printf(" Ch 2 6P off (verified)\n");
+            }
+            sleep_ms(150);  // Complete 200ms total delay
+        }
+
+    }
+
+    return success;
+}
+
+
+================================================================================
+PATCH 2: Modify three_way() function signature and add readback
+================================================================================
+
+FIND (around line 1057):
+void three_way(char ch, char state);
+
+REPLACE WITH:
+bool three_way(char ch, char state);
+
+
+FIND (around line 1246-1349):
+void three_way(char ch, char state){
+
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+
+    if (state == '1'){
+
+        // Channel 1 / A 
+        if ((ch == '1')||(ch == '3')){
+            // Rate limiting protection - enforce 1 second minimum interval
+            uint32_t time_since_last = now - thr_1_last_op;
+            if (thr_1_last_op > 0 && time_since_last < THREE_WAY_MIN_INTERVAL){
+                uint32_t wait_time = THREE_WAY_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 1 3W rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+
+            // start with high signal for inrush as valve moves
+            pwm_set_chan_level(THREE_WAY_1_SLICE, THREE_WAY_1_CH, THREE_WAY_WRAP);
+            pwm_set_enabled(THREE_WAY_1_SLICE, true);
+            add_alarm_in_ms(THREE_WAY_DELAY, three_way_callback_1, NULL, true);
+            thr_1 = 1;
+            thr_1_cycles++;  // Track cycles for maintenance
+            thr_1_last_op = to_ms_since_boot(get_absolute_time());  // Update timestamp after operation
+            if (debug){
+                printf("set 3W Ch 1 alarm timer\n");
+            }
+        }
+
+        // Channel 2 / B
+        if ((ch == '2')||(ch == '3')){
+            // Rate limiting protection - enforce 1 second minimum interval
+            uint32_t time_since_last = now - thr_2_last_op;
+            if (thr_2_last_op > 0 && time_since_last < THREE_WAY_MIN_INTERVAL){
+                uint32_t wait_time = THREE_WAY_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 2 3W rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+
+            // start with high signal for inrush as valve moves
+            pwm_set_chan_level(THREE_WAY_2_SLICE, THREE_WAY_2_CH, THREE_WAY_WRAP);
+            sleep_ms(10);
+            pwm_set_enabled(THREE_WAY_2_SLICE, true);
+            add_alarm_in_ms(THREE_WAY_DELAY, three_way_callback_2, NULL, true);
+            thr_2 = 1;
+            thr_2_cycles++;  // Track cycles for maintenance
+            thr_2_last_op = to_ms_since_boot(get_absolute_time());  // Update timestamp after operation
+            if (debug){
+                printf("set 3W Ch 2 alarm timer\n");
+            }
+        }
+
+    }
+
+    else {
+
+        // Channel 1 / A
+        if (ch != '2'){
+            // Rate limiting protection
+            uint32_t time_since_last = now - thr_1_last_op;
+            if (thr_1_last_op > 0 && time_since_last < THREE_WAY_MIN_INTERVAL){
+                uint32_t wait_time = THREE_WAY_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 1 3W rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+
+            // set low to turn off valve
+            pwm_set_chan_level(THREE_WAY_1_SLICE, THREE_WAY_1_CH, 0);
+            sleep_ms(10);
+            pwm_set_enabled(THREE_WAY_1_SLICE, false);  
+            thr_1 = 0;
+            thr_1_cycles++;  // Track cycles for maintenance (OFF is also a cycle)
+            thr_1_last_op = to_ms_since_boot(get_absolute_time());  // Update timestamp
+            if (debug){
+                printf(" Ch 1 3W off\n");
+            } 
+        }
+
+
+        // Channel 2 / B
+        if (ch != '1'){
+            // Rate limiting protection
+            uint32_t time_since_last = now - thr_2_last_op;
+            if (thr_2_last_op > 0 && time_since_last < THREE_WAY_MIN_INTERVAL){
+                uint32_t wait_time = THREE_WAY_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 2 3W rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+
+            // set low to turn off valve
+            pwm_set_chan_level(THREE_WAY_2_SLICE, THREE_WAY_2_CH, 0);
+            sleep_ms(10);
+            pwm_set_enabled(THREE_WAY_2_SLICE, false);
+            thr_2 = 0;
+            thr_2_cycles++;  // Track cycles for maintenance (OFF is also a cycle)
+            thr_2_last_op = to_ms_since_boot(get_absolute_time());  // Update timestamp
+            if (debug){
+                printf(" Ch 2 3W off\n");
+            }
+        }
+
+    }
+
+}
+
+REPLACE WITH:
+bool three_way(char ch, char state){
+
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    bool success = true;
+
+    if (state == '1'){
+
+        // Channel 1 / A 
+        if ((ch == '1')||(ch == '3')){
+            // Rate limiting protection - enforce 1 second minimum interval
+            uint32_t time_since_last = now - thr_1_last_op;
+            if (thr_1_last_op > 0 && time_since_last < THREE_WAY_MIN_INTERVAL){
+                uint32_t wait_time = THREE_WAY_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 1 3W rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+
+            // start with high signal for inrush as valve moves
+            pwm_set_chan_level(THREE_WAY_1_SLICE, THREE_WAY_1_CH, THREE_WAY_WRAP);
+            pwm_set_enabled(THREE_WAY_1_SLICE, true);
+            sleep_ms(50);  // Wait for PWM to stabilize
+            
+            // READBACK VERIFICATION
+            if (!pwm_get_enabled(THREE_WAY_1_SLICE)) {
+                if (debug) printf(" Ch 1 3W PWM ENABLE FAILED\n");
+                success = false;
+            } else {
+                add_alarm_in_ms(THREE_WAY_DELAY, three_way_callback_1, NULL, true);
+                thr_1 = 1;
+                thr_1_cycles++;  // Track cycles for maintenance
+                thr_1_last_op = to_ms_since_boot(get_absolute_time());
+                if (debug) printf(" Ch 1 3W on (verified)\n");
+            }
+        }
+
+        // Channel 2 / B
+        if ((ch == '2')||(ch == '3')){
+            // Rate limiting protection - enforce 1 second minimum interval
+            uint32_t time_since_last = now - thr_2_last_op;
+            if (thr_2_last_op > 0 && time_since_last < THREE_WAY_MIN_INTERVAL){
+                uint32_t wait_time = THREE_WAY_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 2 3W rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+
+            // start with high signal for inrush as valve moves
+            pwm_set_chan_level(THREE_WAY_2_SLICE, THREE_WAY_2_CH, THREE_WAY_WRAP);
+            pwm_set_enabled(THREE_WAY_2_SLICE, true);
+            sleep_ms(50);  // Wait for PWM to stabilize
+            
+            // READBACK VERIFICATION
+            if (!pwm_get_enabled(THREE_WAY_2_SLICE)) {
+                if (debug) printf(" Ch 2 3W PWM ENABLE FAILED\n");
+                success = false;
+            } else {
+                add_alarm_in_ms(THREE_WAY_DELAY, three_way_callback_2, NULL, true);
+                thr_2 = 1;
+                thr_2_cycles++;  // Track cycles for maintenance
+                thr_2_last_op = to_ms_since_boot(get_absolute_time());
+                if (debug) printf(" Ch 2 3W on (verified)\n");
+            }
+        }
+
+    }
+
+    else {
+
+        // Channel 1 / A
+        if (ch != '2'){
+            // Rate limiting protection
+            uint32_t time_since_last = now - thr_1_last_op;
+            if (thr_1_last_op > 0 && time_since_last < THREE_WAY_MIN_INTERVAL){
+                uint32_t wait_time = THREE_WAY_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 1 3W rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+
+            // set low to turn off valve
+            pwm_set_chan_level(THREE_WAY_1_SLICE, THREE_WAY_1_CH, 0);
+            sleep_ms(10);
+            pwm_set_enabled(THREE_WAY_1_SLICE, false);
+            sleep_ms(50);  // Wait for PWM to shut down
+            
+            // READBACK VERIFICATION
+            if (pwm_get_enabled(THREE_WAY_1_SLICE)) {
+                if (debug) printf(" Ch 1 3W PWM DISABLE FAILED\n");
+                success = false;
+            } else {
+                thr_1 = 0;
+                thr_1_cycles++;  // Track cycles for maintenance (OFF is also a cycle)
+                thr_1_last_op = to_ms_since_boot(get_absolute_time());
+                if (debug) printf(" Ch 1 3W off (verified)\n");
+            }
+        }
+
+
+        // Channel 2 / B
+        if (ch != '1'){
+            // Rate limiting protection
+            uint32_t time_since_last = now - thr_2_last_op;
+            if (thr_2_last_op > 0 && time_since_last < THREE_WAY_MIN_INTERVAL){
+                uint32_t wait_time = THREE_WAY_MIN_INTERVAL - time_since_last;
+                if (debug){
+                    printf(" Ch 2 3W rate limit: waiting %lums\n", wait_time);
+                }
+                sleep_ms(wait_time);
+            }
+
+            // set low to turn off valve
+            pwm_set_chan_level(THREE_WAY_2_SLICE, THREE_WAY_2_CH, 0);
+            sleep_ms(10);
+            pwm_set_enabled(THREE_WAY_2_SLICE, false);
+            sleep_ms(50);  // Wait for PWM to shut down
+            
+            // READBACK VERIFICATION
+            if (pwm_get_enabled(THREE_WAY_2_SLICE)) {
+                if (debug) printf(" Ch 2 3W PWM DISABLE FAILED\n");
+                success = false;
+            } else {
+                thr_2 = 0;
+                thr_2_cycles++;  // Track cycles for maintenance (OFF is also a cycle)
+                thr_2_last_op = to_ms_since_boot(get_absolute_time());
+                if (debug) printf(" Ch 2 3W off (verified)\n");
+            }
+        }
+
+    }
+
+    return success;
+}
+
+
+================================================================================
+PATCH 3: Update command handlers to check return values
+================================================================================
+
+FIND (around line 799-826 in main()):
+                // Valve commands
+                case 'v':
+
+                // Read valve cycle counts
+                if (command[1] == 'c'){
+                    printf("%lu,%lu,%lu,%lu\n", thr_1_cycles, thr_2_cycles, six_1_cycles, six_2_cycles);
+                }
+
+                else if (command[1] == '3'){
+                        three_way(command[2], command[3]);
+                        printf("%d", ACK);
+                    }
+
+                else if (command[1] == '6'){
+                        six_port(command[2], command[3]);
+                        printf("%d", ACK);
+                    }
+
+                else{
+                        printf("%d", NAK);
+                        if (debug){
+                            printf(" er\n");
+                        }
+                    }
+
+                    break;
+
+REPLACE WITH:
+                // Valve commands
+                case 'v':
+
+                // Read valve cycle counts
+                if (command[1] == 'c'){
+                    printf("%lu,%lu,%lu,%lu\n", thr_1_cycles, thr_2_cycles, six_1_cycles, six_2_cycles);
+                }
+
+                else if (command[1] == '3'){
+                        bool result = three_way(command[2], command[3]);
+                        printf("%d", result ? ACK : NAK);
+                        if (!result && debug){
+                            printf(" 3W verification failed\n");
+                        }
+                    }
+
+                else if (command[1] == '6'){
+                        bool result = six_port(command[2], command[3]);
+                        printf("%d", result ? ACK : NAK);
+                        if (!result && debug){
+                            printf(" 6P verification failed\n");
+                        }
+                    }
+
+                else{
+                        printf("%d", NAK);
+                        if (debug){
+                            printf(" er\n");
+                        }
+                    }
+
+                    break;
+
+
+================================================================================
+PATCH 4: Update VERSION constant
+================================================================================
+
+FIND (line 26):
+const char* VERSION = "V2.1";  
+
+REPLACE WITH:
+const char* VERSION = "V2.3";  
+// V2.3: Added GPIO/PWM readback verification for valve commands
+//       - six_port() and three_way() now return bool success status
+//       - Firmware verifies GPIO outputs match commanded state
+//       - PWM enable state checked for three-way valves
+//       - NAK returned if readback verification fails
+
+
+================================================================================
+TESTING PROCEDURE
+================================================================================
+
+1. Flash modified firmware to P4PRO
+
+2. Enable debug mode:
+   python -c "import serial; s=serial.Serial('COM##', 115200); s.write(b'dbg1\n'); print(s.read(100)); s.close()"
+
+3. Test valve commands:
+   python test-gpio-readback.py
+
+4. Expected behavior:
+   - If GPIO readback succeeds: Responds with '1'
+   - If GPIO readback fails: Responds with '0' and debug message
+   - Debug output shows "(verified)" or "READBACK FAILED"
+
+5. If firmware returns '1' but valves don't click:
+   - GPIO is set correctly (firmware level OK)
+   - Problem is in valve driver circuit or valve hardware
+   - Use multimeter to check 24V at valve connector during command
+
+================================================================================
+LIMITATIONS
+================================================================================
+
+This patch verifies:
+✓ GPIO output register is set correctly
+✓ PWM peripheral is enabled/disabled correctly
+
+This patch CANNOT verify:
+✗ Valve driver circuit (transistor/MOSFET) is working
+✗ 24V power is reaching valve coils
+✗ Valve solenoid is mechanically moving
+✗ Valve spool has reached commanded position
+
+For full hardware verification, need:
+- Current sensing on valve power lines
+- Position sensors (Hall effect / limit switches)
+- Valve driver circuit diagnostics
+
+================================================================================
