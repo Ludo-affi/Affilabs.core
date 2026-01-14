@@ -575,6 +575,36 @@ class AffipumpController:
 
     # ============ Synchronized Dual-Pump Operations ============
 
+    def aspirate_both(self, volume_ul, speed_ul_s=400):
+        """Aspirate relative volume from both pumps simultaneously.
+        
+        Args:
+            volume_ul: Volume to aspirate in µL (relative movement)
+            speed_ul_s: Speed in µL/s
+            
+        Returns:
+            volume_ul: The volume aspirated
+        """
+        if volume_ul > self.syringe_volume_ul:
+            raise ValueError(f"Cannot aspirate {volume_ul}µL > syringe capacity {self.syringe_volume_ul}µL")
+        
+        velocity_ul_s = self._format_velocity_for_v_command(speed_ul_s)
+        
+        # Switch valves to INPUT position (buffer reservoir)
+        self.send_command("/1IR")
+        time.sleep(0.1)
+        self.send_command("/2IR")
+        time.sleep(1.0)  # Give valves time to physically switch
+        
+        # Set velocity for broadcast
+        self.send_command(f"/AV{velocity_ul_s:.3f},1R")
+        time.sleep(0.1)
+        
+        # Use broadcast Pickup (relative aspirate) command with µL and parameter 1
+        self.send_command(f"/AP{volume_ul:.3f},1R")
+        
+        return volume_ul
+
     def aspirate_both_to_position(self, target_position_ul=1000, speed_ul_s=400):
         """Aspirate both pumps to absolute position (default P1000)"""
         target_steps = int(target_position_ul * self.ul_to_steps)

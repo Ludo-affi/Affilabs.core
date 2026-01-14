@@ -2717,12 +2717,35 @@ class PicoP4PRO(FlowController):
             return False
 
     def turn_on_channel(self, ch: str) -> bool:
-        """Enable LED channel.
+        """Enable single LED channel for P4PRO using lm: command.
 
-        NOTE: For P4PRO, use enable_multi_led() instead for proper LED activation.
-        This method exists for HAL compatibility but may not work reliably alone.
+        Turns on ONE LED channel while turning off all others.
+        This is critical for sequential LED acquisition (live data).
+
+        Args:
+            ch: Channel letter ('a', 'b', 'c', 'd')
+
+        Returns:
+            True if command succeeded
         """
-        return True  # P4PRO prefers enable_multi_led()
+        try:
+            if self._ser is not None or self.open():
+                # P4PRO firmware: lm:X command enables ONLY channel X
+                # This automatically disables other channels
+                ch_upper = ch.upper()
+                cmd = f"lm:{ch_upper}\n"
+                self._ser.write(cmd.encode())
+                time.sleep(0.01)  # Small delay for firmware processing
+                resp = self._ser.read(10)
+                
+                if resp != b'1':
+                    logger.warning(f"turn_on_channel({ch}) returned: {resp!r} (expected b'1')")
+                    return False
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error turning on channel {ch}: {e}")
+            return False
 
     def turn_off_channels(self) -> bool:
         """Turn off all LED channels using lx command."""

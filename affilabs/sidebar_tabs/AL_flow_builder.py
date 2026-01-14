@@ -348,18 +348,18 @@ class FlowTabBuilder:
         
         flow_rate_value = QLabel("0")
         flow_rate_value.setStyleSheet(
-            "font-size: 20px;"
-            "font-weight: 700;"
+            "font-size: 24px;"
+            "font-weight: 600;"
             "color: #007AFF;"
             "background: transparent;"
-            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+            "font-family: -apple-system, 'SF Mono', 'Menlo', 'Consolas', monospace;"
         )
         flow_row.addWidget(flow_rate_value)
         self.sidebar.flow_current_rate = flow_rate_value
 
         flow_rate_unit = QLabel("µL/min")
         flow_rate_unit.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent; padding-top: 6px;"
+            "font-size: 11px; color: #86868B; background: transparent; padding-top: 8px;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         flow_row.addWidget(flow_rate_unit)
@@ -388,18 +388,18 @@ class FlowTabBuilder:
 
         plunger_value = QLabel("0")
         plunger_value.setStyleSheet(
-            "font-size: 14px;"
+            "font-size: 15px;"
             "font-weight: 600;"
             "color: #1D1D1F;"
             "background: transparent;"
-            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+            "font-family: -apple-system, 'SF Mono', 'Menlo', 'Consolas', monospace;"
         )
         plunger_row.addWidget(plunger_value)
         self.sidebar.flow_plunger_position = plunger_value
 
         plunger_unit = QLabel("µL")
         plunger_unit.setStyleSheet(
-            "font-size: 10px; color: #86868B; background: transparent;"
+            "font-size: 11px; color: #86868B; background: transparent; padding-top: 2px;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         plunger_row.addWidget(plunger_unit)
@@ -420,18 +420,18 @@ class FlowTabBuilder:
 
         contact_value = QLabel("0.0")
         contact_value.setStyleSheet(
-            "font-size: 14px;"
+            "font-size: 15px;"
             "font-weight: 600;"
             "color: #1D1D1F;"
             "background: transparent;"
-            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+            "font-family: -apple-system, 'SF Mono', 'Menlo', 'Consolas', monospace;"
         )
         contact_row.addWidget(contact_value)
         self.sidebar.flow_contact_time = contact_value
 
         contact_unit = QLabel("s")
         contact_unit.setStyleSheet(
-            "font-size: 10px; color: #86868B; background: transparent;"
+            "font-size: 11px; color: #86868B; background: transparent; padding-top: 2px;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         contact_row.addWidget(contact_unit)
@@ -477,7 +477,7 @@ class FlowTabBuilder:
             "font-size: 13px;"
             "color: #1D1D1F;"
             "background: transparent;"
-            "font-weight: 600;"
+            "font-weight: 500;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         affipump_card_layout.addWidget(rates_label)
@@ -565,7 +565,7 @@ class FlowTabBuilder:
             "font-size: 13px;"
             "color: #1D1D1F;"
             "background: transparent;"
-            "font-weight: 600;"
+            "font-weight: 500;"
             "margin-top: 4px;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
@@ -826,11 +826,12 @@ class FlowTabBuilder:
         # VALVES header
         valves_header = QLabel("VALVES")
         valves_header.setStyleSheet(
-            "font-size: 12px;"
+            "font-size: 11px;"
             "color: #86868B;"
             "background: transparent;"
-            "font-weight: 600;"
+            "font-weight: 700;"
             "letter-spacing: 0.5px;"
+            "text-transform: uppercase;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         valve_card_layout.addWidget(valves_header)

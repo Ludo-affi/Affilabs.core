@@ -550,15 +550,24 @@ class CalibrationService(QObject):
                     nonlocal optical_cal_thread
 
                     try:
+                        # CRITICAL: Initialize pumps before priming!
+                        logger.info("🔧 Initializing pumps to zero position...")
+                        self.calibration_progress.emit("Initializing Pumps", 5)
+                        pump._pump.pump.initialize_pumps()
+                        logger.info("✅ Pumps initialized and ready")
+                        
                         aspirate_speed_ul_s = 24000.0 / 60.0
                         dispense_speed_ul_s = 5000.0 / 60.0
                         volume_ul = 1000.0
 
                         for cycle in range(1, 7):  # 6 cycles
-                            progress = 8 + int((cycle - 1) / 6 * 32)  # 8-40%
-                            self.calibration_progress.emit(
-                                f"Pump Priming: Cycle {cycle}/6", progress
-                            )
+                            # Only emit pump progress before optical cal starts (cycles 1-3)
+                            # After cycle 4, optical cal controls the progress bar (40-95%)
+                            if cycle <= 3:
+                                progress = 8 + int((cycle - 1) / 6 * 32)  # 8-40%
+                                self.calibration_progress.emit(
+                                    f"Pump Priming: Cycle {cycle}/6", progress
+                                )
 
                             logger.info(f"\n🔄 Pump Cycle {cycle}/6")
 
@@ -670,47 +679,47 @@ class CalibrationService(QObject):
                 except Exception as e:
                     logger.warning(f"[WARN] USB buffer clear had issues (continuing anyway): {e}")
 
-            logger.info("[OK] Hardware ready")
+                logger.info("[OK] Hardware ready")
 
-            # Load configuration and run calibration (no-pump path)
-            self.calibration_progress.emit("Loading configuration...", 10)
-            from affilabs.utils.device_configuration import DeviceConfiguration
+                # Load configuration and run calibration (no-pump path)
+                self.calibration_progress.emit("Loading configuration...", 10)
+                from affilabs.utils.device_configuration import DeviceConfiguration
 
-            device_serial = getattr(usb, "serial_number", None)
-            device_config = DeviceConfiguration(device_serial=device_serial)
+                device_serial = getattr(usb, "serial_number", None)
+                device_config = DeviceConfiguration(device_serial=device_serial)
 
-            # Run calibration
-            from affilabs.core.calibration_orchestrator import run_startup_calibration
+                # Run calibration
+                from affilabs.core.calibration_orchestrator import run_startup_calibration
 
-            logger.info("🚀 Starting 6-step calibration...")
-            device_type = ctrl.get_device_type()  # Use HAL method, not Python class name
+                logger.info("🚀 Starting 6-step calibration...")
+                device_type = ctrl.get_device_type()  # Use HAL method, not Python class name
 
-            try:
-                cal_result = run_startup_calibration(
-                    usb=usb,
-                    ctrl=ctrl,
-                    device_type=device_type,
-                    device_config=device_config,
-                    detector_serial=device_serial,
-                    progress_callback=self._progress_callback,
-                    use_convergence_engine=True,
-                    force_oem_retrain=self._force_oem_retrain,
-                )
-            except RuntimeError as e:
-                if (
-                    "Servo positions not found" in str(e)
-                    or "ServoCalibrationRequired" in type(e).__name__
-                ):
-                    logger.warning("⚠️ LED calibration requires servo calibration first")
-                    error_msg = (
-                        "Servo calibration required before LED calibration.\n\n"
-                        "The servo calibration should have started automatically when hardware connected.\n"
-                        "Please ensure servo calibration completes successfully before starting LED calibration.\n\n"
-                        "To manually calibrate servo positions, go to Tools > Polarizer Calibration."
+                try:
+                    cal_result = run_startup_calibration(
+                        usb=usb,
+                        ctrl=ctrl,
+                        device_type=device_type,
+                        device_config=device_config,
+                        detector_serial=device_serial,
+                        progress_callback=self._progress_callback,
+                        use_convergence_engine=True,
+                        force_oem_retrain=self._force_oem_retrain,
                     )
-                    raise RuntimeError(error_msg)
-                else:
-                    raise
+                except RuntimeError as e:
+                    if (
+                        "Servo positions not found" in str(e)
+                        or "ServoCalibrationRequired" in type(e).__name__
+                    ):
+                        logger.warning("⚠️ LED calibration requires servo calibration first")
+                        error_msg = (
+                            "Servo calibration required before LED calibration.\n\n"
+                            "The servo calibration should have started automatically when hardware connected.\n"
+                            "Please ensure servo calibration completes successfully before starting LED calibration.\n\n"
+                            "To manually calibrate servo positions, go to Tools > Polarizer Calibration."
+                        )
+                        raise RuntimeError(error_msg)
+                    else:
+                        raise
 
             # Validate calibration result (common for both pump and no-pump paths)
 

@@ -1,6 +1,6 @@
 {
   "device_serial": "FLMT09792",
-  "device_type": "PicoP4SPR",
+  "device_type": "PicoP4PRO",
   "detector_model": "USB4000",
   "led_type": "LCW",
   "led_type_full": "Luminus Cool White",

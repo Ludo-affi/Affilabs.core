@@ -128,6 +128,19 @@ class PumpManager(QObject):
             pump = self.hardware_manager.pump
             ctrl = self.hardware_manager._ctrl_raw  # For valve control
 
+            # DEBUG: Check controller availability
+            logger.info(f"🔍 Controller for valves: {ctrl}")
+            logger.info(f"🔍 Controller type: {type(ctrl).__name__ if ctrl else 'None'}")
+            if ctrl:
+                logger.info(f"🔍 Has knx_six_both: {hasattr(ctrl, 'knx_six_both')}")
+                logger.info(f"🔍 Has knx_three_both: {hasattr(ctrl, 'knx_three_both')}")
+
+            # CRITICAL: Initialize pumps before priming!
+            logger.info("🔧 Initializing pumps to zero position...")
+            self.operation_progress.emit("prime", 0, "Initializing pumps...")
+            pump._pump.pump.initialize_pumps()
+            logger.info("✅ Pumps initialized and ready")
+
             aspirate_speed_ul_s = aspirate_speed / 60.0
             dispense_speed_ul_s = dispense_speed / 60.0
 
@@ -153,15 +166,25 @@ class PumpManager(QObject):
                 if ctrl:
                     if cycle == 3:
                         logger.info("  🔧 Opening BOTH load valves (6-port)...")
-                        if ctrl.knx_six_both(1):
+                        result = ctrl.knx_six_both(1)
+                        logger.info(f"  🔍 knx_six_both(1) returned: {result}")
+                        if result:
                             logger.info("  ✅ Both 6-port valves opened")
+                        else:
+                            logger.error("  ❌ Failed to open 6-port valves!")
                         await asyncio.sleep(0.5)
 
                     elif cycle == 5:
                         logger.info("  🔧 Opening BOTH channel valves (3-way)...")
-                        if ctrl.knx_three_both(1):
+                        result = ctrl.knx_three_both(1)
+                        logger.info(f"  🔍 knx_three_both(1) returned: {result}")
+                        if result:
                             logger.info("  ✅ Both 3-way valves opened")
+                        else:
+                            logger.error("  ❌ Failed to open 3-way valves!")
                         await asyncio.sleep(0.5)
+                else:
+                    logger.warning(f"  ⚠️ No controller available for valve control at cycle {cycle}")
 
                 # Aspirate both pumps
                 logger.info(f"  → ASPIRATE {volume_ul}µL BOTH PUMPS (KC1 & KC2)")
