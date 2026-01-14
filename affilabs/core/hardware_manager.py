@@ -688,6 +688,25 @@ class HardwareManager(QObject):
                             )
                             logger.info(f"Device configuration loaded for {self._spec_serial}")
 
+                            # Update spectrometer serial in device config if missing
+                            if not self.device_config.get_spectrometer_serial():
+                                logger.info(f"Updating spectrometer serial in config: {self._spec_serial}")
+                                self.device_config.set_spectrometer_serial(self._spec_serial)
+                                self.device_config.save()
+
+                            # Verify and update controller model if needed
+                            if self._ctrl_raw and hasattr(self._ctrl_raw, "name"):
+                                detected_controller = self._ctrl_raw.name
+                                config_controller = self.device_config.config.get("hardware", {}).get("controller_model")
+                                
+                                if config_controller != detected_controller:
+                                    logger.warning(f"Controller mismatch! Config: {config_controller}, Detected: {detected_controller}")
+                                    logger.info(f"Updating controller model in config: {detected_controller}")
+                                    self.device_config.config["hardware"]["controller_model"] = detected_controller
+                                    self.device_config.save()
+                                else:
+                                    logger.info(f"Controller verified: {detected_controller}")
+
                             # DISABLED: Don't initialize servo during hardware scan
                             # Servo will be initialized during calibration workflow only
                             # if self.ctrl:

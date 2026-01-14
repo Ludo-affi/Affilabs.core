@@ -357,14 +357,13 @@ class CalibrationService(QObject):
             return
 
         # Start calibration (first time only)
-        logger.info(f"[DEBUG] About to check _running flag: {self._running}")
         if self._running:
             logger.warning(
-                "Calibration thread already running - ignoring duplicate click",
+                "Calibration already running - ignoring duplicate click",
             )
             return
 
-        logger.info("🔄 User clicked Start - beginning calibration")
+        logger.info("Starting calibration...")
 
         # Update dialog
         if self._calibration_dialog:
@@ -375,32 +374,15 @@ class CalibrationService(QObject):
                 "Running LED intensity calibration...",
             )
 
-        # Launch calibration in background thread (ONLY PLACE IT STARTS)
-        logger.info("[DEBUG] Setting _running = True")
+        # Launch calibration in background thread
         self._running = True
-        logger.info("[DEBUG] Creating thread...")
         self._thread = threading.Thread(
             target=self._run_calibration,
             daemon=True,
             name="CalibrationService",
         )
-        logger.info(f"[DEBUG] Thread created: {self._thread}")
-        logger.info(f"[DEBUG] Thread target: {self._thread._target}")
-        logger.info(
-            f"[DEBUG] Thread is alive (before start): {self._thread.is_alive()}",
-        )
-        logger.info("[DEBUG] Starting thread...")
-        try:
-            self._thread.start()
-            logger.info(
-                f"[DEBUG] Thread started successfully, is_alive: {self._thread.is_alive()}",
-            )
-        except Exception as e:
-            logger.error(f"[DEBUG] Thread start FAILED: {e}", exc_info=True)
-            raise
-        logger.info("[DEBUG] Emitting calibration_started signal...")
+        self._thread.start()
         self.calibration_started.emit()
-        logger.info("[OK] Calibration thread started")
 
     def _run_calibration(self) -> None:
         """Main calibration routine (runs in background thread)."""
@@ -410,9 +392,7 @@ class CalibrationService(QObject):
 
         enable_verbose_console()
 
-        logger.info("[CAL-THREAD] Starting calibration in background thread...")
-
-        # File logger to capture full calibration thread output (headless-safe)
+        # File logger to capture full calibration thread output
         log_handler = None
         try:
             import logging
@@ -430,26 +410,10 @@ class CalibrationService(QObject):
             formatter = logging.Formatter("%(asctime)s :: %(levelname)s :: %(message)s")
             log_handler.setFormatter(formatter)
             logger.addHandler(log_handler)
-            logger.info(f"[CAL] File logging enabled → {logfile}")
-            os.makedirs("logs", exist_ok=True)
-            logfile = os.path.join(
-                "logs",
-                for_filename(prefix="calibration_", ext="log"),
-            )
-            logger.info(f"[CAL-THREAD] Creating log file: {logfile}")
-            log_handler = logging.FileHandler(logfile, encoding="utf-8")
-            log_handler.setLevel(logging.INFO)
-            formatter = logging.Formatter("%(asctime)s :: %(levelname)s :: %(message)s")
-            log_handler.setFormatter(formatter)
-            logger.addHandler(log_handler)
-            logger.info(f"[CAL] File logging enabled → {logfile}")
+            logger.info(f"Calibration log: {logfile}")
         except Exception as e:
             with contextlib.suppress(Exception):
-                logger.warning(f"[CAL] Could not initialize file logger: {e}")
-
-        # Do NOT redirect stdout/stderr to logger to avoid recursion deadlocks.
-        # Keep original streams so print() from dependencies remains visible.
-        logger.info("[CalibrationService] _run_calibration entered")
+                logger.warning(f"Could not initialize calibration log file: {e}")
 
         try:
             # Get hardware
@@ -473,7 +437,7 @@ class CalibrationService(QObject):
 
             if pump:  # ENABLED
                 logger.info(
-                    "🌊 Pump detected - starting prime sequence with parallel optical calibration..."
+                    "Pump detected - starting prime sequence with parallel optical calibration...",
                 )
                 self.calibration_progress.emit("Pump Priming: Initializing", 8)
 

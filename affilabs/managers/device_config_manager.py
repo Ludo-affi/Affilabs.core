@@ -119,19 +119,24 @@ class DeviceConfigManager:
             # Auto-load hardware settings into Settings sidebar
             if self.device_config:
                 try:
-                    s_pos, p_pos = self.device_config.get_servo_positions()
-                    led_intensities = self.device_config.get_led_intensities()
-                    self.main_window.sidebar.load_hardware_settings(
-                        s_pos=s_pos,
-                        p_pos=p_pos,
-                        led_a=led_intensities.get("a", 0),
-                        led_b=led_intensities.get("b", 0),
-                        led_c=led_intensities.get("c", 0),
-                        led_d=led_intensities.get("d", 0),
-                    )
-                    logger.info(
-                        f"Auto-loaded hardware settings to sidebar: S={s_pos}, P={p_pos}",
-                    )
+                    servo_positions = self.device_config.get_servo_positions()
+                    if servo_positions:
+                        s_pos = servo_positions["s"]
+                        p_pos = servo_positions["p"]
+                        led_intensities = self.device_config.get_led_intensities()
+                        self.main_window.sidebar.load_hardware_settings(
+                            s_pos=s_pos,
+                            p_pos=p_pos,
+                            led_a=led_intensities.get("a", 0),
+                            led_b=led_intensities.get("b", 0),
+                            led_c=led_intensities.get("c", 0),
+                            led_d=led_intensities.get("d", 0),
+                        )
+                        logger.info(
+                            f"Auto-loaded hardware settings to sidebar: S={s_pos}, P={p_pos}",
+                        )
+                    else:
+                        logger.warning("Servo positions not calibrated - skipping auto-load")
                 except Exception as e:
                     logger.warning(f"Could not auto-load hardware settings: {e}")
 

@@ -112,8 +112,16 @@ class ConvergenceEngine:
         self.led_predictor = None
         self.convergence_predictor = None
 
+        # Check if sklearn is available (required for ML models)
+        sklearn_available = False
+        try:
+            import sklearn
+            sklearn_available = True
+        except ImportError:
+            pass  # sklearn not installed - ML features will be disabled
+
         # Load sensitivity classifier
-        if sensitivity_model_path:
+        if sensitivity_model_path and sklearn_available:
             try:
                 import joblib
                 self.sensitivity_model = joblib.load(sensitivity_model_path)
@@ -122,7 +130,7 @@ class ConvergenceEngine:
                 self._log("warning", f"[ML] Could not load sensitivity classifier: {e}")
 
         # Load LED intensity predictor
-        if led_predictor_path:
+        if led_predictor_path and sklearn_available:
             try:
                 import joblib
                 self.led_predictor = joblib.load(led_predictor_path)
@@ -131,7 +139,7 @@ class ConvergenceEngine:
                 self._log("warning", f"[ML] Could not load LED predictor: {e}")
 
         # Load convergence feasibility predictor
-        if convergence_predictor_path:
+        if convergence_predictor_path and sklearn_available:
             try:
                 import joblib
                 self.convergence_predictor = joblib.load(convergence_predictor_path)

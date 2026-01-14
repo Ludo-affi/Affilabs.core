@@ -12,7 +12,10 @@
     "polarizer_type": "BARREL",
     "led_pcb_model": "luminus_cool_white",
     "optical_fiber_diameter_um": 200,
-    "controller_type": "PicoP4PRO"
+    "controller_type": "PicoP4PRO",
+    "spectrometer_model": "Flame-T",
+    "spectrometer_serial": "FLMT09792",
+    "controller_model": "Raspberry Pi Pico P4SPR"
   },
   "polarizer": {
     "s_position": 4,

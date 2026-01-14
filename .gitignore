@@ -113,3 +113,5 @@ build/
 
 # Public/generated content
 public/
+
+affilabs/local_settings.py  # Local performance overrides

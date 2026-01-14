@@ -281,42 +281,15 @@ def run_startup_calibration(
 
             logger.info("Continuing with startup calibration...\n")
 
-            if progress_callback:
-                progress_callback("Step 3/6: LED brightness measurement...", 30)
-
-        # Brightness measurement skipped - rely on OEM model slopes instead
-        # The OEM model training (Step 2) just measured all channels at 10-60ms,
-        # so model slopes should accurately reflect relative channel brightness.
-        channel_measurements = {}
-
-        logger.warning("=" * 80)
-        logger.warning("⚠️  BRIGHTNESS MEASUREMENT SKIPPED")
-        logger.warning("=" * 80)
-        logger.warning("Relying on OEM model slopes to determine weakest channel.")
-        logger.warning("The model was just trained in Step 2 with 10-60ms measurements,")
-        logger.warning("so slopes should be accurate for channel ranking.")
-        logger.warning("")
-        logger.warning("If you see poor LED convergence or linearity warnings, this may")
-        logger.warning("indicate the OEM model quality is insufficient.")
-        logger.warning("=" * 80)
-
-        # Identify weakest channel or fall back to model if no measurements
-        if channel_measurements:
-            weakest_ch = min(channel_measurements.keys(), key=lambda c: channel_measurements[c][0])
-            logger.info(f"[OK] Weakest channel (measured): {weakest_ch.upper()}")
-            logger.info("[OK] Step 3 complete\n")
+        # Determine weakest channel from OEM model slopes
+        # The OEM model training (Step 2) measured all channels at 10-60ms,
+        # so model slopes accurately reflect relative channel brightness.
+        if model_slopes_s:
+            weakest_ch = min(model_slopes_s.keys(), key=lambda c: model_slopes_s[c])
+            logger.info(f"Weakest channel (from model): {weakest_ch.upper()}")
         else:
-            if model_slopes_s:
-                weakest_ch = min(model_slopes_s.keys(), key=lambda c: model_slopes_s[c])
-                logger.info(
-                    f"[OK] Weakest channel (model-based): {weakest_ch.upper()} (measurement unavailable)"
-                )
-            else:
-                weakest_ch = ch_list[0]
-                logger.info(f"[OK] Weakest channel defaulted to: {weakest_ch.upper()} (no model)")
-            logger.info(
-                "[OK] Step 3 complete (measurement skipped due to device write/read issue)\n"
-            )
+            weakest_ch = ch_list[0]
+            logger.info(f"Weakest channel defaulted to: {weakest_ch.upper()}")
 
         # =================================================================
         # Load and configure servo positions BEFORE mode switching

@@ -69,7 +69,7 @@ DEBUG_LOG_THROTTLE_FACTOR = (
     10  # Log debug messages every Nth acquisition (1=all, 10=every 10th)
 )
 TRANSMISSION_UPDATE_INTERVAL = (
-    1.0  # seconds between transmission spectrum updates (QC graphs)
+    0.05  # seconds between transmission spectrum updates (QC graphs) - 20 Hz for smooth live data
 )
 SENSORGRAM_DOWNSAMPLE_FACTOR = (
     1  # Show all points (1=all, 2=half) - no throttling for smooth 1 Hz updates
