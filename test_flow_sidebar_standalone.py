@@ -93,10 +93,10 @@ class RealPumpManager:
             logger.info(f"[REAL PUMP] 💧 Changing flow rate to {rate} µL/min")
             # Convert µL/min to µL/s
             rate_ul_s = rate / 60.0
-            # Send V command to both pumps
-            self.pump.send_command(f"/1V{rate_ul_s:.3f}R")
+            # Send V command to both pumps with mode parameter ,1
+            self.pump.send_command(f"/1V{rate_ul_s:.3f},1R")
             time.sleep(0.05)
-            self.pump.send_command(f"/2V{rate_ul_s:.3f}R")
+            self.pump.send_command(f"/2V{rate_ul_s:.3f},1R")
             logger.info(f"✅ Flow rate changed to {rate} µL/min")
             self._flow_rate = rate
             return True
@@ -152,14 +152,13 @@ class RealPumpManager:
                     
                     if not busy1 and not busy2:
                         logger.info(f"✅ Pumps homed successfully in {time.time() - start_time:.1f}s")
-                        self.is_idle = True
+                        # DON'T set is_idle here - let buffer flow manage it
                         return True
                 
                 await asyncio.sleep(0.5)
             
-            # Even if still busy, mark as idle and return
+            # Even if still busy, return success
             logger.warning("⚠️ Homing timeout reached, continuing anyway...")
-            self.is_idle = True
             return True
         except Exception as e:
             logger.error(f"❌ Homing failed: {e}")
@@ -182,6 +181,25 @@ class RealPumpManager:
             await asyncio.sleep(0.05)
             self.pump.send_command("/2TR")
             await asyncio.sleep(0.5)
+
+            # Ensure pumps are actually idle and ready before starting a new sequence
+            logger.info("Ensuring pumps are idle before starting new sequence...")
+            try:
+                p1_ready, p2_ready, elapsed, p1_time, p2_time = self.pump.wait_until_both_ready(
+                    timeout=20.0,
+                    auto_recover=True,
+                    check_position_change=False,
+                    allow_early_termination=True,
+                )
+                logger.info(f"  Pump readiness: P1={p1_ready} (t={p1_time}), P2={p2_ready} (t={p2_time}), elapsed={elapsed:.1f}s")
+                if not (p1_ready and p2_ready):
+                    logger.error("❌ Pumps not ready after terminate. Aborting operation.")
+                    self.is_idle = True
+                    return False
+            except Exception as e:
+                logger.error(f"❌ Exception while waiting for pumps to be ready: {e}")
+                self.is_idle = True
+                return False
             
             # Convert to µL/s
             assay_flow_rate_ul_s = assay_rate / 60.0
@@ -201,30 +219,37 @@ class RealPumpManager:
             logger.info(f"  Calculated contact time: {contact_time_s:.2f}s")
             
             # STEP 1: Move plungers to ABSOLUTE POSITION P1000 (full syringe)
-            # This works regardless of current position - P command is absolute!
+            # Use controller-level wait to avoid blind sleeps
             logger.info(f"\n[STEP 1] Moving plungers to ABSOLUTE POSITION P{load_volume_ul}")
             logger.info(f"  (Valve in INPUT orientation, moving to position {load_volume_ul} at {aspiration_flow_rate} µL/min)")
-            self.pump.aspirate_both_to_position(target_position_ul=load_volume_ul, speed_ul_s=aspiration_flow_rate_ul_s)
-            
-            aspirate_time = load_volume_ul / aspiration_flow_rate_ul_s
-            await asyncio.sleep(aspirate_time + 2.0)
-            logger.info(f"  ✓ Both pumps at position P{load_volume_ul}")
+            self.pump.move_both_to_position(load_volume_ul, speed_ul_s=aspiration_flow_rate_ul_s, valve_policy='inlet', wait=True)
+            pos1 = self.pump.get_position(1)
+            pos2 = self.pump.get_position(2)
+            logger.info(f"  ✓ Both pumps at ABSOLUTE POSITION P{load_volume_ul} - P{pos1:.1f}µL / P{pos2:.1f}µL")
             
             # STEP 2: Start dispensing at assay flow rate
             logger.info(f"\n[STEP 2] Starting dispense at {assay_rate} µL/min")
             self.pump.dispense_both(load_volume_ul, assay_flow_rate_ul_s)
             logger.info(f"  ✓ Both pumps dispensing at {assay_rate} µL/min")
-            
-            # Verify dispense started - check positions
-            await asyncio.sleep(2)
-            pos1 = self.pump.get_position(1)
-            pos2 = self.pump.get_position(2)
-            logger.info(f"  Initial dispense positions: Pump1={pos1:.1f}µL, Pump2={pos2:.1f}µL")
-            
-            await asyncio.sleep(3)
-            pos1 = self.pump.get_position(1)
-            pos2 = self.pump.get_position(2)
-            logger.info(f"  After 5s: Pump1={pos1:.1f}µL, Pump2={pos2:.1f}µL (should be decreasing!)")
+
+            # Immediate motion check (expect positions to decrease during dispense)
+            await asyncio.sleep(1.0)
+            p1_start = self.pump.get_position(1)
+            p2_start = self.pump.get_position(2)
+            await asyncio.sleep(1.0)
+            p1_next = self.pump.get_position(1)
+            p2_next = self.pump.get_position(2)
+            if p1_start is not None and p2_start is not None and p1_next is not None and p2_next is not None:
+                d1 = (p1_start or 0.0) - (p1_next or 0.0)
+                d2 = (p2_start or 0.0) - (p2_next or 0.0)
+                if d1 < 0.5 and d2 < 0.5:
+                    logger.error(f"❌ No initial motion detected during dispense (ΔP1={d1:.2f}µL, ΔP2={d2:.2f}µL). Terminating.")
+                    try:
+                        self.pump.send_command("/0TR")
+                    finally:
+                        self.is_idle = True
+                    return False
+            logger.info(f"  Initial dispense positions: Pump1={p1_next:.1f}µL, Pump2={p2_next:.1f}µL")
             
             # STEP 3: Open 6-port valves (while dispensing)
             if self.controller:
@@ -234,12 +259,15 @@ class RealPumpManager:
             else:
                 logger.info("\n[STEP 3] Opening 6-port valves (SIMULATED - no controller)")
             
-            # STEP 4: Contact time with position monitoring
+            # STEP 4: Contact time with position monitoring and stall watchdog
             logger.info(f"\n[STEP 4] Contact time: {contact_time_s:.2f}s")
             
             # Monitor positions during contact time
             elapsed = 0
             check_interval = 5.0
+            no_motion_accum_s = 0.0
+            last_p1 = self.pump.get_position(1)
+            last_p2 = self.pump.get_position(2)
             
             while elapsed < contact_time_s and not self.is_idle and not self._stop_requested:
                 await asyncio.sleep(check_interval)
@@ -250,6 +278,23 @@ class RealPumpManager:
                 pos1 = self.pump.get_position(1)
                 pos2 = self.pump.get_position(2)
                 logger.info(f"  [Contact time {elapsed:.0f}s] Pump1={pos1:.1f}µL, Pump2={pos2:.1f}µL")
+                # Watchdog: ensure positions keep decreasing
+                if last_p1 is not None and last_p2 is not None and pos1 is not None and pos2 is not None:
+                    d1 = (last_p1 or 0.0) - (pos1 or 0.0)
+                    d2 = (last_p2 or 0.0) - (pos2 or 0.0)
+                    if d1 < 0.5 and d2 < 0.5:
+                        no_motion_accum_s += check_interval
+                        logger.warning(f"  ⚠ No-motion detected for {no_motion_accum_s:.0f}s during contact time (ΔP1={d1:.2f}µL, ΔP2={d2:.2f}µL)")
+                        if no_motion_accum_s >= 10.0:
+                            logger.error("❌ Persistent no-motion during contact time. Terminating dispense.")
+                            try:
+                                self.pump.send_command("/0TR")
+                            finally:
+                                self.is_idle = True
+                            return False
+                    else:
+                        no_motion_accum_s = 0.0
+                    last_p1, last_p2 = pos1, pos2
             
             # STEP 5: Close valves
             if self.controller:
@@ -259,7 +304,7 @@ class RealPumpManager:
             else:
                 logger.info("\n[STEP 5] Closing 6-port valves (SIMULATED - no controller)")
             
-            # STEP 6: Continue dispensing until empty
+            # STEP 6: Continue dispensing until empty (with stall watchdog)
             logger.info("\n[STEP 6] Continuing to dispense until empty...")
             remaining_volume = load_volume_ul
             remaining_time_s = (remaining_volume / assay_rate) * 60.0
@@ -268,6 +313,9 @@ class RealPumpManager:
             # Monitor dispensing with position checks
             elapsed = 0
             check_interval = 5.0  # Check every 5s
+            no_motion_accum_s = 0.0
+            last_p1 = self.pump.get_position(1)
+            last_p2 = self.pump.get_position(2)
             
             while elapsed < remaining_time_s and not self.is_idle and not self._stop_requested:
                 await asyncio.sleep(check_interval)
@@ -278,6 +326,23 @@ class RealPumpManager:
                 pos1 = self.pump.get_position(1)
                 pos2 = self.pump.get_position(2)
                 logger.info(f"  [{elapsed:.0f}s] Pump1={pos1:.1f}µL, Pump2={pos2:.1f}µL")
+                # Stall watchdog
+                if last_p1 is not None and last_p2 is not None and pos1 is not None and pos2 is not None:
+                    d1 = (last_p1 or 0.0) - (pos1 or 0.0)
+                    d2 = (last_p2 or 0.0) - (pos2 or 0.0)
+                    if d1 < 0.5 and d2 < 0.5:
+                        no_motion_accum_s += check_interval
+                        logger.warning(f"  ⚠ No-motion detected for {no_motion_accum_s:.0f}s (ΔP1={d1:.2f}µL, ΔP2={d2:.2f}µL)")
+                        if no_motion_accum_s >= 10.0:
+                            logger.error("❌ Persistent no-motion while emptying. Terminating.")
+                            try:
+                                self.pump.send_command("/0TR")
+                            finally:
+                                self.is_idle = True
+                            return False
+                    else:
+                        no_motion_accum_s = 0.0
+                    last_p1, last_p2 = pos1, pos2
             
             # Final position check
             pos1 = self.pump.get_position(1)
@@ -334,11 +399,7 @@ class RealPumpManager:
             # STEP 1: Move to ABSOLUTE POSITION P900
             logger.info("\n[STEP 1] Moving plungers to ABSOLUTE POSITION P900...")
             logger.info(f"  (Moving to position 900 at {aspiration_flow_rate} µL/min)")
-            self.pump.aspirate_both_to_position(target_position_ul=900, speed_ul_s=aspiration_flow_rate_ul_s)
-            
-            aspirate_time = 900.0 / aspiration_flow_rate_ul_s
-            await asyncio.sleep(aspirate_time + 2.0)
-            logger.info("  ✓ Both pumps at position P900")
+            self.pump.move_both_to_position(900, speed_ul_s=aspiration_flow_rate_ul_s, valve_policy='inlet', wait=True)
             
             # STEP 2: Open 3-way valves
             logger.info("\n[STEP 2] Opening 3-way valves...")
@@ -348,7 +409,7 @@ class RealPumpManager:
                 logger.info("  ✓ 3-way valves OPEN (REAL HARDWARE)")
             else:
                 logger.info("  ⚠ 3-way valves OPEN (SIMULATED)")
-            await asyncio.sleep(0.5)
+            
             
             # STEP 3: Open 6-port valves to inject position
             logger.info("\n[STEP 3] Opening 6-port valves (inject position)...")
@@ -362,11 +423,8 @@ class RealPumpManager:
             # STEP 4: Move to ABSOLUTE POSITION P1000 at 900 µL/min (pulls sample into loop)
             logger.info("\n[STEP 4] Moving plungers to ABSOLUTE POSITION P1000...")
             logger.info(f"  (Moving from P900 → P1000 at {output_aspirate_rate} µL/min to pull sample through loop)")
-            self.pump.aspirate_both_to_position(target_position_ul=1000, speed_ul_s=output_aspirate_rate_ul_s)
-            
-            output_aspirate_time = 100.0 / output_aspirate_rate_ul_s  # Moving 100 µL distance
-            await asyncio.sleep(output_aspirate_time + 1.0)
-            
+            self.pump.move_both_to_position(1000, speed_ul_s=output_aspirate_rate_ul_s, valve_policy='outlet', wait=True)
+
             pos1 = self.pump.get_position(1)
             pos2 = self.pump.get_position(2)
             logger.info(f"  ✓ Both pumps at ABSOLUTE POSITION P1000 - P{pos1:.1f}µL / P{pos2:.1f}µL")
@@ -427,20 +485,123 @@ class RealPumpManager:
             # STEP 12: Push rest with contact time
             remaining_volume = 1000.0 - 90.0  # Started with 1000, pushed 50+40=90
             logger.info(f"\n[STEP 12] Pushing remaining {remaining_volume:.0f} µL (contact time: {contact_time_s:.2f}s)...")
-            self.pump.dispense_both(remaining_volume, assay_flow_rate_ul_s)
-            
-            # Monitor positions during contact time
+
+            # Ensure external 3-way valves are OPEN for flow during contact time
+            logger.info("[VALVES] Opening 3-way valves for contact flow...")
+            if self.controller:
+                self.controller.knx_three(state=1, ch=1)
+                self.controller.knx_three(state=1, ch=2)
+                logger.info("  ✓ 3-way valves OPEN (REAL HARDWARE)")
+            else:
+                logger.info("  ⚠ 3-way valves OPEN (SIMULATED)")
+            await asyncio.sleep(0.5)
+
+            # Calculate volume to dispense during contact time at assay rate
+            contact_volume = (assay_rate * (contact_time_s / 60.0))
+            contact_volume = min(contact_volume, remaining_volume)
+
+            # Clamp to available volume (safety)
+            pos1_now = self.pump.get_position(1)
+            pos2_now = self.pump.get_position(2)
+            available_ul = max(min(pos1_now or 0.0, pos2_now or 0.0) - 2.0, 0.0)  # keep 2 µL margin
+            if contact_volume > available_ul:
+                logger.warning(f"[SAFETY] Clamping contact volume from {contact_volume:.1f} µL to available {available_ul:.1f} µL (P1={pos1_now:.1f}, P2={pos2_now:.1f})")
+                contact_volume = available_ul
+            logger.info(f"[DISPENSE] Contact-time volume: {contact_volume:.1f} µL at {assay_rate} µL/min")
+
+            # Start volumetric dispense for contact time
+            pos1_before = self.pump.get_position(1)
+            pos2_before = self.pump.get_position(2)
+            self.pump.dispense_both(contact_volume, assay_flow_rate_ul_s)
+
+            # Quick sanity check: verify motion started within 1s
+            await asyncio.sleep(1.0)
+            pos1_check = self.pump.get_position(1)
+            pos2_check = self.pump.get_position(2)
+            if pos1_check is not None and pos2_check is not None:
+                d1_quick = (pos1_before or 0.0) - (pos1_check or 0.0)
+                d2_quick = (pos2_before or 0.0) - (pos2_check or 0.0)
+                if d1_quick < 0.5 and d2_quick < 0.5:
+                    logger.error(f"❌ No initial motion after 1s (ΔP1={d1_quick:.2f}µL, ΔP2={d2_quick:.2f}µL). Aborting.")
+                    try:
+                        s1 = self.pump.get_status(1)
+                        s2 = self.pump.get_status(2)
+                        logger.error(f"  Pump1 busy={s1.get('busy')} error={s1.get('error')} msg={s1.get('error_msg')}")
+                        logger.error(f"  Pump2 busy={s2.get('busy')} error={s2.get('error')} msg={s2.get('error_msg')}")
+                    except Exception:
+                        pass
+                    if self.controller:
+                        try:
+                            v31 = self.controller.knx_three_state(1)
+                            v32 = self.controller.knx_three_state(2)
+                            v61 = self.controller.knx_six_state(1)
+                            v62 = self.controller.knx_six_state(2)
+                            logger.error(f"  Valve states: 3-way (ch1={v31}, ch2={v32}), 6-port (ch1={v61}, ch2={v62})")
+                        except Exception:
+                            pass
+                    try:
+                        self.pump.send_command("/0TR")
+                    except Exception:
+                        pass
+                    self.is_idle = True
+                    return False
+
+            # Monitor positions during contact time with no-motion watchdog
             elapsed = 0
             check_interval = 5.0
-            
+            pos1_last = self.pump.get_position(1)
+            pos2_last = self.pump.get_position(2)
+            stalled_intervals = 0
+            stall_limit = 3  # abort after ~15s of no motion
+
             while elapsed < contact_time_s and not self.is_idle and not self._stop_requested:
                 await asyncio.sleep(check_interval)
                 QApplication.processEvents()
                 elapsed += check_interval
-                
+
                 pos1 = self.pump.get_position(1)
                 pos2 = self.pump.get_position(2)
                 logger.info(f"  [Contact time {elapsed:.0f}s] Pump1={pos1:.1f}µL, Pump2={pos2:.1f}µL")
+
+                # No-motion watchdog: expect some decrease each interval
+                expected_move = assay_flow_rate_ul_s * check_interval
+                epsilon = max(expected_move * 0.3, 0.5)  # tolerant threshold
+                d1 = abs((pos1 or 0.0) - (pos1_last or 0.0))
+                d2 = abs((pos2 or 0.0) - (pos2_last or 0.0))
+                if d1 < epsilon and d2 < epsilon:
+                    stalled_intervals += 1
+                    logger.warning(f"[WATCHDOG] Low motion detected (ΔP1={d1:.2f}µL, ΔP2={d2:.2f}µL < {epsilon:.2f}µL). Count {stalled_intervals}/{stall_limit}.")
+                else:
+                    stalled_intervals = 0
+                pos1_last, pos2_last = pos1, pos2
+
+                if stalled_intervals >= stall_limit:
+                    logger.error("❌ No-motion watchdog triggered during contact time. Aborting dispense.")
+                    # Log pump statuses
+                    try:
+                        s1 = self.pump.get_status(1)
+                        s2 = self.pump.get_status(2)
+                        logger.error(f"  Pump1 busy={s1.get('busy')} error={s1.get('error')} msg={s1.get('error_msg')}")
+                        logger.error(f"  Pump2 busy={s2.get('busy')} error={s2.get('error')} msg={s2.get('error_msg')}")
+                    except Exception:
+                        pass
+                    # Log valve states if available
+                    if self.controller:
+                        try:
+                            v31 = self.controller.knx_three_state(1)
+                            v32 = self.controller.knx_three_state(2)
+                            v61 = self.controller.knx_six_state(1)
+                            v62 = self.controller.knx_six_state(2)
+                            logger.error(f"  Valve states: 3-way (ch1={v31}, ch2={v32}), 6-port (ch1={v61}, ch2={v62})")
+                        except Exception:
+                            pass
+                    # Emergency stop pumps and exit
+                    try:
+                        self.pump.send_command("/0TR")
+                    except Exception:
+                        pass
+                    self.is_idle = True
+                    return False
             
             # STEP 13: Close 6-port valves after contact time
             logger.info("\n[STEP 13] Closing 6-port valves after contact time...")
@@ -452,19 +613,117 @@ class RealPumpManager:
             
             # STEP 14: Continue emptying pumps
             logger.info("\n[STEP 14] Continuing to empty pumps...")
-            remaining_time_s = (remaining_volume / assay_rate) * 60.0
-            logger.info(f"  Estimated time to empty: {remaining_time_s:.1f}s")
-            
-            # Monitor dispensing
-            elapsed = 0
-            while elapsed < remaining_time_s and not self.is_idle and not self._stop_requested:
-                await asyncio.sleep(check_interval)
-                QApplication.processEvents()
-                elapsed += check_interval
-                
-                pos1 = self.pump.get_position(1)
-                pos2 = self.pump.get_position(2)
-                logger.info(f"  [{elapsed:.0f}s] Pump1={pos1:.1f}µL, Pump2={pos2:.1f}µL")
+            remaining_after_contact = max(remaining_volume - contact_volume, 0.0)
+
+            # Route to WASTE for the remainder
+            logger.info("[VALVES] Routing 3-way valves to WASTE for remaining purge...")
+            if self.controller:
+                self.controller.knx_three(state=0, ch=1)
+                self.controller.knx_three(state=0, ch=2)
+                logger.info("  ✓ 3-way valves to WASTE (REAL HARDWARE)")
+            else:
+                logger.info("  ⚠ 3-way valves to WASTE (SIMULATED)")
+            await asyncio.sleep(0.5)
+
+            if remaining_after_contact > 0:
+                # Clamp to available volume (safety)
+                pos1_now = self.pump.get_position(1)
+                pos2_now = self.pump.get_position(2)
+                available_ul = max(min(pos1_now or 0.0, pos2_now or 0.0) - 2.0, 0.0)
+                if remaining_after_contact > available_ul:
+                    logger.warning(f"[SAFETY] Clamping purge volume from {remaining_after_contact:.1f} µL to available {available_ul:.1f} µL (P1={pos1_now:.1f}, P2={pos2_now:.1f})")
+                    remaining_after_contact = available_ul
+
+                logger.info(f"[DISPENSE] Purging remaining {remaining_after_contact:.1f} µL at {assay_rate} µL/min")
+                pos1_before = self.pump.get_position(1)
+                pos2_before = self.pump.get_position(2)
+                self.pump.dispense_both(remaining_after_contact, assay_flow_rate_ul_s)
+
+                # Quick sanity check: verify motion started within 1s
+                await asyncio.sleep(1.0)
+                pos1_check = self.pump.get_position(1)
+                pos2_check = self.pump.get_position(2)
+                if pos1_check is not None and pos2_check is not None:
+                    d1_quick = (pos1_before or 0.0) - (pos1_check or 0.0)
+                    d2_quick = (pos2_before or 0.0) - (pos2_check or 0.0)
+                    if d1_quick < 0.5 and d2_quick < 0.5:
+                        logger.error(f"❌ No initial motion after 1s during purge (ΔP1={d1_quick:.2f}µL, ΔP2={d2_quick:.2f}µL). Aborting.")
+                        try:
+                            s1 = self.pump.get_status(1)
+                            s2 = self.pump.get_status(2)
+                            logger.error(f"  Pump1 busy={s1.get('busy')} error={s1.get('error')} msg={s1.get('error_msg')}")
+                            logger.error(f"  Pump2 busy={s2.get('busy')} error={s2.get('error')} msg={s2.get('error_msg')}")
+                        except Exception:
+                            pass
+                        if self.controller:
+                            try:
+                                v31 = self.controller.knx_three_state(1)
+                                v32 = self.controller.knx_three_state(2)
+                                v61 = self.controller.knx_six_state(1)
+                                v62 = self.controller.knx_six_state(2)
+                                logger.error(f"  Valve states: 3-way (ch1={v31}, ch2={v32}), 6-port (ch1={v61}, ch2={v62})")
+                            except Exception:
+                                pass
+                        try:
+                            self.pump.send_command("/0TR")
+                        except Exception:
+                            pass
+                        self.is_idle = True
+                        return False
+
+                # Estimate time and monitor
+                remaining_time_s = (remaining_after_contact / assay_rate) * 60.0
+                logger.info(f"  Estimated time to empty: {remaining_time_s:.1f}s")
+
+                elapsed = 0
+                pos1_last = self.pump.get_position(1)
+                pos2_last = self.pump.get_position(2)
+                stalled_intervals = 0
+                while elapsed < remaining_time_s and not self.is_idle and not self._stop_requested:
+                    await asyncio.sleep(check_interval)
+                    QApplication.processEvents()
+                    elapsed += check_interval
+
+                    pos1 = self.pump.get_position(1)
+                    pos2 = self.pump.get_position(2)
+                    logger.info(f"  [{elapsed:.0f}s] Pump1={pos1:.1f}µL, Pump2={pos2:.1f}µL")
+
+                    # No-motion watchdog during purge
+                    expected_move = assay_flow_rate_ul_s * check_interval
+                    epsilon = max(expected_move * 0.3, 0.5)
+                    d1 = abs((pos1 or 0.0) - (pos1_last or 0.0))
+                    d2 = abs((pos2 or 0.0) - (pos2_last or 0.0))
+                    if d1 < epsilon and d2 < epsilon:
+                        stalled_intervals += 1
+                        logger.warning(f"[WATCHDOG] Low motion during purge (ΔP1={d1:.2f}µL, ΔP2={d2:.2f}µL < {epsilon:.2f}µL). Count {stalled_intervals}/3.")
+                    else:
+                        stalled_intervals = 0
+                    pos1_last, pos2_last = pos1, pos2
+
+                    if stalled_intervals >= 3:
+                        logger.error("❌ No-motion watchdog triggered during purge. Aborting.")
+                        try:
+                            s1 = self.pump.get_status(1)
+                            s2 = self.pump.get_status(2)
+                            logger.error(f"  Pump1 busy={s1.get('busy')} error={s1.get('error')} msg={s1.get('error_msg')}")
+                            logger.error(f"  Pump2 busy={s2.get('busy')} error={s2.get('error')} msg={s2.get('error_msg')}")
+                        except Exception:
+                            pass
+                        if self.controller:
+                            try:
+                                v31 = self.controller.knx_three_state(1)
+                                v32 = self.controller.knx_three_state(2)
+                                v61 = self.controller.knx_six_state(1)
+                                v62 = self.controller.knx_six_state(2)
+                                logger.error(f"  Valve states: 3-way (ch1={v31}, ch2={v32}), 6-port (ch1={v61}, ch2={v62})")
+                            except Exception:
+                                pass
+                        try:
+                            self.pump.send_command("/0TR")
+                        except Exception:
+                            pass
+                        self.is_idle = True
+                        return False
             
             # Check if stopped early
             if self._stop_requested:
@@ -676,12 +935,8 @@ class RealPumpManager:
                 pos_before_fill_1 = pos1
                 pos_before_fill_2 = pos2
                 
-                # Aspirate to P1000 (absolute position)
-                self.pump.aspirate_both_to_position(target_position_ul=1000, speed_ul_s=aspirate_rate_ul_s)
-                
-                logger.info(f"  Waiting {actual_fill_time:.1f}s for movement to complete...")
-                
-                await asyncio.sleep(actual_fill_time + 1)
+                # Aspirate to P1000 (absolute position) with controller-level wait
+                self.pump.move_both_to_position(1000, speed_ul_s=aspirate_rate_ul_s, valve_policy='inlet', wait=True)
                 QApplication.processEvents()  # Process Qt events
                 
                 # Check fill status and detect stall
@@ -707,10 +962,9 @@ class RealPumpManager:
                     self.pump.initialize_pumps()
                     await asyncio.sleep(5)
                     
-                    # Retry fill to P1000
+                    # Retry fill to P1000 (with wait)
                     logger.warning("🔄 Retrying fill after re-initialization...")
-                    self.pump.aspirate_both_to_position(target_position_ul=1000, speed_ul_s=aspirate_rate_ul_s)
-                    await asyncio.sleep(actual_fill_time + 1)
+                    self.pump.move_both_to_position(1000, speed_ul_s=aspirate_rate_ul_s, valve_policy='inlet', wait=True)
                     
                     # Check again
                     pos1 = self.pump.get_position(1)
@@ -847,6 +1101,7 @@ class PumpWorker(QThread):
     
     def run(self):
         """Run the async operation in this thread"""
+        loop = None
         try:
             # Create event loop for this thread
             loop = asyncio.new_event_loop()
@@ -858,9 +1113,6 @@ class PumpWorker(QThread):
             # Run it
             result = loop.run_until_complete(method(*self.args))
             
-            # Clean up
-            loop.close()
-            
             self.finished.emit(result)
         except Exception as e:
             logger.error(f"Worker error: {e}")
@@ -868,6 +1120,20 @@ class PumpWorker(QThread):
             traceback.print_exc()
             self.error.emit(str(e))
             self.finished.emit(False)
+        finally:
+            # Always clean up the event loop
+            if loop:
+                try:
+                    # Cancel all pending tasks
+                    pending = asyncio.all_tasks(loop)
+                    for task in pending:
+                        task.cancel()
+                    # Run loop one more time to process cancellations
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                except Exception:
+                    pass
+                finally:
+                    loop.close()
     
     def stop(self):
         """Request stop"""
@@ -1166,14 +1432,7 @@ class FlowSidebarTester(QMainWindow):
         self._log_action("EMERGENCY STOP", "Executing emergency stop...")
         
         try:
-            # STEP 1: Stop the worker thread first
-            if self._current_worker and self._current_worker.isRunning():
-                logger.warning("⚠️ Stopping active worker thread...")
-                self._current_worker.stop()
-                self._current_worker.wait(2000)  # Wait up to 2 seconds
-                self._current_worker = None
-            
-            # STEP 2: Send terminate command to pumps
+            # STEP 1: Send terminate command to pumps FIRST
             logger.warning("[REAL PUMP] 🛑 EMERGENCY STOP - Terminating both pumps!")
             self.pump_mgr.pump.send_command("/1TR")  # Individual terminate
             time.sleep(0.05)
@@ -1181,9 +1440,19 @@ class FlowSidebarTester(QMainWindow):
             time.sleep(0.05)
             self.pump_mgr.pump.send_command("/0TR")  # Broadcast terminate for good measure
             
-            # STEP 3: Set flags
+            # STEP 2: Set flags to stop worker thread gracefully
             self.pump_mgr.is_idle = True
+            self.pump_mgr._stop_requested = True
             self.pump_mgr._current_operation = "IDLE"
+            
+            # STEP 3: Wait for worker thread to finish gracefully
+            if self._current_worker and self._current_worker.isRunning():
+                logger.warning("⚠️ Waiting for worker thread to finish gracefully...")
+                self._current_worker.stop()
+                # Wait indefinitely for thread to finish (it will exit quickly now that pumps are stopped)
+                self._current_worker.wait()
+                logger.info("✅ Worker thread finished")
+                self._current_worker = None
             
             # STEP 4: Verify pumps stopped by checking position
             time.sleep(0.5)
@@ -1193,6 +1462,7 @@ class FlowSidebarTester(QMainWindow):
             self._log_action("SUCCESS", "Emergency stop completed")
         except Exception as e:
             logger.error(f"❌ Emergency stop error: {e}")
+            self._log_action("ERROR", f"Emergency stop failed: {e}")
             self._log_action("ERROR", f"Emergency stop failed: {e}")
     
     def _test_home_pumps(self):
@@ -1264,10 +1534,37 @@ class FlowSidebarTester(QMainWindow):
         self._current_worker.start()
     
     def _on_operation_finished(self, operation_name, success):
-        """Handle operation completion"""
+        """Handle operation completion and ensure worker thread cleanup"""
         if success:
             self._log_action("SUCCESS", f"{operation_name} completed")
-        self._current_worker = None
+        # Ensure the emitting worker is fully stopped before dropping references
+        try:
+            sender = getattr(self, '_current_worker', None)
+            # Prefer the signal sender if available
+            try:
+                from PySide6.QtCore import QThread
+                sig_sender = self.sender() if hasattr(self, 'sender') else None
+                if isinstance(sig_sender, QThread):
+                    sender = sig_sender
+            except Exception:
+                pass
+            if sender:
+                try:
+                    # If still running, request stop and wait
+                    if hasattr(sender, 'isRunning') and sender.isRunning():
+                        if hasattr(sender, 'stop'):
+                            sender.stop()
+                        sender.wait()
+                    else:
+                        # Even if not running, ensure OS thread cleanup
+                        sender.wait()
+                    # Hint Qt to delete later
+                    if hasattr(sender, 'deleteLater'):
+                        sender.deleteLater()
+                except Exception:
+                    pass
+        finally:
+            self._current_worker = None
     
     def _test_prime(self):
         """Test prime function"""

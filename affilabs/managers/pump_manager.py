@@ -44,6 +44,9 @@ class PumpManager(QObject):
     operation_progress = Signal(str, int, str)  # operation, progress_percent, message
     operation_completed = Signal(str, bool)  # operation_name, success
     error_occurred = Signal(str, str)  # operation_name, error_message
+    
+    # Status update signals for UI
+    status_updated = Signal(str, float, float, float)  # status, flow_rate, plunger_pos, contact_time
 
     def __init__(self, hardware_manager: HardwareManager) -> None:
         """Initialize pump manager.
@@ -140,6 +143,9 @@ class PumpManager(QObject):
                     progress,
                     f"Cycle {cycle}/{cycles}",
                 )
+                
+                # Emit status update for UI
+                self.status_updated.emit("Priming", dispense_speed, volume_ul, 0.0)
 
                 logger.info(f"\n🔄 Cycle {cycle}/{cycles}")
 
@@ -568,6 +574,10 @@ class PumpManager(QObject):
 
                 # Aspirate
                 pump._pump.pump.aspirate_both(volume_ul, 24000.0 / 60.0)  # Fast aspirate
+                
+                # Emit status update during aspirate
+                self.status_updated.emit("Aspirating", flow_rate, volume_ul, 0.0)
+                
                 p1_ready, p2_ready, _, _, _ = await asyncio.get_event_loop().run_in_executor(
                     None,
                     pump._pump.pump.wait_until_both_ready,
@@ -583,6 +593,16 @@ class PumpManager(QObject):
 
                 # Dispense at specified flow rate
                 pump._pump.pump.dispense_both(volume_ul, speed_ul_s)
+                
+                # Emit status update during dispense with plunger position
+                try:
+                    p1_pos = pump._pump.pump.get_plunger_position(1) or 0.0
+                    p2_pos = pump._pump.pump.get_plunger_position(2) or 0.0
+                    avg_pos = (p1_pos + p2_pos) / 2.0
+                    self.status_updated.emit("Dispensing", flow_rate, avg_pos, 0.0)
+                except Exception:
+                    self.status_updated.emit("Dispensing", flow_rate, 0.0, 0.0)
+                
                 p1_ready, p2_ready, _, _, _ = await asyncio.get_event_loop().run_in_executor(
                     None,
                     pump._pump.pump.wait_until_both_ready,

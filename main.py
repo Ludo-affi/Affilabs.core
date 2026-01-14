@@ -1459,6 +1459,14 @@ class Application(QApplication):
             ui.sidebar.pump_cleanup_btn.clicked.connect(self._on_pump_cleanup_clicked)
             logger.debug("✓ pump_cleanup_btn connected")
 
+        # Inject operation buttons
+        if hasattr(ui.sidebar, 'inject_simple_btn'):
+            ui.sidebar.inject_simple_btn.clicked.connect(self._on_inject_simple_clicked)
+            logger.debug("✓ inject_simple_btn connected")
+        if hasattr(ui.sidebar, 'inject_partial_btn'):
+            ui.sidebar.inject_partial_btn.clicked.connect(self._on_inject_partial_clicked)
+            logger.debug("✓ inject_partial_btn connected")
+
         # Valve sync button
         if hasattr(ui.sidebar, 'sync_valve_btn'):
             ui.sidebar.sync_valve_btn.clicked.connect(
@@ -1615,6 +1623,14 @@ class Application(QApplication):
         logger.info(
             "[OK] CalibrationService signals already connected in _connect_signals()",
         )
+
+        # === PUMP MANAGER STATUS SIGNALS ===
+        if self.pump_mgr:
+            self.pump_mgr.operation_started.connect(self._on_pump_operation_started)
+            self.pump_mgr.operation_progress.connect(self._on_pump_operation_progress)
+            self.pump_mgr.operation_completed.connect(self._on_pump_operation_completed)
+            self.pump_mgr.status_updated.connect(self._on_pump_status_updated)
+            logger.debug("✓ PumpManager signals connected")
 
         # Manager signals are connected in _connect_signals() (called from __init__)
         # This method is reserved for future manager signal organization
@@ -3188,6 +3204,58 @@ class Application(QApplication):
         """Valve position changed."""
         self.peripheral_events.on_valve_switched(valve_info)
 
+    # === PUMP MANAGER STATUS HANDLERS ===
+
+    def _on_pump_operation_started(self, operation: str):
+        """Handle pump operation started - update status board."""
+        logger.info(f"🔧 Pump operation started: {operation}")
+        ui = self.main_window.sidebar
+        if hasattr(ui, 'flow_pump_status_label'):
+            # Capitalize and format operation name
+            display_name = operation.replace('_', ' ').title()
+            ui.flow_pump_status_label.setText(display_name)
+        if hasattr(ui, 'flow_pump_status_icon'):
+            ui.flow_pump_status_icon.setStyleSheet(
+                "font-size: 12px; color: #34C759; background: transparent;"
+            )
+
+    def _on_pump_operation_progress(self, operation: str, progress: int, message: str):
+        """Handle pump operation progress - update status board with details."""
+        ui = self.main_window.sidebar
+        if hasattr(ui, 'flow_pump_status_label'):
+            ui.flow_pump_status_label.setText(f"{operation.replace('_', ' ').title()} ({progress}%)")
+
+    def _on_pump_operation_completed(self, operation: str, success: bool):
+        """Handle pump operation completed - reset status board."""
+        status = "✓" if success else "✗"
+        logger.info(f"🔧 Pump operation completed: {operation} {status}")
+        ui = self.main_window.sidebar
+        if hasattr(ui, 'flow_pump_status_label'):
+            ui.flow_pump_status_label.setText("Idle")
+        if hasattr(ui, 'flow_pump_status_icon'):
+            ui.flow_pump_status_icon.setStyleSheet(
+                "font-size: 12px; color: #86868B; background: transparent;"
+            )
+        if hasattr(ui, 'flow_current_rate'):
+            ui.flow_current_rate.setText("0")
+
+    def _on_pump_status_updated(self, status: str, flow_rate: float, plunger_pos: float, contact_time: float):
+        """Handle real-time pump status update - update all status board values."""
+        ui = self.main_window.sidebar
+        if hasattr(ui, 'flow_pump_status_label'):
+            ui.flow_pump_status_label.setText(status)
+        if hasattr(ui, 'flow_pump_status_icon'):
+            color = "#34C759" if status != "Idle" else "#86868B"
+            ui.flow_pump_status_icon.setStyleSheet(
+                f"font-size: 12px; color: {color}; background: transparent;"
+            )
+        if hasattr(ui, 'flow_current_rate'):
+            ui.flow_current_rate.setText(f"{flow_rate:.0f}")
+        if hasattr(ui, 'flow_plunger_position'):
+            ui.flow_plunger_position.setText(f"{plunger_pos:.0f}")
+        if hasattr(ui, 'flow_contact_time'):
+            ui.flow_contact_time.setText(f"{contact_time:.1f}")
+
     # === FLOW TAB HANDLERS ===
 
     def _on_pump_prime_clicked(self):
@@ -3225,6 +3293,56 @@ class Application(QApplication):
         # Run cleanup in background
         import asyncio
         asyncio.create_task(self.pump_mgr.cleanup_pump())
+
+    def _on_inject_simple_clicked(self):
+        """User clicked Simple Inject button - run simple injection via PumpManager."""
+        logger.info("💉 Simple Injection requested")
+        
+        if not self.pump_mgr.is_available:
+            from affilabs.widgets.message import show_message
+            show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
+            return
+        
+        if not self.pump_mgr.is_idle:
+            from affilabs.widgets.message import show_message
+            show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
+            return
+        
+        # Get assay rate from UI (default 100 µL/min if not available)
+        assay_rate = 100.0
+        if hasattr(self.main_window.sidebar, 'assay_spin'):
+            assay_rate = float(self.main_window.sidebar.assay_spin.value())
+        
+        logger.info(f"  Using assay rate: {assay_rate} µL/min")
+        
+        # Run simple inject in background
+        import asyncio
+        asyncio.create_task(self.pump_mgr.inject_simple(assay_rate))
+
+    def _on_inject_partial_clicked(self):
+        """User clicked Partial Loop Inject button - run partial loop injection via PumpManager."""
+        logger.info("💉 Partial Loop Injection requested")
+        
+        if not self.pump_mgr.is_available:
+            from affilabs.widgets.message import show_message
+            show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
+            return
+        
+        if not self.pump_mgr.is_idle:
+            from affilabs.widgets.message import show_message
+            show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
+            return
+        
+        # Get assay rate from UI (default 100 µL/min if not available)
+        assay_rate = 100.0
+        if hasattr(self.main_window.sidebar, 'assay_spin'):
+            assay_rate = float(self.main_window.sidebar.assay_spin.value())
+        
+        logger.info(f"  Using assay rate: {assay_rate} µL/min")
+        
+        # Run partial loop inject in background
+        import asyncio
+        asyncio.create_task(self.pump_mgr.inject_partial_loop(assay_rate))
 
     def _on_valve_sync_toggled(self, checked: bool):
         """User toggled valve synchronization.
@@ -4984,7 +5102,27 @@ class Application(QApplication):
             logger.info("=" * 80)
             dialog.hide_start_button()
             dialog.show_progress_bar()
-            self.calibration.start_calibration(force_oem_retrain=True)
+            
+            # CRITICAL: Pass the dialog to calibration service to avoid creating a second dialog
+            # Set the existing dialog as the calibration dialog before starting
+            self.calibration._calibration_dialog = dialog
+            self.calibration._force_oem_retrain = True
+            
+            # Connect calibration service signals to THIS dialog
+            self.calibration.calibration_progress.connect(lambda msg, prog: dialog.update_status(msg))
+            self.calibration.calibration_progress.connect(lambda msg, prog: dialog.set_progress(prog, 100))
+            
+            # Start calibration WITHOUT creating a new dialog (headless mode)
+            self.calibration._running = True
+            import threading
+            self.calibration._thread = threading.Thread(
+                target=self.calibration._run_calibration,
+                daemon=True,
+                name="CalibrationService",
+            )
+            self.calibration._thread.start()
+            self.calibration.calibration_started.emit()
+            logger.info("[OK] Calibration thread started (using existing dialog)")
         
         dialog.start_requested.connect(on_start)
         dialog.show()

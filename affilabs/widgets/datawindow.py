@@ -470,6 +470,14 @@ class DataWindow(QWidget):
             self.bg_rect_radius = 8
             # Will be sized and positioned in setup() based on splitter dimensions
 
+            # Wire Inject button to external callback if provided
+            self._inject_callback = None
+            try:
+                self.ui.inject_button.clicked.connect(self._on_inject_clicked)
+            except Exception:
+                # Defensive: if button not available, just log
+                logger.warning("Inject button not available to wire")
+
         elif self.data_source == "static":
             self.ui = Ui_Processing()
             self.ui.setupUi(self)
@@ -517,6 +525,30 @@ class DataWindow(QWidget):
 
         # set up displays
         self.setup()
+
+    def set_inject_callback(self: Self, callback) -> None:
+        """Set callback for Inject button.
+
+        The callback should perform the injection sequence using the
+        application's pump control path (e.g., a PumpManager or controller).
+        """
+        self._inject_callback = callback
+
+    @Slot()
+    def _on_inject_clicked(self: Self) -> None:
+        """Handle UI Inject button click by delegating to provided callback."""
+        if getattr(self, "busy", False):
+            show_message("System busy — cannot start injection right now.")
+            return
+        if callable(getattr(self, "_inject_callback", None)):
+            try:
+                self._inject_callback()
+            except Exception as e:
+                logger.error(f"Injection callback error: {e}")
+                show_message("Injection failed to start. See logs.")
+        else:
+            logger.warning("No injection callback set; ignoring Inject click")
+            show_message("Injection not configured in this build.")
 
         # Create object to hold metadata and allow user input
         self.metadata = Metadata(CH_LIST)

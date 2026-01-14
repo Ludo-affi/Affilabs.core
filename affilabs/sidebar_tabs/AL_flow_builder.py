@@ -143,6 +143,73 @@ class AdvancedFlowRatesDialog(QDialog):
 
         layout.addWidget(settings_card)
 
+        # Spacer
+        layout.addSpacing(16)
+
+        # Operations section
+        ops_title = QLabel("Operations")
+        ops_title.setStyleSheet("font-size: 14px; font-weight: 600; color: #1D1D1F; font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;")
+        layout.addWidget(ops_title)
+
+        # Operations buttons card
+        ops_card = QFrame()
+        ops_card.setStyleSheet("QFrame { background: rgba(0, 0, 0, 0.03); border-radius: 8px; }")
+        ops_layout = QVBoxLayout(ops_card)
+        ops_layout.setContentsMargins(12, 12, 12, 12)
+        ops_layout.setSpacing(8)
+
+        # Prime Pump button
+        self.prime_btn = QPushButton("🔧 Prime Pump")
+        self.prime_btn.setFixedHeight(36)
+        self.prime_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.prime_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #0051D5;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #004BB5;"
+            "}"
+        )
+        self.prime_btn.setToolTip("Run prime pump sequence (6 cycles)")
+        ops_layout.addWidget(self.prime_btn)
+
+        # Clean Pump button
+        self.cleanup_btn = QPushButton("🧹 Clean Pump")
+        self.cleanup_btn.setFixedHeight(36)
+        self.cleanup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.cleanup_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #34C759;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #28A745;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #1E7E34;"
+            "}"
+        )
+        self.cleanup_btn.setToolTip("Run cleanup sequence (9-phase complete cleaning)")
+        ops_layout.addWidget(self.cleanup_btn)
+
+        layout.addWidget(ops_card)
+
         # Dialog buttons
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         button_box.accepted.connect(self.accept)
@@ -230,6 +297,151 @@ class FlowTabBuilder:
         tab_layout.addWidget(intel_bar)
         tab_layout.addSpacing(8)
 
+        # === FLOW STATUS BOARD ===
+        self._build_flow_status_board(tab_layout)
+
+    def _build_flow_status_board(self, tab_layout: QVBoxLayout):
+        """Build the real-time flow status display board."""
+        status_card = QFrame()
+        status_card.setStyleSheet(
+            "QFrame {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 rgba(0, 122, 255, 0.06), stop:1 rgba(52, 199, 89, 0.06));"
+            "  border: none;"
+            "  border-radius: 10px;"
+            "}"
+        )
+        status_layout = QHBoxLayout(status_card)
+        status_layout.setContentsMargins(16, 12, 16, 12)
+        status_layout.setSpacing(0)
+
+        # Left side: Status indicator
+        left_container = QVBoxLayout()
+        left_container.setSpacing(2)
+        
+        status_row = QHBoxLayout()
+        status_row.setSpacing(6)
+        
+        pump_status_icon = QLabel("●")
+        pump_status_icon.setStyleSheet(
+            "font-size: 12px; color: #86868B; background: transparent;"
+        )
+        status_row.addWidget(pump_status_icon)
+        self.sidebar.flow_pump_status_icon = pump_status_icon
+
+        pump_status_label = QLabel("Idle")
+        pump_status_label.setStyleSheet(
+            "font-size: 14px;"
+            "font-weight: 700;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+        )
+        status_row.addWidget(pump_status_label)
+        self.sidebar.flow_pump_status_label = pump_status_label
+        status_row.addStretch()
+        
+        left_container.addLayout(status_row)
+        
+        # Flow rate under status
+        flow_row = QHBoxLayout()
+        flow_row.setSpacing(4)
+        
+        flow_rate_value = QLabel("0")
+        flow_rate_value.setStyleSheet(
+            "font-size: 20px;"
+            "font-weight: 700;"
+            "color: #007AFF;"
+            "background: transparent;"
+            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+        )
+        flow_row.addWidget(flow_rate_value)
+        self.sidebar.flow_current_rate = flow_rate_value
+
+        flow_rate_unit = QLabel("µL/min")
+        flow_rate_unit.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent; padding-top: 6px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        flow_row.addWidget(flow_rate_unit)
+        flow_row.addStretch()
+        
+        left_container.addLayout(flow_row)
+        status_layout.addLayout(left_container, 1)
+
+        status_layout.addSpacing(16)
+
+        # Right side: Plunger + Contact
+        right_container = QVBoxLayout()
+        right_container.setSpacing(6)
+
+        # Plunger Position
+        plunger_row = QHBoxLayout()
+        plunger_row.setSpacing(4)
+
+        plunger_title = QLabel("Plunger")
+        plunger_title.setStyleSheet(
+            "font-size: 10px; color: #86868B; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        plunger_row.addWidget(plunger_title)
+        plunger_row.addStretch()
+
+        plunger_value = QLabel("0")
+        plunger_value.setStyleSheet(
+            "font-size: 14px;"
+            "font-weight: 600;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+        )
+        plunger_row.addWidget(plunger_value)
+        self.sidebar.flow_plunger_position = plunger_value
+
+        plunger_unit = QLabel("µL")
+        plunger_unit.setStyleSheet(
+            "font-size: 10px; color: #86868B; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        plunger_row.addWidget(plunger_unit)
+
+        right_container.addLayout(plunger_row)
+
+        # Contact Time
+        contact_row = QHBoxLayout()
+        contact_row.setSpacing(4)
+
+        contact_title = QLabel("Contact")
+        contact_title.setStyleSheet(
+            "font-size: 10px; color: #86868B; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        contact_row.addWidget(contact_title)
+        contact_row.addStretch()
+
+        contact_value = QLabel("0.0")
+        contact_value.setStyleSheet(
+            "font-size: 14px;"
+            "font-weight: 600;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+        )
+        contact_row.addWidget(contact_value)
+        self.sidebar.flow_contact_time = contact_value
+
+        contact_unit = QLabel("s")
+        contact_unit.setStyleSheet(
+            "font-size: 10px; color: #86868B; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        contact_row.addWidget(contact_unit)
+
+        right_container.addLayout(contact_row)
+        status_layout.addLayout(right_container, 1)
+
+        tab_layout.addWidget(status_card)
+        tab_layout.addSpacing(12)
+
     def _build_affipump_control(self, tab_layout: QVBoxLayout):
         """Build AffiPump Control section."""
         affipump_section = CollapsibleSection(
@@ -303,6 +515,48 @@ class FlowTabBuilder:
             "Concentration cycle",
         )
 
+        # Quick Preset buttons
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(4)
+        
+        preset_label = QLabel("Quick:")
+        preset_label.setStyleSheet(
+            "font-size: 11px;"
+            "color: #86868B;"
+            "background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+        )
+        preset_row.addWidget(preset_label)
+        
+        for preset_val in [5, 10, 25, 50, 100]:
+            preset_btn = QPushButton(str(preset_val))
+            preset_btn.setFixedSize(36, 24)
+            preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            preset_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #007AFF;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 4px;"
+                "  font-size: 11px;"
+                "  font-weight: 600;"
+                "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #0051D5;"
+                "}"
+                "QPushButton:pressed {"
+                "  background: #004BB5;"
+                "}"
+            )
+            preset_btn.setToolTip(f"Set all flow rates to {preset_val} µL/min")
+            preset_btn.clicked.connect(lambda checked, v=preset_val: self._set_preset_flow_rate(v))
+            preset_row.addWidget(preset_btn)
+        
+        preset_row.addStretch()
+        affipump_card_layout.addLayout(preset_row)
+        affipump_card_layout.addSpacing(4)
+
         self._add_separator(affipump_card_layout)
 
         # Pump Operations label
@@ -317,41 +571,15 @@ class FlowTabBuilder:
         )
         affipump_card_layout.addWidget(operations_label)
 
-        # Prime and Cleanup buttons row
-        prime_cleanup_layout = QHBoxLayout()
-        prime_cleanup_layout.setSpacing(8)
+        # Start Buffer and Flush row
+        start_flush_layout = QHBoxLayout()
+        start_flush_layout.setSpacing(8)
 
-        # Prime Pump button
-        prime_btn = QPushButton("🔧 Prime Pump")
-        prime_btn.setFixedHeight(36)
-        prime_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        prime_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 0px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #0051D5;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #004BB5;"
-            "}"
-        )
-        prime_btn.setToolTip("Run prime pump sequence (6 cycles)")
-        prime_cleanup_layout.addWidget(prime_btn)
-        self.sidebar.pump_prime_btn = prime_btn
-
-        # Cleanup button
-        cleanup_btn = QPushButton("🧹 Clean Pump")
-        cleanup_btn.setFixedHeight(36)
-        cleanup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cleanup_btn.setStyleSheet(
+        # Start Buffer button
+        start_buffer_btn = QPushButton("▶ Start Buffer")
+        start_buffer_btn.setFixedHeight(36)
+        start_buffer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        start_buffer_btn.setStyleSheet(
             "QPushButton {"
             "  background: #34C759;"
             "  color: white;"
@@ -369,36 +597,121 @@ class FlowTabBuilder:
             "  background: #1E7E34;"
             "}"
         )
-        cleanup_btn.setToolTip("Run cleanup sequence (9-phase complete cleaning)")
-        prime_cleanup_layout.addWidget(cleanup_btn)
-        self.sidebar.pump_cleanup_btn = cleanup_btn
+        start_buffer_btn.setToolTip("Start continuous buffer flow")
+        start_flush_layout.addWidget(start_buffer_btn)
+        self.sidebar.start_buffer_btn = start_buffer_btn
 
-        affipump_card_layout.addLayout(prime_cleanup_layout)
+        # Flush Loop button
+        flush_btn = QPushButton("🔄 Flush Loop")
+        flush_btn.setFixedHeight(36)
+        flush_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        flush_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #5AC8FA;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #32ADE6;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #209CCA;"
+            "}"
+        )
+        flush_btn.setToolTip("Flush sample loop with buffer")
+        start_flush_layout.addWidget(flush_btn)
+        self.sidebar.flush_btn = flush_btn
+
+        affipump_card_layout.addLayout(start_flush_layout)
+
+        # Inject buttons row
+        inject_layout = QHBoxLayout()
+        inject_layout.setSpacing(8)
+
+        # Simple Inject button
+        inject_simple_btn = QPushButton("💉 Inject (Simple)")
+        inject_simple_btn.setFixedHeight(36)
+        inject_simple_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        inject_simple_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #FF9500;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #E08500;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #C77500;"
+            "}"
+        )
+        inject_simple_btn.setToolTip("Run simple injection (full syringe dispense with contact time)")
+        inject_layout.addWidget(inject_simple_btn)
+        self.sidebar.inject_simple_btn = inject_simple_btn
+
+        # Partial Loop Inject button
+        inject_partial_btn = QPushButton("💉 Inject (Partial Loop)")
+        inject_partial_btn.setFixedHeight(36)
+        inject_partial_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        inject_partial_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #AF52DE;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #9A3FCC;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #8230B3;"
+            "}"
+        )
+        inject_partial_btn.setToolTip("Run partial loop injection (14-step protocol with spike)")
+        inject_layout.addWidget(inject_partial_btn)
+        self.sidebar.inject_partial_btn = inject_partial_btn
+
+        affipump_card_layout.addLayout(inject_layout)
 
         # Advanced Settings button row
         advanced_layout = QHBoxLayout()
         advanced_layout.addStretch()
 
-        advanced_btn = QPushButton("⚙️ Advanced Settings")
-        advanced_btn.setFixedHeight(28)
+        advanced_btn = QPushButton("⚙️")
+        advanced_btn.setFixedSize(32, 32)
         advanced_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         advanced_btn.setStyleSheet(
             "QPushButton {"
-            "  background: rgba(0, 0, 0, 0.06);"
-            "  color: #86868B;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "  background: white;"
+            "  color: #007AFF;"
+            "  border: 1px solid rgba(0, 0, 0, 0.15);"
             "  border-radius: 6px;"
-            "  font-size: 11px;"
+            "  font-size: 16px;"
             "  font-weight: 500;"
-            "  padding: 0px 12px;"
+            "  padding: 0px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QPushButton:hover {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "  color: #1D1D1F;"
+            "  background: rgba(0, 122, 255, 0.1);"
+            "  color: #0051D5;"
+            "  border: 1px solid #007AFF;"
             "}"
             "QPushButton:pressed {"
-            "  background: rgba(0, 0, 0, 0.15);"
+            "  background: rgba(0, 122, 255, 0.2);"
             "}"
         )
         advanced_btn.setToolTip("Advanced flow rate settings")
@@ -410,6 +723,20 @@ class FlowTabBuilder:
 
         affipump_section.add_content_widget(affipump_card)
         tab_layout.addWidget(affipump_section)
+
+    def _set_preset_flow_rate(self, value):
+        """Set all main flow rates to the same preset value.
+        
+        Args:
+            value: Flow rate value in µL/min
+            
+        """
+        if hasattr(self.sidebar, 'pump_setup_spin'):
+            self.sidebar.pump_setup_spin.setValue(value)
+        if hasattr(self.sidebar, 'pump_functionalization_spin'):
+            self.sidebar.pump_functionalization_spin.setValue(value)
+        if hasattr(self.sidebar, 'pump_assay_spin'):
+            self.sidebar.pump_assay_spin.setValue(value)
 
     def _show_advanced_settings(self):
         """Show the advanced flow rate settings dialog."""
@@ -564,53 +891,133 @@ class FlowTabBuilder:
         )
         loop_row.addWidget(loop_label)
 
-        # KC1 Loop switch
-        kc1_loop_switch = QPushButton("Load")
-        kc1_loop_switch.setCheckable(True)
-        kc1_loop_switch.setFixedSize(80, 28)
-        kc1_loop_switch.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc1_loop_switch.setStyleSheet(
-            "QPushButton {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
-            "  border: none;"
-            "  border-radius: 14px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:checked {"
-            "  background: #34C759;"
-            "  color: white;"
-            "}"
-        )
-        kc1_loop_switch.clicked.connect(lambda: kc1_loop_switch.setText("To Sensor" if kc1_loop_switch.isChecked() else "Load"))
-        loop_row.addWidget(kc1_loop_switch)
-        self.sidebar.kc1_loop_switch = kc1_loop_switch
+        # KC1 Loop segmented control (Load | Sensor)
+        kc1_loop_container = QWidget()
+        kc1_loop_container.setFixedSize(110, 28)
+        kc1_loop_layout = QHBoxLayout(kc1_loop_container)
+        kc1_loop_layout.setContentsMargins(0, 0, 0, 0)
+        kc1_loop_layout.setSpacing(0)
 
-        # KC2 Loop switch
-        kc2_loop_switch = QPushButton("Load")
-        kc2_loop_switch.setCheckable(True)
-        kc2_loop_switch.setFixedSize(80, 28)
-        kc2_loop_switch.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc2_loop_switch.setStyleSheet(
+        kc1_btn_load = QPushButton("Load")
+        kc1_btn_load.setCheckable(True)
+        kc1_btn_load.setChecked(True)
+        kc1_btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
+        kc1_btn_load.setStyleSheet(
             "QPushButton {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
+            "  background: #34C759;"
+            "  color: white;"
             "  border: none;"
-            "  border-radius: 14px;"
-            "  font-size: 11px;"
+            "  border-radius: 14px 0px 0px 14px;"
+            "  font-size: 10px;"
             "  font-weight: 600;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
-            "QPushButton:checked {"
-            "  background: #34C759;"
-            "  color: white;"
+            "QPushButton:!checked {"
+            "  background: #E5E5EA;"
+            "  color: #86868B;"
             "}"
         )
-        kc2_loop_switch.clicked.connect(lambda: kc2_loop_switch.setText("To Sensor" if kc2_loop_switch.isChecked() else "Load"))
-        loop_row.addWidget(kc2_loop_switch)
-        self.sidebar.kc2_loop_switch = kc2_loop_switch
+
+        kc1_btn_sensor = QPushButton("Sensor")
+        kc1_btn_sensor.setCheckable(True)
+        kc1_btn_sensor.setCursor(Qt.CursorShape.PointingHandCursor)
+        kc1_btn_sensor.setStyleSheet(
+            "QPushButton {"
+            "  background: #34C759;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 0px 14px 14px 0px;"
+            "  font-size: 10px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:!checked {"
+            "  background: #E5E5EA;"
+            "  color: #86868B;"
+            "}"
+        )
+
+        def kc1_select_load():
+            kc1_btn_load.setChecked(True)
+            kc1_btn_sensor.setChecked(False)
+
+        def kc1_select_sensor():
+            kc1_btn_load.setChecked(False)
+            kc1_btn_sensor.setChecked(True)
+
+        kc1_btn_load.clicked.connect(kc1_select_load)
+        kc1_btn_sensor.clicked.connect(kc1_select_sensor)
+
+        kc1_loop_layout.addWidget(kc1_btn_load)
+        kc1_loop_layout.addWidget(kc1_btn_sensor)
+
+        loop_row.addWidget(kc1_loop_container)
+        self.sidebar.kc1_loop_btn_load = kc1_btn_load
+        self.sidebar.kc1_loop_btn_sensor = kc1_btn_sensor
+
+        # KC2 Loop segmented control (Load | Sensor)
+        kc2_loop_container = QWidget()
+        kc2_loop_container.setFixedSize(110, 28)
+        kc2_loop_layout = QHBoxLayout(kc2_loop_container)
+        kc2_loop_layout.setContentsMargins(0, 0, 0, 0)
+        kc2_loop_layout.setSpacing(0)
+
+        kc2_btn_load = QPushButton("Load")
+        kc2_btn_load.setCheckable(True)
+        kc2_btn_load.setChecked(True)
+        kc2_btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
+        kc2_btn_load.setStyleSheet(
+            "QPushButton {"
+            "  background: #34C759;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 14px 0px 0px 14px;"
+            "  font-size: 10px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:!checked {"
+            "  background: #E5E5EA;"
+            "  color: #86868B;"
+            "}"
+        )
+
+        kc2_btn_sensor = QPushButton("Sensor")
+        kc2_btn_sensor.setCheckable(True)
+        kc2_btn_sensor.setCursor(Qt.CursorShape.PointingHandCursor)
+        kc2_btn_sensor.setStyleSheet(
+            "QPushButton {"
+            "  background: #34C759;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 0px 14px 14px 0px;"
+            "  font-size: 10px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:!checked {"
+            "  background: #E5E5EA;"
+            "  color: #86868B;"
+            "}"
+        )
+
+        def kc2_select_load():
+            kc2_btn_load.setChecked(True)
+            kc2_btn_sensor.setChecked(False)
+
+        def kc2_select_sensor():
+            kc2_btn_load.setChecked(False)
+            kc2_btn_sensor.setChecked(True)
+
+        kc2_btn_load.clicked.connect(kc2_select_load)
+        kc2_btn_sensor.clicked.connect(kc2_select_sensor)
+
+        kc2_loop_layout.addWidget(kc2_btn_load)
+        kc2_loop_layout.addWidget(kc2_btn_sensor)
+
+        loop_row.addWidget(kc2_loop_container)
+        self.sidebar.kc2_loop_btn_load = kc2_btn_load
+        self.sidebar.kc2_loop_btn_sensor = kc2_btn_sensor
 
         loop_row.addStretch()
         valve_card_layout.addLayout(loop_row)
@@ -1036,7 +1443,7 @@ class FlowTabBuilder:
         row.addSpacing(20)
 
         label = QLabel(label_text)
-        label.setFixedWidth(70)
+        label.setFixedWidth(120)
         label.setStyleSheet(
             "font-size: 12px;"
             "color: #1D1D1F;"
