@@ -844,18 +844,6 @@ class DeviceProfileManager:
         logger.info(f"   Serial: {serial_number}")
         logger.info(f"   LED Type: {led_type} ({led_type_full})")
 
-        # ALSO save to active calibrations location
-        try:
-            project_root = Path(__file__).resolve().parents[2]
-            active_dir = project_root / "calibrations" / "active" / serial_number
-            active_dir.mkdir(parents=True, exist_ok=True)
-            active_profile = active_dir / "device_profile.json"
-            with active_profile.open("w") as f:
-                json.dump(profile_data, f, indent=2)
-            logger.info(f"✅ Active profile saved: calibrations/active/{serial_number}/device_profile.json")
-        except Exception as e:
-            logger.warning(f"Could not save to active location: {e}")
-
         return profile_path
 
     def update_device_config(self, polarizer_results: dict | None, serial_number: str | None = None) -> None:

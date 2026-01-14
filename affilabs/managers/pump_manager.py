@@ -44,7 +44,7 @@ class PumpManager(QObject):
     operation_progress = Signal(str, int, str)  # operation, progress_percent, message
     operation_completed = Signal(str, bool)  # operation_name, success
     error_occurred = Signal(str, str)  # operation_name, error_message
-    
+
     # Status update signals for UI
     status_updated = Signal(str, float, float, float)  # status, flow_rate, plunger_pos, contact_time
 
@@ -126,16 +126,9 @@ class PumpManager(QObject):
             logger.info(f"  Dispense: {dispense_speed} µL/min")
 
             pump = self.hardware_manager.pump
-            ctrl = self.hardware_manager._ctrl_raw  # For valve control
+            ctrl = self.hardware_manager._ctrl_raw
 
-            # DEBUG: Check controller availability
-            logger.info(f"🔍 Controller for valves: {ctrl}")
-            logger.info(f"🔍 Controller type: {type(ctrl).__name__ if ctrl else 'None'}")
-            if ctrl:
-                logger.info(f"🔍 Has knx_six_both: {hasattr(ctrl, 'knx_six_both')}")
-                logger.info(f"🔍 Has knx_three_both: {hasattr(ctrl, 'knx_three_both')}")
-
-            # CRITICAL: Initialize pumps before priming!
+            # Initialize pumps before priming
             logger.info("🔧 Initializing pumps to zero position...")
             self.operation_progress.emit("prime", 0, "Initializing pumps...")
             pump._pump.pump.initialize_pumps()
@@ -156,55 +149,40 @@ class PumpManager(QObject):
                     progress,
                     f"Cycle {cycle}/{cycles}",
                 )
-                
+
                 # Emit status update for UI
                 self.status_updated.emit("Priming", dispense_speed, volume_ul, 0.0)
 
                 logger.info(f"\n🔄 Cycle {cycle}/{cycles}")
 
-                # Valve operations at specific cycles
-                if ctrl:
-                    if cycle == 3:
-                        logger.info("  🔧 Opening BOTH load valves (6-port)...")
-                        result = ctrl.knx_six_both(1)
-                        logger.info(f"  🔍 knx_six_both(1) returned: {result}")
-                        if result:
-                            logger.info("  ✅ Both 6-port valves opened")
-                        else:
-                            logger.error("  ❌ Failed to open 6-port valves!")
-                        await asyncio.sleep(0.5)
+# Open 6-port valves at cycle 3 (INJECT position for flow)
+                if cycle == 3 and ctrl:
+                    logger.info("  🔧 Opening 6-port valves to INJECT position")
+                    result1 = ctrl.knx_six(state=1, ch=1)  # Ch1: state 1 = INJECT
+                    logger.info(f"     6-port valve 1: {'SUCCESS' if result1 else 'FAILED'}")
+                    await asyncio.sleep(0.2)
+                    
+                    result2 = ctrl.knx_six(state=1, ch=2)  # Ch2: state 1 = INJECT
+                    logger.info(f"     6-port valve 2: {'SUCCESS' if result2 else 'FAILED'}")
+                    await asyncio.sleep(0.3)
 
-                    elif cycle == 5:
-                        logger.info("  🔧 Opening BOTH channel valves (3-way)...")
-                        result = ctrl.knx_three_both(1)
-                        logger.info(f"  🔍 knx_three_both(1) returned: {result}")
-                        if result:
-                            logger.info("  ✅ Both 3-way valves opened")
-                        else:
-                            logger.error("  ❌ Failed to open 3-way valves!")
-                        await asyncio.sleep(0.5)
-                else:
-                    logger.warning(f"  ⚠️ No controller available for valve control at cycle {cycle}")
+# Open 3-way valves at cycle 5 (LOAD position for flow)
+                elif cycle == 5 and ctrl:
+                    logger.info("  🔧 Opening 3-way valves to LOAD position")
+                    result1 = ctrl.knx_three(state=1, ch=1)  # Ch1: state 1 = LOAD
+                    logger.info(f"     3-way valve 1: {'SUCCESS' if result1 else 'FAILED'}")
+                    await asyncio.sleep(0.2)
+                    
+                    result2 = ctrl.knx_three(state=1, ch=2)  # Ch2: state 1 = LOAD
+                    logger.info(f"     3-way valve 2: {'SUCCESS' if result2 else 'FAILED'}")
+                    await asyncio.sleep(0.3)
 
                 # Aspirate both pumps
-                logger.info(f"  → ASPIRATE {volume_ul}µL BOTH PUMPS (KC1 & KC2)")
-                logger.debug(f"  → pump object: {type(pump)}")
-                logger.debug(f"  → pump._pump object: {type(pump._pump)}")
-                logger.debug(f"  → pump._pump.pump object: {type(pump._pump.pump)}")
-
-                # Use broadcast command to control BOTH pumps
+                logger.info(f"  → Aspirate {volume_ul}µL (both pumps)")
                 try:
                     pump._pump.pump.aspirate_both(volume_ul, aspirate_speed_ul_s)
-                    logger.info("  → Both pumps started SIMULTANEOUSLY via broadcast command")
-                except AttributeError as e:
-                    error_msg = f"aspirate_both() method not available: {e}"
-                    logger.error(f"❌ {error_msg}")
-                    logger.error("  → Falling back to individual pump control")
-                    # Fallback to individual control
-                    pump._pump.aspirate(1, volume_ul, aspirate_speed * 60.0)
-                    pump._pump.aspirate(2, volume_ul, aspirate_speed * 60.0)
                 except Exception as e:
-                    error_msg = f"Unexpected error during aspirate_both: {e}"
+                    error_msg = f"Aspirate failed: {e}"
                     logger.exception(error_msg)
                     self.error_occurred.emit("prime", error_msg)
                     await self._home_plungers(pump)
@@ -245,11 +223,8 @@ class PumpManager(QObject):
                 await asyncio.sleep(0.5)
 
                 # Dispense both pumps
-                logger.info(f"  → DISPENSE {volume_ul}µL BOTH PUMPS (KC1 & KC2)")
-
-                # Use broadcast command to control BOTH pumps
+                logger.info(f"  → Dispense {volume_ul}µL (both pumps)")
                 pump._pump.pump.dispense_both(volume_ul, dispense_speed_ul_s)
-                logger.info("  → Both pumps started SIMULTANEOUSLY via broadcast command")
 
                 (
                     p1_ready,
@@ -286,21 +261,23 @@ class PumpManager(QObject):
 
             logger.info("\n✅ Priming completed successfully")
 
-            # CRITICAL: Close all valves after priming to prevent overheating
+            # Close all valves after priming
             if ctrl:
-                logger.info("🔧 Closing valves after priming...")
+                logger.info("🔧 Closing all valves after priming...")
                 try:
-                    # Close 3-way channel valves first
-                    if ctrl.knx_three_both(0):
-                        logger.info("  ✅ 3-way valves closed")
-                    await asyncio.sleep(0.2)
+                    # Close 3-way valves to WASTE (state 0)
+                    ctrl.knx_three(state=0, ch=1)
+                    await asyncio.sleep(0.1)
+                    ctrl.knx_three(state=0, ch=2)
+                    await asyncio.sleep(0.1)
 
-                    # Close 6-port load valves
-                    if ctrl.knx_six_both(0):
-                        logger.info("  ✅ 6-port valves closed")
-                    logger.info("  [OK] All valves closed - device safe from heating")
+                    # Close 6-port valves to LOAD (state 0)
+                    ctrl.knx_six(state=0, ch=1)
+                    await asyncio.sleep(0.1)
+                    ctrl.knx_six(state=0, ch=2)
+                    logger.info("✅ All valves closed")
                 except Exception as valve_err:
-                    logger.error(f"  ⚠️ Valve close failed: {valve_err}")
+                    logger.error(f"⚠️ Valve close failed: {valve_err}")
 
             self.operation_progress.emit("prime", 100, "Complete")
             self.operation_completed.emit("prime", True)
@@ -314,15 +291,18 @@ class PumpManager(QObject):
             return False
 
         finally:
-            # SAFETY: Always close valves on exit (success or failure)
+            # Always close valves on exit (safety)
             if ctrl:
                 try:
-                    logger.info("🔧 [SAFETY] Closing valves in finally block...")
-                    ctrl.knx_three_both(0)
-                    ctrl.knx_six_both(0)
-                    logger.info("  [OK] Valves closed")
+                    ctrl.knx_three(state=0, ch=1)
+                    await asyncio.sleep(0.05)
+                    ctrl.knx_three(state=0, ch=2)
+                    await asyncio.sleep(0.05)
+                    ctrl.knx_six(state=0, ch=1)
+                    await asyncio.sleep(0.05)
+                    ctrl.knx_six(state=0, ch=2)
                 except Exception as e:
-                    logger.error(f"  Failed to close valves: {e}")
+                    logger.error(f"Failed to close valves in finally: {e}")
 
             self._current_operation = PumpOperation.IDLE
 
@@ -597,10 +577,10 @@ class PumpManager(QObject):
 
                 # Aspirate
                 pump._pump.pump.aspirate_both(volume_ul, 24000.0 / 60.0)  # Fast aspirate
-                
+
                 # Emit status update during aspirate
                 self.status_updated.emit("Aspirating", flow_rate, volume_ul, 0.0)
-                
+
                 p1_ready, p2_ready, _, _, _ = await asyncio.get_event_loop().run_in_executor(
                     None,
                     pump._pump.pump.wait_until_both_ready,
@@ -616,7 +596,7 @@ class PumpManager(QObject):
 
                 # Dispense at specified flow rate
                 pump._pump.pump.dispense_both(volume_ul, speed_ul_s)
-                
+
                 # Emit status update during dispense with plunger position
                 try:
                     p1_pos = pump._pump.pump.get_plunger_position(1) or 0.0
@@ -625,7 +605,7 @@ class PumpManager(QObject):
                     self.status_updated.emit("Dispensing", flow_rate, avg_pos, 0.0)
                 except Exception:
                     self.status_updated.emit("Dispensing", flow_rate, 0.0, 0.0)
-                
+
                 p1_ready, p2_ready, _, _, _ = await asyncio.get_event_loop().run_in_executor(
                     None,
                     pump._pump.pump.wait_until_both_ready,

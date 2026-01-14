@@ -380,20 +380,12 @@ class HardwareManager(QObject):
             s_position = servo_positions["s"]
             p_position = servo_positions["p"]
 
-            logger.info(f"📍 Servo positions from device_config: S={s_position}°, P={p_position}°")
+            logger.info(f"📍 Servo positions from device_config: S={s_position} PWM, P={p_position} PWM")
 
-            # CRITICAL: Sync device_config to EEPROM FIRST (device_config is truth)
-            logger.info("📝 Syncing device_config to EEPROM (device_config is source of truth)...")
-            try:
-                sync_success = self.device_config.sync_to_eeprom(self._ctrl_raw)
-                if sync_success:
-                    logger.info("[OK] Device config synced to EEPROM successfully")
-                else:
-                    logger.warning(
-                        "⚠️  EEPROM sync failed - servo positions may not match device_config"
-                    )
-            except Exception as sync_err:
-                logger.error(f"Failed to sync device_config to EEPROM: {sync_err}")
+            # Store positions in controller memory (no EEPROM write)
+            logger.info("📝 Loading servo positions to controller (RAM-only, no flash writes)...")
+            self._ctrl_raw.set_servo_positions(s_position, p_position)
+            logger.info("[OK] Servo positions loaded from device config")
 
             # Turn off all LEDs for safety during servo movement
             logger.info("💡 Turning off all LEDs for safe servo movement...")

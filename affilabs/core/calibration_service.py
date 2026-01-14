@@ -550,12 +550,15 @@ class CalibrationService(QObject):
                     nonlocal optical_cal_thread
 
                     try:
+                        # Get raw controller for valve operations (HAL adapter doesn't have valve methods)
+                        raw_ctrl = ctrl._ctrl if hasattr(ctrl, '_ctrl') else ctrl
+                        
                         # CRITICAL: Initialize pumps before priming!
                         logger.info("🔧 Initializing pumps to zero position...")
                         self.calibration_progress.emit("Initializing Pumps", 5)
                         pump._pump.pump.initialize_pumps()
                         logger.info("✅ Pumps initialized and ready")
-                        
+
                         aspirate_speed_ul_s = 24000.0 / 60.0
                         dispense_speed_ul_s = 5000.0 / 60.0
                         volume_ul = 1000.0
@@ -571,12 +574,16 @@ class CalibrationService(QObject):
 
                             logger.info(f"\n🔄 Pump Cycle {cycle}/6")
 
-                            # Valve operations (same as prime-pump.py)
+                            # Open 6-port valves at cycle 3 (INJECT position for flow)
                             if cycle == 3:
-                                logger.info("  🔧 Opening BOTH load valves (6-port)...")
-                                if ctrl:
-                                    ctrl.knx_six_both(1)
-                                await asyncio.sleep(0.5)
+                                logger.info("  🔧 Opening 6-port valves to INJECT position")
+                                if raw_ctrl:
+                                    result1 = raw_ctrl.knx_six(state=1, ch=1)
+                                    logger.info(f"     6-port valve 1: {'SUCCESS' if result1 else 'FAILED'}")
+                                    await asyncio.sleep(0.2)
+                                    result2 = raw_ctrl.knx_six(state=1, ch=2)
+                                    logger.info(f"     6-port valve 2: {'SUCCESS' if result2 else 'FAILED'}")
+                                await asyncio.sleep(0.3)
 
                             elif cycle == 4:
                                 # === START OPTICAL CALIBRATION IN PARALLEL ===
@@ -592,10 +599,14 @@ class CalibrationService(QObject):
                                     optical_cal_thread.start()
 
                             elif cycle == 5:
-                                logger.info("  🔧 Opening BOTH channel valves (3-way)...")
-                                if ctrl:
-                                    ctrl.knx_three_both(1)
-                                await asyncio.sleep(0.5)
+                                logger.info("  🔧 Opening 3-way valves to LOAD position")
+                                if raw_ctrl:
+                                    result1 = raw_ctrl.knx_three(state=1, ch=1)
+                                    logger.info(f"     3-way valve 1: {'SUCCESS' if result1 else 'FAILED'}")
+                                    await asyncio.sleep(0.2)
+                                    result2 = raw_ctrl.knx_three(state=1, ch=2)
+                                    logger.info(f"     3-way valve 2: {'SUCCESS' if result2 else 'FAILED'}")
+                                await asyncio.sleep(0.3)
 
                             # Aspirate
                             pump._pump.pump.aspirate_both(volume_ul, aspirate_speed_ul_s)
@@ -630,6 +641,25 @@ class CalibrationService(QObject):
                                 raise RuntimeError("Pump dispense failed")
 
                             logger.info("  ✅ Cycle completed")
+
+                        # CRITICAL: Close all valves after priming to prevent device heating
+                        if raw_ctrl:
+                            logger.info("\n🔒 Closing all valves after priming (critical safety step)...")
+                            try:
+                                # Close 3-way valves to WASTE (state 0)
+                                raw_ctrl.knx_three(state=0, ch=1)
+                                await asyncio.sleep(0.1)
+                                raw_ctrl.knx_three(state=0, ch=2)
+                                await asyncio.sleep(0.1)
+
+                                # Close 6-port valves to LOAD (state 0)
+                                raw_ctrl.knx_six(state=0, ch=1)
+                                await asyncio.sleep(0.1)
+                                raw_ctrl.knx_six(state=0, ch=2)
+                                logger.info("✅ All valves closed - device safe from heating")
+                            except Exception as valve_err:
+                                logger.error(f"❌ CRITICAL: Valve close failed: {valve_err}")
+                                logger.error("⚠️  DEVICE MAY BE HEATING! Manually power off if needed!")
 
                         logger.info("✅ Pump priming complete - waiting for optical calibration...")
 

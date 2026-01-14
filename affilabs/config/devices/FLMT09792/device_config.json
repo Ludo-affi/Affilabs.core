@@ -1,6 +1,33 @@
 {
+  "device_serial": "FLMT09792",
+  "device_type": "PicoP4PRO",
+  "detector_model": "USB4000",
+  "led_type": "LCW",
+  "led_type_full": "Luminus Cool White",
+  "oem_calibration_version": "1.1",
+  "calibration_date": "2026-01-04T18:50:07.789703",
   "hardware": {
-    "servo_s_position": 127,
-    "servo_p_position": 4
+    "servo_s_position": 4,
+    "servo_p_position": 127,
+    "polarizer_type": "BARREL",
+    "led_pcb_model": "luminus_cool_white",
+    "optical_fiber_diameter_um": 200,
+    "controller_type": "PicoP4PRO"
+  },
+  "polarizer": {
+    "s_position": 4,
+    "p_position": 127,
+    "sp_ratio": 1.6637032970049692,
+    "polarizer_type": "BARREL",
+    "method": "servo_calibration_barrel_detection",
+    "led_intensity_used": "20%",
+    "s_intensity": 19525.223635773706,
+    "p_intensity": 11736.001047135862,
+    "s_stable_range": [124, 136],
+    "p_stable_range": [4, 4]
+  },
+  "device_info": {
+    "created_date": "2026-01-04T18:50:07.789703",
+    "last_modified": "2026-01-14T11:00:00.000000"
   }
 }

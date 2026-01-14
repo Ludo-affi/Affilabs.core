@@ -317,10 +317,10 @@ class FlowTabBuilder:
         # Left side: Status indicator
         left_container = QVBoxLayout()
         left_container.setSpacing(2)
-        
+
         status_row = QHBoxLayout()
         status_row.setSpacing(6)
-        
+
         pump_status_icon = QLabel("●")
         pump_status_icon.setStyleSheet(
             "font-size: 12px; color: #86868B; background: transparent;"
@@ -339,13 +339,13 @@ class FlowTabBuilder:
         status_row.addWidget(pump_status_label)
         self.sidebar.flow_pump_status_label = pump_status_label
         status_row.addStretch()
-        
+
         left_container.addLayout(status_row)
-        
+
         # Flow rate under status
         flow_row = QHBoxLayout()
         flow_row.setSpacing(4)
-        
+
         flow_rate_value = QLabel("0")
         flow_rate_value.setStyleSheet(
             "font-size: 24px;"
@@ -364,7 +364,7 @@ class FlowTabBuilder:
         )
         flow_row.addWidget(flow_rate_unit)
         flow_row.addStretch()
-        
+
         left_container.addLayout(flow_row)
         status_layout.addLayout(left_container, 1)
 
@@ -518,7 +518,7 @@ class FlowTabBuilder:
         # Quick Preset buttons
         preset_row = QHBoxLayout()
         preset_row.setSpacing(4)
-        
+
         preset_label = QLabel("Quick:")
         preset_label.setStyleSheet(
             "font-size: 11px;"
@@ -527,7 +527,7 @@ class FlowTabBuilder:
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         preset_row.addWidget(preset_label)
-        
+
         for preset_val in [5, 10, 25, 50, 100]:
             preset_btn = QPushButton(str(preset_val))
             preset_btn.setFixedSize(36, 24)
@@ -552,7 +552,7 @@ class FlowTabBuilder:
             preset_btn.setToolTip(f"Set all flow rates to {preset_val} µL/min")
             preset_btn.clicked.connect(lambda checked, v=preset_val: self._set_preset_flow_rate(v))
             preset_row.addWidget(preset_btn)
-        
+
         preset_row.addStretch()
         affipump_card_layout.addLayout(preset_row)
         affipump_card_layout.addSpacing(4)
@@ -726,10 +726,10 @@ class FlowTabBuilder:
 
     def _set_preset_flow_rate(self, value):
         """Set all main flow rates to the same preset value.
-        
+
         Args:
             value: Flow rate value in µL/min
-            
+
         """
         if hasattr(self.sidebar, 'pump_setup_spin'):
             self.sidebar.pump_setup_spin.setValue(value)

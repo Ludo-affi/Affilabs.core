@@ -2283,16 +2283,39 @@ class PicoEZSPR(FlowController):
             logger.error(f"Error during knx_start {e}")
 
     def knx_three(self, state, ch):
+        """Control individual 3-way valve.
+
+        Args:
+            state: 0=waste, 1=load
+            ch: Channel (1 or 2)
+
+        Returns:
+            bool: True if successful
+        """
         try:
             cmd = f"v3{ch}{state:1d}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 response = self._ser.read()
-                return response == b"1"  # P4PRO firmware returns '1' for success
+                success = response == b"1"  # P4PRO firmware returns '1' for success
+
+                if success:
+                    # Track state change and cycle count
+                    old_state = self._valve_three_state.get(ch)
+                    if old_state is not None and old_state != state:
+                        self._valve_three_cycles[ch] += 1
+                        logger.debug(f"3-way valve {ch}: cycle {self._valve_three_cycles[ch]} ({old_state}→{state})")
+                    self._valve_three_state[ch] = state
+
+                    state_name = "LOAD" if state == 1 else "WASTE"
+                    logger.info(f"✓ KC{ch} 3-way valve → {state_name} (cycle {self._valve_three_cycles[ch]})")
+
+                return success
             logger.error("failed to send cmd knx_three")
             return False
         except Exception as e:
             logger.error(f"Error during knx_three {e}")
+            return False
 
     def _cancel_valve_timer(self, ch):
         """Cancel existing safety timer for valve channel."""
@@ -2737,7 +2760,7 @@ class PicoP4PRO(FlowController):
                 self._ser.write(cmd.encode())
                 time.sleep(0.01)  # Small delay for firmware processing
                 resp = self._ser.read(10)
-                
+
                 if resp != b'1':
                     logger.warning(f"turn_on_channel({ch}) returned: {resp!r} (expected b'1')")
                     return False
@@ -2912,10 +2935,10 @@ class PicoP4PRO(FlowController):
         return self.servo_move_raw_pwm(target_pwm=p)
 
     def set_mode(self, mode: str) -> bool:
-        """Set polarizer mode (S or P) using ss/sp firmware commands.
+        """Set polarizer mode (S or P) using device config PWM values directly.
 
-        P4PRO firmware v2.0 uses 'ss' and 'sp' commands to move to stored positions.
-        The servo positions must be pre-programmed to flash using the flash command.
+        Uses servo:ANGLE,DURATION command (RAM-only, no EEPROM access).
+        Device config PWM values are the source of truth.
 
         Args:
             mode: 'S' or 'P' (case insensitive)
@@ -2929,77 +2952,56 @@ class PicoP4PRO(FlowController):
                 logger.error(f"Invalid mode: {mode} (must be 'S' or 'P')")
                 return False
 
-            # P4PRO firmware uses 'ss' for S-mode, 'sp' for P-mode
-            cmd = "ss\n" if mode == 'S' else "sp\n"
+            # Use stored PWM values from device config (set via set_servo_positions)
+            if not hasattr(self, '_servo_s_pos') or not hasattr(self, '_servo_p_pos'):
+                logger.error("Servo positions not loaded - call set_servo_positions() first")
+                return False
 
-            if self._ser is not None or self.open():
-                logger.info(f"🔄 Setting P4PRO polarizer to {mode}-mode")
-                self._ser.reset_input_buffer()
-                self._ser.write(cmd.encode())
-                time.sleep(0.05)
-                response = self._ser.read(10)
+            target_pwm = self._servo_s_pos if mode == 'S' else self._servo_p_pos
 
-                # P4PRO responds with b'1' for successful servo move
-                if response == b"1" or b"1" in response:
-                    logger.info(f"✅ Polarizer set to {mode}-mode")
-                    time.sleep(0.5)  # Wait for physical servo movement
-                    return True
-                else:
-                    logger.error(f"[P4PRO-SERVO] Failed to set {mode}-mode: response={response!r}")
-                    return False
-            return False
+            logger.info(f"🔄 Setting P4PRO polarizer to {mode}-mode (PWM={target_pwm})")
+
+            # Use direct PWM move (no EEPROM access)
+            success = self.servo_move_raw_pwm(target_pwm)
+
+            if success:
+                logger.info(f"✅ Polarizer set to {mode}-mode")
+                return True
+            else:
+                logger.error(f"[P4PRO-SERVO] Failed to set {mode}-mode")
+                return False
 
         except Exception as e:
             logger.error(f"Error setting polarizer mode: {e}")
             return False
 
     def set_servo_positions(self, s: int, p: int):
-        """Program servo S and P positions to P4PRO firmware flash memory.
+        """Store servo S and P PWM positions for direct RAM-only moves.
 
-        Uses 'sv' command to write positions to EEPROM. These positions are then
-        used by 'ss' and 'sp' commands to move the polarizer.
+        Device config values are stored in memory and used directly via
+        servo:ANGLE,DURATION commands. No EEPROM/flash writes.
 
         Args:
-            s: S-mode position in degrees (5-175)
-            p: P-mode position in degrees (5-175)
+            s: S-mode PWM position (0-255)
+            p: P-mode PWM position (0-255)
 
         Returns:
-            bool: True if flash write successful
+            bool: True if positions stored successfully
         """
         try:
-            # Validate positions
-            if not (5 <= s <= 175) or not (5 <= p <= 175):
-                logger.error(f"Invalid servo positions: S={s}, P={p} (must be 5-175)")
+            # Validate PWM positions
+            if not (0 <= s <= 255) or not (0 <= p <= 255):
+                logger.error(f"Invalid servo PWM positions: S={s}, P={p} (must be 0-255)")
                 return False
 
-            # Check if positions already match (avoid unnecessary flash writes and servo movement)
-            if hasattr(self, '_servo_s_pos') and hasattr(self, '_servo_p_pos'):
-                if self._servo_s_pos == s and self._servo_p_pos == p:
-                    logger.debug(f"Servo positions unchanged (S={s}°, P={p}°), skipping flash write")
-                    return True
-
-            # P4PRO firmware 'sv' command writes to flash: sv{s:03d}{p:03d}\n
-            cmd = f"sv{s:03d}{p:03d}\n"
-
-            if self._ser is not None or self.open():
-                logger.info(f"💾 Programming P4PRO servo positions to flash: S={s}°, P={p}°")
-                self._ser.reset_input_buffer()
-                self._ser.write(cmd.encode())
-                time.sleep(0.1)  # Flash write takes longer
-                response = self._ser.read(10)
-
-                if response == b"1" or b"1" in response:
-                    self._servo_s_pos = s
-                    self._servo_p_pos = p
-                    logger.info(f"✅ Servo positions programmed to P4PRO flash")
-                    return True
-                else:
-                    logger.error(f"[P4PRO-FLASH] Failed to program servo positions: response={response!r}")
-                    return False
-            return False
+            # Store positions in memory (no flash write)
+            self._servo_s_pos = s
+            self._servo_p_pos = p
+            logger.info(f"📍 Servo positions stored: S={s} PWM, P={p} PWM (device config source)")
+            return True
 
         except Exception as e:
-            logger.error(f"Error programming servo positions: {e}")
+            logger.error(f"Error storing servo positions: {e}")
             return False
 
     def write_config_to_eeprom(self, config: dict) -> bool:
