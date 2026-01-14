@@ -4651,8 +4651,11 @@ class AffilabsMainWindow(QMainWindow):
         # Static mode is available if we have detector AND PCB (regardless of pump)
         static_available = detector_ready and pcb_ready
 
-        # Flow mode is available if we have static mode hardware AND pump
-        flow_available = static_available and has_pump
+        # Flow mode is available when pump is detected (show green indicator)
+        # Full flow operation requires static mode hardware + pump
+        flow_available = has_pump
+        
+        logger.debug(f"🔄 Operation modes update: has_pump={has_pump}, flow_available={flow_available}, static_available={static_available}")
 
         # P4SPR static device - only Static mode
         if ctrl_type in ["P4SPR", "PicoP4SPR"]:
@@ -4669,6 +4672,7 @@ class AffilabsMainWindow(QMainWindow):
         # Update UI indicators
         if hasattr(self.sidebar, "set_operation_mode_availability"):
             self.sidebar.set_operation_mode_availability(static_available, flow_available)
+            logger.debug(f"✓ Called set_operation_mode_availability(static={static_available}, flow={flow_available})")
 
     def _update_scan_button_style(self) -> None:
         """Update scan button style based on scanning state.

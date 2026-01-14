@@ -62,7 +62,7 @@ class AdvancedFlowRatesDialog(QDialog):
         flush_row.addWidget(flush_label)
 
         self.flush_spin = QSpinBox()
-        self.flush_spin.setRange(1, 200)
+        self.flush_spin.setRange(1, 30000)
         self.flush_spin.setValue(50)
         self.flush_spin.setFixedWidth(70)
         self.flush_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
@@ -84,7 +84,7 @@ class AdvancedFlowRatesDialog(QDialog):
         regen_row.addWidget(regen_label)
 
         self.regeneration_spin = QSpinBox()
-        self.regeneration_spin.setRange(1, 200)
+        self.regeneration_spin.setRange(1, 30000)
         self.regeneration_spin.setValue(30)
         self.regeneration_spin.setFixedWidth(70)
         self.regeneration_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
@@ -106,7 +106,7 @@ class AdvancedFlowRatesDialog(QDialog):
         prime_row.addWidget(prime_label)
 
         self.prime_spin = QSpinBox()
-        self.prime_spin.setRange(1, 200)
+        self.prime_spin.setRange(1, 30000)
         self.prime_spin.setValue(100)
         self.prime_spin.setFixedWidth(70)
         self.prime_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
@@ -128,7 +128,7 @@ class AdvancedFlowRatesDialog(QDialog):
         inject_row.addWidget(inject_label)
 
         self.injections_spin = QSpinBox()
-        self.injections_spin.setRange(1, 200)
+        self.injections_spin.setRange(1, 30000)
         self.injections_spin.setValue(20)
         self.injections_spin.setFixedWidth(70)
         self.injections_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
@@ -489,7 +489,7 @@ class FlowTabBuilder:
             "pump_setup_spin",
             25,
             1,
-            200,
+            30000,
             "Default in autoread cycle",
         )
 
@@ -500,7 +500,7 @@ class FlowTabBuilder:
             "pump_functionalization_spin",
             10,
             1,
-            200,
+            30000,
             "Immobilization cycle",
         )
 
@@ -511,7 +511,7 @@ class FlowTabBuilder:
             "pump_assay_spin",
             15,
             1,
-            200,
+            30000,
             "Concentration cycle",
         )
 
@@ -686,6 +686,64 @@ class FlowTabBuilder:
         self.sidebar.inject_partial_btn = inject_partial_btn
 
         affipump_card_layout.addLayout(inject_layout)
+
+        # Maintenance buttons row (Home and Emergency Stop)
+        maintenance_layout = QHBoxLayout()
+        maintenance_layout.setSpacing(8)
+
+        # Home Pumps button
+        home_btn = QPushButton("🏠 Home Pumps")
+        home_btn.setFixedHeight(36)
+        home_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        home_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #0051D5;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #004BB5;"
+            "}"
+        )
+        home_btn.setToolTip("Home both pumps to zero position")
+        maintenance_layout.addWidget(home_btn)
+        self.sidebar.pump_home_btn = home_btn
+
+        # Emergency Stop button
+        emergency_stop_btn = QPushButton("🛑 STOP")
+        emergency_stop_btn.setFixedHeight(36)
+        emergency_stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        emergency_stop_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #FF3B30;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: bold;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #D32F2F;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #B71C1C;"
+            "}"
+        )
+        emergency_stop_btn.setToolTip("Emergency stop - immediately terminate all pump operations")
+        maintenance_layout.addWidget(emergency_stop_btn)
+        self.sidebar.pump_emergency_stop_btn = emergency_stop_btn
+
+        affipump_card_layout.addLayout(maintenance_layout)
 
         # Advanced Settings button row
         advanced_layout = QHBoxLayout()
