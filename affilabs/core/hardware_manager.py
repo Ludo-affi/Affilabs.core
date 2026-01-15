@@ -698,7 +698,7 @@ class HardwareManager(QObject):
                             if self._ctrl_raw and hasattr(self._ctrl_raw, "name"):
                                 detected_controller = self._ctrl_raw.name
                                 config_controller = self.device_config.config.get("hardware", {}).get("controller_model")
-                                
+
                                 if config_controller != detected_controller:
                                     logger.warning(f"Controller mismatch! Config: {config_controller}, Detected: {detected_controller}")
                                     logger.info(f"Updating controller model in config: {detected_controller}")

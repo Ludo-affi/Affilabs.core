@@ -147,8 +147,8 @@ WAVELENGTH_CACHE_MAX_AGE_DAYS: float = 7.0  # tighten from 30 → 7 days by defa
 # ALL timing calculations derive from these base parameters
 
 # Base timing parameters (can be changed in Advanced Settings)
-LED_ON_TIME_MS = 250.0  # LED ON duration (firmware default: 250ms)
-DETECTOR_WAIT_MS = 60.0  # MAX INTEGRATION TIME PER SCAN (default: 60ms)
+LED_ON_TIME_MS = 240.0  # LED ON duration (reduced from 250ms for faster cycles)
+DETECTOR_WAIT_MS = 45.0  # LED stabilization wait (accounts for ~15ms turn_on overhead = ~60ms actual)
 NUM_SCANS = 3  # Number of scans per spectrum (HAL averages these)
 SAFETY_BUFFER_MS = 10.0  # Safety margin for timing calculations
 

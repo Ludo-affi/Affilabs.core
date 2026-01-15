@@ -516,7 +516,7 @@ class CalibrationService(QObject):
                     try:
                         # Get raw controller for valve operations (HAL adapter doesn't have valve methods)
                         raw_ctrl = ctrl._ctrl if hasattr(ctrl, '_ctrl') else ctrl
-                        
+
                         # CRITICAL: Initialize pumps before priming!
                         logger.info("🔧 Initializing pumps to zero position...")
                         self.calibration_progress.emit("Initializing Pumps", 5)

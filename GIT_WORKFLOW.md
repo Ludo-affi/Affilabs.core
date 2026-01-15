@@ -120,8 +120,8 @@ git log --oneline -10
 
 **Before:** You were working on different branches, and when you pushed/pulled, Git would merge old settings from `master` into your local code.
 
-**Now:** 
-- Your work is on `dev-lucia-performance` 
+**Now:**
+- Your work is on `dev-lucia-performance`
 - This branch has your fast settings (0.05s updates)
 - When you push/pull, it only syncs with YOUR branch on GitHub
 - `master` can have slow settings (1.0s) - doesn't affect you

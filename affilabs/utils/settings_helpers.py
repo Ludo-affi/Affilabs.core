@@ -339,6 +339,12 @@ class SettingsHelpers:
             if optics_ready:
                 # Update device status UI directly (no hardware scan needed)
                 # Calibration has already verified the hardware is working
+                # Check if pump is connected
+                pump_is_connected = (
+                    hasattr(app.hardware_mgr, 'pump') and 
+                    app.hardware_mgr.pump is not None
+                )
+                
                 status_update = {
                     "sensor_ready": True,
                     "optics_ready": True,
@@ -346,8 +352,14 @@ class SettingsHelpers:
                     "spectrometer": app.hardware_mgr.usb.serial_number
                     if app.hardware_mgr.usb
                     else None,
-                    "fluidics_ready": app.hardware_mgr.pump is not None,
+                    "fluidics_ready": pump_is_connected,  # Set to True if pump detected
                 }
+                
+                logger.info(f"📋 Calibration complete - updating device status:")
+                logger.info(f"   Sensor: Ready")
+                logger.info(f"   Optics: Ready")
+                logger.info(f"   Fluidics: {'Ready' if pump_is_connected else 'Not Ready'} (pump {'detected' if pump_is_connected else 'not found'})")
+                
                 app._update_device_status_ui(status_update)
                 print(
                     "Device status updated directly (no hardware scan post-calibration)"

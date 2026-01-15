@@ -245,14 +245,8 @@ class Segment:
                         else:
                             self.error = "segment length = 0"
 
-                # Find the earliest timestamp across all channels for proper normalization
-                min_time = None
-                for ch in CH_LIST:
-                    if len(self.seg_x[ch]) > 0:
-                        if min_time is None or self.seg_x[ch][0] < min_time:
-                            min_time = self.seg_x[ch][0]
-
-                # Now normalize all channels relative to the earliest timestamp
+                # Normalize to START CURSOR position (self.start), not first data point
+                # This ensures Active Cycle always shows start_cursor = 0,0
                 for ch in CH_LIST:
                     if (len(self.seg_x[ch]) > 0) and (len(self.seg_y[ch]) > 0):
                         ref_index = 0
@@ -260,9 +254,9 @@ class Segment:
                             ref_index < (len(self.seg_y[ch]) - 1)
                         ):
                             ref_index += 1
-                        # Normalize to the earliest time across all channels
-                        if min_time is not None:
-                            self.seg_x[ch] = self.seg_x[ch] - min_time
+                        # Normalize time to START CURSOR position (not min_time)
+                        # This makes Active Cycle display start at 0,0 regardless of timeline position
+                        self.seg_x[ch] = self.seg_x[ch] - self.start
                         self.seg_y[ch] = self.seg_y[ch] - self.seg_y[ch][ref_index]
                         self.shift[ch] = self.seg_y[ch][-1]
                         self.error = None

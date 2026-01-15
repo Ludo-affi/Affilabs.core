@@ -28,7 +28,7 @@ git branch  # Should show * dev-lucia-performance
 ```
 
 ### If settings get slow again:
-1. Check `affilabs/app_config.py` 
+1. Check `affilabs/app_config.py`
 2. Make sure line 71-73 says: `TRANSMISSION_UPDATE_INTERVAL = 0.05`
 3. If it's back to 1.0, change it to 0.05 and commit
 
@@ -36,7 +36,7 @@ git branch  # Should show * dev-lucia-performance
 
 **Before:** Pushing/pulling from GitHub would overwrite your fast settings with slow ones from master branch
 
-**Now:** 
+**Now:**
 - Your branch (`dev-lucia-performance`) has the fast settings
 - GitHub syncs YOUR branch only
 - Master branch can be slow - doesn't affect you anymore

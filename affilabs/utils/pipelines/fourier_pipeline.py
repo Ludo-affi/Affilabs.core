@@ -135,18 +135,7 @@ class FourierPipeline(ProcessingPipeline):
             # in TransmissionProcessor before being passed to pipeline
             hint_index = np.argmin(spectrum)
 
-            # DEBUG: Log minimum position (first few times)
-            if not hasattr(self, "_debug_count"):
-                self._debug_count = 0
-            if self._debug_count < 3:
-                print(f"\n[FOURIER-MINIMUM-HINT #{self._debug_count+1}]")
-                print(
-                    f"  SPR region: {spr_wavelengths[0]:.1f}-{spr_wavelengths[-1]:.1f}nm ({len(spectrum)} points)",
-                )
-                print(
-                    f"  Minimum at index {hint_index}/{len(spectrum)}: {spr_wavelengths[hint_index]:.1f}nm",
-                )
-                print(f"  Transmission at minimum: {spectrum[hint_index]:.1f}%")
+            # Minimum hint found at index (verbose debug disabled)
 
             # Allow window_size override
             window_size = kwargs.get("window_size", self.window_size)
@@ -200,18 +189,6 @@ class FourierPipeline(ProcessingPipeline):
                     f"Fourier fit outside SPR region: {fit_lambda:.1f}nm - using triangulated hint",
                 )
                 fit_lambda = spr_wavelengths[hint_index]
-
-            # DEBUG: Log final result (first few times)
-            if hasattr(self, "_debug_count") and self._debug_count <= 3:
-                print(
-                    f"  Zero-crossing index: {zero}/{len(spectrum)} (searched around hint index {hint_index})",
-                )
-                print(
-                    f"  Regression window: indices {start}-{end}, wavelengths {spr_wavelengths[start]:.1f}-{spr_wavelengths[end-1]:.1f}nm",
-                )
-                print(f"  RESULT: {fit_lambda:.2f}nm")
-                print()
-                self._debug_count += 1
 
             return float(fit_lambda)
 

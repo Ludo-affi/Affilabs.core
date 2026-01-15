@@ -147,11 +147,8 @@ class SpectroscopyPresenter:
         try:
             channel_idx = self._channel_to_idx[channel]
 
-            # Log first update for debugging
+            # Track first update (logging disabled)
             if channel not in self._first_update_logged:
-                logger.info(
-                    f"First raw spectrum update for channel {channel}: {len(raw_spectrum)} points",
-                )
                 self._first_update_logged.add(channel)
 
             # Update curve (try direct access first, fallback to sidebar method)

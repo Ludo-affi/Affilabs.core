@@ -729,7 +729,7 @@ class Application(QApplication):
         # Pump operations manager
         from affilabs.managers import PumpManager
         from affilabs.managers.pump_manager import PumpOperation
-        
+
         self.pump_mgr = PumpManager(self.hardware_mgr)
         self.PumpOperation = PumpOperation  # Store for handler access
         if self.pump_mgr is None:
@@ -1029,7 +1029,7 @@ class Application(QApplication):
         self._plunger_poll_timer.setInterval(5000)  # 5 seconds
         # Timer will start when pump is detected
         logger.debug("✓ Plunger polling timer initialized")
-        
+
         # Valve position polling timer (3 second interval)
         self._valve_poll_timer = QTimer()
         self._valve_poll_timer.timeout.connect(self._poll_valve_positions)
@@ -1207,18 +1207,36 @@ class Application(QApplication):
         from affilabs.utils.settings_helpers import SettingsHelpers
 
         SettingsHelpers.on_calibration_complete(self, calibration_data)
-        
+
+        # Set LED intensities once after calibration (fixed for entire run)
+        if hasattr(self, 'hardware_mgr') and self.hardware_mgr and hasattr(self.hardware_mgr, 'ctrl'):
+            try:
+                intensities = calibration_data.p_mode_intensities
+                logger.info(f"Setting LED intensities (fixed for run): A={intensities.get('a', 0)}, B={intensities.get('b', 0)}, C={intensities.get('c', 0)}, D={intensities.get('d', 0)}")
+                self.hardware_mgr.ctrl.set_batch_intensities(
+                    a=int(intensities.get('a', 0)),
+                    b=int(intensities.get('b', 0)),
+                    c=int(intensities.get('c', 0)),
+                    d=int(intensities.get('d', 0))
+                )
+                logger.info("✓ LED intensities configured - will not change during run")
+            except Exception as e:
+                logger.warning(f"Could not set LED intensities: {e}")
+
+        # Show QC dialog with calibration results
+        self._show_qc_dialog(calibration_data)
+
         # Automatically log calibration to database for ML training
         self._log_calibration_to_database(calibration_data)
-        
+
         # Clear graph and resume live data after OEM calibration
         logger.info("📊 Clearing graph and resuming live data after calibration...")
-        
+
         # Clear the graph
         if hasattr(self, 'graph') and self.graph:
             self.graph.clear_plot()
             logger.info("   Graph cleared")
-        
+
         # Resume live acquisition if hardware is ready
         if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
             try:
@@ -1230,7 +1248,7 @@ class Application(QApplication):
                     logger.warning("   Acquisition manager not available")
             except Exception as e:
                 logger.warning(f"   Could not start live acquisition: {e}")
-        
+
         logger.info("✓ Post-calibration cleanup complete")
 
     def _show_qc_dialog(self, calibration_data):
@@ -1423,7 +1441,7 @@ class Application(QApplication):
 
         # OEM Calibration button (direct connection)
         ui.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
-        
+
         # LED Model Training button (direct connection)
         ui.led_model_training_btn.clicked.connect(self._on_led_model_training)
 
@@ -1483,7 +1501,7 @@ class Application(QApplication):
         if hasattr(ui.sidebar, 'inject_partial_btn'):
             ui.sidebar.inject_partial_btn.clicked.connect(self._on_inject_partial_clicked)
             logger.debug("✓ inject_partial_btn connected")
-        
+
         # Buffer and Flush operations
         if hasattr(ui.sidebar, 'start_buffer_btn'):
             ui.sidebar.start_buffer_btn.clicked.connect(self._on_start_buffer_clicked)
@@ -1536,7 +1554,7 @@ class Application(QApplication):
                 lambda: self._on_loop_valve_switched(1, 'Sensor')
             )
             logger.debug("✓ kc1_loop_btn_sensor connected")
-        
+
         # KC2 Loop valve - segmented control (Load = state 0, Sensor = state 1)
         if hasattr(ui.sidebar, 'kc2_loop_btn_load'):
             ui.sidebar.kc2_loop_btn_load.clicked.connect(
@@ -1577,13 +1595,13 @@ class Application(QApplication):
                 lambda checked: self._on_internal_pump_sync_toggled(checked)
             )
             logger.debug("✓ internal_pump_sync_btn connected")
-        
+
         if hasattr(ui.sidebar, 'internal_pump_calibrate_btn'):
             ui.sidebar.internal_pump_calibrate_btn.clicked.connect(
                 self._on_internal_pump_calibrate_clicked
             )
             logger.debug("✓ internal_pump_calibrate_btn connected")
-        
+
         # Internal pump flowrate changes
         if hasattr(ui.sidebar, 'internal_pump_flowrate_combo'):
             ui.sidebar.internal_pump_flowrate_combo.currentTextChanged.connect(
@@ -1815,9 +1833,15 @@ class Application(QApplication):
                 if hasattr(timeline, 'start_cursor') and hasattr(timeline, 'stop_cursor'):
                     # Get current end cursor position
                     end_pos = timeline.stop_cursor.value()
-                    # Move start cursor to end position (resets Active Cycle to t=0)
+                    # Move start cursor to end position (Active Cycle will show this as t=0)
                     timeline.start_cursor.setValue(end_pos)
-                    logger.info(f"✓ Active Cycle reset: cursors at t={end_pos:.1f}s (starting fresh)")
+
+                    # CRITICAL: Update the active segment's start time so normalization works
+                    if hasattr(timeline, 'active_segment') and timeline.active_segment is not None:
+                        timeline.active_segment.start = end_pos
+                        logger.debug(f"Updated active segment start to {end_pos:.1f}s")
+
+                    logger.info(f"✓ Active Cycle reset: start cursor at t={end_pos:.1f}s (displays as 0,0)")
         except Exception as e:
             logger.debug(f"Could not reset cursors: {e}")
 
@@ -2603,12 +2627,12 @@ class Application(QApplication):
 
         # Stop LED status monitoring
         self._stop_led_status_monitoring()
-        
+
         # Stop plunger polling timer
         if hasattr(self, '_plunger_poll_timer'):
             self._plunger_poll_timer.stop()
             logger.debug("✓ Stopped plunger polling")
-        
+
         # Stop valve polling timer
         if hasattr(self, '_valve_poll_timer'):
             self._valve_poll_timer.stop()
@@ -2676,17 +2700,17 @@ class Application(QApplication):
         """Servo positions not found - trigger auto-calibration."""
         logger.info("🔧 Servo calibration needed signal received")
         logger.info("   Starting automatic servo calibration...")
-        
+
         # Use QTimer to delay calibration start (allow connection to complete)
         from PySide6.QtCore import QTimer
         QTimer.singleShot(1000, self._run_servo_auto_calibration)
 
     def _log_calibration_to_database(self, calibration_data):
         """Automatically log calibration results to SQL database for ML training.
-        
+
         NOTE: This feature requires proper calibration log files to be saved first.
         Currently disabled until log file saving is implemented.
-        
+
         Args:
             calibration_data: CalibrationData instance with results
         """
@@ -2694,7 +2718,7 @@ class Application(QApplication):
         # The record_calibration_to_database() function expects:
         #   - debug_log_path: Path to timestamped debug log (e.g., debug_20251220_143022.log)
         #   - calibration_json_path: Optional path to calibration results JSON
-        # 
+        #
         # This integration will be enabled once calibration orchestrator
         # saves these files automatically during calibration runs.
         logger.debug("📊 Database logging skipped - awaiting log file integration")
@@ -3329,20 +3353,20 @@ class Application(QApplication):
         """Poll plunger position every 5 seconds and update flow status board."""
         if not self.pump_mgr or not self.pump_mgr.is_available:
             return
-        
+
         try:
             pump = self.hardware_mgr.pump
             if pump and hasattr(pump, '_pump') and pump._pump and hasattr(pump._pump, 'pump'):
                 # Get plunger positions from both pumps
                 p1_pos = pump._pump.pump.get_plunger_position(1) or 0.0
                 p2_pos = pump._pump.pump.get_plunger_position(2) or 0.0
-                
+
                 # Update UI with average position
                 avg_pos = (p1_pos + p2_pos) / 2.0
                 ui = self.main_window.sidebar
                 if hasattr(ui, 'flow_plunger_position'):
                     ui.flow_plunger_position.setText(f"{avg_pos:.0f}")
-                
+
                 # Log every 5 seconds for debugging
                 if self.pump_mgr.is_idle:
                     logger.debug(f"Plunger Poll: Pump1={p1_pos:.1f}µL, Pump2={p2_pos:.1f}µL")
@@ -3354,18 +3378,18 @@ class Application(QApplication):
         ctrl = self.hardware_mgr._ctrl_raw
         if not ctrl:
             return
-        
+
         try:
             # Get 6-port valve states (0=Load, 1=Sensor)
             kc1_loop = ctrl.knx_six_state(1)
             kc2_loop = ctrl.knx_six_state(2)
-            
+
             # Get 3-way valve states (0=waste, 1=load)
             kc1_channel = ctrl.knx_three_state(1)
             kc2_channel = ctrl.knx_three_state(2)
-            
+
             ui = self.main_window.sidebar
-            
+
             # Update KC1 Loop (Load/Sensor)
             if kc1_loop is not None and hasattr(ui, 'kc1_loop_btn_load'):
                 ui.kc1_loop_btn_load.blockSignals(True)
@@ -3378,7 +3402,7 @@ class Application(QApplication):
                     ui.kc1_loop_btn_sensor.setChecked(True)
                 ui.kc1_loop_btn_load.blockSignals(False)
                 ui.kc1_loop_btn_sensor.blockSignals(False)
-            
+
             # Update KC2 Loop (Load/Sensor)
             if kc2_loop is not None and hasattr(ui, 'kc2_loop_btn_load'):
                 ui.kc2_loop_btn_load.blockSignals(True)
@@ -3391,7 +3415,7 @@ class Application(QApplication):
                     ui.kc2_loop_btn_sensor.setChecked(True)
                 ui.kc2_loop_btn_load.blockSignals(False)
                 ui.kc2_loop_btn_sensor.blockSignals(False)
-            
+
             # Update KC1 Channel (A/B)
             if kc1_channel is not None and hasattr(ui, 'kc1_channel_btn_a'):
                 ui.kc1_channel_btn_a.blockSignals(True)
@@ -3404,7 +3428,7 @@ class Application(QApplication):
                     ui.kc1_channel_btn_b.setChecked(True)
                 ui.kc1_channel_btn_a.blockSignals(False)
                 ui.kc1_channel_btn_b.blockSignals(False)
-            
+
             # Update KC2 Channel (C/D)
             if kc2_channel is not None and hasattr(ui, 'kc2_channel_btn_c'):
                 ui.kc2_channel_btn_c.blockSignals(True)
@@ -3417,7 +3441,7 @@ class Application(QApplication):
                     ui.kc2_channel_btn_d.setChecked(True)
                 ui.kc2_channel_btn_c.blockSignals(False)
                 ui.kc2_channel_btn_d.blockSignals(False)
-                
+
         except Exception as e:
             logger.debug(f"Valve poll error: {e}")
 
@@ -3426,17 +3450,17 @@ class Application(QApplication):
     def _on_pump_prime_clicked(self):
         """User clicked Prime Pump button - run prime sequence via PumpManager."""
         logger.info("🔧 Prime Pump requested")
-        
+
         if not self.pump_mgr.is_available:
             from affilabs.widgets.message import show_message
             show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
             return
-        
+
         if not self.pump_mgr.is_idle:
             from affilabs.widgets.message import show_message
             show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
             return
-        
+
         # Run prime pump in background
         def run_prime():
             import asyncio
@@ -3446,24 +3470,24 @@ class Application(QApplication):
                 loop.run_until_complete(self.pump_mgr.prime_pump())
             finally:
                 loop.close()
-        
+
         thread = threading.Thread(target=run_prime, daemon=True, name="PrimePump")
         thread.start()
-        
+
     def _on_pump_cleanup_clicked(self):
         """User clicked Clean Pump button - run cleanup sequence via PumpManager."""
         logger.info("🧹 Pump Cleanup requested")
-        
+
         if not self.pump_mgr.is_available:
             from affilabs.widgets.message import show_message
             show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
             return
-        
+
         if not self.pump_mgr.is_idle:
             from affilabs.widgets.message import show_message
             show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
             return
-        
+
         # Run cleanup in background
         def run_cleanup():
             import asyncio
@@ -3473,31 +3497,31 @@ class Application(QApplication):
                 loop.run_until_complete(self.pump_mgr.cleanup_pump())
             finally:
                 loop.close()
-        
+
         thread = threading.Thread(target=run_cleanup, daemon=True, name="CleanupPump")
         thread.start()
 
     def _on_inject_simple_clicked(self):
         """User clicked Simple Inject button - run simple injection via PumpManager."""
         logger.info("💉 Simple Injection requested")
-        
+
         if not self.pump_mgr.is_available:
             from affilabs.widgets.message import show_message
             show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
             return
-        
+
         if not self.pump_mgr.is_idle:
             from affilabs.widgets.message import show_message
             show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
             return
-        
+
         # Get assay rate from UI (default 100 µL/min if not available)
         assay_rate = 100.0
         if hasattr(self.main_window.sidebar, 'pump_assay_spin'):
             assay_rate = float(self.main_window.sidebar.pump_assay_spin.value())
-        
+
         logger.info(f"  Using assay rate: {assay_rate} µL/min")
-        
+
         # Run simple inject in background
         def run_inject():
             import asyncio
@@ -3507,31 +3531,31 @@ class Application(QApplication):
                 loop.run_until_complete(self.pump_mgr.inject_simple(assay_rate))
             finally:
                 loop.close()
-        
+
         thread = threading.Thread(target=run_inject, daemon=True, name="InjectSimple")
         thread.start()
 
     def _on_inject_partial_clicked(self):
         """User clicked Partial Loop Inject button - run partial loop injection via PumpManager."""
         logger.info("💉 Partial Loop Injection requested")
-        
+
         if not self.pump_mgr.is_available:
             from affilabs.widgets.message import show_message
             show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
             return
-        
+
         if not self.pump_mgr.is_idle:
             from affilabs.widgets.message import show_message
             show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
             return
-        
+
         # Get assay rate from UI (default 100 µL/min if not available)
         assay_rate = 100.0
         if hasattr(self.main_window.sidebar, 'pump_assay_spin'):
             assay_rate = float(self.main_window.sidebar.pump_assay_spin.value())
-        
+
         logger.info(f"  Using assay rate: {assay_rate} µL/min")
-        
+
         # Run partial loop inject in background
         def run_inject_partial():
             import asyncio
@@ -3541,51 +3565,51 @@ class Application(QApplication):
                 loop.run_until_complete(self.pump_mgr.inject_partial_loop(assay_rate))
             finally:
                 loop.close()
-        
+
         thread = threading.Thread(target=run_inject_partial, daemon=True, name="InjectPartialLoop")
         thread.start()
-    
+
     def _on_start_buffer_clicked(self):
         """User clicked Start Buffer button - toggle continuous buffer flow.
-        
+
         If buffer is running, stop it. If idle, start continuous buffer flow.
         """
         if not self.pump_mgr.is_available:
             from affilabs.widgets.message import show_message
             show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
             return
-        
+
         # If buffer is currently running, stop it
         if self.pump_mgr.current_operation == self.PumpOperation.RUNNING_BUFFER:
             logger.info("⏸️ Stopping buffer flow...")
-            
+
             # Request stop
             self.pump_mgr.cancel_operation()
-            
+
             # Update button text back to Start
             if hasattr(self.main_window.sidebar, 'start_buffer_btn'):
                 self.main_window.sidebar.start_buffer_btn.setText("▶ Start Buffer")
             return
-        
+
         # Otherwise, start buffer flow
         logger.info("▶️ Start Buffer requested")
-        
+
         if not self.pump_mgr.is_idle:
             from affilabs.widgets.message import show_message
             show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
             return
-        
+
         # Get setup flow rate from UI (default 25 µL/min if not available)
         flow_rate = 25.0
         if hasattr(self.main_window.sidebar, 'pump_setup_spin'):
             flow_rate = float(self.main_window.sidebar.pump_setup_spin.value())
-        
+
         logger.info(f"  Using flow rate: {flow_rate} µL/min")
-        
+
         # Update button text to Stop
         if hasattr(self.main_window.sidebar, 'start_buffer_btn'):
             self.main_window.sidebar.start_buffer_btn.setText("⏸ Stop Buffer")
-        
+
         # Run continuous buffer flow in background (0 cycles = run until stopped)
         def run_buffer_flow():
             import asyncio
@@ -3600,31 +3624,31 @@ class Application(QApplication):
                 ))
             finally:
                 loop.close()
-        
+
         thread = threading.Thread(target=run_buffer_flow, daemon=True, name="BufferFlow")
         thread.start()
-    
+
     def _on_flush_loop_clicked(self):
         """User clicked Flush Loop button - flush sample loop with buffer."""
         logger.info("🔄 Flush Loop requested")
-        
+
         if not self.pump_mgr.is_available:
             from affilabs.widgets.message import show_message
             show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
             return
-        
+
         if not self.pump_mgr.is_idle:
             from affilabs.widgets.message import show_message
             show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
             return
-        
+
         # Get flush rate from advanced settings or use default (5000 µL/min)
         flush_rate = 5000.0
         if hasattr(self.main_window.sidebar, 'pump_flush_rate'):
             flush_rate = float(self.main_window.sidebar.pump_flush_rate)
-        
+
         logger.info(f"  Using flush rate: {flush_rate} µL/min")
-        
+
         # Run buffer for 3 cycles to flush the loop
         def run_flush():
             import asyncio
@@ -3639,24 +3663,24 @@ class Application(QApplication):
                 ))
             finally:
                 loop.close()
-        
+
         thread = threading.Thread(target=run_flush, daemon=True, name="FlushLoop")
         thread.start()
 
     def _on_home_pumps_clicked(self):
         """User clicked Home Pumps button - home both pumps to zero position."""
         logger.info("🏠 Home Pumps requested")
-        
+
         if not self.pump_mgr.is_available:
             from affilabs.widgets.message import show_message
             show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
             return
-        
+
         if not self.pump_mgr.is_idle:
             from affilabs.widgets.message import show_message
             show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion or use STOP button.", "Warning")
             return
-        
+
         # Home both pumps
         def run_home():
             import asyncio
@@ -3666,19 +3690,19 @@ class Application(QApplication):
                 loop.run_until_complete(self.pump_mgr.home_pumps())
             finally:
                 loop.close()
-        
+
         thread = threading.Thread(target=run_home, daemon=True, name="HomePumps")
         thread.start()
 
     def _on_emergency_stop_clicked(self):
         """User clicked Emergency Stop button - immediately terminate all operations."""
         logger.warning("🛑 EMERGENCY STOP requested by user")
-        
+
         if not self.pump_mgr.is_available:
             from affilabs.widgets.message import show_message
             show_message("AffiPump not connected.", "Warning")
             return
-        
+
         # Execute emergency stop (no idle check - always allow)
         def run_emergency_stop():
             import asyncio
@@ -3688,20 +3712,20 @@ class Application(QApplication):
                 loop.run_until_complete(self.pump_mgr.emergency_stop())
             finally:
                 loop.close()
-        
+
         thread = threading.Thread(target=run_emergency_stop, daemon=True, name="EmergencyStop")
         thread.start()
 
     def _on_flow_rate_changed(self, rate_name: str, value: float):
         """User changed a flow rate spinbox - apply on-the-fly if pump is running.
-        
+
         Args:
             rate_name: Name of the rate that changed (Setup, Functionalization, Assay)
             value: New flow rate value in µL/min
         """
         if not self.pump_mgr.is_available:
             return
-        
+
         # If pump is currently running, apply on-the-fly change
         if not self.pump_mgr.is_idle:
             logger.info(f"💧 {rate_name} flow rate changed to {value} µL/min (pump running - applying on-the-fly)")
@@ -3711,52 +3735,52 @@ class Application(QApplication):
 
     def _on_valve_sync_toggled(self, checked: bool):
         """User toggled valve synchronization.
-        
+
         When enabled, KC1 and KC2 valve switches mirror each other.
-        
+
         Args:
             checked: True = sync enabled, False = independent control
         """
         mode = "SYNCHRONIZED" if checked else "INDEPENDENT"
         logger.info(f"🔄 Valve control mode → {mode}")
-        
+
         # If sync is enabled, mirror current KC1 state to KC2
         if checked:
             if hasattr(self.main_window.sidebar, 'kc1_loop_switch') and hasattr(self.main_window.sidebar, 'kc2_loop_switch'):
                 kc1_state = self.main_window.sidebar.kc1_loop_switch.isChecked()
                 self.main_window.sidebar.kc2_loop_switch.setChecked(kc1_state)
                 logger.info(f"✓ Synced KC2 loop valve to match KC1 ({kc1_state})")
-    
+
     def _on_loop_valve_switched(self, channel: int, position: str):
         """User selected loop valve position (6-port valve) - Load vs Sensor position.
-        
+
         The 6-port valve switches sample loop between loading position and sensor (inject) position.
         When in Sensor position, sample flows through the flow cell for measurement.
-        
+
         Args:
             channel: 1 for KC1, 2 for KC2
             position: 'Load' (state=0) or 'Sensor' (state=1)
         """
         state = 1 if position == 'Sensor' else 0
         state_name = "Sensor (inject)" if state == 1 else "Load"
-        
+
         logger.info(f"🔄 KC{channel} Loop Valve → {state_name} (6-port state={state})")
-        
+
         ctrl = self.hardware_mgr._ctrl_raw
         if not ctrl:
             logger.warning("Controller not connected - cannot switch valve")
             return
-        
+
         try:
             # Use controller's 6-port valve control
             ctrl.knx_six(state, channel)
             logger.info(f"✓ KC{channel} 6-port valve switched to {state_name}")
-            
+
             # If sync is enabled, mirror to other channel
             if hasattr(self.main_window.sidebar, 'sync_valve_btn'):
                 if self.main_window.sidebar.sync_valve_btn.isChecked():
                     other_channel = 2 if channel == 1 else 1
-                    
+
                     # Determine which buttons to update based on other channel
                     if other_channel == 1:
                         btn_load = self.main_window.sidebar.kc1_loop_btn_load
@@ -3764,7 +3788,7 @@ class Application(QApplication):
                     else:
                         btn_load = self.main_window.sidebar.kc2_loop_btn_load
                         btn_sensor = self.main_window.sidebar.kc2_loop_btn_sensor
-                    
+
                     # Update UI - block signals to prevent recursive calls
                     btn_load.blockSignals(True)
                     btn_sensor.blockSignals(True)
@@ -3776,7 +3800,7 @@ class Application(QApplication):
                         btn_sensor.setChecked(True)
                     btn_load.blockSignals(False)
                     btn_sensor.blockSignals(False)
-                    
+
                     # Update hardware
                     ctrl.knx_six(state, other_channel)
                     logger.info(f"✓ Synced KC{other_channel} 6-port valve to {state_name}")
@@ -3787,23 +3811,23 @@ class Application(QApplication):
 
     def _on_channel_valve_switched(self, channel: int, selected_channel: str):
         """User selected channel on 3-way valve - A/B for KC1, C/D for KC2.
-        
+
         Args:
             channel: 1 for KC1, 2 for KC2
             selected_channel: 'A', 'B', 'C', or 'D'
         """
-        # Map A/B/C/D to valve state: 
+        # Map A/B/C/D to valve state:
         # KC1: A=1 (open), B=0 (closed)
         # KC2: C=1 (open), D=0 (closed)
         state = 1 if selected_channel in ['A', 'C'] else 0
-        
+
         logger.info(f"🔄 KC{channel} Channel Valve → {selected_channel} (3-way state={state})")
-        
+
         ctrl = self.hardware_mgr._ctrl_raw
         if not ctrl:
             logger.warning("Controller not connected - cannot switch valve")
             return
-        
+
         try:
             # If sync is enabled, control both valves together
             if hasattr(self.main_window.sidebar, 'sync_valve_btn'):
@@ -3811,19 +3835,19 @@ class Application(QApplication):
                     # Control both 3-way valves simultaneously
                     ctrl.knx_three_both(state)
                     logger.info(f"✓ Both 3-way valves switched to state={state}")
-                    
+
                     # Update UI for both channels
                     btn_a = self.main_window.sidebar.kc1_channel_btn_a
                     btn_b = self.main_window.sidebar.kc1_channel_btn_b
                     btn_c = self.main_window.sidebar.kc2_channel_btn_c
                     btn_d = self.main_window.sidebar.kc2_channel_btn_d
-                    
+
                     # Block signals to prevent recursive calls
                     btn_a.blockSignals(True)
                     btn_b.blockSignals(True)
                     btn_c.blockSignals(True)
                     btn_d.blockSignals(True)
-                    
+
                     # Update all buttons to match the new state
                     if state == 1:  # Open (A/C)
                         btn_a.setChecked(True)
@@ -3835,7 +3859,7 @@ class Application(QApplication):
                         btn_b.setChecked(True)
                         btn_c.setChecked(False)
                         btn_d.setChecked(True)
-                    
+
                     btn_a.blockSignals(False)
                     btn_b.blockSignals(False)
                     btn_c.blockSignals(False)
@@ -3857,15 +3881,15 @@ class Application(QApplication):
 
     def _on_internal_pump_sync_toggled(self, checked: bool):
         """User toggled internal pump synchronization.
-        
+
         When enabled, both KC1 and KC2 pumps run together at same flow rate.
-        
+
         Args:
             checked: True = sync enabled (both pumps), False = single channel control
         """
         mode = "SYNCHRONIZED (Both KC1 & KC2)" if checked else "INDEPENDENT (Single Channel)"
         logger.info(f"🔄 Internal pump mode → {mode}")
-        
+
         # Apply current flow rate to both pumps if sync enabled
         if checked:
             if hasattr(self.main_window.sidebar, 'internal_pump_flowrate_combo'):
@@ -3877,26 +3901,26 @@ class Application(QApplication):
     def _on_internal_pump_calibrate_clicked(self):
         """User clicked Calibrate Speed button for internal peristaltic pumps."""
         logger.info("🔧 Internal pump calibration requested")
-        
+
         ctrl = self.hardware_mgr.controller
         if not ctrl:
             from affilabs.widgets.message import show_message
             show_message("Controller not connected. Connect P4PRO/EZSPR to use internal pumps.", "Warning")
             return
-        
+
         # Get selected channel (1 or 2)
         channel = 1
         if hasattr(self.main_window.sidebar, 'internal_pump_channel_btn_2'):
             if self.main_window.sidebar.internal_pump_channel_btn_2.isChecked():
                 channel = 2
-        
+
         # TODO: Implement pump calibration procedure
         # This would involve:
         # 1. Running pump at known flow rate
         # 2. Measuring actual volume delivered
         # 3. Calculating calibration factor
         # 4. Storing calibration in settings
-        
+
         from affilabs.widgets.message import show_message
         show_message(
             f"Internal pump calibration for KC{channel}\\n\\n"
@@ -3908,14 +3932,14 @@ class Application(QApplication):
 
     def _on_internal_pump_flowrate_changed(self, flowrate_text: str):
         """User changed internal pump flow rate.
-        
+
         Args:
             flowrate_text: Selected flow rate ('50', '100', '200', or 'Flush')
         """
         ctrl = self.hardware_mgr.controller
         if not ctrl:
             return
-        
+
         # Parse flow rate
         if flowrate_text == "Flush":
             rate = 500  # Flush rate
@@ -3925,12 +3949,12 @@ class Application(QApplication):
             except ValueError:
                 logger.warning(f"Invalid flow rate: {flowrate_text}")
                 return
-        
+
         # Get selected channel (1 or 2) or both if sync is on
         sync_enabled = False
         if hasattr(self.main_window.sidebar, 'internal_pump_sync_btn'):
             sync_enabled = self.main_window.sidebar.internal_pump_sync_btn.isChecked()
-        
+
         if sync_enabled:
             # Control both channels together
             logger.info(f"🔄 Internal pumps (both KC1 & KC2) → {rate} µL/min (synced)")
@@ -3948,7 +3972,7 @@ class Application(QApplication):
             if hasattr(self.main_window.sidebar, 'internal_pump_channel_btn_2'):
                 if self.main_window.sidebar.internal_pump_channel_btn_2.isChecked():
                     channel = 2
-            
+
             logger.info(f"🔄 Internal pump KC{channel} → {rate} µL/min")
             try:
                 ctrl.knx_start(rate, channel)
@@ -5490,12 +5514,12 @@ class Application(QApplication):
 
     def _on_oem_led_calibration(self):
         """Run full OEM calibration (servo + LED) via CalibrationService.
-        
+
         This ALWAYS rebuilds the optical model, regardless of whether one exists.
         Shows dialog with "Start" button BEFORE beginning calibration.
         """
         from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
-        
+
         # Show pre-calibration dialog with Start button
         dialog = StartupCalibProgressDialog(
             parent=self.main_window,
@@ -5518,7 +5542,7 @@ class Application(QApplication):
             ),
             show_start_button=True,
         )
-        
+
         def on_start():
             """Called when user clicks Start button."""
             logger.info("=" * 80)
@@ -5526,16 +5550,16 @@ class Application(QApplication):
             logger.info("=" * 80)
             dialog.hide_start_button()
             dialog.show_progress_bar()
-            
+
             # CRITICAL: Pass the dialog to calibration service to avoid creating a second dialog
             # Set the existing dialog as the calibration dialog before starting
             self.calibration._calibration_dialog = dialog
             self.calibration._force_oem_retrain = True
-            
+
             # Connect calibration service signals to THIS dialog
             self.calibration.calibration_progress.connect(lambda msg, prog: dialog.update_status(msg))
             self.calibration.calibration_progress.connect(lambda msg, prog: dialog.set_progress(prog, 100))
-            
+
             # Start calibration WITHOUT creating a new dialog (headless mode)
             self.calibration._running = True
             import threading
@@ -5547,25 +5571,25 @@ class Application(QApplication):
             self.calibration._thread.start()
             self.calibration.calibration_started.emit()
             logger.info("[OK] Calibration thread started (using existing dialog)")
-        
+
         dialog.start_requested.connect(on_start)
         dialog.show()
 
     def _on_led_model_training(self):
         """Run LED model training only (no full calibration).
-        
+
         Directly trains the 3-stage linear LED model without running the full
         6-step calibration. Useful for quickly rebuilding the optical model.
         """
         logger.info("=" * 80)
         logger.info("Starting LED Model Training (optical model only)...")
         logger.info("=" * 80)
-        
+
         # Import required modules
         from affilabs.core.oem_model_training import run_oem_model_training_workflow
         from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
         import threading
-        
+
         # Check hardware
         if not self.hardware_mgr or not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
             from affilabs.ui.ui_message import error as ui_error
@@ -5575,7 +5599,7 @@ class Application(QApplication):
                 "Please connect hardware before training the LED model."
             )
             return
-        
+
         # Show progress dialog
         dialog = StartupCalibProgressDialog(
             parent=self.main_window,
@@ -5591,34 +5615,34 @@ class Application(QApplication):
             ),
             show_start_button=True,
         )
-        
+
         def progress_callback(message: str, percent: int):
             """Update progress dialog."""
             dialog.update_status(message)
             dialog.set_progress(percent, 100)
             if not dialog.progress_bar.isVisible():
                 dialog.show_progress_bar()
-        
+
         def run_training():
             """Run training in background thread."""
             try:
                 logger.info("🔬 LED Model Training thread started...")
-                
+
                 # Run OEM model training workflow
                 success = run_oem_model_training_workflow(
                     hardware_mgr=self.hardware_mgr,
                     progress_callback=progress_callback,
                 )
-                
+
                 if success:
                     logger.info("[OK] LED model training completed successfully")
                     dialog.update_title("LED Model Training Complete")
                     dialog.update_status("✓ Model created successfully!")
                     dialog.hide_progress_bar()
-                    
+
                     from affilabs.ui.ui_message import info as ui_info
                     from PySide6.QtCore import QTimer
-                    
+
                     def show_success():
                         dialog.close()
                         ui_info(
@@ -5627,17 +5651,17 @@ class Application(QApplication):
                             "LED calibration model created successfully!\n\n"
                             "The new model is now active and will be used for all calibrations."
                         )
-                    
+
                     QTimer.singleShot(500, show_success)
                 else:
                     logger.error("[ERROR] LED model training failed")
                     dialog.update_title("Training Failed")
                     dialog.update_status("❌ Model training encountered errors")
                     dialog.hide_progress_bar()
-                    
+
                     from affilabs.ui.ui_message import error as ui_error
                     from PySide6.QtCore import QTimer
-                    
+
                     def show_error():
                         dialog.close()
                         ui_error(
@@ -5645,25 +5669,25 @@ class Application(QApplication):
                             "Training Failed",
                             "LED model training failed.\n\nPlease check the logs for details."
                         )
-                    
+
                     QTimer.singleShot(500, show_error)
-                    
+
             except Exception as e:
                 logger.error(f"LED model training error: {e}", exc_info=True)
                 dialog.update_title("Training Error")
                 dialog.update_status(f"Error: {str(e)}")
                 dialog.hide_progress_bar()
-        
+
         def on_start_clicked():
             """Handle Start button click."""
             dialog.start_button.setEnabled(False)
             dialog.show_progress_bar()
             dialog.update_status("Initializing LED model training...")
-            
+
             # Start training thread
             thread = threading.Thread(target=run_training, daemon=True, name="LEDModelTraining")
             thread.start()
-        
+
         # Connect start button
         dialog.start_clicked.connect(on_start_clicked)
         dialog.show()
@@ -6046,15 +6070,14 @@ class Application(QApplication):
             if hasattr(self, '_plunger_poll_timer') and not self._plunger_poll_timer.isActive():
                 self._plunger_poll_timer.start()
                 logger.debug("✓ Started plunger position polling (5s interval)")
-        
+
         # Start valve polling when controller is connected
         if status.get("knx_type") != "None":
             if hasattr(self, '_valve_poll_timer') and not self._valve_poll_timer.isActive():
                 self._valve_poll_timer.start()
                 logger.debug("✓ Started valve position polling (3s interval)")
 
-        # Also forward to main window for backward compatibility
-        # TODO: Remove this once all UI updates are driven by ViewModel signals
+        # Forward to main window for hardware list and subunit readiness updates
         self.main_window.update_hardware_status(status)
 
         # Log concise hardware summary

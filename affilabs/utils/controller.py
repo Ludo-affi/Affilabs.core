@@ -2652,7 +2652,7 @@ class PicoP4PRO(FlowController):
                     self._ser = serial.Serial(
                         port=dev.device,
                         baudrate=115200,
-                        timeout=1,  # 1 second timeout for fast servo/LED response
+                        timeout=0.01,  # 10ms timeout - firmware responds in <5ms
                         write_timeout=1,
                     )
                     cmd = "id\n"
@@ -2758,27 +2758,39 @@ class PicoP4PRO(FlowController):
                 ch_upper = ch.upper()
                 cmd = f"lm:{ch_upper}\n"
                 self._ser.write(cmd.encode())
-                time.sleep(0.01)  # Small delay for firmware processing
-                resp = self._ser.read(10)
 
-                if resp != b'1':
-                    logger.warning(f"turn_on_channel({ch}) returned: {resp!r} (expected b'1')")
-                    return False
-                return True
+                # Read response - firmware responds in <5ms with '1' or '11111'
+                # Use readline to get complete response without blocking
+                resp = self._ser.readline()
+
+                # Check if response contains '1' (success indicator)
+                if b'1' in resp:
+                    return True
+
+                logger.warning(f"turn_on_channel({ch}) returned: {resp!r} (expected b'1')")
+                return False
             return False
         except Exception as e:
             logger.error(f"Error turning on channel {ch}: {e}")
             return False
 
     def turn_off_channels(self) -> bool:
-        """Turn off all LED channels using lx command."""
+        """Turn off all LED channels by setting all intensities to 0."""
         try:
             if self._ser is not None or self.open():
-                cmd = "lx\n"
-                self._ser.write(cmd.encode())
+                # P4PRO: Set all LED intensities to 0 to turn off
+                # Using sequential la:0 commands (lx command doesn't work reliably)
+                for ch in ['a', 'b', 'c', 'd']:
+                    cmd = f"l{ch}:0\n"
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.005)  # Small delay between commands
+
+                # Read responses
                 time.sleep(0.01)
-                resp = self._ser.read(10)
-                return resp == b'1'
+                if self._ser.in_waiting > 0:
+                    self._ser.read(self._ser.in_waiting)  # Clear buffer
+
+                return True
             return False
         except Exception as e:
             logger.error(f"Error turning off channels: {e}")

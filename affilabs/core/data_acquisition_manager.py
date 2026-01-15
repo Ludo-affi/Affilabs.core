@@ -1063,6 +1063,14 @@ class DataAcquisitionManager(QObject):
                                     spectra_acquired += 1
                                     batch_success = True
 
+                            # Log batch timing every 10 cycles
+                            if cycle_start and cycle_count % 10 == 1:
+                                total_batch_time = (time.perf_counter() - cycle_start) * 1000
+                                logger.info(
+                                    f"[BATCH-TIMING] Cycle {cycle_count}: Total batch time = {total_batch_time:.1f}ms "
+                                    f"({len(channels)} channels × 250ms target = 1000ms)"
+                                )
+
                             # Skip sequential fallback
                             continue
 
@@ -1132,103 +1140,11 @@ class DataAcquisitionManager(QObject):
                                 fixed_cycle_time_ms=fixed_cycle_ms,
                             )
 
-                            # Record per-LED timing (time since batch start)
-                            led_time_ms = None
-                            if self._enable_timing_instrumentation and cycle_start is not None:
-                                led_time_ms = (time.perf_counter() - cycle_start) * 1000
 
-                            if raw_spectrum is not None:
-                                # DEBUG: Log first raw spectrum
-                                if not hasattr(self, "_first_raw_logged"):
-                                    self._first_raw_logged = True
+                                self._emit_raw_spectrum(ch, raw_spectrum, led_intensities)
 
-                                # Package data for processing
-                                # Note: wavelength array is immutable calibration data - no need to copy
-
-                                # Capture timestamp AFTER read completes
-                                read_complete_time = time.time()
-
-                                # Calculate detector ON time by subtracting integration duration
-                                # This gives the approximate time when detector started integrating
-                                total_integration_ms = ch_integration_time * num_scans
-                                detector_on_time = read_complete_time - (
-                                    total_integration_ms / 1000.0
-                                )
-
-                                spectrum_data = {
-                                    "raw_spectrum": raw_spectrum,
-                                    "wavelength": self.calibration_data.wavelengths,  # Reference, not copy (wavelengths never change)
-                                    "timestamp": detector_on_time,  # Synced to detector ON, not read completion
-                                    "led_time_ms": led_time_ms,  # Time since batch start when this LED's detector window completed
-                                    "integration_time": self.calibration_data.integration_time,
-                                    "num_scans": self.calibration_data.num_scans,
-                                    "led_intensity": self.calibration_data.p_mode_intensities.get(
-                                        ch,
-                                        0,
-                                    ),
-                                }
-
-                                timestamp = detector_on_time  # Use detector ON time for consistency
                                 batch_success = True
                                 spectra_acquired += 1
-
-                                try:
-                                    process_start = time.perf_counter()
-
-                                    # Process spectrum directly
-                                    processed = self._process_spectrum(
-                                        ch,
-                                        spectrum_data,
-                                    )
-
-                                    if processed:
-                                        # Validate processed data
-                                        trans = processed.get("transmission_spectrum")
-                                        raw = processed.get("raw_spectrum")
-
-                                        # Check for empty or invalid arrays
-                                        if (
-                                            trans is None
-                                            or (hasattr(trans, "__len__") and len(trans) == 0)
-                                            or (
-                                                hasattr(trans, "__len__")
-                                                and np.count_nonzero(trans) == 0
-                                            )
-                                        ):
-                                            self._empty_transmission_count += 1
-                                        else:
-                                            # Package result
-                                            result = {
-                                                "channel": ch,
-                                                "wavelength": processed["wavelength"],
-                                                "intensity": processed["intensity"],
-                                                "raw_spectrum": raw,
-                                                "transmission_spectrum": trans,
-                                                "wavelengths": self.calibration_data.wavelengths,
-                                                "timestamp": timestamp,
-                                                "is_preview": False,
-                                                "batch_processed": False,  # Inline processing, not batched
-                                                "integration_time": self.calibration_data.integration_time,
-                                                "num_scans": self.calibration_data.num_scans,
-                                                "led_intensity": self.calibration_data.p_mode_intensities.get(
-                                                    ch,
-                                                    0,
-                                                ),
-                                            }
-
-                                            # Emit directly (Qt signals are thread-safe)
-                                            self.spectrum_acquired.emit(result)
-
-                                            (time.perf_counter() - process_start) * 1000
-                                    else:
-                                        # Processing returned None - count as drop
-                                        self._dropped_processing += 1
-
-                                except Exception:
-                                    self._dropped_processing += 1
-                                    import traceback
-
-                                    traceback.print_exc()
 
                                 # Clear channel error count on success
                                 channel_error_counts[ch] = 0
@@ -1426,35 +1342,17 @@ class DataAcquisitionManager(QObject):
                 return {}
 
             # ========================================================================
-            # OPTIMIZED LED CONTROL (Set Once + Turn On)
+            # LED CONTROL (Intensities already set post-calibration)
             # ========================================================================
-            # Set all LED intensities ONCE at start via direct serial commands
-            # Then use turn_on_channel() to switch between LEDs (15ms vs 31ms per command)
-            # This avoids the legacy V1.9 firmware delay from set_batch_intensities
+            # LED intensities are set once after calibration and don't change
+            # during the run. Just cycle LEDs with turn_on_channel()
             # ========================================================================
-
-            # Set LED intensities once at start (only if changed since last cycle)
-            current_intensities = {ch: led_intensities.get(ch, 128) for ch in channels}
-
-            if (
-                not hasattr(self, "_batch_led_intensities_set")
-                or self._last_led_intensities != current_intensities
-            ):
-                # Use direct serial commands to set brightness (ba224\n, bb087\n, etc.)
-                for ch in channels:
-                    intensity = current_intensities[ch]
-                    cmd = f"b{ch}{int(intensity):03d}\n"
-                    ctrl._ctrl._ser.write(cmd.encode())
-                    time.sleep(0.005)  # 5ms between commands for firmware processing
-
-                self._last_led_intensities = current_intensities.copy()
-                self._batch_led_intensities_set = True
 
             # Get LED ON timing from settings (respects Advanced Settings)
             import settings as root_settings
 
-            led_on_time_ms = getattr(root_settings, "LED_ON_TIME_MS", None) or 225.0
-            detector_wait_ms = getattr(root_settings, "DETECTOR_WAIT_MS", None) or 45.0
+            led_on_time_ms = getattr(root_settings, "LED_ON_TIME_MS", 240.0)
+            detector_wait_ms = getattr(root_settings, "DETECTOR_WAIT_MS", 45.0)
 
             # Acquire each channel sequentially
             channel_spectra = {}
@@ -1465,15 +1363,21 @@ class DataAcquisitionManager(QObject):
                     led_on_start = time.perf_counter()
 
                     # Turn on LED (intensity already set, just switches channel)
+                    turn_on_start = time.perf_counter()
                     ctrl.turn_on_channel(ch=ch)
+                    turn_on_time = (time.perf_counter() - turn_on_start) * 1000
 
                     # Wait for LED to stabilize before reading
                     time.sleep(detector_wait_ms / 1000.0)
 
                     # Acquire spectrum while LED is on
+                    # CRITICAL FIX: Send scans 1-by-1 instead of batch to avoid blocking
+                    # Calling read_roi with num_scans=8 blocks for ~1+ second
+                    # Instead, call it 8 times with num_scans=1 and average ourselves
+
                     # DIAGNOSTIC: Log details (first cycle only)
                     if not hasattr(self, "_num_scans_logged"):
-                        logger.info(f"[BATCH] num_scans={num_scans}")
+                        logger.info(f"[BATCH] num_scans={num_scans} (sent 1-by-1, not batched)")
                         logger.info(
                             f"[BATCH] ROI: {self.calibration_data.wave_min_index} to {self.calibration_data.wave_max_index}"
                         )
@@ -1481,11 +1385,45 @@ class DataAcquisitionManager(QObject):
                         logger.info(f"[BATCH] usb has read_roi: {hasattr(usb, 'read_roi')}")
                         self._num_scans_logged = True
 
-                    raw_spectrum = usb.read_roi(
-                        self.calibration_data.wave_min_index,
-                        self.calibration_data.wave_max_index,
-                        num_scans=num_scans,
-                    )
+                    # Send scans one-by-one and average
+                    read_start = time.perf_counter()
+                    if num_scans == 1:
+                        raw_spectrum = usb.read_roi(
+                            self.calibration_data.wave_min_index,
+                            self.calibration_data.wave_max_index,
+                            num_scans=1,
+                        )
+                    else:
+                        # Multiple scans: send individually and average
+                        import numpy as np
+
+                        spectrum_length = (
+                            self.calibration_data.wave_max_index
+                            - self.calibration_data.wave_min_index
+                        )
+                        stack = np.zeros(spectrum_length, dtype=np.float64)
+                        for i in range(num_scans):
+                            scan = usb.read_roi(
+                                self.calibration_data.wave_min_index,
+                                self.calibration_data.wave_max_index,
+                                num_scans=1,  # Always send 1 at a time
+                            )
+                            if scan is not None:
+                                stack += scan
+                            else:
+                                logger.warning(
+                                    f"[BATCH] Scan {i+1}/{num_scans} for channel {ch} returned None"
+                                )
+                        raw_spectrum = (stack / num_scans).astype(np.uint32)
+                    read_time = (time.perf_counter() - read_start) * 1000
+
+                    # Log channel timing (first cycle only)
+                    if not hasattr(self, "_channel_timing_logged"):
+                        logger.info(
+                            f"[BATCH-CH-{ch.upper()}] turn_on={turn_on_time:.1f}ms, wait={detector_wait_ms:.1f}ms, read={read_time:.1f}ms"
+                        )
+                        if ch == channels[-1]:  # Last channel
+                            self._channel_timing_logged = True
 
                     # Capture timestamp immediately after detector read for this specific channel
                     channel_timestamp = time.time()
