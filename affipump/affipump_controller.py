@@ -120,9 +120,29 @@ class AffipumpController:
     def close(self):
         if self.ser and self.ser.is_open:
             self.ser.close()
+    
+    def reconnect(self):
+        """Reconnect to pump after connection loss."""
+        logger.info("[PUMP] Attempting to reconnect...")
+        try:
+            # Close existing connection if any
+            if self.ser and self.ser.is_open:
+                try:
+                    self.ser.close()
+                except Exception:
+                    pass
+            
+            # Reopen connection
+            self.open()
+            logger.info("[PUMP] Reconnection successful")
+            return True
+        except Exception as e:
+            logger.error(f"[PUMP] Reconnection failed: {e}")
+            return False
 
     def send_command(self, cmd, wait_time=None, retry_on_timeout=True):
         if not self.ser or not self.ser.is_open:
+            logger.error("[PUMP] Port not open - cannot send command")
             raise Exception("Port not open")
         self.last_command = cmd
 
@@ -623,21 +643,26 @@ class AffipumpController:
         self.send_command(f"/AP{target_steps}R")  # Absolute position
         return target_position_ul
 
-    def dispense_both(self, volume_ul, speed_ul_s=50):
-        """Dispense same volume from both pumps simultaneously"""
-        steps = int(volume_ul * self.ul_to_steps)
-
-        # Switch valves to OUTPUT position (chip - opposite of home position)
-        logger.info(f"[DISPENSE] Setting valves to OUTPUT position (OR command) - chip")
-        self.send_command("/1OR")
-        time.sleep(0.1)
-        self.send_command("/2OR")
-        time.sleep(1.0)  # Give valves time to physically switch
-
-        # Set velocity and dispense
+    def dispense_both(self, volume_ul, speed_ul_s=50, switch_valve=True):
+        """Dispense same volume from both pumps simultaneously.
+        
+        Args:
+            volume_ul: Volume to dispense in µL
+            speed_ul_s: Speed in µL/s
+            switch_valve: If True, switch valves to OUTPUT before dispense (default)
+                         If False, leave valves in current position
+        """
+        if switch_valve:
+            # Switch valves to OUTPUT position (chip - for normal dispense operations)
+            self.send_command("/1OR")
+            time.sleep(0.1)
+            self.send_command("/2OR")
+            time.sleep(1.0)  # Give valves time to physically switch
+        
+        # Set velocity and dispense using V/D format with ,1 parameter
         self.send_command(f"/AV{speed_ul_s:.3f},1R")
         time.sleep(0.1)
-        self.send_command(f"/AD{steps}R")
+        self.send_command(f"/AD{volume_ul:.3f},1R")
         return volume_ul
 
     def get_both_positions(self):
@@ -1011,6 +1036,31 @@ class AffipumpController:
             except ValueError:
                 return None
         return None
+
+    def get_plunger_position(self, pump_num):
+        """Get plunger position in microliters (µL)
+        
+        Converts raw step position to volume by:
+        1. Get raw position in steps
+        2. Subtract step offset (1600 steps = 0 µL)
+        3. Convert steps to µL using calibration factor
+        4. Apply pump-specific correction factor
+        
+        Returns:
+            float: Current plunger position in µL, or None if query failed
+        """
+        raw_steps = self.get_plunger_position_raw(pump_num)
+        if raw_steps is None:
+            return None
+        
+        # Convert steps to µL
+        # Raw position is absolute steps from home (1600 = empty, 183090 = full for 1mL)
+        volume_steps = raw_steps - self.step_offset
+        volume_ul = volume_steps / self.ul_to_steps
+        
+        # Apply pump-specific correction factor
+        correction = self.pump_corrections.get(pump_num, 1.0)
+        return volume_ul * correction
 
     # ============ Speed Control ============
 

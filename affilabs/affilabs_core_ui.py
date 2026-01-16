@@ -4337,14 +4337,14 @@ class AffilabsMainWindow(QMainWindow):
 
                 # Gray indicator and "Not Ready" text
                 indicator.setStyleSheet(
-                    "font-size: 10px;"
+                    "font-size: 14px;"
                     "color: {Colors.SECONDARY_TEXT};"  # Gray
                     "background: {Colors.TRANSPARENT};"
                     "font-family: {Fonts.SYSTEM};",
                 )
                 status_label.setText("Not Ready")
                 status_label.setStyleSheet(
-                    "font-size: 13px;"
+                    "font-size: 12px;"
                     "color: {Colors.SECONDARY_TEXT};"  # Gray
                     "background: {Colors.TRANSPARENT};"
                     "font-family: {Fonts.SYSTEM};",
@@ -4501,13 +4501,17 @@ class AffilabsMainWindow(QMainWindow):
 
     def _update_subunit_readiness_from_status(self, status: dict[str, Any]) -> None:
         """Update subunit readiness based on hardware verification results."""
+        from affilabs.utils.logger import logger
+        
         # Sensor readiness
         if "sensor_ready" in status:
+            logger.info(f"[UI] Setting Sensor readiness: {status['sensor_ready']}")
             self._set_subunit_status("Sensor", status["sensor_ready"])
 
         # Optics readiness
         if "optics_ready" in status:
             optics_ready = status["optics_ready"]
+            logger.info(f"[UI] Setting Optics readiness: {optics_ready}")
             optics_details = {
                 "failed_channels": status.get("optics_failed_channels", []),
                 "maintenance_channels": status.get("optics_maintenance_channels", []),
@@ -4516,6 +4520,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Fluidics readiness
         if "fluidics_ready" in status:
+            logger.info(f"[UI] Setting Fluidics readiness: {status['fluidics_ready']}")
             self._set_subunit_status("Fluidics", status["fluidics_ready"])
 
     def _set_subunit_status(
@@ -5464,8 +5469,8 @@ End of Debug Log
             system_state, active_issues = intelligence.diagnose_system()
 
             # Determine operational context for more useful messaging
-            is_acquiring = hasattr(self.app, 'data_mgr') and getattr(self.app.data_mgr, '_acquiring', False)
-            is_calibrated = hasattr(self.app, 'data_mgr') and getattr(self.app.data_mgr, 'calibrated', False)
+            is_acquiring = hasattr(self, 'app') and hasattr(self.app, 'data_mgr') and getattr(self.app.data_mgr, '_acquiring', False)
+            is_calibrated = hasattr(self, 'app') and hasattr(self.app, 'data_mgr') and getattr(self.app.data_mgr, 'calibrated', False)
             queue_count = len(self.segment_queue) if hasattr(self, 'segment_queue') else 0
 
             # Update status based on system state
@@ -5599,23 +5604,30 @@ End of Debug Log
         elif checked and self.nm_btn.isChecked():
             logger.info("Unit changed to nm")
 
-    def _load_current_settings(self):
-        """Load current hardware settings from device into UI.
+    def _load_current_settings(self, show_warnings: bool = True):
+        """Load current hardware settings into Hardware Configuration.
 
         Loads:
         - Servo positions (S/P) from device_config (immutable, set at init)
-        - LED intensities (A/B/C/D) from hardware (actual current state)
+        - LED intensities (A/B/C/D) preferring calibrated P-mode final intensities,
+          falling back to current hardware state or device config
+        
+        Args:
+            show_warnings: If True, show warning dialogs when config unavailable.
+                          Set to False during UI init to avoid spurious warnings.
         """
         try:
             if not self.device_config:
-                logger.warning(
-                    "Device config not available - cannot load current settings",
-                )
-                QMessageBox.warning(
-                    self,
-                    "Settings Not Available",
-                    "Device configuration is not available. Please connect to hardware first.",
-                )
+                # Silent return during init; only warn if explicitly requested
+                if show_warnings:
+                    logger.warning(
+                        "Device config not available - cannot load current settings",
+                    )
+                    QMessageBox.warning(
+                        self,
+                        "Settings Not Available",
+                        "Device configuration is not available. Please connect to hardware first.",
+                    )
                 return
 
             # Load servo positions from device_config (set at hardware init)
@@ -5623,23 +5635,34 @@ End of Debug Log
             s_pos = servo_positions.get("s", 0)
             p_pos = servo_positions.get("p", 0)
 
-            # Load LED intensities from actual hardware state (not config file)
+            # Prefer calibrated P-mode final intensities when available
             led_intensities = {"a": 0, "b": 0, "c": 0, "d": 0}
-            if self.hardware_mgr and self.hardware_mgr.ctrl:
-                try:
-                    # Query actual LED intensities from hardware
-                    led_intensities = self.hardware_mgr.ctrl.get_all_led_intensities()
-                    logger.info(f"✓ Loaded LED intensities from hardware: {led_intensities}")
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to query LED intensities from hardware: {e} - using config values",
-                    )
-                    # Fallback to device_config if hardware query fails
+            source = ""
+            try:
+                if hasattr(self, "app") and self.app and hasattr(self.app, "data_mgr") and self.app.data_mgr:
+                    cd = getattr(self.app.data_mgr, "calibration_data", None)
+                    if cd and hasattr(cd, "p_mode_intensities") and cd.p_mode_intensities:
+                        led_intensities = dict(cd.p_mode_intensities)
+                        source = "calibration"
+            except Exception as e:
+                logger.warning(f"Failed to read calibrated P-mode intensities: {e}")
+
+            # Fallback to current hardware or device config
+            if not source:
+                if self.hardware_mgr and self.hardware_mgr.ctrl:
+                    try:
+                        led_intensities = self.hardware_mgr.ctrl.get_all_led_intensities()
+                        source = "hardware"
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to query LED intensities from hardware: {e} - using config values",
+                        )
+                        led_intensities = self.device_config.get_led_intensities()
+                        source = "config"
+                else:
+                    logger.info("Hardware not connected - loading LED intensities from config")
                     led_intensities = self.device_config.get_led_intensities()
-            else:
-                # Hardware not connected - use device_config values
-                logger.info("Hardware not connected - loading LED intensities from config")
-                led_intensities = self.device_config.get_led_intensities()
+                    source = "config"
 
             # Populate UI fields
             self.sidebar.load_hardware_settings(
@@ -5652,7 +5675,7 @@ End of Debug Log
             )
 
             logger.info(
-                f"✓ Loaded current settings: S={s_pos}°, P={p_pos}°, LEDs={led_intensities}",
+                f"✓ Loaded current settings: S={s_pos}°, P={p_pos}°, LEDs={led_intensities} (source={source})",
             )
 
             # Initialize pipeline selector to current configuration
@@ -5985,9 +6008,6 @@ End of Debug Log
 
         # Connect settings tab controls
         self.sidebar.advanced_settings_btn.clicked.connect(self.open_advanced_settings)
-        self.sidebar.load_current_settings_btn.clicked.connect(
-            self._load_current_settings,
-        )
         self.sidebar.apply_settings_btn.clicked.connect(self._apply_settings)
         self.sidebar.polarizer_toggle_btn.clicked.connect(self._toggle_polarizer_mode)
 
@@ -6023,6 +6043,10 @@ End of Debug Log
         # self.sidebar.scan_requested.connect(self._handle_scan_hardware)
         # self.sidebar.export_requested.connect(self._on_export_data)
         # self.sidebar.debug_log_requested.connect(self._handle_debug_log_download)
+
+        # NOTE: Hardware Configuration settings are loaded AFTER hardware connection
+        # in _load_device_settings() called by hardware_event_coordinator, not during UI init
+
         # self.sidebar.polarizer_toggle_requested.connect(self._toggle_polarizer_mode)
         # self.sidebar.settings_apply_requested.connect(self._apply_settings)
 
@@ -6032,225 +6056,29 @@ End of Debug Log
 
     def closeEvent(self, event):
         """Handle application close event - show unplug reminder if hardware connected."""
-        from PySide6.QtWidgets import QApplication, QMessageBox
-
-        # Get the application instance to access hardware_mgr
-        app_instance = QApplication.instance()
-
-        # Check if P4PRO/EZSPR controller or AffiPump are connected
-        devices_to_unplug = []
-
-        if hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
-            hw_mgr = app_instance.hardware_mgr
-
-            # Check for P4PRO/EZSPR controller
-            if hasattr(hw_mgr, 'controller') and hw_mgr.controller is not None:
-                controller_name = getattr(hw_mgr.controller, 'name', 'P4PRO/EZSPR')
-                devices_to_unplug.append(controller_name)
-
-            # Check for AffiPump
-            if hasattr(hw_mgr, 'pump') and hw_mgr.pump is not None:
-                devices_to_unplug.append("AffiPump")
-
-        # Show unplug reminder if any devices are connected
-        if devices_to_unplug:
-            device_list = "\n  • ".join(devices_to_unplug)
-            msg = QMessageBox(self)
-            msg.setIcon(QMessageBox.Information)
-            msg.setWindowTitle("Hardware Shutdown Reminder")
-            msg.setText(
-                f"<b>Please unplug the following device(s):</b><br><br>"
-                f"  • {device_list}<br><br>"
-                f"These devices do not have power buttons and will remain on "
-                f"until unplugged from the power source."
-            )
-            msg.setStandardButtons(QMessageBox.Ok)
-            msg.exec()
-
-        # Accept the close event
-        event.accept()
-
-    def _load_previous_data(self):
-        """Load previously saved experiment data from Excel file.
-
-        Opens a file dialog to select .xlsx files and loads the data
-        into the application for viewing and analysis.
-        """
-        from pathlib import Path
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
-
         try:
-            # Check if app instance is available
-            if not hasattr(self, "app") or self.app is None:
-                QMessageBox.warning(
-                    self,
-                    "Load Data Unavailable",
-                    "Data loading requires full application initialization.\n\n"
-                    "Please ensure the application is running properly.",
-                )
-                return
-
-            # Check if recording manager is available
-            if not hasattr(self.app, "recording_mgr") or self.app.recording_mgr is None:
-                QMessageBox.warning(
-                    self,
-                    "Recording Manager Unavailable",
-                    "Data loading requires the recording manager.\n\n"
-                    "Please check that the application initialized correctly.",
-                )
-                return
-
-            # Open file dialog to select Excel file
-            file_path, _ = QFileDialog.getOpenFileName(
-                self,
-                "Load Experiment Data",
-                str(Path.home() / "Documents"),  # Default to Documents folder
-                "Excel Files (*.xlsx);;All Files (*.*)",
-            )
-
-            if not file_path:
-                # User cancelled
-                return
-
-            file_path = Path(file_path)
-
-            # Validate file exists
-            if not file_path.exists():
-                QMessageBox.critical(
-                    self,
-                    "File Not Found",
-                    f"The selected file does not exist:\n{file_path}",
-                )
-                return
-
-            # Load data using recording manager
-            from affilabs.utils.logger import logger
-            logger.info(f"Loading data from: {file_path}")
-
-            loaded_data = self.app.recording_mgr.load_from_excel(file_path)
-
-            if loaded_data is None:
-                QMessageBox.critical(
-                    self,
-                    "Load Failed",
-                    f"Failed to load data from:\n{file_path}\n\n"
-                    "Please check the file format and try again.",
-                )
-                return
-
-            # Extract summary information
-            num_raw_rows = len(loaded_data.get('raw_data', []))
-            num_cycles = len(loaded_data.get('cycles', []))
-            num_flags = len(loaded_data.get('flags', []))
-            num_events = len(loaded_data.get('events', []))
-            num_analysis = len(loaded_data.get('analysis', []))
-            metadata = loaded_data.get('metadata', {})
-
-            # Show success message with summary
-            summary_text = f"Data loaded successfully!\n\n"
-            summary_text += f"📊 Raw data points: {num_raw_rows}\n"
-            summary_text += f"🔄 Cycles: {num_cycles}\n"
-            summary_text += f"🚩 Flags: {num_flags}\n"
-            summary_text += f"📝 Events: {num_events}\n"
-            summary_text += f"📈 Analysis results: {num_analysis}\n"
-
-            if metadata:
-                summary_text += f"\n📌 Metadata fields: {len(metadata)}"
-
-            QMessageBox.information(
-                self,
-                "Data Loaded",
-                summary_text,
-            )
-
-            logger.info(f"✓ Data loaded: {num_cycles} cycles, {num_raw_rows} data points")
-
-            # Store raw data in data_collector for graph display
-            if self.app.recording_mgr and self.app.recording_mgr.data_collector:
-                raw_data_list = loaded_data.get('raw_data', [])
-                self.app.recording_mgr.data_collector.raw_data_rows = raw_data_list
-                logger.info(f"✓ Stored {len(raw_data_list)} raw data rows in data_collector")
-                if len(raw_data_list) > 0:
-                    logger.debug(f"  First row keys: {list(raw_data_list[0].keys())}")
-            else:
-                logger.warning("⚠ Recording manager or data collector not available for raw data storage")
-
-            # Populate the cycle data table with loaded cycles
-            self._populate_cycle_table_from_loaded_data(loaded_data.get('cycles', []))
-
-            # Store cycles data for cycle markers
-            self._loaded_cycles_data = loaded_data.get('cycles', [])
-            self._loaded_raw_data = loaded_data.get('raw_data', [])
-
-            # Populate timeline graph with loaded raw data
-            if num_raw_rows > 0:
-                self._populate_edits_timeline_from_loaded_data(loaded_data.get('raw_data', []))
-                logger.info(f"✓ Populated timeline graph with {num_raw_rows} data points")
-
-                # Add cycle markers with colored backgrounds to timeline
-                if num_cycles > 0 and hasattr(self, 'edits_tab'):
-                    self.edits_tab.add_cycle_markers_to_timeline(self._loaded_cycles_data)
-                    logger.info(f"✓ Added cycle markers to timeline")
-
-            # Restore alignment settings if available
-            if hasattr(self, 'edits_tab') and 'alignment' in loaded_data:
-                alignment_list = loaded_data.get('alignment', [])
-                for alignment_row in alignment_list:
-                    cycle_idx = alignment_row.get('Cycle_Index')
-                    if cycle_idx is not None:
-                        self.edits_tab._cycle_alignment[cycle_idx] = {
-                            'channel': alignment_row.get('Channel_Filter', 'All'),
-                            'shift': alignment_row.get('Time_Shift_s', 0.0)
-                        }
-                if alignment_list:
-                    logger.info(f"✓ Restored alignment settings for {len(alignment_list)} cycles")
-
-            # Restore flags if available
-            if hasattr(self, 'edits_tab') and 'flags' in loaded_data:
-                from affilabs.domain import flag_from_dict
-                import pyqtgraph as pg
-
-                flags_list = loaded_data.get('flags', [])
-                self.edits_tab._edits_flags.clear()
-
-                for flag_data in flags_list:
-                    try:
-                        # Create Flag instance from dict
-                        flag = flag_from_dict(flag_data)
-
-                        # Create visual marker
-                        marker = pg.ScatterPlotItem(
-                            [flag.time],
-                            [flag.spr],
-                            symbol=flag.marker_symbol,
-                            size=flag.marker_size,
-                            brush=pg.mkBrush(flag.marker_color),
-                            pen=pg.mkPen('w', width=2),
-                        )
-                        marker.setZValue(100)  # Draw on top
-
-                        # Add to graph
-                        self.edits_primary_graph.addItem(marker)
-                        flag.marker = marker
-
-                        # Store flag
-                        self.edits_tab._edits_flags.append(flag)
-                    except Exception as e:
-                        logger.warning(f"Failed to restore flag: {e}")
-
-                if flags_list:
-                    logger.info(f"✓ Restored {len(flags_list)} flags to Edits graph")
-
-        except Exception as e:
-            from affilabs.utils.logger import logger
-            logger.exception(f"Error loading data: {e}")
-
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(
-                self,
-                "Load Error",
-                f"An error occurred while loading data:\n\n{str(e)}",
-            )
+            from PySide6.QtWidgets import QApplication, QMessageBox
+            app_instance = QApplication.instance()
+            devices_to_unplug = []
+            if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
+                hw_mgr = app_instance.hardware_mgr
+                if hasattr(hw_mgr, 'controller') and hw_mgr.controller is not None:
+                    controller_name = getattr(hw_mgr.controller, 'name', 'Controller')
+                    devices_to_unplug.append(controller_name)
+                if hasattr(hw_mgr, 'pump') and hw_mgr.pump is not None:
+                    devices_to_unplug.append('AffiPump')
+            if devices_to_unplug:
+                try:
+                    QMessageBox.information(
+                        self,
+                        "Unplug Devices",
+                        f"Please unplug: {', '.join(devices_to_unplug)}",
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        super().closeEvent(event)
 
     def _populate_cycle_table_from_loaded_data(self, cycles_data: list):
         """Populate the cycle data table with loaded cycle information.

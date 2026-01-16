@@ -219,17 +219,19 @@ class RealPumpManager:
             logger.info(f"  Calculated contact time: {contact_time_s:.2f}s")
             
             # STEP 1: Move plungers to ABSOLUTE POSITION P1000 (full syringe)
-            # Use controller-level wait to avoid blind sleeps
             logger.info(f"\n[STEP 1] Moving plungers to ABSOLUTE POSITION P{load_volume_ul}")
             logger.info(f"  (Valve in INPUT orientation, moving to position {load_volume_ul} at {aspiration_flow_rate} µL/min)")
-            self.pump.move_both_to_position(load_volume_ul, speed_ul_s=aspiration_flow_rate_ul_s, valve_policy='inlet', wait=True)
+            # Use aspirate_both_to_position (automatically sets valves to IR and waits for completion)
+            self.pump.aspirate_both_to_position(load_volume_ul, speed_ul_s=aspiration_flow_rate_ul_s)
+            self.pump.wait_until_both_ready(timeout=60.0)
             pos1 = self.pump.get_position(1)
             pos2 = self.pump.get_position(2)
             logger.info(f"  ✓ Both pumps at ABSOLUTE POSITION P{load_volume_ul} - P{pos1:.1f}µL / P{pos2:.1f}µL")
             
             # STEP 2: Start dispensing at assay flow rate
             logger.info(f"\n[STEP 2] Starting dispense at {assay_rate} µL/min")
-            self.pump.dispense_both(load_volume_ul, assay_flow_rate_ul_s)
+            # Dispense without switching valves (keep INPUT position from STEP 1)
+            self.pump.dispense_both(load_volume_ul, assay_flow_rate_ul_s, switch_valve=False)
             logger.info(f"  ✓ Both pumps dispensing at {assay_rate} µL/min")
 
             # Immediate motion check (expect positions to decrease during dispense)
@@ -399,7 +401,9 @@ class RealPumpManager:
             # STEP 1: Move to ABSOLUTE POSITION P900
             logger.info("\n[STEP 1] Moving plungers to ABSOLUTE POSITION P900...")
             logger.info(f"  (Moving to position 900 at {aspiration_flow_rate} µL/min)")
-            self.pump.move_both_to_position(900, speed_ul_s=aspiration_flow_rate_ul_s, valve_policy='inlet', wait=True)
+            # Use aspirate_both_to_position which automatically sets valves to IR (INPUT)
+            self.pump.aspirate_both_to_position(900, speed_ul_s=aspiration_flow_rate_ul_s)
+            self.pump.wait_until_both_ready(timeout=60.0)
             
             # STEP 2: Open 3-way valves
             logger.info("\n[STEP 2] Opening 3-way valves...")
@@ -423,7 +427,13 @@ class RealPumpManager:
             # STEP 4: Move to ABSOLUTE POSITION P1000 at 900 µL/min (pulls sample into loop)
             logger.info("\n[STEP 4] Moving plungers to ABSOLUTE POSITION P1000...")
             logger.info(f"  (Moving from P900 → P1000 at {output_aspirate_rate} µL/min to pull sample through loop)")
-            self.pump.move_both_to_position(1000, speed_ul_s=output_aspirate_rate_ul_s, valve_policy='outlet', wait=True)
+            # Manually set valves to OR (OUTPUT) then aspirate to P1000
+            self.pump.send_command("/1OR")
+            await asyncio.sleep(0.1)
+            self.pump.send_command("/2OR")
+            await asyncio.sleep(1.0)
+            self.pump.aspirate_both_to_position(1000, speed_ul_s=output_aspirate_rate_ul_s)
+            self.pump.wait_until_both_ready(timeout=60.0)
 
             pos1 = self.pump.get_position(1)
             pos2 = self.pump.get_position(2)
@@ -936,7 +946,8 @@ class RealPumpManager:
                 pos_before_fill_2 = pos2
                 
                 # Aspirate to P1000 (absolute position) with controller-level wait
-                self.pump.move_both_to_position(1000, speed_ul_s=aspirate_rate_ul_s, valve_policy='inlet', wait=True)
+                self.pump.aspirate_both_to_position(1000, speed_ul_s=aspirate_rate_ul_s)
+                self.pump.wait_until_both_ready(timeout=60.0)
                 QApplication.processEvents()  # Process Qt events
                 
                 # Check fill status and detect stall
@@ -964,7 +975,8 @@ class RealPumpManager:
                     
                     # Retry fill to P1000 (with wait)
                     logger.warning("🔄 Retrying fill after re-initialization...")
-                    self.pump.move_both_to_position(1000, speed_ul_s=aspirate_rate_ul_s, valve_policy='inlet', wait=True)
+                    self.pump.aspirate_both_to_position(1000, speed_ul_s=aspirate_rate_ul_s)
+                    self.pump.wait_until_both_ready(timeout=60.0)
                     
                     # Check again
                     pos1 = self.pump.get_position(1)

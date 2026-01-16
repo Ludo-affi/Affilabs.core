@@ -148,11 +148,11 @@ class UIUpdateHelpers:
                 if len(cycle_time) == 0:
                     continue
 
-                # Match Live Sensorgram behavior: skip first point and rebase to second sample
-                if len(cycle_time) > 1:
-                    first_time = cycle_time[1]
-                    display_cycle_time = cycle_time[1:] - first_time
-                    display_delta_spr = delta_spr[1:]
+                # Use all data points - time relative to START CURSOR position (not first data point)
+                # This ensures Active Cycle time=0 aligns with Start cursor position in Live Sensorgram
+                if len(cycle_time) > 0:
+                    display_cycle_time = cycle_time - start_time  # Use cursor position, not first data point
+                    display_delta_spr = delta_spr
 
                     # Apply injection alignment time shift if set (Phase 2)
                     if hasattr(app, '_channel_time_shifts') and ch_letter in app._channel_time_shifts:
@@ -163,7 +163,7 @@ class UIUpdateHelpers:
                     if len(display_cycle_time) > 0:
                         max_cycle_time = max(max_cycle_time, display_cycle_time[-1])
                 else:
-                    # Not enough points to form a segment; draw nothing for now
+                    # No data points; draw nothing
                     display_cycle_time = []
                     display_delta_spr = []
 

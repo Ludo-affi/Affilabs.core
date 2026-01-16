@@ -585,7 +585,31 @@ class CalibrationService(QObject):
                             )
 
                             if not (p1_ready and p2_ready):
-                                raise RuntimeError("Pump aspirate failed")
+                                # Recovery: switch to INPUT and send plunger home
+                                failed_pumps = []
+                                if not p1_ready:
+                                    failed_pumps.append("Pump 1")
+                                if not p2_ready:
+                                    failed_pumps.append("Pump 2")
+                                
+                                pumps_str = " and ".join(failed_pumps)
+                                logger.warning(f"⚠️ {pumps_str} blocked - attempting to unclog by pushing liquid back through valve...")
+                                
+                                if not p1_ready:
+                                    logger.info("  🔧 Pump 1: Switching to INPUT valve and pushing liquid back to unclog")
+                                    pump._pump.pump.set_valve_input(1)
+                                    await asyncio.sleep(0.5)
+                                    pump._pump.pump.move_to_position(1, 0, speed_ul_s=100)
+                                    await asyncio.sleep(2.0)
+                                
+                                if not p2_ready:
+                                    logger.info("  🔧 Pump 2: Switching to INPUT valve and pushing liquid back to unclog")
+                                    pump._pump.pump.set_valve_input(2)
+                                    await asyncio.sleep(0.5)
+                                    pump._pump.pump.move_to_position(2, 0, speed_ul_s=100)
+                                    await asyncio.sleep(2.0)
+                                
+                                raise RuntimeError(f"{pumps_str} blocked - pushed liquid back from device to unclog valve. Check tubing and try calibration again.")
 
                             await asyncio.sleep(0.5)
 

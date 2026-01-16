@@ -225,6 +225,8 @@ class Segment:
                     if (len(self.seg_x[ch]) == 0) or (len(self.seg_y[ch]) == 0):
                         self.error = "no data"
                     else:
+                        # Include 0.5 * CYCLE_TIME buffer before start cursor to properly establish 0,0 baseline
+                        # This ensures Active Cycle graph displays the start point at 0,0
                         while (ind < (len(self.seg_x[ch]) - 2)) and (
                             self.seg_x[ch][ind] < (self.start - (0.5 * CYCLE_TIME))
                         ):

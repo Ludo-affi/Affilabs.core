@@ -357,76 +357,68 @@ class PicoP4SPR(StaticController):
         # Cache of last-set LED intensities for reliable readback/fallback
         self._last_led_intensities: dict[str, int] = {"a": 0, "b": 0, "c": 0, "d": 0}
 
-    def open(self) -> bool:
+    def open(self):
         # Close existing connection if any
         if self._ser is not None:
-            with contextlib.suppress(builtins.BaseException):
+            try:
                 self._ser.close()
+            except:
+                pass
             self._ser = None
 
-        # Reset channel tracking on new connection
-        self._channels_enabled = set()
-
-        # Try VID/PID match first (preferred method - auto-detects correct COM port)
+        # Try VID/PID match first (preferred method)
+        print(f"DEBUG: PicoP4SPR.open() - Looking for VID={hex(PICO_VID)} PID={hex(PICO_PID)}")
         logger.info(
             f"PicoP4SPR.open() - Looking for VID={hex(PICO_VID)} PID={hex(PICO_PID)}",
         )
-        port_list = list(serial.tools.list_ports.comports())
-        logger.debug(f"Found {len(port_list)} COM ports")
-        for dev in port_list:
+        for dev in serial.tools.list_ports.comports():
             logger.debug(
-                f"  Port {dev.device}: VID={hex(dev.vid) if dev.vid else 'None'} PID={hex(dev.pid) if dev.pid else 'None'}",
+                f"  Found port: {dev.device} VID={hex(dev.vid) if dev.vid else 'None'} PID={hex(dev.pid) if dev.pid else 'None'}",
             )
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
                 try:
+                    print(f"DEBUG: MATCH! Trying PicoP4SPR on {dev.device}")
                     logger.info(f"MATCH! Trying PicoP4SPR on {dev.device}")
-                    # Increase timeouts to improve reliability on Windows
                     self._ser = serial.Serial(
                         port=dev.device,
                         baudrate=115200,
-                        timeout=1.0,
+                        timeout=0.5,
                         write_timeout=1,
-                        dsrdtr=True,
-                        rtscts=False,
                     )
-                    # CRITICAL: Explicitly set DTR/RTS after opening (Pico USB CDC requirement)
-                    self._ser.dtr = True
-                    self._ser.rts = True
-                    import time
-
-                    time.sleep(0.1)  # 100ms settle time after DTR/RTS
-
                     # Flush any stale data
                     self._ser.reset_input_buffer()
                     self._ser.reset_output_buffer()
 
                     cmd = "id\n"
                     self._ser.write(cmd.encode())
+                    import time
 
-                    time.sleep(0.5)  # 500ms delay matching PowerShell test
-                    raw_reply = self._ser.readline()
-                    reply = (
-                        raw_reply[0:5].decode()
-                        if len(raw_reply) >= 5
-                        else raw_reply.decode()
-                    )
+                    time.sleep(0.1)  # Increased delay for Pico to respond
+                    reply = self._ser.readline()[0:5].decode()
+                    print(f"DEBUG: Pico P4SPR ID reply: '{reply}'")
                     logger.info(f"Pico P4SPR ID reply: '{reply}'")
                     if reply == "P4SPR":
                         cmd = "iv\n"
                         self._ser.write(cmd.encode())
-                        time.sleep(0.20)
+                        time.sleep(0.1)
                         self.version = self._ser.readline()[0:4].decode()
                         logger.info(f"Pico P4SPR Fw version: {self.version}")
                         return True
-                    logger.warning(f"ID mismatch - expected 'P4SPR', got '{reply}'")
-                    try:
-                        self._ser.close()
-                    except Exception as close_err:
-                        logger.error(
-                            f"Error closing port after ID mismatch: {close_err}",
-                        )
-                    finally:
-                        self._ser = None
+                    # Wrong ID - close port and return False immediately (likely different Pico model)
+                    logger.warning(f"ID mismatch - expected 'P4SPR', got '{reply}' - stopping scan")
+                    print(f"DEBUG: Got reply '{reply}' - this is a different Pico model, returning False immediately")
+                    if self._ser is not None:
+                        try:
+                            self._ser.close()
+                            print(f"DEBUG: Port closed successfully")
+                        except Exception as close_err:
+                            print(f"DEBUG: Error closing port: {close_err}")
+                            logger.error(f"Error closing port after ID mismatch: {close_err}")
+                        finally:
+                            self._ser = None
+                    # Found a Pico but wrong model - let other controller classes try
+                    print(f"DEBUG: Returning False from PicoP4SPR.open() - found {reply}, need P4SPR")
+                    return False
                 except Exception as e:
                     logger.error(f"Failed to open Pico on {dev.device}: {e}")
                     if self._ser is not None:
@@ -462,14 +454,11 @@ class PicoP4SPR(StaticController):
 
             try:
                 logger.info(f"Trying PicoP4SPR fallback on {dev.device}")
-                # Slightly higher timeout to handle slower Pico responses
                 self._ser = serial.Serial(
                     port=dev.device,
                     baudrate=115200,
-                    timeout=0.5,
+                    timeout=0.3,
                     write_timeout=0.5,
-                    dsrdtr=True,
-                    rtscts=False,
                 )
                 self._ser.reset_input_buffer()
                 self._ser.reset_output_buffer()
@@ -478,7 +467,7 @@ class PicoP4SPR(StaticController):
                 self._ser.write(cmd.encode())
                 import time
 
-                time.sleep(0.15)  # Allow more time for firmware to print
+                time.sleep(0.05)  # Reduced from 0.15s
                 reply = self._ser.readline()[0:5].decode()
 
                 if reply == "P4SPR":
@@ -494,8 +483,10 @@ class PicoP4SPR(StaticController):
             except Exception as e:
                 logger.debug(f"   {dev.device} not a Pico P4SPR: {e}")
                 if self._ser is not None:
-                    with contextlib.suppress(builtins.BaseException):
+                    try:
                         self._ser.close()
+                    except:
+                        pass
                     self._ser = None
 
         return False
@@ -1644,14 +1635,108 @@ class PicoEZSPR(FlowController):
         self.firmware_id = ""  # Track firmware ID (EZSPR or AFFINITE only)
 
         # Valve cycle tracking and state monitoring
-        self._valve_six_cycles = {1: 0, 2: 0}  # Total cycles per 6-port valve
-        self._valve_three_cycles = {1: 0, 2: 0}  # Total cycles per 3-way valve
+        self._valve_six_cycles_session = {1: 0, 2: 0}  # Session cycles (reset per run)
+        self._valve_three_cycles_session = {1: 0, 2: 0}  # Session cycles (reset per run)
+        self._valve_six_cycles_lifetime = {1: 0, 2: 0}  # Lifetime cycles (persistent)
+        self._valve_three_cycles_lifetime = {1: 0, 2: 0}  # Lifetime cycles (persistent)
         self._valve_six_state = {1: None, 2: None}  # Current state (0=load, 1=inject)
         self._valve_three_state = {1: None, 2: None}  # Current state (0=waste, 1=load)
+
+        # Load lifetime cycle counts from persistent storage
+        self._load_valve_cycles()
 
         # 6-port valve safety timeout tracking
         self._valve_six_timers = {1: None, 2: None}  # Active timers for auto-shutoff
         self._valve_six_lock = threading.Lock()  # Thread-safe timer management
+
+    def _get_valve_cycles_file(self) -> Path:
+        """Get path to device-specific valve cycles persistence file.
+
+        Tries to use a stable identifier (firmware + port) to avoid mixing counts
+        across physical devices. Falls back to controller name if unavailable.
+        """
+        from pathlib import Path
+        import os
+        
+        home = Path.home()
+        affilabs_dir = home / ".affilabs"
+        affilabs_dir.mkdir(exist_ok=True)
+
+        fw = getattr(self, "firmware_id", "") or ""
+        port = getattr(getattr(self, "_ser", None), "port", "") or ""
+        base = self.name.replace(' ', '_').replace('/', '_')
+        suffix = "_".join([p for p in [fw, port] if p])
+        device_id = f"{base}{('_' + suffix) if suffix else ''}"
+        return affilabs_dir / f"valve_cycles_{device_id}.json"
+
+    def _load_valve_cycles(self) -> None:
+        """Load lifetime valve cycle counts from device-specific persistent storage."""
+        try:
+            cycles_file = self._get_valve_cycles_file()
+            if cycles_file.exists():
+                with open(cycles_file, 'r') as f:
+                    data = json.load(f)
+                    # JSON stores keys as strings, convert back to int
+                    six_data = data.get('valve_six', {})
+                    three_data = data.get('valve_three', {})
+                    self._valve_six_cycles_lifetime = {int(k): v for k, v in six_data.items()} if six_data else {1: 0, 2: 0}
+                    self._valve_three_cycles_lifetime = {int(k): v for k, v in three_data.items()} if three_data else {1: 0, 2: 0}
+                    # Convert string keys to int (JSON keys are always strings)
+                    self._valve_six_cycles_lifetime = {int(k): v for k, v in self._valve_six_cycles_lifetime.items()}
+                    self._valve_three_cycles_lifetime = {int(k): v for k, v in self._valve_three_cycles_lifetime.items()}
+                    logger.info(f"📊 Loaded lifetime valve cycles: 6-port V1={self._valve_six_cycles_lifetime[1]}, V2={self._valve_six_cycles_lifetime[2]}, 3-way V1={self._valve_three_cycles_lifetime[1]}, V2={self._valve_three_cycles_lifetime[2]}")
+        except Exception as e:
+            logger.warning(f"Could not load valve cycle history: {e}")
+            # Keep defaults (all zeros)
+
+    def _save_valve_cycles(self) -> None:
+        """Save lifetime valve cycle counts to persistent storage."""
+        try:
+            cycles_file = self._get_valve_cycles_file()
+            data = {
+                'valve_six': self._valve_six_cycles_lifetime,
+                'valve_three': self._valve_three_cycles_lifetime,
+            }
+            with open(cycles_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not save valve cycle history: {e}")
+
+    def reset_valve_cycles(self, valve_type=None, channel=None) -> None:
+        """Reset valve cycle counts (for maintenance/valve replacement).
+        
+        Args:
+            valve_type: 'six' or 'three' (None = reset all)
+            channel: 1 or 2 (None = reset both channels)
+        """
+        try:
+            if valve_type is None or valve_type == 'six':
+                if channel is None:
+                    for ch in [1, 2]:
+                        self._valve_six_cycles_session[ch] = 0
+                        self._valve_six_cycles_lifetime[ch] = 0
+                    logger.info("✅ Reset all 6-port valve cycles to 0")
+                else:
+                    self._valve_six_cycles_session[channel] = 0
+                    self._valve_six_cycles_lifetime[channel] = 0
+                    logger.info(f"✅ Reset 6-port valve CH{channel} cycles to 0")
+            
+            if valve_type is None or valve_type == 'three':
+                if channel is None:
+                    for ch in [1, 2]:
+                        self._valve_three_cycles_session[ch] = 0
+                        self._valve_three_cycles_lifetime[ch] = 0
+                    logger.info("✅ Reset all 3-way valve cycles to 0")
+                else:
+                    self._valve_three_cycles_session[channel] = 0
+                    self._valve_three_cycles_lifetime[channel] = 0
+                    logger.info(f"✅ Reset 3-way valve CH{channel} cycles to 0")
+            
+            self._save_valve_cycles()
+            logger.info(f"🔧 Valve cycle reset complete for device {self.name}")
+        except Exception as e:
+            logger.error(f"Error resetting valve cycles: {e}")
+
 
     def valid(self):
         return (self._ser is not None and self._ser.is_open) or self.open()
@@ -1726,17 +1811,22 @@ class PicoEZSPR(FlowController):
                 time.sleep(0.15)
                 reply = self._ser.readline().decode().strip()
 
-                # Accept multiple firmware IDs: EZSPR, P4PRO, AFFINITE
-                if reply in ("EZSPR", "P4PRO", "AFFINITE") or "AFFINITE" in reply or "P4PRO" in reply:
+                # Accept EZSPR or AFFINITE firmware only (NOT P4PRO)
+                if reply in ("EZSPR", "AFFINITE") or "AFFINITE" in reply:
                     self.firmware_id = reply  # Store for command format selection
                     logger.info(
-                        f"[OK] Found Pico EZSPR/P4PRO on {dev.device} (firmware: {reply}, fallback method)",
+                        f"[OK] Found Pico EZSPR/AFFINITE on {dev.device} (firmware: {reply}, fallback method)",
                     )
                     cmd = "iv\n"
                     self._ser.write(cmd.encode())
                     time.sleep(0.1)
                     self.version = self._ser.readline()[0:4].decode()
                     return True
+                elif "P4PRO" in reply:
+                    logger.debug("P4PRO firmware detected - skipping (use PicoP4PRO class)")
+                    self._ser.close()
+                    self._ser = None
+                    continue
                 self._ser.close()
                 self._ser = None
             except Exception as e:
@@ -2299,16 +2389,20 @@ class PicoEZSPR(FlowController):
                 response = self._ser.read()
                 success = response == b"1"  # P4PRO firmware returns '1' for success
 
-                if success:
-                    # Track state change and cycle count
-                    old_state = self._valve_three_state.get(ch)
-                    if old_state is not None and old_state != state:
-                        self._valve_three_cycles[ch] += 1
-                        logger.debug(f"3-way valve {ch}: cycle {self._valve_three_cycles[ch]} ({old_state}→{state})")
-                    self._valve_three_state[ch] = state
+                # Track commanded state (what we TOLD the valve to do)
+                old_state = self._valve_three_state.get(ch)
+                if old_state is not None and old_state != state:
+                    self._valve_three_cycles_session[ch] += 1
+                    self._valve_three_cycles_lifetime[ch] += 1
+                    self._save_valve_cycles()
+                    logger.debug(f"3-way valve {ch}: session cycle {self._valve_three_cycles_session[ch]}, lifetime {self._valve_three_cycles_lifetime[ch]} ({old_state}→{state})")
+                self._valve_three_state[ch] = state
 
+                if not success:
+                    logger.warning(f"KC{ch} 3-way valve command sent but firmware verification FAILED (response={response})")
+                else:
                     state_name = "LOAD" if state == 1 else "WASTE"
-                    logger.info(f"✓ KC{ch} 3-way valve → {state_name} (cycle {self._valve_three_cycles[ch]})")
+                    logger.info(f"✓ KC{ch} 3-way valve → {state_name} (session: {self._valve_three_cycles_session[ch]}, lifetime: {self._valve_three_cycles_lifetime[ch]})")
 
                 return success
             logger.error("failed to send cmd knx_three")
@@ -2379,8 +2473,10 @@ class PicoEZSPR(FlowController):
                     # Track state change and cycle count
                     old_state = self._valve_six_state.get(ch)
                     if old_state is not None and old_state != state:
-                        self._valve_six_cycles[ch] += 1
-                        logger.debug(f"6-port valve {ch}: cycle {self._valve_six_cycles[ch]} ({old_state}→{state})")
+                        self._valve_six_cycles_session[ch] += 1
+                        self._valve_six_cycles_lifetime[ch] += 1
+                        self._save_valve_cycles()
+                        logger.debug(f"6-port valve {ch}: session cycle {self._valve_six_cycles_session[ch]}, lifetime {self._valve_six_cycles_lifetime[ch]} ({old_state}→{state})")
                     self._valve_six_state[ch] = state
 
                     # Safety timer management
@@ -2397,14 +2493,14 @@ class PicoEZSPR(FlowController):
                                 )
                                 self._valve_six_timers[ch].daemon = True
                                 self._valve_six_timers[ch].start()
-                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (cycle {self._valve_six_cycles[ch]}) [Safety timeout: {timeout_seconds}s]")
+                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]}) [Safety timeout: {timeout_seconds}s]")
                         else:
                             # No timeout - programmatic operation with calculated contact time
                             self._cancel_valve_timer(ch)
-                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (cycle {self._valve_six_cycles[ch]})")
+                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]})")
                     else:  # Valve turned OFF (LOAD position)
                         self._cancel_valve_timer(ch)
-                        logger.info(f"✓ KC{ch} 6-port valve → LOAD (cycle {self._valve_six_cycles[ch]})")
+                        logger.info(f"✓ KC{ch} 6-port valve → LOAD (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]})")
 
                 return success
             logger.error("failed to send cmd knx_six")
@@ -2431,17 +2527,23 @@ class PicoEZSPR(FlowController):
                 # Send both commands back-to-back
                 self._ser.write(f"v61{state:1d}\n".encode())
                 resp1 = self._ser.read()
+                logger.info(f"DEBUG knx_six_both: v61{state} sent, response: {resp1}")
                 self._ser.write(f"v62{state:1d}\n".encode())
                 resp2 = self._ser.read()
+                logger.info(f"DEBUG knx_six_both: v62{state} sent, response: {resp2}")
                 success = resp1 == b"1" and resp2 == b"1"
+                
+                if not success:
+                    logger.warning(f"⚠️ 6-port valve command partial failure: v61 resp={resp1}, v62 resp={resp2}")
 
                 if success:
                     # Track state changes and cycles for both valves
                     for ch in [1, 2]:
                         old_state = self._valve_six_state.get(ch)
                         if old_state is not None and old_state != state:
-                            self._valve_six_cycles[ch] += 1
-                            logger.debug(f"6-port valve {ch}: cycle {self._valve_six_cycles[ch]} ({old_state}→{state})")
+                            self._valve_six_cycles_session[ch] += 1
+                            self._valve_six_cycles_lifetime[ch] += 1
+                            logger.debug(f"6-port valve {ch}: session cycle {self._valve_six_cycles_session[ch]}, lifetime {self._valve_six_cycles_lifetime[ch]} ({old_state}→{state})")
                         self._valve_six_state[ch] = state
 
                     # Safety timer management for both valves
@@ -2459,22 +2561,25 @@ class PicoEZSPR(FlowController):
                                     )
                                     self._valve_six_timers[ch].daemon = True
                                     self._valve_six_timers[ch].start()
-                            logger.info(f"✓ 6-port valves both set to INJECT (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]}) [Safety timeout: {timeout_seconds}s]")
+                            self._save_valve_cycles()
+                            logger.info(f"✓ 6-port valves both set to INJECT (session: V1={self._valve_six_cycles_session[1]}, V2={self._valve_six_cycles_session[2]} | lifetime: V1={self._valve_six_cycles_lifetime[1]}, V2={self._valve_six_cycles_lifetime[2]}) [Safety timeout: {timeout_seconds}s]")
                         else:
                             # No timeout - programmatic operation with calculated contact time
                             for ch in [1, 2]:
                                 self._cancel_valve_timer(ch)
-                            logger.info(f"✓ 6-port valves both set to INJECT (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]})")
+                            self._save_valve_cycles()
+                            logger.info(f"✓ 6-port valves both set to INJECT (session: V1={self._valve_six_cycles_session[1]}, V2={self._valve_six_cycles_session[2]} | lifetime: V1={self._valve_six_cycles_lifetime[1]}, V2={self._valve_six_cycles_lifetime[2]})")
                     else:  # Valves turned OFF (LOAD position)
                         for ch in [1, 2]:
                             self._cancel_valve_timer(ch)
-                        logger.info(f"✓ 6-port valves both set to LOAD (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]})")
+                        self._save_valve_cycles()
+                        logger.info(f"✓ 6-port valves both set to LOAD (session: V1={self._valve_six_cycles_session[1]}, V2={self._valve_six_cycles_session[2]} | lifetime: V1={self._valve_six_cycles_lifetime[1]}, V2={self._valve_six_cycles_lifetime[2]})")
 
                 return success
-            logger.error("failed to send cmd knx_six_both")
+            logger.error("knx_six_both failed: serial port not available (self._ser is None)")
             return False
         except Exception as e:
-            logger.error(f"Error during knx_six_both {e}")
+            logger.error(f"knx_six_both EXCEPTION: {e}", exc_info=True)
             return False
 
     def knx_three_both(self, state):
@@ -2487,23 +2592,27 @@ class PicoEZSPR(FlowController):
             True if both valves acknowledged, False otherwise
         """
         try:
+            # Firmware uses channel '3' for both valves: v331=ON, v330=OFF (NOT v3B!)
+            cmd = f"v33{state:1d}\n"
             if self._ser is not None or self.open():
-                # Send both commands back-to-back
-                self._ser.write(f"v31{state:1d}\n".encode())
-                resp1 = self._ser.read()
-                self._ser.write(f"v32{state:1d}\n".encode())
-                resp2 = self._ser.read()
-                success = resp1 == b"1" and resp2 == b"1"
+                self._ser.write(cmd.encode())
+                response = self._ser.read()
+                success = response == b"1"
 
-                if success:
-                    # Track state changes and cycles for both valves
-                    for ch in [1, 2]:
-                        old_state = self._valve_three_state.get(ch)
-                        if old_state is not None and old_state != state:
-                            self._valve_three_cycles[ch] += 1
-                            logger.debug(f"3-way valve {ch}: cycle {self._valve_three_cycles[ch]} ({old_state}→{state})")
-                        self._valve_three_state[ch] = state
-                    logger.info(f"✓ 3-way valves both set to {'LOAD' if state == 1 else 'WASTE'} (cycles: V1={self._valve_three_cycles[1]}, V2={self._valve_three_cycles[2]})")
+                # Track commanded state for both valves
+                for ch in [1, 2]:
+                    old_state = self._valve_three_state.get(ch)
+                    if old_state is not None and old_state != state:
+                        self._valve_three_cycles_session[ch] += 1
+                        self._valve_three_cycles_lifetime[ch] += 1
+                        logger.debug(f"3-way valve {ch}: session cycle {self._valve_three_cycles_session[ch]}, lifetime {self._valve_three_cycles_lifetime[ch]} ({old_state}→{state})")
+                    self._valve_three_state[ch] = state
+
+                if not success:
+                    logger.warning(f"BOTH 3-way valves command sent but firmware verification FAILED (resp1={resp1}, resp2={resp2})")
+                else:
+                    self._save_valve_cycles()
+                    logger.info(f"✓ 3-way valves both set to {'LOAD' if state == 1 else 'WASTE'} (session: V1={self._valve_three_cycles_session[1]}, V2={self._valve_three_cycles_session[2]} | lifetime: V1={self._valve_three_cycles_lifetime[1]}, V2={self._valve_three_cycles_lifetime[2]})")
 
                 return success
             logger.error("failed to send cmd knx_three_both")
@@ -2538,16 +2647,20 @@ class PicoEZSPR(FlowController):
         return self._valve_three_state.get(ch)
 
     def get_valve_cycles(self):
-        """Get valve cycle counts for health monitoring.
+        """Get valve cycle counts (session + lifetime) for health monitoring.
 
         Returns:
             dict with cycle counts for all valves
         """
         return {
-            "six_port": dict(self._valve_six_cycles),
-            "three_way": dict(self._valve_three_cycles),
-            "total_six": sum(self._valve_six_cycles.values()),
-            "total_three": sum(self._valve_three_cycles.values()),
+            "six_port_session": dict(self._valve_six_cycles_session),
+            "three_way_session": dict(self._valve_three_cycles_session),
+            "six_port_lifetime": dict(self._valve_six_cycles_lifetime),
+            "three_way_lifetime": dict(self._valve_three_cycles_lifetime),
+            "total_six_session": sum(self._valve_six_cycles_session.values()),
+            "total_three_session": sum(self._valve_three_cycles_session.values()),
+            "total_six_lifetime": sum(self._valve_six_cycles_lifetime.values()),
+            "total_three_lifetime": sum(self._valve_three_cycles_lifetime.values()),
         }
 
     def stop_kinetic(self) -> None:
@@ -2627,46 +2740,168 @@ class PicoP4PRO(FlowController):
         self.version = ""
         self.firmware_id = "P4PRO"
 
-        # Valve cycle tracking and state monitoring
-        self._valve_six_cycles = {1: 0, 2: 0}
-        self._valve_three_cycles = {1: 0, 2: 0}
+        # Valve cycle tracking and state monitoring (session + lifetime)
+        self._valve_six_cycles_session = {1: 0, 2: 0}
+        self._valve_three_cycles_session = {1: 0, 2: 0}
+        self._valve_six_cycles_lifetime = {1: 0, 2: 0}
+        self._valve_three_cycles_lifetime = {1: 0, 2: 0}
         self._valve_six_state = {1: None, 2: None}
         self._valve_three_state = {1: None, 2: None}
+
+        # NOTE: _load_valve_cycles() moved to open() after serial port is established
+        # to avoid crashes during device discovery
 
         # 6-port valve safety timeout tracking
         self._valve_six_timers = {1: None, 2: None}
         self._valve_six_lock = threading.Lock()
+
+    def _get_valve_cycles_file(self) -> Path:
+        """Get path to device-specific valve cycles persistence file.
+
+        Tries to use a stable identifier (firmware + port) to avoid mixing counts
+        across physical devices. Falls back to controller name if unavailable.
+        """
+        from pathlib import Path
+        import os
+        
+        home = Path.home()
+        affilabs_dir = home / ".affilabs"
+        affilabs_dir.mkdir(exist_ok=True)
+
+        fw = getattr(self, "firmware_id", "") or ""
+        port = getattr(getattr(self, "_ser", None), "port", "") or ""
+        base = self.name.replace(' ', '_').replace('/', '_')
+        suffix = "_".join([p for p in [fw, port] if p])
+        device_id = f"{base}{('_' + suffix) if suffix else ''}"
+        return affilabs_dir / f"valve_cycles_{device_id}.json"
+
+    def _load_valve_cycles(self) -> None:
+        """Load lifetime valve cycle counts from device-specific persistent storage."""
+        try:
+            cycles_file = self._get_valve_cycles_file()
+            if cycles_file.exists():
+                with open(cycles_file, 'r') as f:
+                    data = json.load(f)
+                    # JSON stores keys as strings, convert back to int
+                    six_data = data.get('valve_six', {})
+                    three_data = data.get('valve_three', {})
+                    self._valve_six_cycles_lifetime = {int(k): v for k, v in six_data.items()} if six_data else {1: 0, 2: 0}
+                    self._valve_three_cycles_lifetime = {int(k): v for k, v in three_data.items()} if three_data else {1: 0, 2: 0}
+                    # Convert string keys to int (JSON keys are always strings)
+                    self._valve_six_cycles_lifetime = {int(k): v for k, v in self._valve_six_cycles_lifetime.items()}
+                    self._valve_three_cycles_lifetime = {int(k): v for k, v in self._valve_three_cycles_lifetime.items()}
+                    logger.info(f"📊 Loaded lifetime valve cycles: 6-port V1={self._valve_six_cycles_lifetime[1]}, V2={self._valve_six_cycles_lifetime[2]}, 3-way V1={self._valve_three_cycles_lifetime[1]}, V2={self._valve_three_cycles_lifetime[2]}")
+        except Exception as e:
+            logger.warning(f"Could not load valve cycle history: {e}")
+            # Keep defaults (all zeros)
+
+    def _save_valve_cycles(self) -> None:
+        """Save lifetime valve cycle counts to persistent storage."""
+        try:
+            cycles_file = self._get_valve_cycles_file()
+            data = {
+                'valve_six': self._valve_six_cycles_lifetime,
+                'valve_three': self._valve_three_cycles_lifetime,
+            }
+            with open(cycles_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not save valve cycle history: {e}")
+
+    def reset_valve_cycles(self, valve_type=None, channel=None) -> None:
+        """Reset valve cycle counts (for maintenance/valve replacement).
+
+        Args:
+            valve_type: 'six' or 'three' (None = reset all)
+            channel: 1 or 2 (None = reset both channels)
+        """
+        try:
+            if valve_type is None or valve_type == 'six':
+                if channel is None:
+                    for ch in [1, 2]:
+                        self._valve_six_cycles_session[ch] = 0
+                        self._valve_six_cycles_lifetime[ch] = 0
+                    logger.info("✅ Reset all 6-port valve cycles to 0")
+                else:
+                    self._valve_six_cycles_session[channel] = 0
+                    self._valve_six_cycles_lifetime[channel] = 0
+                    logger.info(f"✅ Reset 6-port valve CH{channel} cycles to 0")
+
+            if valve_type is None or valve_type == 'three':
+                if channel is None:
+                    for ch in [1, 2]:
+                        self._valve_three_cycles_session[ch] = 0
+                        self._valve_three_cycles_lifetime[ch] = 0
+                    logger.info("✅ Reset all 3-way valve cycles to 0")
+                else:
+                    self._valve_three_cycles_session[channel] = 0
+                    self._valve_three_cycles_lifetime[channel] = 0
+                    logger.info(f"✅ Reset 3-way valve CH{channel} cycles to 0")
+
+            self._save_valve_cycles()
+            logger.info(f"🔧 Valve cycle reset complete for device {self.name}")
+        except Exception as e:
+            logger.error(f"Error resetting valve cycles: {e}")
 
     def valid(self):
         return (self._ser is not None and self._ser.is_open) or self.open()
 
     def open(self) -> bool:
         """Open P4PRO controller by scanning for P4PRO firmware ID."""
+        print("DEBUG: PicoP4PRO.open() - Looking for VID=0x2e8a PID=0xa")
         logger.info("PicoP4PRO.open() - Looking for VID=0x2e8a PID=0xa")
 
         # Try VID/PID match first
-        for dev in serial.tools.list_ports.comports():
+        print("DEBUG: PicoP4PRO - About to enumerate comports()")
+        ports = list(serial.tools.list_ports.comports())
+        print(f"DEBUG: PicoP4PRO - Found {len(ports)} ports")
+        for dev in ports:
+            print(f"DEBUG: PicoP4PRO - Checking port {dev.device}, VID={hex(dev.vid) if dev.vid else None}, PID={hex(dev.pid) if dev.pid else None}")
             if dev.pid == PICO_PID and dev.vid == PICO_VID:
+                print(f"DEBUG: MATCH! Trying PicoP4PRO on {dev.device}")
                 logger.info(f"MATCH! Trying PicoP4PRO on {dev.device}")
                 try:
+                    print(f"DEBUG: PicoP4PRO - Attempting to open serial port {dev.device}...")
                     self._ser = serial.Serial(
                         port=dev.device,
                         baudrate=115200,
-                        timeout=0.01,  # 10ms timeout - firmware responds in <5ms
+                        timeout=0.05,  # 50ms timeout - firmware may need up to 50ms for response
                         write_timeout=1,
                     )
+                    print(f"DEBUG: PicoP4PRO - Serial port {dev.device} opened successfully")
+                    # Improve reliability on Windows CDC by toggling DTR/RTS
+                    try:
+                        self._ser.dtr = True
+                        self._ser.rts = True
+                    except Exception:
+                        pass
+                    # Clear buffers before identification
+                    try:
+                        self._ser.reset_input_buffer()
+                        self._ser.reset_output_buffer()
+                    except Exception:
+                        pass
                     cmd = "id\n"
+                    print(f"DEBUG: PicoP4PRO - Sending 'id' command...")
                     self._ser.write(cmd.encode())
+                    import time
+                    time.sleep(0.10)
                     reply = self._ser.readline().decode().strip()
+                    print(f"DEBUG: PicoP4PRO - Got ID reply: '{reply}'")
 
                     if reply == "P4PRO" or "P4PRO" in reply:
+                        print(f"DEBUG: PicoP4PRO - ID match! This is a P4PRO!")
                         self.firmware_id = reply
                         cmd = "iv\n"
                         self._ser.write(cmd.encode())
                         self.version = self._ser.readline()[0:4].decode()
                         logger.info(f"✅ Found Pico P4PRO firmware: {reply} (version {self.version})")
+                        # Load valve cycles now that serial port is established
+                        self._load_valve_cycles()
+                        print(f"DEBUG: PicoP4PRO - Returning True (success!)")
                         return True
                     else:
+                        print(f"DEBUG: PicoP4PRO - ID mismatch, expected 'P4PRO', got '{reply}'")
                         logger.warning(f"ID mismatch - expected 'P4PRO', got '{reply}'")
                         try:
                             self._ser.close()
@@ -2674,6 +2909,7 @@ class PicoP4PRO(FlowController):
                             pass
                         self._ser = None
                 except Exception as e:
+                    print(f"DEBUG: PicoP4PRO - EXCEPTION while trying {dev.device}: {e}")
                     logger.error(f"Error connecting to {dev.device}: {e}")
                     if self._ser:
                         try:
@@ -2682,7 +2918,55 @@ class PicoP4PRO(FlowController):
                             pass
                         self._ser = None
 
+        print("DEBUG: PicoP4PRO - No VID/PID match found")
         logger.warning("No PicoP4PRO found with VID/PID match")
+        # FALLBACK: Try all COM ports if VID/PID match failed
+        logger.info("🔧 PicoP4PRO VID/PID match failed - trying all COM ports...")
+        for dev in serial.tools.list_ports.comports():
+            try:
+                logger.debug(f"   Trying {dev.device}...")
+                self._ser = serial.Serial(
+                    port=dev.device,
+                    baudrate=115200,
+                    timeout=0.5,
+                    write_timeout=1,
+                )
+                # Improve reliability: toggle DTR/RTS and flush buffers
+                with contextlib.suppress(Exception):
+                    self._ser.dtr = True
+                    self._ser.rts = True
+                    self._ser.reset_input_buffer()
+                    self._ser.reset_output_buffer()
+
+                # Identify firmware
+                cmd = "id\n"
+                self._ser.write(cmd.encode())
+                import time
+                time.sleep(0.15)
+                reply = self._ser.readline().decode().strip()
+
+                if reply == "P4PRO" or "P4PRO" in reply:
+                    self.firmware_id = reply
+                    cmd = "iv\n"
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.10)
+                    self.version = self._ser.readline()[0:4].decode()
+                    logger.info(
+                        f"[OK] Found Pico P4PRO on {dev.device} (firmware: {reply}, fallback method)",
+                    )
+                    # Load valve cycles now that serial port is established
+                    self._load_valve_cycles()
+                    return True
+                # Not P4PRO - close and continue scan
+                self._ser.close()
+                self._ser = None
+            except Exception as e:
+                logger.debug(f"   {dev.device} not a Pico P4PRO: {e}")
+                if self._ser is not None:
+                    with contextlib.suppress(Exception):
+                        self._ser.close()
+                    self._ser = None
+
         return False
 
     def close(self) -> None:
@@ -2759,15 +3043,19 @@ class PicoP4PRO(FlowController):
                 cmd = f"lm:{ch_upper}\n"
                 self._ser.write(cmd.encode())
 
-                # Read response - firmware responds in <5ms with '1' or '11111'
-                # Use readline to get complete response without blocking
-                resp = self._ser.readline()
+                # Small delay for firmware to process and respond
+                time.sleep(0.01)  # 10ms - firmware responds in <5ms
 
-                # Check if response contains '1' (success indicator)
-                if b'1' in resp:
+                # Read response - firmware responds with b'\x01' (byte 1) or b'1' (ASCII)
+                # Use readline to get complete response
+                resp = self._ser.readline().strip()
+
+                # Check if response contains '1' or 0x01 (success indicators)
+                if b'1' in resp or b'\x01' in resp:
                     return True
 
-                logger.warning(f"turn_on_channel({ch}) returned: {resp!r} (expected b'1')")
+                # Empty response or unexpected response
+                logger.warning(f"turn_on_channel({ch}) returned: {resp!r} (expected b'1' or b'\\x01')")
                 return False
             return False
         except Exception as e:
@@ -2852,7 +3140,7 @@ class PicoP4PRO(FlowController):
                     cmd = f"leds:A:{a},B:{b},C:{c},D:{d}\n"
                     self._ser.write(cmd.encode())
                     time.sleep(0.01)
-                    resp = self._ser.read(10)
+                    resp = self._ser.readline().strip()
 
                     if resp != b'1':
                         logger.warning(f"leds atomic command failed: {resp!r}")
@@ -2866,7 +3154,7 @@ class PicoP4PRO(FlowController):
                             cmd = f"l{ch}:{val}\n"
                             self._ser.write(cmd.encode())
                             time.sleep(0.01)
-                            resp = self._ser.read(10)
+                            resp = self._ser.readline().strip()
                             if resp != b'1':
                                 logger.warning(f"l{ch}:{val} command failed: {resp!r}")
 
@@ -2912,11 +3200,11 @@ class PicoP4PRO(FlowController):
             if self._ser is not None or self.open():
                 self._ser.reset_input_buffer()
                 self._ser.write(cmd.encode())
-                time.sleep(0.6)  # Wait for servo movement + response (500ms + margin)
-                response = self._ser.read(10)
+                time.sleep(0.7)  # Wait for servo movement + response (500ms + 200ms margin)
+                response = self._ser.readline().strip()  # Use readline for complete response
 
-                # P4PRO v2.1 responds with b'\x01\r\n' or b'1\r\n'
-                if len(response) > 0 and (b"\x01" in response or b"1" in response):
+                # P4PRO v2.1 responds with b'\x01', b'1', or b'B' (all valid)
+                if len(response) > 0 and (b"\x01" in response or b"1" in response or b"B" in response):
                     return True
                 else:
                     logger.error(f"[P4PRO-SERVO] Move to {degrees}° failed: response={response!r}")
@@ -3099,12 +3387,17 @@ class PicoP4PRO(FlowController):
                 response = self._ser.read()
                 success = response == b"1"
 
-                if success:
-                    # Track state and cycles
-                    old_state = self._valve_six_state.get(ch)
-                    if old_state is not None and old_state != state:
-                        self._valve_six_cycles[ch] += 1
-                    self._valve_six_state[ch] = state
+                # Track commanded state (what we TOLD the valve to do)
+                old_state = self._valve_six_state.get(ch)
+                if old_state is not None and old_state != state:
+                    self._valve_six_cycles_session[ch] += 1
+                    self._valve_six_cycles_lifetime[ch] += 1
+                    self._save_valve_cycles()
+                    logger.debug(f"6-port valve {ch}: session cycle {self._valve_six_cycles_session[ch]}, lifetime {self._valve_six_cycles_lifetime[ch]} ({old_state}→{state})")
+                self._valve_six_state[ch] = state
+
+                if not success:
+                    logger.warning(f"KC{ch} 6-port valve command sent but firmware verification FAILED (response={response})")
 
                     # Safety timer management
                     if state == 1:  # INJECT
@@ -3119,13 +3412,13 @@ class PicoP4PRO(FlowController):
                                 )
                                 self._valve_six_timers[ch].daemon = True
                                 self._valve_six_timers[ch].start()
-                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (cycle {self._valve_six_cycles[ch]}) [Timeout: {timeout_seconds}s]")
+                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]}) [Timeout: {timeout_seconds}s]")
                         else:
                             self._cancel_valve_timer(ch)
-                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (cycle {self._valve_six_cycles[ch]})")
+                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]})")
                     else:  # LOAD
                         self._cancel_valve_timer(ch)
-                        logger.info(f"✓ KC{ch} 6-port valve → LOAD (cycle {self._valve_six_cycles[ch]})")
+                        logger.info(f"✓ KC{ch} 6-port valve → LOAD (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]})")
 
                 return success
             return False
@@ -3136,35 +3429,44 @@ class PicoP4PRO(FlowController):
     def knx_six_both(self, state, timeout_seconds=None):
         """Control both 6-port valves simultaneously."""
         try:
-            cmd = f"v6B{state:1d}\n"
+            # Firmware uses channel '3' for both valves: v631=ON, v630=OFF
+            cmd = f"v63{state:1d}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 response = self._ser.read()
                 success = response == b"1"
 
-                if success:
-                    for ch in [1, 2]:
-                        old_state = self._valve_six_state.get(ch)
-                        if old_state is not None and old_state != state:
-                            self._valve_six_cycles[ch] += 1
-                        self._valve_six_state[ch] = state
+                # Track commanded state for both channels
+                for ch in [1, 2]:
+                    old_state = self._valve_six_state.get(ch)
+                    if old_state is not None and old_state != state:
+                        self._valve_six_cycles_session[ch] += 1
+                        self._valve_six_cycles_lifetime[ch] += 1
+                        self._save_valve_cycles()
+                        logger.debug(f"Valve 6-port CH{ch} cycles - session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]}")
+                    self._valve_six_state[ch] = state
 
-                        if state == 1 and timeout_seconds:
-                            with self._valve_six_lock:
-                                if self._valve_six_timers[ch] is not None:
-                                    self._valve_six_timers[ch].cancel()
-                                self._valve_six_timers[ch] = threading.Timer(
-                                    timeout_seconds,
-                                    self._auto_shutoff_valve,
-                                    args=[ch]
-                                )
-                                self._valve_six_timers[ch].daemon = True
-                                self._valve_six_timers[ch].start()
-                        else:
-                            self._cancel_valve_timer(ch)
+                if not success:
+                    logger.warning(f"BOTH 6-port valves command sent but firmware verification FAILED (response={response})")
 
-                    mode = "INJECT" if state == 1 else "LOAD"
-                    logger.info(f"✓ Both 6-port valves → {mode} (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]})")
+                # Handle timeout timers for both channels
+                for ch in [1, 2]:
+                    if state == 1 and timeout_seconds:
+                        with self._valve_six_lock:
+                            if self._valve_six_timers[ch] is not None:
+                                self._valve_six_timers[ch].cancel()
+                            self._valve_six_timers[ch] = threading.Timer(
+                                timeout_seconds,
+                                self._auto_shutoff_valve,
+                                args=[ch]
+                            )
+                            self._valve_six_timers[ch].daemon = True
+                            self._valve_six_timers[ch].start()
+                    else:
+                        self._cancel_valve_timer(ch)
+
+                mode = "INJECT" if state == 1 else "LOAD"
+                logger.info(f"✓ Both 6-port valves → {mode} (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]})")
 
                 return success
             return False
@@ -3186,13 +3488,20 @@ class PicoP4PRO(FlowController):
                 response = self._ser.read()
                 success = response == b"1"
 
-                if success:
-                    old_state = self._valve_three_state.get(ch)
-                    if old_state is not None and old_state != state:
-                        self._valve_three_cycles[ch] += 1
-                    self._valve_three_state[ch] = state
+                # Track commanded state
+                old_state = self._valve_three_state.get(ch)
+                if old_state is not None and old_state != state:
+                    self._valve_three_cycles_session[ch] += 1
+                    self._valve_three_cycles_lifetime[ch] += 1
+                    self._save_valve_cycles()
+                    logger.debug(f"3-way valve {ch}: session cycle {self._valve_three_cycles_session[ch]}, lifetime {self._valve_three_cycles_lifetime[ch]} ({old_state}→{state})")
+                self._valve_three_state[ch] = state
+
+                if not success:
+                    logger.warning(f"KC{ch} 3-way valve command sent but firmware verification FAILED (response={response})")
+                else:
                     mode = "LOAD" if state == 1 else "WASTE"
-                    logger.info(f"✓ KC{ch} 3-way valve → {mode} (cycle {self._valve_three_cycles[ch]})")
+                    logger.info(f"✓ KC{ch} 3-way valve → {mode} (session: {self._valve_three_cycles_session[ch]}, lifetime: {self._valve_three_cycles_lifetime[ch]})")
 
                 return success
             return False
@@ -3203,20 +3512,28 @@ class PicoP4PRO(FlowController):
     def knx_three_both(self, state):
         """Control both 3-way valves simultaneously."""
         try:
-            cmd = f"v3B{state:1d}\n"
+            # Firmware uses channel '3' for both valves: v331=ON, v330=OFF (NOT v3B!)
+            cmd = f"v33{state:1d}\n"
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 response = self._ser.read()
                 success = response == b"1"
 
-                if success:
-                    for ch in [1, 2]:
-                        old_state = self._valve_three_state.get(ch)
-                        if old_state is not None and old_state != state:
-                            self._valve_three_cycles[ch] += 1
-                        self._valve_three_state[ch] = state
+                # Track commanded state for both valves
+                for ch in [1, 2]:
+                    old_state = self._valve_three_state.get(ch)
+                    if old_state is not None and old_state != state:
+                        self._valve_three_cycles_session[ch] += 1
+                        self._valve_three_cycles_lifetime[ch] += 1
+                        logger.debug(f"3-way valve {ch}: session cycle {self._valve_three_cycles_session[ch]}, lifetime {self._valve_three_cycles_lifetime[ch]} ({old_state}→{state})")
+                    self._valve_three_state[ch] = state
+
+                if not success:
+                    logger.warning(f"BOTH 3-way valves command sent but firmware verification FAILED (response={response})")
+                else:
+                    self._save_valve_cycles()
                     mode = "LOAD" if state == 1 else "WASTE"
-                    logger.info(f"✓ Both 3-way valves → {mode} (cycles: V1={self._valve_three_cycles[1]}, V2={self._valve_three_cycles[2]})")
+                    logger.info(f"✓ Both 3-way valves → {mode} (session: V1={self._valve_three_cycles_session[1]}, V2={self._valve_three_cycles_session[2]} | lifetime: V1={self._valve_three_cycles_lifetime[1]}, V2={self._valve_three_cycles_lifetime[2]})")
 
                 return success
             return False
@@ -3233,12 +3550,16 @@ class PicoP4PRO(FlowController):
         return self._valve_three_state.get(ch)
 
     def get_valve_cycles(self):
-        """Get valve cycle counts for health monitoring."""
+        """Get valve cycle counts (session + lifetime) for health monitoring."""
         return {
-            "six_port": dict(self._valve_six_cycles),
-            "three_way": dict(self._valve_three_cycles),
-            "total_six": sum(self._valve_six_cycles.values()),
-            "total_three": sum(self._valve_three_cycles.values()),
+            "six_port_session": dict(self._valve_six_cycles_session),
+            "three_way_session": dict(self._valve_three_cycles_session),
+            "six_port_lifetime": dict(self._valve_six_cycles_lifetime),
+            "three_way_lifetime": dict(self._valve_three_cycles_lifetime),
+            "total_six_session": sum(self._valve_six_cycles_session.values()),
+            "total_three_session": sum(self._valve_three_cycles_session.values()),
+            "total_six_lifetime": sum(self._valve_six_cycles_lifetime.values()),
+            "total_three_lifetime": sum(self._valve_three_cycles_lifetime.values()),
         }
 
     def stop_kinetic(self) -> None:

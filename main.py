@@ -1273,6 +1273,15 @@ class Application(QApplication):
             )
 
             logger.info("QC report displayed and closed (modal)")
+            
+            # Turn off all LEDs after QC report
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr and hasattr(self.hardware_mgr, 'ctrl'):
+                try:
+                    self.hardware_mgr.ctrl.turn_off_channels()
+                    logger.info("✓ All LEDs turned off after calibration QC report")
+                except Exception as led_error:
+                    logger.warning(f"Failed to turn off LEDs: {led_error}")
+            
             logger.info("System ready - Click START button to begin live acquisition")
 
         except Exception as e:
@@ -1411,8 +1420,6 @@ class Application(QApplication):
             ui.sidebar.copy_graph_btn.clicked.connect(self._on_copy_graph_to_clipboard)
 
         # --- Settings Tab Controls ---
-        if hasattr(ui.sidebar, 'load_current_settings_btn'):
-            ui.sidebar.load_current_settings_btn.clicked.connect(self._on_load_current_settings)
         if hasattr(ui.sidebar, 'apply_settings_btn'):
             ui.sidebar.apply_settings_btn.clicked.connect(self._on_apply_settings)
 
@@ -1836,10 +1843,17 @@ class Application(QApplication):
                     # Move start cursor to end position (Active Cycle will show this as t=0)
                     timeline.start_cursor.setValue(end_pos)
 
-                    # CRITICAL: Update the active segment's start time so normalization works
+                    # CRITICAL: Update the active segment's start time AND clear old data
                     if hasattr(timeline, 'active_segment') and timeline.active_segment is not None:
                         timeline.active_segment.start = end_pos
-                        logger.debug(f"Updated active segment start to {end_pos:.1f}s")
+                        # Clear any existing data so Active Cycle starts fresh at 0,0
+                        import numpy as np
+                        for ch in ['a', 'b', 'c', 'd']:
+                            timeline.active_segment.seg_x[ch] = np.array([])
+                            timeline.active_segment.seg_y[ch] = np.array([])
+                            timeline.active_segment.start_index[ch] = 0
+                            timeline.active_segment.end_index[ch] = 0
+                        logger.debug(f"Updated active segment start to {end_pos:.1f}s and cleared data")
 
                     logger.info(f"✓ Active Cycle reset: start cursor at t={end_pos:.1f}s (displays as 0,0)")
         except Exception as e:
@@ -3000,6 +3014,10 @@ class Application(QApplication):
 
             # Update position
             stop_cursor.setValue(elapsed_time)
+            
+            # Update label in real-time
+            if hasattr(stop_cursor, "label") and stop_cursor.label:
+                stop_cursor.label.setFormat(f"Stop: {elapsed_time:.1f}s")
 
         except (AttributeError, RuntimeError):
             pass  # Cursor not ready, skip silently
@@ -3332,7 +3350,7 @@ class Application(QApplication):
         if hasattr(ui, 'flow_current_rate'):
             ui.flow_current_rate.setText("0")
 
-    def _on_pump_status_updated(self, status: str, flow_rate: float, plunger_pos: float, contact_time: float):
+    def _on_pump_status_updated(self, status: str, flow_rate: float, plunger_pos: float, contact_time_current: float, contact_time_expected: float):
         """Handle real-time pump status update - update all status board values."""
         ui = self.main_window.sidebar
         if hasattr(ui, 'flow_pump_status_label'):
@@ -3347,11 +3365,19 @@ class Application(QApplication):
         if hasattr(ui, 'flow_plunger_position'):
             ui.flow_plunger_position.setText(f"{plunger_pos:.0f}")
         if hasattr(ui, 'flow_contact_time'):
-            ui.flow_contact_time.setText(f"{contact_time:.1f}")
+            # Display as "current / expected" format (e.g., "22 / 120")
+            if contact_time_expected > 0:
+                ui.flow_contact_time.setText(f"{contact_time_current:.0f} / {contact_time_expected:.0f}")
+            else:
+                ui.flow_contact_time.setText(f"{contact_time_current:.1f}")
 
     def _poll_plunger_position(self):
         """Poll plunger position every 5 seconds and update flow status board."""
         if not self.pump_mgr or not self.pump_mgr.is_available:
+            return
+
+        # Only poll when pump is actively running
+        if self.pump_mgr.is_idle:
             return
 
         try:
@@ -3367,11 +3393,10 @@ class Application(QApplication):
                 if hasattr(ui, 'flow_plunger_position'):
                     ui.flow_plunger_position.setText(f"{avg_pos:.0f}")
 
-                # Log every 5 seconds for debugging
-                if self.pump_mgr.is_idle:
-                    logger.debug(f"Plunger Poll: Pump1={p1_pos:.1f}µL, Pump2={p2_pos:.1f}µL")
+                # Log positions during active operation
+                logger.debug(f"P1: {p1_pos:.1f} uL | P2: {p2_pos:.1f} uL")
         except Exception as e:
-            logger.debug(f"Plunger poll error: {e}")
+            logger.debug(f"Plunger position error: {e}")
 
     def _poll_valve_positions(self):
         """Poll valve positions every 3 seconds and sync UI to hardware state."""
@@ -3380,64 +3405,72 @@ class Application(QApplication):
             return
 
         try:
-            # Get 6-port valve states (0=Load, 1=Sensor)
+            # Only poll valves if controller supports them (P4PRO has 6-port valves, P4SPR doesn't)
+            if not hasattr(ctrl, 'knx_six_state'):
+                return
+            
+            # Valve state is tracked by controller based on last command sent
+            # We update UI when commands are sent, so polling just ensures consistency
             kc1_loop = ctrl.knx_six_state(1)
             kc2_loop = ctrl.knx_six_state(2)
-
-            # Get 3-way valve states (0=waste, 1=load)
             kc1_channel = ctrl.knx_three_state(1)
             kc2_channel = ctrl.knx_three_state(2)
 
             ui = self.main_window.sidebar
 
-            # Update KC1 Loop (Load/Sensor)
+            # Update UI only if we have a cached state
             if kc1_loop is not None and hasattr(ui, 'kc1_loop_btn_load'):
                 ui.kc1_loop_btn_load.blockSignals(True)
                 ui.kc1_loop_btn_sensor.blockSignals(True)
+                # Uncheck both first to prevent overlap, then set correct state
+                ui.kc1_loop_btn_load.setChecked(False)
+                ui.kc1_loop_btn_sensor.setChecked(False)
                 if kc1_loop == 0:
                     ui.kc1_loop_btn_load.setChecked(True)
-                    ui.kc1_loop_btn_sensor.setChecked(False)
                 else:
-                    ui.kc1_loop_btn_load.setChecked(False)
                     ui.kc1_loop_btn_sensor.setChecked(True)
                 ui.kc1_loop_btn_load.blockSignals(False)
                 ui.kc1_loop_btn_sensor.blockSignals(False)
 
-            # Update KC2 Loop (Load/Sensor)
             if kc2_loop is not None and hasattr(ui, 'kc2_loop_btn_load'):
                 ui.kc2_loop_btn_load.blockSignals(True)
                 ui.kc2_loop_btn_sensor.blockSignals(True)
+                # Uncheck both first to prevent overlap, then set correct state
+                ui.kc2_loop_btn_load.setChecked(False)
+                ui.kc2_loop_btn_sensor.setChecked(False)
                 if kc2_loop == 0:
                     ui.kc2_loop_btn_load.setChecked(True)
-                    ui.kc2_loop_btn_sensor.setChecked(False)
                 else:
-                    ui.kc2_loop_btn_load.setChecked(False)
                     ui.kc2_loop_btn_sensor.setChecked(True)
                 ui.kc2_loop_btn_load.blockSignals(False)
                 ui.kc2_loop_btn_sensor.blockSignals(False)
 
             # Update KC1 Channel (A/B)
+            # state=0: A active, state=1: B active
             if kc1_channel is not None and hasattr(ui, 'kc1_channel_btn_a'):
                 ui.kc1_channel_btn_a.blockSignals(True)
                 ui.kc1_channel_btn_b.blockSignals(True)
-                if kc1_channel == 1:
+                # Uncheck both first to prevent overlap, then set correct state
+                ui.kc1_channel_btn_a.setChecked(False)
+                ui.kc1_channel_btn_b.setChecked(False)
+                if kc1_channel == 0:
                     ui.kc1_channel_btn_a.setChecked(True)
-                    ui.kc1_channel_btn_b.setChecked(False)
                 else:
-                    ui.kc1_channel_btn_a.setChecked(False)
                     ui.kc1_channel_btn_b.setChecked(True)
                 ui.kc1_channel_btn_a.blockSignals(False)
                 ui.kc1_channel_btn_b.blockSignals(False)
 
             # Update KC2 Channel (C/D)
+            # state=0: C active, state=1: D active
             if kc2_channel is not None and hasattr(ui, 'kc2_channel_btn_c'):
                 ui.kc2_channel_btn_c.blockSignals(True)
                 ui.kc2_channel_btn_d.blockSignals(True)
-                if kc2_channel == 1:
+                # Uncheck both first to prevent overlap, then set correct state
+                ui.kc2_channel_btn_c.setChecked(False)
+                ui.kc2_channel_btn_d.setChecked(False)
+                if kc2_channel == 0:
                     ui.kc2_channel_btn_c.setChecked(True)
-                    ui.kc2_channel_btn_d.setChecked(False)
                 else:
-                    ui.kc2_channel_btn_c.setChecked(False)
                     ui.kc2_channel_btn_d.setChecked(True)
                 ui.kc2_channel_btn_c.blockSignals(False)
                 ui.kc2_channel_btn_d.blockSignals(False)
@@ -3752,129 +3785,159 @@ class Application(QApplication):
                 logger.info(f"✓ Synced KC2 loop valve to match KC1 ({kc1_state})")
 
     def _on_loop_valve_switched(self, channel: int, position: str):
-        """User selected loop valve position (6-port valve) - Load vs Sensor position.
-
-        The 6-port valve switches sample loop between loading position and sensor (inject) position.
-        When in Sensor position, sample flows through the flow cell for measurement.
-
+        """User clicked loop valve button - simple ON/OFF control.
+        
+        The valve has ONE command: power ON (1) or OFF (0)
+        - state=0 (OFF): Load position (de-energized, normal state)
+        - state=1 (ON): Sensor position (energized)
+        
+        Injection sequence:
+        - During filling: Valves in LOAD (state=0) - loop fills from sample
+        - During injection: Valves switch to INJECT/Sensor (state=1) - loop content to sensor
+        - After contact time: Valves return to LOAD (state=0)
+        
         Args:
-            channel: 1 for KC1, 2 for KC2
-            position: 'Load' (state=0) or 'Sensor' (state=1)
+            channel: 1 for KC1, 2 for KC2  
+            position: 'Load' or 'Sensor'
         """
+        # Simple: Sensor/INJECT=OPEN(1), Load=CLOSED(0)
         state = 1 if position == 'Sensor' else 0
-        state_name = "Sensor (inject)" if state == 1 else "Load"
-
-        logger.info(f"🔄 KC{channel} Loop Valve → {state_name} (6-port state={state})")
-
+        
         ctrl = self.hardware_mgr._ctrl_raw
         if not ctrl:
-            logger.warning("Controller not connected - cannot switch valve")
+            logger.warning("Controller not connected")
             return
-
+            
+        ui = self.main_window.sidebar
+        sync_enabled = hasattr(ui, 'sync_valve_btn') and ui.sync_valve_btn.isChecked()
+            
         try:
-            # Use controller's 6-port valve control
-            ctrl.knx_six(state, channel)
-            logger.info(f"✓ KC{channel} 6-port valve switched to {state_name}")
-
-            # If sync is enabled, mirror to other channel
-            if hasattr(self.main_window.sidebar, 'sync_valve_btn'):
-                if self.main_window.sidebar.sync_valve_btn.isChecked():
-                    other_channel = 2 if channel == 1 else 1
-
-                    # Determine which buttons to update based on other channel
-                    if other_channel == 1:
-                        btn_load = self.main_window.sidebar.kc1_loop_btn_load
-                        btn_sensor = self.main_window.sidebar.kc1_loop_btn_sensor
+            # Check if sync mode is enabled - use broadcast command for both valves
+            if sync_enabled:
+                # Use broadcast command v631/v630 to control both valves simultaneously
+                success = ctrl.knx_six_both(state)
+                
+                if success:
+                    # Update both KC1 and KC2 UI buttons
+                    ui.kc1_loop_btn_load.blockSignals(True)
+                    ui.kc1_loop_btn_sensor.blockSignals(True)
+                    ui.kc1_loop_btn_load.setChecked(state == 0)
+                    ui.kc1_loop_btn_sensor.setChecked(state == 1)
+                    ui.kc1_loop_btn_load.blockSignals(False)
+                    ui.kc1_loop_btn_sensor.blockSignals(False)
+                    
+                    ui.kc2_loop_btn_load.blockSignals(True)
+                    ui.kc2_loop_btn_sensor.blockSignals(True)
+                    ui.kc2_loop_btn_load.setChecked(state == 0)
+                    ui.kc2_loop_btn_sensor.setChecked(state == 1)
+                    ui.kc2_loop_btn_load.blockSignals(False)
+                    ui.kc2_loop_btn_sensor.blockSignals(False)
+                    
+                    logger.info(f"✓ BOTH Loop valves (SYNC): {position} (state={state})")
+                else:
+                    logger.error(f"BOTH Loop valves command failed (SYNC mode)")
+            else:
+                # Independent mode - control only the clicked channel
+                success = ctrl.knx_six(state, channel)
+                
+                if success:
+                    # Update only the clicked channel's UI
+                    if channel == 1:
+                        ui.kc1_loop_btn_load.blockSignals(True)
+                        ui.kc1_loop_btn_sensor.blockSignals(True)
+                        ui.kc1_loop_btn_load.setChecked(state == 0)
+                        ui.kc1_loop_btn_sensor.setChecked(state == 1)
+                        ui.kc1_loop_btn_load.blockSignals(False)
+                        ui.kc1_loop_btn_sensor.blockSignals(False)
                     else:
-                        btn_load = self.main_window.sidebar.kc2_loop_btn_load
-                        btn_sensor = self.main_window.sidebar.kc2_loop_btn_sensor
-
-                    # Update UI - block signals to prevent recursive calls
-                    btn_load.blockSignals(True)
-                    btn_sensor.blockSignals(True)
-                    if state == 0:  # Load
-                        btn_load.setChecked(True)
-                        btn_sensor.setChecked(False)
-                    else:  # Sensor
-                        btn_load.setChecked(False)
-                        btn_sensor.setChecked(True)
-                    btn_load.blockSignals(False)
-                    btn_sensor.blockSignals(False)
-
-                    # Update hardware
-                    ctrl.knx_six(state, other_channel)
-                    logger.info(f"✓ Synced KC{other_channel} 6-port valve to {state_name}")
+                        ui.kc2_loop_btn_load.blockSignals(True)
+                        ui.kc2_loop_btn_sensor.blockSignals(True)
+                        ui.kc2_loop_btn_load.setChecked(state == 0)
+                        ui.kc2_loop_btn_sensor.setChecked(state == 1)
+                        ui.kc2_loop_btn_load.blockSignals(False)
+                        ui.kc2_loop_btn_sensor.blockSignals(False)
+                        
+                    logger.info(f"✓ KC{channel} Loop valve: {position} (state={state})")
+                else:
+                    logger.error(f"KC{channel} Loop valve command failed")
         except Exception as e:
-            logger.error(f"Failed to switch KC{channel} loop valve: {e}")
-            from affilabs.widgets.message import show_message
-            show_message(f"Failed to switch valve: {e}", "Error")
+            logger.error(f"Loop valve error: {e}")
 
     def _on_channel_valve_switched(self, channel: int, selected_channel: str):
-        """User selected channel on 3-way valve - A/B for KC1, C/D for KC2.
-
+        """User clicked channel valve button - simple OPEN/CLOSED control.
+        
+        3-way valve states (NO WASTE):
+        - state=0 (CLOSED): KC1→A, KC2→C (de-energized)
+        - state=1 (OPEN): KC1→B, KC2→D (energized)
+        
         Args:
             channel: 1 for KC1, 2 for KC2
             selected_channel: 'A', 'B', 'C', or 'D'
         """
-        # Map A/B/C/D to valve state:
-        # KC1: A=1 (open), B=0 (closed)
-        # KC2: C=1 (open), D=0 (closed)
-        state = 1 if selected_channel in ['A', 'C'] else 0
-
-        logger.info(f"🔄 KC{channel} Channel Valve → {selected_channel} (3-way state={state})")
-
+        # B/D=OPEN(1), A/C=CLOSED(0)
+        state = 1 if selected_channel in ['B', 'D'] else 0
+        
         ctrl = self.hardware_mgr._ctrl_raw
         if not ctrl:
-            logger.warning("Controller not connected - cannot switch valve")
+            logger.warning("Controller not connected")
             return
-
+            
+        ui = self.main_window.sidebar
+        sync_enabled = hasattr(ui, 'sync_valve_btn') and ui.sync_valve_btn.isChecked()
+            
         try:
-            # If sync is enabled, control both valves together
-            if hasattr(self.main_window.sidebar, 'sync_valve_btn'):
-                if self.main_window.sidebar.sync_valve_btn.isChecked():
-                    # Control both 3-way valves simultaneously
-                    ctrl.knx_three_both(state)
-                    logger.info(f"✓ Both 3-way valves switched to state={state}")
-
-                    # Update UI for both channels
-                    btn_a = self.main_window.sidebar.kc1_channel_btn_a
-                    btn_b = self.main_window.sidebar.kc1_channel_btn_b
-                    btn_c = self.main_window.sidebar.kc2_channel_btn_c
-                    btn_d = self.main_window.sidebar.kc2_channel_btn_d
-
-                    # Block signals to prevent recursive calls
-                    btn_a.blockSignals(True)
-                    btn_b.blockSignals(True)
-                    btn_c.blockSignals(True)
-                    btn_d.blockSignals(True)
-
-                    # Update all buttons to match the new state
-                    if state == 1:  # Open (A/C)
-                        btn_a.setChecked(True)
-                        btn_b.setChecked(False)
-                        btn_c.setChecked(True)
-                        btn_d.setChecked(False)
-                    else:  # Closed (B/D)
-                        btn_a.setChecked(False)
-                        btn_b.setChecked(True)
-                        btn_c.setChecked(False)
-                        btn_d.setChecked(True)
-
-                    btn_a.blockSignals(False)
-                    btn_b.blockSignals(False)
-                    btn_c.blockSignals(False)
-                    btn_d.blockSignals(False)
+            # Check if sync mode is enabled - use broadcast command for both valves
+            if sync_enabled:
+                # Use broadcast command v3B1/v3B0 to control both valves simultaneously
+                success = ctrl.knx_three_both(state)
+                
+                if success:
+                    # Update both KC1 and KC2 UI buttons
+                    # state=0: A/C active, state=1: B/D active
+                    ui.kc1_channel_btn_a.blockSignals(True)
+                    ui.kc1_channel_btn_b.blockSignals(True)
+                    ui.kc1_channel_btn_a.setChecked(state == 0)
+                    ui.kc1_channel_btn_b.setChecked(state == 1)
+                    ui.kc1_channel_btn_a.blockSignals(False)
+                    ui.kc1_channel_btn_b.blockSignals(False)
+                    
+                    ui.kc2_channel_btn_c.blockSignals(True)
+                    ui.kc2_channel_btn_d.blockSignals(True)
+                    ui.kc2_channel_btn_c.setChecked(state == 0)
+                    ui.kc2_channel_btn_d.setChecked(state == 1)
+                    ui.kc2_channel_btn_c.blockSignals(False)
+                    ui.kc2_channel_btn_d.blockSignals(False)
+                    
+                    logger.info(f"✓ BOTH Channel valves (SYNC): {selected_channel} (state={state})")
                 else:
-                    # Sync disabled - control only the individual channel
-                    ctrl.knx_three(state, channel)
-                    logger.info(f"✓ KC{channel} 3-way valve switched to channel {selected_channel}")
+                    logger.error(f"BOTH Channel valves command failed (SYNC mode)")
             else:
-                # No sync button - control individual channel
-                ctrl.knx_three(state, channel)
-                logger.info(f"✓ KC{channel} 3-way valve switched to channel {selected_channel}")
+                # Independent mode - control only the clicked channel
+                success = ctrl.knx_three(state, channel)
+                
+                if success:
+                    # Update only the clicked channel's UI
+                    # state=0: A/C active, state=1: B/D active
+                    if channel == 1:
+                        ui.kc1_channel_btn_a.blockSignals(True)
+                        ui.kc1_channel_btn_b.blockSignals(True)
+                        ui.kc1_channel_btn_a.setChecked(state == 0)
+                        ui.kc1_channel_btn_b.setChecked(state == 1)
+                        ui.kc1_channel_btn_a.blockSignals(False)
+                        ui.kc1_channel_btn_b.blockSignals(False)
+                    else:
+                        ui.kc2_channel_btn_c.blockSignals(True)
+                        ui.kc2_channel_btn_d.blockSignals(True)
+                        ui.kc2_channel_btn_c.setChecked(state == 0)
+                        ui.kc2_channel_btn_d.setChecked(state == 1)
+                        ui.kc2_channel_btn_c.blockSignals(False)
+                        ui.kc2_channel_btn_d.blockSignals(False)
+                        
+                    logger.info(f"✓ KC{channel} Channel valve: {selected_channel} (state={state})")
+                else:
+                    logger.error(f"KC{channel} Channel valve command failed")
         except Exception as e:
-            logger.error(f"Failed to switch KC{channel} channel valve: {e}")
-            from affilabs.widgets.message import show_message
+            logger.error(f"KC{channel} Channel valve error: {e}")
             show_message(f"Failed to switch valve: {e}", "Error")
 
     # === INTERNAL PUMP HANDLERS (RPi Peristaltic Pumps - Separate from AffiPump) ===
@@ -3899,7 +3962,11 @@ class Application(QApplication):
                 self._on_internal_pump_flowrate_changed(flowrate_text)
 
     def _on_internal_pump_calibrate_clicked(self):
-        """User clicked Calibrate Speed button for internal peristaltic pumps."""
+        """User clicked Calibrate Speed button for internal peristaltic pumps.
+        
+        Opens advanced settings dialog to adjust pump correction factors
+        for matching flow rates between KC1 and KC2.
+        """
         logger.info("🔧 Internal pump calibration requested")
 
         ctrl = self.hardware_mgr.controller
@@ -3908,27 +3975,16 @@ class Application(QApplication):
             show_message("Controller not connected. Connect P4PRO/EZSPR to use internal pumps.", "Warning")
             return
 
-        # Get selected channel (1 or 2)
-        channel = 1
-        if hasattr(self.main_window.sidebar, 'internal_pump_channel_btn_2'):
-            if self.main_window.sidebar.internal_pump_channel_btn_2.isChecked():
-                channel = 2
-
-        # TODO: Implement pump calibration procedure
-        # This would involve:
-        # 1. Running pump at known flow rate
-        # 2. Measuring actual volume delivered
-        # 3. Calculating calibration factor
-        # 4. Storing calibration in settings
-
-        from affilabs.widgets.message import show_message
-        show_message(
-            f"Internal pump calibration for KC{channel}\\n\\n"
-            "Calibration procedure not yet implemented.\\n"
-            "This will measure actual flow rate and adjust pump speed accordingly.",
-            "Info"
-        )
-        logger.info(f"Internal pump KC{channel} calibration - feature pending implementation")
+        # Open pump calibration dialog
+        from affilabs.ui.pump_calibration_dialog import PumpCalibrationDialog
+        
+        dialog = PumpCalibrationDialog(controller=ctrl, parent=self.main_window)
+        result = dialog.exec()
+        
+        if result == dialog.DialogCode.Accepted:
+            logger.info("✓ Pump calibration dialog accepted")
+        else:
+            logger.info("Pump calibration dialog cancelled")
 
     def _on_internal_pump_flowrate_changed(self, flowrate_text: str):
         """User changed internal pump flow rate.

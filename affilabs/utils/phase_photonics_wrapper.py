@@ -78,12 +78,22 @@ class PhasePhotonics:
         try:
             logger.debug("Scanning for PhasePhotonics spectrometers...")
             # ftd2xx enumerates FTDI USB devices
-            self.devs = [s.decode() for s in listDevices() if s.startswith(b"ST")]
-            logger.debug(
+            all_devices = listDevices()
+            
+            if all_devices is None:
+                logger.warning(
+                    "ftd2xx.listDevices() returned None - D2XX drivers may not be installed or device not connected"
+                )
+                self.devs = []
+                return
+            
+            # Filter for PhasePhotonics devices (serial starts with "ST")
+            self.devs = [s.decode() for s in all_devices if s.startswith(b"ST")]
+            logger.info(
                 f"Found {len(self.devs)} PhasePhotonics device(s): {self.devs}",
             )
         except Exception as e:
-            logger.debug(f"Error getting device list: {e}")
+            logger.error(f"Error getting device list: {e}", exc_info=True)
             self.devs = []
 
     def open(self) -> bool | None:
@@ -105,14 +115,10 @@ class PhasePhotonics:
             self.serial_number = self.devs[0]
             logger.info(f"Connecting to PhasePhotonics {self.serial_number}...")
 
-            # Select correct DLL based on device serial number
-            # ST00005 requires 64-bit DLL
-            if self.serial_number == "ST00005":
-                dll_path = Path(__file__).parent / "SensorT_x64.dll"
-                logger.debug("Using SensorT_x64.dll for device ST00005")
-            else:
-                dll_path = Path(__file__).parent / "Sensor.dll"
-                logger.debug("Using Sensor.dll")
+            # Use OEM-recommended DLL (Sensor64bit.dll) for optimal performance
+            # Provides 120+ FPS and 8-10ms pixel reading times
+            dll_path = Path(__file__).parent / "Sensor64bit.dll"
+            logger.debug("Using Sensor64bit.dll (OEM recommended for high performance)")
 
             if not dll_path.exists():
                 logger.error(f"PhasePhotonics DLL not found: {dll_path}")

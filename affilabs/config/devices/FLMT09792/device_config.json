@@ -2,17 +2,18 @@
   "device_info": {
     "config_version": "1.0",
     "created_date": "2026-01-04T18:50:07.789703",
-    "last_modified": "2026-01-14T18:57:16.866654",
+    "last_modified": "2026-01-15T12:01:39.216353",
     "device_id": null
   },
   "hardware": {
-    "led_pcb_model": "luminus_cool_white",
-    "led_type_code": "LCW",
+    "led_pcb_model": "warm_white",
+    "led_type_code": "LWW",
     "led_pcb_serial": null,
     "spectrometer_model": "Flame-T",
     "spectrometer_serial": "FLMT09792",
     "controller_model": "pico_p4pro",
     "controller_serial": null,
+    "firmware_version": "affinite_P4PRO v2.3",
     "optical_fiber_diameter_um": 200,
     "polarizer_type": "BARREL",
     "servo_model": "HS-55MG",

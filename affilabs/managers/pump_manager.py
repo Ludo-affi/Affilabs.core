@@ -15,6 +15,7 @@ Author: Affilabs
 from __future__ import annotations
 
 import asyncio
+import time
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -46,7 +47,7 @@ class PumpManager(QObject):
     error_occurred = Signal(str, str)  # operation_name, error_message
 
     # Status update signals for UI
-    status_updated = Signal(str, float, float, float)  # status, flow_rate, plunger_pos, contact_time
+    status_updated = Signal(str, float, float, float, float)  # status, flow_rate, plunger_pos, contact_time_current, contact_time_expected
 
     def __init__(self, hardware_manager: HardwareManager) -> None:
         """Initialize pump manager.
@@ -151,7 +152,7 @@ class PumpManager(QObject):
                 )
 
                 # Emit status update for UI
-                self.status_updated.emit("Priming", dispense_speed, volume_ul, 0.0)
+                self.status_updated.emit("Priming", dispense_speed, volume_ul, 0.0, 0.0)
 
                 logger.info(f"\n🔄 Cycle {cycle}/{cycles}")
 
@@ -161,11 +162,11 @@ class PumpManager(QObject):
                     ctrl.knx_six_both(state=1)  # Both channels: state 1 = INJECT
                     logger.info("     Both 6-port valves opened")
 
-# Open 3-way valves at cycle 5 (LOAD position for flow)
+# Set 3-way valves to OPEN at cycle 5 (KC1→B, KC2→D)
                 elif cycle == 5 and ctrl:
-                    logger.info("  🔧 Opening 3-way valves to LOAD position")
-                    ctrl.knx_three_both(state=1)  # Both channels: state 1 = LOAD
-                    logger.info("     Both 3-way valves opened")
+                    logger.info("  🔧 Setting 3-way valves to OPEN position")
+                    ctrl.knx_three_both(state=1)  # state=1 OPEN: KC1→B, KC2→D
+                    logger.info("     Both 3-way valves in OPEN position")
 
                 # Aspirate both pumps
                 logger.info(f"  → Aspirate {volume_ul}µL (both pumps)")
@@ -251,15 +252,15 @@ class PumpManager(QObject):
 
             logger.info("\n✅ Priming completed successfully")
 
-            # Close all valves after priming
+            # Return all valves to default after priming
             if ctrl:
-                logger.info("🔧 Closing all valves after priming...")
+                logger.info("🔧 Returning all valves to default position...")
                 try:
-                    # Close 3-way valves to WASTE (state 0)
+                    # 3-way valves: state=0 CLOSED (KC1→A, KC2→C)
                     ctrl.knx_three_both(state=0)
-                    # Close 6-port valves to LOAD (state 0)
+                    # 6-port valves: state=0 CLOSED/LOAD position
                     ctrl.knx_six_both(state=0)
-                    logger.info("✅ All valves closed")
+                    logger.info("✅ All valves in default position")
                 except Exception as valve_err:
                     logger.error(f"⚠️ Valve close failed: {valve_err}")
 
@@ -275,12 +276,12 @@ class PumpManager(QObject):
             return False
 
         finally:
-            # Always close valves on exit (safety)
+            # Always return valves to CLOSED position on exit (safety)
             if ctrl:
                 try:
-                    ctrl.knx_three(state=0, ch=1)
+                    ctrl.knx_three(state=0, ch=1)  # KC1→A (CLOSED)
                     await asyncio.sleep(0.05)
-                    ctrl.knx_three(state=0, ch=2)
+                    ctrl.knx_three(state=0, ch=2)  # KC2→C (CLOSED)
                     await asyncio.sleep(0.05)
                     ctrl.knx_six(state=0, ch=1)
                     await asyncio.sleep(0.05)
@@ -439,9 +440,9 @@ class PumpManager(QObject):
             self.operation_progress.emit("cleanup", 80, "Closing valves")
             logger.info("\n🔧 Phase 7: Closing all valves")
             if ctrl:
-                ctrl.knx_six_both(0)  # Close 6-port
+                ctrl.knx_six_both(0)  # 6-port CLOSED (LOAD)
                 await asyncio.sleep(0.5)
-                ctrl.knx_three_both(0)  # Close 3-way
+                ctrl.knx_three_both(0)  # 3-way state=0 CLOSED: KC1→A, KC2→C
                 await asyncio.sleep(0.5)
                 logger.info("✅ All valves closed")
 
@@ -563,7 +564,7 @@ class PumpManager(QObject):
                 pump._pump.pump.aspirate_both(volume_ul, 24000.0 / 60.0)  # Fast aspirate
 
                 # Emit status update during aspirate
-                self.status_updated.emit("Aspirating", flow_rate, volume_ul, 0.0)
+                self.status_updated.emit("Aspirating", flow_rate, volume_ul, 0.0, 0.0)
 
                 p1_ready, p2_ready, _, _, _ = await asyncio.get_event_loop().run_in_executor(
                     None,
@@ -586,9 +587,9 @@ class PumpManager(QObject):
                     p1_pos = pump._pump.pump.get_plunger_position(1) or 0.0
                     p2_pos = pump._pump.pump.get_plunger_position(2) or 0.0
                     avg_pos = (p1_pos + p2_pos) / 2.0
-                    self.status_updated.emit("Dispensing", flow_rate, avg_pos, 0.0)
+                    self.status_updated.emit("Dispensing", flow_rate, avg_pos, 0.0, 0.0)
                 except Exception:
-                    self.status_updated.emit("Dispensing", flow_rate, 0.0, 0.0)
+                    self.status_updated.emit("Dispensing", flow_rate, 0.0, 0.0, 0.0)
 
                 p1_ready, p2_ready, _, _, _ = await asyncio.get_event_loop().run_in_executor(
                     None,
@@ -671,7 +672,7 @@ class PumpManager(QObject):
 
         self._current_operation = PumpOperation.IDLE  # Keep as idle since this is maintenance
         self.operation_started.emit("home_pumps")
-        self.status_updated.emit("Homing...", 0.0, 0.0, 0.0)
+        self.status_updated.emit("Homing...", 0.0, 0.0, 0.0, 0.0)
 
         try:
             logger.info("🏠 Homing both pumps to zero position...")
@@ -680,7 +681,7 @@ class PumpManager(QObject):
             success = await self._home_plungers(pump)
 
             if success:
-                self.status_updated.emit("Homed", 0.0, 0.0, 0.0)
+                self.status_updated.emit("Homed", 0.0, 0.0, 0.0, 0.0)
                 self.operation_completed.emit("home_pumps", True)
                 return True
             else:
@@ -723,6 +724,9 @@ class PumpManager(QObject):
             import time
             time.sleep(0.05)
             pump._pump.pump.send_command(f"/2V{rate_ul_s:.3f},1R")
+            
+            # Update internal flow rate tracker
+            self._current_flow_rate = flow_rate
             
             logger.info(f"✅ Flow rate changed to {flow_rate} µL/min")
             return True
@@ -862,8 +866,8 @@ class PumpManager(QObject):
                     ctrl.knx_six_both(1)
                     await asyncio.sleep(0.5)
                 elif cycle == 5:
-                    logger.info("    Opening 3-way valves...")
-                    ctrl.knx_three_both(1)
+                    logger.info("    Opening 3-way valves (KC1→B, KC2→D)...")
+                    ctrl.knx_three_both(1)  # state=1 OPEN: KC1→B, KC2→D
                     await asyncio.sleep(0.5)
 
             # Aspirate
@@ -972,6 +976,12 @@ class PumpManager(QObject):
             pump = self.hardware_manager.pump
             ctrl = self.hardware_manager._ctrl_raw  # 6-port valve controller
             
+            # DEBUG: Check controller availability
+            logger.info(f"DEBUG: Controller object: {ctrl}")
+            logger.info(f"DEBUG: Controller type: {type(ctrl)}")
+            if ctrl:
+                logger.info(f"DEBUG: Controller has knx_six_both: {hasattr(ctrl, 'knx_six_both')}")
+            
             # Parameters matching test file exactly
             aspiration_flow_rate = 24000  # µL/min
             aspiration_flow_rate_ul_s = aspiration_flow_rate / 60.0
@@ -980,172 +990,159 @@ class PumpManager(QObject):
             loop_volume_ul = 100
             
             logger.info("=== Simple Inject Started ===")
-            logger.info(f"  Assay flow rate: {flow_rate} µL/min")
-            logger.info(f"  Loop volume: {loop_volume_ul} µL")
+            logger.info(f"  Assay flow rate: {flow_rate:.1f} µL/min")
+            logger.info(f"  Loop volume: {loop_volume_ul:.1f} µL")
             
             # Calculate contact time
             contact_time_s = (loop_volume_ul / flow_rate) * 60.0
             logger.info(f"  Calculated contact time: {contact_time_s:.2f}s")
             
-            # STEP 1: Move plungers to ABSOLUTE POSITION P1000 (full syringe)
-            logger.info(f"\n[STEP 1] Moving plungers to ABSOLUTE POSITION P{load_volume_ul}")
-            logger.info(f"  (Valve in INPUT orientation, moving to position {load_volume_ul} at {aspiration_flow_rate} µL/min)")
+            # STEP 1: Aspirate full volume (SAME AS PRIME PUMP)
+            logger.info(f"\n[STEP 1] Aspirating {load_volume_ul:.1f} µL (both pumps)")
+            logger.info(f"  (Flow rate: {aspiration_flow_rate:.1f} µL/min)")
             self.operation_progress.emit("inject_simple", 10, "Loading sample...")
-            self.status_updated.emit("Loading", aspiration_flow_rate, 0.0, 0.0)
+            self.status_updated.emit("Loading", aspiration_flow_rate, 0.0, 0.0, 0.0)
             
-            # Use aspirate_both_to_position (valve automatically switches to inlet)
-            await asyncio.get_event_loop().run_in_executor(
+            # Use aspirate_both - SAME AS PRIME PUMP (with try-catch)
+            try:
+                pump._pump.pump.aspirate_both(load_volume_ul, aspiration_flow_rate_ul_s)
+            except Exception as e:
+                error_msg = f"Aspirate failed: {e}"
+                logger.exception(error_msg)
+                self.error_occurred.emit("inject_simple", error_msg)
+                await self._home_plungers(pump)
+                self.operation_completed.emit("inject_simple", False)
+                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
+                return False
+            
+            p1_ready, p2_ready, elapsed, p1_time, p2_time = await asyncio.get_event_loop().run_in_executor(
                 None,
-                pump._pump.pump.aspirate_both_to_position,
-                load_volume_ul,
-                aspiration_flow_rate_ul_s,
+                pump._pump.pump.wait_until_both_ready,
+                60.0,
             )
             
-            pos1 = pump._pump.pump.get_position(1)
-            pos2 = pump._pump.pump.get_position(2)
-            logger.info(f"  ✓ Both pumps at ABSOLUTE POSITION P{load_volume_ul} - P{pos1:.1f}µL / P{pos2:.1f}µL")
+            if not (p1_ready and p2_ready):
+                logger.error("❌ Aspirate failed - pump(s) not responding")
+                self.error_occurred.emit("inject_simple", "Aspirate failed")
+                await self._home_plungers(pump)
+                self.operation_completed.emit("inject_simple", False)
+                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
+                return False
             
-            # STEP 2: Start dispensing at assay flow rate
-            logger.info(f"\n[STEP 2] Starting dispense at {flow_rate} µL/min")
-            self.operation_progress.emit("inject_simple", 30, "Starting dispense...")
-            self.status_updated.emit("Dispensing", flow_rate, load_volume_ul, 0.0)
+            # Check for blockage (SAME AS PRIME PUMP)
+            time_diff = abs(p1_time - p2_time)
+            if time_diff > 1.5:
+                blocked_pump = "KC2" if p1_time > p2_time else "KC1"
+                error_msg = f"Blockage detected in {blocked_pump} during aspirate"
+                logger.error(f"❌ {error_msg}")
+                self.error_occurred.emit("inject_simple", error_msg)
+                await self._home_plungers(pump)
+                self.operation_completed.emit("inject_simple", False)
+                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
+                return False
             
-            pump._pump.pump.dispense_both(load_volume_ul, assay_flow_rate_ul_s)
-            logger.info(f"  ✓ Both pumps dispensing at {flow_rate} µL/min")
+            pos1 = pump._pump.pump.get_plunger_position(1)
+            pos2 = pump._pump.pump.get_plunger_position(2)
+            logger.info(f"  ✓ Aspirate complete - P1: {pos1:.1f}µL / P2: {pos2:.1f}µL")
             
-            # Wait for valve switching and command to take effect (dispense_both has 1s sleep for valves)
-            await asyncio.sleep(2.0)
+            # Delay between aspirate and dispense (SAME AS PRIME PUMP)
+            await asyncio.sleep(0.5)
             
-            # Immediate motion check (expect positions to decrease during dispense)
-            await asyncio.sleep(1.0)
-            p1_start = pump._pump.pump.get_position(1)
-            p2_start = pump._pump.pump.get_position(2)
-            await asyncio.sleep(1.0)
-            p1_next = pump._pump.pump.get_position(1)
-            p2_next = pump._pump.pump.get_position(2)
+            # STEP 2: Start dispense - fills loop (pump valve switches to OUTPUT)
+            logger.info(f"\n[STEP 2] Dispensing at {flow_rate:.1f} µL/min")
+            logger.info("  (6-port valves in LOAD - filling loop, pump valve to OUTPUT)")
+            self.operation_progress.emit("inject_simple", 30, "Dispensing...")
+            self.status_updated.emit("Dispensing", flow_rate, load_volume_ul, 0.0, 0.0)
             
-            if p1_start is not None and p2_start is not None and p1_next is not None and p2_next is not None:
-                d1 = (p1_start or 0.0) - (p1_next or 0.0)
-                d2 = (p2_start or 0.0) - (p2_next or 0.0)
-                if d1 < 0.5 and d2 < 0.5:
-                    logger.error(f"❌ No initial motion detected during dispense (ΔP1={d1:.2f}µL, ΔP2={d2:.2f}µL). Terminating.")
-                    pump._pump.pump.send_command("/0TR")
-                    self.error_occurred.emit("inject_simple", "No pump motion detected")
-                    self.operation_completed.emit("inject_simple", False)
-                    self.status_updated.emit("Idle", 0.0, 0.0, 0.0)
-                    return False
-                    
-            logger.info(f"  Initial dispense positions: Pump1={p1_next:.1f}µL, Pump2={p2_next:.1f}µL")
+            # Dispense with pump valve switching to OUTPUT (chip)
+            pump._pump.pump.dispense_both(load_volume_ul, assay_flow_rate_ul_s, switch_valve=True)
+            logger.info(f"  ✓ Both pumps dispensing at {flow_rate:.1f} µL/min (valve → OUTPUT)")
             
-            # STEP 3: Open 6-port valves (while dispensing)
+            # STEP 3: Wait for loop to fill (dispense continues in parallel)
+            valve_open_delay_s = 15.0  # seconds (BY DESIGN - loop fills while dispense runs)
+            logger.info(f"\n[STEP 3] Waiting {valve_open_delay_s:.1f}s for loop to fill...")
+            self.operation_progress.emit("inject_simple", 40, f"Filling loop ({valve_open_delay_s}s)...")
+            await asyncio.sleep(valve_open_delay_s)
+            
+            # STEP 4: OPEN valves to INJECT position - loop content flows to sensor
             if ctrl:
-                logger.info("\n[STEP 3] Opening 6-port valves (REAL HARDWARE)")
-                self.operation_progress.emit("inject_simple", 40, "Opening valves...")
-                ctrl.knx_six_both(state=1)  # 1 = INJECT position
-                logger.info("  ✓ Both 6-port valves opened (INJECT position)")
+                logger.info("\n[STEP 4] Opening 6-port valves to INJECT position")
+                logger.info("  (Loop content now flows to sensor)")
+                self.operation_progress.emit("inject_simple", 50, "Injecting to sensor...")
+                valve_result = ctrl.knx_six_both(state=1)  # 1 = INJECT position (OPEN)
+                if not valve_result:
+                    logger.warning("⚠️ Valve command returned False (controller busy or error) - continuing anyway")
             else:
-                logger.info("\n[STEP 3] Opening 6-port valves (SIMULATED - no controller)")
+                logger.warning("\n[STEP 4] NO CONTROLLER - valves cannot be opened!")
+                logger.warning("  ctrl is None - check hardware_manager._ctrl_raw")
             
-            # STEP 4: Contact time with position monitoring and stall watchdog
-            import time
-            logger.info(f"\n[STEP 4] Contact time: {contact_time_s:.2f}s")
-            self.operation_progress.emit("inject_simple", 50, "Contact time...")
+            # STEP 5: Contact time - loop content flows through sensor
+            logger.info(f"\n[STEP 5] Contact time: {contact_time_s:.2f}s")
+            logger.info("  (Loop content flowing through sensor)")
+            self.operation_progress.emit("inject_simple", 60, "Contact time...")
             
-            # Monitor positions during contact time
-            elapsed = 0
-            check_interval = 5.0
-            no_motion_accum_s = 0.0
-            last_p1 = pump._pump.pump.get_position(1)
-            last_p2 = pump._pump.pump.get_position(2)
+            # Update contact time display every 0.5 seconds during contact period
+            start_time = asyncio.get_event_loop().time()
+            while True:
+                elapsed = asyncio.get_event_loop().time() - start_time
+                if elapsed >= contact_time_s:
+                    break
+                self.status_updated.emit("Contact", flow_rate, load_volume_ul, elapsed, contact_time_s)
+                await asyncio.sleep(0.5)
             
-            while elapsed < contact_time_s:
-                await asyncio.sleep(check_interval)
-                elapsed += check_interval
-                
-                # Log position every 5 seconds
-                pos1 = pump._pump.pump.get_position(1)
-                pos2 = pump._pump.pump.get_position(2)
-                logger.info(f"  [Contact time {elapsed:.0f}s] Pump1={pos1:.1f}µL, Pump2={pos2:.1f}µL")
-                
-                # Update UI
-                avg_pos = ((pos1 or 0.0) + (pos2 or 0.0)) / 2.0
-                self.status_updated.emit("Contact", flow_rate, avg_pos, elapsed)
-                
-                # Watchdog: ensure positions keep decreasing
-                if last_p1 is not None and last_p2 is not None and pos1 is not None and pos2 is not None:
-                    d1 = (last_p1 or 0.0) - (pos1 or 0.0)
-                    d2 = (last_p2 or 0.0) - (pos2 or 0.0)
-                    if d1 < 0.5 and d2 < 0.5:
-                        no_motion_accum_s += check_interval
-                        logger.warning(f"  ⚠ No-motion detected for {no_motion_accum_s:.0f}s during contact time (ΔP1={d1:.2f}µL, ΔP2={d2:.2f}µL)")
-                        if no_motion_accum_s >= 10.0:
-                            logger.error("❌ Persistent no-motion during contact time. Terminating dispense.")
-                            pump._pump.pump.send_command("/0TR")
-                            self.error_occurred.emit("inject_simple", "Pump stalled during contact time")
-                            self.operation_completed.emit("inject_simple", False)
-                            self.status_updated.emit("Idle", 0.0, 0.0, 0.0)
-                            return False
-                    else:
-                        no_motion_accum_s = 0.0
-                    last_p1, last_p2 = pos1, pos2
+            # Final update with full contact time
+            self.status_updated.emit("Contact", flow_rate, load_volume_ul, contact_time_s, contact_time_s)
             
-            # STEP 5: Close valves
+            # STEP 6: CLOSE valves back to LOAD position - stop injection
             if ctrl:
-                logger.info("\n[STEP 5] Closing 6-port valves (REAL HARDWARE)")
-                self.operation_progress.emit("inject_simple", 80, "Closing valves...")
-                ctrl.knx_six_both(state=0)  # 0 = LOAD position
-                logger.info("  ✓ Both 6-port valves closed (LOAD position)")
+                logger.info("\n[STEP 6] Closing 6-port valves back to LOAD position")
+                logger.info("  (Sample injection complete)")
+                self.operation_progress.emit("inject_simple", 70, "Closing valves...")
+                
+                # Send valve command and CHECK if it succeeded
+                valve_result = ctrl.knx_six_both(state=0)  # 0 = LOAD position (CLOSED)
+                if not valve_result:
+                    logger.warning("⚠️ Failed to close 6-port valves - command rejected")
+                
+                await asyncio.sleep(0.5)  # Wait for valves to physically move
+                logger.info("  ✓ Both 6-port valves in LOAD position (CLOSED)")
             else:
-                logger.info("\n[STEP 5] Closing 6-port valves (SIMULATED - no controller)")
+                logger.info("\n[STEP 6] Closing 6-port valves (SIMULATED - no controller)")
             
-            # STEP 6: Continue dispensing until empty (with stall watchdog)
-            logger.info("\n[STEP 6] Continuing to dispense until empty...")
-            self.operation_progress.emit("inject_simple", 90, "Completing dispense...")
+            # STEP 7: Wait for dispense to complete
+            logger.info(f"\n[STEP 7] Waiting for dispense to complete...")
+            self.operation_progress.emit("inject_simple", 80, "Completing...")
             
-            remaining_volume = load_volume_ul
-            remaining_time_s = (remaining_volume / flow_rate) * 60.0
-            logger.info(f"  Estimated time to empty: {remaining_time_s:.1f}s")
+            p1_ready, p2_ready, elapsed, p1_time, p2_time = await asyncio.get_event_loop().run_in_executor(
+                None,
+                pump._pump.pump.wait_until_both_ready,
+                300.0,  # 5 minute timeout
+            )
             
-            # Monitor dispensing with position checks
-            elapsed = 0
-            check_interval = 5.0
-            no_motion_accum_s = 0.0
-            last_p1 = pump._pump.pump.get_position(1)
-            last_p2 = pump._pump.pump.get_position(2)
+            if not (p1_ready and p2_ready):
+                logger.error("❌ Dispense failed - pump(s) not responding")
+                self.error_occurred.emit("inject_simple", "Dispense failed")
+                await self._home_plungers(pump)
+                self.operation_completed.emit("inject_simple", False)
+                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
+                return False
             
-            while elapsed < remaining_time_s:
-                await asyncio.sleep(check_interval)
-                elapsed += check_interval
-                
-                # Log position every 5 seconds
-                pos1 = pump._pump.pump.get_position(1)
-                pos2 = pump._pump.pump.get_position(2)
-                logger.info(f"  [{elapsed:.0f}s] Pump1={pos1:.1f}µL, Pump2={pos2:.1f}µL")
-                
-                # Update UI
-                avg_pos = ((pos1 or 0.0) + (pos2 or 0.0)) / 2.0
-                total_contact = contact_time_s + elapsed
-                self.status_updated.emit("Emptying", flow_rate, avg_pos, total_contact)
-                
-                # Stall watchdog
-                if last_p1 is not None and last_p2 is not None and pos1 is not None and pos2 is not None:
-                    d1 = (last_p1 or 0.0) - (pos1 or 0.0)
-                    d2 = (last_p2 or 0.0) - (pos2 or 0.0)
-                    if d1 < 0.5 and d2 < 0.5:
-                        no_motion_accum_s += check_interval
-                        logger.warning(f"  ⚠ No-motion detected for {no_motion_accum_s:.0f}s (ΔP1={d1:.2f}µL, ΔP2={d2:.2f}µL)")
-                        if no_motion_accum_s >= 10.0:
-                            logger.error("❌ Persistent no-motion while emptying. Terminating.")
-                            pump._pump.pump.send_command("/0TR")
-                            break
-                    else:
-                        no_motion_accum_s = 0.0
-                    last_p1, last_p2 = pos1, pos2
+            # Check for blockage during dispense (SAME AS PRIME PUMP)
+            time_diff = abs(p1_time - p2_time)
+            if time_diff > 2.0:
+                blocked_pump = "KC2" if p1_time > p2_time else "KC1"
+                error_msg = f"Blockage detected in {blocked_pump} during dispense"
+                logger.error(f"❌ {error_msg}")
+                self.error_occurred.emit("inject_simple", error_msg)
+                await self._home_plungers(pump)
+                self.operation_completed.emit("inject_simple", False)
+                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
+                return False
             
-            logger.info("✓ Simple injection complete")
+            logger.info(f"  ✓ Dispense complete ({elapsed:.1f}s)")
             
+            logger.info("\n✅ Simple inject completed")
             self.operation_progress.emit("inject_simple", 100, "Complete")
-            self.status_updated.emit("Complete", 0.0, 0.0, contact_time)
             self.operation_completed.emit("inject_simple", True)
             logger.info("=== Simple Injection Complete ===")
             return True
@@ -1155,13 +1152,13 @@ class PumpManager(QObject):
             logger.exception(error_msg)
             self.error_occurred.emit("inject_simple", error_msg)
             self.operation_completed.emit("inject_simple", False)
-            self.status_updated.emit("Idle", 0.0, 0.0, 0.0)
+            self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
             return False
         finally:
             self._current_operation = PumpOperation.IDLE
             # Set to idle after a short delay to show completion
             await asyncio.sleep(2.0)
-            self.status_updated.emit("Idle", 0.0, 0.0, 0.0)
+            self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
 
     async def inject_partial_loop(self, flow_rate: float = 100.0) -> bool:
         """Run partial loop injection (14-step protocol) - EXACT match to test file.
@@ -1182,6 +1179,26 @@ class PumpManager(QObject):
                 f"Cannot start injection - pump is {self._current_operation.value}",
             )
             return False
+
+        # Validate pump connection before starting operation
+        pump = self.hardware_manager.pump
+        if not pump or not pump._pump or not pump._pump.pump:
+            self.error_occurred.emit("inject_partial", "Pump not initialized")
+            return False
+            
+        # Check if pump serial port is open
+        if not pump._pump.pump.ser or not pump._pump.pump.ser.is_open:
+            logger.error("Pump serial port is not open - attempting to reconnect...")
+            try:
+                # Try to reconnect
+                pump._pump.pump.reconnect()
+                if not pump._pump.pump.ser or not pump._pump.pump.ser.is_open:
+                    self.error_occurred.emit("inject_partial", "Pump connection lost - port not open")
+                    return False
+                logger.info("Pump reconnected successfully")
+            except Exception as e:
+                self.error_occurred.emit("inject_partial", f"Pump reconnection failed: {e}")
+                return False
 
         self._current_operation = PumpOperation.RUNNING_BUFFER
         self._shutdown_requested = False
@@ -1213,7 +1230,7 @@ class PumpManager(QObject):
             logger.info("\n[STEP 1] Moving plungers to ABSOLUTE POSITION P900...")
             logger.info(f"  (Moving to position 900 at {aspiration_flow_rate} µL/min)")
             self.operation_progress.emit("inject_partial", 7, "Loading P900...")
-            self.status_updated.emit("Loading", aspiration_flow_rate, 0.0, 0.0)
+            self.status_updated.emit("Loading", aspiration_flow_rate, 0.0, 0.0, 0.0)
             
             await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -1222,13 +1239,12 @@ class PumpManager(QObject):
                 aspiration_flow_rate_ul_s,
             )
             
-            # STEP 2: Open 3-way valves
-            logger.info("\n[STEP 2] Opening 3-way valves...")
+            # STEP 2: Set 3-way valves to OPEN (KC1→B, KC2→D)
+            logger.info("\n[STEP 2] Setting 3-way valves to OPEN...")
             self.operation_progress.emit("inject_partial", 14, "Opening 3-way...")
             if ctrl:
-                ctrl.knx_three(state=1, ch=1)
-                ctrl.knx_three(state=1, ch=2)
-                logger.info("  ✓ 3-way valves OPEN (REAL HARDWARE)")
+                ctrl.knx_three_both(state=1)  # state=1 OPEN: Both to LOAD (v331 broadcast)
+                logger.info("  ✓ 3-way valves OPEN (KC1→B, KC2→D) - broadcast")
             else:
                 logger.info("  ⚠ 3-way valves OPEN (SIMULATED)")
             
@@ -1246,7 +1262,7 @@ class PumpManager(QObject):
             logger.info("\n[STEP 4] Moving plungers to ABSOLUTE POSITION P1000...")
             logger.info(f"  (Moving to position 1000 at {aspiration_flow_rate} µL/min)")
             self.operation_progress.emit("inject_partial", 28, "Loading P1000...")
-            self.status_updated.emit("Loading", aspiration_flow_rate, 0.0, 0.0)
+            self.status_updated.emit("Loading", aspiration_flow_rate, 0.0, 0.0, 0.0)
             
             await asyncio.get_event_loop().run_in_executor(
                 None,
@@ -1265,17 +1281,15 @@ class PumpManager(QObject):
                 logger.info("  ⚠ 6-port valves LOAD (SIMULATED)")
             await asyncio.sleep(1.0)  # Valve switching delay
             
-            # STEP 6: Dispense 50µL to P950
+            # STEP 6: Dispense 50µL to P950 (pump valve to OUTPUT)
             logger.info("\n[STEP 6] Dispensing 50µL to P950...")
+            logger.info("  (Pump valve switching to OUTPUT)")
             self.operation_progress.emit("inject_partial", 42, "Dispensing to P950...")
-            self.status_updated.emit("Dispensing", output_aspirate_rate, 0.0, 0.0)
+            self.status_updated.emit("Dispensing", output_aspirate_rate, 0.0, 0.0, 0.0)
             
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                pump._pump.pump.dispense_both,
-                50.0,
-                output_aspirate_rate_ul_s,
-            )
+            # Explicitly set switch_valve=True to ensure pump valve goes to OUTPUT
+            pump._pump.pump.dispense_both(50.0, output_aspirate_rate_ul_s, switch_valve=True)
+            await asyncio.sleep(0.5)  # Wait for valve switch
             await asyncio.sleep(2.0)  # Wait for dispense to start
             
             # STEP 7: Wait 10 seconds
@@ -1293,41 +1307,37 @@ class PumpManager(QObject):
                 logger.info("  ⚠ 6-port valves INJECT (SIMULATED)")
             await asyncio.sleep(1.0)  # Valve switching delay
             
-            # STEP 9: Dispense 40µL spike at pulse rate
+            # STEP 9: Dispense 40µL spike at pulse rate (pump valve already at OUTPUT)
             logger.info("\n[STEP 9] Dispensing 40µL spike...")
             logger.info(f"  (Dispensing at {pulse_rate} µL/min)")
             self.operation_progress.emit("inject_partial", 63, "Spiking 40µL...")
-            self.status_updated.emit("Spiking", pulse_rate, 0.0, 0.0)
+            self.status_updated.emit("Spiking", pulse_rate, 0.0, 0.0, 0.0)
             
-            await asyncio.get_event_loop().run_in_executor(
-                None,
-                pump._pump.pump.dispense_both,
-                40.0,
-                pulse_rate_ul_s,
-            )
+            # Pump valve already at OUTPUT from Step 6, but set explicitly for safety
+            pump._pump.pump.dispense_both(40.0, pulse_rate_ul_s, switch_valve=True)
+            await asyncio.sleep(0.5)  # Wait for command
             await asyncio.sleep(2.0)  # Wait for dispense to start
             
-            # STEP 10: Close 3-way valves
-            logger.info("\n[STEP 10] Closing 3-way valves...")
+            # STEP 10: Set 3-way valves to CLOSED (KC1→A, KC2→C)
+            logger.info("\n[STEP 10] Setting 3-way valves to CLOSED...")
             self.operation_progress.emit("inject_partial", 70, "Closing 3-way...")
             if ctrl:
-                ctrl.knx_three(state=0, ch=1)
-                ctrl.knx_three(state=0, ch=2)
-                logger.info("  ✓ 3-way valves CLOSED (REAL HARDWARE)")
+                ctrl.knx_three_both(state=0)  # state=0 CLOSED: Both to WASTE (v330 broadcast)
+                logger.info("  ✓ 3-way valves CLOSED (KC1→A, KC2→C) - broadcast")
             else:
                 logger.info("  ⚠ 3-way valves CLOSED (SIMULATED)")
             await asyncio.sleep(1.0)  # Valve switching delay
             
-            # STEP 11: Continue dispensing at assay flow rate
+            # STEP 11: Continue dispensing at assay flow rate (pump valve already at OUTPUT)
             logger.info("\n[STEP 11] Starting assay flow rate dispense...")
             logger.info(f"  (Dispensing remaining 910µL at {flow_rate} µL/min)")
             self.operation_progress.emit("inject_partial", 77, "Contact time...")
-            self.status_updated.emit("Injecting", flow_rate, 910.0, 0.0)
+            self.status_updated.emit("Injecting", flow_rate, 910.0, 0.0, contact_time_s)
             
-            # Start non-blocking dispense
+            # Start non-blocking dispense with pump valve at OUTPUT
             remaining_volume = 910  # µL
             speed_ul_s = assay_flow_rate_ul_s
-            pump._pump.pump.dispense_both(remaining_volume, speed_ul_s)
+            pump._pump.pump.dispense_both(remaining_volume, speed_ul_s, switch_valve=True)
             
             # Wait for valve switching and command to take effect
             await asyncio.sleep(2.0)
@@ -1338,18 +1348,18 @@ class PumpManager(QObject):
             
             # Immediate motion check (1-second intervals)
             await asyncio.sleep(1.0)
-            pos1_before_1 = pump._pump.pump.get_position(1) or 0.0
-            pos2_before_1 = pump._pump.pump.get_position(2) or 0.0
+            pos1_before_1 = pump._pump.pump.get_plunger_position(1) or 0.0
+            pos2_before_1 = pump._pump.pump.get_plunger_position(2) or 0.0
             await asyncio.sleep(1.0)
-            pos1_after_1 = pump._pump.pump.get_position(1) or 0.0
-            pos2_after_1 = pump._pump.pump.get_position(2) or 0.0
+            pos1_after_1 = pump._pump.pump.get_plunger_position(1) or 0.0
+            pos2_after_1 = pump._pump.pump.get_plunger_position(2) or 0.0
             
             moved_1 = (abs(pos1_after_1 - pos1_before_1) > 0.5) or (abs(pos2_after_1 - pos2_before_1) > 0.5)
             if not moved_1:
                 logger.error("⚠ NO MOTION DETECTED in first 2 seconds!")
                 self.error_occurred.emit("inject_partial", "Pump stalled immediately")
                 self.operation_completed.emit("inject_partial", False)
-                self.status_updated.emit("Idle", 0.0, 0.0, 0.0)
+                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
                 return False
             
             logger.info(f"✓ Motion detected: P1={pos1_before_1:.1f}→{pos1_after_1:.1f}, P2={pos2_before_1:.1f}→{pos2_after_1:.1f}")
@@ -1369,14 +1379,14 @@ class PumpManager(QObject):
                 
                 # Get current positions
                 try:
-                    pos1 = pump._pump.pump.get_position(1) or 0.0
-                    pos2 = pump._pump.pump.get_position(2) or 0.0
+                    pos1 = pump._pump.pump.get_plunger_position(1) or 0.0
+                    pos2 = pump._pump.pump.get_plunger_position(2) or 0.0
                     avg_pos = (pos1 + pos2) / 2.0
                     elapsed_now = time.time() - start_time
                     
                     # Log positions
                     logger.info(f"  Position check: P1={pos1:.1f} µL, P2={pos2:.1f} µL (t={elapsed_now:.1f}s)")
-                    self.status_updated.emit("Injecting", flow_rate, avg_pos, elapsed_now)
+                    self.status_updated.emit("Injecting", flow_rate, avg_pos, elapsed_now, contact_time_s)
                     
                     # Check for motion (threshold: 0.5 µL over 5 seconds)
                     moved = (abs(pos1 - last_pos1) > 0.5) or (abs(pos2 - last_pos2) > 0.5)
@@ -1389,7 +1399,7 @@ class PumpManager(QObject):
                             logger.error("⚠ STALL DETECTED - aborting injection!")
                             self.error_occurred.emit("inject_partial", "Pump stalled during contact time")
                             self.operation_completed.emit("inject_partial", False)
-                            self.status_updated.emit("Idle", 0.0, 0.0, 0.0)
+                            self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
                             return False
                     else:
                         stall_count = 0  # Reset if motion detected
@@ -1430,18 +1440,18 @@ class PumpManager(QObject):
                     p2_ready = not status2.get('busy', False)
                     
                     try:
-                        p1_pos = pump._pump.pump.get_position(1) or 0.0
-                        p2_pos = pump._pump.pump.get_position(2) or 0.0
+                        p1_pos = pump._pump.pump.get_plunger_position(1) or 0.0
+                        p2_pos = pump._pump.pump.get_plunger_position(2) or 0.0
                         avg_pos = (p1_pos + p2_pos) / 2.0
                         elapsed_total = time.time() - start_time
-                        self.status_updated.emit("Purging", flow_rate, avg_pos, elapsed_total)
+                        self.status_updated.emit("Purging", flow_rate, avg_pos, elapsed_total, 0.0)
                     except Exception:
                         pass
             
             if not (p1_ready and p2_ready):
                 self.error_occurred.emit("inject_partial", "Purge failed")
                 self.operation_completed.emit("inject_partial", False)
-                self.status_updated.emit("Idle", 0.0, 0.0, 0.0)
+                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
                 return False
             
             total_time = time.time() - start_time
@@ -1449,7 +1459,7 @@ class PumpManager(QObject):
             logger.info(f"✓ Total injection time: {total_time:.1f}s")
             
             self.operation_progress.emit("inject_partial", 100, "Complete")
-            self.status_updated.emit("Complete", 0.0, 0.0, contact_time_s)
+            self.status_updated.emit("Complete", 0.0, 0.0, contact_time_s, contact_time_s)
             self.operation_completed.emit("inject_partial", True)
             logger.info("=== Partial Loop Injection Complete ===")
             return True
@@ -1457,12 +1467,19 @@ class PumpManager(QObject):
         except Exception as e:
             error_msg = f"Partial loop injection error: {e}"
             logger.exception(error_msg)
-            self.error_occurred.emit("inject_partial", error_msg)
+            
+            # Handle port closure during shutdown gracefully
+            if "Port not open" in str(e):
+                logger.info("Pump port closed during operation (likely during shutdown) - operation cancelled")
+                self.error_occurred.emit("inject_partial", "Operation cancelled - system shutting down")
+            else:
+                self.error_occurred.emit("inject_partial", error_msg)
+            
             self.operation_completed.emit("inject_partial", False)
-            self.status_updated.emit("Idle", 0.0, 0.0, 0.0)
+            self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
             return False
         finally:
             self._current_operation = PumpOperation.IDLE
             # Set to idle after a short delay to show completion
             await asyncio.sleep(2.0)
-            self.status_updated.emit("Idle", 0.0, 0.0, 0.0)
+            self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)

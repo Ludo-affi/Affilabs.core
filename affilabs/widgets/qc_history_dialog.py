@@ -260,15 +260,19 @@ class QCHistoryDialog(QDialog):
 
                 show_message(
                     "Failed to load QC report.",
-                    "Load Error",
-                    "Error",
+                    msg_type="Critical",
+                    title="Error",
                 )
 
         except Exception as e:
             logger.error(f"Failed to view report: {e}")
             from affilabs.widgets.message import show_message
 
-            show_message(f"Failed to view report:\n{e!s}", "Error", "Error")
+            show_message(
+                f"Failed to view report:\n{e!s}",
+                msg_type="Critical",
+                title="Error",
+            )
 
     def _view_ml_features(self):
         """View ML features extracted from recent reports."""

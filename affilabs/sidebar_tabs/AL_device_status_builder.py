@@ -366,7 +366,8 @@ class DeviceStatusTabBuilder:
         tab_layout.addSpacing(16)
 
         # Software Version
-        version_label = QLabel("beta v1.01")
+        from version import __version__
+        version_label = QLabel(__version__)
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(
             label_style(11, Colors.SECONDARY_TEXT) + "font-weight: 500;",

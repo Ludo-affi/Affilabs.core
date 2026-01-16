@@ -232,7 +232,19 @@ class USB4000:
                             logger.info("Successfully connected after cleanup")
                     except Exception as retry_error:
                         logger.error(f"Cleanup and retry failed: {retry_error}")
-                        return False
+                        # If device still reports 'already opened', attempt direct instantiation once more
+                        try:
+                            if "already opened" in str(retry_error).lower():
+                                logger.warning(
+                                    "Device reports 'already opened' after cleanup - attempting direct Spectrometer(dev0) attach",
+                                )
+                                self._device = Spectrometer(dev0)
+                                logger.info("Successfully attached to existing open device")
+                            else:
+                                return False
+                        except Exception as final_attach_err:
+                            logger.error(f"Final attach failed: {final_attach_err}")
+                            return False
                 else:
                     logger.error(f"Connection failed via from_serial_number: {e}")
                     logger.info(

@@ -263,29 +263,12 @@ class FlowTabBuilder:
         intel_bar_layout.setContentsMargins(16, 12, 16, 8)
         intel_bar_layout.setSpacing(12)
 
-        # Status indicators
-        self.sidebar.flow_intel_status_label = QLabel("○ Ready")
-        self.sidebar.flow_intel_status_label.setStyleSheet(
-            "font-size: 12px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-weight: 700;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        intel_bar_layout.addWidget(self.sidebar.flow_intel_status_label)
-
-        # Separator bullet
-        self.sidebar.flow_intel_separator = QLabel("•")
-        self.sidebar.flow_intel_separator.setStyleSheet(
-            "font-size: 12px;color: #86868B;background: transparent;",
-        )
-        intel_bar_layout.addWidget(self.sidebar.flow_intel_separator)
-
-        self.sidebar.flow_intel_message_label = QLabel("→ Configure flow rates")
+        # Cycle status message (will show running cycles and queued cycles)
+        self.sidebar.flow_intel_message_label = QLabel("No cycles running")
         self.sidebar.flow_intel_message_label.setFixedHeight(20)
         self.sidebar.flow_intel_message_label.setStyleSheet(
             "font-size: 12px;"
-            "color: #007AFF;"
+            "color: #86868B;"
             "background: transparent;"
             "font-weight: 600;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
@@ -996,16 +979,8 @@ class FlowTabBuilder:
             "}"
         )
 
-        def kc1_select_load():
-            kc1_btn_load.setChecked(True)
-            kc1_btn_sensor.setChecked(False)
-
-        def kc1_select_sensor():
-            kc1_btn_load.setChecked(False)
-            kc1_btn_sensor.setChecked(True)
-
-        kc1_btn_load.clicked.connect(kc1_select_load)
-        kc1_btn_sensor.clicked.connect(kc1_select_sensor)
+        # Button state management handled in main.py _on_loop_valve_switched()
+        # Local handlers removed to prevent state conflicts
 
         kc1_loop_layout.addWidget(kc1_btn_load)
         kc1_loop_layout.addWidget(kc1_btn_sensor)
@@ -1060,16 +1035,8 @@ class FlowTabBuilder:
             "}"
         )
 
-        def kc2_select_load():
-            kc2_btn_load.setChecked(True)
-            kc2_btn_sensor.setChecked(False)
-
-        def kc2_select_sensor():
-            kc2_btn_load.setChecked(False)
-            kc2_btn_sensor.setChecked(True)
-
-        kc2_btn_load.clicked.connect(kc2_select_load)
-        kc2_btn_sensor.clicked.connect(kc2_select_sensor)
+        # Button state management handled in main.py _on_loop_valve_switched()
+        # Local handlers removed to prevent state conflicts
 
         kc2_loop_layout.addWidget(kc2_btn_load)
         kc2_loop_layout.addWidget(kc2_btn_sensor)
@@ -1141,16 +1108,8 @@ class FlowTabBuilder:
             "}"
         )
 
-        def kc1_select_a():
-            kc1_btn_a.setChecked(True)
-            kc1_btn_b.setChecked(False)
-
-        def kc1_select_b():
-            kc1_btn_a.setChecked(False)
-            kc1_btn_b.setChecked(True)
-
-        kc1_btn_a.clicked.connect(kc1_select_a)
-        kc1_btn_b.clicked.connect(kc1_select_b)
+        # Button state management handled in main.py _on_channel_valve_switched()
+        # Local handlers removed to prevent state conflicts
 
         kc1_channel_layout.addWidget(kc1_btn_a)
         kc1_channel_layout.addWidget(kc1_btn_b)
@@ -1205,16 +1164,8 @@ class FlowTabBuilder:
             "}"
         )
 
-        def kc2_select_c():
-            kc2_btn_c.setChecked(True)
-            kc2_btn_d.setChecked(False)
-
-        def kc2_select_d():
-            kc2_btn_c.setChecked(False)
-            kc2_btn_d.setChecked(True)
-
-        kc2_btn_c.clicked.connect(kc2_select_c)
-        kc2_btn_d.clicked.connect(kc2_select_d)
+        # Button state management handled in main.py _on_channel_valve_switched()
+        # Local handlers removed to prevent state conflicts
 
         kc2_channel_layout.addWidget(kc2_btn_c)
         kc2_channel_layout.addWidget(kc2_btn_d)

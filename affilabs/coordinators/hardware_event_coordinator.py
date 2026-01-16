@@ -293,21 +293,53 @@ class HardwareEventCoordinator:
         }
         self._app._update_device_status_ui(empty_status)
 
-        # Show error message ONLY for controller-only case
+        # Build detailed message about what was found vs what's missing
         ctrl_type = status.get("ctrl_type")
         has_detector = status.get("spectrometer") is True
-        ctrl_only = ctrl_type and not has_detector
+        has_pump = status.get("pump_connected") is True
 
-        if ctrl_only:
-            error_msg = (
-                f"Incomplete hardware detected.\n\n"
-                f"{ctrl_type} controller found but detector missing.\n\n"
-                f"Both controller AND detector required.\n"
-                f"Please connect USB4000 spectrometer."
-            )
-            from affilabs.widgets.message import show_message
+        # Build found/missing lists
+        found = []
+        missing = []
 
-            show_message(error_msg, msg_type="Warning", title="Connection Failed")
+        if ctrl_type:
+            found.append(f"✓ Controller ({ctrl_type})")
+        else:
+            missing.append("✗ Controller (Pico P4PRO/EZSPR)")
+
+        if has_detector:
+            detector_serial = status.get("spectrometer_serial", "unknown")
+            found.append(f"✓ Detector (S/N: {detector_serial})")
+        else:
+            missing.append("✗ Detector (USB4000 or PhasePhotonics)")
+
+        if has_pump:
+            found.append("✓ Pump (AffiPump)")
+        else:
+            missing.append("✗ Pump (optional)")
+
+        # Build error message
+        error_msg = "Hardware scan incomplete.\n\n"
+
+        if found:
+            error_msg += "FOUND:\n" + "\n".join(found) + "\n\n"
+
+        if missing:
+            error_msg += "MISSING:\n" + "\n".join(missing) + "\n\n"
+
+        error_msg += "REQUIRED: Controller + Detector\n\n"
+        error_msg += "TO FIX:\n"
+        
+        if not ctrl_type:
+            error_msg += "• Plug in Pico controller (USB)\n"
+        if not has_detector:
+            error_msg += "• Plug in USB4000/PhasePhotonics spectrometer\n"
+        
+        error_msg += "• Wait 5 seconds for Windows to detect\n"
+        error_msg += "• Press Power button to scan again"
+
+        from affilabs.widgets.message import show_message
+        show_message(error_msg, msg_type="Warning", title="Hardware Scan Failed")
 
     def _initialize_device_config(self, status: dict, device_serial: str):
         """Initialize device configuration for newly connected device."""

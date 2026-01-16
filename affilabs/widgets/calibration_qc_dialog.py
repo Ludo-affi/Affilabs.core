@@ -155,7 +155,7 @@ class CalibrationQCDialog(QDialog):
 
         # Add software version
         from version import __version__
-        version_label = QLabel(f"v{__version__}")
+        version_label = QLabel(f"{__version__}")
         version_label.setStyleSheet("""
             font-size: 12px;
             color: #86868B;
@@ -435,9 +435,9 @@ class CalibrationQCDialog(QDialog):
 
         # Per-channel table
         table = QTableWidget()
-        table.setColumnCount(5)
+        table.setColumnCount(6)
         table.setHorizontalHeaderLabels(
-            ["Channel", "LED Intensity", "Integration (ms)", "Signal (counts)", "Saturation %"],
+            ["Channel", "LED Intensity", "Integration (ms)", "Signal (counts)", "Saturation %", "Iterations"],
         )
         table.verticalHeader().setVisible(False)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -501,6 +501,12 @@ class CalibrationQCDialog(QDialog):
             else:
                 sat_item.setForeground(QColor("#FF9500"))  # Orange (low)
             table.setItem(idx, 4, sat_item)
+
+            # Iteration count
+            iterations = ch_data.get("iterations", 0)
+            iter_item = QTableWidgetItem(str(iterations))
+            iter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(idx, 5, iter_item)
 
         table.resizeColumnsToContents()
         table.setMaximumHeight(150)
@@ -1137,10 +1143,17 @@ class CalibrationQCDialog(QDialog):
         table.setMinimumHeight(180)
         table.setMaximumHeight(220)
 
-        # Create horizontal layout for table and message
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(12)
-        content_layout.addWidget(table, stretch=2)
+        # Create horizontal layout for tables (transmission table + calibration metrics table)
+        tables_layout = QHBoxLayout()
+        tables_layout.setSpacing(12)
+        tables_layout.addWidget(table, stretch=1)
+        
+        # Add calibration metrics table next to transmission table
+        metrics_table = self._create_calibration_metrics_table()
+        if metrics_table:
+            tables_layout.addWidget(metrics_table, stretch=1)
+        
+        layout.addLayout(tables_layout)
 
         # Overall result - check if all channels passed
         passed_channels = [
@@ -1180,10 +1193,8 @@ class CalibrationQCDialog(QDialog):
                 font-size: 12px;
             }}
         """)
-        result_label.setMinimumHeight(200)
-        content_layout.addWidget(result_label, stretch=1)
-
-        layout.addLayout(content_layout)
+        result_label.setMinimumHeight(120)
+        layout.addWidget(result_label)
 
         return frame
 
@@ -1225,30 +1236,42 @@ class CalibrationQCDialog(QDialog):
 
         for ch in ["a", "b", "c", "d"]:
             if ch in s_pol_spectra and s_pol_spectra[ch] is not None:
-                s_max = np.max(s_pol_spectra[ch])
-                s_max_str_parts.append(f"{ch.upper()}:{s_max:.0f}")
+                try:
+                    s_arr = np.asarray(s_pol_spectra[ch], dtype=float)
+                    s_max = float(np.max(s_arr))
+                    s_max_str_parts.append(f"{ch.upper()}:{s_max:.0f}")
+                except Exception:
+                    pass
 
             if ch in p_pol_spectra and p_pol_spectra[ch] is not None:
-                p_max = np.max(p_pol_spectra[ch])
-                p_max_str_parts.append(f"{ch.upper()}:{p_max:.0f}")
+                try:
+                    p_arr = np.asarray(p_pol_spectra[ch], dtype=float)
+                    p_max = float(np.max(p_arr))
+                    p_max_str_parts.append(f"{ch.upper()}:{p_max:.0f}")
+                except Exception:
+                    pass
 
         s_max_str = ", ".join(s_max_str_parts) if s_max_str_parts else "N/A"
         p_max_str = ", ".join(p_max_str_parts) if p_max_str_parts else "N/A"
 
-        # Calculate average dark signal across all channels
+        # Calculate average dark signal across all channels (single value)
         dark_s_scans = data.get("dark_s_scans", {})
         dark_p_scans = data.get("dark_p_scans", {})
-        dark_avg_parts = []
+        dark_values = []
 
         for ch in ["a", "b", "c", "d"]:
             if ch in dark_s_scans and dark_s_scans[ch] is not None:
-                dark_s_avg = np.mean(dark_s_scans[ch])
-                dark_avg_parts.append(f"{ch.upper()}:{dark_s_avg:.0f}")
+                try:
+                    dark_values.append(float(np.mean(np.asarray(dark_s_scans[ch], dtype=float))))
+                except Exception:
+                    pass
             elif ch in dark_p_scans and dark_p_scans[ch] is not None:
-                dark_p_avg = np.mean(dark_p_scans[ch])
-                dark_avg_parts.append(f"{ch.upper()}:{dark_p_avg:.0f}")
+                try:
+                    dark_values.append(float(np.mean(np.asarray(dark_p_scans[ch], dtype=float))))
+                except Exception:
+                    pass
 
-        dark_avg_str = ", ".join(dark_avg_parts) if dark_avg_parts else "N/A"
+        dark_avg_str = f"{np.mean(dark_values):.0f}" if dark_values else "N/A"
 
         # Swap warning badge
         swap_badge = (
@@ -1257,10 +1280,8 @@ class CalibrationQCDialog(QDialog):
             else ""
         )
 
-        # SINGLE ROW with LED intensities, max counts, and dark average - consolidated and compact
+        # SINGLE ROW with max counts and dark average
         combined_text = f"""
-        <span style='color:#86868B; font-size:10px; font-weight:600;'>LED INTENSITIES</span> <span style='color:#1D1D1F; font-weight:500;'>{led_str}</span>
-        &nbsp;&nbsp;•&nbsp;&nbsp;
         <span style='color:#86868B; font-size:10px; font-weight:600;'>S-POL MAX</span> <span style='color:#34C759; font-weight:600;'>{s_max_str}</span>
         &nbsp;&nbsp;•&nbsp;&nbsp;
         <span style='color:#86868B; font-size:10px; font-weight:600;'>P-POL MAX</span> <span style='color:#007AFF; font-weight:600;'>{p_max_str}</span>
@@ -1282,6 +1303,80 @@ class CalibrationQCDialog(QDialog):
         layout.addWidget(combined_label)
 
         return frame
+
+    def _create_calibration_metrics_table(self) -> QTableWidget | None:
+        """Create a table showing LED intensities and iteration counts per channel.
+        
+        Returns:
+            QTableWidget with calibration metrics, or None if no data available
+        """
+        data = self.calibration_data
+        led_intensities = data.get("led_intensities", {})
+        convergence_summary = data.get("convergence_summary", {})
+        
+        if not led_intensities and not convergence_summary:
+            return None
+            
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(["Channel", "LED Intensity", "Iterations"])
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setStyleSheet("""
+            QTableWidget {
+                background: white;
+                border: 1px solid #E5E5EA;
+                border-radius: 4px;
+                gridline-color: #E5E5EA;
+                font-size: 11px;
+            }
+            QHeaderView::section {
+                background: #F5F5F7;
+                color: #1D1D1F;
+                padding: 6px;
+                border: none;
+                font-weight: 600;
+                font-size: 11px;
+            }
+            QTableWidget::item {
+                padding: 4px;
+            }
+        """)
+        
+        channels_list = ["a", "b", "c", "d"]
+        table.setRowCount(len(channels_list))
+        
+        # Extract iteration counts from convergence_summary if available
+        channels_data = convergence_summary.get("channels", {}) if convergence_summary else {}
+        
+        for idx, ch in enumerate(channels_list):
+            # Channel name
+            ch_item = QTableWidgetItem(ch.upper())
+            ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(idx, 0, ch_item)
+            
+            # LED intensity
+            led = led_intensities.get(ch, 0)
+            led_item = QTableWidgetItem(str(led))
+            led_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(idx, 1, led_item)
+            
+            # Iterations (from convergence_summary if available)
+            iterations = "N/A"
+            if ch in channels_data and isinstance(channels_data[ch], dict):
+                ch_iterations = channels_data[ch].get("iterations", None)
+                if ch_iterations is not None:
+                    iterations = str(ch_iterations)
+            
+            iter_item = QTableWidgetItem(iterations)
+            iter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(idx, 2, iter_item)
+        
+        # Resize columns to content
+        table.resizeColumnsToContents()
+        table.setMaximumHeight(160)
+        
+        return table
 
     def _create_graph(self, title: str, data_type: str) -> QFrame:
         """Create a single graph widget.

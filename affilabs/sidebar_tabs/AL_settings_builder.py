@@ -437,32 +437,6 @@ class SettingsTabBuilder:
         settings_button_row = QHBoxLayout()
         settings_button_row.setSpacing(8)
 
-        # Load Current Settings button
-        self.sidebar.load_current_settings_btn = QPushButton("↻ Load Current")
-        self.sidebar.load_current_settings_btn.setFixedHeight(32)
-        self.sidebar.load_current_settings_btn.setToolTip(
-            "Load current settings from device",
-        )
-        self.sidebar.load_current_settings_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #F2F2F7;"
-            "  color: #1D1D1F;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 6px;"
-            "  padding: 6px 12px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(0, 0, 0, 0.06);"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "}",
-        )
-        settings_button_row.addWidget(self.sidebar.load_current_settings_btn)
-
         # Apply Settings button
         self.sidebar.apply_settings_btn = QPushButton("Apply Settings")
         self.sidebar.apply_settings_btn.setFixedHeight(32)

@@ -29,10 +29,19 @@ class TimerMessageBox(QMessageBox):
             self.wait_for_button = False
 
         if timeout is not None:
-            self.timer = QTimer(self)
-            self.timer.setInterval(timeout * 1000)
-            self.timer.timeout.connect(self._on_timeout)
-            self.timer.start()
+            # Coerce timeout (seconds) to an integer millisecond interval; disable timer on invalid types
+            msec = None
+            try:
+                # Allow int, float, or numeric strings
+                msec = int(float(timeout) * 1000)
+            except Exception:
+                msec = None
+
+            if msec is not None and msec > 0:
+                self.timer = QTimer(self)
+                self.timer.setInterval(msec)
+                self.timer.timeout.connect(self._on_timeout)
+                self.timer.start()
 
     def _on_timeout(self):
         self.timer.stop()

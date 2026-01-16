@@ -14,6 +14,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from affilabs.utils.logger import logger
+
 if TYPE_CHECKING:
     from main_simplified import Application  # type: ignore[import-not-found]
 
@@ -227,6 +229,15 @@ class SettingsHelpers:
                 app.main_window.sidebar.set_polarizer_position("S")
                 print("  [OK] Polarizer position initialized to S-mode (default)")
 
+            # Populate Hardware Configuration table with current settings
+            # (after device_config is loaded and hardware is connected)
+            if hasattr(app.main_window, '_load_current_settings'):
+                try:
+                    app.main_window._load_current_settings(show_warnings=False)
+                    print("  [OK] Hardware Configuration populated with current settings")
+                except Exception as load_err:
+                    print(f"  [WARN] Could not populate Hardware Configuration: {load_err}")
+
         except Exception as e:
             print(f"Failed to load device settings: {e}")
             import traceback
@@ -353,6 +364,7 @@ class SettingsHelpers:
                     if app.hardware_mgr.usb
                     else None,
                     "fluidics_ready": pump_is_connected,  # Set to True if pump detected
+                    "pump_connected": pump_is_connected,  # Enable/disable Flow operation mode
                 }
                 
                 logger.info(f"📋 Calibration complete - updating device status:")
@@ -384,8 +396,8 @@ class SettingsHelpers:
                 app._on_clear_graphs_requested()
                 print("✓ Sensorgram reset complete - ready for new data")
 
-            # === PART 4: Show QC dialog ===
-            app._show_qc_dialog(calibration_data)
+            # NOTE: QC dialog shown by main.py handler (_on_calibration_complete_status_update)
+            # to avoid duplicate dialog display
 
         except Exception as e:
             print(f"[X] Failed to process calibration completion: {e}")

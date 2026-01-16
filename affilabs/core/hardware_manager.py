@@ -1035,38 +1035,46 @@ class HardwareManager(QObject):
             logger.info("Fast reconnect failed, doing full scan...")
 
         try:
-            if HARDWARE_DEBUG:
-                logger.info("=" * 60)
-                logger.info("SCANNING FOR CONTROLLERS...")
-                logger.info("=" * 60)
+            print("DEBUG: ENTERED try block in _connect_controller")
+            logger.info("=" * 60)
+            logger.info("SCANNING FOR CONTROLLERS...")
+            logger.info("=" * 60)
+            print("DEBUG: About to import serial.tools.list_ports")
 
-            # Check available serial ports only in debug mode
-            if HARDWARE_DEBUG:
-                import serial.tools.list_ports
+            # Check available serial ports
+            import serial.tools.list_ports
 
-                available_ports = list(serial.tools.list_ports.comports())
-                logger.info(f"Serial ports: {len(available_ports)}")
-                for port in available_ports:
-                    vid_str = f"0x{port.vid:04X}" if port.vid else "None"
-                    pid_str = f"0x{port.pid:04X}" if port.pid else "None"
-                    logger.info(
-                        f"  {port.device}: VID={vid_str} PID={pid_str} - {port.description}",
-                    )
+            available_ports = list(serial.tools.list_ports.comports())
+            print(f"DEBUG: Found {len(available_ports)} ports")
+            logger.info(f"Serial ports: {len(available_ports)}")
+            for port in available_ports:
+                vid_str = f"0x{port.vid:04X}" if port.vid else "None"
+                pid_str = f"0x{port.pid:04X}" if port.pid else "None"
+                logger.info(
+                    f"  {port.device}: VID={vid_str} PID={pid_str} - {port.description}",
+                )
 
             # Get controller classes safely
+            print("DEBUG: Getting controller classes")
             classes = _get_controller_classes()
             settings = _get_settings()
+            print(f"DEBUG: Got classes={list(classes.keys())}")
 
             # Try controllers in priority order: PicoP4SPR → PicoP4PRO → PicoEZSPR → Arduino
             # STOP at first controller found - ignore the rest
 
             # Priority 1: Try PicoP4SPR first (most common modern controller)
+            print(f"DEBUG: [1/3] About to try PicoP4SPR")
             logger.info(
                 f"[1/3] Trying PicoP4SPR (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
             )
             pico_p4spr = classes["PicoP4SPR"]()
+            print(f"DEBUG: Calling pico_p4spr.open()...")
             open_result = pico_p4spr.open()
+            print(f"DEBUG: pico_p4spr.open() returned: {open_result}")
+            print(f"DEBUG: pico_p4spr.open() returned: {open_result}")
             if open_result:
+                print(f"DEBUG: PicoP4SPR connected successfully!")
                 logger.info(f"✅ [OK] Controller connected: {pico_p4spr.name}")
 
                 # Wrap with HAL for consistent interface
@@ -1086,14 +1094,20 @@ class HardwareManager(QObject):
                 # NOTE: Servo initialization moved to after device_config is loaded (after detector connection)
                 logger.info("[OK] Controller wrapped with HAL")
                 return  # Found controller - stop searching
+            print("DEBUG: PicoP4SPR.open() returned False - trying next controller")
             logger.info("   ❌ PicoP4SPR not found")
 
             # Priority 2: Try PicoP4PRO (standalone P4PRO hardware)
+            print("DEBUG: [2/3] About to try PicoP4PRO")
             logger.info(
                 f"[2/3] Trying PicoP4PRO (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
             )
+            print("DEBUG: About to instantiate PicoP4PRO class...")
             pico_p4pro = classes["PicoP4PRO"]()
+            print("DEBUG: PicoP4PRO class instantiated successfully")
+            print("DEBUG: Calling pico_p4pro.open()...")
             if pico_p4pro.open():
+                print("DEBUG: PicoP4PRO connected successfully!")
                 logger.info(f"✅ [OK] Controller connected: {pico_p4pro.name}")
 
                 # Wrap with HAL for consistent interface
@@ -1152,9 +1166,11 @@ class HardwareManager(QObject):
                 # Don't clear cache - keep for retry
 
         except Exception as e:
-            logger.error(f"Controller connection failed: {e}")
+            logger.error(f"❌ EXCEPTION in _connect_controller: {e}")
+            logger.error(f"Exception type: {type(e).__name__}")
             if HARDWARE_DEBUG:
-                logger.exception("Full exception details:")
+                import traceback
+                logger.error(f"Traceback:\n{traceback.format_exc()}")
             self.ctrl = None
 
     def _should_scan_kinetic(self) -> bool:
