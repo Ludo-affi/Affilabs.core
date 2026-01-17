@@ -1279,19 +1279,17 @@ class ConvergenceEngine:
                                          f"(ratio {scale:.2f}x, err {error_pct*100:.1f}%)")
                                 state.leds[ch] = new_led
 
-            # Classify adjustments
-            urgent, near = priority.classify(
-                channels=recipe.channels,
-                signals=signals,
-                saturation=saturation,
-                target_signal=target_signal,
-                near_window_percent=recipe.near_window_percent,
-                locked=locked,
-            )
-            needs = urgent + near
+            # ============================================================================
+            # LEGACY ADJUSTMENT CODE DELETED
+            # ============================================================================
+            # The old LED adjustment code (lines 1282-1469) has been DELETED to prevent
+            # duplicate adjustments. It was running AFTER Phase-1/2 and causing LEDs to
+            # be adjusted TWICE per iteration (e.g., 34→55→79 concatenating values).
+            # Phase-1/2 (lines 1175-1280) now handles all LED adjustments using slopes.
+            # ============================================================================
 
-            # Adjust
-            for ch in needs:
+            # Record boundaries and slope history for next iteration
+            for ch in recipe.channels:
                 # PRIORITY 1: Respect locks - NEVER adjust locked channels
                 if ch in locked:
                     self._log("info", f"  🔒 {ch.upper()} is locked - skipping adjustment")
