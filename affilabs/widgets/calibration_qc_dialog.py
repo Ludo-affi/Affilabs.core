@@ -656,40 +656,127 @@ class CalibrationQCDialog(QDialog):
         )  # Status
         table.setMaximumHeight(160)
 
-        # Create horizontal layout for table and message
+        # Create horizontal layout for FWHM table and P-pol brightness table
         content_layout = QHBoxLayout()
         content_layout.setSpacing(12)
-        content_layout.addWidget(table, stretch=2)
+        content_layout.addWidget(table, stretch=1)
 
-        # Status summary box (next to table)
-        if global_pass_transmission:
-            result_text = "✓ SENSOR QUALITY: EXCELLENT - All channels calibrated successfully"
-            result_color = "#34C759"
-        else:
-            result_text = "⚠ SENSOR QUALITY: POOR - Check sensor hydration and peak quality"
-            result_color = "#FF3B30"
-
-        result_label = QLabel(result_text)
-        result_label.setWordWrap(True)
-        result_label.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-        result_label.setStyleSheet(f"""
-            QLabel {{
-                color: {result_color};
-                font-weight: 600;
-                padding: 12px;
-                background: #F5F5F7;
-                border-radius: 4px;
-                border: 2px solid {result_color};
-                font-size: 12px;
-            }}
-        """)
-        result_label.setMinimumHeight(140)
-        content_layout.addWidget(result_label, stretch=1)
+        # Add P-pol brightness and iteration table
+        ppol_table = self._create_ppol_brightness_table()
+        content_layout.addWidget(ppol_table, stretch=1)
 
         layout.addLayout(content_layout)
         container_layout.addWidget(frame)
 
         return container
+
+    def _create_ppol_brightness_table(self) -> QWidget:
+        """Create P-pol brightness and iteration table."""
+        table = QTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(
+            [
+                "Ch",
+                "P-Pol Signal",
+                "Conv Iter",
+            ],
+        )
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        table.setStyleSheet("""
+            QTableWidget {
+                background: white;
+                border: none;
+                gridline-color: #E5E5EA;
+                font-size: 11px;
+            }
+            QHeaderView::section {
+                background: #F5F5F7;
+                color: #1D1D1F;
+                padding: 6px;
+                border: none;
+                font-weight: 600;
+                font-size: 11px;
+            }
+        """)
+
+        channels = ["a", "b", "c", "d"]
+        table.setRowCount(4)
+
+        # Get P-pol spectra
+        p_pol_spectra = self.calibration_data.get("p_pol_spectra", {})
+        
+        # Get convergence summary for iterations
+        convergence_summary = self.calibration_data.get("convergence_summary", {})
+        channels_data = convergence_summary.get("channels", {}) if convergence_summary else {}
+
+        for idx, ch in enumerate(channels):
+            # Channel name
+            ch_item = QTableWidgetItem(ch.upper())
+            ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(idx, 0, ch_item)
+
+            # P-pol final brightness (max value)
+            if ch in p_pol_spectra and p_pol_spectra[ch] is not None:
+                try:
+                    p_arr = np.asarray(p_pol_spectra[ch], dtype=float)
+                    p_max = float(np.max(p_arr))
+                    brightness_item = QTableWidgetItem(f"{p_max:.0f}")
+                    brightness_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    
+                    # Color code based on brightness level
+                    if p_max > 50000:
+                        brightness_item.setForeground(QColor("#34C759"))  # Green (good signal)
+                    elif p_max > 30000:
+                        brightness_item.setForeground(QColor("#FF9500"))  # Orange (moderate)
+                    else:
+                        brightness_item.setForeground(QColor("#FF3B30"))  # Red (low signal)
+                    
+                    table.setItem(idx, 1, brightness_item)
+                except Exception:
+                    na_item = QTableWidgetItem("N/A")
+                    na_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    table.setItem(idx, 1, na_item)
+            else:
+                na_item = QTableWidgetItem("N/A")
+                na_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                table.setItem(idx, 1, na_item)
+
+            # Convergence iterations
+            if ch in channels_data:
+                ch_iterations = channels_data[ch].get("iterations", None)
+                if ch_iterations is not None:
+                    iter_item = QTableWidgetItem(str(ch_iterations))
+                    iter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    
+                    # Color code based on iteration count
+                    if ch_iterations <= 5:
+                        iter_item.setForeground(QColor("#34C759"))  # Green (fast convergence)
+                    elif ch_iterations <= 10:
+                        iter_item.setForeground(QColor("#FF9500"))  # Orange (moderate)
+                    else:
+                        iter_item.setForeground(QColor("#FF3B30"))  # Red (slow convergence)
+                    
+                    table.setItem(idx, 2, iter_item)
+                else:
+                    na_item = QTableWidgetItem("N/A")
+                    na_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    table.setItem(idx, 2, na_item)
+            else:
+                na_item = QTableWidgetItem("N/A")
+                na_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                table.setItem(idx, 2, na_item)
+
+        # Optimize column widths
+        table.setColumnWidth(0, 60)  # Ch
+        table.setColumnWidth(1, 110)  # P-Pol Signal
+        table.horizontalHeader().setSectionResizeMode(
+            2,
+            table.horizontalHeader().ResizeMode.Stretch,
+        )  # Conv Iter
+        table.setMaximumHeight(160)
+
+        return table
 
     def _create_model_validation_table(self) -> QFrame:
         """Create model validation table showing predicted vs measured LED values."""
