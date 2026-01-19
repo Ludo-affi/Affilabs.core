@@ -546,11 +546,29 @@ def run_startup_calibration(
             ctrl.set_intensity(ch, initial_leds[ch])
         time.sleep(0.03)  # Minimal delay - LEDs stabilize quickly
 
-        # Select convergence function based on flag
-        if use_convergence_engine and ENGINE_AVAILABLE:
+        # Select convergence function - enforce engine wrapper when requested
+        if use_convergence_engine:
+            if not ENGINE_AVAILABLE:
+                error_msg = (
+                    "Convergence engine wrapper requested but not available.\n\n"
+                    "The device-agnostic convergence engine is required but failed to import.\n"
+                    "This may indicate a missing module or import error in:\n"
+                    "  affilabs/convergence/production_wrapper.py\n\n"
+                    "Please check the logs for import errors or contact support."
+                )
+                logger.error(error_msg)
+                raise RuntimeError(error_msg)
             LEDconverge = LEDconverge_engine
+            logger.info("🔬 Using device-agnostic convergence engine (production_wrapper)")
         else:
-            LEDconverge = LEDconverge_current
+            # Legacy path not supported in device-agnostic architecture
+            error_msg = (
+                "Legacy convergence algorithm is deprecated.\n\n"
+                "The orchestrator now requires the device-agnostic convergence engine.\n"
+                "Set use_convergence_engine=True in run_startup_calibration() call."
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
         s_integration_time, s_final_signals, s_success, s_converged_leds = LEDconverge(
             usb=usb,
             ctrl=ctrl,
@@ -601,6 +619,15 @@ def run_startup_calibration(
         result.s_integration_time = s_integration_time
 
         logger.info(f"S-mode: {s_integration_time:.1f}ms, LEDs={s_mode_leds}")
+
+        # Determine weakest channel from S-mode to carry over into P-mode
+        if s_final_signals:
+            s_weakest_ch = min(ch_list, key=lambda c: s_final_signals.get(c, float('inf')))
+            logger.info(f"🔗 Carrying weakest channel from S→P: {s_weakest_ch.upper()}")
+        else:
+            # Fallback to lowest LED setting if signals missing
+            s_weakest_ch = min(ch_list, key=lambda c: s_mode_leds.get(c, 0))
+            logger.info(f"🔗 Carrying weakest channel from S→P (fallback by LED): {s_weakest_ch.upper()}")
 
         # Capture S-pol reference spectra (using num_scans for high-quality baseline)
         # Calculate num_scans: floor(DETECTOR_WINDOW / integration_time), capped at 10
@@ -702,6 +729,16 @@ def run_startup_calibration(
             prefer_est_after_iters=1,  # Trust measurements immediately
             near_window_percent=0.10,  # Tighter convergence window for speed
         )
+
+        # Carry weakest channel override into P-mode convergence and FREEZE integration
+        try:
+            setattr(p_config, "WEAKEST_CHANNEL_OVERRIDE", s_weakest_ch)
+            # Policy: P-mode brightness-only tweak at fixed S-mode integration
+            setattr(p_config, "FREEZE_INTEGRATION", True)
+            setattr(p_config, "ALLOW_INTEGRATION_INCREASE_ONLY", False)
+        except Exception:
+            # Config may be a simple object; setattr should succeed, ignore if not
+            pass
 
         p_integration_time, p_final_signals, p_success, p_converged_leds = LEDconverge(
             usb=usb,

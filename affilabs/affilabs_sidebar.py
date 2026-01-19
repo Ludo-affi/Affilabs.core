@@ -771,10 +771,10 @@ class AffilabsSidebar(QWidget):
         Args:
             s_pos: S-mode servo position (0-180)
             p_pos: P-mode servo position (0-180)
-            led_a: Channel A LED intensity (0-255)
-            led_b: Channel B LED intensity (0-255)
-            led_c: Channel C LED intensity (0-255)
-            led_d: Channel D LED intensity (0-255)
+            led_a: Channel A LED brightness (0-255)
+            led_b: Channel B LED brightness (0-255)
+            led_c: Channel C LED brightness (0-255)
+            led_d: Channel D LED brightness (0-255)
 
         """
         if s_pos is not None and hasattr(self, "s_position_input"):

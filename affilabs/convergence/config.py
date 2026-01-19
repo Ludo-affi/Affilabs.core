@@ -29,6 +29,9 @@ class ConvergenceRecipe:
     target_percent: float  # e.g., 0.85 for 85% of detector max
     tolerance_percent: float  # e.g., 0.05 for ±5%
 
+    # Polarization mode (S or P) - affects saturation handling
+    polarization_mode: str = "S"  # "S" or "P" - P-pol NEVER reduces aggressively
+
     # Behavior (OPTIMIZED FOR SPEED - AGGRESSIVE)
     near_window_percent: float = 0.15  # ±15% window for earlier fine-tuning entry (faster)
     max_iterations: int = 6  # Further reduced - trust model predictions for faster convergence

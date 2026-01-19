@@ -729,6 +729,11 @@ class DataAcquisitionManager(QObject):
         NO PROCESSING - Pure acquisition and emission.
         """
         try:
+            logger.info("[WORKER] ========== ACQUISITION WORKER STARTED ==========")
+            logger.info(f"[WORKER] Thread: {threading.current_thread().name}")
+            logger.info(f"[WORKER] Calibrated: {self.calibrated}")
+            logger.info(f"[WORKER] Has calibration_data: {self.calibration_data is not None}")
+            
             channels = ["a", "b", "c", "d"]
             consecutive_errors = 0
             max_consecutive_errors = 5
@@ -737,10 +742,12 @@ class DataAcquisitionManager(QObject):
             # ===================================================================
             # SMART PARAMETER ANALYSIS: Detect what's common across channels
             # ===================================================================
+            logger.info("[WORKER] Analyzing calibration parameters...")
             # Integration time analysis (consistent naming with calibration)
             p_integration_time_effective = self.calibration_data.p_integration_time
             if not p_integration_time_effective or p_integration_time_effective <= 0:
                 p_integration_time_effective = self.calibration_data.s_mode_integration_time
+            logger.info(f"[WORKER] Integration time: {p_integration_time_effective}ms")
 
             # Check if we have per-channel integration times (alternative mode)
             has_per_channel_integration_times = bool(
@@ -819,12 +826,12 @@ class DataAcquisitionManager(QObject):
                 detector_window_ms = detector_on_time_ms - safety_buffer_ms
 
                 # CRITICAL: Enforce integration time cap BEFORE calculating num_scans
-                # DETECTOR_WAIT_MS = MAX INTEGRATION TIME PER SCAN
+                # MAX_INTEGRATION_PER_SCAN_MS = USB4000 hardware limit (62.5ms)
                 # Formula: DETECTOR_ON_TIME = LED_ON_TIME_MS - DETECTOR_WAIT_MS
                 #          DETECTOR_WINDOW = DETECTOR_ON_TIME - SAFETY_BUFFER_MS
-                #          integration_time ≤ DETECTOR_WAIT_MS (per-scan cap)
+                #          integration_time ≤ MAX_INTEGRATION_PER_SCAN_MS (per-scan cap)
                 #          num_scans = floor(DETECTOR_WINDOW / integration_time)
-                max_integration_per_scan_ms = detector_wait_ms
+                max_integration_per_scan_ms = getattr(root_settings, 'MAX_INTEGRATION_PER_SCAN_MS', 62.5)
 
                 if p_integration_time_effective > max_integration_per_scan_ms:
                     logger.warning(
@@ -882,6 +889,11 @@ class DataAcquisitionManager(QObject):
 
             while not self._stop_acquisition.is_set():
                 cycle_count += 1
+                
+                # DEBUG: Log first cycle entry
+                if cycle_count == 1:
+                    logger.info(f"[WORKER] Entered acquisition loop - cycle {cycle_count}")
+                    logger.info(f"[WORKER] _acquiring={self._acquiring}, _stop_acquisition={self._stop_acquisition.is_set()}")
 
                 # Manual GC every 100 cycles (during safe time, not critical path)
                 if cycle_count % 100 == 0:
@@ -1029,6 +1041,8 @@ class DataAcquisitionManager(QObject):
                     # This is the standard production method - reliable and predictable
                     if not self._rank_mode_enabled and self._batch_supported:
                         try:
+                            logger.info(f"[BATCH] Starting batch acquisition for cycle {cycle_count}")
+                            
                             # Build LED intensity dict
                             led_intensities = {}
                             for ch in channels:
@@ -1063,14 +1077,16 @@ class DataAcquisitionManager(QObject):
                                     spectra_acquired += 1
                                     batch_success = True
 
-                            # Skip sequential fallback
-                            continue
+                            # SUCCESS: Skip sequential fallback if batch worked
+                            if batch_success:
+                                continue
 
                         except Exception as batch_err:
                             logger.error(
                                 f"[BATCH] Failed, falling back to sequential: {batch_err}",
                             )
-                            # Fall through to sequential acquisition
+                            logger.error(f"[BATCH] Exception details:", exc_info=True)
+                            # Fall through to sequential acquisition (remove the continue statement below)
 
                     # ========================================================================
                     # ACQUISITION METHOD 3: SEQUENTIAL (FALLBACK)
@@ -1306,6 +1322,8 @@ class DataAcquisitionManager(QObject):
             import traceback
 
             error_msg = f"FATAL: Acquisition worker crashed: {e}\n{traceback.format_exc()}"
+            logger.error(f"❌ {error_msg}")  # LOG THE ERROR!
+            logger.error(f"❌ Full traceback:", exc_info=True)
             with contextlib.suppress(builtins.BaseException):
                 self._emission_queue.put_nowait({"_error": error_msg})
 
@@ -1444,7 +1462,7 @@ class DataAcquisitionManager(QObject):
                 for ch in channels:
                     intensity = current_intensities[ch]
                     cmd = f"b{ch}{int(intensity):03d}\n"
-                    ctrl._ctrl._ser.write(cmd.encode())
+                    ctrl._ser.write(cmd.encode())
                     time.sleep(0.005)  # 5ms between commands for firmware processing
 
                 self._last_led_intensities = current_intensities.copy()

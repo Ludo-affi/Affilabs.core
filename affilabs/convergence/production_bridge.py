@@ -18,6 +18,7 @@ def create_recipe_from_production_config(
     target_percent: float,
     tolerance_percent: float,
     config: Optional[ConvergenceConfig] = None,
+    polarization_mode: str = "S",  # S or P polarization mode
 ) -> ConvergenceRecipe:
     """Convert production ConvergenceConfig to engine ConvergenceRecipe.
 
@@ -47,6 +48,9 @@ def create_recipe_from_production_config(
         # Targets (same as production)
         target_percent=target_percent,
         tolerance_percent=tolerance_percent,
+
+        # Polarization mode - CRITICAL for P-pol physics
+        polarization_mode=polarization_mode.upper(),  # Normalize to uppercase S or P
 
         # Behavior from production config
         near_window_percent=getattr(config, 'NEAR_WINDOW_PERCENT', 0.10),
@@ -80,6 +84,7 @@ def create_detector_params_from_production(
     saturation_threshold: float,
     min_integration_time: float,
     max_integration_time: float,
+    polarization_mode: str = "S",  # S or P polarization
 ) -> DetectorParams:
     """Create engine DetectorParams from production parameters.
 
@@ -88,10 +93,16 @@ def create_detector_params_from_production(
         saturation_threshold: Saturation threshold in counts
         min_integration_time: Minimum integration time in ms
         max_integration_time: Maximum integration time in ms
+        polarization_mode: S or P polarization - P-pol gets higher max integration (62.5ms)
 
     Returns:
         DetectorParams configured for production detector
     """
+    # P-pol can use higher integration time since it's always lower intensity than S-pol
+    # (P-pol transmission < S-pol transmission at SPR resonance)
+    if polarization_mode.upper() == "P":
+        max_integration_time = 62.5  # P-pol: higher max integration allowed
+    
     return DetectorParams(
         max_counts=max_counts,
         saturation_threshold=saturation_threshold,

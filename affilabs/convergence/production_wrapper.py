@@ -116,6 +116,7 @@ def LEDconverge_engine(
         target_percent=target_percent,
         tolerance_percent=tolerance_percent,
         config=config,
+        polarization_mode=polarization,  # Pass S or P mode to recipe
     )
 
     # Override max_iterations if provided
@@ -128,6 +129,7 @@ def LEDconverge_engine(
         saturation_threshold=detector_params.saturation_threshold,
         min_integration_time=detector_params.min_integration_time,
         max_integration_time=detector_params.max_integration_time,
+        polarization_mode=polarization,  # Pass polarization mode for P-pol specific limits
     )
 
     # Check for trained ML models

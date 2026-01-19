@@ -433,13 +433,26 @@ class AdvancedSettingsDialog(QDialog):
             return
 
         try:
-            # Load integration time from calibration
-            integration_time = getattr(calibration_data, "integration_time", None)
+            # Load P-mode integration time from calibration (preferred)
+            integration_time_p = getattr(calibration_data, "integration_time_p", None)
+            integration_time_s = getattr(calibration_data, "integration_time_s", None)
+            integration_time_legacy = getattr(calibration_data, "integration_time", None)
+            
+            # Prefer P-mode integration time (used during live acquisition)
+            integration_time = integration_time_p or integration_time_legacy
+            
             if integration_time:
                 self.detector_on_input.setValue(int(integration_time))
-                self.integration_source_label.setText("(from calibration)")
+                self.integration_source_label.setText("(from P-mode calibration)")
                 logger.info(
-                    f"  Loaded integration time from calibration: {integration_time}ms",
+                    f"  Loaded integration time from calibration: P-mode={integration_time}ms, S-mode={integration_time_s}ms",
+                )
+            elif integration_time_s:
+                # Fallback to S-mode if P-mode not available
+                self.detector_on_input.setValue(int(integration_time_s))
+                self.integration_source_label.setText("(from S-mode calibration)")
+                logger.info(
+                    f"  Loaded integration time from S-mode calibration: {integration_time_s}ms",
                 )
 
             # Load LED timing if available

@@ -675,6 +675,11 @@ class Application(QApplication):
         # Next cycle warning line for active cycle graph
         self._next_cycle_warning_line = None
 
+        # Internal pump state tracking (P4PROPLUS)
+        self._pump1_running = False
+        self._pump2_running = False
+        self._synced_pumps_running = False
+
     def _init_managers(self):
         """Initialize business layer managers (no UI dependencies).
 
@@ -1229,6 +1234,14 @@ class Application(QApplication):
         # Automatically log calibration to database for ML training
         self._log_calibration_to_database(calibration_data)
 
+        # Populate LED brightness in Hardware Configuration section
+        logger.info("📋 Populating calibration settings in UI...")
+        try:
+            self._load_current_settings(show_warnings=False)
+            logger.info("   ✓ LED brightness populated in Hardware Configuration")
+        except Exception as e:
+            logger.warning(f"   Could not populate settings: {e}")
+
         # Clear graph and resume live data after OEM calibration
         logger.info("📊 Clearing graph and resuming live data after calibration...")
 
@@ -1549,6 +1562,42 @@ class Application(QApplication):
             )
             logger.debug("✓ sync_valve_btn connected")
 
+        # Internal pump controls (P4PROPLUS)
+        if hasattr(ui.sidebar, 'synced_toggle_btn'):
+            ui.sidebar.synced_toggle_btn.toggled.connect(lambda checked: self._on_synced_pump_toggle(checked))
+            logger.debug("✓ synced_toggle_btn connected")
+        if hasattr(ui.sidebar, 'pump1_toggle_btn'):
+            ui.sidebar.pump1_toggle_btn.toggled.connect(lambda checked: self._on_internal_pump1_toggle(checked))
+            logger.debug("✓ pump1_toggle_btn connected")
+        if hasattr(ui.sidebar, 'pump2_toggle_btn'):
+            ui.sidebar.pump2_toggle_btn.toggled.connect(lambda checked: self._on_internal_pump2_toggle(checked))
+            logger.debug("✓ pump2_toggle_btn connected")
+        if hasattr(ui.sidebar, 'internal_pump_inject_30s_btn'):
+            ui.sidebar.internal_pump_inject_30s_btn.clicked.connect(self._on_internal_pump_inject_30s)
+            logger.debug("✓ internal_pump_inject_30s_btn connected")
+        
+        # Internal pump RPM changes (for sync mode)
+        if hasattr(ui.sidebar, 'synced_rpm_spin'):
+            ui.sidebar.synced_rpm_spin.valueChanged.connect(lambda: self._on_synced_rpm_changed())
+            logger.debug("✓ synced_rpm_spin connected")
+        if hasattr(ui.sidebar, 'synced_correction_spin'):
+            ui.sidebar.synced_correction_spin.valueChanged.connect(lambda: self._on_synced_rpm_changed())
+            logger.debug("✓ synced_correction_spin connected")
+        
+        # Individual pump RPM changes (for independent mode)
+        if hasattr(ui.sidebar, 'pump1_rpm_spin'):
+            ui.sidebar.pump1_rpm_spin.valueChanged.connect(lambda: self._on_pump1_rpm_changed())
+            logger.debug("✓ pump1_rpm_spin connected")
+        if hasattr(ui.sidebar, 'pump1_correction_spin'):
+            ui.sidebar.pump1_correction_spin.valueChanged.connect(lambda: self._on_pump1_rpm_changed())
+            logger.debug("✓ pump1_correction_spin connected")
+        if hasattr(ui.sidebar, 'pump2_rpm_spin'):
+            ui.sidebar.pump2_rpm_spin.valueChanged.connect(lambda: self._on_pump2_rpm_changed())
+            logger.debug("✓ pump2_rpm_spin connected")
+        if hasattr(ui.sidebar, 'pump2_correction_spin'):
+            ui.sidebar.pump2_correction_spin.valueChanged.connect(lambda: self._on_pump2_rpm_changed())
+            logger.debug("✓ pump2_correction_spin connected")
+
         # Valve controls (Loop valves - 6-port)
         # KC1 Loop valve - segmented control (Load = state 0, Sensor = state 1)
         if hasattr(ui.sidebar, 'kc1_loop_btn_load'):
@@ -1608,6 +1657,12 @@ class Application(QApplication):
                 self._on_internal_pump_calibrate_clicked
             )
             logger.debug("✓ internal_pump_calibrate_btn connected")
+
+        if hasattr(ui.sidebar, 'internal_pump_calibrate_timing_btn'):
+            ui.sidebar.internal_pump_calibrate_timing_btn.clicked.connect(
+                self._on_internal_pump_calibrate_timing_clicked
+            )
+            logger.debug("✓ internal_pump_calibrate_timing_btn connected")
 
         # Internal pump flowrate changes
         if hasattr(ui.sidebar, 'internal_pump_flowrate_combo'):
@@ -2612,6 +2667,40 @@ class Application(QApplication):
     def _on_hardware_connected(self, status: dict):
         """Hardware connection completed and update Device Status UI."""
         self.hardware_events.on_hardware_connected(status)
+        
+        # Update internal pump section visibility based on P4PROPLUS detection
+        self._update_internal_pump_visibility()
+
+    def _update_internal_pump_visibility(self):
+        """Show/hide internal pump control section based on P4PROPLUS detection."""
+        try:
+            # Check if we have internal pumps - use hardware manager's raw controller
+            has_internal = False
+            
+            # Try hardware manager's raw controller first (most reliable)
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                if hasattr(self.hardware_mgr, '_ctrl_raw') and self.hardware_mgr._ctrl_raw:
+                    raw_ctrl = self.hardware_mgr._ctrl_raw
+                    if hasattr(raw_ctrl, 'firmware_id'):
+                        has_internal = 'p4proplus' in raw_ctrl.firmware_id.lower()
+                    elif hasattr(raw_ctrl, 'has_internal_pumps'):
+                        has_internal = raw_ctrl.has_internal_pumps()
+            
+            # Fallback to self.ctrl (HAL adapter)
+            if not has_internal and hasattr(self, 'ctrl') and self.ctrl:
+                if hasattr(self.ctrl, 'has_internal_pumps'):
+                    has_internal = self.ctrl.has_internal_pumps()
+            
+            # Show/hide section
+            if hasattr(self.main_window.sidebar, 'internal_pump_section'):
+                section = self.main_window.sidebar.internal_pump_section
+                if has_internal:
+                    section.show()
+                    logger.info("P4PROPLUS detected - Internal Pump Control visible")
+                else:
+                    section.hide()
+        except Exception as e:
+            logger.error(f"Error updating internal pump visibility: {e}")
 
     def _on_hardware_disconnected(self):
         """Hardware disconnected."""
@@ -2625,6 +2714,9 @@ class Application(QApplication):
             logger.error("=" * 60)
             logger.error("CRITICAL: HARDWARE DISCONNECTED")
             logger.error("=" * 60)
+        
+        # Hide internal pump section when disconnected
+        self._update_internal_pump_visibility()
 
         # Check if acquisition was running
         acquisition_was_running = (
@@ -2651,6 +2743,13 @@ class Application(QApplication):
         if hasattr(self, '_valve_poll_timer'):
             self._valve_poll_timer.stop()
             logger.debug("✓ Stopped valve polling")
+
+        # Reset pump running states and sync button UI
+        self._pump1_running = False
+        self._pump2_running = False
+        self._synced_pumps_running = False
+        self._sync_pump_button_states()
+        self._update_internal_pump_status("Idle", running=False)
 
         # Reset calibration completed flag
         self._calibration_completed = False
@@ -3538,12 +3637,17 @@ class Application(QApplication):
         """User clicked Simple Inject button - run simple injection via PumpManager."""
         logger.info("💉 Simple Injection requested")
 
-        if not self.pump_mgr.is_available:
+        # Check for EITHER AffiPump OR P4PROPLUS internal pumps
+        has_affipump = self.pump_mgr.is_available
+        has_internal = self.hardware_mgr.ctrl and self.hardware_mgr.ctrl.has_internal_pumps()
+        
+        if not has_affipump and not has_internal:
             from affilabs.widgets.message import show_message
-            show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
+            show_message("No pump available. Connect AffiPump or use P4PROPLUS with internal pumps.", "Warning")
             return
 
-        if not self.pump_mgr.is_idle:
+        # If using AffiPump, check if it's idle
+        if has_affipump and not self.pump_mgr.is_idle:
             from affilabs.widgets.message import show_message
             show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
             return
@@ -3572,9 +3676,13 @@ class Application(QApplication):
         """User clicked Partial Loop Inject button - run partial loop injection via PumpManager."""
         logger.info("💉 Partial Loop Injection requested")
 
-        if not self.pump_mgr.is_available:
+        # Check for EITHER AffiPump OR P4PROPLUS internal pumps
+        has_affipump = self.pump_mgr.is_available
+        has_internal = self.hardware_mgr.ctrl and self.hardware_mgr.ctrl.has_internal_pumps()
+        
+        if not has_affipump and not has_internal:
             from affilabs.widgets.message import show_message
-            show_message("AffiPump not connected. Connect pump to use this feature.", "Warning")
+            show_message("No pump available. Connect AffiPump or use P4PROPLUS with internal pumps.", "Warning")
             return
 
         if not self.pump_mgr.is_idle:
@@ -3765,6 +3873,688 @@ class Application(QApplication):
             self.pump_mgr.change_flow_rate_on_the_fly(value)
         else:
             logger.debug(f"{rate_name} flow rate set to {value} µL/min (pump idle - will use on next operation)")
+
+    def _on_valve_sync_toggled(self, checked: bool):
+        """User toggled valve synchronization.
+
+        When enabled, KC1 and KC2 valve switches mirror each other.
+
+        Args:
+            checked: True = sync enabled, False = independent control
+        """
+        mode = "SYNCHRONIZED" if checked else "INDEPENDENT"
+        logger.info(f"🔄 Valve control mode → {mode}")
+
+        # If sync is enabled, mirror current KC1 state to KC2
+
+    def _on_internal_pump1_toggle(self, checked: bool):
+        """Toggle internal pump 1 on/off.
+        
+        Args:
+            checked: True = start pump, False = stop pump
+        """
+        if not hasattr(self.main_window.sidebar, 'pump1_rpm_spin'):
+            logger.error("Pump 1 RPM spinbox not found")
+            return
+        
+        if checked:
+            # Start pump
+            rpm = self.main_window.sidebar.pump1_rpm_spin.value()
+            correction = getattr(self.main_window.sidebar.pump1_correction_spin, 'value', lambda: 1.0)()
+            
+            ctrl = self.hardware_mgr._ctrl_raw
+            if not ctrl:
+                from affilabs.widgets.message import show_message
+                show_message("Controller not connected", "Warning")
+                btn = self.main_window.sidebar.pump1_toggle_btn
+                btn.blockSignals(True)
+                btn.setChecked(False)
+                btn.blockSignals(False)
+                return
+            
+            if hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
+                rpm_corrected = rpm * correction
+                
+                logger.info(f"▶ Starting internal pump 1: {rpm_corrected:.1f} RPM (correction: {correction})")
+                
+                # Update UI immediately to prevent lag
+                btn = self.main_window.sidebar.pump1_toggle_btn
+                btn.setText("■ Stop")
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+                self._update_internal_pump_status(f"Pump 1: {rpm_corrected:.0f} RPM", running=True)
+                
+                # Run hardware command in background thread to prevent UI blocking
+                from PySide6.QtCore import QThreadPool, QRunnable
+                
+                class PumpStartTask(QRunnable):
+                    def __init__(task_self, ctrl, rpm, ch, callback):
+                        super().__init__()
+                        task_self.ctrl = ctrl
+                        task_self.rpm = rpm
+                        task_self.ch = ch
+                        task_self.callback = callback
+                    
+                    def run(task_self):
+                        success = task_self.ctrl.pump_start(rate_ul_min=task_self.rpm, ch=task_self.ch)
+                        task_self.callback(success)
+                
+                def on_start_complete(success):
+                    if success:
+                        logger.info(f"✓ Started pump 1 at {rpm_corrected:.1f} RPM")
+                        self._pump1_running = True  # Track state
+                    else:
+                        logger.error(f"✗ Failed to start internal pump")
+                        self._pump1_running = False
+                        # Revert button state on failure (block signals to prevent toggle loop)
+                        btn.blockSignals(True)
+                        btn.setChecked(False)
+                        btn.blockSignals(False)
+                        btn.setText("▶ Start")
+                        btn.style().unpolish(btn)
+                        btn.style().polish(btn)
+                        self._update_internal_pump_status("Idle", running=False)
+                
+                # ALWAYS channel 1 for pump1 (not affected by sync mode)
+                task = PumpStartTask(ctrl, rpm_corrected, 1, on_start_complete)
+                QThreadPool.globalInstance().start(task)
+            else:
+                from affilabs.widgets.message import show_message
+                show_message("Internal pumps not available. P4PRO+ V2.3+ required.", "Warning")
+                btn = self.main_window.sidebar.pump1_toggle_btn
+                btn.blockSignals(True)
+                btn.setChecked(False)
+                btn.blockSignals(False)
+        else:
+            # Stop pump
+            ctrl = self.hardware_mgr._ctrl_raw
+            if ctrl and hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
+                logger.info(f"■ Stopping internal pump 1")
+                
+                # Update UI immediately to prevent lag
+                btn = self.main_window.sidebar.pump1_toggle_btn
+                btn.setText("▶ Start")
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+                self._update_internal_pump_status("Idle", running=False)
+                
+                # Run hardware command in background thread
+                from PySide6.QtCore import QThreadPool, QRunnable
+                
+                class PumpStopTask(QRunnable):
+                    def __init__(task_self, ctrl, ch, callback):
+                        super().__init__()
+                        task_self.ctrl = ctrl
+                        task_self.ch = ch
+                        task_self.callback = callback
+                    
+                    def run(task_self):
+                        success = task_self.ctrl.pump_stop(ch=task_self.ch)
+                        task_self.callback(success)
+                
+                def on_stop_complete(success):
+                    if success:
+                        logger.info(f"✓ Stopped pump 1")
+                        self._pump1_running = False  # Track state
+                    else:
+                        logger.error(f"✗ Failed to stop pump 1")
+                        # Keep state as running if stop failed
+                        logger.warning("Pump 1 may still be running!")
+                
+                task = PumpStopTask(ctrl, 1, on_stop_complete)
+                QThreadPool.globalInstance().start(task)
+
+    def _on_internal_pump2_toggle(self, checked: bool):
+        """Toggle internal pump 2 on/off.
+        
+        Args:
+            checked: True = start pump, False = stop pump
+        """
+        if not hasattr(self.main_window.sidebar, 'pump2_rpm_spin'):
+            logger.error("Pump 2 RPM spinbox not found")
+            return
+        
+        if checked:
+            # Start pump
+            rpm = self.main_window.sidebar.pump2_rpm_spin.value()
+            correction = getattr(self.main_window.sidebar.pump2_correction_spin, 'value', lambda: 1.0)()
+            
+            ctrl = self.hardware_mgr._ctrl_raw
+            if not ctrl:
+                from affilabs.widgets.message import show_message
+                show_message("Controller not connected", "Warning")
+                btn = self.main_window.sidebar.pump2_toggle_btn
+                btn.blockSignals(True)
+                btn.setChecked(False)
+                btn.blockSignals(False)
+                return
+            
+            if hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
+                rpm_corrected = rpm * correction
+                
+                logger.info(f"▶ Starting internal pump 2: {rpm_corrected:.1f} RPM (correction: {correction})")
+                
+                # Update UI immediately to prevent lag
+                btn = self.main_window.sidebar.pump2_toggle_btn
+                btn.setText("■ Stop")
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+                self._update_internal_pump_status(f"Pump 2: {rpm_corrected:.0f} RPM", running=True)
+                
+                # Run hardware command in background thread
+                from PySide6.QtCore import QThreadPool, QRunnable
+                
+                class PumpStartTask(QRunnable):
+                    def __init__(task_self, ctrl, rpm, ch, callback):
+                        super().__init__()
+                        task_self.ctrl = ctrl
+                        task_self.rpm = rpm
+                        task_self.ch = ch
+                        task_self.callback = callback
+                    
+                    def run(task_self):
+                        success = task_self.ctrl.pump_start(rate_ul_min=task_self.rpm, ch=task_self.ch)
+                        task_self.callback(success)
+                
+                def on_start_complete(success):
+                    if success:
+                        logger.info(f"✓ Started pump 2 at {rpm_corrected:.1f} RPM")
+                        self._pump2_running = True  # Track state
+                    else:
+                        logger.error(f"✗ Failed to start internal pump 2")
+                        self._pump2_running = False
+                        # Revert button state on failure (block signals to prevent toggle loop)
+                        btn = self.main_window.sidebar.pump2_toggle_btn
+                        btn.blockSignals(True)
+                        btn.setChecked(False)
+                        btn.blockSignals(False)
+                        btn.setText("▶ Start")
+                        btn.style().unpolish(btn)
+                        btn.style().polish(btn)
+                        self._update_internal_pump_status("Idle", running=False)
+                
+                task = PumpStartTask(ctrl, rpm_corrected, 2, on_start_complete)
+                QThreadPool.globalInstance().start(task)
+            else:
+                from affilabs.widgets.message import show_message
+                show_message("Internal pumps not available. P4PRO+ V2.3+ required.", "Warning")
+                btn = self.main_window.sidebar.pump2_toggle_btn
+                btn.blockSignals(True)
+                btn.setChecked(False)
+                btn.blockSignals(False)
+        else:
+            # Stop pump
+            ctrl = self.hardware_mgr._ctrl_raw
+            if ctrl and hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
+                logger.info(f"■ Stopping internal pump 2")
+                
+                # Update UI immediately to prevent lag
+                btn = self.main_window.sidebar.pump2_toggle_btn
+                btn.setText("▶ Start")
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+                self._update_internal_pump_status("Idle", running=False)
+                
+                # Run hardware command in background thread
+                from PySide6.QtCore import QThreadPool, QRunnable
+                
+                class PumpStopTask(QRunnable):
+                    def __init__(task_self, ctrl, ch, callback):
+                        super().__init__()
+                        task_self.ctrl = ctrl
+                        task_self.ch = ch
+                        task_self.callback = callback
+                    
+                    def run(task_self):
+                        success = task_self.ctrl.pump_stop(ch=task_self.ch)
+                        task_self.callback(success)
+                
+                def on_stop_complete(success):
+                    if success:
+                        logger.info(f"✓ Stopped pump 2")
+                        self._pump2_running = False  # Track state
+                    else:
+                        logger.error(f"✗ Failed to stop pump 2")
+                        logger.warning("Pump 2 may still be running!")
+                
+                task = PumpStopTask(ctrl, 2, on_stop_complete)
+                QThreadPool.globalInstance().start(task)
+
+    def _on_synced_pump_toggle(self, checked: bool):
+        """Toggle synced pumps (both pumps) on/off.
+        
+        Args:
+            checked: True = start both pumps, False = stop both pumps
+        """
+        if not hasattr(self.main_window.sidebar, 'synced_rpm_spin'):
+            logger.error("Synced RPM spinbox not found")
+            return
+        
+        if checked:
+            # Start both pumps
+            rpm = self.main_window.sidebar.synced_rpm_spin.value()
+            correction = getattr(self.main_window.sidebar.synced_correction_spin, 'value', lambda: 1.0)()
+            
+            ctrl = self.hardware_mgr._ctrl_raw
+            if not ctrl:
+                from affilabs.widgets.message import show_message
+                show_message("Controller not connected", "Warning")
+                btn = self.main_window.sidebar.synced_toggle_btn
+                btn.blockSignals(True)
+                btn.setChecked(False)
+                btn.blockSignals(False)
+                return
+            
+            if hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
+                rpm_corrected = rpm * correction
+                logger.info(f"▶ Starting both pumps: {rpm_corrected:.1f} RPM (correction: {correction})")
+                
+                # Update UI immediately to prevent lag
+                btn = self.main_window.sidebar.synced_toggle_btn
+                btn.setText("■ Stop")
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+                self._update_internal_pump_status(f"Both Pumps: {rpm_corrected:.0f} RPM", running=True)
+                
+                # Run hardware command in background thread (consistent with pump1/pump2)
+                from PySide6.QtCore import QThreadPool, QRunnable
+                
+                class PumpStartTask(QRunnable):
+                    def __init__(task_self, ctrl, rpm, callback):
+                        super().__init__()
+                        task_self.ctrl = ctrl
+                        task_self.rpm = rpm
+                        task_self.callback = callback
+                    
+                    def run(task_self):
+                        success = task_self.ctrl.pump_start(rate_ul_min=task_self.rpm, ch=3)
+                        task_self.callback(success)
+                
+                def on_start_complete(success):
+                    if success:
+                        logger.info(f"✓ Started both pumps at {rpm_corrected:.1f} RPM")
+                        self._synced_pumps_running = True  # Track state
+                        self._pump1_running = True
+                        self._pump2_running = True
+                    else:
+                        logger.error(f"✗ Failed to start synced pumps")
+                        self._synced_pumps_running = False
+                        # Revert button state on failure (block signals to prevent toggle loop)
+                        btn.blockSignals(True)
+                        btn.setChecked(False)
+                        btn.blockSignals(False)
+                        btn.setText("▶ Start")
+                        btn.style().unpolish(btn)
+                        btn.style().polish(btn)
+                        self._update_internal_pump_status("Idle", running=False)
+                
+                task = PumpStartTask(ctrl, rpm_corrected, on_start_complete)
+                QThreadPool.globalInstance().start(task)
+            else:
+                from affilabs.widgets.message import show_message
+                show_message("Internal pumps not available. P4PRO+ V2.3+ required.", "Warning")
+                btn = self.main_window.sidebar.synced_toggle_btn
+                btn.blockSignals(True)
+                btn.setChecked(False)
+                btn.blockSignals(False)
+        else:
+            # Stop both pumps
+            ctrl = self.hardware_mgr._ctrl_raw
+            if ctrl and hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
+                logger.info(f"■ Stopping both internal pumps")
+                
+                # Update UI immediately to prevent lag
+                btn = self.main_window.sidebar.synced_toggle_btn
+                btn.setText("▶ Start")
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+                self._update_internal_pump_status("Idle", running=False)
+                
+                # Run hardware command in background thread
+                from PySide6.QtCore import QThreadPool, QRunnable
+                
+                class PumpStopTask(QRunnable):
+                    def __init__(task_self, ctrl, callback):
+                        super().__init__()
+                        task_self.ctrl = ctrl
+                        task_self.callback = callback
+                    
+                    def run(task_self):
+                        success = task_self.ctrl.pump_stop(ch=3)
+                        task_self.callback(success)
+                
+                def on_stop_complete(success):
+                    if success:
+                        logger.info(f"✓ Stopped both pumps")
+                        self._synced_pumps_running = False  # Track state
+                        self._pump1_running = False
+                        self._pump2_running = False
+                    else:
+                        logger.error(f"✗ Failed to stop both pumps")
+                        logger.warning("Pumps may still be running!")
+                
+                task = PumpStopTask(ctrl, on_stop_complete)
+                QThreadPool.globalInstance().start(task)
+
+    def _on_internal_pump_inject_30s(self):
+        """Run simple inject sequence with 30 second contact time using internal pumps."""
+        logger.info("💉 Starting 30s inject sequence (internal pumps)")
+        
+        # Check if sync mode is active
+        is_synced = False
+        if hasattr(self.main_window.sidebar, 'internal_pump_sync_btn'):
+            is_synced = self.main_window.sidebar.internal_pump_sync_btn.isChecked()
+        
+        # When synced, inject with both pumps using synced settings
+        if is_synced:
+            channel = 3  # Both pumps
+            if hasattr(self.main_window.sidebar, 'synced_rpm_spin'):
+                rpm = self.main_window.sidebar.synced_rpm_spin.value()
+                correction = getattr(self.main_window.sidebar.synced_correction_spin, 'value', lambda: 1.0)()
+            else:
+                rpm = 100
+                correction = 1.0
+            pump_name = "Both Pumps (Synced)"
+        else:
+            # When not synced, use pump 1 settings for injection
+            channel = 1  # Pump 1
+            if hasattr(self.main_window.sidebar, 'pump1_rpm_spin'):
+                rpm = self.main_window.sidebar.pump1_rpm_spin.value()
+                correction = getattr(self.main_window.sidebar.pump1_correction_spin, 'value', lambda: 1.0)()
+            else:
+                rpm = 100
+                correction = 1.0
+            pump_name = "Pump 1"
+        
+        ctrl = self.hardware_mgr._ctrl_raw
+        if not ctrl:
+            from affilabs.widgets.message import show_message
+            show_message("Controller not connected", "Warning")
+            return
+        
+        if hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
+            rpm_corrected = rpm * correction
+            
+            logger.info(f"💉 Inject {pump_name}: {rpm_corrected:.1f} RPM with 30s valve contact time")
+            
+            # Start pump(s) first
+            success = ctrl.pump_start(rate_ul_min=rpm_corrected, ch=channel)
+            
+            if success:
+                logger.info(f"✓ Pumps started at {rpm_corrected:.1f} RPM")
+                # Update status
+                self._update_internal_pump_status(f"Injecting: {rpm_corrected:.0f} RPM", running=True)
+                
+                # Check if valve sync is enabled
+                valve_sync_enabled = False
+                if hasattr(self.main_window.sidebar, 'sync_valve_btn'):
+                    valve_sync_enabled = self.main_window.sidebar.sync_valve_btn.isChecked()
+                
+                # Turn on 6-port valve(s) for 30-second contact time
+                # Use both valves if sync enabled, otherwise just KC1
+                try:
+                    import time
+                    if valve_sync_enabled:
+                        # Control both valves simultaneously: state=1 (inject position)
+                        valve_success = ctrl.knx_six_both(state=1, timeout_seconds=None)
+                        if valve_success:
+                            logger.info(f"✓ Both 6-port valves → INJECT - 30s contact time started")
+                        else:
+                            logger.warning("Failed to activate both 6-port valves")
+                    else:
+                        # Control KC1 only: state=1 (inject position), channel=1
+                        valve_success = ctrl.knx_six(state=1, ch=1, timeout_seconds=None)
+                        if valve_success:
+                            logger.info(f"✓ KC1 6-port valve → INJECT - 30s contact time started")
+                        else:
+                            logger.warning("Failed to activate KC1 6-port valve")
+                    time.sleep(0.1)  # Brief settle time
+                except Exception as e:
+                    logger.warning(f"Could not activate 6-port valve: {e}")
+                
+                # Schedule valve close after 30 seconds (contact time)
+                # NOTE: Pumps continue running after valve closes - user must stop manually
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(30000, lambda: self._close_inject_valve())
+            else:
+                logger.error(f"✗ Failed to start inject sequence")
+        else:
+            from affilabs.widgets.message import show_message
+            show_message("Internal pumps not available. P4PRO+ V2.3+ required.", "Warning")
+
+    def _close_inject_valve(self):
+        """Close 6-port valve after 30-second contact time ends.
+        
+        NOTE: Pumps continue running - this only closes the valve.
+        User must manually stop pumps using toggle buttons.
+        """
+        ctrl = self.hardware_mgr._ctrl_raw
+        if ctrl and hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
+            # Check if valve sync is enabled
+            valve_sync_enabled = False
+            if hasattr(self.main_window.sidebar, 'sync_valve_btn'):
+                valve_sync_enabled = self.main_window.sidebar.sync_valve_btn.isChecked()
+            
+            # Turn off 6-port valve(s) (end of 30s contact time)
+            try:
+                if valve_sync_enabled:
+                    # Return both valves to LOAD position (state=0)
+                    valve_success = ctrl.knx_six_both(state=0, timeout_seconds=None)
+                    if valve_success:
+                        logger.info(f"✓ Both 6-port valves → LOAD - 30s contact time complete (pumps still running)")
+                    else:
+                        logger.warning("Failed to return both 6-port valves to LOAD")
+                else:
+                    # Return KC1 to LOAD position (state=0, channel=1)
+                    valve_success = ctrl.knx_six(state=0, ch=1, timeout_seconds=None)
+                    if valve_success:
+                        logger.info(f"✓ KC1 6-port valve → LOAD - 30s contact time complete (pumps still running)")
+                    else:
+                        logger.warning("Failed to return KC1 6-port valve to LOAD")
+            except Exception as e:
+                logger.warning(f"Could not close 6-port valve: {e}")
+            
+            # Update status to show pumps are still running but contact time is over
+            self._update_internal_pump_status("Pumps running (contact complete)", running=True)
+    
+    def _update_internal_pump_status(self, text: str, running: bool = False):
+        """Update internal pump status display.
+        
+        Args:
+            text: Status text to display
+            running: True if pumps are running (green), False if idle (grey)
+        """
+        if hasattr(self.main_window.sidebar, 'internal_pump_status_label'):
+            self.main_window.sidebar.internal_pump_status_label.setText(text)
+        if hasattr(self.main_window.sidebar, 'internal_pump_status_icon'):
+            color = "#34C759" if running else "#86868B"
+            self.main_window.sidebar.internal_pump_status_icon.setStyleSheet(
+                f"color: {color}; font-size: 14px; background: transparent;"
+            )
+    
+    def _sync_pump_button_states(self):
+        """Sync pump button UI states with tracked running state.
+        
+        Called after hardware reconnection or when UI needs to reflect actual pump state.
+        """
+        # Pump 1 button
+        if hasattr(self.main_window.sidebar, 'pump1_toggle_btn'):
+            btn = self.main_window.sidebar.pump1_toggle_btn
+            btn.blockSignals(True)
+            btn.setChecked(self._pump1_running)
+            btn.setText("■ Stop" if self._pump1_running else "▶ Start")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.blockSignals(False)
+        
+        # Pump 2 button
+        if hasattr(self.main_window.sidebar, 'pump2_toggle_btn'):
+            btn = self.main_window.sidebar.pump2_toggle_btn
+            btn.blockSignals(True)
+            btn.setChecked(self._pump2_running)
+            btn.setText("■ Stop" if self._pump2_running else "▶ Start")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.blockSignals(False)
+        
+        # Synced pumps button
+        if hasattr(self.main_window.sidebar, 'synced_toggle_btn'):
+            btn = self.main_window.sidebar.synced_toggle_btn
+            btn.blockSignals(True)
+            btn.setChecked(self._synced_pumps_running)
+            btn.setText("■ Stop" if self._synced_pumps_running else "▶ Start")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            btn.blockSignals(False)
+
+    def _on_synced_rpm_changed(self):
+        """Handle RPM change in synced controls - update running pumps in real-time.
+        
+        Uses 300ms debouncing to prevent rapid command flooding that could
+        violate the firmware's 150ms command spacing requirement.
+        """
+        # Cancel any pending update timer
+        if hasattr(self, '_synced_rpm_timer') and self._synced_rpm_timer is not None:
+            self._synced_rpm_timer.stop()
+            self._synced_rpm_timer = None
+        
+        # Schedule update after 300ms of no changes (debouncing)
+        from PySide6.QtCore import QTimer
+        self._synced_rpm_timer = QTimer()
+        self._synced_rpm_timer.setSingleShot(True)
+        self._synced_rpm_timer.timeout.connect(self._update_synced_rpm)
+        self._synced_rpm_timer.start(300)
+    
+    def _update_synced_rpm(self):
+        """Actually update synced pump RPM (called after debounce delay)."""
+        # Only update if pumps are currently running
+        if not hasattr(self.main_window.sidebar, 'synced_toggle_btn'):
+            return
+        
+        is_running = self.main_window.sidebar.synced_toggle_btn.isChecked()
+        if not is_running:
+            return  # Pump not running, no need to update
+        
+        # Get new RPM value
+        if not hasattr(self.main_window.sidebar, 'synced_rpm_spin'):
+            return
+        
+        rpm = self.main_window.sidebar.synced_rpm_spin.value()
+        correction = getattr(self.main_window.sidebar.synced_correction_spin, 'value', lambda: 1.0)()
+        rpm_corrected = rpm * correction
+        
+        # Update running pumps with new RPM
+        ctrl = self.hardware_mgr._ctrl_raw
+        if not ctrl or not hasattr(ctrl, 'has_internal_pumps') or not ctrl.has_internal_pumps():
+            return
+        
+        logger.info(f"🔄 Updating synced pump speed: {rpm_corrected:.1f} RPM")
+        
+        # P4PROPLUS allows changing speed while running - just send new start command
+        success = ctrl.pump_start(rate_ul_min=rpm_corrected, ch=3)
+        if success:
+            logger.info(f"✓ Synced pumps speed updated to {rpm_corrected:.1f} RPM")
+            self._update_internal_pump_status(f"Both Pumps: {rpm_corrected:.0f} RPM", running=True)
+        else:
+            logger.error(f"✗ Failed to update synced pump speed")
+    
+    def _on_pump1_rpm_changed(self):
+        """Handle RPM change for pump 1 - update if currently running.
+        
+        Uses 300ms debouncing to prevent rapid command flooding that could
+        violate the firmware's 150ms command spacing requirement.
+        """
+        # Cancel any pending update timer
+        if hasattr(self, '_pump1_rpm_timer') and self._pump1_rpm_timer is not None:
+            self._pump1_rpm_timer.stop()
+            self._pump1_rpm_timer = None
+        
+        # Schedule update after 300ms of no changes (debouncing)
+        from PySide6.QtCore import QTimer
+        self._pump1_rpm_timer = QTimer()
+        self._pump1_rpm_timer.setSingleShot(True)
+        self._pump1_rpm_timer.timeout.connect(self._update_pump1_rpm)
+        self._pump1_rpm_timer.start(300)
+    
+    def _update_pump1_rpm(self):
+        """Actually update pump 1 RPM (called after debounce delay)."""
+        if not hasattr(self.main_window.sidebar, 'pump1_toggle_btn'):
+            logger.debug("pump1_rpm_changed: toggle_btn not found")
+            return
+        
+        is_running = self.main_window.sidebar.pump1_toggle_btn.isChecked()
+        logger.debug(f"pump1_rpm_changed: is_running={is_running}")
+        if not is_running:
+            return  # Pump not running, no need to update
+        
+        if not hasattr(self.main_window.sidebar, 'pump1_rpm_spin'):
+            logger.debug("pump1_rpm_changed: rpm_spin not found")
+            return
+        
+        rpm = self.main_window.sidebar.pump1_rpm_spin.value()
+        correction = getattr(self.main_window.sidebar.pump1_correction_spin, 'value', lambda: 1.0)()
+        rpm_corrected = rpm * correction
+        
+        ctrl = self.hardware_mgr._ctrl_raw
+        if not ctrl or not hasattr(ctrl, 'has_internal_pumps') or not ctrl.has_internal_pumps():
+            logger.debug("pump1_rpm_changed: no internal pumps available")
+            return
+        
+        logger.info(f"🔄 Updating pump 1 speed: {rpm_corrected:.1f} RPM (from spinbox value {rpm})")
+        
+        success = ctrl.pump_start(rate_ul_min=rpm_corrected, ch=1)
+        if success:
+            logger.info(f"✓ Pump 1 speed updated to {rpm_corrected:.1f} RPM")
+            self._update_internal_pump_status(f"Pump 1: {rpm_corrected:.0f} RPM", running=True)
+        else:
+            logger.error(f"✗ Failed to update pump 1 speed")
+    
+    def _on_pump2_rpm_changed(self):
+        """Handle RPM change for pump 2 - update if currently running.
+        
+        Uses 300ms debouncing to prevent rapid command flooding that could
+        violate the firmware's 150ms command spacing requirement.
+        """
+        # Cancel any pending update timer
+        if hasattr(self, '_pump2_rpm_timer') and self._pump2_rpm_timer is not None:
+            self._pump2_rpm_timer.stop()
+            self._pump2_rpm_timer = None
+        
+        # Schedule update after 300ms of no changes (debouncing)
+        from PySide6.QtCore import QTimer
+        self._pump2_rpm_timer = QTimer()
+        self._pump2_rpm_timer.setSingleShot(True)
+        self._pump2_rpm_timer.timeout.connect(self._update_pump2_rpm)
+        self._pump2_rpm_timer.start(300)
+    
+    def _update_pump2_rpm(self):
+        """Actually update pump 2 RPM (called after debounce delay)."""
+        if not hasattr(self.main_window.sidebar, 'pump2_toggle_btn'):
+            return
+        
+        is_running = self.main_window.sidebar.pump2_toggle_btn.isChecked()
+        if not is_running:
+            return  # Pump not running, no need to update
+        
+        if not hasattr(self.main_window.sidebar, 'pump2_rpm_spin'):
+            return
+        
+        rpm = self.main_window.sidebar.pump2_rpm_spin.value()
+        correction = getattr(self.main_window.sidebar.pump2_correction_spin, 'value', lambda: 1.0)()
+        rpm_corrected = rpm * correction
+        
+        ctrl = self.hardware_mgr._ctrl_raw
+        if not ctrl or not hasattr(ctrl, 'has_internal_pumps') or not ctrl.has_internal_pumps():
+            return
+        
+        logger.info(f"🔄 Updating pump 2 speed: {rpm_corrected:.1f} RPM")
+        
+        success = ctrl.pump_start(rate_ul_min=rpm_corrected, ch=2)
+        if success:
+            logger.info(f"✓ Pump 2 speed updated to {rpm_corrected:.1f} RPM")
+            self._update_internal_pump_status(f"Pump 2: {rpm_corrected:.0f} RPM", running=True)
+        else:
+            logger.error(f"✗ Failed to update pump 2 speed")
 
     def _on_valve_sync_toggled(self, checked: bool):
         """User toggled valve synchronization.
@@ -3986,6 +4776,37 @@ class Application(QApplication):
         else:
             logger.info("Pump calibration dialog cancelled")
 
+    def _on_internal_pump_calibrate_timing_clicked(self):
+        """User clicked Calibrate Timing button for internal peristaltic pumps.
+        
+        Launches automated timing calibration to synchronize pump arrival times
+        at the detector by running test injections and calculating correction factors.
+        """
+        logger.info("⏱ Internal pump timing calibration requested")
+
+        ctrl = self.hardware_mgr.ctrl
+        if not ctrl:
+            from affilabs.widgets.message import show_message
+            show_message("Controller not connected. Connect P4PRO/EZSPR to use internal pumps.", "Warning")
+            return
+
+        # Check for P4PROPLUS with internal pumps
+        if not hasattr(ctrl, 'has_internal_pumps') or not ctrl.has_internal_pumps():
+            from affilabs.widgets.message import show_message
+            show_message("P4PROPLUS with internal pumps required for timing calibration.", "Warning")
+            return
+
+        # Import and run timing calibration dialog
+        from affilabs.ui.pump_timing_calibration_dialog import PumpTimingCalibrationDialog
+        
+        dialog = PumpTimingCalibrationDialog(controller=ctrl, parent=self.main_window)
+        result = dialog.exec()
+        
+        if result == dialog.DialogCode.Accepted:
+            logger.info("✓ Pump timing calibration completed")
+        else:
+            logger.info("Pump timing calibration cancelled or failed")
+
     def _on_internal_pump_flowrate_changed(self, flowrate_text: str):
         """User changed internal pump flow rate.
 
@@ -4041,6 +4862,28 @@ class Application(QApplication):
     def _cleanup_resources(self, emergency: bool = False):
         """Consolidated cleanup logic for all shutdown paths."""
         from affilabs.utils.resource_helpers import ResourceHelpers
+        
+        # Turn off all LEDs gracefully
+        try:
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                ctrl = getattr(self.hardware_mgr, 'ctrl', None)
+                if ctrl and hasattr(ctrl, 'turn_off_channels'):
+                    logger.info("💡 Turning off all LEDs gracefully...")
+                    ctrl.turn_off_channels()
+                    logger.info("✓ All LEDs turned off")
+        except Exception as e:
+            logger.debug(f"Could not turn off LEDs during cleanup: {e}")
+        
+        # Gracefully stop internal pumps if running
+        try:
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                ctrl = getattr(self.hardware_mgr, '_ctrl_raw', None)
+                if ctrl and hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
+                    logger.info("⏹️ Stopping internal pumps gracefully...")
+                    ctrl.pump_stop(ch=3)  # Stop all pumps (channel 3 = both)
+                    logger.info("✓ Internal pumps stopped")
+        except Exception as e:
+            logger.debug(f"Could not stop internal pumps during cleanup: {e}")
 
         ResourceHelpers.cleanup_resources(self, emergency)
 
@@ -5628,7 +6471,7 @@ class Application(QApplication):
             self.calibration.calibration_started.emit()
             logger.info("[OK] Calibration thread started (using existing dialog)")
 
-        dialog.start_requested.connect(on_start)
+        dialog.start_clicked.connect(on_start)
         dialog.show()
 
     def _on_led_model_training(self):
@@ -6085,6 +6928,51 @@ class Application(QApplication):
         """
         logger.debug("Updating Device Status UI via ViewModel...")
 
+        # Treat P4PROPLUS internal pumps as a flow-capable pump for UI purposes
+        try:
+            has_internal_pumps = False
+
+            # Prefer raw controller from HardwareManager (has firmware_id/has_internal_pumps)
+            if hasattr(self, "hardware_mgr") and self.hardware_mgr:
+                raw_ctrl = getattr(self.hardware_mgr, "_ctrl_raw", None)
+                if raw_ctrl is not None:
+                    if hasattr(raw_ctrl, "firmware_id") and raw_ctrl.firmware_id:
+                        try:
+                            fw_id = str(raw_ctrl.firmware_id).lower()
+                            if "p4proplus" in fw_id:
+                                has_internal_pumps = True
+                        except Exception:
+                            pass
+                    if (not has_internal_pumps and
+                            hasattr(raw_ctrl, "has_internal_pumps")):
+                        try:
+                            has_internal_pumps = bool(raw_ctrl.has_internal_pumps())
+                        except Exception:
+                            pass
+
+            # Fallback to HAL controller adapter if present
+            if (not has_internal_pumps and
+                    hasattr(self, "ctrl") and self.ctrl and
+                    hasattr(self.ctrl, "has_internal_pumps")):
+                try:
+                    has_internal_pumps = bool(self.ctrl.has_internal_pumps())
+                except Exception:
+                    pass
+
+            # If we have internal pumps but no external AffiPump flag, mark pump_connected
+            if has_internal_pumps and not status.get("pump_connected"):
+                status["pump_connected"] = True
+                logger.info(
+                    "[UI] P4PROPLUS internal pumps detected - treating as flow-capable pump (pump_connected=True)",
+                )
+            
+            # NOTE: fluidics_ready should NOT be set here - it should be set AFTER calibration
+            # by the hardware_manager when flow_calibrated becomes True
+            # Premature fluidics_ready causes flow button to turn green before calibration
+        except Exception as e:
+            # Never let UI status updates crash the app
+            logger.debug(f"Error while inferring internal pump capability: {e}")
+
         # Update ViewModel with hardware status (Phase 1.3+1.4 integration)
         # ViewModel will emit signals that trigger UI updates
         if status.get("ctrl_type"):
@@ -6134,6 +7022,7 @@ class Application(QApplication):
                 logger.debug("✓ Started valve position polling (3s interval)")
 
         # Forward to main window for hardware list and subunit readiness updates
+        logger.debug(f"📤 Forwarding status to main_window.update_hardware_status: flow_calibrated={status.get('flow_calibrated', 'NOT SET')}")
         self.main_window.update_hardware_status(status)
 
         # Log concise hardware summary

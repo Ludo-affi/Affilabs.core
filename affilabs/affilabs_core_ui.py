@@ -4429,13 +4429,15 @@ class AffilabsMainWindow(QMainWindow):
         ctrl_type = status.get("ctrl_type")
 
         # Map internal names to display names
-        # Valid hardware: P4SPR, P4PRO, ezSPR, KNX, AffiPump
-        # Common pairings: P4SPR+KNX, P4PRO+AffiPump
+        # Valid hardware: P4SPR, P4PRO, P4PROPLUS, ezSPR, KNX, AffiPump
+        # Common pairings: P4SPR+KNX, P4PRO+AffiPump, P4PROPLUS (internal pumps)
         CONTROLLER_DISPLAY_NAMES = {
             "PicoP4SPR": "P4SPR",
             "P4SPR": "P4SPR",
             "PicoP4PRO": "P4PRO",
             "P4PRO": "P4PRO",
+            "P4PROPLUS": "P4PRO+",
+            "PicoP4PROPLUS": "P4PRO+",
             "PicoEZSPR": "P4PRO",  # PicoEZSPR hardware = P4PRO product
             "EZSPR": "ezSPR",
             "ezSPR": "ezSPR",
@@ -4454,8 +4456,6 @@ class AffilabsMainWindow(QMainWindow):
                 devices.append(display_name)
             else:
                 # Unknown controller - log warning but don't display
-                from affilabs.utils.logger import logger
-
                 logger.warning(
                     f"⚠️ Unknown controller type '{ctrl_type}' - not displayed in Hardware Connected",
                 )
@@ -4468,15 +4468,18 @@ class AffilabsMainWindow(QMainWindow):
                 devices.append(display_name)
             else:
                 # Unknown kinetic type - log warning but don't display
-                from affilabs.utils.logger import logger
-
                 logger.warning(
                     f"⚠️ Unknown kinetic type '{knx_type}' - not displayed in Hardware Connected",
                 )
 
-        # Pump (AffiPump)
+        # Pump (AffiPump) - only show if external pump actually connected
+        # Don't show "AffiPump" for P4PROPLUS internal pumps
         if status.get("pump_connected"):
-            devices.append("AffiPump")
+            # Check if this is external AffiPump or P4PROPLUS internal pumps
+            # P4PROPLUS sets pump_connected=True but shouldn't display as "AffiPump"
+            is_p4proplus_internal = ctrl_type in ["P4PROPLUS", "PicoP4PROPLUS"]
+            if not is_p4proplus_internal:
+                devices.append("AffiPump")
 
         # Update device labels
         for i, label in enumerate(self.sidebar.hw_device_labels):
@@ -4497,12 +4500,11 @@ class AffilabsMainWindow(QMainWindow):
         self._update_subunit_readiness_from_status(status)
 
         # Update operation mode availability based on hardware
+        logger.debug(f"📥 update_hardware_status received: flow_calibrated={status.get('flow_calibrated', 'NOT SET')}")
         self._update_operation_modes(status)
 
     def _update_subunit_readiness_from_status(self, status: dict[str, Any]) -> None:
         """Update subunit readiness based on hardware verification results."""
-        from affilabs.utils.logger import logger
-        
         # Sensor readiness
         if "sensor_ready" in status:
             logger.info(f"[UI] Setting Sensor readiness: {status['sensor_ready']}")
@@ -4520,8 +4522,11 @@ class AffilabsMainWindow(QMainWindow):
 
         # Fluidics readiness
         if "fluidics_ready" in status:
-            logger.info(f"[UI] Setting Fluidics readiness: {status['fluidics_ready']}")
-            self._set_subunit_status("Fluidics", status["fluidics_ready"])
+            fluidics_ready = status["fluidics_ready"]
+            logger.info(f"[UI] Setting Fluidics readiness: {fluidics_ready}")
+            logger.info(f"[UI] Full status dict keys: {list(status.keys())}")
+            logger.info(f"[UI] pump_connected={status.get('pump_connected')}, flow_calibrated={status.get('flow_calibrated')}")
+            self._set_subunit_status("Fluidics", fluidics_ready)
 
     def _set_subunit_status(
         self,
@@ -4656,11 +4661,18 @@ class AffilabsMainWindow(QMainWindow):
         # Static mode is available if we have detector AND PCB (regardless of pump)
         static_available = detector_ready and pcb_ready
 
-        # Flow mode is available when pump is detected (show green indicator)
-        # Full flow operation requires static mode hardware + pump
-        flow_available = has_pump
+        # Flow mode requires calibration to be completed (not just pump detection)
+        # During initial connection, flow indicators stay grey until calibration completes
+        # After calibration, flow_available will be set based on pump presence
+        # For P4PROPLUS (internal pumps) and other flow controllers, still needs calibration
+        flow_available = status.get("flow_calibrated", False)  # Enabled after calibration completes
         
-        logger.debug(f"🔄 Operation modes update: has_pump={has_pump}, flow_available={flow_available}, static_available={static_available}")
+        logger.info(f"🔄 Operation modes update:")
+        logger.info(f"   ctrl_type={ctrl_type}")
+        logger.info(f"   pump_connected={has_pump}")
+        logger.info(f"   flow_calibrated={status.get('flow_calibrated', 'NOT IN STATUS DICT')}")
+        logger.info(f"   flow_available={flow_available} (THIS CONTROLS GREEN/GRAY)")
+        logger.info(f"   static_available={static_available}")
 
         # P4SPR static device - only Static mode
         if ctrl_type in ["P4SPR", "PicoP4SPR"]:
@@ -5609,7 +5621,7 @@ End of Debug Log
 
         Loads:
         - Servo positions (S/P) from device_config (immutable, set at init)
-        - LED intensities (A/B/C/D) preferring calibrated P-mode final intensities,
+        - LED brightness (A/B/C/D) preferring calibrated P-mode final brightness,
           falling back to current hardware state or device config
         
         Args:
@@ -5645,7 +5657,7 @@ End of Debug Log
                         led_intensities = dict(cd.p_mode_intensities)
                         source = "calibration"
             except Exception as e:
-                logger.warning(f"Failed to read calibrated P-mode intensities: {e}")
+                logger.warning(f"Failed to read calibrated P-mode brightness: {e}")
 
             # Fallback to current hardware or device config
             if not source:
@@ -5655,12 +5667,12 @@ End of Debug Log
                         source = "hardware"
                     except Exception as e:
                         logger.warning(
-                            f"Failed to query LED intensities from hardware: {e} - using config values",
+                            f"Failed to query LED brightness from hardware: {e} - using config values",
                         )
                         led_intensities = self.device_config.get_led_intensities()
                         source = "config"
                 else:
-                    logger.info("Hardware not connected - loading LED intensities from config")
+                    logger.info("Hardware not connected - loading LED brightness from config")
                     led_intensities = self.device_config.get_led_intensities()
                     source = "config"
 
@@ -5771,6 +5783,18 @@ End of Debug Log
             dialog.nm_btn.setChecked(
                 self.nm_btn.isChecked() if hasattr(self, "nm_btn") else False,
             )
+
+        # Load calibration parameters if available
+        if hasattr(self, "app") and self.app and hasattr(self.app, "data_mgr") and self.app.data_mgr:
+            calibration_data = getattr(self.app.data_mgr, "calibration_data", None)
+            if calibration_data:
+                dialog.load_calibration_params(calibration_data)
+                logger.info("✓ Loaded calibration parameters into Advanced Settings")
+
+        # Load device info if available
+        if self.device_config:
+            device_serial = self.device_config.get_serial_number() if hasattr(self.device_config, "get_serial_number") else "Not detected"
+            dialog.load_device_info(serial=device_serial)
 
         # Show dialog
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -6055,10 +6079,22 @@ End of Debug Log
         # ElementInspector.install_inspector(self)
 
     def closeEvent(self, event):
-        """Handle application close event - show unplug reminder if hardware connected."""
+        """Handle application close event - shutdown LEDs gracefully and show unplug reminder if hardware connected."""
         try:
             from PySide6.QtWidgets import QApplication, QMessageBox
             app_instance = QApplication.instance()
+            
+            # Turn off all LEDs before closing
+            if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
+                hw_mgr = app_instance.hardware_mgr
+                if hasattr(hw_mgr, 'ctrl') and hw_mgr.ctrl:
+                    try:
+                        logger.info("💡 Shutting down LEDs before close...")
+                        hw_mgr.ctrl.turn_off_channels()
+                        logger.info("✓ LEDs turned off gracefully")
+                    except Exception as e:
+                        logger.warning(f"Could not turn off LEDs: {e}")
+            
             devices_to_unplug = []
             if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
                 hw_mgr = app_instance.hardware_mgr

@@ -122,12 +122,19 @@ class SaturationPolicy:
         saturation: Dict[str, int],
         current_integration_ms: float,
         params: DetectorParams,
+        polarization_mode: str = "S",  # S or P polarization
     ) -> float:
         """Reduce integration time based on saturation severity.
 
-        More aggressive reduction for severe saturation to break out of
-        saturation spirals faster.
+        CRITICAL: P-pol NEVER reduces integration time!
+        P-pol transmission is always lower than S-pol, so if S-pol converged
+        successfully, P-pol will never saturate starting from same values.
         """
+        # P-pol: NEVER reduce integration time
+        if polarization_mode.upper() == "P":
+            return current_integration_ms  # No reduction for P-pol!
+        
+        # S-pol: Less aggressive reduction, prefer LED adjustment
         total_sat = sum(saturation.values())
         if total_sat == 0:
             return current_integration_ms
@@ -135,17 +142,14 @@ class SaturationPolicy:
         max_sat = max(saturation.values()) if saturation else 0
         num_saturating = sum(1 for s in saturation.values() if s > 0)
 
-        # Graduated reduction based on severity
-        if max_sat > 100:  # Very severe
-            factor = 0.50  # Cut in half
-        elif max_sat > 50:  # Severe
-            factor = 0.60
-        elif max_sat > 20:  # Moderate
-            factor = 0.75
-        elif num_saturating >= 3:  # Multiple channels saturating
-            factor = 0.70
-        else:  # Mild
-            factor = 0.85
+        # MUCH less aggressive - prefer LED brightness reduction
+        # Only cut integration when ALL channels are severely saturating
+        if num_saturating == 4 and max_sat > 100:  # All 4 channels severely saturating
+            factor = 0.85  # Max 15% reduction
+        elif num_saturating == 4 and max_sat > 50:  # All 4 channels moderately saturating  
+            factor = 0.90  # 10% reduction
+        else:  # 1-3 channels saturating - minimal reduction, let LED adjustment handle it
+            factor = 0.95  # Only 5% reduction
 
         new_time = max(params.min_integration_time, current_integration_ms * factor)
         return new_time

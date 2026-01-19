@@ -388,16 +388,16 @@ class SettingsTabBuilder:
         layout.addLayout(polarizer_row)
 
     def _build_led_settings(self, layout: QVBoxLayout):
-        """Build LED intensity settings for channels A, B, C, D."""
-        led_intensity_label = QLabel("LED Intensity per Channel:")
-        led_intensity_label.setStyleSheet(
+        """Build LED brightness settings for channels A, B, C, D."""
+        led_brightness_label = QLabel("LED Brightness per Channel:")
+        led_brightness_label.setStyleSheet(
             "font-size: 13px;"
             "color: #1D1D1F;"
             "background: transparent;"
             "font-weight: 500;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
-        layout.addWidget(led_intensity_label)
+        layout.addWidget(led_brightness_label)
 
         # Create channel inputs (A, B, C, D)
         channels = ["a", "b", "c", "d"]
@@ -418,7 +418,7 @@ class SettingsTabBuilder:
             channel_input = QLineEdit()
             channel_input.setPlaceholderText("0-255")
             channel_input.setToolTip(
-                f"LED intensity for Channel {channel.upper()} (0-255)",
+                f"LED brightness for Channel {channel.upper()} (0-255)",
             )
             channel_input.setFixedWidth(70)
             channel_input.setStyleSheet(self._lineedit_style())

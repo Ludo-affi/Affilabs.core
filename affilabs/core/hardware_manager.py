@@ -164,9 +164,11 @@ class HardwareManager(QObject):
         # Verification and calibration state
         self._sensor_verified = False
         self._optics_verified = False
+        self._fluidics_verified = False
         self._calibration_passed = False
         self._afterglow_calibration_done = False
         self._optics_leak_detected = False
+        self._flow_calibrated = False  # Flow mode enabled after successful calibration with pump
 
         # Intensity/leak tracking structures
         self._channel_intensity_history = {"a": [], "b": [], "c": [], "d": []}
@@ -1005,21 +1007,33 @@ class HardwareManager(QObject):
 
     def _connect_controller(self) -> None:
         """Attempt to connect to SPR controller."""
-        # CRITICAL SAFEGUARD: Prevent reconnection if controller already connected
+        # CRITICAL SAFEGUARD: Prevent reconnection if controller already connected AND actually open
         if self.ctrl is not None:
             try:
-                controller_name = self.ctrl.get_device_type() if self.ctrl else None
-                logger.warning(
-                    f"⚠️ Controller already connected ({controller_name}) - skipping scan",
-                )
-                logger.warning(
-                    "  If this is unexpected, the previous connection did not properly clean up!"
-                )
-                logger.warning(f"  Current ctrl object: {self.ctrl}")
-                return
+                # Check if the controller is actually open (has a live serial connection)
+                is_open = False
+                if hasattr(self, '_ctrl_raw') and self._ctrl_raw is not None:
+                    if hasattr(self._ctrl_raw, '_ser') and self._ctrl_raw._ser is not None:
+                        is_open = True
+                
+                if is_open:
+                    controller_name = self.ctrl.get_device_type() if self.ctrl else None
+                    logger.warning(
+                        f"⚠️ Controller already connected ({controller_name}) - skipping scan",
+                    )
+                    logger.warning(
+                        "  If this is unexpected, the previous connection did not properly clean up!"
+                    )
+                    logger.warning(f"  Current ctrl object: {self.ctrl}")
+                    return
+                else:
+                    # Controller adapter exists but no live connection - clear and rescan
+                    logger.info("Controller adapter present but not open - clearing and rescanning...")
+                    self.ctrl = None
+                    self._ctrl_raw = None
             except Exception as e:
                 # If we can't check name, proceed with connection attempt
-                logger.warning(f"Controller object present but name lookup failed: {e}")
+                logger.warning(f"Controller object present but state check failed: {e}")
                 logger.info("Clearing stale controller and continuing scan...")
                 self.ctrl = None
                 self._ctrl_raw = None
@@ -1283,6 +1297,7 @@ class HardwareManager(QObject):
         Returns standardized hardware names for UI display:
         - P4SPR: Basic SPR controller (PicoP4SPR)
         - P4PRO: Advanced SPR controller with servo polarizer (PicoP4PRO)
+        - P4PROPLUS: P4PRO with internal peristaltic pumps (PicoP4PRO V2.3+)
         - ezSPR: Standalone easy-to-use SPR controller (PicoEZSPR)
         - AFFINITE: Integrated SPR with pump (PicoAFFINITE)
 
@@ -1299,6 +1314,17 @@ class HardwareManager(QObject):
         if device_type == "PicoP4SPR":
             return "P4SPR"
         elif device_type == "PicoP4PRO":
+            # Check if P4PRO has internal pumps (P4PROPLUS)
+            if hasattr(self, '_ctrl_raw') and self._ctrl_raw:
+                if hasattr(self._ctrl_raw, 'firmware_id') and self._ctrl_raw.firmware_id:
+                    if 'p4proplus' in str(self._ctrl_raw.firmware_id).lower():
+                        return "P4PROPLUS"
+                elif hasattr(self._ctrl_raw, 'has_internal_pumps'):
+                    try:
+                        if self._ctrl_raw.has_internal_pumps():
+                            return "P4PROPLUS"
+                    except Exception:
+                        pass
             return "P4PRO"
         elif device_type == "PicoEZSPR":
             return "ezSPR"
@@ -1333,6 +1359,7 @@ class HardwareManager(QObject):
         """
         self._sensor_verified = False
         self._optics_verified = False
+        self._fluidics_verified = False
 
         if not self.usb or not self.ctrl:
             logger.warning("Cannot verify sensor/optics: hardware not connected")
@@ -1408,6 +1435,15 @@ class HardwareManager(QObject):
             # Mark as verified anyway if we have hardware - verification failed due to error, not hardware issue
             self._sensor_verified = self.usb is not None
             self._optics_verified = self.usb is not None
+        
+        # Verify fluidics (pump hardware present)
+        has_pump = self.pump is not None
+        if not has_pump and hasattr(self, '_ctrl_raw') and self._ctrl_raw:
+            try:
+                has_pump = bool(self._ctrl_raw.has_internal_pumps())
+            except (AttributeError, Exception):
+                pass
+        self._fluidics_verified = has_pump
 
     def update_calibration_status(
         self,
@@ -1707,17 +1743,26 @@ class HardwareManager(QObject):
 
     def _emit_hardware_status(self) -> None:
         """Emit current hardware status with updated verification flags."""
+        # Check if pump is connected (external AffiPump or internal P4PROPLUS pumps)
+        has_pump = self.pump is not None
+        if not has_pump and hasattr(self, '_ctrl_raw') and self._ctrl_raw:
+            try:
+                has_pump = bool(self._ctrl_raw.has_internal_pumps())
+            except (AttributeError, Exception):
+                pass
+        
         status = {
             "ctrl_type": self._get_controller_type(),
             "knx_type": self._get_kinetic_type(),
-            "pump_connected": self.pump is not None,
+            "pump_connected": has_pump,
             "spectrometer": "USB4000" if self.usb else None,
             "spectrometer_serial": self.usb.serial_number
             if self.usb and hasattr(self.usb, "serial_number")
             else None,
             "sensor_ready": self._sensor_verified,
             "optics_ready": self._optics_verified,
-            "fluidics_ready": self.pump is not None,
+            "fluidics_ready": self._fluidics_verified,  # Set during verification scan
+            "flow_calibrated": getattr(self, "_flow_calibrated", False),
         }
 
         self.hardware_connected.emit(status)
@@ -2002,6 +2047,7 @@ class HardwareManager(QObject):
         # Clear verification states
         self._sensor_verified = False
         self._optics_verified = False
+        self._fluidics_verified = False
         self._calibration_passed = False
         self._afterglow_calibration_done = False
 

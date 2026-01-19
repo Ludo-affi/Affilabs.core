@@ -209,9 +209,115 @@ class DeviceConfiguration:
             if not silent_load:
                 logger.info(f"✓ Saved EEPROM config to JSON: {self.config_path}")
 
+        # Ensure hardware identification in config matches the actual connected controller
+        # (e.g. correctly distinguish PicoP4PRO vs PicoP4PROPLUS based on firmware ID
+        #  and internal pump capabilities). This keeps the DEVICE CONFIGURATION SUMMARY
+        #  in sync with reality even if an older JSON file had stale controller_model.
+        if self.controller is not None:
+            try:
+                logger.info("Syncing controller config from connected hardware...")
+                self._sync_controller_from_hardware()
+            except Exception as e:
+                # Best-effort only – never fail config loading because of this
+                logger.error(f"Failed to sync controller hardware info from device: {e}", exc_info=True)
+
         if not silent_load:
             logger.info(f"Device configuration loaded from: {self.config_path}")
             self._log_config_summary()
+
+    def _sync_controller_from_hardware(self) -> None:
+        """Align controller-related hardware fields with the connected device.
+
+        This is especially important for distinguishing between PicoP4PRO and
+        PicoP4PROPLUS. Older configuration files may have "pico_p4pro" even
+        when the actual firmware is P4PROPLUS with internal pumps. We treat
+        the live controller as authoritative and update controller_type,
+        controller_model and polarizer_type when we can unambiguously detect
+        them from the hardware.
+        """
+
+        if self.controller is None:
+            logger.debug("_sync_controller_from_hardware: No controller provided")
+            return
+
+        hw = self.config.get("hardware", {})
+        old_model = hw.get("controller_model")
+        old_type = hw.get("controller_type")
+        old_polarizer = hw.get("polarizer_type")
+
+        # Read hardware attributes - use 'name' not 'device_name'
+        ctrl_name = getattr(self.controller, "name", "").lower()
+        firmware_id = getattr(self.controller, "firmware_id", "").lower()
+        
+        logger.info(f"   Controller name: {ctrl_name}")
+        logger.info(f"   Firmware ID: {firmware_id}")
+        logger.info(f"   Current config model: {old_model}")
+
+        new_model = old_model
+        new_type = old_type
+        new_polarizer = old_polarizer
+
+        # Mirror the auto-detection rules used when creating a fresh config
+        if "arduino" in ctrl_name or ctrl_name == "p4spr":
+            new_type = "Arduino"
+            new_model = "Arduino P4SPR"
+            new_polarizer = "round"  # Hardware rule: Arduino always uses round
+        elif "pico_p4spr" in ctrl_name or "picop4spr" in ctrl_name:
+            new_type = "PicoP4SPR"
+            new_model = "Raspberry Pi Pico P4SPR"
+            new_polarizer = "round"  # Hardware rule: PicoP4SPR always uses round
+        elif "pico_p4pro" in ctrl_name or "picop4pro" in ctrl_name or "p4pro" in firmware_id:
+            # P4PRO family – check if this is the PLUS variant with internal pumps
+            is_plus = "p4proplus" in firmware_id
+            try:
+                if not is_plus and hasattr(self.controller, "has_internal_pumps"):
+                    is_plus = bool(self.controller.has_internal_pumps())
+            except Exception:
+                # If has_internal_pumps() fails, fall back to firmware_id only
+                pass
+
+            if is_plus:
+                new_type = "PicoP4PROPLUS"
+                new_model = "pico_p4proplus"
+            else:
+                new_type = "PicoP4PRO"
+                new_model = "pico_p4pro"
+
+            # Hardware rule: all P4PRO variants use barrel polarizer
+            new_polarizer = "barrel"
+        elif "pico_ezspr" in ctrl_name or "picoezspr" in ctrl_name:
+            new_type = "PicoEZSPR"
+            new_model = "Raspberry Pi Pico EZSPR"
+            new_polarizer = "barrel"  # Typical for PicoEZSPR
+
+        changed = False
+        if new_model and new_model != old_model:
+            hw["controller_model"] = new_model
+            changed = True
+        if new_type and new_type != old_type:
+            hw["controller_type"] = new_type
+            changed = True
+        if new_polarizer and new_polarizer != old_polarizer:
+            hw["polarizer_type"] = new_polarizer
+            changed = True
+
+        if changed:
+            self.config["hardware"] = hw
+            # Update last_modified so JSON clearly reflects the new hardware ID
+            try:
+                self.config["device_info"]["last_modified"] = datetime.now().isoformat()
+            except Exception:
+                pass
+
+            logger.info(
+                f"Updated controller config: {old_model!r} -> {new_model!r} (type: {old_type!r} -> {new_type!r})"
+            )
+
+            # Persist the correction so future runs and logs stay in sync
+            self.save()
+            logger.info(f"Saved updated config to {self.config_path}")
+        else:
+            logger.info(f"Controller config already correct: {old_model}")
 
     def _load_or_create_config(self) -> dict[str, Any]:
         """Load configuration from file or create new with defaults.
@@ -434,6 +540,8 @@ class DeviceConfiguration:
         if self.controller is not None:
             try:
                 ctrl_name = getattr(self.controller, "device_name", "").lower()
+                firmware_id = getattr(self.controller, "firmware_id", "").lower()
+                
                 if "arduino" in ctrl_name or ctrl_name == "p4spr":
                     config["hardware"]["controller_type"] = "Arduino"
                     config["hardware"]["controller_model"] = "Arduino P4SPR"
@@ -451,6 +559,23 @@ class DeviceConfiguration:
                     )
                     logger.info(
                         "  ✓ Controller: PicoP4SPR (auto-set polarizer to 'round')",
+                    )
+                elif "pico_p4pro" in ctrl_name or "picop4pro" in ctrl_name or "p4pro" in firmware_id:
+                    # Check if it's the PLUS version with internal pumps
+                    if "p4proplus" in firmware_id or (hasattr(self.controller, 'has_internal_pumps') and self.controller.has_internal_pumps()):
+                        config["hardware"]["controller_type"] = "PicoP4PROPLUS"
+                        config["hardware"]["controller_model"] = "pico_p4proplus"
+                        logger.info(
+                            "  ✓ Controller: PicoP4PROPLUS (with internal pumps, auto-set polarizer to 'barrel')",
+                        )
+                    else:
+                        config["hardware"]["controller_type"] = "PicoP4PRO"
+                        config["hardware"]["controller_model"] = "pico_p4pro"
+                        logger.info(
+                            "  ✓ Controller: PicoP4PRO (auto-set polarizer to 'barrel')",
+                        )
+                    config["hardware"]["polarizer_type"] = (
+                        "barrel"  # Hardware rule: P4PRO uses barrel polarizer
                     )
                 elif "pico_ezspr" in ctrl_name or "picoezspr" in ctrl_name:
                     config["hardware"]["controller_type"] = "PicoEZSPR"

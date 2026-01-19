@@ -30,11 +30,9 @@ from .led_convergence_core import (
     check_convergence,
     measure_channel,
 )
-from .device_sensitivity_classifier import (
-    DeviceSensitivityClassifier,
-    SensitivityFeatures,
-    SensitivityLabel,
-)
+# Note: No device-specific classifiers in the core algorithm.
+# Device sensitivity handling (ML/rule-based) is handled upstream
+# in orchestrators/adapters when needed.
 
 
 def LEDconverge(
@@ -91,6 +89,10 @@ def LEDconverge(
     state = ConvergenceState()
     integration_ms = initial_integration_ms
 
+    # Convergence policy flags
+    freeze_integration = bool(getattr(config, "FREEZE_INTEGRATION", False))
+    allow_increase_only = bool(getattr(config, "ALLOW_INTEGRATION_INCREASE_ONLY", False))
+
     # Calculate target signal in counts
     target_signal = target_percent * detector_params.max_counts
     tolerance_signal = tolerance_percent * detector_params.max_counts
@@ -104,10 +106,12 @@ def LEDconverge(
     _log(logger, "info", f"  Starting LEDs: {led_intensities}")
     _log(logger, "info", f"{'='*80}\n")
 
-    # Sensitivity classifier
-    classifier = DeviceSensitivityClassifier()
-    high_sensitivity_detected = False
-    sensitivity_reason = ""
+    # Device-agnostic: no sensitivity classification in this core loop.
+
+    # CRITICAL: Track weakest LED priority and integration time lock
+    weakest_led_at_max = False
+    integration_locked = False
+    locked_integration_time = None
 
     # Main convergence loop
     for iteration in range(1, max_iterations + 1):
@@ -190,25 +194,34 @@ def LEDconverge(
                     break
 
         # If sequential and early saturation detected, reduce integration and retry
+        # CRITICAL: Respect FREEZE_INTEGRATION flag - P-MODE MUST NEVER REDUCE INTEGRATION!
+        # P-mode should maintain S-mode integration time and only adjust LEDs
         if (not config.PARALLEL_MEASUREMENTS) and early_sat_detected:
-            new_integration = calculate_integration_time_reduction(
-                sat_per_ch=sat_per_ch,
-                current_integration=integration_ms,
-                detector_params=detector_params,
-                config=config,
-                logger=logger,
-            )
-            if new_integration < integration_ms:
-                integration_ms = new_integration
-            # Restart iteration after integration change or saturation handling
-            yield_cb = getattr(config, "YIELD_CALLBACK", None)
-            if yield_cb is not None:
-                try:
-                    yield_cb()
-                except Exception:
-                    pass
-            # No sleep needed - hardware timing already handled in measurement
-            continue
+            if not freeze_integration and not allow_increase_only:
+                _log(logger, "info", "  ⚠️ Early saturation detected - reducing integration time")
+                new_integration = calculate_integration_time_reduction(
+                    sat_per_ch=sat_per_ch,
+                    current_integration=integration_ms,
+                    detector_params=detector_params,
+                    config=config,
+                    logger=logger,
+                )
+                if new_integration < integration_ms:
+                    integration_ms = new_integration
+                    # Restart iteration after integration change
+                    yield_cb = getattr(config, "YIELD_CALLBACK", None)
+                    if yield_cb is not None:
+                        try:
+                            yield_cb()
+                        except Exception:
+                            pass
+                    # No sleep needed - hardware timing already handled in measurement
+                    continue
+            else:
+                # Integration frozen - log and let main saturation handler reduce LEDs instead
+                _log(logger, "info", f"  🔒 Early saturation detected but integration FROZEN at {integration_ms:.1f}ms")
+                _log(logger, "info", "  ℹ️ Will reduce saturating channel LEDs instead (continuing to convergence check)")
+            # Fall through to convergence check - don't continue/restart iteration
 
         # STEP 2: Check convergence
         # For clarity, compute acceptance window in both counts and % of target
@@ -237,9 +250,8 @@ def LEDconverge(
             config=config,
         )
 
-        # Skip sensitivity classification - adds overhead without benefit for modern workflow
-        # Integration time is already constrained by DETECTOR_WINDOW_MS (180ms with 10 scans)
-        # Classifier logging removed to reduce console spam during calibration
+        # Device-agnostic: no sensitivity classification in algorithm.
+        # Integration time behavior is controlled by recipe/config and detector params.
 
         if converged:
             _log(logger, "info", f"\n✅ CONVERGED at iteration {iteration}!")
@@ -259,6 +271,36 @@ def LEDconverge(
 
         # Merge with sticky locks (persist from prior iterations at same integration)
         locked_channels |= set([ch for ch in state.get_locked() if sat_per_ch.get(ch, 0) == 0])
+
+        # Determine weakest channel with optional override from config
+        # If config.WEAKEST_CHANNEL_OVERRIDE is provided (e.g., from S-pol), honor it across polarizations
+        weakest_override = getattr(config, "WEAKEST_CHANNEL_OVERRIDE", None) if config is not None else None
+        if weakest_override in ch_list:
+            weakest_ch = weakest_override
+            _log(logger, "info", f"  🎯 Using weakest channel override from previous polarization: {weakest_ch.upper()}")
+        else:
+            # Avoid lambda capturing loop-local dict to satisfy linters
+            weakest_ch = ch_list[0] if ch_list else ""
+            weakest_val = signals.get(weakest_ch, 0.0) if weakest_ch else 0.0
+            for _c in ch_list[1:]:
+                _v = signals.get(_c, 0.0)
+                if _v < weakest_val:
+                    weakest_ch = _c
+                    weakest_val = _v
+
+        weakest_led = led_intensities.get(weakest_ch, 0)
+        weakest_signal = signals.get(weakest_ch, 0.0)
+
+        # CRITICAL: Lock integration time when weakest LED hits max (255)
+        # This prevents oscillation - other channels will adjust LEDs to match
+        # Don't wait for weakest to be "in tolerance" - lock immediately when it maxes out
+        if weakest_led >= config.MAX_LED and not integration_locked:
+            integration_locked = True
+            locked_integration_time = integration_ms
+            _log(logger, "info", f"\n🔒 INTEGRATION TIME LOCKED: {weakest_ch.upper()} at max LED={weakest_led}")
+            _log(logger, "info", f"   Signal: {weakest_signal:.0f} counts ({weakest_signal/target_signal*100:.1f}% of target)")
+            _log(logger, "info", f"   Integration time LOCKED at {integration_ms:.1f}ms")
+            _log(logger, "info", "   Remaining iterations will ONLY adjust other channel LEDs\n")
 
         # Classify remaining channels into priority groups
         urgent_channels = []  # outside ±10% OR any saturation
@@ -295,20 +337,20 @@ def LEDconverge(
             # Skipping detailed per-channel reasons to keep output concise here
 
         # STEP 3: Handle saturation (reduce LED intensities OR integration time)
+        # CRITICAL P-MODE POLICY: If freeze_integration=True (P-mode), NEVER reduce integration!
+        # P-mode MUST maintain S-mode integration time. Only LED adjustment allowed.
         total_sat = sum(sat_per_ch.values())
         if total_sat > 0:
-            # NEW LOGIC: Check if weakest channel is maxed and locked
-            # If yes, reduce saturating channels' LEDs instead of integration time
-            weakest_ch = min(ch_list, key=lambda c: signals.get(c, 0.0))
-            weakest_led = led_intensities.get(weakest_ch, 0)
-            weakest_locked = weakest_ch in locked_channels
-
-            # Only reduce integration time if weakest channel can still increase LED
-            # Otherwise, reduce saturating channels' LED intensities
-            if weakest_led >= config.MAX_LED and weakest_locked:
-                # Weakest channel is maxed and locked -> normalize other LEDs relative to weakest
-                _log(logger, "info", f"  ℹ️ Weakest channel {weakest_ch.upper()} at max LED ({weakest_led}) and locked")
-                _log(logger, "info", f"  ℹ️ Using model slopes to normalize saturating channels relative to weakest")
+            # CRITICAL: If integration time is locked OR policy forbids reduction,
+            # NEVER reduce integration. Instead, ALWAYS reduce saturating channel LEDs.
+            if integration_locked or freeze_integration or allow_increase_only:
+                if freeze_integration:
+                    _log(logger, "info", f"  🔒 P-MODE FREEZE POLICY ACTIVE - Integration LOCKED at {integration_ms:.1f}ms")
+                    _log(logger, "info", f"     P-mode inherits S-mode integration time and NEVER reduces it")
+                else:
+                    _log(logger, "info", f"  🔒 Integration time LOCKED at {locked_integration_time:.1f}ms")
+                _log(logger, "info", f"  ℹ️ Weakest channel {weakest_ch.upper()} locked at max LED ({weakest_led})")
+                _log(logger, "info", "  ℹ️ Reducing saturating channels' LEDs (integration time unchanged)")
 
                 weakest_slope = model_slopes.get(weakest_ch) if model_slopes else None
                 weakest_signal = signals.get(weakest_ch, 0.0)
@@ -349,22 +391,32 @@ def LEDconverge(
 
             else:
                 # Weakest channel can still increase LED -> reduce integration time
-                new_integration = calculate_integration_time_reduction(
-                    sat_per_ch=sat_per_ch,
-                    current_integration=integration_ms,
-                    detector_params=detector_params,
-                    config=config,
-                    logger=logger,
-                )
+                # CRITICAL: This branch should NEVER execute in P-mode!
+                # If you see this in P-mode logs, freeze_integration check FAILED!
+                if freeze_integration:
+                    _log(logger, "error", f"  ❌ BUG: P-mode attempting to reduce integration time!")
+                    _log(logger, "error", f"     freeze_integration={freeze_integration} but else branch executed!")
+                    _log(logger, "error", f"     This should NEVER happen - skipping integration reduction")
+                    # Don't reduce integration in P-mode even if we got here by mistake
+                else:
+                    _log(logger, "info", f"  ⚠️ Multiple channels saturating - reducing integration time")
+                    new_integration = calculate_integration_time_reduction(
+                        sat_per_ch=sat_per_ch,
+                        current_integration=integration_ms,
+                        detector_params=detector_params,
+                        config=config,
+                        logger=logger,
+                    )
 
-                if new_integration < integration_ms:
-                    integration_ms = new_integration
-                    # Integration time changed, boundaries will be cleared on next iteration
-                    continue
+                    if new_integration < integration_ms:
+                        integration_ms = new_integration
+                        # Integration time changed, boundaries will be cleared on next iteration
+                        continue
 
         # STEP 3b: If signals are uniformly low and LEDs are pegged, increase integration
+        # CRITICAL: Skip if integration time is locked (weakest LED at max)
         # Condition: no saturation, majority of adjustable channels at MAX_LED and below target
-        if total_sat == 0:
+        if total_sat == 0 and not integration_locked and not freeze_integration:
             adjustable = [ch for ch in ch_list if ch not in locked_channels]
             if adjustable:
                 maxed_and_low = [
@@ -405,9 +457,7 @@ def LEDconverge(
                     # Cap candidate integration by predicted safe maximum
                     candidate_integration = min(candidate_integration, integration_max_safe)
 
-                    # Cap further for high sensitivity systems
-                    if high_sensitivity_detected:
-                        candidate_integration = min(candidate_integration, 20.0)
+                    # Device-agnostic: do not hard-cap integration here; limits come from detector_params.
 
                     new_integration = candidate_integration
                     if new_integration > integration_ms * 1.05:  # require at least +5% to apply
@@ -424,9 +474,10 @@ def LEDconverge(
                         continue
 
         # STEP 3c: Check for maxed LEDs below acceptance threshold
+        # CRITICAL: Skip if integration time is locked (weakest LED at max)
         # If any channel is at max LED and below acceptance window, increase integration
         # This handles the case where weak channels are maxed but still below target
-        if total_sat == 0:  # Only if no saturation
+        if total_sat == 0 and not integration_locked and not freeze_integration:  # Only if no saturation and policy allows
             min_acceptable_signal = target_signal - tolerance_signal  # Lower bound of acceptance window
             maxed_below_threshold = [
                 ch for ch in needs_adjustment
@@ -462,6 +513,85 @@ def LEDconverge(
                     # Continue with LED adjustment even though it won't help
 
         # STEP 4: Adjust LEDs ONLY for channels needing adjustment (not locked)
+        # CRITICAL PRIORITY: If weakest LED not yet at max OR not in tolerance, prioritize it
+        # Once weakest LED reaches 255 AND achieves acceptable signal, switch to reducing other LEDs
+        
+        weakest_in_tolerance = weakest_ch in locked_channels
+        
+        if (weakest_led < config.MAX_LED or not weakest_in_tolerance) and weakest_ch not in locked_channels:
+            # PRIORITY MODE: Focus ONLY on weakest channel until it reaches 255 AND acceptable signal
+            if weakest_led < config.MAX_LED:
+                _log(logger, "info", f"\n🎯 PRIORITY: Boosting weakest channel {weakest_ch.upper()} (LED={weakest_led}, target 255)")
+            else:
+                _log(logger, "info", f"\n🎯 PRIORITY: Weakest channel {weakest_ch.upper()} at max LED but below target - need integration time increase")
+            
+            ch = weakest_ch
+            signal = signals[ch]
+            sat_pixels = sat_per_ch[ch]
+            current_led = led_intensities[ch]
+            
+            # If saturating, reduce integration time instead of LED
+            # CRITICAL: Respect FREEZE_INTEGRATION flag - P-MODE MUST NEVER REDUCE INTEGRATION!
+            if sat_pixels > 0:
+                if not freeze_integration and not allow_increase_only:
+                    _log(logger, "info", f"  ⚠️ Weakest channel {ch.upper()} saturating - reducing integration time")
+                    new_integration = calculate_integration_time_reduction(
+                        sat_per_ch=sat_per_ch,
+                        current_integration=integration_ms,
+                        detector_params=detector_params,
+                        config=config,
+                        logger=logger,
+                    )
+                    if new_integration < integration_ms:
+                        integration_ms = new_integration
+                        continue
+                else:
+                    # Integration FROZEN (P-mode) - reduce LED instead even for weakest channel
+                    _log(logger, "info", f"  🔒 P-MODE: Integration FROZEN at {integration_ms:.1f}ms")
+                    _log(logger, "info", f"     Weakest channel {ch.upper()} saturating - reducing LED instead of integration")
+                    new_led = calculate_saturation_recovery(
+                        channel=ch,
+                        current_led=current_led,
+                        current_signal=signal,
+                        target_signal=target_signal,
+                        sat_pixels=sat_pixels,
+                        model_slope=model_slopes.get(ch) if model_slopes else None,
+                        config=config,
+                        logger=logger,
+                    )
+                    led_intensities[ch] = new_led
+                    continue
+            
+            # If below target, increase LED toward 255
+            if signal < target_signal - tolerance_signal:
+                # Get model slope
+                model_slope = None
+                if model_slopes and ch in model_slopes:
+                    model_slope = model_slopes[ch] * (integration_ms / 10.0)
+                est_slope = state.get_estimated_slope(ch)
+                
+                # Calculate LED increase, capping at 255
+                new_led = calculate_led_adjustment(
+                    channel=ch,
+                    current_led=current_led,
+                    current_signal=signal,
+                    target_signal=target_signal,
+                    iteration=iteration,
+                    model_slope=model_slope,
+                    estimated_slope=est_slope,
+                    config=config,
+                    logger=logger,
+                )
+                
+                # Enforce max LED
+                new_led = min(config.MAX_LED, new_led)
+                led_intensities[ch] = new_led
+                _log(logger, "info", f"  🎯 {ch.upper()} LED {current_led}→{new_led} (weakest priority)")
+            
+            # Skip all other channels this iteration
+            continue
+        
+        # NORMAL MODE: Weakest LED is at max AND in tolerance, adjust all other channels
         # Locked channels are within tolerance and will not be modified
         for ch in needs_adjustment:
             signal = signals[ch]

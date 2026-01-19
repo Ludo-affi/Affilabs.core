@@ -70,6 +70,11 @@ class EngineState:
     best_iteration_leds: Dict[str, int] = field(default_factory=dict)
     best_iteration_signals: Dict[str, float] = field(default_factory=dict)
     best_iteration_integration: float = field(default=0.0)
+    
+    # Per-channel best brightness tracking (NEW: pick best per-channel across iterations)
+    best_per_channel_leds: Dict[str, int] = field(default_factory=dict)
+    best_per_channel_signals: Dict[str, float] = field(default_factory=dict)
+    best_per_channel_error: Dict[str, float] = field(default_factory=dict)
 
     # ML context for enhanced fallback
     ml_sensitivity_detected: bool = field(default=False)
@@ -336,6 +341,7 @@ class ConvergenceEngine:
             total_error = sum(abs(signals[ch] - target_signal) for ch in recipe.channels)
             avg_error_pct = (total_error / (target_signal * len(recipe.channels))) * 100 if target_signal > 0 else 0.0
 
+            # ORIGINAL: Track best iteration overall
             if total_error < state.best_iteration_error and total_sat_pixels == 0:
                 state.best_iteration_error = total_error
                 state.best_iteration_leds = dict(state.leds)
@@ -344,6 +350,30 @@ class ConvergenceEngine:
                 self._log("debug", f"  💡 New best iteration: total_error={total_error:.0f} counts")
             elif total_sat_pixels > 0 and total_error < state.best_iteration_error:
                 self._log("debug", f"  ⚠️  Lower error but SATURATED ({total_sat_pixels}px) - not tracking as best")
+            
+            # NEW: Track best brightness PER CHANNEL across iterations (at same integration time)
+            # This allows combining best results from different iterations
+            for ch in recipe.channels:
+                ch_signal = signals[ch]
+                ch_led = state.leds[ch]
+                ch_sat = saturation[ch]
+                ch_error = abs(ch_signal - target_signal)
+                
+                # Only track non-saturated channels
+                if ch_sat == 0:
+                    # Initialize on first valid measurement
+                    if ch not in state.best_per_channel_error:
+                        state.best_per_channel_error[ch] = ch_error
+                        state.best_per_channel_leds[ch] = ch_led
+                        state.best_per_channel_signals[ch] = ch_signal
+                        self._log("debug", f"  📌 {ch.upper()}: Initial best - LED={ch_led}, signal={ch_signal:.0f} ({ch_signal/target_signal*100:.1f}%)")
+                    # Update if this iteration has better brightness for this channel
+                    elif ch_error < state.best_per_channel_error[ch]:
+                        prev_signal = state.best_per_channel_signals[ch]
+                        state.best_per_channel_error[ch] = ch_error
+                        state.best_per_channel_leds[ch] = ch_led
+                        state.best_per_channel_signals[ch] = ch_signal
+                        self._log("debug", f"  💡 {ch.upper()}: New best brightness - LED={ch_led}, signal={ch_signal:.0f} ({ch_signal/target_signal*100:.1f}%) [was {prev_signal:.0f}]")
 
             # Acceptance
             acc = accept.evaluate(signals, saturation, target_signal, tol_signal, recipe)
@@ -472,6 +502,24 @@ class ConvergenceEngine:
                         0,  # phase1_iterations (not available at iteration 1)
                         0,  # phase2_iterations (not available at iteration 1)
                         0,  # phase3_iterations (not available at iteration 1)
+                        # Device history features (14 features, defaults for unknown device)
+                        0.0,  # device_total_calibrations
+                        0.5,  # device_success_rate (neutral default)
+                        6.0,  # device_avg_s_iterations (typical default)
+                        4.0,  # device_avg_p_iterations (typical default)
+                        10.0,  # device_avg_total_iterations
+                        2.0,  # device_std_s_iterations
+                        75.0,  # device_avg_fwhm (typical SPR FWHM)
+                        5.0,  # device_std_fwhm
+                        50.0,  # device_avg_snr (typical SNR)
+                        1.0,  # device_avg_warnings
+                        100.0,  # device_avg_final_led_s
+                        150.0,  # device_avg_final_led_p
+                        0.5,  # device_avg_convergence_rate
+                        0.8,  # device_avg_stability
+                        0.2,  # device_oscillation_frequency
+                        30.0,  # device_days_since_last_cal
+                        30.0,  # device_calibration_frequency_days
                     ]
 
                     conv_prediction = self.convergence_predictor.predict([X_conv])[0]
@@ -675,11 +723,11 @@ class ConvergenceEngine:
                 # Check if we should reduce saturated channel LEDs instead of integration time
                 # Conditions:
                 # 1. Weakest channel at max LED and locked (original protection)
-                # 2. OR only 1-2 channels saturating and others making progress (NEW)
+                # 2. OR 3 or fewer channels saturating - reduce their LEDs instead (EXPANDED from 2)
                 num_saturating = sum(1 for s in saturation.values() if s > 0)
                 should_adjust_leds_not_time = (
                     (weakest_led >= 255 and weakest_locked) or  # Original protection
-                    (num_saturating <= 2)  # NEW: Reduce saturated LEDs if only 1-2 channels saturating
+                    (num_saturating <= 3)  # EXPANDED: Reduce saturated LEDs if 3 or fewer channels saturating
                 )
 
                 if should_adjust_leds_not_time:
@@ -687,7 +735,7 @@ class ConvergenceEngine:
                         self._log("info", f"  ℹ️  Weakest channel {weakest_ch.upper()} at max LED (255) and locked")
                         self._log("info", f"  ℹ️  Normalizing saturating channels relative to weakest using slopes")
                     else:
-                        self._log("info", f"  💡 Only {num_saturating} channel(s) saturating - reducing their LEDs instead of cutting integration")
+                        self._log("info", f"  💡 {num_saturating} channel(s) saturating (≤3) - reducing their LEDs instead of cutting integration")
 
                     weakest_slope = None
                     if model_slopes_at_10ms and weakest_ch in model_slopes_at_10ms:
@@ -791,7 +839,12 @@ class ConvergenceEngine:
                 # Original saturation handling (reduce integration time)
                 # Only executed if multiple channels (3+) are saturating
                 self._log("info", f"  ⚠️  Multiple channels ({num_saturating}) saturating - reducing integration time")
-                new_time = saturation_policy.reduce_integration(saturation, state.integration_ms, params)
+                new_time = saturation_policy.reduce_integration(
+                    saturation, 
+                    state.integration_ms, 
+                    params,
+                    polarization_mode=recipe.polarization_mode,  # Pass polarization mode
+                )
                 if new_time < state.integration_ms:
                     self._log(
                         "info",
@@ -1595,9 +1648,31 @@ class ConvergenceEngine:
 
         # Not converged - return BEST iteration with QC warnings (PASS with warnings for QC review)
         if state.best_iteration_leds:
-            # Calculate QC metrics
+            # NEW: Use per-channel best brightness if available, otherwise fall back to best iteration
+            final_leds = {}
+            final_signals = {}
+            
+            if state.best_per_channel_leds:
+                # Use per-channel best brightness (combining best from different iterations)
+                self._log("info", f"\n📊 Using PER-CHANNEL best brightness (combined from iterations at {state.best_iteration_integration:.1f}ms):")
+                for ch in recipe.channels:
+                    if ch in state.best_per_channel_leds:
+                        final_leds[ch] = state.best_per_channel_leds[ch]
+                        final_signals[ch] = state.best_per_channel_signals[ch]
+                        pct = (final_signals[ch] / target_signal * 100) if target_signal > 0 else 0
+                        self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} counts ({pct:5.1f}% of target)")
+                    else:
+                        # Fallback if channel not tracked (shouldn't happen)
+                        final_leds[ch] = state.best_iteration_leds.get(ch, 0)
+                        final_signals[ch] = state.best_iteration_signals.get(ch, 0)
+            else:
+                # Fallback to original best iteration overall
+                final_leds = dict(state.best_iteration_leds)
+                final_signals = dict(state.best_iteration_signals)
+            
+            # Calculate QC metrics using final combined results
             qc_warnings = []
-            max_signal = max(state.best_iteration_signals.values()) if state.best_iteration_signals else 0
+            max_signal = max(final_signals.values()) if final_signals else 0
             max_signal_pct = (max_signal / params.max_counts) * 100 if params.max_counts > 0 else 0
             target_pct = recipe.target_percent * 100
 
@@ -1614,8 +1689,8 @@ class ConvergenceEngine:
 
             # Check each channel for warnings
             for ch in recipe.channels:
-                sig = state.best_iteration_signals.get(ch, 0)
-                led = state.best_iteration_leds.get(ch, 0)
+                sig = final_signals.get(ch, 0)
+                led = final_leds.get(ch, 0)
                 sig_pct = (sig / target_signal * 100) if target_signal > 0 else 0
                 error_pct = abs(sig - target_signal) / target_signal if target_signal > 0 else 1.0
 
@@ -1636,11 +1711,11 @@ class ConvergenceEngine:
 
             # Log result
             if converged_best_effort:
-                self._log("info", f"\n\u2705 CONVERGED (BEST EFFORT) - iteration {iteration} (error={state.best_iteration_error:.0f} counts)")
+                self._log("info", f"\n\u2705 CONVERGED (BEST EFFORT) - iteration {iteration} (combined per-channel best)")
                 if qc_warnings:
                     self._log("warning", f"   \u26a0\ufe0f  QC Review Recommended: {len(qc_warnings)} warning(s)")
             else:
-                self._log("warning", f"\n\u26a0\ufe0f  PARTIAL CONVERGENCE - returning BEST iteration (error={state.best_iteration_error:.0f} counts)")
+                self._log("warning", f"\n\u26a0\ufe0f  PARTIAL CONVERGENCE - returning BEST iteration (combined per-channel best)")
                 self._log("info", f"   Max signal achieved: {max_signal_pct:.1f}%, target: {target_pct:.1f}%")
 
             self._log("info", f"   Final integration time: {state.best_iteration_integration:.1f}ms")
@@ -1652,8 +1727,8 @@ class ConvergenceEngine:
 
             return ConvergenceResult(
                 state.best_iteration_integration,
-                dict(state.best_iteration_leds),
-                dict(state.best_iteration_signals),
+                final_leds,  # Use combined per-channel best LEDs
+                final_signals,  # Use combined per-channel best signals
                 converged_best_effort,  # True if within 3% of target
                 qc_warnings=qc_warnings if qc_warnings else [],
                 best_iteration=iteration,

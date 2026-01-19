@@ -22,7 +22,7 @@ class DeviceStatusWidget(QWidget):
 
     # Controller type constants
     STATIC_CONTROLLERS = ["P4SPR", "PicoP4SPR"]
-    FLOW_CONTROLLERS = ["PicoKNX2", "PicoEZSPR", "EZSPR"]
+    FLOW_CONTROLLERS = ["PicoKNX2", "PicoEZSPR", "EZSPR", "P4PROPLUS"]
 
     def __init__(self, parent=None):
         super(DeviceStatusWidget, self).__init__(parent)
@@ -424,25 +424,29 @@ class DeviceStatusWidget(QWidget):
         # Determine if devices are connected
         spr_connected = bool(ctrl_type and ctrl_type != "")
         knx_connected = bool(knx_type and knx_type != "")
+        
+        # Check if controller has internal pumps (P4PROPLUS)
+        has_internal_pumps = ctrl_type == "P4PROPLUS"
 
         # Update Hardware Connected section
         device_count = 0
         if spr_connected:
             self.hw_device_labels[device_count].setText(
-                f"• SPR Controller: {ctrl_type}",
+                f"• {ctrl_type}",
             )
             self.hw_device_labels[device_count].setVisible(True)
             device_count += 1
 
         if knx_connected:
             self.hw_device_labels[device_count].setText(
-                f"• Kinetic Controller: {knx_type}",
+                f"• {knx_type}",
             )
             self.hw_device_labels[device_count].setVisible(True)
             device_count += 1
 
-        if pump_connected:
-            self.hw_device_labels[device_count].setText("• Pump: Connected")
+        # Only show external pump if pump_connected AND no internal pumps
+        if pump_connected and not has_internal_pumps:
+            self.hw_device_labels[device_count].setText("• AffiPump")
             self.hw_device_labels[device_count].setVisible(True)
             device_count += 1
 

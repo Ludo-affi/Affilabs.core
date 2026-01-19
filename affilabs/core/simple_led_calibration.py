@@ -104,6 +104,12 @@ def run_simple_led_calibration(
             cal = device_config.config.get("calibration", {})
             current_integration_s = cal.get("integration_time_ms", 50.0)
             current_integration_p = cal.get("integration_time_ms", 50.0)
+            
+            # Ensure integration times are valid numbers
+            if current_integration_s is None:
+                current_integration_s = 50.0
+            if current_integration_p is None:
+                current_integration_p = 50.0
 
             logger.info(f"[OK] Current LED intensities: {current_leds}")
             logger.info(f"     Integration time: {current_integration_s:.2f}ms")

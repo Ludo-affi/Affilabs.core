@@ -148,6 +148,7 @@ WAVELENGTH_CACHE_MAX_AGE_DAYS: float = 7.0  # tighten from 30 → 7 days by defa
 # Base timing parameters (can be changed in Advanced Settings)
 LED_ON_TIME_MS = 225.0  # LED ON duration - optimized (actual=250ms with 25ms overhead)
 DETECTOR_WAIT_MS = 45.0  # Optimized LED stabilization time (was 60ms)
+MAX_INTEGRATION_PER_SCAN_MS = 62.5  # USB4000 hardware limit for integration time per scan
 NUM_SCANS = 3  # Number of scans per spectrum (HAL averages these)
 SAFETY_BUFFER_MS = 10.0  # Safety margin for timing calculations
 
@@ -189,15 +190,17 @@ OVERNIGHT_DELAY_SECONDS: float = 15.0  # Delay between channels (15s × 4 = 60s 
 # DETECTOR_WINDOW = DETECTOR_ON_TIME - SAFETY_BUFFER_MS
 #                 = 180ms - 10ms = 170ms
 #
-# MAX_INTEGRATION_PER_SCAN = DETECTOR_WAIT_MS = 45ms
+# Integration time constraints:
+#   - DETECTOR_WAIT_MS = 45ms (LED stabilization wait)
+#   - MAX_INTEGRATION_PER_SCAN_MS = 62.5ms (USB4000 hardware limit)
 #
 # num_scans calculation in live data:
-#   1. Cap integration_time to DETECTOR_WAIT_MS (45ms max per scan)
+#   1. Cap integration_time to MAX_INTEGRATION_PER_SCAN_MS (62.5ms max per scan)
 #   2. num_scans = floor(DETECTOR_WINDOW / integration_time)
 #   3. Total acquisition = num_scans × integration_time ≤ 170ms
 #
-# Example: integration_time = 40ms
-#   → num_scans = floor(170ms / 40ms) = 4 scans
+# Example: integration_time = 60ms
+#   → num_scans = floor(170ms / 60ms) = 2 scans
 #   → Total = 4 × 40ms = 160ms (within 170ms window)
 
 # Reference Signal Averaging

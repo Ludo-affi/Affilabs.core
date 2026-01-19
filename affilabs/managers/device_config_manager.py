@@ -60,11 +60,12 @@ class DeviceConfigManager:
                 and self.main_window.app
                 and hasattr(self.main_window.app, "hardware_mgr")
             ):
-                controller = (
-                    self.main_window.app.hardware_mgr.ctrl
-                    if self.main_window.app.hardware_mgr
-                    else None
-                )
+                # Use _ctrl_raw (raw controller) not ctrl (HAL adapter) so firmware_id is accessible
+                hardware_mgr = self.main_window.app.hardware_mgr
+                if hardware_mgr and hasattr(hardware_mgr, "_ctrl_raw"):
+                    controller = hardware_mgr._ctrl_raw
+                elif hardware_mgr and hasattr(hardware_mgr, "ctrl"):
+                    controller = hardware_mgr.ctrl
 
             self.device_config = DeviceConfiguration(
                 device_serial=device_serial,

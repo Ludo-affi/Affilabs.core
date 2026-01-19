@@ -2889,12 +2889,19 @@ class PicoP4PRO(FlowController):
                     reply = self._ser.readline().decode().strip()
                     print(f"DEBUG: PicoP4PRO - Got ID reply: '{reply}'")
 
-                    if reply == "P4PRO" or "P4PRO" in reply:
-                        print(f"DEBUG: PicoP4PRO - ID match! This is a P4PRO!")
+                    if reply == "P4PRO" or "P4PRO" in reply or reply == "p4proplus" or "p4proplus" in reply:
+                        print(f"DEBUG: PicoP4PRO - ID match! This is a P4PRO/P4PROPLUS!")
                         self.firmware_id = reply
+                        # Clear any leftover data before version query
+                        try:
+                            self._ser.reset_input_buffer()
+                        except Exception:
+                            pass
                         cmd = "iv\n"
                         self._ser.write(cmd.encode())
-                        self.version = self._ser.readline()[0:4].decode()
+                        time.sleep(0.10)  # Wait for version response
+                        version_raw = self._ser.readline().decode().strip()
+                        self.version = version_raw[0:4] if len(version_raw) >= 4 else version_raw
                         logger.info(f"✅ Found Pico P4PRO firmware: {reply} (version {self.version})")
                         # Load valve cycles now that serial port is established
                         self._load_valve_cycles()
@@ -2947,10 +2954,16 @@ class PicoP4PRO(FlowController):
 
                 if reply == "P4PRO" or "P4PRO" in reply:
                     self.firmware_id = reply
+                    # Clear any leftover data before version query
+                    try:
+                        self._ser.reset_input_buffer()
+                    except Exception:
+                        pass
                     cmd = "iv\n"
                     self._ser.write(cmd.encode())
                     time.sleep(0.10)
-                    self.version = self._ser.readline()[0:4].decode()
+                    version_raw = self._ser.readline().decode().strip()
+                    self.version = version_raw[0:4] if len(version_raw) >= 4 else version_raw
                     logger.info(
                         f"[OK] Found Pico P4PRO on {dev.device} (firmware: {reply}, fallback method)",
                     )
@@ -3050,12 +3063,12 @@ class PicoP4PRO(FlowController):
                 # Use readline to get complete response
                 resp = self._ser.readline().strip()
 
-                # Check if response contains '1' or 0x01 (success indicators)
-                if b'1' in resp or b'\x01' in resp:
+                # Check if response contains '1', 0x01, or 'b' (success indicators)
+                if b'1' in resp or b'\x01' in resp or b'b' in resp:
                     return True
 
                 # Empty response or unexpected response
-                logger.warning(f"turn_on_channel({ch}) returned: {resp!r} (expected b'1' or b'\\x01')")
+                logger.warning(f"turn_on_channel({ch}) returned: {resp!r} (expected b'1', b'\\x01', or b'b')")
                 return False
             return False
         except Exception as e:
@@ -3155,7 +3168,7 @@ class PicoP4PRO(FlowController):
                             self._ser.write(cmd.encode())
                             time.sleep(0.01)
                             resp = self._ser.readline().strip()
-                            if resp != b'1':
+                            if resp not in (b'1', b'\x01', b'b'):
                                 logger.warning(f"l{ch}:{val} command failed: {resp!r}")
 
                     logger.debug(f"P4PRO LED batch set (sequential): A={a} B={b} C={c} D={d}")
@@ -3203,11 +3216,14 @@ class PicoP4PRO(FlowController):
                 time.sleep(0.7)  # Wait for servo movement + response (500ms + 200ms margin)
                 response = self._ser.readline().strip()  # Use readline for complete response
 
-                # P4PRO v2.1 responds with b'\x01', b'1', or b'B' (all valid)
-                if len(response) > 0 and (b"\x01" in response or b"1" in response or b"B" in response):
+                # P4PRO v2.1 responds with b'\x01', b'1', b'B', or blank b'' (all valid)
+                # Blank response means servo moved but firmware didn't acknowledge - this is normal
+                if len(response) == 0 or b"\x01" in response or b"1" in response or b"B" in response:
+                    if len(response) == 0:
+                        logger.debug(f"[P4PRO-SERVO] Move to {degrees}° (no response - servo moved)")
                     return True
                 else:
-                    logger.error(f"[P4PRO-SERVO] Move to {degrees}° failed: response={response!r}")
+                    logger.error(f"[P4PRO-SERVO] Move to {degrees}° failed: unexpected response={response!r}")
                     return False
             return False
         except Exception as e:
@@ -3466,7 +3482,7 @@ class PicoP4PRO(FlowController):
                         self._cancel_valve_timer(ch)
 
                 mode = "INJECT" if state == 1 else "LOAD"
-                logger.info(f"✓ Both 6-port valves → {mode} (cycles: V1={self._valve_six_cycles[1]}, V2={self._valve_six_cycles[2]})")
+                logger.info(f"✓ Both 6-port valves → {mode} (cycles: V1={self._valve_six_cycles_lifetime[1]}, V2={self._valve_six_cycles_lifetime[2]})")
 
                 return success
             return False
@@ -3561,6 +3577,284 @@ class PicoP4PRO(FlowController):
             "total_six_lifetime": sum(self._valve_six_cycles_lifetime.values()),
             "total_three_lifetime": sum(self._valve_three_cycles_lifetime.values()),
         }
+
+    # ========================================================================
+    # Internal Peristaltic Pump Control (P4PROPLUS V2.3+)
+    # ========================================================================
+
+    def has_internal_pumps(self) -> bool:
+        """Check if this P4PRO has internal peristaltic pumps.
+        
+        P4PROPLUS (V2.3+) has integrated peristaltic pumps that can substitute
+        for external AffiPump in many operations.
+        
+        Standard P4PRO (V2.1-V2.2) has valves only and requires external AffiPump.
+        
+        Returns:
+            True if firmware version >= V2.3 (P4PROPLUS with internal pumps)
+        """
+        # Check firmware ID first
+        if hasattr(self, 'firmware_id') and self.firmware_id:
+            if 'p4proplus' in self.firmware_id.lower():
+                logger.debug(f"P4PROPLUS detected via firmware ID: {self.firmware_id}")
+                return True
+        
+        # Fall back to version check
+        if not self.version:
+            return False
+        
+        try:
+            # Extract version number (V2.3 -> 2.3)
+            version_str = self.version.replace('V', '').replace('v', '')
+            version_float = float(version_str)
+            
+            # P4PROPLUS is V2.3+
+            has_pumps = version_float >= 2.3
+            
+            if has_pumps:
+                logger.debug(f"P4PROPLUS detected: {self.version} has internal peristaltic pumps")
+            else:
+                logger.debug(f"Standard P4PRO: {self.version} has valves only (needs external AffiPump)")
+            
+            return has_pumps
+            
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Version parse error: {e}")
+            return False
+    
+    def get_pump_capabilities(self) -> dict:
+        """Get capability flags for P4PROPLUS internal pumps.
+        
+        Returns dict with capability flags for UI logic (greying out incompatible operations).
+        Empty dict if no internal pumps available.
+        """
+        if not self.has_internal_pumps():
+            return {}
+        
+        return {
+            # Hardware type
+            "type": "peristaltic",
+            
+            # Core capabilities
+            "bidirectional": False,  # Forward flow only, no aspiration
+            "has_homing": False,  # No position initialization
+            "has_position_tracking": False,  # CRITICAL: No feedback loop!
+            "supports_partial_loop": False,  # Needs aspiration (bidirectional)
+            
+            # Flow rate specs (user-facing, in uL/min)
+            "max_flow_rate_ul_min": 300,
+            "min_flow_rate_ul_min": 1,
+            "supports_flow_rate_change": True,  # Can change on-the-fly
+            
+            # Calibration factor for uL/min to RPM conversion
+            "ul_per_revolution": 3.0,  # Must be calibrated per installation
+            
+            # Firmware RPM limits
+            "min_rpm": 5,
+            "max_rpm": 300,
+            
+            # Reliability compensations
+            "recommended_prime_cycles": 10,  # vs 6 for syringe pumps
+            "requires_visual_verification": True,
+            "suction_reliability_warning": (
+                "Peristaltic pumps may fail to pick up sample at START of run.\n"
+                "You MUST visually verify liquid in tubing during priming.\n"
+                "Watch for air bubbles - they indicate suction failure."
+            )
+        }
+    
+    def _ul_min_to_rpm(self, rate_ul_min: float) -> int:
+        """Convert flow rate from uL/min to RPM for peristaltic pump.
+        
+        Based on peristaltic pump tubing specifications.
+        This conversion factor MUST be calibrated per installation.
+        
+        Args:
+            rate_ul_min: Flow rate in uL/min
+            
+        Returns:
+            RPM value (5-300 range, clamped to firmware limits)
+        """
+        caps = self.get_pump_capabilities()
+        ul_per_rev = caps.get("ul_per_revolution", 3.0)
+        
+        # Convert uL/min to revolutions/min
+        rpm = rate_ul_min / ul_per_rev
+        
+        # Clamp to firmware limits (5-300 RPM)
+        min_rpm = caps.get("min_rpm", 5)
+        max_rpm = caps.get("max_rpm", 300)
+        rpm = max(min_rpm, min(max_rpm, int(rpm)))
+        
+        return rpm
+    
+    def pump_start(self, rate_ul_min: float, ch: int = 1) -> bool:
+        """Start internal peristaltic pump at specified RPM.
+        
+        CRITICAL: P4PROPLUS firmware expects RPM (rotations per minute)!
+        
+        Command format: pr{ch}{rpm:04d}\n
+        Examples:
+            pr10050\n = Pump 1 at 50 RPM
+            pr20100\n = Pump 2 at 100 RPM
+            pr30075\n = Both pumps at 75 RPM
+        
+        Args:
+            rate_ul_min: RPM value (parameter name kept for compatibility, but now expects RPM)
+            ch: Pump channel (1, 2, or 3 for both)
+            
+        Returns:
+            True if command sent successfully
+        """
+        if not self.has_internal_pumps():
+            logger.error("No internal pumps available (P4PROPLUS V2.3+ required)")
+            return False
+        
+        # Treat input as RPM directly (no conversion)
+        rpm = int(round(rate_ul_min))
+        
+        # Validate RPM range (5-300 RPM per firmware limits)
+        if rpm < 5 or rpm > 300:
+            logger.error(f"RPM {rpm} out of range [5-300]")
+            return False
+        
+        # Format command: pr{ch}{rpm:04d}\n
+        # Firmware parses command[3:6] directly as rate (no offset subtraction)
+        cmd = f"pr{ch}{rpm:04d}\n"
+        
+        logger.info(f"Internal pump {ch} start: {rpm} RPM -> {cmd.strip()}")
+        
+        try:
+            if self._ser is not None or self.open():
+                self._ser.write(cmd.encode())
+                # CRITICAL: Firmware needs time to process pump commands
+                # Without delay, rapid commands interfere and pump won't stop/change speed
+                import time
+                time.sleep(0.15)  # 150ms delay for firmware processing
+                
+                # P4PROPLUS firmware doesn't send response for pump commands
+                # (unlike valve commands which send b"6")
+                # Pump movement confirmed working even with empty response
+                try:
+                    response = self._ser.read(1)  # Try to read any response
+                    if response:
+                        logger.debug(f"Pump {ch} response: {response!r}")
+                except Exception:
+                    pass  # No response is OK for pump commands
+                
+                logger.debug(f"Pump {ch} started successfully")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error starting pump {ch}: {e}")
+            return False
+    
+    def pump_stop(self, ch: int = 1) -> bool:
+        """Stop internal peristaltic pump.
+        
+        Command format: ps{ch}\n
+        Examples:
+            ps1\n = Stop pump 1
+            ps2\n = Stop pump 2
+            ps3\n = Stop both pumps
+        
+        Args:
+            ch: Pump channel (1, 2, or 3 for both)
+            
+        Returns:
+            True if command sent successfully and firmware responded with success (b"6")
+        """
+        if not self.has_internal_pumps():
+            logger.error("No internal pumps available (P4PROPLUS V2.3+ required)")
+            return False
+        
+        cmd = f"ps{ch}\n"
+        
+        logger.info(f"Internal pump {ch} stop: {cmd.strip()}")
+        
+        try:
+            if self._ser is not None or self.open():
+                self._ser.write(cmd.encode())
+                # CRITICAL: Firmware needs time to process pump commands
+                # Without delay, rapid commands interfere and pump won't stop/change speed
+                import time
+                time.sleep(0.15)  # 150ms delay for firmware processing
+                
+                # P4PROPLUS firmware doesn't send response for pump commands
+                # (unlike valve commands which send b"6")
+                # Pump movement confirmed working even with empty response
+                try:
+                    response = self._ser.read(1)  # Try to read any response
+                    if response:
+                        logger.debug(f"Pump {ch} response: {response!r}")
+                except Exception:
+                    pass  # No response is OK for pump commands
+                
+                logger.debug(f"Pump {ch} stopped successfully")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error stopping pump {ch}: {e}")
+            return False
+    
+    def inject_internal_pump(self, volume_ul: float, flow_rate_ul_min: float, ch: int = 1) -> bool:
+        """Perform simple injection using internal peristaltic pump.
+        
+        Since peristaltic pumps are unidirectional (forward flow only),
+        this is a simple inject operation without aspiration/load phase.
+        
+        Args:
+            volume_ul: Volume to inject in microliters
+            flow_rate_ul_min: Flow rate in uL/min (1-300)
+            ch: Pump channel (1, 2, or 3 for both)
+            
+        Returns:
+            True if injection completed successfully
+            
+        Example:
+            # Inject 100 uL at 150 uL/min using pump 1
+            ctrl.inject_internal_pump(volume_ul=100, flow_rate_ul_min=150, ch=1)
+        """
+        if not self.has_internal_pumps():
+            logger.error("No internal pumps available (P4PROPLUS V2.3+ required)")
+            return False
+        
+        if volume_ul <= 0:
+            logger.error(f"Invalid volume: {volume_ul} uL (must be > 0)")
+            return False
+        
+        # Calculate injection duration
+        duration_sec = (volume_ul / flow_rate_ul_min) * 60.0
+        
+        logger.info(f"Internal pump inject: {volume_ul} uL at {flow_rate_ul_min} uL/min (ch {ch})")
+        logger.info(f"  Duration: {duration_sec:.2f} seconds")
+        
+        try:
+            # Start pump
+            if not self.pump_start(rate_ul_min=flow_rate_ul_min, ch=ch):
+                logger.error("Failed to start pump for injection")
+                return False
+            
+            # Wait for injection to complete
+            import time
+            time.sleep(duration_sec)
+            
+            # Stop pump
+            if not self.pump_stop(ch=ch):
+                logger.warning("Failed to stop pump after injection (pump may still be running!)")
+                return False
+            
+            logger.info(f"Injection complete: {volume_ul} uL delivered")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error during injection: {e}")
+            # Try to stop pump on error
+            try:
+                self.pump_stop(ch=ch)
+            except Exception:
+                pass
+            return False
 
     def stop_kinetic(self) -> None:
         """Stop all kinetic operations (pumps and valves)."""

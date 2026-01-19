@@ -305,18 +305,18 @@ class HardwareEventCoordinator:
         if ctrl_type:
             found.append(f"✓ Controller ({ctrl_type})")
         else:
-            missing.append("✗ Controller (Pico P4PRO/EZSPR)")
+            missing.append("✗ Controller")
 
         if has_detector:
             detector_serial = status.get("spectrometer_serial", "unknown")
             found.append(f"✓ Detector (S/N: {detector_serial})")
         else:
-            missing.append("✗ Detector (USB4000 or PhasePhotonics)")
+            missing.append("✗ Detector")
 
         if has_pump:
             found.append("✓ Pump (AffiPump)")
         else:
-            missing.append("✗ Pump (optional)")
+            missing.append("✗ Pump")
 
         # Build error message
         error_msg = "Hardware scan incomplete.\n\n"
