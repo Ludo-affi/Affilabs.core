@@ -4565,8 +4565,8 @@ class AffilabsMainWindow(QMainWindow):
                 if subunit_name == "Optics" and hasattr(self, "_optics_warning_active"):
                     self._clear_optics_warning()
             else:
-                # Red indicator for Optics and Sensor, Gray for Fluidics
-                color = "#FF3B30" if subunit_name in ["Optics", "Sensor"] else "#86868B"
+                # Red indicator for Not Ready (all subunits use red for consistency)
+                color = "#FF3B30"
                 indicator.setStyleSheet(
                     "font-size: 14px;"
                     f"color: {color};"
@@ -5796,6 +5796,10 @@ End of Debug Log
             device_serial = self.device_config.get_serial_number() if hasattr(self.device_config, "get_serial_number") else "Not detected"
             dialog.load_device_info(serial=device_serial)
 
+        # Load pump calibration (pk) if P4PROPLUS available
+        if hasattr(self, "app") and self.app and hasattr(self.app, "hardware_mgr"):
+            dialog.load_pump_calibration(self.app.hardware_mgr)
+
         # Show dialog
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Apply settings
@@ -6079,21 +6083,20 @@ End of Debug Log
         # ElementInspector.install_inspector(self)
 
     def closeEvent(self, event):
-        """Handle application close event - shutdown LEDs gracefully and show unplug reminder if hardware connected."""
+        """Handle application close event - shutdown hardware gracefully and show unplug reminder if hardware connected."""
         try:
             from PySide6.QtWidgets import QApplication, QMessageBox
             app_instance = QApplication.instance()
             
-            # Turn off all LEDs before closing
-            if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
-                hw_mgr = app_instance.hardware_mgr
-                if hasattr(hw_mgr, 'ctrl') and hw_mgr.ctrl:
-                    try:
-                        logger.info("💡 Shutting down LEDs before close...")
-                        hw_mgr.ctrl.turn_off_channels()
-                        logger.info("✓ LEDs turned off gracefully")
-                    except Exception as e:
-                        logger.warning(f"Could not turn off LEDs: {e}")
+            # CRITICAL: Always call application cleanup to ensure:
+            # 1. LEDs are turned off
+            # 2. Valves are powered off (prevent overheating)
+            # 3. Pumps are stopped
+            # NO EXIT PATH bypasses this graceful shutdown
+            if app_instance and hasattr(app_instance, 'close'):
+                logger.info("🔒 Triggering graceful hardware shutdown...")
+                app_instance.close()
+                logger.info("✓ Hardware shutdown complete")
             
             devices_to_unplug = []
             if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:

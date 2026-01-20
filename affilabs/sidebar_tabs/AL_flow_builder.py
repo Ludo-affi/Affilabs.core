@@ -878,18 +878,63 @@ class FlowTabBuilder:
         )
         synced_pump_layout.addWidget(synced_label)
 
-        # Synced controls - Flow Rate, Correction, and Toggle Button
+        # Synced controls - Flowrate Preset, Contact Time, and Toggle Button
         synced_control_layout = QHBoxLayout()
         synced_control_layout.setSpacing(8)
 
-        # RPM spinbox
-        synced_rpm_spin = QSpinBox()
-        synced_rpm_spin.setRange(5, 300)
-        synced_rpm_spin.setValue(50)
-        synced_rpm_spin.setSuffix(" RPM")
-        synced_rpm_spin.setFixedHeight(36)
-        synced_rpm_spin.setAlignment(Qt.AlignmentFlag.AlignRight)
-        synced_rpm_spin.setStyleSheet(
+        # Flowrate preset combo (replaces spinbox)
+        synced_flowrate_combo = QComboBox()
+        synced_flowrate_combo.addItems(["25 µL/min", "50 µL/min", "100 µL/min", "200 µL/min", "Flush (220)"])
+        synced_flowrate_combo.setCurrentIndex(1)  # Default to 50 µL/min
+        synced_flowrate_combo.setFixedHeight(36)
+        synced_flowrate_combo.setCursor(Qt.CursorShape.PointingHandCursor)
+        synced_flowrate_combo.setStyleSheet(
+            "QComboBox {"
+            "  background: white;"
+            "  border: 1px solid rgba(0, 0, 0, 0.12);"
+            "  border-radius: 7px;"
+            "  padding: 6px 10px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "  color: #1D1D1F;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QComboBox:focus {"
+            "  border: 2px solid #FF9500;"
+            "  padding: 5px 9px;"
+            "}"
+            "QComboBox::drop-down {"
+            "  border: none;"
+            "  width: 20px;"
+            "}"
+            "QComboBox::down-arrow {"
+            "  image: none;"
+            "  border-left: 4px solid transparent;"
+            "  border-right: 4px solid transparent;"
+            "  border-top: 5px solid #1D1D1F;"
+            "  margin-right: 8px;"
+            "}"
+            "QComboBox QAbstractItemView {"
+            "  background: white;"
+            "  border: 1px solid rgba(0, 0, 0, 0.12);"
+            "  border-radius: 7px;"
+            "  padding: 4px;"
+            "  selection-background-color: #FF9500;"
+            "  selection-color: white;"
+            "}"
+        )
+        synced_flowrate_combo.setToolTip("Select flowrate preset")
+        synced_control_layout.addWidget(synced_flowrate_combo, 1)
+        self.sidebar.synced_flowrate_combo = synced_flowrate_combo
+
+        # Contact time spinbox
+        synced_contact_time_spin = QSpinBox()
+        synced_contact_time_spin.setRange(10, 600)
+        synced_contact_time_spin.setValue(60)  # Default to 100 µL/min preset time
+        synced_contact_time_spin.setSuffix(" s")
+        synced_contact_time_spin.setFixedHeight(36)
+        synced_contact_time_spin.setAlignment(Qt.AlignmentFlag.AlignRight)
+        synced_contact_time_spin.setStyleSheet(
             "QSpinBox {"
             "  background: white;"
             "  border: 1px solid rgba(0, 0, 0, 0.12);"
@@ -912,45 +957,54 @@ class FlowTabBuilder:
             "  background: rgba(0, 0, 0, 0.06);"
             "}"
         )
-        synced_rpm_spin.setToolTip("Both pumps flow rate (5-300 RPM)")
-        synced_control_layout.addWidget(synced_rpm_spin, 1)
-        self.sidebar.synced_rpm_spin = synced_rpm_spin
+        synced_contact_time_spin.setToolTip("Valve contact time - auto-calculated unless Manual is checked")
+        synced_control_layout.addWidget(synced_contact_time_spin, 1)
+        self.sidebar.synced_contact_time_spin = synced_contact_time_spin
 
-        # Correction factor spinbox
-        synced_corr_spin = QDoubleSpinBox()
-        synced_corr_spin.setRange(0.5, 2.0)
-        synced_corr_spin.setValue(1.0)
-        synced_corr_spin.setSingleStep(0.01)
-        synced_corr_spin.setDecimals(3)
-        synced_corr_spin.setPrefix("×")
-        synced_corr_spin.setFixedHeight(36)
-        synced_corr_spin.setAlignment(Qt.AlignmentFlag.AlignRight)
-        synced_corr_spin.setStyleSheet(
-            "QDoubleSpinBox {"
-            "  background: white;"
-            "  border: 1px solid rgba(0, 0, 0, 0.12);"
-            "  border-radius: 7px;"
-            "  padding: 6px 10px;"
-            "  font-size: 13px;"
-            "  font-weight: 500;"
+        # Manual mode checkbox to disable auto-calculation
+        from PySide6.QtWidgets import QCheckBox
+        synced_manual_time_check = QCheckBox("Manual")
+        synced_manual_time_check.setFixedHeight(36)
+        synced_manual_time_check.setCursor(Qt.CursorShape.PointingHandCursor)
+        synced_manual_time_check.setStyleSheet(
+            "QCheckBox {"
+            "  spacing: 6px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
             "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
-            "QDoubleSpinBox:focus {"
-            "  border: 2px solid #FF9500;"
-            "  padding: 5px 9px;"
-            "}"
-            "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
+            "QCheckBox::indicator {"
             "  width: 18px;"
+            "  height: 18px;"
+            "  border: 2px solid rgba(0, 0, 0, 0.2);"
             "  border-radius: 4px;"
+            "  background: white;"
             "}"
-            "QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {"
-            "  background: rgba(0, 0, 0, 0.06);"
+            "QCheckBox::indicator:checked {"
+            "  background: #007AFF;"
+            "  border-color: #007AFF;"
+            "  image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOSIgdmlld0JveD0iMCAwIDEyIDkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgNEw0LjUgNy41TDExIDEiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+);"
+            "}"
+            "QCheckBox::indicator:hover {"
+            "  border-color: #007AFF;"
             "}"
         )
-        synced_corr_spin.setToolTip("Correction factor (from calibration)")
-        synced_control_layout.addWidget(synced_corr_spin, 1)
-        self.sidebar.synced_correction_spin = synced_corr_spin
+        synced_manual_time_check.setToolTip("Check to manually set contact time (disables auto-calculation)")
+        synced_control_layout.addWidget(synced_manual_time_check)
+        self.sidebar.synced_manual_time_check = synced_manual_time_check
+        
+        # Auto-update contact time when flowrate changes (unless manual mode)
+        def _on_synced_flowrate_changed():
+            if not synced_manual_time_check.isChecked():  # Only auto-update if not manual
+                flowrate_map = {0: 240, 1: 120, 2: 60, 3: 30, 4: 10}  # Contact times in seconds
+                idx = synced_flowrate_combo.currentIndex()
+                synced_contact_time_spin.setValue(flowrate_map.get(idx, 60))
+        
+        synced_flowrate_combo.currentIndexChanged.connect(_on_synced_flowrate_changed)
+        
+        # Initialize with default contact time
+        _on_synced_flowrate_changed()
 
         # Start/Stop toggle button for synced pumps
         synced_toggle_btn = QPushButton("▶ Start")
@@ -1016,7 +1070,7 @@ class FlowTabBuilder:
 
         # RPM spinbox
         pump1_rpm_spin = QSpinBox()
-        pump1_rpm_spin.setRange(5, 300)
+        pump1_rpm_spin.setRange(5, 220)
         pump1_rpm_spin.setValue(50)
         pump1_rpm_spin.setSuffix(" RPM")
         pump1_rpm_spin.setFixedHeight(36)
@@ -1044,7 +1098,7 @@ class FlowTabBuilder:
             "  background: rgba(0, 0, 0, 0.06);"
             "}"
         )
-        pump1_rpm_spin.setToolTip("Pump 1 flow rate (5-300 RPM)")
+        pump1_rpm_spin.setToolTip("Pump 1 flow rate (5-220 µL/min)")
         pump1_control_layout.addWidget(pump1_rpm_spin, 1)
         self.sidebar.pump1_rpm_spin = pump1_rpm_spin
 
@@ -1083,6 +1137,11 @@ class FlowTabBuilder:
         pump1_corr_spin.setToolTip("Correction factor (from calibration)")
         pump1_control_layout.addWidget(pump1_corr_spin, 1)
         self.sidebar.pump1_correction_spin = pump1_corr_spin
+        # Hide Pump 1 correction spinbox in internal pump UI
+        try:
+            self.sidebar.pump1_correction_spin.hide()
+        except Exception:
+            pass
 
         # Start/Stop toggle button for Pump 1
         pump1_toggle_btn = QPushButton("▶ Start")
@@ -1121,131 +1180,7 @@ class FlowTabBuilder:
         self.sidebar.pump1_toggle_btn = pump1_toggle_btn
 
         individual_pumps_layout.addLayout(pump1_control_layout)
-        individual_pumps_layout.addSpacing(4)
 
-        # Pump 2 Controls
-        pump2_label = QLabel("Pump 2")
-        pump2_label.setStyleSheet(
-            "font-size: 13px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 600;"
-            "margin-top: 4px;"
-            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;",
-        )
-        individual_pumps_layout.addWidget(pump2_label)
-
-        # Pump 2 - Flow Rate, Correction, and Toggle Button on same line
-        pump2_control_layout = QHBoxLayout()
-        pump2_control_layout.setSpacing(8)
-
-        # RPM spinbox
-        pump2_rpm_spin = QSpinBox()
-        pump2_rpm_spin.setRange(5, 300)
-        pump2_rpm_spin.setValue(50)
-        pump2_rpm_spin.setSuffix(" RPM")
-        pump2_rpm_spin.setFixedHeight(36)
-        pump2_rpm_spin.setAlignment(Qt.AlignmentFlag.AlignRight)
-        pump2_rpm_spin.setStyleSheet(
-            "QSpinBox {"
-            "  background: white;"
-            "  border: 1px solid rgba(0, 0, 0, 0.12);"
-            "  border-radius: 7px;"
-            "  padding: 6px 10px;"
-            "  font-size: 13px;"
-            "  font-weight: 500;"
-            "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
-            "}"
-            "QSpinBox:focus {"
-            "  border: 2px solid #FF9500;"
-            "  padding: 5px 9px;"
-            "}"
-            "QSpinBox::up-button, QSpinBox::down-button {"
-            "  width: 18px;"
-            "  border-radius: 4px;"
-            "}"
-            "QSpinBox::up-button:hover, QSpinBox::down-button:hover {"
-            "  background: rgba(0, 0, 0, 0.06);"
-            "}"
-        )
-        pump2_rpm_spin.setToolTip("Pump 2 flow rate (5-300 RPM)")
-        pump2_control_layout.addWidget(pump2_rpm_spin, 1)
-        self.sidebar.pump2_rpm_spin = pump2_rpm_spin
-
-        # Correction factor spinbox
-        pump2_corr_spin = QDoubleSpinBox()
-        pump2_corr_spin.setRange(0.5, 2.0)
-        pump2_corr_spin.setValue(1.0)
-        pump2_corr_spin.setSingleStep(0.01)
-        pump2_corr_spin.setDecimals(3)
-        pump2_corr_spin.setPrefix("×")
-        pump2_corr_spin.setFixedHeight(36)
-        pump2_corr_spin.setAlignment(Qt.AlignmentFlag.AlignRight)
-        pump2_corr_spin.setStyleSheet(
-            "QDoubleSpinBox {"
-            "  background: white;"
-            "  border: 1px solid rgba(0, 0, 0, 0.12);"
-            "  border-radius: 7px;"
-            "  padding: 6px 10px;"
-            "  font-size: 13px;"
-            "  font-weight: 500;"
-            "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
-            "}"
-            "QDoubleSpinBox:focus {"
-            "  border: 2px solid #FF9500;"
-            "  padding: 5px 9px;"
-            "}"
-            "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
-            "  width: 18px;"
-            "  border-radius: 4px;"
-            "}"
-            "QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {"
-            "  background: rgba(0, 0, 0, 0.06);"
-            "}"
-        )
-        pump2_corr_spin.setToolTip("Correction factor (from calibration)")
-        pump2_control_layout.addWidget(pump2_corr_spin, 1)
-        self.sidebar.pump2_correction_spin = pump2_corr_spin
-
-        # Start/Stop toggle button for Pump 2
-        pump2_toggle_btn = QPushButton("▶ Start")
-        pump2_toggle_btn.setCheckable(True)
-        pump2_toggle_btn.setFixedHeight(36)
-        pump2_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        pump2_toggle_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 7px;"
-            "  padding: 0px 18px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:checked {"
-            "  background: #FF3B30;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #28A745;"
-            "}"
-            "QPushButton:checked:hover {"
-            "  background: #D32F2F;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #1E7E34;"
-            "}"
-            "QPushButton:checked:pressed {"
-            "  background: #B71C1C;"
-            "}"
-        )
-        pump2_toggle_btn.setToolTip("Start/Stop Pump 2")
-        pump2_control_layout.addWidget(pump2_toggle_btn)
-        self.sidebar.pump2_toggle_btn = pump2_toggle_btn
-
-        individual_pumps_layout.addLayout(pump2_control_layout)
         internal_pump_card_layout.addWidget(individual_pumps_container)
         self.sidebar.individual_pumps_container = individual_pumps_container
         individual_pumps_container.hide()  # Hidden by default, shown when sync is OFF
@@ -1258,8 +1193,8 @@ class FlowTabBuilder:
         inject_layout.setContentsMargins(0, 0, 0, 0)
         inject_layout.setSpacing(6)
 
-        # Inject button (30 second contact time)
-        inject_30s_btn = QPushButton("💉 Inject (30s Contact Time)")
+        # Inject button (uses contact time from spinbox)
+        inject_30s_btn = QPushButton("💉 Inject")
         inject_30s_btn.setFixedHeight(42)
         inject_30s_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         inject_30s_btn.setStyleSheet(
@@ -1281,79 +1216,20 @@ class FlowTabBuilder:
             "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #C77500, stop:1 #C75500);"
             "}"
         )
-        inject_30s_btn.setToolTip("Start pumps for 30 seconds (ideal for sample injection)")
+        inject_30s_btn.setToolTip("Start pump at selected flowrate for chosen contact time")
         inject_layout.addWidget(inject_30s_btn)
         self.sidebar.internal_pump_inject_30s_btn = inject_30s_btn
 
         internal_pump_card_layout.addWidget(inject_container)
-
-        self._add_separator(internal_pump_card_layout)
-
-        # === CALIBRATION BUTTONS ===
-        calibration_container = QWidget()
-        calibration_layout = QVBoxLayout(calibration_container)
-        calibration_layout.setContentsMargins(0, 0, 0, 0)
-        calibration_layout.setSpacing(8)
-
-        # Calibrate Speed button (correction factors)
-        calibrate_speed_btn = QPushButton("⚙ Calibrate Speed")
-        calibrate_speed_btn.setFixedHeight(38)
-        calibrate_speed_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        calibrate_speed_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: white;"
-            "  color: #007AFF;"
-            "  border: 1.5px solid #007AFF;"
-            "  border-radius: 7px;"
-            "  padding: 0px 16px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(0, 122, 255, 0.08);"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(0, 122, 255, 0.15);"
-            "}"
-        )
-        calibrate_speed_btn.setToolTip("Adjust pump correction factors to match flow rates")
-        calibration_layout.addWidget(calibrate_speed_btn)
-        self.sidebar.internal_pump_calibrate_btn = calibrate_speed_btn
-
-        # Calibrate Timing button (arrival synchronization)
-        calibrate_timing_btn = QPushButton("⏱ Calibrate Timing")
-        calibrate_timing_btn.setFixedHeight(38)
-        calibrate_timing_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        calibrate_timing_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: white;"
-            "  color: #5856D6;"
-            "  border: 1.5px solid #5856D6;"
-            "  border-radius: 7px;"
-            "  padding: 0px 16px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(88, 86, 214, 0.08);"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(88, 86, 214, 0.15);"
-            "}"
-        )
-        calibrate_timing_btn.setToolTip("Run automated timing calibration to synchronize pump arrivals at detector")
-        calibration_layout.addWidget(calibrate_timing_btn)
-        self.sidebar.internal_pump_calibrate_timing_btn = calibrate_timing_btn
-
-        internal_pump_card_layout.addWidget(calibration_container)
 
         internal_pump_section.content_layout.addWidget(internal_pump_card)
         tab_layout.addWidget(internal_pump_section)
         
         # Store reference to section for show/hide control
         self.sidebar.internal_pump_section = internal_pump_section
+        
+        # Load saved pump corrections from device config (if available)
+        self._load_saved_pump_corrections()
         
         # Initially hide the section (will be shown when P4PROPLUS detected)
         internal_pump_section.hide()
@@ -1378,6 +1254,75 @@ class FlowTabBuilder:
                 self.sidebar.synced_correction_spin.setValue(self.sidebar.pump1_correction_spin.value())
             if hasattr(self.sidebar, 'pump1_correction_spin') and hasattr(self.sidebar, 'pump2_correction_spin'):
                 self.sidebar.pump2_correction_spin.setValue(self.sidebar.pump1_correction_spin.value())
+
+    def _load_saved_pump_corrections(self):
+        """Load saved pump correction factors from EEPROM or device config.
+        
+        Loading priority:
+        1. Controller EEPROM (if supported - travels with hardware when shipped)
+        2. Device config JSON (local calibration data)
+        3. Default values (1.0)
+        """
+        try:
+            # Get device_config from hardware manager if available
+            if not hasattr(self.sidebar, 'hardware_mgr'):
+                return
+            
+            hardware_mgr = self.sidebar.hardware_mgr
+            if not hardware_mgr:
+                return
+            
+            pump1_corr = 1.0
+            pump2_corr = 1.0
+            source = "default"
+            
+            # Try to load from controller EEPROM first (highest priority - travels with device)
+            ctrl = hardware_mgr._ctrl_raw
+            if ctrl and hasattr(ctrl, 'get_pump_corrections'):
+                try:
+                    eeprom_corrections = ctrl.get_pump_corrections()
+                    if eeprom_corrections and isinstance(eeprom_corrections, dict):
+                        eeprom_pump1 = eeprom_corrections.get(1, 1.0)
+                        eeprom_pump2 = eeprom_corrections.get(2, 1.0)
+                        
+                        # Only use EEPROM values if they're not default (1.0)
+                        if eeprom_pump1 != 1.0 or eeprom_pump2 != 1.0:
+                            pump1_corr = eeprom_pump1
+                            pump2_corr = eeprom_pump2
+                            source = "EEPROM"
+                            logger.info(f"📥 Loaded pump corrections from controller EEPROM")
+                except Exception as e:
+                    logger.debug(f"Could not read pump corrections from EEPROM: {e}")
+            
+            # Fallback to device config if EEPROM didn't have values
+            if source == "default" and hasattr(hardware_mgr, 'device_config'):
+                device_config = hardware_mgr.device_config
+                if device_config:
+                    corrections = device_config.get_pump_corrections()
+                    config_pump1 = corrections.get("pump_1", 1.0)
+                    config_pump2 = corrections.get("pump_2", 1.0)
+                    
+                    if config_pump1 != 1.0 or config_pump2 != 1.0:
+                        pump1_corr = config_pump1
+                        pump2_corr = config_pump2
+                        source = "device config"
+                        logger.info(f"📥 Loaded pump corrections from device config")
+            
+            # Apply to individual pump spinboxes
+            if hasattr(self.sidebar, 'pump1_correction_spin'):
+                self.sidebar.pump1_correction_spin.setValue(pump1_corr)
+            if hasattr(self.sidebar, 'pump2_correction_spin'):
+                self.sidebar.pump2_correction_spin.setValue(pump2_corr)
+            
+            # Apply to synced pump spinbox (use pump1 value)
+            if hasattr(self.sidebar, 'synced_correction_spin'):
+                self.sidebar.synced_correction_spin.setValue(pump1_corr)
+            
+            if pump1_corr != 1.0 or pump2_corr != 1.0:
+                logger.info(f"✓ Pump corrections loaded from {source}: Pump 1={pump1_corr:.3f}, Pump 2={pump2_corr:.3f}")
+                
+        except Exception as e:
+            logger.warning(f"Could not load saved pump corrections: {e}")
 
     def _set_preset_flow_rate(self, value):
         """Set all main flow rates to the same preset value.
