@@ -515,7 +515,7 @@ class CalibrationService(QObject):
 
                     try:
                         # Get raw controller for valve operations (HAL adapter doesn't have valve methods)
-                        raw_ctrl = ctrl._ctrl if hasattr(ctrl, '_ctrl') else ctrl
+                        raw_ctrl = ctrl._ctrl if hasattr(ctrl, "_ctrl") else ctrl
 
                         # CRITICAL: Initialize pumps before priming!
                         logger.info("🔧 Initializing pumps to zero position...")
@@ -543,10 +543,14 @@ class CalibrationService(QObject):
                                 logger.info("  🔧 Opening 6-port valves to INJECT position")
                                 if raw_ctrl:
                                     result1 = raw_ctrl.knx_six(state=1, ch=1)
-                                    logger.info(f"     6-port valve 1: {'SUCCESS' if result1 else 'FAILED'}")
+                                    logger.info(
+                                        f"     6-port valve 1: {'SUCCESS' if result1 else 'FAILED'}"
+                                    )
                                     await asyncio.sleep(0.2)
                                     result2 = raw_ctrl.knx_six(state=1, ch=2)
-                                    logger.info(f"     6-port valve 2: {'SUCCESS' if result2 else 'FAILED'}")
+                                    logger.info(
+                                        f"     6-port valve 2: {'SUCCESS' if result2 else 'FAILED'}"
+                                    )
                                 await asyncio.sleep(0.3)
 
                             elif cycle == 4:
@@ -566,10 +570,14 @@ class CalibrationService(QObject):
                                 logger.info("  🔧 Opening 3-way valves to LOAD position")
                                 if raw_ctrl:
                                     result1 = raw_ctrl.knx_three(state=1, ch=1)
-                                    logger.info(f"     3-way valve 1: {'SUCCESS' if result1 else 'FAILED'}")
+                                    logger.info(
+                                        f"     3-way valve 1: {'SUCCESS' if result1 else 'FAILED'}"
+                                    )
                                     await asyncio.sleep(0.2)
                                     result2 = raw_ctrl.knx_three(state=1, ch=2)
-                                    logger.info(f"     3-way valve 2: {'SUCCESS' if result2 else 'FAILED'}")
+                                    logger.info(
+                                        f"     3-way valve 2: {'SUCCESS' if result2 else 'FAILED'}"
+                                    )
                                 await asyncio.sleep(0.3)
 
                             # Aspirate
@@ -591,25 +599,33 @@ class CalibrationService(QObject):
                                     failed_pumps.append("Pump 1")
                                 if not p2_ready:
                                     failed_pumps.append("Pump 2")
-                                
+
                                 pumps_str = " and ".join(failed_pumps)
-                                logger.warning(f"⚠️ {pumps_str} blocked - attempting to unclog by pushing liquid back through valve...")
-                                
+                                logger.warning(
+                                    f"⚠️ {pumps_str} blocked - attempting to unclog by pushing liquid back through valve..."
+                                )
+
                                 if not p1_ready:
-                                    logger.info("  🔧 Pump 1: Switching to INPUT valve and pushing liquid back to unclog")
+                                    logger.info(
+                                        "  🔧 Pump 1: Switching to INPUT valve and pushing liquid back to unclog"
+                                    )
                                     pump._pump.pump.set_valve_input(1)
                                     await asyncio.sleep(0.5)
                                     pump._pump.pump.move_to_position(1, 0, speed_ul_s=100)
                                     await asyncio.sleep(2.0)
-                                
+
                                 if not p2_ready:
-                                    logger.info("  🔧 Pump 2: Switching to INPUT valve and pushing liquid back to unclog")
+                                    logger.info(
+                                        "  🔧 Pump 2: Switching to INPUT valve and pushing liquid back to unclog"
+                                    )
                                     pump._pump.pump.set_valve_input(2)
                                     await asyncio.sleep(0.5)
                                     pump._pump.pump.move_to_position(2, 0, speed_ul_s=100)
                                     await asyncio.sleep(2.0)
-                                
-                                raise RuntimeError(f"{pumps_str} blocked - pushed liquid back from device to unclog valve. Check tubing and try calibration again.")
+
+                                raise RuntimeError(
+                                    f"{pumps_str} blocked - pushed liquid back from device to unclog valve. Check tubing and try calibration again."
+                                )
 
                             await asyncio.sleep(0.5)
 
@@ -632,7 +648,9 @@ class CalibrationService(QObject):
 
                         # CRITICAL: Close all valves after priming to prevent device heating
                         if raw_ctrl:
-                            logger.info("\n🔒 Closing all valves after priming (critical safety step)...")
+                            logger.info(
+                                "\n🔒 Closing all valves after priming (critical safety step)..."
+                            )
                             try:
                                 # Close 3-way valves to WASTE (state 0)
                                 raw_ctrl.knx_three(state=0, ch=1)
@@ -647,7 +665,9 @@ class CalibrationService(QObject):
                                 logger.info("✅ All valves closed - device safe from heating")
                             except Exception as valve_err:
                                 logger.error(f"❌ CRITICAL: Valve close failed: {valve_err}")
-                                logger.error("⚠️  DEVICE MAY BE HEATING! Manually power off if needed!")
+                                logger.error(
+                                    "⚠️  DEVICE MAY BE HEATING! Manually power off if needed!"
+                                )
 
                         logger.info("✅ Pump priming complete - waiting for optical calibration...")
 
@@ -724,18 +744,106 @@ class CalibrationService(QObject):
                         force_oem_retrain=self._force_oem_retrain,
                     )
                 except RuntimeError as e:
-                    if (
-                        "Servo positions not found" in str(e)
+                    error_str = str(e)
+
+                    # Detect servo calibration requirement:
+                    # 1. Missing servo positions
+                    # 2. Polarizer blocking (signal <5%)
+                    # 3. Signal extremely low (likely wrong positions)
+                    # DO NOT trigger on generic convergence failures when there's light!
+                    needs_servo_cal = (
+                        "Servo positions not found" in error_str
                         or "ServoCalibrationRequired" in type(e).__name__
-                    ):
-                        logger.warning("⚠️ LED calibration requires servo calibration first")
-                        error_msg = (
-                            "Servo calibration required before LED calibration.\n\n"
-                            "The servo calibration should have started automatically when hardware connected.\n"
-                            "Please ensure servo calibration completes successfully before starting LED calibration.\n\n"
-                            "To manually calibrate servo positions, go to Tools > Polarizer Calibration."
-                        )
-                        raise RuntimeError(error_msg)
+                        or "Polarizer blocking light" in error_str
+                        or "positions are INCORRECT" in error_str
+                        or "Signal is extremely low" in error_str
+                        or "Signal is too low" in error_str
+                    )
+                    # Removed: "convergence failed" - too broad, triggers even with good signal
+
+                    if needs_servo_cal:
+                        logger.warning("=" * 80)
+                        logger.warning(f"⚠️ Convergence issue detected: {error_str[:100]}...")
+                        logger.warning("   This may indicate incorrect servo positions.")
+                        logger.warning("=" * 80)
+                        logger.warning("⚠️ SERVO CALIBRATION REQUIRED - Starting automatically...")
+                        logger.warning("=" * 80)
+
+                        # Emit progress update
+                        self._progress_callback("Servo calibration required - starting...", 0)
+
+                        # Trigger servo calibration automatically
+                        logger.info("🔧 Starting automatic servo calibration...")
+                        try:
+                            # Import servo calibration function
+                            from servo_polarizer_calibration.calibrate_polarizer import (
+                                run_calibration_with_hardware,
+                            )
+
+                            # Create a simple hardware manager wrapper for servo calibration
+                            class HardwareManagerWrapper:
+                                def __init__(self, usb, ctrl):
+                                    self.usb = usb
+                                    self.ctrl = ctrl
+
+                            hw_wrapper = HardwareManagerWrapper(usb=usb, ctrl=ctrl)
+
+                            # Run servo calibration using existing hardware connection
+                            logger.info(
+                                "   Scanning servo positions to find correct S/P orientations..."
+                            )
+                            servo_success = run_calibration_with_hardware(
+                                hardware_manager=hw_wrapper,
+                                progress_callback=self._progress_callback,
+                            )
+
+                            if servo_success:
+                                # Reload device config to get new servo positions
+                                device_config.reload()
+                                servo_positions = device_config.get_servo_positions()
+
+                                if servo_positions:
+                                    s_pos = servo_positions["s"]
+                                    p_pos = servo_positions["p"]
+                                    logger.info("=" * 80)
+                                    logger.info("✅ SERVO CALIBRATION COMPLETED SUCCESSFULLY")
+                                    logger.info("=" * 80)
+                                    logger.info(f"   New servo positions: S={s_pos}, P={p_pos}")
+                                    logger.info(
+                                        "   Positions have been saved to device_config.json"
+                                    )
+                                    logger.info(
+                                        "   Retrying LED calibration with correct positions..."
+                                    )
+                                    logger.info("=" * 80)
+
+                                    # Retry LED calibration with correct servo positions
+                                    self._progress_callback("Retrying LED calibration...", 40)
+                                    cal_result = run_startup_calibration(
+                                        usb=usb,
+                                        ctrl=ctrl,
+                                        device_type=device_type,
+                                        device_config=device_config,
+                                        detector_serial=device_serial,
+                                        progress_callback=self._progress_callback,
+                                        use_convergence_engine=True,
+                                        force_oem_retrain=self._force_oem_retrain,
+                                    )
+                                else:
+                                    raise RuntimeError(
+                                        "Servo calibration completed but positions not saved"
+                                    )
+                            else:
+                                raise RuntimeError("Servo calibration returned False - scan failed")
+
+                        except Exception as servo_err:
+                            logger.error(f"❌ Automatic servo calibration failed: {servo_err}")
+                            error_msg = (
+                                "Servo calibration failed.\n\n"
+                                f"Error: {servo_err}\n\n"
+                                "Please try manual servo calibration from Tools > Polarizer Calibration."
+                            )
+                            raise RuntimeError(error_msg)
                     else:
                         raise
 

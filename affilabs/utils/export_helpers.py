@@ -436,6 +436,44 @@ class ExportHelpers:
                         if cycles_data:
                             df_cycles = pd.DataFrame(cycles_data)
                             df_cycles.to_excel(writer, sheet_name='Cycles', index=False)
+
+                        # Sheet 3: Per-Channel XY (time and SPR per channel)
+                        try:
+                            # Determine channels to include (use requested set)
+                            all_channels = channels
+                            # Find maximum length across selected channels
+                            max_len = 0
+                            for ch in all_channels:
+                                if ch in app._idx_to_channel:
+                                    max_len = max(max_len, len(app.buffer_mgr.cycle_data[ch].time))
+
+                            if max_len > 0:
+                                sheet_data: dict[str, np.ndarray] = {}
+                                for ch in all_channels:
+                                    if ch not in app._idx_to_channel:
+                                        # Create empty columns if channel not present
+                                        sheet_data[f"Time_{ch.upper()}"] = np.full((max_len,), np.nan)
+                                        sheet_data[f"SPR_{ch.upper()}"] = np.full((max_len,), np.nan)
+                                        continue
+
+                                    # Extract time and SPR arrays for channel
+                                    ch_time = app.buffer_mgr.cycle_data[ch].time
+                                    ch_spr = app.buffer_mgr.cycle_data[ch].spr
+
+                                    # Pad to max_len with NaN to align positions
+                                    if len(ch_time) < max_len:
+                                        ch_time = np.pad(ch_time, (0, max_len - len(ch_time)), constant_values=np.nan)
+                                    if len(ch_spr) < max_len:
+                                        ch_spr = np.pad(ch_spr, (0, max_len - len(ch_spr)), constant_values=np.nan)
+
+                                    sheet_data[f"Time_{ch.upper()}"] = ch_time
+                                    sheet_data[f"SPR_{ch.upper()}"] = ch_spr
+
+                                df_xy = pd.DataFrame(sheet_data)
+                                df_xy.to_excel(writer, sheet_name='Channels XY', index=False)
+                        except Exception as e:
+                            # Non-fatal: continue export even if XY sheet fails
+                            print(f"Warning: could not create 'Channels XY' sheet: {e}")
                 elif format_type == "csv":
                     df_raw.to_csv(str(full_path), index=False)
                 elif format_type == "json":

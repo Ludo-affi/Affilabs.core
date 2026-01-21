@@ -229,6 +229,52 @@ class AdvancedSettingsDialog(QDialog):
         )
         form.addRow(overnight_label, self.overnight_checkbox)
 
+        # Separator for pump corrections section
+        separator_pump = QFrame()
+        separator_pump.setFrameShape(QFrame.Shape.HLine)
+        separator_pump.setStyleSheet(divider_style())
+        form.addRow(separator_pump)
+
+        # Pump Corrections Section Header
+        pump_section_label = QLabel("Internal Pump Corrections")
+        pump_section_label.setStyleSheet(title_style(15) + "margin-top: 8px; margin-bottom: 8px;")
+        form.addRow(pump_section_label)
+
+        # Pump 1 Correction
+        from PySide6.QtWidgets import QDoubleSpinBox
+        pump1_label = QLabel("Pump 1 Correction:")
+        pump1_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
+        self.pump1_correction_spin = QDoubleSpinBox()
+        self.pump1_correction_spin.setRange(0.1, 2.0)
+        self.pump1_correction_spin.setSingleStep(0.01)
+        self.pump1_correction_spin.setDecimals(2)
+        self.pump1_correction_spin.setValue(1.0)
+        self.pump1_correction_spin.setFixedWidth(120)
+        self.pump1_correction_spin.setStyleSheet(spinbox_style())
+        self.pump1_correction_spin.setToolTip(
+            "Flowrate correction factor for Pump 1\n"
+            "Multiplier applied to commanded flowrate to correct for pump calibration.\n"
+            "Example: 1.0 = no correction, 0.65 = 65% of commanded rate"
+        )
+        form.addRow(pump1_label, self.pump1_correction_spin)
+
+        # Pump 2 Correction
+        pump2_label = QLabel("Pump 2 Correction:")
+        pump2_label.setStyleSheet(label_style(13, Colors.PRIMARY_TEXT, 600))
+        self.pump2_correction_spin = QDoubleSpinBox()
+        self.pump2_correction_spin.setRange(0.1, 2.0)
+        self.pump2_correction_spin.setSingleStep(0.01)
+        self.pump2_correction_spin.setDecimals(2)
+        self.pump2_correction_spin.setValue(1.0)
+        self.pump2_correction_spin.setFixedWidth(120)
+        self.pump2_correction_spin.setStyleSheet(spinbox_style())
+        self.pump2_correction_spin.setToolTip(
+            "Flowrate correction factor for Pump 2\n"
+            "Multiplier applied to commanded flowrate to correct for pump calibration.\n"
+            "Example: 1.0 = no correction, 0.65 = 65% of commanded rate"
+        )
+        form.addRow(pump2_label, self.pump2_correction_spin)
+
         main_layout.addLayout(form)
 
         # Separator
@@ -412,6 +458,40 @@ class AdvancedSettingsDialog(QDialog):
 
             logger.info("✅ Settings applied successfully!")
 
+            # Save pump corrections to device config and controller EEPROM
+            try:
+                pump1_corr = self.pump1_correction_spin.value()
+                pump2_corr = self.pump2_correction_spin.value()
+
+                # Use stored hardware_mgr from load_pump_corrections
+                if hasattr(self, '_hardware_mgr') and self._hardware_mgr:
+                    device_config = getattr(self._hardware_mgr, 'device_config', None)
+                    ctrl = getattr(self._hardware_mgr, '_ctrl_raw', None)
+
+                    # Save to device config JSON
+                    if device_config and hasattr(device_config, 'set_pump_corrections'):
+                        device_config.set_pump_corrections(pump1_corr, pump2_corr)
+                        device_config.save()
+                        logger.info(f"💾 Pump corrections saved to device config: P1={pump1_corr:.3f}, P2={pump2_corr:.3f}")
+
+                    # Save to controller EEPROM (if supported by firmware)
+                    if ctrl and hasattr(ctrl, 'set_pump_corrections'):
+                        success = ctrl.set_pump_corrections(pump1_corr, pump2_corr)
+                        if success:
+                            logger.info(f"✓ Pump corrections written to controller EEPROM: P1={pump1_corr:.3f}, P2={pump2_corr:.3f}")
+                        else:
+                            logger.warning(f"⚠ Controller EEPROM write failed - firmware version may not support pump corrections (need V1.4+)")
+                    else:
+                        if not ctrl:
+                            logger.warning("⚠ Controller not connected - pump corrections saved to config only")
+                        else:
+                            logger.warning("⚠ Controller does not have set_pump_corrections method")
+                else:
+                    logger.warning("⚠ Hardware manager not available - pump corrections not saved to controller")
+
+            except Exception as e:
+                logger.warning(f"Could not save pump corrections: {e}")
+
             # Notify parent window if it has an update method
             if hasattr(self.parent(), "on_settings_changed"):
                 self.parent().on_settings_changed()
@@ -437,10 +517,10 @@ class AdvancedSettingsDialog(QDialog):
             integration_time_p = getattr(calibration_data, "integration_time_p", None)
             integration_time_s = getattr(calibration_data, "integration_time_s", None)
             integration_time_legacy = getattr(calibration_data, "integration_time", None)
-            
+
             # Prefer P-mode integration time (used during live acquisition)
             integration_time = integration_time_p or integration_time_legacy
-            
+
             if integration_time:
                 self.detector_on_input.setValue(int(integration_time))
                 self.integration_source_label.setText("(from P-mode calibration)")
@@ -490,3 +570,47 @@ class AdvancedSettingsDialog(QDialog):
                 self.cal_date_value.setText(cal_date.strftime("%Y-%m-%d %H:%M"))
         else:
             self.cal_date_value.setText("N/A")
+
+    def load_pump_corrections(self, hardware_mgr):
+        """Load pump correction values from device config and controller EEPROM.
+
+        Args:
+            hardware_mgr: Hardware manager instance to access device config and controller
+        """
+        # Store hardware_mgr for later use in save
+        self._hardware_mgr = hardware_mgr
+
+        try:
+            # Try to get corrections from device config first
+            device_config = getattr(hardware_mgr, 'device_config', None)
+            if device_config and hasattr(device_config, 'get_pump_corrections'):
+                corrections = device_config.get_pump_corrections()
+                if corrections and isinstance(corrections, dict):
+                    pump1_corr = corrections.get("pump_1", 1.0)
+                    pump2_corr = corrections.get("pump_2", 1.0)
+                    self.pump1_correction_spin.setValue(pump1_corr)
+                    self.pump2_correction_spin.setValue(pump2_corr)
+                    logger.info(f"📖 Loaded pump corrections from device config: P1={pump1_corr:.3f}, P2={pump2_corr:.3f}")
+                    return
+
+            # Fallback: try to get from controller EEPROM
+            ctrl = getattr(hardware_mgr, '_ctrl_raw', None)
+            if ctrl and hasattr(ctrl, 'get_pump_corrections'):
+                corrections = ctrl.get_pump_corrections()
+                if corrections:
+                    if isinstance(corrections, tuple) and len(corrections) == 2:
+                        pump1_corr, pump2_corr = corrections
+                    elif isinstance(corrections, dict):
+                        pump1_corr = corrections.get(1, 1.0)
+                        pump2_corr = corrections.get(2, 1.0)
+                    else:
+                        logger.warning(f"Unexpected pump corrections format: {corrections}")
+                        return
+
+                    self.pump1_correction_spin.setValue(pump1_corr)
+                    self.pump2_correction_spin.setValue(pump2_corr)
+                    logger.info(f"📖 Loaded pump corrections from controller EEPROM: P1={pump1_corr:.3f}, P2={pump2_corr:.3f}")
+
+        except Exception as e:
+            logger.debug(f"Could not load pump corrections: {e}")
+            # Keep default values (1.0, 1.0)

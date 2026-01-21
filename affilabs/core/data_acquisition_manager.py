@@ -733,7 +733,7 @@ class DataAcquisitionManager(QObject):
             logger.info(f"[WORKER] Thread: {threading.current_thread().name}")
             logger.info(f"[WORKER] Calibrated: {self.calibrated}")
             logger.info(f"[WORKER] Has calibration_data: {self.calibration_data is not None}")
-            
+
             channels = ["a", "b", "c", "d"]
             consecutive_errors = 0
             max_consecutive_errors = 5
@@ -831,7 +831,9 @@ class DataAcquisitionManager(QObject):
                 #          DETECTOR_WINDOW = DETECTOR_ON_TIME - SAFETY_BUFFER_MS
                 #          integration_time ≤ MAX_INTEGRATION_PER_SCAN_MS (per-scan cap)
                 #          num_scans = floor(DETECTOR_WINDOW / integration_time)
-                max_integration_per_scan_ms = getattr(root_settings, 'MAX_INTEGRATION_PER_SCAN_MS', 62.5)
+                max_integration_per_scan_ms = getattr(
+                    root_settings, "MAX_INTEGRATION_PER_SCAN_MS", 62.5
+                )
 
                 if p_integration_time_effective > max_integration_per_scan_ms:
                     logger.warning(
@@ -887,19 +889,21 @@ class DataAcquisitionManager(QObject):
                 finally:
                     self._run_params_logged = True
 
+            # Initialize channel error tracking
+            channel_error_counts = {"a": 0, "b": 0, "c": 0, "d": 0}
+            channel_disabled = {"a": False, "b": False, "c": False, "d": False}
+
             while not self._stop_acquisition.is_set():
                 cycle_count += 1
-                
+
                 # DEBUG: Log first cycle entry
                 if cycle_count == 1:
                     logger.info(f"[WORKER] Entered acquisition loop - cycle {cycle_count}")
-                    logger.info(f"[WORKER] _acquiring={self._acquiring}, _stop_acquisition={self._stop_acquisition.is_set()}")
+                    logger.info(
+                        f"[WORKER] _acquiring={self._acquiring}, _stop_acquisition={self._stop_acquisition.is_set()}"
+                    )
 
                 # Manual GC every 100 cycles (during safe time, not critical path)
-                if cycle_count % 100 == 0:
-                    gc.collect(generation=0)
-
-                # Manual GC every 100 cycles
                 if cycle_count % 100 == 0:
                     gc.collect(generation=0)
 
@@ -1041,8 +1045,10 @@ class DataAcquisitionManager(QObject):
                     # This is the standard production method - reliable and predictable
                     if not self._rank_mode_enabled and self._batch_supported:
                         try:
-                            logger.info(f"[BATCH] Starting batch acquisition for cycle {cycle_count}")
-                            
+                            logger.info(
+                                f"[BATCH] Starting batch acquisition for cycle {cycle_count}"
+                            )
+
                             # Build LED intensity dict
                             led_intensities = {}
                             for ch in channels:
@@ -1085,7 +1091,7 @@ class DataAcquisitionManager(QObject):
                             logger.error(
                                 f"[BATCH] Failed, falling back to sequential: {batch_err}",
                             )
-                            logger.error(f"[BATCH] Exception details:", exc_info=True)
+                            logger.error("[BATCH] Exception details:", exc_info=True)
                             # Fall through to sequential acquisition (remove the continue statement below)
 
                     # ========================================================================
@@ -1323,7 +1329,7 @@ class DataAcquisitionManager(QObject):
 
             error_msg = f"FATAL: Acquisition worker crashed: {e}\n{traceback.format_exc()}"
             logger.error(f"❌ {error_msg}")  # LOG THE ERROR!
-            logger.error(f"❌ Full traceback:", exc_info=True)
+            logger.error("❌ Full traceback:", exc_info=True)
             with contextlib.suppress(builtins.BaseException):
                 self._emission_queue.put_nowait({"_error": error_msg})
 

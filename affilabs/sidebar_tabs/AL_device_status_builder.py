@@ -200,15 +200,17 @@ class DeviceStatusTabBuilder:
             status_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
             subunit_row.addWidget(status_label)
 
-            # Store references
-            self.sidebar.subunit_status[subunit_name] = {
-                "indicator": status_indicator,
-                "status_label": status_label,
-            }
-
+            # Create container widget for the row
             subunit_container = QWidget()
             subunit_container.setLayout(subunit_row)
             subunit_card_layout.addWidget(subunit_container)
+
+            # Store references including the container for visibility control
+            self.sidebar.subunit_status[subunit_name] = {
+                "indicator": status_indicator,
+                "status_label": status_label,
+                "container": subunit_container,
+            }
 
             # Add separator between items (not after last)
             if i < len(subunit_names) - 1:

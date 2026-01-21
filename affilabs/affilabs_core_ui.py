@@ -4520,13 +4520,31 @@ class AffilabsMainWindow(QMainWindow):
             }
             self._set_subunit_status("Optics", optics_ready, details=optics_details)
 
-        # Fluidics readiness
+        # Fluidics readiness - only show for flow-capable controllers
         if "fluidics_ready" in status:
             fluidics_ready = status["fluidics_ready"]
             logger.info(f"[UI] Setting Fluidics readiness: {fluidics_ready}")
             logger.info(f"[UI] Full status dict keys: {list(status.keys())}")
             logger.info(f"[UI] pump_connected={status.get('pump_connected')}, flow_calibrated={status.get('flow_calibrated')}")
             self._set_subunit_status("Fluidics", fluidics_ready)
+            # Show the fluidics row
+            self._set_subunit_visibility("Fluidics", True)
+        else:
+            # Hide the fluidics row for static-only controllers (P4SPR)
+            self._set_subunit_visibility("Fluidics", False)
+
+    def _set_subunit_visibility(self, subunit_name: str, visible: bool) -> None:
+        """Show or hide a subunit status row.
+
+        Args:
+            subunit_name: Name of subunit (Sensor, Optics, Fluidics)
+            visible: True to show, False to hide
+        """
+        if subunit_name in self.sidebar.subunit_status:
+            # Get the container widget for the entire row
+            container = self.sidebar.subunit_status[subunit_name].get("container")
+            if container:
+                container.setVisible(visible)
 
     def _set_subunit_status(
         self,
@@ -4666,7 +4684,7 @@ class AffilabsMainWindow(QMainWindow):
         # After calibration, flow_available will be set based on pump presence
         # For P4PROPLUS (internal pumps) and other flow controllers, still needs calibration
         flow_available = status.get("flow_calibrated", False)  # Enabled after calibration completes
-        
+
         logger.info(f"🔄 Operation modes update:")
         logger.info(f"   ctrl_type={ctrl_type}")
         logger.info(f"   pump_connected={has_pump}")
@@ -5623,7 +5641,7 @@ End of Debug Log
         - Servo positions (S/P) from device_config (immutable, set at init)
         - LED brightness (A/B/C/D) preferring calibrated P-mode final brightness,
           falling back to current hardware state or device config
-        
+
         Args:
             show_warnings: If True, show warning dialogs when config unavailable.
                           Set to False during UI init to avoid spurious warnings.
@@ -5796,9 +5814,10 @@ End of Debug Log
             device_serial = self.device_config.get_serial_number() if hasattr(self.device_config, "get_serial_number") else "Not detected"
             dialog.load_device_info(serial=device_serial)
 
-        # Load pump calibration (pk) if P4PROPLUS available
+        # Load pump corrections if available
         if hasattr(self, "app") and self.app and hasattr(self.app, "hardware_mgr"):
-            dialog.load_pump_calibration(self.app.hardware_mgr)
+            if hasattr(dialog, "load_pump_corrections"):
+                dialog.load_pump_corrections(self.app.hardware_mgr)
 
         # Show dialog
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -5914,32 +5933,11 @@ End of Debug Log
             self.apply_led_settings_requested.emit(settings)
             logger.info("✅ Settings saved to device config")
 
-            # Show success message
-            if s_pos is not None or p_pos is not None:
-                QMessageBox.information(
-                    self,
-                    "Settings Applied",
-                    "LED intensities applied immediately.\n\n"
-                    "Servo positions saved to config - RESTART REQUIRED to take effect.",
-                )
-            else:
-                QMessageBox.information(
-                    self,
-                    "Success",
-                    "Settings applied and saved successfully!",
-                )
+            # Note: Message boxes removed - visual feedback now via button style change only
+            # LED brightness updates are now live (no need for confirmation dialogs)
 
         except Exception as e:
             logger.error(f"❌ Failed to apply settings: {e}", exc_info=True)
-            QMessageBox.warning(self, "Error", f"Failed to apply settings: {e}")
-            QMessageBox.information(
-                self,
-                "Success",
-                "Settings applied to hardware and saved to config",
-            )
-
-        except Exception as e:
-            logger.error(f"Failed to apply settings: {e}")
             QMessageBox.warning(self, "Error", f"Failed to apply settings: {e}")
 
     def _handle_simple_led_calibration(self) -> None:
@@ -6087,7 +6085,7 @@ End of Debug Log
         try:
             from PySide6.QtWidgets import QApplication, QMessageBox
             app_instance = QApplication.instance()
-            
+
             # CRITICAL: Always call application cleanup to ensure:
             # 1. LEDs are turned off
             # 2. Valves are powered off (prevent overheating)
@@ -6097,7 +6095,7 @@ End of Debug Log
                 logger.info("🔒 Triggering graceful hardware shutdown...")
                 app_instance.close()
                 logger.info("✓ Hardware shutdown complete")
-            
+
             devices_to_unplug = []
             if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
                 hw_mgr = app_instance.hardware_mgr

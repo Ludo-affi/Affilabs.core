@@ -65,6 +65,8 @@ class AffilabsSidebar(QWidget):
     debug_log_requested = Signal()
     polarizer_toggle_requested = Signal()
     settings_apply_requested = Signal()
+    led_brightness_changed = Signal(str, str)  # channel, value (live update)
+    synced_flowrate_changed = Signal()  # Synced pump flowrate changed (live update)
 
     # High-level cycle signals (MVVM refactoring)
     cycle_start_requested = Signal(object)  # CycleConfigViewModel

@@ -177,7 +177,7 @@ def LEDconverge_engine(
         )
 
         # Convert engine result to production format
-        integration_ms, signals, converged, final_leds = convert_engine_result_to_production(
+        integration_ms, signals, converged, final_leds, best_iteration = convert_engine_result_to_production(
             result=result,
             channel_list=ch_list,
         )
@@ -186,12 +186,14 @@ def LEDconverge_engine(
             if converged:
                 logger.info(f"\n✅ ENGINE CONVERGED!")
                 logger.info(f"   Final integration time: {integration_ms:.1f}ms")
+                logger.info(f"   Converged at iteration: {best_iteration}")
                 logger.info(f"   Final signals: {signals}")
             else:
                 logger.warning(f"\n⚠️  ENGINE DID NOT CONVERGE")
                 logger.warning(f"   Final integration time: {integration_ms:.1f}ms")
+                logger.warning(f"   Best iteration: {best_iteration}")
 
-        return integration_ms, signals, converged, final_leds
+        return integration_ms, signals, converged, final_leds, best_iteration
 
     except Exception as e:
         if logger:
@@ -199,4 +201,4 @@ def LEDconverge_engine(
             logger.exception("Engine execution failed")
 
         # Return failure format
-        return initial_integration_ms, {}, False, {}
+        return initial_integration_ms, {}, False, {}, 0

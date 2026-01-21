@@ -478,22 +478,38 @@ class PicoP4SPRAdapter:
             True if command succeeded
         """
         try:
+            # Delegate to actual controller which handles V2.4 servo:ANGLE,DURATION format
+            if hasattr(self._ctrl, 'servo_move_raw_pwm'):
+                return self._ctrl.servo_move_raw_pwm(pwm)
+
+            # Fallback for old controllers
             if not (1 <= pwm <= 255):
                 return False
 
             # Convert PWM (1-255) to degrees (0-180)
             degrees = int((pwm - 1) * 180 / 254)
-
-            # Clamp to valid range
             degrees = max(0, min(180, degrees))
 
-            cmd = f"sv{degrees:03d}000\n"
+            # V2.4 firmware format: servo:ANGLE,DURATION
+            cmd = f"servo:{degrees},500\n"
             if self._ser is None or not self._ser.is_open:
                 return False
 
+            # Enable servo power first (V2.4 firmware requirement)
+            self._ser.write(b"sp1\n")
+            time.sleep(0.05)
+            self._ser.read(1)  # Consume enable response
+
+            # Send movement command
             self._ser.write(cmd.encode())
-            self._ser.readline()  # Read response
-            return True
+            time.sleep(0.05)
+            response = self._ser.read(1)
+
+            # V2.4 firmware responds with '1', older with '6'
+            if response in (b"1", b"6"):
+                time.sleep(0.6)  # Wait for movement
+                return True
+            return False
         except Exception:
             return False
 

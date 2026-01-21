@@ -156,6 +156,36 @@ class ConvergenceEngine:
                 except Exception:
                     pass
 
+    def _apply_saturation_fallback(self, current_led: int, sat_pixels: int, channel: str, reason: str) -> int:
+        """Apply percentage-based LED reduction when slope data unavailable.
+
+        Args:
+            current_led: Current LED value
+            sat_pixels: Number of saturated pixels
+            channel: Channel identifier for logging
+            reason: Why fallback is being used
+
+        Returns:
+            New LED value after reduction
+        """
+        # Determine reduction percentage based on saturation severity
+        if sat_pixels < 100:
+            margin = 0.98  # 2% reduction (minor saturation)
+            severity = "minor"
+        elif sat_pixels < 1000:
+            margin = 0.93  # 7% reduction (moderate)
+            severity = "moderate"
+        else:
+            margin = 0.85  # 15% reduction (heavy)
+            severity = "heavy"
+
+        new_led = max(10, int(current_led * margin))
+        reduction_pct = int((1 - margin) * 100)
+        self._log("warning",
+                 f"  🔴 {channel.upper()} SATURATED ({sat_pixels}px, {severity}): "
+                 f"LED {current_led}→{new_led} (-{reduction_pct}%, {reason})")
+        return new_led
+
     def run(
         self,
         recipe: ConvergenceRecipe,
@@ -187,28 +217,6 @@ class ConvergenceEngine:
         )
         saturation_policy = SaturationPolicy()
         sensitivity_classifier = SensitivityClassifier()
-        
-        # DEVICE-SPECIFIC CHANNEL SLOPE ADJUSTMENT: Apply optional boost factors
-        # Caller can provide per-channel slope adjustments (e.g., for P-pol compensation)
-        # By REDUCING the slope (counts per LED), algorithm calculates HIGHER LED values
-        if model_slopes_at_10ms and recipe.channel_slope_boost:
-            adjusted_slopes = {}
-            for ch in recipe.channels:
-                if ch in model_slopes_at_10ms:
-                    boost = recipe.channel_slope_boost.get(ch, 1.0)
-                    if boost != 1.0:
-                        # INVERSE boost: If channel needs X× more LED, then slope is 1/X×
-                        adjusted_slope = model_slopes_at_10ms[ch] / boost
-                        adjusted_slopes[ch] = adjusted_slope
-                        self._log("info", 
-                                 f"  🔧 {ch.upper()} slope adjusted: {model_slopes_at_10ms[ch]:.1f} → {adjusted_slope:.1f} "
-                                 f"(÷{boost:.2f} for {boost:.2f}× LED boost)")
-                    else:
-                        adjusted_slopes[ch] = model_slopes_at_10ms[ch]
-                else:
-                    adjusted_slopes[ch] = model_slopes_at_10ms.get(ch, 0)
-            
-            model_slopes_at_10ms = adjusted_slopes
 
         # State - with smarter initial LED calculation
         initial_leds = {}
@@ -238,6 +246,10 @@ class ConvergenceEngine:
             integration_ms=recipe.initial_integration_ms,
             leds=initial_leds,
         )
+
+        # Store slopes for use in the algorithm (AFTER state is created)
+        state.model_slopes_at_10ms = model_slopes_at_10ms or {}
+        self._log("debug", f"Model slopes: {state.model_slopes_at_10ms}")
         high_sensitivity_detected = False
 
         target_signal = recipe.target_percent * params.max_counts
@@ -359,11 +371,11 @@ class ConvergenceEngine:
                 ch_led = state.leds[ch]
                 ch_sat = saturation[ch]
                 ch_error = abs(ch_signal - target_signal)
-                
+
                 # Track channels with ZERO saturation OR minor saturation (<100 pixels)
                 # Minor saturation is acceptable if it's MUCH closer to target than previous best
                 is_trackable = (ch_sat == 0) or (ch_sat < 100 and ch_error < target_signal * 0.30)
-                
+
                 if is_trackable:
                     # Initialize on first valid measurement
                     if ch not in state.best_per_channel_error:
@@ -641,6 +653,25 @@ class ConvergenceEngine:
                 locked_info = [f"{ch.upper()}@{state.leds[ch]}" for ch in locked]
                 self._log("info", f"  🔒 Locked channels (converged): {', '.join(locked_info)}")
 
+            # EARLY STOPPING: Stop if system is stable with good results
+            # Prevents overshooting from aggressive PHASE-2 model predictions
+            if iteration >= 5:  # Give it at least 5 iterations to converge
+                has_saturation = sum(saturation.values()) > 0
+                is_stable_or_improving = iteration_trend in ["➡️  STABLE", "📈 IMPROVING"]
+                error_is_low = avg_error_pct < 10.0  # Within 10% average error
+
+                if not has_saturation and is_stable_or_improving and error_is_low:
+                    self._log("info", f"\n✅ EARLY STOP: System stable with {avg_error_pct:.1f}% error and no saturation")
+                    self._log("info", f"   Stopping at iteration {iteration} to prevent overshooting from model predictions")
+
+                    # Return current state as final result
+                    return ConvergenceResult(
+                        integration_ms=state.integration_ms,
+                        final_leds=dict(state.leds),
+                        signals=dict(signals),
+                        converged=True
+                    )
+
             # STRATEGY DECISION: Should we adjust integration time or LED intensities?
             # Use iteration history to make intelligent choice
             prefer_led_adjustment = False
@@ -849,12 +880,10 @@ class ConvergenceEngine:
                 # Only executed if multiple channels (3+) are saturating
                 self._log("info", f"  ⚠️  Multiple channels ({num_saturating}) saturating - reducing integration time")
                 new_time = saturation_policy.reduce_integration(
-                    saturation, 
-                    state.integration_ms, 
+                    saturation,
+                    state.integration_ms,
                     params,
                     polarization_mode=recipe.polarization_mode,  # Pass polarization mode
-                    model_slopes_at_10ms=model_slopes_at_10ms,  # Pass channel slopes for sensitivity-aware reduction
-                    target_signal=target_signal,  # Pass target for calculating minimum safe integration
                 )
                 if new_time < state.integration_ms:
                     self._log(
@@ -1160,14 +1189,20 @@ class ConvergenceEngine:
                     if chosen_option is None and option2_feasible:
                         chosen_option = "option2"
 
+                    # Helper: Apply LED changes and log
+                    def apply_led_updates(led_dict, locked_set, log_prefix="  📐"):
+                        for ch, new_led in led_dict.items():
+                            if ch not in locked_set:
+                                old_led = state.leds[ch]
+                                state.leds[ch] = new_led
+                                self._log("info", f"{log_prefix} {ch.upper()}: LED {old_led}→{new_led}")
+                            else:
+                                self._log("info", f"{log_prefix} {ch.upper()} is locked - skipping")
+
                     # Apply chosen optimization
                     if chosen_option == "option1":
                         self._log("info", f"  🎯 Optimization: Adjust LEDs (keep integration @ {state.integration_ms:.1f}ms)")
-                        for ch, new_led in option1_leds.items():
-                            if ch not in locked:
-                                old_led = state.leds[ch]
-                                state.leds[ch] = new_led
-                                self._log("info", f"  📐 [OPT] {ch.upper()}: LED {old_led}→{new_led}")
+                        apply_led_updates(option1_leds, locked, "  📐 [OPT]")
                         optimization_applied = True
 
                     elif chosen_option == "option2":
@@ -1181,11 +1216,7 @@ class ConvergenceEngine:
                         self._log("info", f"  🎯 Optimization: Balance both (LED & integration)")
                         self._log("info", f"      Integration: {state.integration_ms:.1f}ms → {option3_integration:.1f}ms")
                         state.integration_ms = option3_integration
-                        for ch, new_led in option3_leds.items():
-                            if ch not in locked:
-                                old_led = state.leds[ch]
-                                state.leds[ch] = new_led
-                                self._log("info", f"      {ch.upper()}: LED {old_led}→{new_led}")
+                        apply_led_updates(option3_leds, locked, "     ")
                         state.clear_for_integration_change()
                         optimization_applied = True
                         continue  # Skip to next iteration with new settings
@@ -1328,74 +1359,61 @@ class ConvergenceEngine:
                 if sat > 0:
                     # PHYSICS-BASED REDUCTION: Use model slopes to calculate exact LED change needed
                     # Formula: LED_reduction = (current_counts - safe_target) / slope
-                    
+
                     if model_slopes_at_10ms and ch in model_slopes_at_10ms:
                         slope_10ms = model_slopes_at_10ms[ch]
                         counts_per_led = slope_10ms * (state.integration_ms / 10.0)
-                        
+
                         if counts_per_led > 0:
+                            # CRITICAL: safe_target must not exceed convergence target!
+                            # Otherwise signal stays above target and never converges
+                            convergence_target_counts = target_signal  # This is the 85% target
+
                             # Determine safe target based on saturation severity
-                            # Minor saturation: aim for 5% below saturation threshold (safe headroom)
-                            # Heavy saturation: aim for 15% below target (more aggressive)
+                            # But NEVER go above the convergence target
                             if sat < 100:
                                 # Minor saturation: Drop just below saturation threshold + 5% safety
                                 # Saturation threshold is at 90% of max_counts
-                                safe_target = params.saturation_threshold * 0.95  # 5% below threshold
+                                safe_target = min(params.saturation_threshold * 0.95, convergence_target_counts)
                                 approach = "gentle"
                             elif sat < 1000:
                                 # Moderate saturation: Drop to 85% of max (below threshold with margin)
-                                safe_target = params.max_counts * 0.85
+                                safe_target = min(params.max_counts * 0.85, convergence_target_counts)
                                 approach = "moderate"
                             else:
                                 # Heavy saturation: Drop to 80% of max (aggressive margin)
-                                safe_target = params.max_counts * 0.80
+                                safe_target = min(params.max_counts * 0.80, convergence_target_counts)
                                 approach = "aggressive"
-                            
+
                             # Calculate exact counts to drop
                             counts_to_drop = sig - safe_target
-                            
+
                             if counts_to_drop > 0:
                                 # Calculate exact LED reduction from slope
                                 led_reduction = counts_to_drop / counts_per_led
-                                
+
                                 # Apply minimum reduction for safety (at least 1 LED)
                                 led_reduction = max(1, int(led_reduction))
-                                
+
                                 # Sanity check: don't reduce more than 80% of current LED
                                 max_reduction = int(current_led * 0.80)
                                 led_reduction = min(led_reduction, max_reduction)
-                                
+
                                 new_led = max(10, current_led - led_reduction)
-                                
+
                                 self._log("warning",
                                          f"  🔴 {ch.upper()} SATURATED ({sat}px, {approach}): LED {current_led}→{new_led} "
                                          f"(-{led_reduction} LED, drop {int(counts_to_drop)} counts @ {counts_per_led:.1f} counts/LED)")
                             else:
-                                # Already below safe target (shouldn't happen)
+                                # Already below safe target - no reduction needed
                                 new_led = current_led
-                                self._log("warning", f"  ⚠️  {ch.upper()} sat={sat}px but signal already safe: {sig:.0f} < {safe_target:.0f}")
+                                self._log("debug", f"  {ch.upper()} sat={sat}px but signal already safe: {sig:.0f} < {safe_target:.0f}")
                         else:
-                            # Slope is zero or invalid - use fallback percentage
-                            if sat < 100:
-                                new_led = max(10, int(current_led * 0.98))  # 2% reduction
-                            elif sat < 1000:
-                                new_led = max(10, int(current_led * 0.93))  # 7% reduction
-                            else:
-                                new_led = max(10, int(current_led * 0.85))  # 15% reduction
-                            self._log("warning",
-                                     f"  🔴 {ch.upper()} SATURATED ({sat}px): LED {current_led}→{new_led} (fallback, no slope data)")
+                            # Slope unavailable - use percentage fallback
+                            new_led = self._apply_saturation_fallback(current_led, sat, ch, "no slope data")
                     else:
-                        # No model slopes available - use fallback percentage based on severity
-                        if sat < 100:
-                            safety_margin = 0.98  # 2% reduction
-                        elif sat < 1000:
-                            safety_margin = 0.93  # 7% reduction
-                        else:
-                            safety_margin = 0.85  # 15% reduction
-                        
-                        new_led = max(10, int(current_led * safety_margin))
-                        self._log("warning",
-                                 f"  🔴 {ch.upper()} SATURATED ({sat}px): LED {current_led}→{new_led} (fallback {int((1-safety_margin)*100)}%, no model)")
+                        # No model slopes - use percentage fallback
+                        new_led = self._apply_saturation_fallback(current_led, sat, ch, "no model")
 
                     # Record this LED as a saturation boundary
                     b = state.get_bounds(ch)
@@ -1418,17 +1436,12 @@ class ConvergenceEngine:
                         # Prepare features: channel, target_counts, integration_ms, sensitivity
                         channel_encoding = {'a': 0, 'b': 1, 'c': 2, 'd': 3}.get(ch, 0)
                         sensitivity_label = 1 if high_sensitivity_detected else 0  # 1=HIGH, 0=BASELINE
-                        
+
                         # Get model slope for this channel (scaled to current integration time)
                         model_slope = 0.0
                         if model_slopes_at_10ms and ch in model_slopes_at_10ms:
                             model_slope = model_slopes_at_10ms[ch] * (state.integration_ms / 10.0)
-                        
-                        # Get channel slope boost (P-pol sensitivity compensation)
-                        slope_boost = 1.0
-                        if recipe.channel_slope_boost and ch in recipe.channel_slope_boost:
-                            slope_boost = recipe.channel_slope_boost[ch]
-                        
+
                         # Polarization mode encoding
                         pol_mode = 1 if recipe.polarization_mode.upper() == "P" else 0  # 1=P-pol, 0=S-pol
 
@@ -1440,18 +1453,18 @@ class ConvergenceEngine:
                             sig,                    # Current signal (counts) - NEW
                             current_led,            # Current LED value - NEW
                             model_slope,            # Channel slope at current integration - NEW
-                            slope_boost,            # P-pol sensitivity boost factor - NEW
+                            1.0,                    # Deprecated slope_boost (kept for ML compatibility) - LEGACY
                             pol_mode,               # Polarization mode: 0=S, 1=P - NEW
                         ]
 
                         ml_led_predicted = int(self.led_predictor.predict([X_led])[0])
                         ml_led_predicted = max(10, min(255, ml_led_predicted))  # Clamp
-                        
+
                         # VALIDATE ML PREDICTION AGAINST MODEL SLOPE (if available)
                         if model_slopes_at_10ms and ch in model_slopes_at_10ms:
                             model_slope = model_slopes_at_10ms[ch] * (state.integration_ms / 10.0)
                             expected_counts_from_ml = model_slope * ml_led_predicted
-                            
+
                             # Check if ML prediction would overshoot target by >50%
                             if expected_counts_from_ml > target_signal * 1.5:
                                 # Calculate model-based LED instead
@@ -1460,7 +1473,7 @@ class ConvergenceEngine:
                                 self._log("warning", f"    ⚠️  [ML] Prediction {ml_led_predicted} would overshoot (expected {expected_counts_from_ml:.0f} vs target {target_signal:.0f})")
                                 self._log("info", f"    🔧 [MODEL-AWARE] Using model-based LED {model_led} instead")
                                 ml_led_predicted = model_led
-                        
+
                         self._log("info", f"    🤖 [ML] {ch.upper()} LED prediction: {ml_led_predicted}")
                         ml_features_available = True
                     except Exception as e:
@@ -1474,18 +1487,18 @@ class ConvergenceEngine:
                     model = None
                     if model_slopes_at_10ms and ch in model_slopes_at_10ms:
                         model = model_slopes_at_10ms[ch] * (state.integration_ms / 10.0)
-                    
+
                     if model and model > 0 and sig > 0:
                         # Model-based LED calculation
                         model_led = int(target_signal / model) if model > 0 else current_led
                         model_led = max(10, min(255, model_led))
-                        
+
                         # BLEND: 30% ML + 70% Model (reduces ML influence)
                         ml_weight = 0.30
                         model_weight = 0.70
                         new_led = int(ml_weight * ml_led_predicted + model_weight * model_led)
                         new_led = max(10, min(255, new_led))
-                        
+
                         self._log("info", f"    🎯 [BLEND] ML={ml_led_predicted} (30%) + Model={model_led} (70%) → {new_led}")
                     else:
                         # No model available, use ML directly
@@ -1708,40 +1721,40 @@ class ConvergenceEngine:
         if state.best_per_channel_leds:
             # Check if all per-channel best are from same integration time
             integration_times = set(state.best_per_channel_integration.values())
-            
+
             if len(integration_times) == 1:
                 # All from same integration time - use per-channel best
                 best_integration = list(integration_times)[0]
                 final_leds = dict(state.best_per_channel_leds)
                 final_signals = dict(state.best_per_channel_signals)
-                
+
                 # CRITICAL FIX: Boost LED for channels below target
                 # Use OBSERVED signal/LED ratio from THIS channel's data (device-agnostic)
                 for ch in recipe.channels:
                     sig = final_signals[ch]
                     led = final_leds[ch]
-                    
+
                     if sig < target_signal * 0.90 and led < 255:  # Only boost if below 90% of target
                         # Calculate needed LED using observed linear relationship
                         # At current LED: signal = sig
                         # At needed LED: signal = target_signal
                         # Assuming linear: target_signal / sig = led_needed / led
                         # Therefore: led_needed = led * (target_signal / sig)
-                        
+
                         ratio = target_signal / sig if sig > 0 else 1.15
                         led_needed = int(led * ratio)
                         led_needed = min(255, max(led + 5, led_needed))  # At least +5, max 255
-                        
+
                         self._log("info", f"   📈 Boosting {ch.upper()} LED: {led} → {led_needed} (signal {sig:.0f} → ~{target_signal:.0f})")
                         final_leds[ch] = led_needed
                         # Estimate new signal using same linear ratio
                         final_signals[ch] = sig * ratio
-                
+
                 self._log("info", f"\n📊 Using PER-CHANNEL best brightness (all from {best_integration:.1f}ms, boosted where needed):")
                 for ch in recipe.channels:
                     pct = (final_signals[ch] / target_signal * 100) if target_signal > 0 else 0
                     self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} counts ({pct:5.1f}% of target)")
-                
+
                 # Use the integration time from per-channel best
                 final_integration = best_integration
             else:
@@ -1749,13 +1762,13 @@ class ConvergenceEngine:
                 final_leds = dict(state.leds)
                 final_signals = dict(signals)
                 final_integration = state.integration_ms
-                
+
                 self._log("warning", f"\n⚠️  Per-channel best from mixed integration times - using final iteration")
                 self._log("info", f"\n📊 Using final iteration LEDs (complete set at {state.integration_ms:.1f}ms):")
                 for ch in recipe.channels:
                     pct = (final_signals[ch] / target_signal * 100) if target_signal > 0 else 0
                     self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} counts ({pct:5.1f}% of target)")
-            
+
             # Calculate QC metrics using final combined results
             qc_warnings = []
             max_signal = max(final_signals.values()) if final_signals else 0
@@ -1767,18 +1780,21 @@ class ConvergenceEngine:
             target_gap = abs(max_signal_pct - target_pct)
 
             # STRICT: Accept only if ALL channels are within tolerance
-            # Individual channel check - each must be within 10% of target
+            # Individual channel check - each must be within tolerance (±15% for most recipes)
             all_channels_acceptable = True
+            acceptance_tolerance = max(recipe.tolerance_percent, 0.15)  # Use recipe tolerance or 15%, whichever is larger
+
             for ch in recipe.channels:
                 sig = final_signals.get(ch, 0)
                 sig_pct = (sig / target_signal * 100) if target_signal > 0 else 0
                 error_pct = abs(sig - target_signal) / target_signal if target_signal > 0 else 1.0
-                
-                # Channel is acceptable if within 10% of target (not 30% tolerance)
-                if error_pct > 0.10:  # Stricter than recipe.tolerance_percent
+
+                # Channel is acceptable if within tolerance
+                if error_pct > acceptance_tolerance:
                     all_channels_acceptable = False
+                    self._log("warning", f"{ch.upper()}: error {error_pct*100:.1f}% exceeds tolerance {acceptance_tolerance*100:.1f}%")
                     break
-            
+
             # Accept convergence only if average is within 5% of target
             converged_best_effort = (target_gap <= 5.0) and all_channels_acceptable
 

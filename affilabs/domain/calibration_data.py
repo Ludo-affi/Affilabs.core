@@ -104,6 +104,10 @@ class CalibrationData:
     # Convergence summary (from LED calibration Steps 3-5)
     convergence_summary: dict | None = None  # LED convergence results for QC report
 
+    # Convergence iteration counts (from S- and P-mode engines)
+    s_iterations: int = 0  # S-mode convergence iterations
+    p_iterations: int = 0  # P-mode convergence iterations
+
     # Metadata
     timestamp: float = field(default_factory=lambda: datetime.now().timestamp())
     detector_serial: str = "Unknown"  # Device serial number
@@ -220,6 +224,8 @@ class CalibrationData:
             timestamp=self.timestamp,
             roi_start=self.roi_start,
             roi_end=self.roi_end,
+            s_iterations=self.s_iterations,
+            p_iterations=self.p_iterations,
         )
 
     # ============================================================================
@@ -427,4 +433,7 @@ class CalibrationData:
             # ROI
             "roi_start": self.roi_start,
             "roi_end": self.roi_end,
+            # Convergence iteration counts
+            "s_iterations": self.s_iterations,
+            "p_iterations": self.p_iterations,
         }

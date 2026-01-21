@@ -2,7 +2,7 @@
   "device_info": {
     "config_version": "1.0",
     "created_date": "2025-11-21T08:22:12.096448",
-    "last_modified": "2025-12-18T00:20:37.261852",
+    "last_modified": "2026-01-20T13:02:54.284183",
     "device_id": "FLMT09788"
   },
   "hardware": {
@@ -11,13 +11,15 @@
     "led_pcb_serial": null,
     "spectrometer_model": "Flame-T",
     "spectrometer_serial": "FLMT09788",
-    "controller_model": "Raspberry Pi Pico P4SPR",
+    "controller_model": "pico_p4spr",
     "controller_serial": null,
     "optical_fiber_diameter_um": 200,
-    "polarizer_type": "barrel",
+    "polarizer_type": "round",
     "servo_model": "HS-55MG",
-    "servo_s_position": 133,
-    "servo_p_position": 35
+    "servo_s_position": 120,
+    "servo_p_position": 30,
+    "controller_firmware_version": "V2.4",
+    "controller_type": "PicoP4SPR"
   },
   "timing_parameters": {
     "pre_led_delay_ms": 35.0,
@@ -46,12 +48,12 @@
     "factory_calibrated": false,
     "user_calibrated": false,
     "preferred_calibration_mode": "global",
-    "integration_time_ms": null,
+    "integration_time_ms": 5.0,
     "num_scans": null,
-    "led_intensity_a": 77,
-    "led_intensity_b": 132,
-    "led_intensity_c": 35,
-    "led_intensity_d": 35,
+    "led_intensity_a": 255,
+    "led_intensity_b": 255,
+    "led_intensity_c": 255,
+    "led_intensity_d": 255,
     "spr_model_path": null,
     "spr_model_calibration_date": null
   },

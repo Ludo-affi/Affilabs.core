@@ -76,8 +76,19 @@ def measure_with_spectral_analysis(hm, wavelengths, method="max"):
     return float(spectrum.max())
 
 
-def move_to_position(hm, target_pwm, settle_time=0.1):
-    """Move to position and settle using direct servo command."""
+def move_to_position(hm, target_pwm, settle_time=0.3):
+    """Move to position using controller HAL method.
+
+    Uses the controller's servo_move_raw_pwm() method which automatically
+    handles the correct command format for each firmware type:
+    - P4SPR: servo:ANGLE,DURATION (V2.4 firmware)
+    - P4PRO: servo:ANGLE,DURATION (V2.0+ firmware)
+
+    Args:
+        hm: Hardware manager
+        target_pwm: PWM value 0-255 (controller converts to angle)
+        settle_time: Additional settle time after movement
+    """
     try:
         if target_pwm < 0 or target_pwm > 255:
             print(f"❌ Invalid PWM value: {target_pwm}")
@@ -86,52 +97,20 @@ def move_to_position(hm, target_pwm, settle_time=0.1):
         ctrl = hm.ctrl
         pwm_val = int(target_pwm)
 
-        # Use servo_move_raw_pwm() method which handles P4PRO firmware v2.1 correctly
-        # This uses the servo:ANGLE,DURATION command (RAM-only, no flash writes)
+        # Use the controller's HAL method (handles firmware differences)
         if hasattr(ctrl, 'servo_move_raw_pwm'):
-            # PicoP4PRO class has optimized servo move with correct timing
             success = ctrl.servo_move_raw_pwm(pwm_val)
+
             if success:
+                print(f"✅ Servo moved to PWM {pwm_val}")
+                # Additional settle time for measurement stability
                 time.sleep(settle_time)
                 return True
             else:
                 print(f"❌ Failed to move servo to PWM {pwm_val}")
                 return False
-        
-        # Fallback for other controller types
-        # Detect if this is P4PRO firmware
-        is_p4pro = hasattr(ctrl, 'firmware_id') and 'P4PRO' in ctrl.firmware_id
-        
-        if is_p4pro:
-            # P4PRO firmware v2.1: Use servo:ANGLE,DURATION format (RAM-only)
-            # CRITICAL: Requires 500ms duration + 600ms wait for reliable operation
-            angle = int((pwm_val / 255.0) * 170.0) + 5  # Map 0-255 PWM to 5-175 degrees
-            cmd = f"servo:{angle},500\n"
         else:
-            # P4SPR firmware: Use servo:ANGLE,DURATION format
-            angle = int((pwm_val / 255.0) * 180.0)
-            cmd = f"servo:{angle},150\n"
-
-        if ctrl._ser is not None:
-            ctrl._ser.reset_input_buffer()
-            ctrl._ser.write(cmd.encode())
-            
-            if is_p4pro:
-                # P4PRO firmware v2.1 requires 600ms wait for reliable response
-                time.sleep(0.6)
-                response = ctrl._ser.read(10)
-            else:
-                # P4SPR firmware
-                time.sleep(0.05)
-                response = ctrl._ser.read(10)
-                # Wait for physical movement (firmware does 150ms)
-                time.sleep(0.20)  # 150ms movement + 50ms settle
-
-            # Additional settle time for stable measurement
-            time.sleep(settle_time)
-            return True
-        else:
-            print("❌ Serial port not available")
+            print("❌ Controller does not support servo_move_raw_pwm()")
             return False
 
     except Exception as e:
@@ -593,6 +572,7 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
 
     # === Refine S region ===
     print("\nRefining S region (3 PWM steps)...")
+
     s_results = []
 
     for idx, pwm in enumerate(range(max(1, s_center - 10), min(256, s_center + 11), 3)):
@@ -745,14 +725,14 @@ def main():
 
         # Detect if this is P4PRO firmware (requires channel enable before batch command)
         is_p4pro = hasattr(hm.ctrl, 'firmware_id') and 'P4PRO' in hm.ctrl.firmware_id
-        
+
         # P4PRO uses 40% initial intensity, others use 20%
         led_intensity_percent = 40 if is_p4pro else 20
         max_attempts = 2
 
         for attempt in range(max_attempts):
             led_intensity = int(led_intensity_percent * 255 / 100)
-            
+
             # Set all LEDs
             print(f"Setting all 4 LEDs to {led_intensity_percent}% ({led_intensity}/255)...")
             try:
@@ -992,15 +972,15 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
                 print(f"  enable_multi_led() returned: {result}")
             else:
                 print(f"  WARNING: Controller type {type(ctrl).__name__} has no enable_multi_led() method!")
-            
+
             # Brief delay for LED enable to take effect
             time.sleep(0.2)
-            
+
             # Set LED intensities
             print(f"Setting LEDs to {led_intensity_percent}% ({led_intensity}/255) using set_batch_intensities()...")
             result = ctrl.set_batch_intensities(a=led_intensity, b=led_intensity, c=led_intensity, d=led_intensity)
             print(f"  set_batch_intensities() returned: {result}")
-            
+
             # Brief delay for intensity to settle
             time.sleep(0.2)
 
@@ -1051,6 +1031,40 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
             # Success - break out of retry loop
             break
 
+        # ===== CRITICAL VALIDATION: DEGREE SEPARATION =====
+        # HS-65MG servo: PWM 0-255 maps to 0-180 degrees
+        def pwm_to_degrees(pwm):
+            return (pwm / 255.0) * 180.0
+
+        s_degrees = pwm_to_degrees(refinement['s_pwm'])
+        p_degrees = pwm_to_degrees(refinement['p_pwm'])
+        separation_degrees = abs(s_degrees - p_degrees)
+
+        # BARREL polarizers REQUIRE 80-110° separation (typically ~90°)
+        MIN_SEPARATION_DEGREES = 80.0
+        MAX_SEPARATION_DEGREES = 110.0
+
+        if polarizer_type == "BARREL" and (separation_degrees < MIN_SEPARATION_DEGREES or separation_degrees > MAX_SEPARATION_DEGREES):
+            print("\n" + "=" * 70)
+            print("❌ CALIBRATION FAILED - INVALID SERVO POSITIONS")
+            print("=" * 70)
+            print(f"S Position: PWM {refinement['s_pwm']} = {s_degrees:.1f}°")
+            print(f"P Position: PWM {refinement['p_pwm']} = {p_degrees:.1f}°")
+            print(f"Separation: {separation_degrees:.1f}° (REQUIRED: {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES}°)")
+            print("")
+            print("BARREL polarizers have two transmission windows that MUST be")
+            print(f"separated by {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES} degrees (typically ~90 degrees).")
+            print("")
+            print("Possible causes:")
+            print("  1. Polarizer barrel not rotating with servo")
+            print("  2. Mechanical slippage in coupling")
+            print("  3. Wrong polarizer type detected")
+            print("  4. Incorrect window detection (both windows on same quadrant)")
+            print("")
+            print("ACTION REQUIRED: Check mechanical coupling and re-run calibration")
+            print("=" * 70)
+            return False
+
         # Print results
         ratio = refinement["s_intensity"] / refinement["p_intensity"]
         separation = refinement["s_intensity"] - refinement["p_intensity"]
@@ -1059,8 +1073,9 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
         print("SERVO CALIBRATION COMPLETE")
         print("=" * 70)
         print(f"Polarizer Type: {polarizer_type}")
-        print(f"\nP Position: PWM {refinement['p_pwm']}")
-        print(f"S Position: PWM {refinement['s_pwm']}")
+        print(f"\nP Position: PWM {refinement['p_pwm']} ({p_degrees:.1f}°)")
+        print(f"S Position: PWM {refinement['s_pwm']} ({s_degrees:.1f}°)")
+        print(f"Angular Separation: {separation_degrees:.1f}° {'✅' if MIN_SEPARATION_DEGREES <= separation_degrees <= MAX_SEPARATION_DEGREES else '⚠️'}")
         print(f"\nS/P Ratio: {ratio:.2f}×")
         print(f"Separation: {separation:.0f} counts")
         print("=" * 70)
@@ -1230,24 +1245,26 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
         p_degrees = pwm_to_degrees(refinement['p_pwm'])
         separation_degrees = abs(s_degrees - p_degrees)
 
-        # BARREL polarizers REQUIRE >60° separation (ideally 80-90°)
-        MIN_SEPARATION_DEGREES = 60.0
+        # BARREL polarizers REQUIRE 80-110° separation (typically ~90°)
+        MIN_SEPARATION_DEGREES = 80.0
+        MAX_SEPARATION_DEGREES = 110.0
 
-        if is_barrel and separation_degrees < MIN_SEPARATION_DEGREES:
+        if is_barrel and (separation_degrees < MIN_SEPARATION_DEGREES or separation_degrees > MAX_SEPARATION_DEGREES):
             logger.error("\n" + "=" * 70)
             logger.error("❌ CALIBRATION FAILED - INVALID SERVO POSITIONS")
             logger.error("=" * 70)
             logger.error(f"S Position: PWM {refinement['s_pwm']} = {s_degrees:.1f}°")
             logger.error(f"P Position: PWM {refinement['p_pwm']} = {p_degrees:.1f}°")
-            logger.error(f"Separation: {separation_degrees:.1f}° (REQUIRED: >{MIN_SEPARATION_DEGREES}°)")
+            logger.error(f"Separation: {separation_degrees:.1f}° (REQUIRED: {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES}°)")
             logger.error("")
             logger.error("BARREL polarizers have two transmission windows that MUST be")
-            logger.error("separated by at least 60 degrees (ideally 80-90 degrees).")
+            logger.error(f"separated by {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES} degrees (typically ~90 degrees).")
             logger.error("")
             logger.error("Possible causes:")
             logger.error("  1. Polarizer barrel not rotating with servo")
             logger.error("  2. Mechanical slippage in coupling")
             logger.error("  3. Wrong polarizer type detected")
+            logger.error("  4. Incorrect window detection (both windows on same quadrant)")
             logger.error("")
             logger.error("ACTION REQUIRED: Check mechanical coupling and re-run calibration")
             logger.error("=" * 70)
@@ -1262,7 +1279,7 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
         logger.info(f"Polarizer Type:    {polarizer_type}")
         logger.info(f"S Position (PWM):  {refinement['s_pwm']} ({s_degrees:.1f}°)")
         logger.info(f"P Position (PWM):  {refinement['p_pwm']} ({p_degrees:.1f}°)")
-        logger.info(f"Angular Separation: {separation_degrees:.1f}° {'✅' if separation_degrees > MIN_SEPARATION_DEGREES else '⚠️'}")
+        logger.info(f"Angular Separation: {separation_degrees:.1f}° {'✅' if MIN_SEPARATION_DEGREES <= separation_degrees <= MAX_SEPARATION_DEGREES else '⚠️'}")
         logger.info(f"S/P Ratio:         {ratio:.2f}")
         logger.info(f"S Intensity:       {refinement['s_intensity']:.1f}")
         logger.info(f"P Intensity:       {refinement['p_intensity']:.1f}")

@@ -78,19 +78,40 @@ class ExcelExporter:
                     df_raw.to_excel(writer, sheet_name="Raw Data", index=False)
                     logger.debug(f"Exported {len(raw_data_rows)} raw data points")
 
-                # Sheet 2: Cycles
+                # Sheet 2: Channel-Specific Data (each channel with its own time column)
+                if raw_data_rows:
+                    df_raw = pd.DataFrame(raw_data_rows)
+
+                    # Create separate dataframes for each channel
+                    channels = df_raw["channel"].unique()
+                    channel_dfs = []
+
+                    for ch in sorted(channels):
+                        ch_data = df_raw[df_raw["channel"] == ch][["time", "value"]].copy()
+                        ch_data.columns = [f"Time {ch.upper()} (s)", f"Channel {ch.upper()} (nm)"]
+                        channel_dfs.append(ch_data.reset_index(drop=True))
+
+                    # Concatenate horizontally (side by side)
+                    df_channel_specific = pd.concat(channel_dfs, axis=1)
+
+                    df_channel_specific.to_excel(writer, sheet_name="Channel Data", index=False)
+                    logger.debug(
+                        f"Exported channel-specific data with {len(df_channel_specific)} rows"
+                    )
+
+                # Sheet 3: Cycles
                 if cycles:
                     df_cycles = pd.DataFrame(cycles)
                     df_cycles.to_excel(writer, sheet_name="Cycles", index=False)
                     logger.debug(f"Exported {len(cycles)} cycles")
 
-                # Sheet 3: Flags
+                # Sheet 4: Flags
                 if flags:
                     df_flags = pd.DataFrame(flags)
                     df_flags.to_excel(writer, sheet_name="Flags", index=False)
                     logger.debug(f"Exported {len(flags)} flags")
 
-                # Sheet 4: Events
+                # Sheet 5: Events
                 if events:
                     events_data = []
                     for timestamp, event in events:
@@ -109,13 +130,13 @@ class ExcelExporter:
                     df_events.to_excel(writer, sheet_name="Events", index=False)
                     logger.debug(f"Exported {len(events)} events")
 
-                # Sheet 5: Analysis Results
+                # Sheet 6: Analysis Results
                 if analysis_results:
                     df_analysis = pd.DataFrame(analysis_results)
                     df_analysis.to_excel(writer, sheet_name="Analysis", index=False)
                     logger.debug(f"Exported {len(analysis_results)} analysis results")
 
-                # Sheet 6: Metadata
+                # Sheet 7: Metadata
                 if metadata:
                     # Convert metadata dict to DataFrame
                     metadata_items = [{"key": k, "value": str(v)} for k, v in metadata.items()]
@@ -123,7 +144,7 @@ class ExcelExporter:
                     df_meta.to_excel(writer, sheet_name="Metadata", index=False)
                     logger.debug(f"Exported {len(metadata)} metadata items")
 
-                # Sheet 7: Alignment (Edits tab settings)
+                # Sheet 8: Alignment (Edits tab settings)
                 if alignment_data:
                     alignment_rows = []
                     for cycle_idx, settings in alignment_data.items():

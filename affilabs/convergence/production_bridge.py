@@ -102,7 +102,7 @@ def create_detector_params_from_production(
     # (P-pol transmission < S-pol transmission at SPR resonance)
     if polarization_mode.upper() == "P":
         max_integration_time = 62.5  # P-pol: higher max integration allowed
-    
+
     return DetectorParams(
         max_counts=max_counts,
         saturation_threshold=saturation_threshold,
@@ -154,7 +154,7 @@ def validate_engine_result(
 def convert_engine_result_to_production(
     result,
     channel_list: List[str],
-) -> tuple[float, Dict[str, float], bool, Dict[str, int]]:
+) -> tuple[float, Dict[str, float], bool, Dict[str, int], int]:
     """Convert engine result to production LEDconverge return format.
 
     Args:
@@ -162,16 +162,17 @@ def convert_engine_result_to_production(
         channel_list: List of channels (for validation)
 
     Returns:
-        Tuple (integration_ms, signals_dict, converged, final_leds)
-        Extended format with final LED values
+        Tuple (integration_ms, signals_dict, converged, final_leds, best_iteration)
+        Extended format with final LED values and iteration count
     """
     if not validate_engine_result(result, channel_list):
         # Return failure format
-        return result.integration_ms, {}, False, {}
+        return result.integration_ms, {}, False, {}, 0
 
     return (
         result.integration_ms,
         result.signals.copy(),
         result.converged,
         result.final_leds.copy(),
+        result.best_iteration,
     )

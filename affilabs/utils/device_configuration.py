@@ -248,7 +248,7 @@ class DeviceConfiguration:
         # Read hardware attributes - use 'name' not 'device_name'
         ctrl_name = getattr(self.controller, "name", "").lower()
         firmware_id = getattr(self.controller, "firmware_id", "").lower()
-        
+
         logger.info(f"   Controller name: {ctrl_name}")
         logger.info(f"   Firmware ID: {firmware_id}")
         logger.info(f"   Current config model: {old_model}")
@@ -541,7 +541,7 @@ class DeviceConfiguration:
             try:
                 ctrl_name = getattr(self.controller, "device_name", "").lower()
                 firmware_id = getattr(self.controller, "firmware_id", "").lower()
-                
+
                 if "arduino" in ctrl_name or ctrl_name == "p4spr":
                     config["hardware"]["controller_type"] = "Arduino"
                     config["hardware"]["controller_model"] = "Arduino P4SPR"
@@ -1397,6 +1397,40 @@ class DeviceConfiguration:
             "num_scans": cal["num_scans"],
         }
 
+    def get_pump_corrections(self) -> dict[str, float]:
+        """Get pump correction factors for internal pumps.
+
+        Returns:
+            Dict with keys 'pump_1' and 'pump_2' (default 1.0 if not set)
+
+        """
+        if "pump_corrections" not in self.config:
+            return {"pump_1": 1.0, "pump_2": 1.0}
+
+        corrections = self.config["pump_corrections"]
+        return {
+            "pump_1": corrections.get("pump_1", 1.0),
+            "pump_2": corrections.get("pump_2", 1.0),
+        }
+
+    def set_pump_corrections(self, pump1_correction: float, pump2_correction: float) -> None:
+        """Set pump correction factors for internal pumps.
+
+        Args:
+            pump1_correction: Pump 1 flowrate correction factor (multiplier)
+            pump2_correction: Pump 2 flowrate correction factor (multiplier)
+
+        """
+        if "pump_corrections" not in self.config:
+            self.config["pump_corrections"] = {}
+
+        self.config["pump_corrections"]["pump_1"] = pump1_correction
+        self.config["pump_corrections"]["pump_2"] = pump2_correction
+        self.config["device_info"]["last_modified"] = datetime.now().isoformat()
+        logger.info(
+            f"Pump corrections updated: P1={pump1_correction:.3f}, P2={pump2_correction:.3f}",
+        )
+
     def set_calibration_settings(
         self,
         integration_time_ms: int | None,
@@ -1528,19 +1562,23 @@ class DeviceConfiguration:
             hw = self.config["hardware"]
             cal = self.config["calibration"]
 
+            # Helper to safely convert to int, handling None values
+            def safe_int(value, default):
+                return int(value) if value is not None else default
+
             eeprom_config = {
                 "led_pcb_model": hw.get("led_pcb_model", "luminus_cool_white"),
                 "controller_type": self._get_controller_type_name(controller),
-                "fiber_diameter_um": hw.get("optical_fiber_diameter_um", 200),
+                "fiber_diameter_um": safe_int(hw.get("optical_fiber_diameter_um"), 200),
                 "polarizer_type": hw.get("polarizer_type", "round"),
-                "servo_s_position": hw.get("servo_s_position", 10),
-                "servo_p_position": hw.get("servo_p_position", 100),
-                "led_intensity_a": cal.get("led_intensity_a", 0),
-                "led_intensity_b": cal.get("led_intensity_b", 0),
-                "led_intensity_c": cal.get("led_intensity_c", 0),
-                "led_intensity_d": cal.get("led_intensity_d", 0),
-                "integration_time_ms": cal.get("integration_time_ms", 100),
-                "num_scans": cal.get("num_scans", 3),
+                "servo_s_position": safe_int(hw.get("servo_s_position"), 10),
+                "servo_p_position": safe_int(hw.get("servo_p_position"), 100),
+                "led_intensity_a": safe_int(cal.get("led_intensity_a"), 0),
+                "led_intensity_b": safe_int(cal.get("led_intensity_b"), 0),
+                "led_intensity_c": safe_int(cal.get("led_intensity_c"), 0),
+                "led_intensity_d": safe_int(cal.get("led_intensity_d"), 0),
+                "integration_time_ms": safe_int(cal.get("integration_time_ms"), 100),
+                "num_scans": safe_int(cal.get("num_scans"), 3),
             }
 
             success = controller.write_config_to_eeprom(eeprom_config)

@@ -418,7 +418,7 @@ class SettingsTabBuilder:
             channel_input = QLineEdit()
             channel_input.setPlaceholderText("0-255")
             channel_input.setToolTip(
-                f"LED brightness for Channel {channel.upper()} (0-255)",
+                f"LED brightness for Channel {channel.upper()} (0-255) - Changes apply immediately",
             )
             channel_input.setFixedWidth(70)
             channel_input.setStyleSheet(self._lineedit_style())
@@ -426,6 +426,12 @@ class SettingsTabBuilder:
 
             # Store reference on sidebar
             setattr(self.sidebar, f"channel_{channel}_input", channel_input)
+
+            # Connect to live update handler
+            # Emit signal with channel letter when text changes
+            channel_input.textChanged.connect(
+                lambda text, ch=channel: self.sidebar.led_brightness_changed.emit(ch, text)
+            )
 
             channel_row.addStretch()
             layout.addLayout(channel_row)

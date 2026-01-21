@@ -216,6 +216,21 @@ def led_calibration_result_to_domain(legacy_result) -> CalibrationData:
     except Exception:
         pass
 
+    # Propagate convergence iteration counts if available
+    try:
+        s_iter = safe_get("s_iterations")
+        if s_iter is not None:
+            cal_data.s_iterations = int(s_iter)
+    except Exception:
+        pass
+
+    try:
+        p_iter = safe_get("p_iterations")
+        if p_iter is not None:
+            cal_data.p_iterations = int(p_iter)
+    except Exception:
+        pass
+
     # Set ROI indices directly (these have properties but underlying fields can be set)
     # CRITICAL: These are used by live acquisition to crop raw spectra correctly
     cal_data._wave_min_index = (

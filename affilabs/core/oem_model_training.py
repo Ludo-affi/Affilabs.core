@@ -80,11 +80,20 @@ def train_led_model(
     needs_shorter_times = False
 
     # Measure dark current at each integration time
+    # ALSO measure ultra-sensitive times [5, 10, 15]ms upfront so they're ready if needed
     logger.info("Step 1/4: Measuring dark current...")
+    # Send individual turn-off commands for each LED (more reliable than batch)
+    controller.set_intensity("a", 0)
+    controller.set_intensity("b", 0)
+    controller.set_intensity("c", 0)
+    controller.set_intensity("d", 0)
+    # Send batch turn-off as well for redundancy
     controller.set_batch_intensities(a=0, b=0, c=0, d=0)
-    time.sleep(0.5)
+    logger.info("Waiting 3 seconds for LEDs to fully turn off...")
+    time.sleep(3.0)  # Increased from 0.5s - LEDs need time to fully shut down
 
     dark_counts_per_time = {}
+    # Measure dark for normal times [10, 20, 30, 45, 60]ms
     for time_ms in integration_times:
         spectrometer.set_integration(float(time_ms))
         time.sleep(0.5)
@@ -97,6 +106,21 @@ def train_led_model(
         dark = float(spectrum.max())
         dark_counts_per_time[time_ms] = dark
         logger.info(f"  {time_ms}ms: {dark:.0f} counts")
+
+    # ALSO measure ultra-sensitive times [5, 10, 15]ms (will use if ultra-sensitive detected)
+    logger.info("Pre-measuring ultra-sensitive integration times...")
+    for time_ms in [5, 10, 15]:
+        if time_ms not in dark_counts_per_time:  # Don't re-measure 10ms
+            spectrometer.set_integration(float(time_ms))
+            time.sleep(0.5)
+            scans = []
+            for _ in range(3):
+                scans.append(spectrometer.read_intensity())
+                time.sleep(0.05)
+            spectrum = np.mean(scans, axis=0)
+            dark = float(spectrum.max())
+            dark_counts_per_time[time_ms] = dark
+            logger.info(f"  {time_ms}ms: {dark:.0f} counts")
 
     logger.info("")
 
@@ -139,6 +163,14 @@ def train_led_model(
                 intensities_for_stage = [20, 40, 60, 80, 100]  # 67% of base
             elif time_ms >= 30:
                 intensities_for_stage = [24, 48, 72, 96, 120]  # 80% of base
+            elif time_ms >= 20:
+                intensities_for_stage = [
+                    20,
+                    40,
+                    60,
+                    80,
+                    100,
+                ]  # Conservative for 20ms to avoid early saturation
             else:
                 intensities_for_stage = base_intensities
 
@@ -175,6 +207,44 @@ def train_led_model(
                         # Check if saturation happened very early (first 2 intensities)
                         if intensity <= base_intensities[1]:
                             saturated_early = True
+
+                        # ADAPTIVE: For ultra-sensitive devices, try intermediate intensities to get 2nd point
+                        if len(led_data) == 1:
+                            logger.info(
+                                "  Only 1 data point - attempting adaptive intermediate collection..."
+                            )
+                            last_good_intensity = led_data[-1][0]
+                            # Try multiple intermediate points, getting progressively closer to last good
+                            attempts = [
+                                int((last_good_intensity + intensity) / 2),  # Halfway
+                                int((last_good_intensity + intensity) / 3)
+                                + last_good_intensity,  # 1/3 from last good
+                                int((intensity - last_good_intensity) / 4)
+                                + last_good_intensity,  # 1/4 from last good
+                            ]
+
+                            for intermediate in attempts:
+                                if intermediate <= last_good_intensity or intermediate >= intensity:
+                                    continue
+                                logger.info(f"  Trying intermediate intensity {intermediate}...")
+                                result_mid = measure_led_response(
+                                    controller,
+                                    spectrometer,
+                                    led_char,
+                                    intermediate,
+                                    integration_time,
+                                    dark_counts,
+                                    detector_wait_ms,
+                                )
+                                if not result_mid["is_saturated"]:
+                                    corrected_mid = result_mid["corrected_counts"]
+                                    led_data.append((intermediate, corrected_mid))
+                                    logger.info(f"  I={intermediate}: {corrected_mid:.0f} counts ✓")
+                                    break  # Got our 2nd point, stop trying
+                                else:
+                                    logger.warning(
+                                        f"  I={intermediate}: SATURATED - trying lower..."
+                                    )
                         break
 
                     corrected = result["corrected_counts"]
@@ -195,17 +265,33 @@ def train_led_model(
                         msg = f"Failed to fit model for LED {led_name} at {time_ms}ms"
                         raise ModelTrainingError(msg)
                 else:
-                    msg = f"Insufficient data for LED {led_name} at {time_ms}ms"
-                    raise ModelTrainingError(msg)
+                    # Insufficient data - check if this is due to ultra-high sensitivity
+                    if saturated_early and time_ms >= 20 and not needs_shorter_times:
+                        logger.warning(
+                            f"  LED {led_name} saturated too early at {time_ms}ms - marking for ultra-sensitive restart"
+                        )
+                        saturation_count += 1
+                        # Don't raise error yet - let the ultra-sensitive detection handle it
+                        continue
+                    elif needs_shorter_times:
+                        # In ultra-sensitive mode but still couldn't get 2 points - log warning and skip this integration time
+                        logger.warning(
+                            f"  LED {led_name}: Could not collect 2 points at {time_ms}ms (ultra-sensitive) - skipping this integration time"
+                        )
+                        continue
+                    else:
+                        msg = f"Insufficient data for LED {led_name} at {time_ms}ms"
+                        raise ModelTrainingError(msg)
 
             # Check if we should switch to shorter integration times
             # If 50%+ of LEDs saturated early at ≥20ms, device is ultra-sensitive
-            if time_ms >= 20 and saturation_count >= total_leds / 2 and not needs_shorter_times:
+            # Lower threshold to 1 LED (25%) to catch ultra-bright single channels
+            if time_ms >= 20 and saturation_count >= 1 and not needs_shorter_times:
                 logger.warning("")
                 logger.warning("=" * 80)
                 logger.warning("⚠ ULTRA-SENSITIVE DEVICE DETECTED:")
                 logger.warning(
-                    f"  {saturation_count}/{total_leds} LEDs saturated at low intensities with {time_ms}ms"
+                    f"  {saturation_count}/{total_leds} LED(s) saturated at low intensities with {time_ms}ms"
                 )
                 logger.warning("  Switching to shorter integration times: [5, 10, 15]ms")
                 logger.warning("=" * 80)
@@ -216,23 +302,14 @@ def train_led_model(
                 integration_times = [5, 10, 15]
                 needs_shorter_times = True
 
-                # Re-measure dark current at shorter times
-                logger.info("Re-measuring dark current at shorter integration times...")
-                controller.set_batch_intensities(a=0, b=0, c=0, d=0)
-                time.sleep(0.5)
-
-                dark_counts_per_time = {}
+                # Dark current already measured at top - no need to re-measure!
+                logger.info(
+                    "Using pre-measured dark current for ultra-sensitive integration times:"
+                )
                 for short_time_ms in integration_times:
-                    spectrometer.set_integration(float(short_time_ms))
-                    time.sleep(0.5)
-                    scans = []
-                    for _ in range(3):
-                        scans.append(spectrometer.read_intensity())
-                        time.sleep(0.05)
-                    spectrum = np.mean(scans, axis=0)
-                    dark = float(spectrum.max())
-                    dark_counts_per_time[short_time_ms] = dark
-                    logger.info(f"  {short_time_ms}ms: {dark:.0f} counts")
+                    logger.info(
+                        f"  {short_time_ms}ms: {dark_counts_per_time[short_time_ms]:.0f} counts"
+                    )
                 logger.info("")
 
                 # Restart the loop with shorter times

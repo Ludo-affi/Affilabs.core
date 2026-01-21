@@ -705,10 +705,10 @@ class CalibrationQCDialog(QDialog):
 
         # Get P-pol spectra
         p_pol_spectra = self.calibration_data.get("p_pol_spectra", {})
-        
-        # Get convergence summary for iterations
-        convergence_summary = self.calibration_data.get("convergence_summary", {})
-        channels_data = convergence_summary.get("channels", {}) if convergence_summary else {}
+
+        # Get iteration counts (stored directly in calibration_data now)
+        s_iterations = self.calibration_data.get("s_iterations", 0)
+        p_iterations = self.calibration_data.get("p_iterations", 0)
 
         for idx, ch in enumerate(channels):
             # Channel name
@@ -723,7 +723,7 @@ class CalibrationQCDialog(QDialog):
                     p_max = float(np.max(p_arr))
                     brightness_item = QTableWidgetItem(f"{p_max:.0f}")
                     brightness_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    
+
                     # Color code based on brightness level
                     if p_max > 50000:
                         brightness_item.setForeground(QColor("#34C759"))  # Green (good signal)
@@ -731,7 +731,7 @@ class CalibrationQCDialog(QDialog):
                         brightness_item.setForeground(QColor("#FF9500"))  # Orange (moderate)
                     else:
                         brightness_item.setForeground(QColor("#FF3B30"))  # Red (low signal)
-                    
+
                     table.setItem(idx, 1, brightness_item)
                 except Exception:
                     na_item = QTableWidgetItem("N/A")
@@ -742,26 +742,21 @@ class CalibrationQCDialog(QDialog):
                 na_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 table.setItem(idx, 1, na_item)
 
-            # Convergence iterations
-            if ch in channels_data:
-                ch_iterations = channels_data[ch].get("iterations", None)
-                if ch_iterations is not None:
-                    iter_item = QTableWidgetItem(str(ch_iterations))
-                    iter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    
-                    # Color code based on iteration count
-                    if ch_iterations <= 5:
-                        iter_item.setForeground(QColor("#34C759"))  # Green (fast convergence)
-                    elif ch_iterations <= 10:
-                        iter_item.setForeground(QColor("#FF9500"))  # Orange (moderate)
-                    else:
-                        iter_item.setForeground(QColor("#FF3B30"))  # Red (slow convergence)
-                    
-                    table.setItem(idx, 2, iter_item)
+            # Convergence iterations (show S/P combined)
+            if s_iterations > 0 or p_iterations > 0:
+                iter_text = f"{s_iterations}/{p_iterations}" if p_iterations > 0 else str(s_iterations)
+                iter_item = QTableWidgetItem(iter_text)
+                iter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                # Color code based on S-pol iteration count (primary convergence)
+                if s_iterations <= 5:
+                    iter_item.setForeground(QColor("#34C759"))  # Green (fast convergence)
+                elif s_iterations <= 10:
+                    iter_item.setForeground(QColor("#FF9500"))  # Orange (moderate)
                 else:
-                    na_item = QTableWidgetItem("N/A")
-                    na_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    table.setItem(idx, 2, na_item)
+                    iter_item.setForeground(QColor("#FF3B30"))  # Red (slow convergence)
+
+                table.setItem(idx, 2, iter_item)
             else:
                 na_item = QTableWidgetItem("N/A")
                 na_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1234,12 +1229,12 @@ class CalibrationQCDialog(QDialog):
         tables_layout = QHBoxLayout()
         tables_layout.setSpacing(12)
         tables_layout.addWidget(table, stretch=1)
-        
+
         # Add calibration metrics table next to transmission table
         metrics_table = self._create_calibration_metrics_table()
         if metrics_table:
             tables_layout.addWidget(metrics_table, stretch=1)
-        
+
         layout.addLayout(tables_layout)
 
         # Overall result - check if all channels passed
@@ -1393,17 +1388,17 @@ class CalibrationQCDialog(QDialog):
 
     def _create_calibration_metrics_table(self) -> QTableWidget | None:
         """Create a table showing LED intensities and iteration counts per channel.
-        
+
         Returns:
             QTableWidget with calibration metrics, or None if no data available
         """
         data = self.calibration_data
         led_intensities = data.get("led_intensities", {})
         convergence_summary = data.get("convergence_summary", {})
-        
+
         if not led_intensities and not convergence_summary:
             return None
-            
+
         table = QTableWidget()
         table.setColumnCount(3)
         table.setHorizontalHeaderLabels(["Channel", "LED Intensity", "Iterations"])
@@ -1429,40 +1424,40 @@ class CalibrationQCDialog(QDialog):
                 padding: 4px;
             }
         """)
-        
+
         channels_list = ["a", "b", "c", "d"]
         table.setRowCount(len(channels_list))
-        
+
         # Extract iteration counts from convergence_summary if available
         channels_data = convergence_summary.get("channels", {}) if convergence_summary else {}
-        
+
         for idx, ch in enumerate(channels_list):
             # Channel name
             ch_item = QTableWidgetItem(ch.upper())
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 0, ch_item)
-            
+
             # LED intensity
             led = led_intensities.get(ch, 0)
             led_item = QTableWidgetItem(str(led))
             led_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 1, led_item)
-            
+
             # Iterations (from convergence_summary if available)
             iterations = "N/A"
             if ch in channels_data and isinstance(channels_data[ch], dict):
                 ch_iterations = channels_data[ch].get("iterations", None)
                 if ch_iterations is not None:
                     iterations = str(ch_iterations)
-            
+
             iter_item = QTableWidgetItem(iterations)
             iter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 2, iter_item)
-        
+
         # Resize columns to content
         table.resizeColumnsToContents()
         table.setMaximumHeight(160)
-        
+
         return table
 
     def _create_graph(self, title: str, data_type: str) -> QFrame:

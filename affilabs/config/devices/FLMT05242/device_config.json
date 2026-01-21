@@ -2,7 +2,7 @@
   "device_info": {
     "config_version": "1.0",
     "created_date": "2026-01-16T23:43:03.927225",
-    "last_modified": "2026-01-19T10:15:50.717320",
+    "last_modified": "2026-01-20T23:11:09.597492",
     "device_id": "FLMT05242"
   },
   "hardware": {
@@ -16,8 +16,8 @@
     "optical_fiber_diameter_um": 200,
     "polarizer_type": "barrel",
     "servo_model": "HS-55MG",
-    "servo_s_position": 10,
-    "servo_p_position": 187,
+    "servo_s_position": 1,
+    "servo_p_position": 127,
     "controller_type": "PicoP4PROPLUS"
   },
   "timing_parameters": {
@@ -46,12 +46,12 @@
     "factory_calibrated": false,
     "user_calibrated": false,
     "preferred_calibration_mode": "global",
-    "integration_time_ms": 60.0,
+    "integration_time_ms": 6.145267480060438,
     "num_scans": null,
-    "led_intensity_a": 78,
-    "led_intensity_b": 86,
-    "led_intensity_c": 45,
-    "led_intensity_d": 169,
+    "led_intensity_a": 166,
+    "led_intensity_b": 90,
+    "led_intensity_c": 95,
+    "led_intensity_d": 125,
     "spr_model_path": null,
     "spr_model_calibration_date": null
   },
@@ -60,5 +60,9 @@
     "total_measurement_cycles": 0,
     "led_on_hours": 0.0,
     "next_maintenance_due": "2026-11-01"
+  },
+  "pump_corrections": {
+    "pump_1": 1.0,
+    "pump_2": 1.0
   }
 }

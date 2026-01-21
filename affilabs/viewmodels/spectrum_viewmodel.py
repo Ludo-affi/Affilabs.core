@@ -60,20 +60,17 @@ class SpectrumViewModel(QObject):
 
         # Services (injected via dependency injection)
         self._transmission_calculator = None
-        self._baseline_corrector = None
         self._spectrum_processor = None
 
     def set_services(
         self,
         transmission_calculator,
-        baseline_corrector,
         spectrum_processor,
     ):
         """Inject service dependencies.
 
         Args:
             transmission_calculator: TransmissionCalculator instance
-            baseline_corrector: BaselineCorrector instance
             spectrum_processor: SpectrumProcessor instance
 
         """
@@ -82,10 +79,6 @@ class SpectrumViewModel(QObject):
             raise TypeError(
                 f"transmission_calculator must have calculate_transmission method, got {type(transmission_calculator)}",
             )
-        if not hasattr(baseline_corrector, "correct_baseline"):
-            raise TypeError(
-                f"baseline_corrector must have correct_baseline method, got {type(baseline_corrector)}",
-            )
         # SpectrumProcessor provides smooth_savgol, find_peaks, calculate_centroid methods
         if not hasattr(spectrum_processor, "smooth_savgol"):
             raise TypeError(
@@ -93,7 +86,6 @@ class SpectrumViewModel(QObject):
             )
 
         self._transmission_calculator = transmission_calculator
-        self._baseline_corrector = baseline_corrector
         self._spectrum_processor = spectrum_processor
 
         logger.debug("Spectrum processing services injected")

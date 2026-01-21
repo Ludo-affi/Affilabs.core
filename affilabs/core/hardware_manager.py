@@ -382,7 +382,9 @@ class HardwareManager(QObject):
             s_position = servo_positions["s"]
             p_position = servo_positions["p"]
 
-            logger.info(f"📍 Servo positions from device_config: S={s_position} PWM, P={p_position} PWM")
+            logger.info(
+                f"📍 Servo positions from device_config: S={s_position} PWM, P={p_position} PWM"
+            )
 
             # Store positions in controller memory (no EEPROM write)
             logger.info("📝 Loading servo positions to controller (RAM-only, no flash writes)...")
@@ -692,19 +694,29 @@ class HardwareManager(QObject):
 
                             # Update spectrometer serial in device config if missing
                             if not self.device_config.get_spectrometer_serial():
-                                logger.info(f"Updating spectrometer serial in config: {self._spec_serial}")
+                                logger.info(
+                                    f"Updating spectrometer serial in config: {self._spec_serial}"
+                                )
                                 self.device_config.set_spectrometer_serial(self._spec_serial)
                                 self.device_config.save()
 
                             # Verify and update controller model if needed
                             if self._ctrl_raw and hasattr(self._ctrl_raw, "name"):
                                 detected_controller = self._ctrl_raw.name
-                                config_controller = self.device_config.config.get("hardware", {}).get("controller_model")
+                                config_controller = self.device_config.config.get(
+                                    "hardware", {}
+                                ).get("controller_model")
 
                                 if config_controller != detected_controller:
-                                    logger.warning(f"Controller mismatch! Config: {config_controller}, Detected: {detected_controller}")
-                                    logger.info(f"Updating controller model in config: {detected_controller}")
-                                    self.device_config.config["hardware"]["controller_model"] = detected_controller
+                                    logger.warning(
+                                        f"Controller mismatch! Config: {config_controller}, Detected: {detected_controller}"
+                                    )
+                                    logger.info(
+                                        f"Updating controller model in config: {detected_controller}"
+                                    )
+                                    self.device_config.config["hardware"]["controller_model"] = (
+                                        detected_controller
+                                    )
                                     self.device_config.save()
                                 else:
                                     logger.info(f"Controller verified: {detected_controller}")
@@ -1012,10 +1024,10 @@ class HardwareManager(QObject):
             try:
                 # Check if the controller is actually open (has a live serial connection)
                 is_open = False
-                if hasattr(self, '_ctrl_raw') and self._ctrl_raw is not None:
-                    if hasattr(self._ctrl_raw, '_ser') and self._ctrl_raw._ser is not None:
+                if hasattr(self, "_ctrl_raw") and self._ctrl_raw is not None:
+                    if hasattr(self._ctrl_raw, "_ser") and self._ctrl_raw._ser is not None:
                         is_open = True
-                
+
                 if is_open:
                     controller_name = self.ctrl.get_device_type() if self.ctrl else None
                     logger.warning(
@@ -1028,7 +1040,9 @@ class HardwareManager(QObject):
                     return
                 else:
                     # Controller adapter exists but no live connection - clear and rescan
-                    logger.info("Controller adapter present but not open - clearing and rescanning...")
+                    logger.info(
+                        "Controller adapter present but not open - clearing and rescanning..."
+                    )
                     self.ctrl = None
                     self._ctrl_raw = None
             except Exception as e:
@@ -1078,17 +1092,17 @@ class HardwareManager(QObject):
             # STOP at first controller found - ignore the rest
 
             # Priority 1: Try PicoP4SPR first (most common modern controller)
-            print(f"DEBUG: [1/3] About to try PicoP4SPR")
+            print("DEBUG: [1/3] About to try PicoP4SPR")
             logger.info(
                 f"[1/3] Trying PicoP4SPR (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
             )
             pico_p4spr = classes["PicoP4SPR"]()
-            print(f"DEBUG: Calling pico_p4spr.open()...")
+            print("DEBUG: Calling pico_p4spr.open()...")
             open_result = pico_p4spr.open()
             print(f"DEBUG: pico_p4spr.open() returned: {open_result}")
             print(f"DEBUG: pico_p4spr.open() returned: {open_result}")
             if open_result:
-                print(f"DEBUG: PicoP4SPR connected successfully!")
+                print("DEBUG: PicoP4SPR connected successfully!")
                 logger.info(f"✅ [OK] Controller connected: {pico_p4spr.name}")
 
                 # Wrap with HAL for consistent interface
@@ -1184,6 +1198,7 @@ class HardwareManager(QObject):
             logger.error(f"Exception type: {type(e).__name__}")
             if HARDWARE_DEBUG:
                 import traceback
+
                 logger.error(f"Traceback:\n{traceback.format_exc()}")
             self.ctrl = None
 
@@ -1315,11 +1330,11 @@ class HardwareManager(QObject):
             return "P4SPR"
         elif device_type == "PicoP4PRO":
             # Check if P4PRO has internal pumps (P4PROPLUS)
-            if hasattr(self, '_ctrl_raw') and self._ctrl_raw:
-                if hasattr(self._ctrl_raw, 'firmware_id') and self._ctrl_raw.firmware_id:
-                    if 'p4proplus' in str(self._ctrl_raw.firmware_id).lower():
+            if hasattr(self, "_ctrl_raw") and self._ctrl_raw:
+                if hasattr(self._ctrl_raw, "firmware_id") and self._ctrl_raw.firmware_id:
+                    if "p4proplus" in str(self._ctrl_raw.firmware_id).lower():
                         return "P4PROPLUS"
-                elif hasattr(self._ctrl_raw, 'has_internal_pumps'):
+                elif hasattr(self._ctrl_raw, "has_internal_pumps"):
                     try:
                         if self._ctrl_raw.has_internal_pumps():
                             return "P4PROPLUS"
@@ -1435,10 +1450,10 @@ class HardwareManager(QObject):
             # Mark as verified anyway if we have hardware - verification failed due to error, not hardware issue
             self._sensor_verified = self.usb is not None
             self._optics_verified = self.usb is not None
-        
+
         # Verify fluidics (pump hardware present)
         has_pump = self.pump is not None
-        if not has_pump and hasattr(self, '_ctrl_raw') and self._ctrl_raw:
+        if not has_pump and hasattr(self, "_ctrl_raw") and self._ctrl_raw:
             try:
                 has_pump = bool(self._ctrl_raw.has_internal_pumps())
             except (AttributeError, Exception):
@@ -1745,12 +1760,12 @@ class HardwareManager(QObject):
         """Emit current hardware status with updated verification flags."""
         # Check if pump is connected (external AffiPump or internal P4PROPLUS pumps)
         has_pump = self.pump is not None
-        if not has_pump and hasattr(self, '_ctrl_raw') and self._ctrl_raw:
+        if not has_pump and hasattr(self, "_ctrl_raw") and self._ctrl_raw:
             try:
                 has_pump = bool(self._ctrl_raw.has_internal_pumps())
             except (AttributeError, Exception):
                 pass
-        
+
         status = {
             "ctrl_type": self._get_controller_type(),
             "knx_type": self._get_kinetic_type(),
@@ -1761,9 +1776,13 @@ class HardwareManager(QObject):
             else None,
             "sensor_ready": self._sensor_verified,
             "optics_ready": self._optics_verified,
-            "fluidics_ready": self._fluidics_verified,  # Set during verification scan
-            "flow_calibrated": getattr(self, "_flow_calibrated", False),
         }
+
+        # Only include fluidics_ready for controllers that support flow mode
+        # P4SPR/static controllers don't have fluidics, so shouldn't show this status
+        if self.ctrl and hasattr(self.ctrl, "supports_flow_mode") and self.ctrl.supports_flow_mode:
+            status["fluidics_ready"] = self._fluidics_verified  # Set during verification scan
+            status["flow_calibrated"] = getattr(self, "_flow_calibrated", False)
 
         self.hardware_connected.emit(status)
         logger.info(

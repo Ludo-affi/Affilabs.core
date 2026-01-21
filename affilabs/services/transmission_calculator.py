@@ -17,19 +17,12 @@ class TransmissionCalculator:
     """Calculates transmission from raw P-mode and S-mode reference spectra.
 
     This service implements the core transmission calculation:
-        Transmission (%) = 100 * (P_raw / S_ref) * (S_LED / P_LED)
-
-    Where LED correction accounts for different LED intensities between modes.
+        Transmission (%) = 100 * (P_raw / S_ref)
     """
 
-    def __init__(self, apply_led_correction: bool = True):
-        """Initialize transmission calculator.
-
-        Args:
-            apply_led_correction: Whether to apply LED intensity correction
-
-        """
-        self.apply_led_correction = apply_led_correction
+    def __init__(self):
+        """Initialize transmission calculator."""
+        pass
 
     def calculate_transmission(
         self,
@@ -57,8 +50,8 @@ class TransmissionCalculator:
         Args:
             p_spectrum: Raw P-mode spectrum (counts)
             s_reference: S-mode reference spectrum (counts)
-            p_led_intensity: P-mode LED brightness (0-255), optional
-            s_led_intensity: S-mode LED brightness (0-255), optional
+            p_led_intensity: Ignored (kept for compatibility)
+            s_led_intensity: Ignored (kept for compatibility)
 
         Returns:
             Transmission spectrum (%)
@@ -70,25 +63,13 @@ class TransmissionCalculator:
         # Validate inputs
         self._validate_inputs(p_spectrum, s_reference, p_led_intensity, s_led_intensity)
 
-        # Calculate raw transmission (element-wise division)
+        # Calculate transmission (element-wise division)
         with np.errstate(divide="ignore", invalid="ignore"):
             transmission = np.divide(
                 p_spectrum,
                 s_reference,
                 out=np.zeros_like(p_spectrum, dtype=float),
                 where=s_reference != 0,
-            )
-
-        # Apply LED intensity correction if requested and available
-        if (
-            self.apply_led_correction
-            and p_led_intensity is not None
-            and s_led_intensity is not None
-        ):
-            led_correction = s_led_intensity / p_led_intensity
-            transmission *= led_correction
-            logger.debug(
-                f"Applied LED correction factor: {led_correction:.3f} (S={s_led_intensity}, P={p_led_intensity})",
             )
 
         # Convert to percentage
@@ -131,16 +112,6 @@ class TransmissionCalculator:
                 out=np.zeros_like(p_spectra, dtype=float),
                 where=s_references != 0,
             )
-
-        # Apply LED correction if available
-        if (
-            self.apply_led_correction
-            and p_led_intensities is not None
-            and s_led_intensities is not None
-        ):
-            led_correction = s_led_intensities / p_led_intensities
-            # Broadcast correction factor across wavelengths
-            transmission *= led_correction[:, np.newaxis]
 
         # Convert to percentage and clamp
         transmission *= 100.0

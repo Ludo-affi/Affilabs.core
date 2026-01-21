@@ -361,6 +361,45 @@ def _require_wave_data(result: LEDCalibrationResult, step_name: str) -> np.ndarr
 # =============================================================================
 
 
+def _get_servo_positions_from_config(device_config, detector_serial: str) -> dict:
+    """Get servo S and P positions from device configuration.
+
+    Args:
+        device_config: DeviceConfiguration instance or dict with hardware.servo_s/p_position
+        detector_serial: Detector serial number (unused, kept for compatibility)
+
+    Returns:
+        Dict with keys 's_position' and 'p_position' (PWM values 0-255)
+
+    Raises:
+        ValueError: If positions are not set in device_config
+    """
+    # Handle DeviceConfiguration object
+    if hasattr(device_config, 'get_servo_positions'):
+        positions = device_config.get_servo_positions()
+        if positions:
+            return {
+                's_position': positions['s'],
+                'p_position': positions['p'],
+            }
+
+    # Handle dict format
+    if isinstance(device_config, dict):
+        hardware = device_config.get('hardware', {})
+        s_pos = hardware.get('servo_s_position')
+        p_pos = hardware.get('servo_p_position')
+
+        if s_pos is not None and p_pos is not None:
+            return {
+                's_position': s_pos,
+                'p_position': p_pos,
+            }
+
+    # Positions not found
+    msg = "Servo S/P positions not set in device_config. Run polarizer calibration first."
+    raise ValueError(msg)
+
+
 def servo_initiation_to_s(
     ctrl,
     device_config: dict,
@@ -1681,7 +1720,7 @@ def _step6c_calculate_transmission(result, ch_list) -> dict:
             led_intensity_p=result.p_mode_intensity[ch],
             wavelengths=result.wave_data,
             apply_sg_filter=True,
-            baseline_method="percentile",
+            baseline_method="none",
             baseline_percentile=95.0,
             verbose=True,
         )

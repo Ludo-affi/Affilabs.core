@@ -1131,6 +1131,259 @@ class PicoP4SPR(StaticController):
             return False
 
     # =========================================================================
+    # V2.4 FIRMWARE COMMANDS
+    # =========================================================================
+
+    def rankbatch(self, int_a, int_b, int_c, int_d, settling_ms, dark_ms, num_cycles):
+        """Execute rankbatch LED sequence (V2.4 CYCLE_SYNC firmware).
+
+        V2.4 firmware uses hardware timer ISR to sequence LEDs with precise timing.
+        Sends CYCLE_START event once per cycle (75% less USB traffic than V2.3).
+
+        Args:
+            int_a: Intensity for LED A (0-255)
+            int_b: Intensity for LED B (0-255)
+            int_c: Intensity for LED C (0-255)
+            int_d: Intensity for LED D (0-255)
+            settling_ms: LED settling time in ms (10-1000)
+            dark_ms: Dark period between LEDs in ms (0-100)
+            num_cycles: Number of measurement cycles (1-10000)
+
+        Returns:
+            bool: True if command sent successfully, False otherwise
+
+        Note:
+            This sends the command and returns immediately. The acquisition
+            manager monitors CYCLE_START events to synchronize reads.
+        """
+        try:
+            # Clamp values to safe ranges
+            int_a = max(0, min(255, int(int_a)))
+            int_b = max(0, min(255, int(int_b)))
+            int_c = max(0, min(255, int(int_c)))
+            int_d = max(0, min(255, int(int_d)))
+            settling_ms = max(10, min(1000, int(settling_ms)))
+            dark_ms = max(0, min(100, int(dark_ms)))
+            num_cycles = max(1, min(10000, int(num_cycles)))
+
+            # Format: rankbatch:A,B,C,D,SETTLE,DARK,CYCLES
+            cmd = f"rankbatch:{int_a},{int_b},{int_c},{int_d},{settling_ms},{dark_ms},{num_cycles}\n"
+
+            if self._ser is not None or self.open():
+                with self._lock:
+                    self._ser.reset_input_buffer()
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.01)
+
+                    # Wait for ACK
+                    response = self._ser.read(1)
+                    success = response == b"6"
+
+                    if success:
+                        logger.info(f"[OK] Rankbatch started: {num_cycles} cycles")
+                    else:
+                        logger.error(f"[ERROR] Rankbatch failed to start: {response!r}")
+
+                    return success
+        except Exception as e:
+            logger.error(f"Error sending rankbatch command: {e}")
+            return False
+
+    def stop_rankbatch(self):
+        """Stop currently running rankbatch sequence (V2.4).
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if self._ser is not None or self.open():
+                with self._lock:
+                    self._ser.reset_input_buffer()
+                    self._ser.write(b"stop\n")
+                    time.sleep(0.01)
+
+                    response = self._ser.read(1)
+                    success = response == b"6"
+
+                    if success:
+                        logger.info("[OK] Rankbatch stopped")
+                    else:
+                        logger.warning(f"[WARN] Stop command response: {response!r}")
+
+                    return success
+        except Exception as e:
+            logger.error(f"Error stopping rankbatch: {e}")
+            return False
+
+    def send_keepalive(self):
+        """Send keepalive to reset watchdog timer (V2.4.1).
+
+        The watchdog monitors for keepalive signals and will auto-stop
+        rankbatch if timeout is exceeded (default 120 seconds).
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if self._ser is not None or self.open():
+                with self._lock:
+                    self._ser.write(b"ka\n")
+                    time.sleep(0.005)
+
+                    response = self._ser.read(1)
+                    success = response == b"6"
+
+                    if not success:
+                        logger.debug(f"Keepalive response: {response!r}")
+
+                    return success
+        except Exception as e:
+            logger.debug(f"Keepalive error: {e}")
+            return False
+
+    def set_servo_speed(self, speed_ms):
+        """Set servo pulse duration for movement speed (V2.4).
+
+        Args:
+            speed_ms: Pulse duration in milliseconds (200-2000)
+                     200 = fastest, 2000 = slowest
+                     Default is 500ms
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            speed_ms = max(200, min(2000, int(speed_ms)))
+
+            cmd = f"servo_speed:{speed_ms}\n"
+
+            if self._ser is not None or self.open():
+                with self._lock:
+                    self._ser.reset_input_buffer()
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.01)
+
+                    response = self._ser.read(1)
+                    success = response == b"6"
+
+                    if success:
+                        logger.info(f"[OK] Servo speed set to {speed_ms}ms")
+                    else:
+                        logger.warning(f"[WARN] Servo speed command response: {response!r}")
+
+                    return success
+        except Exception as e:
+            logger.error(f"Error setting servo speed: {e}")
+            return False
+
+    def reboot_to_bootloader(self):
+        """Reboot controller into BOOTSEL mode for firmware updates (V2.4).
+
+        Returns:
+            bool: True if command sent, False otherwise
+
+        Note:
+            Controller will disconnect immediately after receiving this command.
+        """
+        try:
+            if self._ser is not None or self.open():
+                with self._lock:
+                    self._ser.write(b"ib\n")
+                    time.sleep(0.1)  # Give time for response
+
+                    response = self._ser.read(1)
+                    logger.info(f"Bootloader reboot initiated (response: {response!r})")
+
+                    # Controller will disconnect - close serial port
+                    try:
+                        self._ser.close()
+                    except:
+                        pass
+                    self._ser = None
+
+                    return True
+        except Exception as e:
+            logger.error(f"Error rebooting to bootloader: {e}")
+            return False
+
+    def device_off(self):
+        """Turn off device (all LEDs off, power indicator off) (V2.4).
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if self._ser is not None or self.open():
+                with self._lock:
+                    self._ser.reset_input_buffer()
+                    self._ser.write(b"do\n")
+                    time.sleep(0.02)
+
+                    response = self._ser.read(1)
+                    success = response == b"6"
+
+                    if success:
+                        logger.info("[OK] Device powered off")
+                    else:
+                        logger.warning(f"[WARN] Device off response: {response!r}")
+
+                    return success
+        except Exception as e:
+            logger.error(f"Error turning device off: {e}")
+            return False
+
+    def turn_on_multi_leds(self, channels):
+        """Turn on multiple LEDs simultaneously (V2.4).
+
+        Args:
+            channels: String or list of channels to enable (e.g., "abc" or ['a', 'b', 'c'])
+
+        Returns:
+            bool: True if successful, False otherwise
+
+        Example:
+            ctrl.turn_on_multi_leds("ab")   # Turn on A and B
+            ctrl.turn_on_multi_leds(['a', 'c', 'd'])  # Turn on A, C, D
+        """
+        try:
+            # Convert to string and validate
+            if isinstance(channels, list):
+                channels = "".join(channels)
+
+            channels = channels.lower()
+            valid_channels = [ch for ch in channels if ch in 'abcd']
+
+            if not valid_channels:
+                logger.error("No valid channels specified")
+                return False
+
+            # Format: lm:A,B,C,D
+            channel_str = ",".join(valid_channels)
+            cmd = f"lm:{channel_str}\n"
+
+            if self._ser is not None or self.open():
+                with self._lock:
+                    self._ser.reset_input_buffer()
+                    self._ser.write(cmd.encode())
+                    time.sleep(0.02)
+
+                    response = self._ser.read(1)
+                    success = response == b"6"
+
+                    if success:
+                        # Update enabled channels tracking
+                        self._channels_enabled.clear()
+                        self._channels_enabled.update(valid_channels)
+                        logger.debug(f"[OK] Multi-LED enabled: {','.join(valid_channels)}")
+                    else:
+                        logger.warning(f"[WARN] Multi-LED response: {response!r}")
+
+                    return success
+        except Exception as e:
+            logger.error(f"Error enabling multi-LEDs: {e}")
+            return False
+
+    # =========================================================================
     # LEGACY EEPROM FUNCTIONS DELETED - DO NOT USE FOR SERVO POSITIONS
     # =========================================================================
     # servo_get() - DELETED - reads positions from EEPROM (DANGEROUS)
@@ -1146,10 +1399,22 @@ class PicoP4SPR(StaticController):
         """Move servo to a specific PWM position (for calibration).
 
         This is used during servo calibration to move the servo to test positions.
-        Firmware sends PWM pulse for 500ms (default), then waits 100ms.
+
+        V2.4 Firmware Command Format:
+            servo:ANGLE,DURATION_MS
+            Example: servo:90,500 → move to 90° in 500ms
+
+        Firmware Angle Mapping (from affinite_p4spr_LATEST_v2.4.1.c):
+            MIN_DEG = 5, MAX_DEG = 175
+            duty = 0.025 + (deg - MIN_DEG) × (0.125 - 0.025) / (MAX_DEG - MIN_DEG)
+            Linear map: 5-175° → 2.5%-12.5% duty cycle
+
+        PWM to Angle Conversion:
+            PWM 0-255 → Angle 5-175°
+            Formula: angle = 5 + (pwm / 255.0) × 170
 
         Args:
-            target_pwm: PWM value 0-255
+            target_pwm: PWM value 0-255 (will be converted to angle 5-175°)
 
         Returns:
             bool: True if successful, False otherwise
@@ -1159,49 +1424,59 @@ class PicoP4SPR(StaticController):
                 logger.error(f"Invalid PWM value: {target_pwm} (must be 0-255)")
                 return False
 
-            # Set both S and P to the same value (we're just testing one position)
+            # Convert PWM (0-255) to firmware angle (5-175°)
+            # Linear mapping: 0→5°, 255→175°
             pwm_val = int(target_pwm)
+            MIN_ANGLE = 5
+            MAX_ANGLE = 175
+            angle = int(MIN_ANGLE + (pwm_val / 255.0) * (MAX_ANGLE - MIN_ANGLE))
 
-            # Send sv command to set the position values
-            cmd = f"sv{pwm_val:03d}{pwm_val:03d}\n"
-            logger.info(f"🔧 Moving servo to PWM {pwm_val}: {cmd.strip()}")
+            # Clamp to firmware range
+            angle = max(MIN_ANGLE, min(MAX_ANGLE, angle))
 
-            if self._ser is not None or self.open():
+            # V2.4 firmware command: servo:ANGLE,DURATION_MS
+            # Use 500ms duration for smooth, reliable movement
+            cmd = f"servo:{angle},500\n"
+            logger.info(f"🔧 Moving servo: PWM {pwm_val} → angle {angle}°: {cmd.strip()}")
+
+            # Debug: Check serial port state
+            if self._ser is None:
+                logger.warning(f"⚠️ Serial port is None - attempting to open...")
+                if not self.open():
+                    logger.error("❌ Failed to open serial port!")
+                    return False
+                logger.info(f"✅ Serial port opened successfully")
+
+            if self._ser is not None:
+                logger.debug(f"🔍 Serial port: {self._ser.port}, is_open={self._ser.is_open}")
+
                 with self._lock:
                     try:
                         self._ser.reset_input_buffer()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to reset input buffer: {e}")
 
-                    # Step 1: Set the position values
+                    # Send servo move command
+                    logger.debug(f"📤 Sending command: {cmd.strip()}")
                     self._ser.write(cmd.encode())
                     time.sleep(0.05)
-                    response = self._ser.read(1)
+                    response = self._ser.read(10)  # Read up to 10 bytes for response
+                    logger.debug(f"📥 Response: {response!r}")
 
-                    if response != b"6":
-                        logger.error(f"❌ sv command failed: {response!r}")
-                        return False
-
-                    logger.debug(f"✅ Position set to PWM {pwm_val}")
-
-                    # Step 2: Move to that position using ss (S-mode)
-                    # Firmware will send PWM pulse for ~500ms then turn off
-                    self._ser.write(b"ss\n")
-                    time.sleep(0.05)
-                    response = self._ser.read(1)
-
-                    if response == b"6":
+                    # V2.4 firmware responds with '1' for servo:ANGLE,DURATION format
+                    # Older firmware responds with '6'
+                    if response in (b"1", b"6"):
                         # Wait for physical servo movement
-                        # Firmware: 500ms pulse + 100ms settle = 600ms total
-                        # Add extra margin for physical movement
-                        time.sleep(0.7)  # 700ms total wait
-                        logger.info(f"✅ Servo physically moved to PWM {pwm_val}")
+                        # V2.4 firmware: 500ms movement duration specified in command
+                        # Add extra margin for physical settling
+                        time.sleep(0.6)  # 600ms total wait (500ms movement + 100ms settle)
+                        logger.info(f"✅ Servo physically moved to angle {angle}° (PWM {pwm_val})")
                         return True
                     else:
-                        logger.error(f"❌ ss command failed: {response!r}")
+                        logger.error(f"❌ servo command failed: {response!r} (expected b'1' or b'6')")
                         return False
 
-            logger.error("❌ Serial port not open")
+            logger.error("❌ Serial port not open after attempted recovery")
             return False
 
         except Exception as e:
@@ -1382,8 +1657,9 @@ class PicoP4SPR(StaticController):
                         config.get("polarizer_type", "round"),
                     )
 
-                    servo_s = config.get("servo_s_position", 10)
-                    servo_p = config.get("servo_p_position", 100)
+                    # Ensure servo positions are integers (not strings or floats)
+                    servo_s = int(config.get("servo_s_position", 10))
+                    servo_p = int(config.get("servo_p_position", 100))
                     data[5:7] = struct.pack("<H", servo_s)
                     data[7:9] = struct.pack("<H", servo_p)
 
@@ -1399,15 +1675,26 @@ class PicoP4SPR(StaticController):
                     data[16] = self._calculate_checksum(data)
 
                     # Send to controller
+                    # V2.4 firmware EEPROM write command
                     self._ser.reset_input_buffer()
+
+                    # Debug: Log what we're sending
+                    logger.debug(f"📤 Sending EEPROM write: wc + {len(data)} bytes + newline")
+                    logger.debug(f"   Servo S={servo_s}, P={servo_p}")
+
                     self._ser.write(b"wc")
                     self._ser.write(bytes(data))
                     self._ser.write(b"\n")
 
-                    time.sleep(0.2)
+                    # CRITICAL: EEPROM writes are SLOW (can take 500ms+)
+                    # V2.4 firmware needs longer timeout for flash operations
+                    time.sleep(0.6)  # Increased from 0.2s to 0.6s for EEPROM write
 
-                    response = self._ser.read(1)
-                    success = response == b"6"
+                    # Read response with timeout
+                    response = self._ser.read(10)  # Read up to 10 bytes to catch any error messages
+                    logger.debug(f"📥 EEPROM write response: {response!r}")
+
+                    success = b"6" in response
 
                     if success:
                         logger.info("✓ Device config written to PicoP4SPR EEPROM")
@@ -1415,6 +1702,7 @@ class PicoP4SPR(StaticController):
                         logger.warning(
                             f"PicoP4SPR EEPROM write failed, response: {response}",
                         )
+                        logger.warning("   This may be normal for V2.4 firmware - config still applied to RAM")
 
                     return success
 
@@ -1657,7 +1945,7 @@ class PicoEZSPR(FlowController):
         """
         from pathlib import Path
         import os
-        
+
         home = Path.home()
         affilabs_dir = home / ".affilabs"
         affilabs_dir.mkdir(exist_ok=True)
@@ -1704,7 +1992,7 @@ class PicoEZSPR(FlowController):
 
     def reset_valve_cycles(self, valve_type=None, channel=None) -> None:
         """Reset valve cycle counts (for maintenance/valve replacement).
-        
+
         Args:
             valve_type: 'six' or 'three' (None = reset all)
             channel: 1 or 2 (None = reset both channels)
@@ -1720,7 +2008,7 @@ class PicoEZSPR(FlowController):
                     self._valve_six_cycles_session[channel] = 0
                     self._valve_six_cycles_lifetime[channel] = 0
                     logger.info(f"✅ Reset 6-port valve CH{channel} cycles to 0")
-            
+
             if valve_type is None or valve_type == 'three':
                 if channel is None:
                     for ch in [1, 2]:
@@ -1731,7 +2019,7 @@ class PicoEZSPR(FlowController):
                     self._valve_three_cycles_session[channel] = 0
                     self._valve_three_cycles_lifetime[channel] = 0
                     logger.info(f"✅ Reset 3-way valve CH{channel} cycles to 0")
-            
+
             self._save_valve_cycles()
             logger.info(f"🔧 Valve cycle reset complete for device {self.name}")
         except Exception as e:
@@ -2532,7 +2820,7 @@ class PicoEZSPR(FlowController):
                 resp2 = self._ser.read()
                 logger.info(f"DEBUG knx_six_both: v62{state} sent, response: {resp2}")
                 success = resp1 == b"1" and resp2 == b"1"
-                
+
                 if not success:
                     logger.warning(f"⚠️ 6-port valve command partial failure: v61 resp={resp1}, v62 resp={resp2}")
 
@@ -2763,7 +3051,7 @@ class PicoP4PRO(FlowController):
         """
         from pathlib import Path
         import os
-        
+
         home = Path.home()
         affilabs_dir = home / ".affilabs"
         affilabs_dir.mkdir(exist_ok=True)
@@ -3216,9 +3504,9 @@ class PicoP4PRO(FlowController):
                 time.sleep(0.7)  # Wait for servo movement + response (500ms + 200ms margin)
                 response = self._ser.readline().strip()  # Use readline for complete response
 
-                # P4PRO v2.1 responds with b'\x01', b'1', b'B', or blank b'' (all valid)
+                # P4PRO v2.1 responds with b'\x01', b'1', b'B', b'b', or blank b'' (all valid)
                 # Blank response means servo moved but firmware didn't acknowledge - this is normal
-                if len(response) == 0 or b"\x01" in response or b"1" in response or b"B" in response:
+                if len(response) == 0 or b"\x01" in response or b"1" in response or b"B" in response or b"b" in response:
                     if len(response) == 0:
                         logger.debug(f"[P4PRO-SERVO] Move to {degrees}° (no response - servo moved)")
                     return True
@@ -3339,16 +3627,13 @@ class PicoP4PRO(FlowController):
             s_pwm = config.get("servo_s_position", 10)
             p_pwm = config.get("servo_p_position", 100)
 
-            # Convert PWM (0-255) to degrees (5-175) for P4PRO sv command
-            s_deg = int(5 + (s_pwm * 170 / 255))
-            p_deg = int(5 + (p_pwm * 170 / 255))
-            s_deg = max(5, min(175, s_deg))
-            p_deg = max(5, min(175, p_deg))
-
-            logger.info(f"📝 Writing servo config to P4PRO EEPROM: S={s_pwm} PWM ({s_deg}°), P={p_pwm} PWM ({p_deg}°)")
+            # P4PROPLUS firmware stores PWM values (0-255) directly in EEPROM
+            # DO NOT convert to degrees - firmware expects PWM values
+            logger.info(f"📝 Writing servo config to P4PRO EEPROM: S={s_pwm} PWM, P={p_pwm} PWM (storing PWM values directly)")
 
             # Use existing set_servo_positions method which sends 'sv' command
-            success = self.set_servo_positions(s=s_deg, p=p_deg)
+            # For P4PROPLUS, this stores PWM values directly
+            success = self.set_servo_positions(s=s_pwm, p=p_pwm)
 
             if success:
                 logger.info("✅ P4PRO EEPROM config written successfully")
@@ -3401,7 +3686,8 @@ class PicoP4PRO(FlowController):
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 response = self._ser.read()
-                success = response == b"1"
+                # Accept b"1", b"\x01", b"b", or b"" (empty) as success
+                success = response in (b"1", b"\x01", b"b", b"")
 
                 # Track commanded state (what we TOLD the valve to do)
                 old_state = self._valve_six_state.get(ch)
@@ -3413,7 +3699,7 @@ class PicoP4PRO(FlowController):
                 self._valve_six_state[ch] = state
 
                 if not success:
-                    logger.warning(f"KC{ch} 6-port valve command sent but firmware verification FAILED (response={response})")
+                    logger.warning(f"KC{ch} 6-port valve command sent but firmware verification FAILED (response={response!r}) - expected b'1', b'\\x01', b'b', or b''")
 
                     # Safety timer management
                     if state == 1:  # INJECT
@@ -3450,7 +3736,8 @@ class PicoP4PRO(FlowController):
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
                 response = self._ser.read()
-                success = response == b"1"
+                # Accept b"1", b"\x01", b"b", or b"" (empty) as success
+                success = response in (b"1", b"\x01", b"b", b"")
 
                 # Track commanded state for both channels
                 for ch in [1, 2]:
@@ -3463,7 +3750,7 @@ class PicoP4PRO(FlowController):
                     self._valve_six_state[ch] = state
 
                 if not success:
-                    logger.warning(f"BOTH 6-port valves command sent but firmware verification FAILED (response={response})")
+                    logger.warning(f"BOTH 6-port valves command sent but firmware verification FAILED (response={response!r}) - expected b'1', b'\\x01', b'b', or b''")
 
                 # Handle timeout timers for both channels
                 for ch in [1, 2]:
@@ -3584,12 +3871,12 @@ class PicoP4PRO(FlowController):
 
     def has_internal_pumps(self) -> bool:
         """Check if this P4PRO has internal peristaltic pumps.
-        
+
         P4PROPLUS (V2.3+) has integrated peristaltic pumps that can substitute
         for external AffiPump in many operations.
-        
+
         Standard P4PRO (V2.1-V2.2) has valves only and requires external AffiPump.
-        
+
         Returns:
             True if firmware version >= V2.3 (P4PROPLUS with internal pumps)
         """
@@ -3598,61 +3885,61 @@ class PicoP4PRO(FlowController):
             if 'p4proplus' in self.firmware_id.lower():
                 logger.debug(f"P4PROPLUS detected via firmware ID: {self.firmware_id}")
                 return True
-        
+
         # Fall back to version check
         if not self.version:
             return False
-        
+
         try:
             # Extract version number (V2.3 -> 2.3)
             version_str = self.version.replace('V', '').replace('v', '')
             version_float = float(version_str)
-            
+
             # P4PROPLUS is V2.3+
             has_pumps = version_float >= 2.3
-            
+
             if has_pumps:
                 logger.debug(f"P4PROPLUS detected: {self.version} has internal peristaltic pumps")
             else:
                 logger.debug(f"Standard P4PRO: {self.version} has valves only (needs external AffiPump)")
-            
+
             return has_pumps
-            
+
         except (ValueError, AttributeError) as e:
             logger.warning(f"Version parse error: {e}")
             return False
-    
+
     def get_pump_capabilities(self) -> dict:
         """Get capability flags for P4PROPLUS internal pumps.
-        
+
         Returns dict with capability flags for UI logic (greying out incompatible operations).
         Empty dict if no internal pumps available.
         """
         if not self.has_internal_pumps():
             return {}
-        
+
         return {
             # Hardware type
             "type": "peristaltic",
-            
+
             # Core capabilities
             "bidirectional": False,  # Forward flow only, no aspiration
             "has_homing": False,  # No position initialization
             "has_position_tracking": False,  # CRITICAL: No feedback loop!
             "supports_partial_loop": False,  # Needs aspiration (bidirectional)
-            
+
             # Flow rate specs (user-facing, in uL/min)
             "max_flow_rate_ul_min": 300,
             "min_flow_rate_ul_min": 1,
             "supports_flow_rate_change": True,  # Can change on-the-fly
-            
+
             # Calibration factor for uL/min to RPM conversion
             "ul_per_revolution": 3.0,  # Must be calibrated per installation
-            
+
             # Firmware RPM limits
             "min_rpm": 5,
             "max_rpm": 300,
-            
+
             # Reliability compensations
             "recommended_prime_cycles": 10,  # vs 6 for syringe pumps
             "requires_visual_verification": True,
@@ -3662,68 +3949,68 @@ class PicoP4PRO(FlowController):
                 "Watch for air bubbles - they indicate suction failure."
             )
         }
-    
+
     def _ul_min_to_rpm(self, rate_ul_min: float) -> int:
         """Convert flow rate from uL/min to RPM for peristaltic pump.
-        
+
         Based on peristaltic pump tubing specifications.
         This conversion factor MUST be calibrated per installation.
-        
+
         Args:
             rate_ul_min: Flow rate in uL/min
-            
+
         Returns:
             RPM value (5-300 range, clamped to firmware limits)
         """
         caps = self.get_pump_capabilities()
         ul_per_rev = caps.get("ul_per_revolution", 3.0)
-        
+
         # Convert uL/min to revolutions/min
         rpm = rate_ul_min / ul_per_rev
-        
+
         # Clamp to firmware limits (5-300 RPM)
         min_rpm = caps.get("min_rpm", 5)
         max_rpm = caps.get("max_rpm", 300)
         rpm = max(min_rpm, min(max_rpm, int(rpm)))
-        
+
         return rpm
-    
+
     def pump_start(self, rate_ul_min: float, ch: int = 1) -> bool:
         """Start internal peristaltic pump at specified RPM.
-        
+
         CRITICAL: P4PROPLUS firmware expects RPM (rotations per minute)!
-        
+
         Command format: pr{ch}{rpm:04d}\n
         Examples:
             pr10050\n = Pump 1 at 50 RPM
             pr20100\n = Pump 2 at 100 RPM
             pr30075\n = Both pumps at 75 RPM
-        
+
         Args:
             rate_ul_min: RPM value (parameter name kept for compatibility, but now expects RPM)
             ch: Pump channel (1, 2, or 3 for both)
-            
+
         Returns:
             True if command sent successfully
         """
         if not self.has_internal_pumps():
             logger.error("No internal pumps available (P4PROPLUS V2.3+ required)")
             return False
-        
+
         # Treat input as RPM directly (no conversion)
         rpm = int(round(rate_ul_min))
-        
+
         # Validate RPM range (5-300 RPM per firmware limits)
         if rpm < 5 or rpm > 300:
             logger.error(f"RPM {rpm} out of range [5-300]")
             return False
-        
+
         # Format command: pr{ch}{rpm:04d}\n
         # Firmware parses command[3:6] directly as rate (no offset subtraction)
         cmd = f"pr{ch}{rpm:04d}\n"
-        
+
         logger.info(f"Internal pump {ch} start: {rpm} RPM -> {cmd.strip()}")
-        
+
         try:
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
@@ -3731,7 +4018,7 @@ class PicoP4PRO(FlowController):
                 # Without delay, rapid commands interfere and pump won't stop/change speed
                 import time
                 time.sleep(0.15)  # 150ms delay for firmware processing
-                
+
                 # P4PROPLUS firmware doesn't send response for pump commands
                 # (unlike valve commands which send b"6")
                 # Pump movement confirmed working even with empty response
@@ -3741,37 +4028,37 @@ class PicoP4PRO(FlowController):
                         logger.debug(f"Pump {ch} response: {response!r}")
                 except Exception:
                     pass  # No response is OK for pump commands
-                
+
                 logger.debug(f"Pump {ch} started successfully")
                 return True
             return False
         except Exception as e:
             logger.error(f"Error starting pump {ch}: {e}")
             return False
-    
+
     def pump_stop(self, ch: int = 1) -> bool:
         """Stop internal peristaltic pump.
-        
+
         Command format: ps{ch}\n
         Examples:
             ps1\n = Stop pump 1
             ps2\n = Stop pump 2
             ps3\n = Stop both pumps
-        
+
         Args:
             ch: Pump channel (1, 2, or 3 for both)
-            
+
         Returns:
             True if command sent successfully and firmware responded with success (b"6")
         """
         if not self.has_internal_pumps():
             logger.error("No internal pumps available (P4PROPLUS V2.3+ required)")
             return False
-        
+
         cmd = f"ps{ch}\n"
-        
+
         logger.info(f"Internal pump {ch} stop: {cmd.strip()}")
-        
+
         try:
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
@@ -3779,7 +4066,7 @@ class PicoP4PRO(FlowController):
                 # Without delay, rapid commands interfere and pump won't stop/change speed
                 import time
                 time.sleep(0.15)  # 150ms delay for firmware processing
-                
+
                 # P4PROPLUS firmware doesn't send response for pump commands
                 # (unlike valve commands which send b"6")
                 # Pump movement confirmed working even with empty response
@@ -3789,28 +4076,28 @@ class PicoP4PRO(FlowController):
                         logger.debug(f"Pump {ch} response: {response!r}")
                 except Exception:
                     pass  # No response is OK for pump commands
-                
+
                 logger.debug(f"Pump {ch} stopped successfully")
                 return True
             return False
         except Exception as e:
             logger.error(f"Error stopping pump {ch}: {e}")
             return False
-    
+
     def inject_internal_pump(self, volume_ul: float, flow_rate_ul_min: float, ch: int = 1) -> bool:
         """Perform simple injection using internal peristaltic pump.
-        
+
         Since peristaltic pumps are unidirectional (forward flow only),
         this is a simple inject operation without aspiration/load phase.
-        
+
         Args:
             volume_ul: Volume to inject in microliters
             flow_rate_ul_min: Flow rate in uL/min (1-300)
             ch: Pump channel (1, 2, or 3 for both)
-            
+
         Returns:
             True if injection completed successfully
-            
+
         Example:
             # Inject 100 uL at 150 uL/min using pump 1
             ctrl.inject_internal_pump(volume_ul=100, flow_rate_ul_min=150, ch=1)
@@ -3818,35 +4105,35 @@ class PicoP4PRO(FlowController):
         if not self.has_internal_pumps():
             logger.error("No internal pumps available (P4PROPLUS V2.3+ required)")
             return False
-        
+
         if volume_ul <= 0:
             logger.error(f"Invalid volume: {volume_ul} uL (must be > 0)")
             return False
-        
+
         # Calculate injection duration
         duration_sec = (volume_ul / flow_rate_ul_min) * 60.0
-        
+
         logger.info(f"Internal pump inject: {volume_ul} uL at {flow_rate_ul_min} uL/min (ch {ch})")
         logger.info(f"  Duration: {duration_sec:.2f} seconds")
-        
+
         try:
             # Start pump
             if not self.pump_start(rate_ul_min=flow_rate_ul_min, ch=ch):
                 logger.error("Failed to start pump for injection")
                 return False
-            
+
             # Wait for injection to complete
             import time
             time.sleep(duration_sec)
-            
+
             # Stop pump
             if not self.pump_stop(ch=ch):
                 logger.warning("Failed to stop pump after injection (pump may still be running!)")
                 return False
-            
+
             logger.info(f"Injection complete: {volume_ul} uL delivered")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error during injection: {e}")
             # Try to stop pump on error

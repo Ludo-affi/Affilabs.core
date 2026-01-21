@@ -811,7 +811,7 @@ class FlowTabBuilder:
         )
         status_layout.addWidget(status_icon)
         self.sidebar.internal_pump_status_icon = status_icon
-        
+
         status_label = QLabel("Idle")
         status_label.setStyleSheet(
             "font-size: 12px;"
@@ -993,16 +993,18 @@ class FlowTabBuilder:
         synced_manual_time_check.setToolTip("Check to manually set contact time (disables auto-calculation)")
         synced_control_layout.addWidget(synced_manual_time_check)
         self.sidebar.synced_manual_time_check = synced_manual_time_check
-        
+
         # Auto-update contact time when flowrate changes (unless manual mode)
         def _on_synced_flowrate_changed():
             if not synced_manual_time_check.isChecked():  # Only auto-update if not manual
                 flowrate_map = {0: 240, 1: 120, 2: 60, 3: 30, 4: 10}  # Contact times in seconds
                 idx = synced_flowrate_combo.currentIndex()
                 synced_contact_time_spin.setValue(flowrate_map.get(idx, 60))
-        
+            # Emit signal to update status if pumps are running
+            self.sidebar.synced_flowrate_changed.emit()
+
         synced_flowrate_combo.currentIndexChanged.connect(_on_synced_flowrate_changed)
-        
+
         # Initialize with default contact time
         _on_synced_flowrate_changed()
 
@@ -1197,8 +1199,26 @@ class FlowTabBuilder:
         inject_30s_btn = QPushButton("💉 Inject")
         inject_30s_btn.setFixedHeight(42)
         inject_30s_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        inject_30s_btn.setProperty("injection_state", "ready")  # States: ready, busy, manual
         inject_30s_btn.setStyleSheet(
-            "QPushButton {"
+            "QPushButton[injection_state='ready'] {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #34C759, stop:1 #30B350);"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  padding: 0px 20px;"
+            "  font-size: 14px;"
+            "  font-weight: 700;"
+            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "  letter-spacing: 0.3px;"
+            "}"
+            "QPushButton[injection_state='ready']:hover {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2FB04D, stop:1 #2A9F45);"
+            "}"
+            "QPushButton[injection_state='ready']:pressed {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #289E43, stop:1 #258F3D);"
+            "}"
+            "QPushButton[injection_state='busy'] {"
             "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #FF9500, stop:1 #FF6B00);"
             "  color: white;"
             "  border: none;"
@@ -1209,14 +1229,26 @@ class FlowTabBuilder:
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
             "  letter-spacing: 0.3px;"
             "}"
-            "QPushButton:hover {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #E08500, stop:1 #E06000);"
+            "QPushButton[injection_state='manual'] {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5856D6, stop:1 #4845B8);"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  padding: 0px 20px;"
+            "  font-size: 14px;"
+            "  font-weight: 700;"
+            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "  letter-spacing: 0.3px;"
             "}"
-            "QPushButton:pressed {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #C77500, stop:1 #C75500);"
+            "QPushButton[injection_state='manual']:hover {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4745C0, stop:1 #3D3AA5);"
+            "}"
+            "QPushButton:disabled {"
+            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #D1D1D6, stop:1 #B8B8BD);"
+            "  color: #86868B;"
             "}"
         )
-        inject_30s_btn.setToolTip("Start pump at selected flowrate for chosen contact time")
+        inject_30s_btn.setToolTip("✅ Ready to inject")
         inject_layout.addWidget(inject_30s_btn)
         self.sidebar.internal_pump_inject_30s_btn = inject_30s_btn
 
@@ -1224,19 +1256,19 @@ class FlowTabBuilder:
 
         internal_pump_section.content_layout.addWidget(internal_pump_card)
         tab_layout.addWidget(internal_pump_section)
-        
+
         # Store reference to section for show/hide control
         self.sidebar.internal_pump_section = internal_pump_section
-        
+
         # Load saved pump corrections from device config (if available)
         self._load_saved_pump_corrections()
-        
+
         # Initially hide the section (will be shown when P4PROPLUS detected)
         internal_pump_section.hide()
 
     def _toggle_pump_sync(self, checked):
         """Toggle synchronized pump mode - shows/hides appropriate controls.
-        
+
         Args:
             checked: True if sync button is checked (sync ON), False otherwise
         """
@@ -1245,7 +1277,7 @@ class FlowTabBuilder:
             self.sidebar.synced_pump_container.setVisible(checked)
         if hasattr(self.sidebar, 'individual_pumps_container'):
             self.sidebar.individual_pumps_container.setVisible(not checked)
-        
+
         # When toggling to sync mode, copy pump1 values to synced controls
         if checked:
             if hasattr(self.sidebar, 'pump1_rpm_spin') and hasattr(self.sidebar, 'synced_rpm_spin'):
@@ -1257,7 +1289,7 @@ class FlowTabBuilder:
 
     def _load_saved_pump_corrections(self):
         """Load saved pump correction factors from EEPROM or device config.
-        
+
         Loading priority:
         1. Controller EEPROM (if supported - travels with hardware when shipped)
         2. Device config JSON (local calibration data)
@@ -1267,15 +1299,15 @@ class FlowTabBuilder:
             # Get device_config from hardware manager if available
             if not hasattr(self.sidebar, 'hardware_mgr'):
                 return
-            
+
             hardware_mgr = self.sidebar.hardware_mgr
             if not hardware_mgr:
                 return
-            
+
             pump1_corr = 1.0
             pump2_corr = 1.0
             source = "default"
-            
+
             # Try to load from controller EEPROM first (highest priority - travels with device)
             ctrl = hardware_mgr._ctrl_raw
             if ctrl and hasattr(ctrl, 'get_pump_corrections'):
@@ -1284,7 +1316,7 @@ class FlowTabBuilder:
                     if eeprom_corrections and isinstance(eeprom_corrections, dict):
                         eeprom_pump1 = eeprom_corrections.get(1, 1.0)
                         eeprom_pump2 = eeprom_corrections.get(2, 1.0)
-                        
+
                         # Only use EEPROM values if they're not default (1.0)
                         if eeprom_pump1 != 1.0 or eeprom_pump2 != 1.0:
                             pump1_corr = eeprom_pump1
@@ -1293,7 +1325,7 @@ class FlowTabBuilder:
                             logger.info(f"📥 Loaded pump corrections from controller EEPROM")
                 except Exception as e:
                     logger.debug(f"Could not read pump corrections from EEPROM: {e}")
-            
+
             # Fallback to device config if EEPROM didn't have values
             if source == "default" and hasattr(hardware_mgr, 'device_config'):
                 device_config = hardware_mgr.device_config
@@ -1301,26 +1333,26 @@ class FlowTabBuilder:
                     corrections = device_config.get_pump_corrections()
                     config_pump1 = corrections.get("pump_1", 1.0)
                     config_pump2 = corrections.get("pump_2", 1.0)
-                    
+
                     if config_pump1 != 1.0 or config_pump2 != 1.0:
                         pump1_corr = config_pump1
                         pump2_corr = config_pump2
                         source = "device config"
                         logger.info(f"📥 Loaded pump corrections from device config")
-            
+
             # Apply to individual pump spinboxes
             if hasattr(self.sidebar, 'pump1_correction_spin'):
                 self.sidebar.pump1_correction_spin.setValue(pump1_corr)
             if hasattr(self.sidebar, 'pump2_correction_spin'):
                 self.sidebar.pump2_correction_spin.setValue(pump2_corr)
-            
+
             # Apply to synced pump spinbox (use pump1 value)
             if hasattr(self.sidebar, 'synced_correction_spin'):
                 self.sidebar.synced_correction_spin.setValue(pump1_corr)
-            
+
             if pump1_corr != 1.0 or pump2_corr != 1.0:
                 logger.info(f"✓ Pump corrections loaded from {source}: Pump 1={pump1_corr:.3f}, Pump 2={pump2_corr:.3f}")
-                
+
         except Exception as e:
             logger.warning(f"Could not load saved pump corrections: {e}")
 
