@@ -132,18 +132,26 @@ def LEDconverge_engine(
         polarization_mode=polarization,  # Pass polarization mode for P-pol specific limits
     )
 
-    # Check for trained ML models
+    # Check for trained ML models (bundled with application)
     from pathlib import Path
-    ml_models_dir = Path("tools/ml_training/models")
-
+    import sys
+    
+    # Determine base path (works for both frozen .exe and development)
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # Running as compiled .exe - models are in _MEIPASS
+        base_path = Path(sys._MEIPASS) / "affilabs" / "convergence" / "models"
+    else:
+        # Running from source - use relative path from this file
+        base_path = Path(__file__).parent / "models"
+    
     sensitivity_model_path = None
     led_predictor_path = None
     convergence_predictor_path = None
 
-    if ml_models_dir.exists():
-        sensitivity_path = ml_models_dir / "sensitivity_classifier.joblib"
-        led_path = ml_models_dir / "led_predictor.joblib"
-        convergence_path = ml_models_dir / "convergence_predictor.joblib"
+    if base_path.exists():
+        sensitivity_path = base_path / "sensitivity_classifier.joblib"
+        led_path = base_path / "led_predictor.joblib"
+        convergence_path = base_path / "convergence_predictor.joblib"
 
         if sensitivity_path.exists():
             sensitivity_model_path = str(sensitivity_path)
