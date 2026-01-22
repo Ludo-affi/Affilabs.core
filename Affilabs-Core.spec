@@ -6,6 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[('.venv312/Lib/site-packages/libusb_package/libusb-1.0.dll', '.')],
     datas=[
+        ('VERSION', '.'),
         ('affilabs/ui', 'affilabs/ui'),
         ('affilabs/config', 'affilabs/config'),
         ('detector_profiles', 'detector_profiles'),

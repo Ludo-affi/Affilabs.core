@@ -6,7 +6,7 @@
 
 ; Installer Information
 !define PRODUCT_NAME "Affilabs-Core"
-!define PRODUCT_VERSION "1.0.2"
+!define PRODUCT_VERSION "1.05"
 !define PRODUCT_PUBLISHER "Affilabs"
 !define PRODUCT_WEB_SITE "https://affinitelabs.com"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
