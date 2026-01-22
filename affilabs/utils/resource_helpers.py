@@ -71,19 +71,18 @@ class ResourceHelpers:
                         print(f"Error stopping pumps: {e}")
 
                 # Home pumps to zero position before closing
-                if hasattr(app, "hardware_mgr") and app.hardware_mgr:
-                    if hasattr(app.hardware_mgr, "pump") and app.hardware_mgr.pump:
-                        print("Homing pumps to zero position...")
-                        try:
-                            import asyncio
-                            # Run async home_pumps in sync context
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            loop.run_until_complete(app.hardware_mgr.pump.home_pumps())
-                            loop.close()
-                            print("✓ Pumps homed successfully")
-                        except Exception as e:
-                            print(f"Error homing pumps: {e}")
+                if hasattr(app, "pump_mgr") and app.pump_mgr:
+                    print("Homing pumps to zero position...")
+                    try:
+                        import asyncio
+                        # Run async home_pumps in sync context via PumpManager
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(app.pump_mgr.home_pumps())
+                        loop.close()
+                        print("✓ Pumps homed successfully")
+                    except Exception as e:
+                        print(f"Error homing pumps: {e}")
 
             # Disconnect hardware (force close in emergency mode)
             if hasattr(app, "hardware_mgr") and app.hardware_mgr:

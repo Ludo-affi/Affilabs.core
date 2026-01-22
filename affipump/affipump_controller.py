@@ -104,7 +104,7 @@ class AffipumpController:
         self.ser.reset_input_buffer()
         self.ser.reset_output_buffer()
         print(f"Connected to {self.port} @ {self.baudrate} baud (Syringe: {self.syringe_volume_ul}uL)")
-        
+
         # CRITICAL: Immediately stop any stuck operations from improper shutdown
         # Send terminate command to both pumps in case they were left running
         logger.info("[PUMP INIT] Sending emergency stop to clear stuck state...")
@@ -120,7 +120,7 @@ class AffipumpController:
     def close(self):
         if self.ser and self.ser.is_open:
             self.ser.close()
-    
+
     def reconnect(self):
         """Reconnect to pump after connection loss."""
         logger.info("[PUMP] Attempting to reconnect...")
@@ -131,7 +131,7 @@ class AffipumpController:
                     self.ser.close()
                 except Exception:
                     pass
-            
+
             # Reopen connection
             self.open()
             logger.info("[PUMP] Reconnection successful")
@@ -155,7 +155,7 @@ class AffipumpController:
                 if elapsed < self._min_command_interval:
                     sleep_time = self._min_command_interval - elapsed
                     time.sleep(sleep_time)
-                    
+
                 try:
                     self.ser.reset_input_buffer()
                 except Exception:
@@ -338,24 +338,24 @@ class AffipumpController:
 
     def wait_until_ready(self, pump_num, timeout=30.0, poll_interval=0.1):
         """Wait for pump to become ready (not busy).
-        
+
         Args:
             pump_num: Pump number (1 or 2)
             timeout: Maximum wait time in seconds (default: 30)
             poll_interval: Time between status checks in seconds (default: 0.1)
-            
+
         Returns:
             tuple: (ready: bool, elapsed_time: float, error_msg: str or None)
         """
         start_time = time.time()
-        
+
         while True:
             elapsed = time.time() - start_time
-            
+
             # Check timeout
             if elapsed >= timeout:
                 return (False, elapsed, f"Timeout after {timeout}s")
-            
+
             # Get status
             try:
                 result = self.get_status(pump_num)
@@ -363,20 +363,20 @@ class AffipumpController:
                     # Check for errors
                     if result['error'] and result['error_msg'] != 'No Error':
                         return (False, elapsed, f"Pump error: {result['error_msg']}")
-                    
+
                     # Check if ready (not busy)
                     if result['busy'] is False:  # Explicitly check False (not just falsy)
                         return (True, elapsed, None)
                 else:
                     # Failed to get status
                     return (False, elapsed, "Failed to get pump status")
-                    
+
             except Exception as e:
                 return (False, elapsed, f"Status check exception: {e}")
-            
+
             # Wait before next poll
             time.sleep(poll_interval)
-    
+
     def is_idle(self, pump_num):
         """Check if pump is idle (not busy)"""
         result = self.get_status(pump_num)
@@ -461,11 +461,11 @@ class AffipumpController:
         logger.info("[PUMP INIT] Broadcasting initialize command /AZR...")
         response = self.send_command("/AZR")
         logger.info(f"[PUMP INIT] Broadcast response: {response}")
-        
+
         # Wait for initialization to complete (pumps physically move to P0)
         logger.info("[PUMP INIT] Waiting for initialization to complete (5s)...")
         time.sleep(5.0)
-        
+
         # Verify both pumps are idle after initialization
         logger.info("[PUMP INIT] Verifying pumps are ready...")
         timeout = 5.0
@@ -473,17 +473,17 @@ class AffipumpController:
         while time.time() - start < timeout:
             status1 = self.get_status(1)
             status2 = self.get_status(2)
-            
+
             busy1 = status1.get('busy', True) if status1 else True
             busy2 = status2.get('busy', True) if status2 else True
-            
+
             if not busy1 and not busy2:
                 logger.info(f"[PUMP INIT] ✅ Both pumps ready after {time.time() - start + 5.0:.1f}s")
                 break
             time.sleep(0.2)
         else:
             logger.warning("[PUMP INIT] ⚠️  Pumps still busy after 10s total, proceeding anyway...")
-        
+
         return True
 
     def initialize_pump(self, pump_num):
@@ -597,32 +597,32 @@ class AffipumpController:
 
     def aspirate_both(self, volume_ul, speed_ul_s=400):
         """Aspirate relative volume from both pumps simultaneously.
-        
+
         Args:
             volume_ul: Volume to aspirate in µL (relative movement)
             speed_ul_s: Speed in µL/s
-            
+
         Returns:
             volume_ul: The volume aspirated
         """
         if volume_ul > self.syringe_volume_ul:
             raise ValueError(f"Cannot aspirate {volume_ul}µL > syringe capacity {self.syringe_volume_ul}µL")
-        
+
         velocity_ul_s = self._format_velocity_for_v_command(speed_ul_s)
-        
+
         # Switch valves to INPUT position (buffer reservoir)
         self.send_command("/1IR")
         time.sleep(0.1)
         self.send_command("/2IR")
         time.sleep(1.0)  # Give valves time to physically switch
-        
+
         # Set velocity for broadcast
         self.send_command(f"/AV{velocity_ul_s:.3f},1R")
         time.sleep(0.1)
-        
+
         # Use broadcast Pickup (relative aspirate) command with µL and parameter 1
         self.send_command(f"/AP{volume_ul:.3f},1R")
-        
+
         return volume_ul
 
     def aspirate_both_to_position(self, target_position_ul=1000, speed_ul_s=400):
@@ -636,7 +636,7 @@ class AffipumpController:
         time.sleep(0.1)
         self.send_command("/2IR")
         time.sleep(1.0)  # Give valves time to physically switch
-        
+
         # Set velocity and move to absolute position
         self.send_command(f"/AV{speed_ul_s:.3f},1R")
         time.sleep(0.1)
@@ -645,7 +645,7 @@ class AffipumpController:
 
     def dispense_both(self, volume_ul, speed_ul_s=50, switch_valve=True):
         """Dispense same volume from both pumps simultaneously.
-        
+
         Args:
             volume_ul: Volume to dispense in µL
             speed_ul_s: Speed in µL/s
@@ -658,12 +658,36 @@ class AffipumpController:
             time.sleep(0.1)
             self.send_command("/2OR")
             time.sleep(1.0)  # Give valves time to physically switch
-        
+
         # Set velocity and dispense using V/D format with ,1 parameter
         self.send_command(f"/AV{speed_ul_s:.3f},1R")
         time.sleep(0.1)
         self.send_command(f"/AD{volume_ul:.3f},1R")
         return volume_ul
+
+    def dispense_both_to_position(self, target_position_ul=0, speed_ul_s=50, switch_valve=True):
+        """Dispense both pumps to absolute position.
+
+        Args:
+            target_position_ul: Target absolute position in µL (default: 0)
+            speed_ul_s: Speed in µL/s
+            switch_valve: If True, switch valves to OUTPUT before dispense (default)
+                         If False, leave valves in current position
+        """
+        target_steps = int(target_position_ul * self.ul_to_steps)
+
+        if switch_valve:
+            # Switch valves to OUTPUT position (chip - for normal dispense operations)
+            self.send_command("/1OR")
+            time.sleep(0.1)
+            self.send_command("/2OR")
+            time.sleep(1.0)  # Give valves time to physically switch
+
+        # Set velocity and move to absolute position
+        self.send_command(f"/AV{speed_ul_s:.3f},1R")
+        time.sleep(0.1)
+        self.send_command(f"/AP{target_steps}R")  # Absolute position
+        return target_position_ul
 
     def get_both_positions(self):
         """Get positions of both pumps"""
@@ -804,7 +828,7 @@ class AffipumpController:
                                         abs(pos1_start - 300.0) < 20.0 or  # Near flush volume
                                         abs(pos1_start - 1000.0) < 20.0  # Near buffer/prime volume
                                     )
-                                    
+
                                     if is_at_common_target and pump1_finish_time < 1.0:
                                         logger.debug(f"[PUMP1] Already at/near target position ({pos1_start:.1f} µL) - no movement needed")
                                         pump1_ready = True
@@ -893,7 +917,7 @@ class AffipumpController:
                                         abs(pos2_start - 300.0) < 20.0 or  # Near flush volume
                                         abs(pos2_start - 1000.0) < 20.0  # Near buffer/prime volume
                                     )
-                                    
+
                                     if is_at_common_target and pump2_finish_time < 1.0:
                                         logger.debug(f"[PUMP2] Already at/near target position ({pos2_start:.1f} µL) - no movement needed")
                                         pump2_ready = True
@@ -1039,25 +1063,25 @@ class AffipumpController:
 
     def get_plunger_position(self, pump_num):
         """Get plunger position in microliters (µL)
-        
+
         Converts raw step position to volume by:
         1. Get raw position in steps
         2. Subtract step offset (1600 steps = 0 µL)
         3. Convert steps to µL using calibration factor
         4. Apply pump-specific correction factor
-        
+
         Returns:
             float: Current plunger position in µL, or None if query failed
         """
         raw_steps = self.get_plunger_position_raw(pump_num)
         if raw_steps is None:
             return None
-        
+
         # Convert steps to µL
         # Raw position is absolute steps from home (1600 = empty, 183090 = full for 1mL)
         volume_steps = raw_steps - self.step_offset
         volume_ul = volume_steps / self.ul_to_steps
-        
+
         # Apply pump-specific correction factor
         correction = self.pump_corrections.get(pump_num, 1.0)
         return volume_ul * correction
