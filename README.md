@@ -2,6 +2,18 @@
 
 **Version 1.0.1** - Stable Release (December 2025)
 
+---
+
+## 🚀 New User?
+
+**👉 [Get started in 5 minutes →](QUICK_START.md)**
+
+The [QUICK_START.md](QUICK_START.md) guide covers installation, hardware connection, and your first measurement. Use this for fast-track onboarding.
+
+**Existing user?** Continue below for comprehensive documentation.
+
+---
+
 ## ⚡ Quick Start
 
 ### Prerequisites
