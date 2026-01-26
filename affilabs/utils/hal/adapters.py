@@ -200,7 +200,23 @@ class OceanSpectrometerAdapter(Spectrometer):
         return self._usb.read_intensity()
 
     def read_wavelength(self) -> np.ndarray:  # type: ignore[override]
-        return self._usb.read_wavelength()
+        """Read wavelength calibration, applying corrections for specific detectors."""
+        from numpy.polynomial import Polynomial
+
+        # Apply serial-specific wavelength corrections for write-protected EEPROM
+        if hasattr(self._usb, 'serial_number') and self._usb.serial_number == "ST00012":
+            # Correct calibration for ST00012 (EEPROM write-protected)
+            # Factory EEPROM: 536.21-726 nm (incorrect)
+            # Correct range: 563.79-837.84 nm
+            correct_coeffs = [5.637917e2, 2.089449e-1, -2.302712e-6, -1.650914e-8]
+            calibration_curve = Polynomial(correct_coeffs)
+            # Generate wavelengths for 1848 pixels
+            wavelengths = calibration_curve(np.arange(1848))
+        else:
+            # Read from EEPROM for other detectors
+            wavelengths = self._usb.read_wavelength()
+
+        return wavelengths
 
     def set_integration(self, integration_ms: int) -> bool:  # type: ignore[override]
         # CRITICAL: Must return the result from underlying detector for pre-arm validation
@@ -213,6 +229,11 @@ class OceanSpectrometerAdapter(Spectrometer):
     @property
     def serial_number(self) -> str | None:  # type: ignore[override]
         return getattr(self._usb, "serial_number", None)
+
+    @property
+    def max_counts(self) -> int:
+        """Maximum ADC counts for this detector (12-bit=4095, 14-bit=16383, 16-bit=65535)."""
+        return getattr(self._usb, "max_counts", 65535)  # Default to USB4000's 16-bit
 
     def close(self) -> None:
         """Close the underlying USB device gracefully."""

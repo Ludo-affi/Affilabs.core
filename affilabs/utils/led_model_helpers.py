@@ -61,6 +61,27 @@ def measure_led_response(
     spectrometer.set_integration(integration_time_ms)
     time.sleep(0.05)
 
+    # Enable LEDs first (P4SPR requires lm:ABCD, P4PRO uses enable_multi_led)
+    raw_ctrl = controller._ctrl if hasattr(controller, '_ctrl') else controller
+    controller_class = raw_ctrl.__class__.__name__
+
+    if 'P4SPR' in controller_class:
+        # P4SPR: Use direct serial lm:ABCD command
+        try:
+            if hasattr(raw_ctrl, '_ser') and raw_ctrl._ser is not None:
+                raw_ctrl._ser.write(b"lm:ABCD\n")
+                time.sleep(0.05)
+                raw_ctrl._ser.read(10)  # Read response
+        except Exception:
+            pass  # Ignore errors during LED enable
+    elif 'P4PRO' in controller_class:
+        # P4PRO: Use enable_multi_led() if available
+        if hasattr(controller, 'enable_multi_led'):
+            try:
+                controller.enable_multi_led(a=True, b=True, c=True, d=True)
+            except Exception:
+                pass
+
     # Turn on this LED only (others off)
     intensities = {"a": 0, "b": 0, "c": 0, "d": 0}
     intensities[led_char] = intensity
@@ -79,16 +100,19 @@ def measure_led_response(
     top_10_avg = float(spectrum[top_10_indices].mean())
     corrected = top_10_avg - dark_counts
 
-    # Saturation check
-    saturated_pixels = int((spectrum >= 65535).sum())
-    near_saturation = int((spectrum >= 60000).sum())
+    # Detector-agnostic saturation check (USB4000: 65535, PhasePhotonics: 4095)
+    detector_max = getattr(spectrometer, 'max_counts', 65535)
+    near_saturation_threshold = int(0.92 * detector_max)  # 92% of max
+
+    saturated_pixels = int((spectrum >= detector_max).sum())
+    near_saturation = int((spectrum >= near_saturation_threshold).sum())
 
     return {
         "raw_counts": top_10_avg,
         "corrected_counts": corrected,
         "saturated_wavelengths": saturated_pixels,
         "near_saturation_pixels": near_saturation,
-        "is_saturated": saturated_pixels > 0 or top_10_avg >= 60000,
+        "is_saturated": saturated_pixels > 0 or top_10_avg >= near_saturation_threshold,
     }
 
 

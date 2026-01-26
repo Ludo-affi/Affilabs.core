@@ -117,9 +117,13 @@ def train_model(features_df: pd.DataFrame) -> GradientBoostingRegressor:
     print(f"Test RMSE: {np.sqrt(mean_squared_error(y_test, y_test_pred)):.2f} LED units")
     print(f"Test R²: {r2_score(y_test, y_test_pred):.3f}")
 
-    # Cross-validation
-    cv_scores = -cross_val_score(model, X, y, cv=5, scoring='neg_mean_absolute_error')
-    print(f"\nCross-validation MAE: {cv_scores.mean():.2f} (+/- {cv_scores.std():.2f}) LED units")
+    # Cross-validation (adjust folds for small datasets)
+    n_splits = min(5, len(X))
+    if n_splits >= 2:
+        cv_scores = -cross_val_score(model, X, y, cv=n_splits, scoring='neg_mean_absolute_error')
+        print(f"\nCross-validation MAE: {cv_scores.mean():.2f} (+/- {cv_scores.std():.2f}) LED units (cv={n_splits})")
+    else:
+        print(f"\nCross-validation: Skipped (insufficient samples: {len(X)})")
 
     # Feature importance
     print(f"\n=== Feature Importance ===")

@@ -816,9 +816,13 @@ class AffipumpController:
                         elif check_position_change and not allow_early_termination:
                             # Verify actual position change (only for aspirate/dispense, NOT initialization)
                             # Skip this check if allow_early_termination=True (pump may have been stopped)
+                            # CRITICAL: Read FRESH position, not cached value
+                            time.sleep(0.1)  # Small delay to ensure position register is updated
                             pos1_end = self.get_position(1)
                             if pos1_start is not None and pos1_end is not None:
                                 pos_change = abs(pos1_end - pos1_start)
+                                logger.debug(f"[PUMP1] Position check: {pos1_start:.1f} → {pos1_end:.1f} µL (change: {pos_change:.1f}µL)")
+                                
                                 if pos_change < 10.0:  # Less than 10µL movement
                                     # Check if pump was already at/near a reasonable target position
                                     # Common targets: 0 (home), 300 (flush), 1000 (buffer/prime)
@@ -905,9 +909,13 @@ class AffipumpController:
                         elif check_position_change and not allow_early_termination:
                             # Verify actual position change (only for aspirate/dispense, NOT initialization)
                             # Skip this check if allow_early_termination=True (pump may have been stopped)
+                            # CRITICAL: Read FRESH position, not cached value
+                            time.sleep(0.1)  # Small delay to ensure position register is updated
                             pos2_end = self.get_position(2)
                             if pos2_start is not None and pos2_end is not None:
                                 pos_change = abs(pos2_end - pos2_start)
+                                logger.debug(f"[PUMP2] Position check: {pos2_start:.1f} → {pos2_end:.1f} µL (change: {pos_change:.1f}µL)")
+                                
                                 if pos_change < 10.0:  # Less than 10µL movement
                                     # Check if pump was already at/near a reasonable target position
                                     # Common targets: 0 (home), 300 (flush), 1000 (buffer/prime)

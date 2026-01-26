@@ -1,0 +1,114 @@
+{
+  "detector_serial": "ST00012",
+  "timestamp": "20260122_212308",
+  "model_type": "3-stage-linear",
+  "model_equation": "counts = slope_10ms \u00d7 intensity \u00d7 (time_ms / 10)",
+  "integration_times": [
+    10,
+    20,
+    30,
+    45,
+    60
+  ],
+  "dark_counts_per_time": {
+    "10": 936.0,
+    "20": 937.0,
+    "30": 937.0,
+    "45": 939.0,
+    "60": 944.0,
+    "5": 936.0,
+    "15": 935.0
+  },
+  "led_models": {
+    "A": [
+      {
+        "time_ms": 10,
+        "slope": 9.232060606060607
+      },
+      {
+        "time_ms": 20,
+        "slope": 18.875636363636367
+      },
+      {
+        "time_ms": 30,
+        "slope": 28.988030303030303
+      },
+      {
+        "time_ms": 45,
+        "slope": 44.18354545454545
+      },
+      {
+        "time_ms": 60,
+        "slope": 59.03975757575758
+      }
+    ],
+    "B": [
+      {
+        "time_ms": 10,
+        "slope": 19.16460606060606
+      },
+      {
+        "time_ms": 20,
+        "slope": 39.164818181818184
+      },
+      {
+        "time_ms": 30,
+        "slope": 58.210075757575765
+      },
+      {
+        "time_ms": 45,
+        "slope": 80.01563636363636
+      },
+      {
+        "time_ms": 60,
+        "slope": 106.8390303030303
+      }
+    ],
+    "C": [
+      {
+        "time_ms": 10,
+        "slope": 35.726
+      },
+      {
+        "time_ms": 20,
+        "slope": 70.45454545454545
+      },
+      {
+        "time_ms": 30,
+        "slope": 75.09757575757577
+      },
+      {
+        "time_ms": 45,
+        "slope": 93.69963636363636
+      },
+      {
+        "time_ms": 60,
+        "slope": 124.85866666666666
+      }
+    ],
+    "D": [
+      {
+        "time_ms": 10,
+        "slope": 36.04969696969697
+      },
+      {
+        "time_ms": 20,
+        "slope": 71.06872727272727
+      },
+      {
+        "time_ms": 30,
+        "slope": 75.61007575757576
+      },
+      {
+        "time_ms": 45,
+        "slope": 93.83945454545454
+      },
+      {
+        "time_ms": 60,
+        "slope": 125.0469090909091
+      }
+    ]
+  },
+  "training_method": "automatic_oem_workflow",
+  "detector_wait_ms": 50
+}

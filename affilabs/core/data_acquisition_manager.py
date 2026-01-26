@@ -277,6 +277,7 @@ class DataAcquisitionManager(QObject):
         self._stop_acquisition = threading.Event()
         self._pause_acquisition = threading.Event()  # Pause flag
         self._stop_processing = threading.Event()  # Processing thread stop flag
+        self._emission_queue = queue.Queue(maxsize=100)  # Queue for emitting data to UI
 
         # One-time run parameter summary flag (reset on each start)
         self._run_params_logged = False

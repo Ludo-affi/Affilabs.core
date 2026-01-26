@@ -203,11 +203,11 @@ class WashFlag(Flag):
 
     @property
     def marker_color(self) -> str:
-        return "#4ECDC4"  # Teal for wash
+        return "#00D9FF"  # Bright cyan for wash (more visible)
 
     @property
     def marker_size(self) -> int:
-        return 12
+        return 16  # Increased from 12 for better visibility
 
 
 @dataclass
@@ -233,11 +233,11 @@ class SpikeFlag(Flag):
 
     @property
     def marker_color(self) -> str:
-        return "#FFD93D"  # Yellow for spike/warning
+        return "#FF9500"  # Bright orange for spike/warning (more visible)
 
     @property
     def marker_size(self) -> int:
-        return 14
+        return 18  # Increased from 14 for better visibility
 
 
 def create_flag(flag_type: str, channel: str, time: float, spr: float, **kwargs) -> Flag:

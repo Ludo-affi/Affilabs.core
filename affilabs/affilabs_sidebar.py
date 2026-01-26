@@ -771,8 +771,8 @@ class AffilabsSidebar(QWidget):
         """Load hardware settings into the input fields.
 
         Args:
-            s_pos: S-mode servo position (0-180)
-            p_pos: P-mode servo position (0-180)
+            s_pos: S-mode servo position (0-255 PWM)
+            p_pos: P-mode servo position (0-255 PWM)
             led_a: Channel A LED brightness (0-255)
             led_b: Channel B LED brightness (0-255)
             led_c: Channel C LED brightness (0-255)

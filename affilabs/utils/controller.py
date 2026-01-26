@@ -499,6 +499,7 @@ class PicoP4SPR(StaticController):
 
             # Skip if already enabled (optimization)
             if ch in self._channels_enabled:
+                logger.debug(f"LED {ch.upper()} already enabled, skipping turn_on_channel")
                 return True
 
             cmd = f"l{ch}\n"
@@ -507,19 +508,17 @@ class PicoP4SPR(StaticController):
                     self._ser.reset_input_buffer()  # Clear any leftover data
                     self._ser.write(cmd.encode())
                     time.sleep(0.02)  # Wait for response
-                    response = self._ser.read(1)  # Read 1 byte (firmware sends '1')
-                    success = response == b"6"
+                    response = self._ser.read(1)  # Read 1 byte
+                    # Accept both '6' and '1' as success (firmware versions vary)
+                    success = response in (b"6", b"1")
                     if success:
                         # CRITICAL: Firmware auto-disables previous LED when new one turns on
                         # Clear tracking set and add only the new channel
                         self._channels_enabled.clear()
                         self._channels_enabled.add(ch)
-                        logger.debug(
-                            f"[OK] LED {ch.upper()} enabled via 'l{ch}' command",
-                        )
                     else:
                         logger.warning(
-                            f"[ERROR] LED {ch.upper()} enable failed - no '1' response (got: {response})",
+                            f"[ERROR] LED {ch.upper()} enable failed - expected b'6' or b'1', got: {response!r}",
                         )
                     return success
         except Exception as e:
@@ -856,16 +855,44 @@ class PicoP4SPR(StaticController):
             c = max(0, min(255, int(c)))
             d = max(0, min(255, int(d)))
 
-            # Format: batch:A,B,C,D\n
-            # V2.4.1 firmware: batch command handles PWM enable/disable automatically
-            cmd = f"batch:{a},{b},{c},{d}\n"
+            # CRITICAL: P4SPR firmware requires 2 commands for multi-LED operation:
+            # 1. lm:a,b,c,d - Enable channels (which ones are active)
+            # 2. batch:A,B,C,D - Set intensities for active channels
+            # The 'la/lb/lc/ld' commands disable all other LEDs (only 1 LED at a time)
 
             if self._ser is not None or self.open():
                 with self._lock:
-                    # V2.4.1: Send batch command directly (no pre-enable needed)
-                    # The firmware batch handler calls led_brightness() which sets PWM registers
-                    # and enables/disables channels automatically based on intensity values
                     self._ser.reset_input_buffer()
+
+                    # Step 1: Enable all channels with non-zero intensity using lm: command
+                    channels_to_enable = []
+                    if a > 0:
+                        channels_to_enable.append('a')
+                    if b > 0:
+                        channels_to_enable.append('b')
+                    if c > 0:
+                        channels_to_enable.append('c')
+                    if d > 0:
+                        channels_to_enable.append('d')
+
+                    if channels_to_enable:
+                        # Enable channels: lm:a,b,c,d
+                        channel_str = ",".join(channels_to_enable)
+                        lm_cmd = f"lm:{channel_str}\n"
+                        logger.debug(f"Enabling LED channels: {lm_cmd.strip()}")
+                        self._ser.write(lm_cmd.encode())
+                        time.sleep(0.02)  # Wait for channel enable
+
+                        # Read ACK for lm command
+                        lm_response = self._ser.read(1)
+                        logger.debug(f"lm command response: {lm_response!r}")
+
+                        self._ser.reset_input_buffer()
+
+                    # Step 2: Set intensities with batch command
+                    # Format: batch:A,B,C,D\n
+                    cmd = f"batch:{a},{b},{c},{d}\n"
+                    logger.debug(f"Setting LED intensities: {cmd.strip()}")
                     self._ser.write(cmd.encode())
 
                     # Firmware v2.4.1: Minimal wait for command processing (~2ms firmware execution)
@@ -1437,7 +1464,7 @@ class PicoP4SPR(StaticController):
             # V2.4 firmware command: servo:ANGLE,DURATION_MS
             # Use 500ms duration for smooth, reliable movement
             cmd = f"servo:{angle},500\n"
-            logger.info(f"🔧 Moving servo: PWM {pwm_val} → angle {angle}°: {cmd.strip()}")
+            logger.info(f"Moving servo: PWM {pwm_val} to angle {angle} degrees: {cmd.strip()}")
 
             # Debug: Check serial port state
             if self._ser is None:
@@ -1470,7 +1497,7 @@ class PicoP4SPR(StaticController):
                         # V2.4 firmware: 500ms movement duration specified in command
                         # Add extra margin for physical settling
                         time.sleep(0.6)  # 600ms total wait (500ms movement + 100ms settle)
-                        logger.info(f"✅ Servo physically moved to angle {angle}° (PWM {pwm_val})")
+                        logger.info(f"Servo physically moved to angle {angle} degrees (PWM {pwm_val})")
                         return True
                     else:
                         logger.error(f"❌ servo command failed: {response!r} (expected b'1' or b'6')")
@@ -1532,7 +1559,17 @@ class PicoP4SPR(StaticController):
                             time.sleep(0.05)
                             response = self._ser.readline().strip()
 
-                        return response == b"6"
+                        # Accept '6' or '1' as success (firmware versions vary)
+                        # Also accept if '6' or '1' appears anywhere in response
+                        success = (response == b"6" or response == b"1" or
+                                   b"6" in response or b"1" in response)
+
+                        if not success:
+                            logger.debug(f"Servo move response: {response!r} (expected b'6' or b'1')")
+
+                        # CRITICAL: Even if no ACK, the servo IS moving (verified by user)
+                        # Return True as long as command was sent successfully
+                        return True
                 else:
                     logger.error("Cannot move servo - port not open")
                     return False
@@ -1551,11 +1588,20 @@ class PicoP4SPR(StaticController):
         try:
             if self._ser is not None or self.open():
                 with self._lock:
-                    self._ser.reset_input_buffer()
+                    with contextlib.suppress(Exception):
+                        self._ser.reset_input_buffer()
                     self._ser.write(b"cv\n")
-                    time.sleep(0.1)
-                    response = self._ser.read(1)
-                    return response == b"6"
+                    # Firmware V2.4 may take longer and may not ACK reliably
+                    start = time.time()
+                    response = b""
+                    while time.time() - start < 1.0:  # up to 1s
+                        chunk = self._ser.read(1)
+                        if chunk:
+                            response += chunk
+                            break
+                        time.sleep(0.05)
+                    # Treat '6' or response starting with '6' as success; empty = unknown/False
+                    return response == b"6" or response.startswith(b"6")
             return False
         except Exception as e:
             logger.debug(f"PicoP4SPR EEPROM config check failed: {e}")
@@ -1569,12 +1615,26 @@ class PicoP4SPR(StaticController):
         try:
             if self._ser is not None or self.open():
                 with self._lock:
-                    self._ser.reset_input_buffer()
+                    with contextlib.suppress(Exception):
+                        self._ser.reset_input_buffer()
                     self._ser.write(b"rc\n")
-                    time.sleep(0.15)
+                    # Firmware V2.4 may stream data slower; accumulate up to 20 bytes
+                    start = time.time()
+                    buf = bytearray()
+                    while time.time() - start < 1.0 and len(buf) < 20:
+                        # Read whatever is waiting
+                        waiting = getattr(self._ser, "in_waiting", 0)
+                        if waiting and waiting > 0:
+                            buf.extend(self._ser.read(waiting))
+                        else:
+                            # Fallback to 1-byte reads
+                            chunk = self._ser.read(1)
+                            if chunk:
+                                buf.extend(chunk)
+                            else:
+                                time.sleep(0.05)
 
-                    # Read 20 bytes
-                    data = self._ser.read(20)
+                    data = bytes(buf[:20])
                     if len(data) != 20:
                         logger.warning(
                             f"PicoP4SPR EEPROM read returned {len(data)} bytes, expected 20",

@@ -59,7 +59,7 @@ class BaselineRecordingPresenter:
                 return
 
             # Pass spectrum_viewmodel to baseline recorder for transmission data access
-            spectrum_vm = getattr(self.app, 'spectrum_vm', None)
+            spectrum_vm = getattr(self.main_window.app, 'spectrum_vm', None)
             if not spectrum_vm:
                 logger.warning("[WARN] spectrum_viewmodel not available - baseline recorder will use fallback mode")
 
@@ -99,7 +99,7 @@ class BaselineRecordingPresenter:
     def on_recording_started(self) -> None:
         """Handle recording started signal - update button to show stop state."""
         if hasattr(self.main_window, "baseline_capture_btn"):
-            self.main_window.baseline_capture_btn.setText("⏹️ Stop Capture")
+            self.main_window.baseline_capture_btn.setText("■ Stop Recording")
             self.main_window.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF9500, stop:1 #E08000);"
@@ -129,14 +129,14 @@ class BaselineRecordingPresenter:
 
         if hasattr(self.main_window, "baseline_capture_btn"):
             self.main_window.baseline_capture_btn.setText(
-                f"⏹️ Capturing... {int(percent)}% ({int(remaining)}s)",
+                f"■ Recording {int(percent)}% ({int(remaining)}s left)",
             )
 
     def on_recording_complete(self, filepath: str) -> None:
         """Handle recording complete signal - reset button and show success message."""
         if hasattr(self.main_window, "baseline_capture_btn"):
             self.main_window.baseline_capture_btn.setText(
-                "🔴 Record 5-Min Baseline Data",
+                "● Record 5-Min Baseline",
             )
             self.main_window.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"

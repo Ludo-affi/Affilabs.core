@@ -63,7 +63,7 @@ class PhasePhotonics:
         # Detector specifications - PhasePhotonics specific
         self._wavelengths = None
         self._integration_time = 0.1  # seconds
-        self._max_counts = 65535  # 16-bit ADC
+        self._max_counts = 4095  # 12-bit ADC (confirmed by OEM specs)
         self._num_pixels = SENSOR_DATA_LEN  # 1848 for PhasePhotonics (ISOLATED)
 
         logger.info(
@@ -79,14 +79,14 @@ class PhasePhotonics:
             logger.debug("Scanning for PhasePhotonics spectrometers...")
             # ftd2xx enumerates FTDI USB devices
             all_devices = listDevices()
-            
+
             if all_devices is None:
                 logger.warning(
                     "ftd2xx.listDevices() returned None - D2XX drivers may not be installed or device not connected"
                 )
                 self.devs = []
                 return
-            
+
             # Filter for PhasePhotonics devices (serial starts with "ST")
             self.devs = [s.decode() for s in all_devices if s.startswith(b"ST")]
             logger.info(
@@ -182,31 +182,19 @@ class PhasePhotonics:
             return False
 
         try:
-            logger.debug(
-                f"Setting PhasePhotonics integration time: {integration_ms}ms ({integration_us}µs)",
-            )
             r = self.api.usb_set_interval(self.spec, integration_us)
             # Note: No post-set delay needed (confirmed by OEM)
             self._integration_time = integration_ms / 1000.0  # Store in seconds
 
             if r == 0:
-                logger.info(
-                    f"✓ PhasePhotonics integration time set to {integration_ms}ms",
-                )
-
                 # CRITICAL: Set trigger timeout to match integration time (LabVIEW does this!)
                 # This is what enables fast acquisition!
                 trig_tmo_ms = max(
                     20,
                     int(integration_ms * 3),
                 )  # 3x integration or 20ms minimum
-                logger.debug(
-                    f"Setting trigger timeout to {trig_tmo_ms}ms for fast acquisition...",
-                )
                 r_tmo = self.api.usb_set_trig_tmo(self.spec, trig_tmo_ms)
-                if r_tmo == 0:
-                    logger.info(f"✓ Trigger timeout set to {trig_tmo_ms}ms")
-                else:
+                if r_tmo != 0:
                     logger.warning(
                         f"Failed to set trigger timeout, error code: {r_tmo}",
                     )

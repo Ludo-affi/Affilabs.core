@@ -455,6 +455,11 @@ class USB4000:
         return self._max_counts
 
     @property
+    def dark_current(self):
+        """Typical dark current baseline in counts (USB4000)."""
+        return 3000  # USB4000 typical dark current
+
+    @property
     def num_pixels(self):
         return self._num_pixels
 

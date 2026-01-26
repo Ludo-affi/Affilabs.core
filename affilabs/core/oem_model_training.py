@@ -517,6 +517,69 @@ def run_oem_model_training_workflow(
             logger.info("Skipping servo calibration step\n")
 
         # ====================================================================
+        # STEP 1.5: Move polarizer to S position for LED model training
+        # ====================================================================
+        if has_servo:
+            logger.info("\n" + "=" * 80)
+            logger.info("Moving polarizer to S position for LED model training...")
+            logger.info("=" * 80)
+
+            # Get S position from device_config.json
+            try:
+                import json
+
+                # Use device-specific config path (matches where servo cal saves)
+                config_path = (
+                    Path(__file__).parent.parent
+                    / "config"
+                    / "devices"
+                    / detector_serial
+                    / "device_config.json"
+                )
+
+                # Fallback to global config if device-specific doesn't exist
+                if not config_path.exists():
+                    config_path = Path(__file__).parent.parent / "config" / "device_config.json"
+
+                logger.info(f"Loading servo positions from: {config_path}")
+
+                with open(config_path) as f:
+                    device_config = json.load(f)
+
+                # Servo positions are stored in hardware section
+                s_pwm = device_config.get("hardware", {}).get("servo_s_position")
+
+                if s_pwm is None:
+                    logger.error("❌ S position not found in device_config.json!")
+                    logger.error(f"   Config path: {config_path}")
+                    logger.error(f"   Hardware section: {device_config.get('hardware', {})}")
+                    return False
+
+                logger.info(f"Moving servo to S position: {s_pwm} PWM")
+
+                # Convert PWM to degrees for sv command
+                s_degrees = int(s_pwm * 180.0 / 255.0)
+
+                # Access underlying controller (ctrl is PicoP4SPRAdapter wrapper)
+                raw_ctrl = ctrl._ctrl if hasattr(ctrl, "_ctrl") else ctrl
+
+                # Use sv+sp commands (works for P4SPR)
+                sv_cmd = f"sv{s_degrees:03d}{s_degrees:03d}\n"
+                raw_ctrl._ser.write(sv_cmd.encode())
+                time.sleep(0.1)
+                raw_ctrl._ser.readline()  # Read ACK
+
+                raw_ctrl._ser.write(b"sp\n")
+                time.sleep(2.0)  # Wait for servo to reach position
+                raw_ctrl._ser.readline()  # Read ACK
+
+                logger.info("[OK] Polarizer moved to S position")
+
+            except Exception as e:
+                logger.error(f"❌ Failed to move polarizer to S position: {e}")
+                return False
+
+        # ====================================================================
         # STEP 2/2: LED Calibration Model Training
         # ====================================================================
         logger.info("\n" + "=" * 80)

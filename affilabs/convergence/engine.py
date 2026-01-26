@@ -97,7 +97,7 @@ class ConvergenceEngine:
     EARLY_STOP_ERROR_THRESHOLD = 10.0  # Maximum average error % for early stopping
     FINE_TUNE_ERROR_THRESHOLD = 0.05  # Lock channels within 5% of target
     UNLOCK_DRIFT_THRESHOLD = 0.10  # Unlock if drifted >10% from target
-    
+
     def __init__(
         self,
         spectrometer: Spectrometer,
@@ -164,27 +164,27 @@ class ConvergenceEngine:
                 except Exception:
                     pass
 
-    def _check_early_stopping(self, iteration: int, iteration_trend: str, avg_error_pct: float, 
+    def _check_early_stopping(self, iteration: int, iteration_trend: str, avg_error_pct: float,
                               saturation: Dict[str, int], state: EngineState, signals: Dict[str, float]) -> bool:
         """Check if early stopping conditions are met.
-        
+
         Returns True if convergence should stop early to prevent overshooting.
         """
         if iteration < self.MIN_ITERATIONS_FOR_EARLY_STOP:
             return False
-            
+
         has_saturation = sum(saturation.values()) > 0
         is_stable_or_improving = iteration_trend in ["➡️  STABLE", "📈 IMPROVING"]
         error_is_low = avg_error_pct < self.EARLY_STOP_ERROR_THRESHOLD
-        
+
         if not has_saturation and is_stable_or_improving and error_is_low:
             self._log("info", f"\n✅ EARLY STOP: System stable with {avg_error_pct:.1f}% error and no saturation")
             self._log("info", f"   Stopping at iteration {iteration} to prevent overshooting from model predictions")
             return True
-            
+
         return False
-    
-    def _apply_led_updates(self, led_dict: Dict[str, int], locked_set: set, 
+
+    def _apply_led_updates(self, led_dict: Dict[str, int], locked_set: set,
                           state: EngineState, log_prefix: str = "  📐") -> None:
         """Apply LED updates to state and log changes."""
         for ch, new_led in led_dict.items():
@@ -194,7 +194,7 @@ class ConvergenceEngine:
                 self._log("info", f"{log_prefix} {ch.upper()}: LED {old_led}→{new_led}")
             else:
                 self._log("info", f"{log_prefix} {ch.upper()} is locked - skipping")
-    
+
     def _apply_saturation_fallback(self, current_led: int, sat_pixels: int, channel: str, reason: str) -> int:
         """Apply percentage-based LED reduction when slope data unavailable.
 
@@ -276,7 +276,7 @@ class ConvergenceEngine:
                         led = conservative_led
                         self._log("info",
                                  f"  🔵 {ch.upper()} initial LED adjusted: {recipe.initial_leds.get(ch, 10)}→{led} "
-                                 f"(75% of predicted based on slope={slope_at_initial:.1f})")
+                                 f"({self.CONSERVATIVE_LED_FACTOR*100:.0f}% of predicted based on slope={slope_at_initial:.1f})")
 
             initial_leds[ch] = led
 
@@ -918,6 +918,43 @@ class ConvergenceEngine:
                     state.integration_ms = new_time
                     state.clear_for_integration_change()
                     continue
+
+            # SPEED OPTIMIZATION: Prefer high LEDs over low integration time
+            # If enabled, try to maximize LED brightness first before reducing integration
+            if recipe.prefer_led_over_integration and sum(saturation.values()) == 0:
+                # Find weakest LED that's not locked
+                non_locked = [ch for ch in recipe.channels if ch not in locked]
+                if non_locked:
+                    weakest_led = min(state.leds[ch] for ch in non_locked)
+                    weakest_ch = [ch for ch in non_locked if state.leds[ch] == weakest_led][0]
+
+                    # If weakest LED is below optimization target and integration time is above minimum
+                    if (weakest_led < recipe.led_optimization_target and
+                        state.integration_ms > recipe.min_integration_for_led_max):
+
+                        # Check if we can reduce integration while increasing LEDs
+                        all_signals_above_target = all(signals.get(ch, 0) >= target_signal * 0.95
+                                                       for ch in recipe.channels if ch not in locked)
+
+                        if all_signals_above_target:
+                            # Reduce integration time by 10% and increase LEDs proportionally
+                            new_int = max(recipe.min_integration_for_led_max, state.integration_ms * 0.90)
+                            scale_factor = state.integration_ms / new_int  # How much signal we'll lose
+
+                            self._log("info", f"  🚀 SPEED-OPT: Reducing integration {state.integration_ms:.1f}ms → {new_int:.1f}ms")
+                            self._log("info", f"  🚀 SPEED-OPT: Scaling LEDs by {scale_factor:.2f}x to maintain signal")
+
+                            # Increase all LEDs to compensate
+                            for ch in non_locked:
+                                old_led = state.leds[ch]
+                                new_led = min(255, int(old_led * scale_factor))
+                                if new_led != old_led:
+                                    state.leds[ch] = new_led
+                                    self._log("info", f"     {ch.upper()}: LED {old_led}→{new_led}")
+
+                            state.integration_ms = new_int
+                            state.clear_for_integration_change()
+                            continue
 
             # Check for LED saturation limits (max or min) preventing convergence
             # If any channel is at LED boundary and can't reach acceptance, increase integration

@@ -209,7 +209,7 @@ class RecordingEventCoordinator:
         Updates button appearance to show recording state.
         """
         if hasattr(self.app.main_window, "baseline_capture_btn"):
-            self.app.main_window.baseline_capture_btn.setText("⏹ Stop Recording")
+            self.app.main_window.baseline_capture_btn.setText("Stop Recording")
             self.app.main_window.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF9500, stop:1 #E08000);"
@@ -219,7 +219,6 @@ class RecordingEventCoordinator:
                 "  padding: 8px 16px;"
                 "  font-size: 13px;"
                 "  font-weight: 600;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 "}"
                 "QPushButton:hover {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFA520, stop:1 #F09000);"

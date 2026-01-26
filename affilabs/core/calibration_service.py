@@ -461,8 +461,16 @@ class CalibrationService(QObject):
                         # USB buffer clear
                         logger.info("🔄 Clearing USB buffer with dummy reads...")
                         try:
-                            usb.set_integration(10)
-                            time.sleep(0.1)
+                            # NOTE: Skip changing integration time - just use current setting
+                            # Changing integration caused detector to hang on first read
+                            current_int = (
+                                usb._integration_time * 1000
+                                if hasattr(usb, "_integration_time")
+                                else 100
+                            )
+                            logger.info(
+                                f"   Using current integration time ({current_int:.1f}ms)..."
+                            )
                             for i in range(3):
                                 dummy = usb.read_intensity()
                                 if dummy is not None:
@@ -704,8 +712,12 @@ class CalibrationService(QObject):
                 # CRITICAL FIX: Clear USB device buffer with dummy reads
                 logger.info("🔄 Clearing USB buffer with dummy reads...")
                 try:
-                    usb.set_integration(10)
-                    time.sleep(0.1)
+                    # NOTE: Skip changing integration time - just use current setting
+                    # Changing integration caused detector to hang on first read
+                    current_int = (
+                        usb._integration_time * 1000 if hasattr(usb, "_integration_time") else 100
+                    )
+                    logger.info(f"   Using current integration time ({current_int:.1f}ms)...")
                     for i in range(3):
                         dummy = usb.read_intensity()
                         if dummy is not None:
@@ -798,8 +810,10 @@ class CalibrationService(QObject):
                             )
 
                             if servo_success:
-                                # Reload device config to get new servo positions
-                                device_config.reload()
+                                # Re-create device config to get updated servo positions from disk
+                                from affilabs.utils.device_configuration import DeviceConfiguration
+
+                                device_config = DeviceConfiguration(device_serial=device_serial)
                                 servo_positions = device_config.get_servo_positions()
 
                                 if servo_positions:

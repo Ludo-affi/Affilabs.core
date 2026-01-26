@@ -72,6 +72,16 @@ class DeviceConfigManager:
                 controller=controller,
             )
             self.main_window.device_config = self.device_config
+            # Update sidebar's device_config reference so S/P position inputs work
+            if hasattr(self.main_window, "sidebar"):
+                self.main_window.sidebar.device_config = self.device_config
+            # Update hardware_mgr's device_config to use the same object
+            if (
+                hasattr(self.main_window, "app")
+                and self.main_window.app
+                and hasattr(self.main_window.app, "hardware_mgr")
+            ):
+                self.main_window.app.hardware_mgr.device_config = self.device_config
 
             # Initialize tracking variables
             self.led_start_time = None

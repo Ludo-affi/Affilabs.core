@@ -16,6 +16,7 @@ Use create_controller_hal() factory function to wrap existing controller instanc
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
@@ -383,6 +384,9 @@ class PicoP4SPRAdapter:
         self._ctrl = controller
         self._device_type = "PicoP4SPR"
         self._device_config = device_config
+        # Cache desired servo positions (PWM) for RAM-only movements
+        self._servo_s_pos = None
+        self._servo_p_pos = None
 
     @property
     def _ser(self):
@@ -427,7 +431,57 @@ class PicoP4SPRAdapter:
 
     # Polarizer Control
     def set_mode(self, mode: str) -> bool:
-        return self._ctrl.set_mode(mode) or False
+        """Set polarizer mode using sv + ss/sp commands (verified working).
+
+        Uses the working sv + ss/sp format verified in testing.
+        """
+        try:
+            logger.info(f"🔧 HAL.set_mode('{mode}') called - checking cached positions...")
+            logger.info(f"   Cached S position: {self._servo_s_pos}")
+            logger.info(f"   Cached P position: {self._servo_p_pos}")
+
+            # Use cached PWM positions when available (calibration path)
+            if self._servo_s_pos is not None and self._servo_p_pos is not None:
+                m = (mode or "").lower()
+
+                # Convert PWM to degrees
+                s_degrees = int(5 + (self._servo_s_pos / 255.0) * 170.0)
+                p_degrees = int(5 + (self._servo_p_pos / 255.0) * 170.0)
+
+                if self._ser is None or not self._ser.is_open:
+                    logger.error("❌ Serial port not available!")
+                    return False
+
+                # Set both positions using sv command
+                sv_cmd = f"sv{s_degrees:03d}{p_degrees:03d}\n"
+                logger.info(f"   📤 Sending sv command: {sv_cmd.strip()}")
+                self._ser.write(sv_cmd.encode())
+                time.sleep(0.2)
+
+                # Move to S or P using ss/sp command
+                if m == "s":
+                    logger.info(f"   📤 Sending ss command to move to S position")
+                    self._ser.write(b"ss\n")
+                    logger.info(f"   ✅ Moved to S-mode (PWM {self._servo_s_pos}, {s_degrees}°) using sv+ss")
+                elif m == "p":
+                    logger.info(f"   📤 Sending sp command to move to P position")
+                    self._ser.write(b"sp\n")
+                    logger.info(f"   ✅ Moved to P-mode (PWM {self._servo_p_pos}, {p_degrees}°) using sv+sp")
+                else:
+                    logger.error(f"❌ Invalid mode: {mode}")
+                    return False
+
+                time.sleep(0.5)  # Wait for servo to settle
+                return True
+
+            # Fallback to firmware ss/sp using EEPROM positions
+            logger.warning("⚠️  No cached positions - falling back to firmware set_mode()")
+            return self._ctrl.set_mode(mode) or False
+        except Exception as e:
+            logger.error(f"P4SPRAdapter.set_mode error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def get_polarizer_position(self) -> dict[str, Any]:
         """Get polarizer positions from device_config (NOT EEPROM).
@@ -461,56 +515,41 @@ class PicoP4SPRAdapter:
         return self._ctrl.servo_move_calibration_only(s=s, p=p) or False
 
     def servo_move_raw_pwm(self, pwm: int) -> bool:
-        """Move servo to arbitrary PWM position for calibration sweeps.
+        """Move servo to arbitrary PWM position using sv + ss/sp commands (verified working).
 
-        IMPORTANT: The firmware sv command expects DEGREES (0-180), not PWM values!
-        This method converts PWM (1-255) to degrees (0-180) before sending.
-
-        PWM to Degrees conversion:
-        - PWM 1 → 0°
-        - PWM 128 → 90°
-        - PWM 255 → 180°
+        Test results showed that Format 2 (sv + ss/sp) is the ONLY working format.
+        This is the old V1.9 firmware command set.
 
         Args:
-            pwm: PWM value (1-255) - will be converted to degrees
+            pwm: PWM value (0-255)
 
         Returns:
             True if command succeeded
         """
         try:
-            # Delegate to actual controller which handles V2.4 servo:ANGLE,DURATION format
-            if hasattr(self._ctrl, 'servo_move_raw_pwm'):
-                return self._ctrl.servo_move_raw_pwm(pwm)
-
-            # Fallback for old controllers
-            if not (1 <= pwm <= 255):
+            if not (0 <= pwm <= 255):
                 return False
 
-            # Convert PWM (1-255) to degrees (0-180)
-            degrees = int((pwm - 1) * 180 / 254)
-            degrees = max(0, min(180, degrees))
+            # Convert PWM to degrees (0-255 PWM = 5-175 degrees)
+            degrees = int(5 + (pwm / 255.0) * 170.0)
+            degrees = max(5, min(175, degrees))
 
-            # V2.4 firmware format: servo:ANGLE,DURATION
-            cmd = f"servo:{degrees},500\n"
             if self._ser is None or not self._ser.is_open:
                 return False
 
-            # Enable servo power first (V2.4 firmware requirement)
-            self._ser.write(b"sp1\n")
-            time.sleep(0.05)
-            self._ser.read(1)  # Consume enable response
+            # Set positions using sv command (set both S and P to same position)
+            sv_cmd = f"sv{degrees:03d}{degrees:03d}\n"
+            self._ser.write(sv_cmd.encode())
+            time.sleep(0.1)
 
-            # Send movement command
-            self._ser.write(cmd.encode())
-            time.sleep(0.05)
-            response = self._ser.read(1)
+            # Move to position using sp command
+            self._ser.write(b"sp\n")
+            time.sleep(0.5)  # Wait for servo to settle
 
-            # V2.4 firmware responds with '1', older with '6'
-            if response in (b"1", b"6"):
-                time.sleep(0.6)  # Wait for movement
-                return True
-            return False
-        except Exception:
+            logger.info(f"Servo physically moved to angle {degrees} degrees (PWM {pwm})")
+            return True
+        except Exception as e:
+            logger.error(f"servo_move_raw_pwm failed: {e}")
             return False
 
     def servo_set(self, s: int | None = None, p: int | None = None) -> bool:
@@ -520,6 +559,20 @@ class PicoP4SPRAdapter:
         Just move servo to position - firmware remembers last position.
         """
         return self._ctrl.servo_move_calibration_only(s=s, p=p) or False
+
+    def set_servo_positions(self, s: int, p: int) -> None:
+        """Cache desired servo positions (PWM) for RAM-only movements.
+
+        On PicoP4SPR, firmware 'ss'/'sp' normally uses EEPROM. When EEPROM
+        sync is unavailable, we cache PWM positions and use direct servo
+        movement in set_mode().
+        """
+        try:
+            self._servo_s_pos = int(s)
+            self._servo_p_pos = int(p)
+            logger.info(f"📌 Cached servo positions (PWM): S={s}, P={p}")
+        except Exception as e:
+            logger.error(f"Failed to cache servo positions: {e}")
 
     # LED Query
     def get_all_led_intensities(self) -> dict[str, int] | None:

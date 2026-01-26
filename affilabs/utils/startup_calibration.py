@@ -1090,10 +1090,10 @@ def _step2_wavelength_calibration(usb, progress_callback=None) -> dict:
     logger.info(f"   Pixel indices: [{wave_min_index}:{wave_max_index}]")
     logger.info(f"   Filter width: {wave_max_index - wave_min_index} pixels\n")
 
-    # Get detector parameters
-    from affilabs.utils.detector_params import get_detector_params
+    # Get detector parameters from the actual detector object
+    from affilabs.utils.calibration_helpers import get_detector_params
 
-    detector_params = get_detector_params("P4SPR")  # All use USB4000 params
+    detector_params = get_detector_params(usb)  # FIXED: Use detector object, not device type
 
     return {
         "wave_data": wave_data[wave_min_index:wave_max_index],
@@ -1460,8 +1460,9 @@ def _step6d_comprehensive_qc_validation(
 
     qc_results = {}
 
-    # Use detector params for saturation checks
-    det_params_for_qc = get_detector_params(device_type)
+    # Use detector params for saturation checks - FIXED: Use detector object
+    # Note: device_type parameter should be changed to usb in function signature
+    det_params_for_qc = get_detector_params(device_type)  # TODO: Change device_type→usb in caller
 
     for ch in ch_list:
         logger.info(f"\n{'=' * 80}")

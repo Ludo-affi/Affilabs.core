@@ -131,7 +131,7 @@ class SettingsTabBuilder:
         )
 
         # Add "Capture Baseline" button (REBUILT - cleaner architecture)
-        baseline_btn = QPushButton("📊 Capture 5-Min Baseline")
+        baseline_btn = QPushButton("[REC] Capture 5-Min Baseline")
         baseline_btn.setObjectName("baseline_capture_btn")  # Explicit object name
         baseline_btn.setFixedHeight(40)
         baseline_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -323,9 +323,9 @@ class SettingsTabBuilder:
         polarizer_row.addWidget(s_position_label)
 
         self.sidebar.s_position_input = QLineEdit()
-        self.sidebar.s_position_input.setPlaceholderText("0-180")
+        self.sidebar.s_position_input.setPlaceholderText("0-255")
         self.sidebar.s_position_input.setToolTip(
-            "Servo position for S polarization mode (0-180 degrees)",
+            "Servo position for S polarization mode (0-255 PWM)",
         )
         self.sidebar.s_position_input.setFixedWidth(70)
         self.sidebar.s_position_input.setStyleSheet(self._lineedit_style())
@@ -343,9 +343,9 @@ class SettingsTabBuilder:
         polarizer_row.addWidget(p_position_label)
 
         self.sidebar.p_position_input = QLineEdit()
-        self.sidebar.p_position_input.setPlaceholderText("0-180")
+        self.sidebar.p_position_input.setPlaceholderText("0-255")
         self.sidebar.p_position_input.setToolTip(
-            "Servo position for P polarization mode (0-180 degrees)",
+            "Servo position for P polarization mode (0-255 PWM)",
         )
         self.sidebar.p_position_input.setFixedWidth(70)
         self.sidebar.p_position_input.setStyleSheet(self._lineedit_style())
@@ -687,7 +687,7 @@ class SettingsTabBuilder:
         try:
             if text.strip() and hasattr(self.sidebar, "device_config"):
                 s_pos = int(text)
-                if 0 <= s_pos <= 180:
+                if 0 <= s_pos <= 255:
                     device_config = self.sidebar.device_config
                     if device_config and hasattr(device_config, "config"):
                         if "hardware" not in device_config.config:
@@ -706,7 +706,7 @@ class SettingsTabBuilder:
         try:
             if text.strip() and hasattr(self.sidebar, "device_config"):
                 p_pos = int(text)
-                if 0 <= p_pos <= 180:
+                if 0 <= p_pos <= 255:
                     device_config = self.sidebar.device_config
                     if device_config and hasattr(device_config, "config"):
                         if "hardware" not in device_config.config:

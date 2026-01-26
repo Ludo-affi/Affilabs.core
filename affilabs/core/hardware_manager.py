@@ -211,16 +211,16 @@ class HardwareManager(QObject):
             s_pos = cfg["hardware"].get("servo_s_position")
             p_pos = cfg["hardware"].get("servo_p_position")
             if s_pos is not None and p_pos is not None:
-                # Validate positions are in valid range (1-180 degrees)
-                if not (1 <= s_pos <= 180):
-                    msg = f"Invalid S-position {s_pos} (must be 1-180)"
+                # Validate positions are in valid range (0-255 PWM)
+                if not (0 <= s_pos <= 255):
+                    msg = f"Invalid S-position {s_pos} (must be 0-255 PWM)"
                     raise ValueError(msg)
-                if not (1 <= p_pos <= 180):
-                    msg = f"Invalid P-position {p_pos} (must be 1-180)"
+                if not (0 <= p_pos <= 255):
+                    msg = f"Invalid P-position {p_pos} (must be 0-255 PWM)"
                     raise ValueError(msg)
 
                 logger.info(
-                    f"[HAL] Servo positions for {detector_serial}: S={s_pos}°, P={p_pos}°",
+                    f"[HAL] Servo positions for {detector_serial}: S={s_pos} PWM, P={p_pos} PWM",
                 )
                 return {"s_position": s_pos, "p_position": p_pos}
 

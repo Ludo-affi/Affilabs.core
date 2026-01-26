@@ -2122,12 +2122,28 @@ FAILURE DIAGNOSIS:
                     ax1 = fig.add_subplot(gs[1, 0])
                     s_pol_data = self.calibration_data.get('s_pol_spectra', {})
 
+                    # Calculate max values for auto-scaling
+                    s_max_values = []
                     for ch, color in zip(channels, colors):
                         if ch in s_pol_data:
-                            ax1.plot(wavelengths, s_pol_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                            spectrum = s_pol_data[ch]
+                            ax1.plot(wavelengths, spectrum, color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                            if len(spectrum) > 0:
+                                s_max_values.append(max(spectrum))
 
-                    # Add pass region overlay AFTER plotting data (35,000 - 50,000 counts = acceptable range)
-                    ax1.axhspan(35000, 50000, alpha=0.2, color='green', zorder=1, label='Pass Region (35k-50k)')
+                    # Auto-scale y-axis based on actual data
+                    if s_max_values:
+                        y_max = max(s_max_values) * 1.2
+                        # Add pass region overlay (75%-95% of max signal)
+                        pass_min = max(s_max_values) * 0.75
+                        pass_max = max(s_max_values) * 0.95
+                        ax1.axhspan(pass_min, pass_max, alpha=0.2, color='green', zorder=1,
+                                   label=f'Pass Region ({pass_min:.0f}-{pass_max:.0f})')
+                        ax1.set_ylim(0, y_max)
+                    else:
+                        # Fallback to default range if no data
+                        ax1.axhspan(35000, 50000, alpha=0.2, color='green', zorder=1, label='Pass Region (35k-50k)')
+                        ax1.set_ylim(0, 70000)
 
                     ax1.set_title('S-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
                     ax1.set_xlabel('Wavelength (nm)', fontsize=10)

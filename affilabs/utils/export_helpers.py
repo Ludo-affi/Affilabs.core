@@ -344,18 +344,7 @@ class ExportHelpers:
                 )
                 return
 
-            # Get filename and path from config (pre-populated by Record button)
-            filename = config.get("filename", "")
-            if not filename:
-                from affilabs.utils.time_utils import for_filename
-                timestamp = for_filename().replace(".", "_")
-                filename = f"AffiLabs_data_{timestamp}"
-
-            destination = config.get("destination", "")
-            if not destination:
-                destination = str(Path.home() / "Documents" / "Affilabs Data")
-
-            # Add appropriate extension
+            # Determine target path and format
             format_type = config.get("format", "excel")
             extension_map = {
                 "excel": ".xlsx",
@@ -365,17 +354,43 @@ class ExportHelpers:
             }
             extension = extension_map.get(format_type, ".xlsx")
 
-            # Ensure extension is on filename
-            if not filename.endswith(extension):
-                filename += extension
+            # Unify with active recording file when possible: if a recording file exists and we're exporting Excel,
+            # write into that same workbook instead of creating a separate file.
+            full_path = None
+            if (
+                hasattr(app, "recording_mgr")
+                and app.recording_mgr is not None
+                and getattr(app.recording_mgr, "current_file", None)
+                and str(app.recording_mgr.current_file).lower().endswith(".xlsx")
+                and format_type == "excel"
+            ):
+                full_path = Path(str(app.recording_mgr.current_file))
+            else:
+                # Fallback to configured destination + filename
+                filename = config.get("filename", "")
+                if not filename:
+                    from affilabs.utils.time_utils import for_filename
+                    timestamp = for_filename().replace(".", "_")
+                    filename = f"AffiLabs_data_{timestamp}"
 
-            full_path = Path(destination) / filename
+                destination = config.get("destination", "")
+                if not destination:
+                    destination = str(Path.home() / "Documents" / "Affilabs Data")
+
+                # Ensure extension is on filename
+                if not filename.endswith(extension):
+                    filename += extension
+
+                full_path = Path(destination) / filename
 
             # Show confirmation dialog BEFORE saving
             msg = QMessageBox(app.main_window)
             msg.setIcon(QMessageBox.Question)
             msg.setWindowTitle("Export Data")
-            msg.setText(f"Ready to save recorded data.\n\nFile: {filename}\nLocation: {destination}")
+            # Show destination based on unified path
+            msg.setText(
+                f"Ready to save recorded data.\n\nFile: {full_path.name}\nLocation: {str(full_path.parent)}"
+            )
             msg.setInformativeText("Click SAVE to export data, or CANCEL to adjust the filename/location.")
 
             save_btn = msg.addButton("SAVE", QMessageBox.AcceptRole)
@@ -424,24 +439,23 @@ class ExportHelpers:
                     cycles_data = app.recording_mgr.data_collector.cycles
 
                 # Ensure destination directory exists
-                Path(destination).mkdir(parents=True, exist_ok=True)
+                full_path.parent.mkdir(parents=True, exist_ok=True)
 
                 # Export using format-specific logic
                 if format_type == "excel":
-                    with pd.ExcelWriter(str(full_path), engine='openpyxl') as writer:
-                        # Sheet 1: Raw Data
-                        df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
-
-                        # Sheet 2: Cycles (if available)
-                        if cycles_data:
-                            df_cycles = pd.DataFrame(cycles_data)
-                            df_cycles.to_excel(writer, sheet_name='Cycles', index=False)
-
-                        # Sheet 3: Per-Channel XY (time and SPR per channel)
+                    # If writing to an existing recording workbook, append/replace only the Channels XY sheet;
+                    # otherwise, create a full new workbook with all sheets.
+                    if (
+                        hasattr(app, "recording_mgr")
+                        and app.recording_mgr is not None
+                        and getattr(app.recording_mgr, "current_file", None)
+                        and str(app.recording_mgr.current_file).lower().endswith(".xlsx")
+                        and Path(str(app.recording_mgr.current_file)) == full_path
+                    ):
                         try:
-                            # Determine channels to include (use requested set)
+                            # Write or replace 'Channels XY' sheet in existing workbook
+                            # Build Channels XY DataFrame
                             all_channels = channels
-                            # Find maximum length across selected channels
                             max_len = 0
                             for ch in all_channels:
                                 if ch in app._idx_to_channel:
@@ -451,16 +465,13 @@ class ExportHelpers:
                                 sheet_data: dict[str, np.ndarray] = {}
                                 for ch in all_channels:
                                     if ch not in app._idx_to_channel:
-                                        # Create empty columns if channel not present
                                         sheet_data[f"Time_{ch.upper()}"] = np.full((max_len,), np.nan)
                                         sheet_data[f"SPR_{ch.upper()}"] = np.full((max_len,), np.nan)
                                         continue
 
-                                    # Extract time and SPR arrays for channel
                                     ch_time = app.buffer_mgr.cycle_data[ch].time
                                     ch_spr = app.buffer_mgr.cycle_data[ch].spr
 
-                                    # Pad to max_len with NaN to align positions
                                     if len(ch_time) < max_len:
                                         ch_time = np.pad(ch_time, (0, max_len - len(ch_time)), constant_values=np.nan)
                                     if len(ch_spr) < max_len:
@@ -470,10 +481,58 @@ class ExportHelpers:
                                     sheet_data[f"SPR_{ch.upper()}"] = ch_spr
 
                                 df_xy = pd.DataFrame(sheet_data)
-                                df_xy.to_excel(writer, sheet_name='Channels XY', index=False)
+
+                                with pd.ExcelWriter(
+                                    str(full_path),
+                                    engine='openpyxl',
+                                    mode='a',
+                                    if_sheet_exists='replace'
+                                ) as writer:
+                                    df_xy.to_excel(writer, sheet_name='Channels XY', index=False)
                         except Exception as e:
-                            # Non-fatal: continue export even if XY sheet fails
-                            print(f"Warning: could not create 'Channels XY' sheet: {e}")
+                            print(f"Warning: could not update 'Channels XY' in recording file: {e}")
+                    else:
+                        with pd.ExcelWriter(str(full_path), engine='openpyxl') as writer:
+                            # Sheet 1: Raw Data
+                            df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
+
+                            # Sheet 2: Cycles (if available)
+                            if cycles_data:
+                                df_cycles = pd.DataFrame(cycles_data)
+                                df_cycles.to_excel(writer, sheet_name='Cycles', index=False)
+
+                            # Sheet 3: Per-Channel XY (time and SPR per channel)
+                            try:
+                                all_channels = channels
+                                max_len = 0
+                                for ch in all_channels:
+                                    if ch in app._idx_to_channel:
+                                        max_len = max(max_len, len(app.buffer_mgr.cycle_data[ch].time))
+
+                                if max_len > 0:
+                                    sheet_data: dict[str, np.ndarray] = {}
+                                    for ch in all_channels:
+                                        if ch not in app._idx_to_channel:
+                                            sheet_data[f"Time_{ch.upper()}"] = np.full((max_len,), np.nan)
+                                            sheet_data[f"SPR_{ch.upper()}"] = np.full((max_len,), np.nan)
+                                            continue
+
+                                        ch_time = app.buffer_mgr.cycle_data[ch].time
+                                        ch_spr = app.buffer_mgr.cycle_data[ch].spr
+
+                                        if len(ch_time) < max_len:
+                                            ch_time = np.pad(ch_time, (0, max_len - len(ch_time)), constant_values=np.nan)
+                                        if len(ch_spr) < max_len:
+                                            ch_spr = np.pad(ch_spr, (0, max_len - len(ch_spr)), constant_values=np.nan)
+
+                                        sheet_data[f"Time_{ch.upper()}"] = ch_time
+                                        sheet_data[f"SPR_{ch.upper()}"] = ch_spr
+
+                                    df_xy = pd.DataFrame(sheet_data)
+                                    df_xy.to_excel(writer, sheet_name='Channels XY', index=False)
+                            except Exception as e:
+                                # Non-fatal: continue export even if XY sheet fails
+                                print(f"Warning: could not create 'Channels XY' sheet: {e}")
                 elif format_type == "csv":
                     df_raw.to_csv(str(full_path), index=False)
                 elif format_type == "json":

@@ -135,7 +135,7 @@ def LEDconverge_engine(
     # Check for trained ML models (bundled with application)
     from pathlib import Path
     import sys
-    
+
     # Determine base path (works for both frozen .exe and development)
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         # Running as compiled .exe - models are in _MEIPASS
@@ -143,7 +143,7 @@ def LEDconverge_engine(
     else:
         # Running from source - use relative path from this file
         base_path = Path(__file__).parent / "models"
-    
+
     sensitivity_model_path = None
     led_predictor_path = None
     convergence_predictor_path = None

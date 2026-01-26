@@ -8,7 +8,12 @@ AXIS_COLOR = "#86868B"
 GRID_ALPHA = 0.15
 AXIS_PEN_COLOR = "#E5E5EA"
 
+# Default channel colors (Black, Red, Blue, Green)
 CHANNEL_COLORS = ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
+
+# Colorblind-friendly palette (Okabe-Ito) - matches settings.GRAPH_COLORS_COLORBLIND
+# Ch A: Blue (1, 115, 178), Ch B: Orange (222, 143, 5), Ch C: Green (2, 158, 115), Ch D: Magenta (204, 120, 188)
+CHANNEL_COLORS_COLORBLIND = ["#0173B2", "#DE8F05", "#029E73", "#CC78BC"]
 
 
 def create_time_plot(

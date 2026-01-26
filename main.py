@@ -47,6 +47,39 @@ from pathlib import Path
 # These filters suppress false-positive Qt threading warnings that occur when
 # using queue-based architecture. MUST be installed before importing Qt.
 
+# Centralized helpers for environment flags and Qt message suppression
+def _env_flag(name: str, default: bool = False) -> bool:
+    """Parse boolean-like environment variables safely.
+
+    Accepts 1/0, true/false, yes/no, on/off (case-insensitive).
+    """
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return str(val).strip().lower() in {"1", "true", "yes", "on"}
+
+
+QT_SUPPRESSED_SUBSTRINGS = (
+    # General Qt threading false-positives
+    "QTextDocument",
+    "different thread",
+    "parent's thread is QThread",
+    "parent that is in a different thread",
+    # Object creation warnings that are benign in our architecture
+    "QObject: Cannot create children",
+)
+
+
+def _is_suppressed_qt_text(text: str) -> bool:
+    try:
+        if isinstance(text, bytes):
+            text = text.decode("utf-8", errors="replace")
+        else:
+            text = str(text)
+    except Exception:
+        return False
+    return any(sub in text for sub in QT_SUPPRESSED_SUBSTRINGS)
+
 
 # --- Exception Handler ---
 def qt_exception_handler(exctype, value, tb):
@@ -69,12 +102,7 @@ def qt_exception_handler(exctype, value, tb):
 class QtWarningFilter:
     """Stderr wrapper that suppresses known Qt threading false-positives."""
 
-    SUPPRESSED_PATTERNS = (
-        "QObject: Cannot create children",
-        "QTextDocument",
-        "parent's thread is QThread",
-        "parent that is in a different thread",
-    )
+    SUPPRESSED_PATTERNS = QT_SUPPRESSED_SUBSTRINGS
 
     def __init__(self, original_stderr):
         self.original = original_stderr
@@ -91,7 +119,7 @@ class QtWarningFilter:
                 text = str(text)
 
             # Drop known false-positive warnings
-            if any(pattern in text for pattern in self.SUPPRESSED_PATTERNS):
+            if _is_suppressed_qt_text(text):
                 return
 
             self.original.write(text)
@@ -117,7 +145,7 @@ class QtWarningFilter:
 sys.excepthook = qt_exception_handler
 
 # Install stderr filter (unless verbose mode)
-if os.environ.get("AFFILABS_VERBOSE_QT", "0") in ("0", "false", "False"):
+if not _env_flag("AFFILABS_VERBOSE_QT", default=False):
     sys.stderr = QtWarningFilter(sys.stderr)
 
 # Note: stdout is NOT wrapped here to preserve sys.stdout.buffer for logger
@@ -158,7 +186,7 @@ from affilabs.utils.time_utils import monotonic
 def qt_message_handler(msg_type, context, message):
     """Qt message handler that filters false-positive threading warnings."""
     # Suppress known false-positives
-    if "QTextDocument" in message or "different thread" in message:
+    if _is_suppressed_qt_text(message):
         return
 
     # Forward legitimate messages to stdout
@@ -2800,8 +2828,12 @@ class Application(QApplication):
 
     def _on_servo_calibration_needed(self):
         """Servo positions not found - trigger auto-calibration."""
-        logger.info("🔧 Servo calibration needed signal received")
-        logger.info("   Starting automatic servo calibration...")
+        logger.info("=" * 80)
+        logger.info("🔧 SERVO CALIBRATION NEEDED - AUTO-TRIGGERING")
+        logger.info("=" * 80)
+        logger.info("   Servo positions not found in device configuration")
+        logger.info("   Starting automatic servo calibration in 1 second...")
+        logger.info("=" * 80)
 
         # Use QTimer to delay calibration start (allow connection to complete)
         from PySide6.QtCore import QTimer
@@ -3159,8 +3191,8 @@ class Application(QApplication):
 
         # Update label with bold text for better visibility
         self.main_window.cycle_of_interest_graph.delta_display.setText(
-            f"<b>Δ SPR: Ch A: {delta_values['a']:+.1f} RU  |  Ch B: {delta_values['b']:+.1f} RU  |  "
-            f"Ch C: {delta_values['c']:+.1f} RU  |  Ch D: {delta_values['d']:+.1f} RU</b>",
+            f"<b>Δ SPR: Ch A: {delta_values['a']:.1f} RU  |  Ch B: {delta_values['b']:.1f} RU  |  "
+            f"Ch C: {delta_values['c']:.1f} RU  |  Ch D: {delta_values['d']:.1f} RU</b>",
         )
 
     def _on_acquisition_error(self, error: str):
@@ -3628,7 +3660,9 @@ class Application(QApplication):
 
         # Check for EITHER AffiPump OR P4PROPLUS internal pumps
         has_affipump = self.pump_mgr.is_available
-        has_internal = self.hardware_mgr.ctrl and self.hardware_mgr.ctrl.has_internal_pumps()
+        has_internal = (self.hardware_mgr.ctrl and
+                       hasattr(self.hardware_mgr.ctrl, 'has_internal_pumps') and
+                       self.hardware_mgr.ctrl.has_internal_pumps())
 
         if not has_affipump and not has_internal:
             from affilabs.widgets.message import show_message
@@ -3646,7 +3680,7 @@ class Application(QApplication):
         if hasattr(self.main_window.sidebar, 'pump_assay_spin'):
             assay_rate = float(self.main_window.sidebar.pump_assay_spin.value())
 
-        logger.info(f"  Using assay rate: {assay_rate} µL/min")
+        logger.info(f"  Using assay rate: {assay_rate} uL/min")
 
         # Run simple inject in background
         def run_inject():
@@ -3667,7 +3701,9 @@ class Application(QApplication):
 
         # Check for EITHER AffiPump OR P4PROPLUS internal pumps
         has_affipump = self.pump_mgr.is_available
-        has_internal = self.hardware_mgr.ctrl and self.hardware_mgr.ctrl.has_internal_pumps()
+        has_internal = (self.hardware_mgr.ctrl and
+                       hasattr(self.hardware_mgr.ctrl, 'has_internal_pumps') and
+                       self.hardware_mgr.ctrl.has_internal_pumps())
 
         if not has_affipump and not has_internal:
             from affilabs.widgets.message import show_message
@@ -3684,7 +3720,7 @@ class Application(QApplication):
         if hasattr(self.main_window.sidebar, 'pump_assay_spin'):
             assay_rate = float(self.main_window.sidebar.pump_assay_spin.value())
 
-        logger.info(f"  Using assay rate: {assay_rate} µL/min")
+        logger.info(f"  Using assay rate: {assay_rate} uL/min")
 
         # Run partial loop inject in background
         def run_inject_partial():
@@ -3719,6 +3755,15 @@ class Application(QApplication):
             # Update button text back to Start
             if hasattr(self.main_window.sidebar, 'start_buffer_btn'):
                 self.main_window.sidebar.start_buffer_btn.setText("▶ Start Buffer")
+
+            # Update status immediately to show stopping state
+            ui = self.main_window.sidebar
+            if hasattr(ui, 'flow_pump_status_label'):
+                ui.flow_pump_status_label.setText("Stopping...")
+            if hasattr(ui, 'flow_pump_status_icon'):
+                ui.flow_pump_status_icon.setStyleSheet(
+                    "font-size: 12px; color: #FF9500; background: transparent;"
+                )
             return
 
         # Otherwise, start buffer flow
@@ -3734,7 +3779,7 @@ class Application(QApplication):
         if hasattr(self.main_window.sidebar, 'pump_setup_spin'):
             flow_rate = float(self.main_window.sidebar.pump_setup_spin.value())
 
-        logger.info(f"  Using flow rate: {flow_rate} µL/min")
+        logger.info(f"  Using flow rate: {flow_rate} uL/min")
 
         # Update button text to Stop
         if hasattr(self.main_window.sidebar, 'start_buffer_btn'):
@@ -3777,7 +3822,7 @@ class Application(QApplication):
         if hasattr(self.main_window.sidebar, 'pump_flush_rate'):
             flush_rate = float(self.main_window.sidebar.pump_flush_rate)
 
-        logger.info(f"  Using flush rate: {flush_rate} µL/min")
+        logger.info(f"  Using flush rate: {flush_rate} uL/min")
 
         # Run buffer for 3 cycles to flush the loop
         def run_flush():
@@ -3858,10 +3903,10 @@ class Application(QApplication):
 
         # If pump is currently running, apply on-the-fly change
         if not self.pump_mgr.is_idle:
-            logger.info(f"💧 {rate_name} flow rate changed to {value} µL/min (pump running - applying on-the-fly)")
+            logger.info(f"💧 {rate_name} flow rate changed to {value} uL/min (pump running - applying on-the-fly)")
             self.pump_mgr.change_flow_rate_on_the_fly(value)
         else:
-            logger.debug(f"{rate_name} flow rate set to {value} µL/min (pump idle - will use on next operation)")
+            logger.debug(f"{rate_name} flow rate set to {value} uL/min (pump idle - will use on next operation)")
 
     def _on_valve_sync_toggled(self, checked: bool):
         """User toggled valve synchronization.
@@ -4062,15 +4107,15 @@ class Application(QApplication):
         # Only update if pumps are currently running
         if not hasattr(self, '_synced_pumps_running') or not self._synced_pumps_running:
             return
-        
+
         if not hasattr(self.main_window.sidebar, 'synced_flowrate_combo'):
             return
-        
+
         # Get current flowrate setting
         flowrate_map = {0: 25, 1: 50, 2: 100, 3: 200, 4: 220}
         idx = self.main_window.sidebar.synced_flowrate_combo.currentIndex()
         flow_rate = flowrate_map.get(idx, 50)
-        
+
         # Get pump corrections
         correction_p1 = 1.0
         correction_p2 = 1.0
@@ -4085,10 +4130,10 @@ class Application(QApplication):
                     correction_p1, correction_p2 = corrections
             except Exception:
                 pass
-        
+
         rpm_p1 = flow_rate * correction_p1
         rpm_p2 = flow_rate * correction_p2
-        
+
         # Update status display with new flowrate
         self._update_internal_pump_status(f"Both Pumps: P1={rpm_p1:.0f} P2={rpm_p2:.0f} µL/min", running=True)
         logger.debug(f"Status updated: flowrate changed to {flow_rate} µL/min (P1={rpm_p1:.0f}, P2={rpm_p2:.0f})")
@@ -4464,7 +4509,7 @@ class Application(QApplication):
                 except Exception as e:
                     logger.warning(f"Could not activate 6-port valve: {e}")
                     self._update_internal_pump_status(f"Injecting: {flush_rate:.0f} µL/min", running=True)
-                
+
                 # After 6 seconds, reduce BOTH pumps to target flowrate with corrections
                 # This runs REGARDLESS of valve success to ensure pumps don't stay at flush rate
                 from PySide6.QtCore import QTimer
@@ -5553,6 +5598,40 @@ class Application(QApplication):
     def _on_filter_strength_changed(self, value: int):
         """Filter strength slider changed."""
         self.ui_control_events.on_filter_strength_changed(value)
+
+    def on_settings_changed(self):
+        """Called when Advanced Settings are applied - update UI to reflect new settings.
+        
+        This method is called by AdvancedSettingsDialog.accept() after settings are saved.
+        It updates the Active Cycle graph Y-axis label to reflect the current unit (RU/nm).
+        """
+        try:
+            import settings
+            
+            # Update Active Cycle graph Y-axis label to match new unit
+            if hasattr(self, 'main_window') and hasattr(self.main_window, 'cycle_of_interest_graph'):
+                graph = self.main_window.cycle_of_interest_graph
+                if hasattr(graph, 'reset_segment_graph'):
+                    unit = getattr(settings, 'DEFAULT_UNIT', 'RU')
+                    graph.reset_segment_graph(unit)
+                    logger.info(f"✓ Updated Active Cycle Y-axis label to: Δ SPR ({unit})")
+                    
+            # Update unit display labels in the UI if available
+            if hasattr(self, 'main_window') and hasattr(self.main_window, 'ui'):
+                ui = self.main_window.ui
+                unit = getattr(settings, 'DEFAULT_UNIT', 'RU')
+                # Update unit labels for shift display (Processing tab)
+                from settings import CH_LIST
+                for ch in CH_LIST:
+                    unit_label = getattr(ui, f"unit_{ch}", None)
+                    if unit_label:
+                        unit_label.setText(unit)
+                logger.info(f"✓ Updated unit labels to: {unit}")
+                
+        except Exception as e:
+            logger.error(f"Error in on_settings_changed: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _init_kalman_filters(self):
         """Initialize Kalman filter instances for each channel."""
@@ -6739,22 +6818,35 @@ class Application(QApplication):
             progress.close()
 
             if success:
-                # Load the newly calibrated S and P positions from device_config.json
+                # Load the newly calibrated S and P positions from device-specific config
                 try:
                     import json
                     from pathlib import Path
-                    config_path = Path(__file__).parent / "affilabs" / "config" / "device_config.json"
+                    
+                    # Get detector serial number
+                    serial_number = None
+                    if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                        if hasattr(self.hardware_mgr, 'detector') and self.hardware_mgr.detector:
+                            serial_number = getattr(self.hardware_mgr.detector, 'serial_number', None)
+                    
+                    # Use device-specific config if serial available, else generic
+                    if serial_number:
+                        config_path = Path(__file__).parent / "affilabs" / "config" / "devices" / serial_number / "device_config.json"
+                    else:
+                        config_path = Path(__file__).parent / "affilabs" / "config" / "device_config.json"
+                    
                     with open(config_path) as f:
                         config = json.load(f)
 
-                    s_position = config.get("oem_calibration", {}).get("polarizer_s_position")
-                    p_position = config.get("oem_calibration", {}).get("polarizer_p_position")
+                    # Read from hardware section (where calibration writes)
+                    s_position = config.get("hardware", {}).get("servo_s_position")
+                    p_position = config.get("hardware", {}).get("servo_p_position")
 
                     if s_position is not None and p_position is not None:
-                        # Positions loaded - servo will move during convergence, not here
-                        logger.info(f"Servo positions available: S={s_position}°, P={p_position}°")
+                        # Positions are in PWM (0-255), not degrees
+                        logger.info(f"Servo positions available: S={s_position}, P={p_position}")
                     else:
-                        logger.warning("⚠️ Servo positions not found in device_config.json")
+                        logger.warning("WARNING: Servo positions not found in device_config.json")
                 except Exception as e:
                     logger.error(f"Failed to load servo positions: {e}")
 
@@ -7721,8 +7813,20 @@ class Application(QApplication):
 
     def _run_servo_auto_calibration(self):
         """Run servo polarizer calibration automatically."""
-        logger.info("🔧 Auto-triggering servo polarizer calibration...")
-        self._on_polarizer_calibration()
+        logger.info("=" * 80)
+        logger.info("🔧 AUTO-TRIGGERING SERVO POLARIZER CALIBRATION")
+        logger.info("=" * 80)
+        try:
+            self._on_polarizer_calibration()
+            logger.info("[OK] Auto-calibration completed successfully")
+        except Exception as e:
+            logger.error(f"[ERROR] Auto-calibration failed: {e}", exc_info=True)
+            from affilabs.widgets.message import show_message
+            show_message(
+                f"Automatic servo calibration failed:\n\n{e}\n\n"
+                "Please run calibration manually from the Calibrations tab.",
+                "Calibration Error"
+            )
 
     def _update_led_intensities_for_integration_time(
         self,
@@ -8034,10 +8138,10 @@ class Application(QApplication):
                 show_message("Invalid input values. Please enter numbers only.", "Error")
                 return
 
-            # Validate ranges
-            if not (0 <= s_pos <= 180) or not (0 <= p_pos <= 180):
+            # Validate ranges (PWM 0-255, not degrees)
+            if not (0 <= s_pos <= 255) or not (0 <= p_pos <= 255):
                 from affilabs.widgets.message import show_message
-                show_message("Polarizer positions must be between 0-180 degrees", "Error")
+                show_message("Polarizer positions must be between 0-255 PWM", "Error")
                 return
 
             if not all(0 <= val <= 255 for val in [led_a, led_b, led_c, led_d]):

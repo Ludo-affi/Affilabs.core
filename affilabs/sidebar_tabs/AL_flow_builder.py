@@ -165,22 +165,7 @@ class AdvancedFlowRatesDialog(QDialog):
         self.prime_btn.setFixedHeight(36)
         self.prime_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.prime_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 0px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #0051D5;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #004BB5;"
-            "}"
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
         )
         self.prime_btn.setToolTip("Run prime pump sequence (6 cycles)")
         ops_layout.addWidget(self.prime_btn)
@@ -190,22 +175,7 @@ class AdvancedFlowRatesDialog(QDialog):
         self.cleanup_btn.setFixedHeight(36)
         self.cleanup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cleanup_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 0px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #28A745;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #1E7E34;"
-            "}"
+            self._colored_button_style("#34C759", "#28A745", "#1E7E34")
         )
         self.cleanup_btn.setToolTip("Run cleanup sequence (9-phase complete cleaning)")
         ops_layout.addWidget(self.cleanup_btn)
@@ -218,9 +188,52 @@ class AdvancedFlowRatesDialog(QDialog):
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
+    def _colored_button_style(self, background: str, hover: str, pressed: str):
+        """Generate a colored button style with consistent typography.
+
+        Args:
+            background: Default background color
+            hover: Hover background color
+            pressed: Pressed background color
+
+        Returns:
+            CSS stylesheet string
+        """
+        return (
+            "QPushButton {"
+            f"  background: {background};"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            f"  background: {hover};"
+            "}"
+            "QPushButton:pressed {"
+            f"  background: {pressed};"
+            "}"
+        )
+
 
 class FlowTabBuilder:
     """Builder for constructing the Flow Control tab UI."""
+
+    # UI Style Constants
+    FONT_FAMILY_SYSTEM = "-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif"
+    FONT_FAMILY_MONO = "-apple-system, 'SF Mono', 'Menlo', 'Consolas', monospace"
+
+    # Constants for flow control
+    FLOWRATE_TO_CONTACT_TIME = {
+        0: 240,  # 25 µL/min → 240s contact time
+        1: 120,  # 15 µL/min → 120s contact time
+        2: 60,   # 10 µL/min → 60s contact time
+        3: 30,   # 5 µL/min → 30s contact time
+        4: 10,   # Custom → 10s contact time
+    }
 
     def __init__(self, sidebar):
         """Initialize builder with reference to parent sidebar.
@@ -245,6 +258,24 @@ class FlowTabBuilder:
 
         # Add stretch to push content to top
         tab_layout.addStretch()
+
+    def _on_synced_flowrate_changed(self):
+        """Update contact time based on flowrate preset unless manual mode is active."""
+        try:
+            manual_check = getattr(self.sidebar, 'synced_manual_time_check', None)
+            flowrate_combo = getattr(self.sidebar, 'synced_flowrate_combo', None)
+            contact_spin = getattr(self.sidebar, 'synced_contact_time_spin', None)
+            if manual_check is None or flowrate_combo is None or contact_spin is None:
+                return
+
+            if not manual_check.isChecked():
+                flowrate_idx = flowrate_combo.currentIndex()
+                contact_time_sec = self.FLOWRATE_TO_CONTACT_TIME.get(flowrate_idx, 60)
+                contact_spin.setValue(contact_time_sec)
+        finally:
+            # Emit signal to update status if pumps are running
+            if hasattr(self.sidebar, 'synced_flowrate_changed'):
+                self.sidebar.synced_flowrate_changed.emit()
 
     def _build_intelligence_bar(self, tab_layout: QVBoxLayout):
         """Build intelligence bar section."""
@@ -366,7 +397,7 @@ class FlowTabBuilder:
         plunger_title = QLabel("Plunger")
         plunger_title.setStyleSheet(
             "font-size: 10px; color: #86868B; background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            f"font-family: {self.FONT_FAMILY_SYSTEM};"
         )
         plunger_row.addWidget(plunger_title)
         plunger_row.addStretch()
@@ -377,7 +408,7 @@ class FlowTabBuilder:
             "font-weight: 600;"
             "color: #1D1D1F;"
             "background: transparent;"
-            "font-family: -apple-system, 'SF Mono', 'Menlo', 'Consolas', monospace;"
+            f"font-family: {self.FONT_FAMILY_MONO};"
         )
         plunger_row.addWidget(plunger_value)
         self.sidebar.flow_plunger_position = plunger_value
@@ -385,7 +416,7 @@ class FlowTabBuilder:
         plunger_unit = QLabel("µL")
         plunger_unit.setStyleSheet(
             "font-size: 11px; color: #86868B; background: transparent; padding-top: 2px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            f"font-family: {self.FONT_FAMILY_SYSTEM};"
         )
         plunger_row.addWidget(plunger_unit)
 
@@ -398,7 +429,7 @@ class FlowTabBuilder:
         contact_title = QLabel("Contact")
         contact_title.setStyleSheet(
             "font-size: 10px; color: #86868B; background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            f"font-family: {self.FONT_FAMILY_SYSTEM};"
         )
         contact_row.addWidget(contact_title)
         contact_row.addStretch()
@@ -437,21 +468,12 @@ class FlowTabBuilder:
         affipump_help = QLabel(
             "Configure flow rates for Setup, Functionalization, Assay, and advanced operations",
         )
-        affipump_help.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-style: italic;"
-            "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
+        affipump_help.setStyleSheet(self._help_text_style())
         affipump_section.content_layout.addWidget(affipump_help)
 
         # Card container
         affipump_card = QFrame()
-        affipump_card.setStyleSheet(
-            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
-        )
+        affipump_card.setStyleSheet(self._card_container_style())
         affipump_card_layout = QVBoxLayout(affipump_card)
         affipump_card_layout.setContentsMargins(12, 8, 12, 8)
         affipump_card_layout.setSpacing(6)
@@ -562,25 +584,10 @@ class FlowTabBuilder:
 
         # Start Buffer button
         start_buffer_btn = QPushButton("▶ Start Buffer")
-        start_buffer_btn.setFixedHeight(36)
+        start_buffer_btn.setFixedHeight(34)
         start_buffer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         start_buffer_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 0px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #28A745;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #1E7E34;"
-            "}"
+            self._uniform_button_style("#34C759", "#28A745", "#1E7E34")
         )
         start_buffer_btn.setToolTip("Start continuous buffer flow")
         start_flush_layout.addWidget(start_buffer_btn)
@@ -588,25 +595,10 @@ class FlowTabBuilder:
 
         # Flush Loop button
         flush_btn = QPushButton("🔄 Flush Loop")
-        flush_btn.setFixedHeight(36)
+        flush_btn.setFixedHeight(34)
         flush_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         flush_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #5AC8FA;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 0px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #32ADE6;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #209CCA;"
-            "}"
+            self._uniform_button_style("#5AC8FA", "#32ADE6", "#209CCA")
         )
         flush_btn.setToolTip("Flush sample loop with buffer")
         start_flush_layout.addWidget(flush_btn)
@@ -620,25 +612,10 @@ class FlowTabBuilder:
 
         # Simple Inject button
         inject_simple_btn = QPushButton("💉 Inject (Simple)")
-        inject_simple_btn.setFixedHeight(36)
+        inject_simple_btn.setFixedHeight(34)
         inject_simple_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         inject_simple_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #FF9500;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 0px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #E08500;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #C77500;"
-            "}"
+            self._uniform_button_style("#FF9500", "#E08500", "#C77500")
         )
         inject_simple_btn.setToolTip("Run simple injection (full syringe dispense with contact time)")
         inject_layout.addWidget(inject_simple_btn)
@@ -646,25 +623,10 @@ class FlowTabBuilder:
 
         # Partial Loop Inject button
         inject_partial_btn = QPushButton("💉 Inject (Partial Loop)")
-        inject_partial_btn.setFixedHeight(36)
+        inject_partial_btn.setFixedHeight(34)
         inject_partial_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         inject_partial_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #AF52DE;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 0px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #9A3FCC;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #8230B3;"
-            "}"
+            self._uniform_button_style("#AF52DE", "#9A3FCC", "#8230B3")
         )
         inject_partial_btn.setToolTip("Run partial loop injection (14-step protocol with spike)")
         inject_layout.addWidget(inject_partial_btn)
@@ -678,25 +640,10 @@ class FlowTabBuilder:
 
         # Home Pumps button
         home_btn = QPushButton("🏠 Home Pumps")
-        home_btn.setFixedHeight(36)
+        home_btn.setFixedHeight(34)
         home_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         home_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 0px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #0051D5;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #004BB5;"
-            "}"
+            self._uniform_button_style("#007AFF", "#0051D5", "#004BB5")
         )
         home_btn.setToolTip("Home both pumps to zero position")
         maintenance_layout.addWidget(home_btn)
@@ -704,25 +651,10 @@ class FlowTabBuilder:
 
         # Emergency Stop button
         emergency_stop_btn = QPushButton("🛑 STOP")
-        emergency_stop_btn.setFixedHeight(36)
+        emergency_stop_btn.setFixedHeight(34)
         emergency_stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         emergency_stop_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #FF3B30;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 0px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: bold;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #D32F2F;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #B71C1C;"
-            "}"
+            self._uniform_button_style("#FF3B30", "#FF4D42", "#C01818")
         )
         emergency_stop_btn.setToolTip("Emergency stop - immediately terminate all pump operations")
         maintenance_layout.addWidget(emergency_stop_btn)
@@ -778,25 +710,12 @@ class FlowTabBuilder:
         internal_pump_help = QLabel(
             "Control P4PROPLUS internal peristaltic pumps - sync or individual operation",
         )
-        internal_pump_help.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-style: italic;"
-            "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
+        internal_pump_help.setStyleSheet(self._help_text_style())
         internal_pump_section.content_layout.addWidget(internal_pump_help)
 
         # Card container
         internal_pump_card = QFrame()
-        internal_pump_card.setStyleSheet(
-            "QFrame {"
-            "  background: white;"
-            "  border: 1px solid rgba(0, 0, 0, 0.08);"
-            "  border-radius: 8px;"
-            "}"
-        )
+        internal_pump_card.setStyleSheet(self._white_card_style())
         internal_pump_card_layout = QVBoxLayout(internal_pump_card)
         internal_pump_card_layout.setContentsMargins(16, 12, 16, 12)
         internal_pump_card_layout.setSpacing(8)
@@ -943,7 +862,7 @@ class FlowTabBuilder:
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+            f"  font-family: {self.FONT_FAMILY_MONO};"
             "}"
             "QSpinBox:focus {"
             "  border: 2px solid #FF9500;"
@@ -995,18 +914,10 @@ class FlowTabBuilder:
         self.sidebar.synced_manual_time_check = synced_manual_time_check
 
         # Auto-update contact time when flowrate changes (unless manual mode)
-        def _on_synced_flowrate_changed():
-            if not synced_manual_time_check.isChecked():  # Only auto-update if not manual
-                flowrate_map = {0: 240, 1: 120, 2: 60, 3: 30, 4: 10}  # Contact times in seconds
-                idx = synced_flowrate_combo.currentIndex()
-                synced_contact_time_spin.setValue(flowrate_map.get(idx, 60))
-            # Emit signal to update status if pumps are running
-            self.sidebar.synced_flowrate_changed.emit()
-
-        synced_flowrate_combo.currentIndexChanged.connect(_on_synced_flowrate_changed)
+        synced_flowrate_combo.currentIndexChanged.connect(self._on_synced_flowrate_changed)
 
         # Initialize with default contact time
-        _on_synced_flowrate_changed()
+        self._on_synced_flowrate_changed()
 
         # Start/Stop toggle button for synced pumps
         synced_toggle_btn = QPushButton("▶ Start")
@@ -1014,31 +925,7 @@ class FlowTabBuilder:
         synced_toggle_btn.setFixedHeight(36)
         synced_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         synced_toggle_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 7px;"
-            "  padding: 0px 18px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:checked {"
-            "  background: #FF3B30;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #28A745;"
-            "}"
-            "QPushButton:checked:hover {"
-            "  background: #D32F2F;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #1E7E34;"
-            "}"
-            "QPushButton:checked:pressed {"
-            "  background: #B71C1C;"
-            "}"
+            self._toggle_button_style(radius=7, padding="0px 18px", font_size=13)
         )
         synced_toggle_btn.setToolTip("Start/Stop both pumps")
         synced_control_layout.addWidget(synced_toggle_btn)
@@ -1086,7 +973,7 @@ class FlowTabBuilder:
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+            f"  font-family: {self.FONT_FAMILY_MONO};"
             "}"
             "QSpinBox:focus {"
             "  border: 2px solid #FF9500;"
@@ -1122,7 +1009,7 @@ class FlowTabBuilder:
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
+            f"  font-family: {self.FONT_FAMILY_MONO};"
             "}"
             "QDoubleSpinBox:focus {"
             "  border: 2px solid #FF9500;"
@@ -1151,31 +1038,7 @@ class FlowTabBuilder:
         pump1_toggle_btn.setFixedHeight(36)
         pump1_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         pump1_toggle_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 7px;"
-            "  padding: 0px 18px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:checked {"
-            "  background: #FF3B30;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #28A745;"
-            "}"
-            "QPushButton:checked:hover {"
-            "  background: #D32F2F;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #1E7E34;"
-            "}"
-            "QPushButton:checked:pressed {"
-            "  background: #B71C1C;"
-            "}"
+            self._toggle_button_style(radius=7, padding="0px 18px", font_size=13)
         )
         pump1_toggle_btn.setToolTip("Start/Stop Pump 1")
         pump1_control_layout.addWidget(pump1_toggle_btn)
@@ -1535,40 +1398,12 @@ class FlowTabBuilder:
         kc1_btn_load.setCheckable(True)
         kc1_btn_load.setChecked(True)
         kc1_btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc1_btn_load.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 14px 0px 0px 14px;"
-            "  font-size: 10px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:!checked {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
-            "}"
-        )
+        kc1_btn_load.setStyleSheet(self._segmented_button_style(left=True, font_size=10))
 
         kc1_btn_sensor = QPushButton("Sensor")
         kc1_btn_sensor.setCheckable(True)
         kc1_btn_sensor.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc1_btn_sensor.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 0px 14px 14px 0px;"
-            "  font-size: 10px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:!checked {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
-            "}"
-        )
+        kc1_btn_sensor.setStyleSheet(self._segmented_button_style(right=True, font_size=10))
 
         # Button state management handled in main.py _on_loop_valve_switched()
         # Local handlers removed to prevent state conflicts
@@ -1591,40 +1426,12 @@ class FlowTabBuilder:
         kc2_btn_load.setCheckable(True)
         kc2_btn_load.setChecked(True)
         kc2_btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc2_btn_load.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 14px 0px 0px 14px;"
-            "  font-size: 10px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:!checked {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
-            "}"
-        )
+        kc2_btn_load.setStyleSheet(self._segmented_button_style(left=True, font_size=10))
 
         kc2_btn_sensor = QPushButton("Sensor")
         kc2_btn_sensor.setCheckable(True)
         kc2_btn_sensor.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc2_btn_sensor.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 0px 14px 14px 0px;"
-            "  font-size: 10px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:!checked {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
-            "}"
-        )
+        kc2_btn_sensor.setStyleSheet(self._segmented_button_style(right=True, font_size=10))
 
         # Button state management handled in main.py _on_loop_valve_switched()
         # Local handlers removed to prevent state conflicts
@@ -1664,40 +1471,12 @@ class FlowTabBuilder:
         kc1_btn_a.setCheckable(True)
         kc1_btn_a.setChecked(True)
         kc1_btn_a.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc1_btn_a.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 14px 0px 0px 14px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:!checked {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
-            "}"
-        )
+        kc1_btn_a.setStyleSheet(self._segmented_button_style(left=True, font_size=11))
 
         kc1_btn_b = QPushButton("B")
         kc1_btn_b.setCheckable(True)
         kc1_btn_b.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc1_btn_b.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 0px 14px 14px 0px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:!checked {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
-            "}"
-        )
+        kc1_btn_b.setStyleSheet(self._segmented_button_style(right=True, font_size=11))
 
         # Button state management handled in main.py _on_channel_valve_switched()
         # Local handlers removed to prevent state conflicts
@@ -1720,40 +1499,12 @@ class FlowTabBuilder:
         kc2_btn_c.setCheckable(True)
         kc2_btn_c.setChecked(True)
         kc2_btn_c.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc2_btn_c.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 14px 0px 0px 14px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:!checked {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
-            "}"
-        )
+        kc2_btn_c.setStyleSheet(self._segmented_button_style(left=True, font_size=11))
 
         kc2_btn_d = QPushButton("D")
         kc2_btn_d.setCheckable(True)
         kc2_btn_d.setCursor(Qt.CursorShape.PointingHandCursor)
-        kc2_btn_d.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 0px 14px 14px 0px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:!checked {"
-            "  background: #E5E5EA;"
-            "  color: #86868B;"
-            "}"
-        )
+        kc2_btn_d.setStyleSheet(self._segmented_button_style(right=True, font_size=11))
 
         # Button state management handled in main.py _on_channel_valve_switched()
         # Local handlers removed to prevent state conflicts
@@ -1907,6 +1658,178 @@ class FlowTabBuilder:
         setattr(self.sidebar, switch_ref, switch)
 
         layout.addLayout(row)
+
+    def _card_container_style(self, background="rgba(0, 0, 0, 0.03)"):
+        """Return consistent card container stylesheet.
+
+        Args:
+            background: Background color (default: light gray)
+
+        Returns:
+            CSS stylesheet string
+        """
+        return f"QFrame {{ background: {background}; border-radius: 8px; }}"
+
+    def _white_card_style(self):
+        """Return white card container with border."""
+        return (
+            "QFrame {"
+            "  background: white;"
+            "  border: 1px solid rgba(0, 0, 0, 0.08);"
+            "  border-radius: 8px;"
+            "}"
+        )
+
+    def _help_text_style(self):
+        """Return consistent help text stylesheet."""
+        return (
+            f"font-size: 11px;"
+            f"color: #86868B;"
+            f"background: transparent;"
+            f"font-style: italic;"
+            f"margin: 4px 0px 8px 0px;"
+            f"font-family: {self.FONT_FAMILY_SYSTEM};"
+        )
+
+    def _colored_button_style(self, background: str, hover: str, pressed: str):
+        """Generate a colored button style with consistent typography.
+
+        Args:
+            background: Default background color
+            hover: Hover background color
+            pressed: Pressed background color
+
+        Returns:
+            CSS stylesheet string
+        """
+        return (
+            "QPushButton {"
+            f"  background: {background};"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            f"  font-family: {self.FONT_FAMILY_SYSTEM};"
+            "}"
+            "QPushButton:hover {"
+            f"  background: {hover};"
+            "}"
+            "QPushButton:pressed {"
+            f"  background: {pressed};"
+            "}"
+        )
+
+    def _uniform_button_style(self, background: str, hover: str, pressed: str):
+        """Generate uniform button style for AffiPump control section.
+
+        Args:
+            background: Default background color
+            hover: Hover background color
+            pressed: Pressed background color
+
+        Returns:
+            CSS stylesheet string with consistent styling
+        """
+        return (
+            "QPushButton {"
+            f"  background: {background};"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 14px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            f"  font-family: {self.FONT_FAMILY_SYSTEM};"
+            "}"
+            "QPushButton:hover {"
+            f"  background: {hover};"
+            "}"
+            "QPushButton:pressed {"
+            f"  background: {pressed};"
+            "}"
+            "QPushButton:disabled {"
+            "  background: #D1D1D6;"
+            "  color: #86868B;"
+            "}"
+        )
+
+    def _toggle_button_style(
+        self,
+        base_bg: str = "#34C759",
+        hover_bg: str = "#28A745",
+        pressed_bg: str = "#1E7E34",
+        checked_bg: str = "#FF3B30",
+        checked_hover: str = "#D32F2F",
+        checked_pressed: str = "#B71C1C",
+        radius: int = 7,
+        padding: str = "0px 18px",
+        font_size: int = 13,
+        bold: bool = False,
+    ) -> str:
+        """Generate a Start/Stop toggle button style.
+
+        Returns CSS for a checkable button with distinct unchecked/checked states.
+        """
+        weight = "700" if bold else "600"
+        return (
+            "QPushButton {"
+            f"  background: {base_bg};"
+            "  color: white;"
+            "  border: none;"
+            f"  border-radius: {radius}px;"
+            f"  padding: {padding};"
+            f"  font-size: {font_size}px;"
+            f"  font-weight: {weight};"
+            f"  font-family: {self.FONT_FAMILY_SYSTEM};"
+            "}"
+            "QPushButton:hover {"
+            f"  background: {hover_bg};"
+            "}"
+            "QPushButton:pressed {"
+            f"  background: {pressed_bg};"
+            "}"
+            "QPushButton:checked {"
+            f"  background: {checked_bg};"
+            "  color: white;"
+            "}"
+            "QPushButton:checked:hover {"
+            f"  background: {checked_hover};"
+            "}"
+            "QPushButton:checked:pressed {"
+            f"  background: {checked_pressed};"
+            "}"
+        )
+
+    def _segmented_button_style(self, left: bool = False, right: bool = False, font_size: int = 10) -> str:
+        """Generate segmented toggle style for valve controls.
+
+        Left/right determine border radii for paired buttons.
+        Checked state is green; unchecked is gray.
+        """
+        if left:
+            radius = "14px 0px 0px 14px"
+        elif right:
+            radius = "0px 14px 14px 0px"
+        else:
+            radius = "14px"
+
+        return (
+            "QPushButton {"
+            "  background: #34C759;"
+            "  color: white;"
+            "  border: none;"
+            f"  border-radius: {radius};"
+            f"  font-size: {font_size}px;"
+            "  font-weight: 600;"
+            f"  font-family: {self.FONT_FAMILY_SYSTEM};"
+            "}"
+            "QPushButton:!checked {"
+            "  background: #E5E5EA;"
+            "  color: #86868B;"
+            "}"
+        )
 
     def _button_style(self, primary=False, secondary=False, danger=False):
         """Generate button style CSS.

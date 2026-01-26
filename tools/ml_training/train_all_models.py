@@ -46,7 +46,7 @@ def main():
         sys.exit(1)
 
     parser = CalibrationLogParser(logs_dir)
-    # Only parse recent 200 logs - old logs don't have convergence format anyway
+    # Parse recent 200 logs for better training data
     iterations_df, runs_df = parser.parse_all_logs(max_logs=200)
 
     # Save parsed data

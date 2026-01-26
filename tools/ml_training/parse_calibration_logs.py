@@ -123,18 +123,14 @@ class CalibrationLogParser:
         self.logs_dir = Path(logs_dir)
         
     def parse_all_logs(self, max_logs: int = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Parse calibration logs.
+        """Parse calibration logs quickly (optimized).
         
         Args:
-            max_logs: Max recent logs to parse (None = all). Recommended: 200
+            max_logs: Max recent logs to parse (None = all). Recommended: 100
         
         Returns:
             Tuple of (iteration_data, calibration_runs) DataFrames
         """
-        iteration_records = []
-        run_records = []
-        
-        # Sort by modification time (newest first) for recent logs
         import time
         
         all_logs = list(self.logs_dir.glob("calibration_*.log"))
@@ -146,36 +142,64 @@ class CalibrationLogParser:
         else:
             print(f"Found {len(log_files)} calibration log files")
         
-        start_time = time.time()
-        last_update = start_time
+        # Quick filter - skip large files
+        valid_files = []
+        for log_file in log_files:
+            file_size_mb = log_file.stat().st_size / (1024 * 1024)
+            if file_size_mb <= 0.5:  # Skip files > 0.5MB
+                valid_files.append(log_file)
         
-        for i, log_file in enumerate(log_files, 1):
+        print(f"Parsing {len(valid_files)} valid files (skipped {len(log_files) - len(valid_files)} large files)...")
+        
+        start_time = time.time()
+        iteration_records = []
+        run_records = []
+        
+        for i, log_file in enumerate(valid_files, 1):
             file_start = time.time()
-            
-            # Show progress every 50 files OR every 5 seconds
-            now = time.time()
-            if i % 50 == 0 or (now - last_update) > 5:
-                elapsed = now - start_time
-                rate = i / elapsed if elapsed > 0 else 0
-                eta = (len(log_files) - i) / rate if rate > 0 else 0
-                print(f"  [{i}/{len(log_files)}] {rate:.1f} logs/sec | Elapsed: {elapsed:.0f}s | ETA: {eta:.0f}s | Current: {log_file.name}")
-                last_update = now
+            print(f"  [{i}/{len(valid_files)}] {log_file.name}...", end='', flush=True)
             
             try:
-                iterations, run_summary = self.parse_log(log_file)
+                import threading
+                result = [None]
+                error = [None]
+                
+                def parse_with_timeout():
+                    try:
+                        result[0] = self.parse_log(log_file)
+                    except Exception as e:
+                        error[0] = e
+                
+                thread = threading.Thread(target=parse_with_timeout)
+                thread.daemon = True
+                thread.start()
+                thread.join(timeout=10.0)  # 10 second timeout
+                
+                if thread.is_alive():
+                    print(f" TIMEOUT (>10s) - SKIPPED")
+                    continue
+                
+                if error[0]:
+                    print(f" ERROR: {error[0]}")
+                    continue
+                
+                if result[0]:
+                    iterations, run_summary = result[0]
+                    iteration_records.extend(iterations)
+                    if run_summary:
+                        run_records.append(run_summary)
                 
                 file_time = time.time() - file_start
-                if file_time > 2:  # Warn about slow files
-                    print(f"    SLOW: {log_file.name} took {file_time:.1f}s ({len(iterations)} iterations)")
-                
-                iteration_records.extend(iterations)
-                if run_summary:
-                    run_records.append(run_summary)
+                if file_time > 2:
+                    print(f" {file_time:.1f}s (SLOW)")
+                else:
+                    print(f" {file_time:.2f}s")
             except Exception as e:
-                print(f"  Warning: Failed to parse {log_file.name}: {e}")
+                print(f" ERROR: {e}")
                 continue
         
-        print(f"Extracted {len(iteration_records)} iteration records from {len(run_records)} calibration runs")
+        elapsed = time.time() - start_time
+        print(f"Extracted {len(iteration_records)} iteration records from {len(run_records)} runs in {elapsed:.1f}s")
         
         # Convert to DataFrames
         iterations_df = pd.DataFrame([asdict(r) for r in iteration_records])
@@ -184,15 +208,18 @@ class CalibrationLogParser:
         return iterations_df, runs_df
     
     def parse_log(self, log_file: Path) -> Tuple[List[IterationData], Optional[CalibrationRun]]:
-        """Parse a single calibration log file.
+        """Parse a single calibration log file (optimized).
         
         Returns:
             Tuple of (iteration_records, run_summary)
         """
-        with open(log_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        lines = content.split('\n')
+        # Read with line limit to avoid huge files
+        with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = []
+            for i, line in enumerate(f):
+                if i > 2000:  # Cap at 2000 lines to prevent slow parsing
+                    break
+                lines.append(line.rstrip('\n'))
         
         # Extract basic info
         timestamp = self._extract_timestamp(lines)
@@ -362,7 +389,9 @@ class CalibrationLogParser:
         i = 0
         while i < len(lines):
             line = lines[i]
-            if len(line) > 10000:  # Skip absurdly long lines
+            
+            # Skip very long lines immediately (they're usually debug output)
+            if len(line) > 500:
                 i += 1
                 continue
             
@@ -392,7 +421,9 @@ class CalibrationLogParser:
                 i += 1
                 while i < len(lines):
                     ch_line = lines[i]
-                    if len(ch_line) > 10000:  # Skip absurdly long lines
+                    
+                    # Skip very long lines
+                    if len(ch_line) > 500:
                         i += 1
                         continue
                     

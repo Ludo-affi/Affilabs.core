@@ -288,6 +288,15 @@ class FlagManager:
             # Remove from graph
             self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
 
+            # If this was the selected flag, remove the highlight ring
+            if closest_flag_idx == self._selected_flag_idx:
+                if self._flag_highlight_ring is not None:
+                    self.app.main_window.cycle_of_interest_graph.removeItem(
+                        self._flag_highlight_ring
+                    )
+                    self._flag_highlight_ring = None
+                self._selected_flag_idx = None
+
             # Remove from storage
             self._flag_markers.pop(closest_flag_idx)
 

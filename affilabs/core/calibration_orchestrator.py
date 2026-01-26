@@ -178,7 +178,14 @@ def run_startup_calibration(
         # Get detector parameters and channel list
         from affilabs.utils.calibration_helpers import determine_channel_list, get_detector_params
 
-        detector_params = get_detector_params(device_type)
+        detector_params = get_detector_params(
+            usb
+        )  # FIXED: Pass detector object, not device_type string
+        logger.info(f"🔍 DEBUG: detector_params.max_counts = {detector_params.max_counts}")
+        logger.info(f"🔍 DEBUG: detector object type = {type(usb).__name__}")
+        logger.info(
+            f"🔍 DEBUG: detector max_counts attribute = {getattr(usb, 'max_counts', 'MISSING')}"
+        )
         ch_list = determine_channel_list(device_type, single_mode, single_ch)
         logger.info(f"Channels: {ch_list}")
 
@@ -377,9 +384,16 @@ def run_startup_calibration(
         ctrl.turn_off_channels()
         time.sleep(0.1)
 
-        # Use set_mode() instead of raw PWM - this handles degrees-to-PWM conversion automatically
-        # and uses the EEPROM-synced positions
-        logger.info(f"   Sending 'ss' command to move to S-mode (EEPROM position: {s_pos})...")
+        # Preferred path: set desired positions into controller state, then use ss/sp
+        # This ensures set_mode() uses the positions from device_config rather than stale EEPROM.
+        logger.info(
+            f"   Loading desired servo positions into controller state: S={s_pos}, P={p_pos}"
+        )
+        ctrl.set_servo_positions(s_pos, p_pos)
+        time.sleep(0.2)
+
+        # Use set_mode() which sends 'ss' and relies on positions loaded above
+        logger.info(f"   Sending 'ss' command to move to S-mode (target PWM: {s_pos})...")
         logger.info(
             f"   Expected S position from device_config: PWM {s_pos} ({(s_pos / 255.0) * 180:.1f}°)"
         )
@@ -608,8 +622,9 @@ def run_startup_calibration(
         # Calculate initial LED intensities using model if available
         if model_exists and model_loader.model_data:
             # Use model loader to calculate initial intensities - EXACT method from led_model_loader.py
-            # Target: 75% of max (49151 counts) - prevents hot pixels from saturating during reference capture
-            target_counts = int(0.75 * detector_params.max_counts)  # 49151 for 65535 max
+            # Target: 85% of max - matches convergence algorithm target
+            # Start with target so weakest channel at LED 255 reaches the final convergence goal immediately
+            target_counts = int(0.85 * detector_params.max_counts)  # 55,705 for 65535 max
 
             # OPTIMAL LOGIC: Calculate integration time for weakest LED at max intensity (255)
             # This gives shortest time to hit target with weakest channel maxed = optimal condition
@@ -623,6 +638,11 @@ def run_startup_calibration(
                 # Calculate optimal integration time for weakest LED at max (255)
                 optimal_integration_ms = (target_counts / (weakest_slope * 255.0)) * 10.0
 
+                # Apply 1.5x safety multiplier since model may be from different conditions
+                # (polarizer position, LED aging, etc.)
+                # REDUCED from 3x to avoid excessive initial saturation with sensitive detectors
+                optimal_integration_ms *= 1.5
+
                 # Clamp to detector limits
                 optimal_integration_ms = max(
                     detector_params.min_integration_time, optimal_integration_ms
@@ -632,20 +652,27 @@ def run_startup_calibration(
                 )
 
                 initial_integration_ms = optimal_integration_ms
-                logger.info(f"Integration time: {initial_integration_ms:.1f}ms")
+                logger.info(
+                    f"Integration time: {initial_integration_ms:.1f}ms (3x safety factor, weakest ch={weakest_ch}, model slope={weakest_slope:.1f})"
+                )
             else:
                 # Fallback: use average slope method
+                # CRITICAL FIX: Lower slope = weaker signal = needs LONGER integration (not shorter)
+                # Higher slope = stronger signal = needs SHORTER integration (not longer)
+                # Logic: Start with weakest LED at max brightness (255), low integration to avoid saturation
                 avg_slope = np.mean([model_slopes_s.get(ch, 870.0) for ch in ch_list])
-                if avg_slope > 600:
-                    initial_integration_ms = 10.0
-                elif avg_slope > 300:
-                    initial_integration_ms = 20.0
-                elif avg_slope > 180:
-                    initial_integration_ms = 30.0
-                elif avg_slope > 120:
-                    initial_integration_ms = 45.0
+                if avg_slope < 120:
+                    initial_integration_ms = (
+                        60.0  # Very weak → need long integration even at LED=255
+                    )
+                elif avg_slope < 180:
+                    initial_integration_ms = 45.0  # Weak → moderately long integration
+                elif avg_slope < 300:
+                    initial_integration_ms = 30.0  # Medium → medium integration
+                elif avg_slope < 600:
+                    initial_integration_ms = 20.0  # Strong → short integration
                 else:
-                    initial_integration_ms = 60.0
+                    initial_integration_ms = 10.0  # Very strong → shortest integration
                 logger.info(
                     f"[OK] Fallback integration time: {initial_integration_ms}ms (avg slope: {avg_slope:.1f})"
                 )
@@ -704,6 +731,24 @@ def run_startup_calibration(
             )
             logger.error(error_msg)
             raise RuntimeError(error_msg)
+
+        # Create S-mode convergence config with speed optimization for PhasePhotonics
+        # Strategy: Maximize LED brightness, minimize integration time for fastest acquisition
+        from affilabs.convergence.config import ConvergenceRecipe
+
+        s_config = ConvergenceRecipe(
+            channels=ch_list,
+            initial_leds=initial_leds,
+            initial_integration_ms=initial_integration_ms,
+            target_percent=0.85,
+            tolerance_percent=0.15,
+            max_iterations=12,
+            # SPEED OPTIMIZATION: Prefer bright LEDs over long integration
+            prefer_led_over_integration=True,  # Enable LED-first strategy
+            led_optimization_target=200.0,  # Target LED brightness for weakest channel
+            min_integration_for_led_max=5.0,  # Minimum integration when maximizing LEDs
+        )
+
         s_integration_time, s_final_signals, s_success, s_converged_leds, s_iterations = (
             LEDconverge(
                 usb=usb,
@@ -723,7 +768,7 @@ def run_startup_calibration(
                 use_batch_command=True,
                 model_slopes=model_slopes_s,
                 polarization="S",
-                config=None,
+                config=s_config,  # Pass speed-optimized config
                 logger=logger,
                 progress_callback=progress_callback,
             )
@@ -739,21 +784,23 @@ def run_startup_calibration(
             if s_final_signals:
                 target = detector_params.max_counts * s_target_percent
 
+                # Calculate max_signal FIRST (needed for polarizer diagnosis)
+                max_signal = max(s_final_signals.values()) if s_final_signals else 0.0
+                percent = (max_signal / detector_params.max_counts) * 100
+
                 # Check which channels failed (more accurate than just max signal)
                 failed_channels = []
                 for ch, sig in s_final_signals.items():
                     error_pct = abs(sig - target) / target * 100
                     if error_pct > 15.0:  # tolerance threshold
                         sig_pct = (sig / target) * 100
-                        led = s_final_leds.get(ch, 0) if s_final_leds else 0
+                        led = s_converged_leds.get(ch, 0) if s_converged_leds else 0
                         failed_channels.append(f"{ch.upper()}={sig_pct:.1f}% (LED={led})")
 
                 if failed_channels:
                     error_msg += f"Channels outside tolerance: {', '.join(failed_channels)}. "
                 else:
                     # Fallback to old message if no specific channel failures
-                    max_signal = max(s_final_signals.values())
-                    percent = (max_signal / detector_params.max_counts) * 100
                     error_msg += (
                         f"Max signal achieved was {max_signal:.0f} ({percent:.1f}%), "
                         f"target was {target:.0f} ({s_target_percent*100:.0f}%). "
@@ -875,9 +922,30 @@ def run_startup_calibration(
         ctrl.turn_off_channels()
         time.sleep(0.05)  # Minimal delay - just ensure command processed
 
-        # Set polarizer to P-mode using HAL
-        ctrl.set_mode("p")  # Servo moves to P position from EEPROM
-        time.sleep(0.2)  # Optimized - servo is warm, motor has settled from S-mode
+        # Move servo to P-mode position using sv + sp commands (working format from test)
+        logger.info("=" * 80)
+        logger.info("🔧 MOVING SERVO TO P-MODE POSITION")
+        logger.info("=" * 80)
+        logger.info(f"   Target P position: PWM {p_pos} ({(p_pos/255.0)*180:.1f}°)")
+
+        # Convert PWM to degrees and use sv + sp commands
+        s_degrees = int(5 + (s_pos / 255.0) * 170.0)
+        p_degrees = int(5 + (p_pos / 255.0) * 170.0)
+
+        # Get raw controller access
+        raw_ctrl = ctrl._ctrl if hasattr(ctrl, "_ctrl") else ctrl
+
+        # Set positions using sv command
+        sv_cmd = f"sv{s_degrees:03d}{p_degrees:03d}\n"
+        raw_ctrl._ser.write(sv_cmd.encode())
+        time.sleep(0.2)
+
+        # Move to P position using sp command
+        raw_ctrl._ser.write(b"sp\n")
+        time.sleep(0.5)  # Wait for servo to settle at P position
+
+        logger.info(f"   ✅ Servo positioned at P-mode (PWM {p_pos}, {p_degrees}°)")
+        logger.info("=" * 80)
 
         # Enable LED channels for P4PRO (required after turning them off)
         if ctrl.get_device_type() == "PicoP4PRO":
@@ -915,6 +983,10 @@ def run_startup_calibration(
             led_small_step=8,  # Larger steps OK since we know direction (always boost for P-pol)
             prefer_est_after_iters=1,  # Trust measurements immediately
             near_window_percent=0.10,  # Tighter convergence window for speed
+            # SPEED OPTIMIZATION: Same as S-mode for consistent fast acquisition
+            prefer_led_over_integration=True,  # Enable LED-first strategy
+            led_optimization_target=200.0,  # Target LED brightness for weakest channel
+            min_integration_for_led_max=5.0,  # Minimum integration when maximizing LEDs
         )
 
         # Carry weakest channel override into P-mode convergence and FREEZE integration
@@ -976,6 +1048,41 @@ def run_startup_calibration(
         result.p_integration_time = p_integration_time
 
         logger.info(f"P-mode: {p_integration_time:.1f}ms, LEDs={p_mode_leds}")
+
+        # CRITICAL: Dark signal detection - check if P-pol position is blocked/wrong
+        # If all channels show dark signals (<1000 counts), servo position is incorrect
+        DARK_THRESHOLD = 1000  # Below this = blocked/dark (same as servo calibration)
+        if p_final_signals:
+            all_signals = list(p_final_signals.values())
+            max_signal = max(all_signals)
+            avg_signal = sum(all_signals) / len(all_signals)
+
+            if max_signal < DARK_THRESHOLD:
+                logger.error("=" * 80)
+                logger.error(">> CRITICAL ERROR: P-POL POSITION IS DARK/BLOCKED!")
+                logger.error("=" * 80)
+                logger.error(
+                    f"   All channels showing dark signals (max={max_signal:.0f} counts < {DARK_THRESHOLD})"
+                )
+                logger.error(f"   Average signal: {avg_signal:.0f} counts")
+                logger.error(
+                    f"   Current P-pol servo position: PWM {p_pos} ({(p_pos/255.0)*180:.1f}deg)"
+                )
+                logger.error("")
+                logger.error("   AUTOMATIC SERVO RECALIBRATION REQUIRED!")
+                logger.error(
+                    "   The system will now run servo calibration to find correct P-pol position..."
+                )
+                logger.error("=" * 80)
+
+                # Special exception that UI can catch to trigger automatic servo calibration
+                raise RuntimeError(
+                    "SERVO_RECALIBRATION_REQUIRED: P-pol position is dark/blocked. "
+                    f"Signal={max_signal:.0f} counts (expected >{DARK_THRESHOLD}). "
+                    f"Current P position PWM {p_pos} is incorrect. "
+                    "Please run servo calibration (servo_polarizer_calibration/calibrate_polarizer.py) "
+                    "to find the correct P-pol position, then retry this calibration."
+                )
 
         # Capture P-pol reference spectra
 
@@ -1116,11 +1223,20 @@ def run_startup_calibration(
             )
             qc_results[ch] = qc
 
+            # Format QC results with safety checks for None values
+            dip_wl = qc.get("dip_wavelength")
+            dip_depth = qc.get("dip_depth")
+            fwhm = qc.get("fwhm")
+
+            dip_wl_str = f"{dip_wl:.1f}" if dip_wl is not None else "N/A"
+            dip_depth_str = f"{dip_depth:.1f}" if dip_depth is not None else "N/A"
+            fwhm_str = f"{fwhm:.1f}" if fwhm is not None else "N/A"
+
             logger.info(
                 f"Channel {ch.upper()}: "
-                f"Dip={qc['dip_wavelength']:.1f}nm, "
-                f"Depth={qc['dip_depth']:.1f}%, "
-                f"FWHM={qc.get('fwhm', 0):.1f}nm"
+                f"Dip={dip_wl_str}nm, "
+                f"Depth={dip_depth_str}%, "
+                f"FWHM={fwhm_str}nm"
             )
 
         result.qc_results = qc_results

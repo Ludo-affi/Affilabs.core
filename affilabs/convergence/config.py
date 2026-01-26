@@ -57,6 +57,11 @@ class ConvergenceRecipe:
     # Acceptance (OPTIMIZED FOR SPEED)
     accept_above_extra_percent: float = 0.03  # Allow 3% overshoot for faster convergence (was 0.0)
 
+    # Speed optimization strategy (PhasePhotonics detector with fast readout)
+    prefer_led_over_integration: bool = True  # Maximize LED brightness before reducing integration time
+    led_optimization_target: float = 200.0  # Target LED value for weakest channel (out of 255)
+    min_integration_for_led_max: float = 5.0  # Minimum integration time (ms) when optimizing for LED brightness
+
     def __post_init__(self) -> None:
         """Validate and adjust configuration for logical consistency.
 

@@ -1322,16 +1322,16 @@ class PumpManager(QObject):
                 logger.info("  ⚠ 6-port valves INJECT (SIMULATED)")
             await asyncio.sleep(1.0)  # Valve switching delay
 
-            # STEP 4: Aspirate 50µL (P950 → P1000)
-            logger.info("\n[STEP 4] Aspirating 50uL to P1000...")
+            # STEP 4: Aspirate 10µL (P950 → P960)
+            logger.info("\n[STEP 4] Aspirating 10uL to P960...")
             logger.info(f"  (Aspirating at {output_aspirate_rate} uL/min)")
-            self.operation_progress.emit("inject_partial", 28, "Loading P1000...")
+            self.operation_progress.emit("inject_partial", 28, "Loading P960...")
             self.status_updated.emit("Loading", output_aspirate_rate, 0.0, 0.0, 0.0)
 
-            pump._pump.pump.aspirate_both(50.0, output_aspirate_rate_ul_s)
+            pump._pump.pump.aspirate_both(10.0, output_aspirate_rate_ul_s)
             await asyncio.sleep(0.5)  # Wait for command to be sent
 
-            # Wait for aspirate to complete (50µL @ 250µL/min = ~12s)
+            # Wait for aspirate to complete (10µL @ 250µL/min = ~2.4s)
             p1_ready, p2_ready, _, _, _ = await asyncio.get_event_loop().run_in_executor(
                 None,
                 pump._pump.pump.wait_until_both_ready,
@@ -1343,7 +1343,7 @@ class PumpManager(QObject):
                 self.operation_completed.emit("inject_partial", False)
                 return False
 
-            logger.info("  ✓ 50µL aspirate completed (now at P1000)")
+            logger.info("  ✓ 10µL aspirate completed (now at P960)")
 
             # STEP 5: Close 6-port valves to load position
             logger.info("\n[STEP 5] Closing 6-port valves (load position)...")
@@ -1355,17 +1355,17 @@ class PumpManager(QObject):
                 logger.info("  ⚠ 6-port valves LOAD (SIMULATED)")
             await asyncio.sleep(1.0)  # Valve switching delay
 
-            # STEP 6: Dispense 25µL (P1000 → P975, pump valve to OUTPUT)
-            logger.info("\n[STEP 6] Dispensing 25uL to P975...")
+            # STEP 6: Dispense 5µL (P960 → P955, pump valve to OUTPUT)
+            logger.info("\n[STEP 6] Dispensing 5uL to P955...")
             logger.info("  (Pump valve switching to OUTPUT)")
-            self.operation_progress.emit("inject_partial", 42, "Dispensing to P975...")
+            self.operation_progress.emit("inject_partial", 42, "Dispensing to P955...")
             self.status_updated.emit("Dispensing", output_aspirate_rate, 0.0, 0.0, 0.0)
 
-            # Dispense 25µL (relative) at output aspirate rate
-            pump._pump.pump.dispense_both(25.0, output_aspirate_rate_ul_s, switch_valve=True)
+            # Dispense 5µL (relative) at output aspirate rate
+            pump._pump.pump.dispense_both(5.0, output_aspirate_rate_ul_s, switch_valve=True)
             await asyncio.sleep(0.5)  # Wait for command to be sent
 
-            # Wait for dispense to complete (25µL @ 250µL/min = ~6s)
+            # Wait for dispense to complete (5µL @ 250µL/min = ~1.2s)
             p1_ready, p2_ready, _, _, _ = await asyncio.get_event_loop().run_in_executor(
                 None,
                 pump._pump.pump.wait_until_both_ready,
@@ -1377,7 +1377,7 @@ class PumpManager(QObject):
                 self.operation_completed.emit("inject_partial", False)
                 return False
 
-            logger.info("  ✓ 25µL dispense completed (now at P975)")
+            logger.info("  ✓ 5µL dispense completed (now at P955)")
 
             # STEP 7: Wait 10 seconds
             logger.info("\n[STEP 7] Waiting 10 seconds...")
@@ -1394,13 +1394,13 @@ class PumpManager(QObject):
                 logger.info("  ⚠ 6-port valves INJECT (SIMULATED)")
             await asyncio.sleep(1.0)  # Valve switching delay
 
-            # STEP 9: Dispense 30µL spike at pulse rate - EXACT VALIDATED COMMANDS
-            logger.info(f"\n[STEP 9] Dispensing 30uL spike at {pulse_rate} uL/min...")
+            # STEP 9: Dispense 12µL spike at pulse rate - EXACT VALIDATED COMMANDS
+            logger.info(f"\n[STEP 9] Dispensing 12uL spike at {pulse_rate} uL/min...")
             self.operation_progress.emit("inject_partial", 63, "Spiking...")
             self.status_updated.emit("Spiking", pulse_rate, 0.0, 0.0, 0.0)
 
             # Use EXACT validated commands from test (valves already at OUTPUT from Step 6)
-            spike_volume_ul = 30.0
+            spike_volume_ul = 12.0
             pump._pump.pump.send_command(f"/AV{pulse_rate_ul_s:.3f},1R")
             await asyncio.sleep(0.1)
             pump._pump.pump.send_command(f"/AD{spike_volume_ul:.3f},1R")
@@ -1418,7 +1418,7 @@ class PumpManager(QObject):
                 self.operation_completed.emit("inject_partial", False)
                 return False
 
-            logger.info("  ✓ 30µL spike completed")
+            logger.info("  ✓ 12µL spike completed")
 
             # STEP 11: Dispense remaining 945µL at assay flow rate - EXACT VALIDATED COMMANDS
             remaining_volume_ul = 945.0

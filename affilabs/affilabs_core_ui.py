@@ -1355,6 +1355,10 @@ class AffilabsMainWindow(QMainWindow):
         self.channel_d_input = self.sidebar.channel_d_input
         self.apply_settings_btn = self.sidebar.apply_settings_btn
 
+        # Connect colorblind mode signal to update button colors
+        if hasattr(self.sidebar, 'colorblind_mode_signal'):
+            self.sidebar.colorblind_mode_signal.connect(self._on_colorblind_mode_changed)
+
         # Forward spectroscopy plots (if they exist)
         logger.debug("Checking for transmission_plot in sidebar...")
 
@@ -1771,7 +1775,7 @@ class AffilabsMainWindow(QMainWindow):
         channels_label.setToolTip("Toggle channel visibility on graphs")
         first_row_layout.addWidget(channels_label)
 
-        # Channel toggles - consistent colors (Black, Red, Blue, Green)
+        # Channel toggles - show/hide channels on graphs
         self.channel_toggles = {}
         channel_names = {
             "A": ("#1D1D1F", "Channel A (Black) - Toggle visibility"),
@@ -1782,7 +1786,7 @@ class AffilabsMainWindow(QMainWindow):
         for ch, (color, tooltip) in channel_names.items():
             ch_btn = QPushButton(f"Ch {ch}")
             ch_btn.setCheckable(True)
-            ch_btn.setChecked(True)
+            ch_btn.setChecked(True)  # All visible by default
             ch_btn.setFixedSize(56, 32)
             ch_btn.setToolTip(tooltip)
             ch_btn.setStyleSheet(UIStyleManager.get_channel_button_style(color))
@@ -1790,8 +1794,7 @@ class AffilabsMainWindow(QMainWindow):
             # Store reference and connect to visibility toggle
             self.channel_toggles[ch] = ch_btn
             ch_btn.toggled.connect(
-                lambda checked,
-                channel=ch: self.sensogram_presenter.toggle_channel_visibility(
+                lambda checked, channel=ch: self.sensogram_presenter.toggle_channel_visibility(
                     channel,
                     checked,
                 ),
@@ -1834,20 +1837,6 @@ class AffilabsMainWindow(QMainWindow):
         # Connect to DataWindow's reset_graphs() method (triggers proper clear chain)
         self.clear_graph_btn.clicked.connect(self._on_clear_graph_clicked)
         first_row_layout.addWidget(self.clear_graph_btn)
-
-        # Clear Flags button
-        self.clear_flags_btn = QPushButton("Clear Flags")
-        self.clear_flags_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_STD)
-        self.clear_flags_btn.setToolTip(
-            "Remove all cycle markers from Full Sensorgram timeline\n"
-            "• Clears vertical lines and labels showing cycle start times\n"
-            "• Does not affect recorded data or cycle table",
-        )
-        self.clear_flags_btn.setStyleSheet(
-            UIStyleManager.get_clear_button_style("danger"),
-        )
-        self.clear_flags_btn.clicked.connect(self._clear_cycle_markers)
-        first_row_layout.addWidget(self.clear_flags_btn)
 
         header_layout.addWidget(first_row)
 
@@ -2217,10 +2206,16 @@ class AffilabsMainWindow(QMainWindow):
                 self.app._on_clear_graphs_requested()
 
     def _clear_cycle_markers(self):
-        """Remove all cycle markers from the Full Sensorgram timeline graph."""
+        """Clear all flags from the Active Cycle graph and markers from Full Sensorgram timeline."""
         try:
             logger.info("🗑️ Clear Flags button clicked")
 
+            # Clear flags from Active Cycle (bottom) graph via flag manager
+            if hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
+                self.app.flag_mgr.clear_all_flags()
+                logger.info("✅ Cleared all flags from Active Cycle graph")
+
+            # Also clear cycle markers from Full Sensorgram (top) graph
             if not hasattr(self, "full_timeline_graph"):
                 logger.warning("❌ Full timeline graph not found")
                 return
@@ -2261,11 +2256,106 @@ class AffilabsMainWindow(QMainWindow):
             self.app._cycle_markers.clear()
 
             logger.info(f"✅ Cleared {markers_cleared} cycle markers from Full Sensorgram timeline")
-            print(f"✅ Cleared {markers_cleared} cycle markers from timeline")
+            print(f"✅ Cleared all flags and cycle markers")
+
+            # Update flag counter
+            self._update_flag_counter()
 
         except Exception as e:
-            logger.error(f"❌ Error clearing cycle markers: {e}")
-            print(f"❌ Error clearing cycle markers: {e}")
+            logger.error(f"❌ Error clearing flags/markers: {e}")
+            print(f"❌ Error clearing flags/markers: {e}")
+
+    def _reset_channel_timing(self):
+        """Reset all channel time shifts to default (remove injection alignment)."""
+        try:
+            logger.info("🔄 Reset Timing button clicked")
+
+            if not hasattr(self, "app") or not self.app:
+                logger.warning("❌ App reference not found")
+                return
+
+            # Clear channel time shifts
+            if hasattr(self.app, '_channel_time_shifts'):
+                self.app._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
+                logger.info("✅ Reset all channel time shifts to 0.0")
+
+            # Clear injection reference if it exists in flag manager
+            if hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
+                self.app.flag_mgr._injection_reference_time = None
+                self.app.flag_mgr._injection_reference_channel = None
+
+                # Remove injection alignment line from graph
+                if hasattr(self.app.flag_mgr, '_injection_alignment_line') and self.app.flag_mgr._injection_alignment_line:
+                    if hasattr(self, 'cycle_of_interest_graph'):
+                        try:
+                            self.cycle_of_interest_graph.removeItem(self.app.flag_mgr._injection_alignment_line)
+                        except:
+                            pass
+                    self.app.flag_mgr._injection_alignment_line = None
+
+                logger.info("✅ Cleared injection alignment reference")
+
+            # Refresh the Active Cycle display to show updated timing
+            if hasattr(self.app, '_refresh_active_cycle_display'):
+                self.app._refresh_active_cycle_display()
+
+            print("✅ Channel timing reset to default")
+            logger.info("✅ Channel timing reset complete")
+
+        except Exception as e:
+            logger.error(f"❌ Error resetting channel timing: {e}")
+            print(f"❌ Error resetting timing: {e}")
+
+    def _update_flag_counter(self):
+        """Update the flag counter label with current number of flags."""
+        try:
+            if not hasattr(self, 'flag_counter_label'):
+                return
+
+            # Count flags from full_timeline_graph
+            flag_count = 0
+            if hasattr(self, 'full_timeline_graph') and hasattr(self.full_timeline_graph, 'flag_markers'):
+                flag_count = len(self.full_timeline_graph.flag_markers)
+
+            # Update label text
+            self.flag_counter_label.setText(f"Flags: {flag_count}")
+
+            # Change color based on flag count
+            if flag_count == 0:
+                color = "#86868B"  # Gray when no flags
+            else:
+                color = "#007AFF"  # Blue when flags exist
+
+            self.flag_counter_label.setStyleSheet(
+                f"QLabel {{ "
+                f"  font-size: 11px; "
+                f"  color: {color}; "
+                f"  padding: 4px 8px; "
+                f"  font-weight: {600 if flag_count > 0 else 400}; "
+                f"  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; "
+                f"}}"
+            )
+
+        except Exception as e:
+            logger.debug(f"Error updating flag counter: {e}")
+
+    def _on_colorblind_mode_changed(self, enabled: bool):
+        """Update button colors when colorblind mode is toggled."""
+        from affilabs.utils.ui_styles import UIStyleManager
+        from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+
+        # Select color palette based on mode
+        colors = CHANNEL_COLORS_COLORBLIND if enabled else CHANNEL_COLORS
+
+        # Update channel visibility toggle buttons
+        if hasattr(self, 'channel_toggles'):
+            for i, (ch, btn) in enumerate(self.channel_toggles.items()):
+                btn.setStyleSheet(UIStyleManager.get_channel_button_style(colors[i]))
+
+        # Update flag selection buttons
+        if hasattr(self, 'channel_selection_buttons'):
+            for i, (ch, btn) in enumerate(self.channel_selection_buttons.items()):
+                btn.setStyleSheet(UIStyleManager.get_channel_button_style(colors[i]))
 
     def _create_graph_container(
         self,
@@ -2275,6 +2365,7 @@ class AffilabsMainWindow(QMainWindow):
     ) -> QFrame:
         """Create a graph container with title and controls."""
         import pyqtgraph as pg
+        from affilabs.utils.ui_styles import UIStyleManager
 
         container = QFrame()
         container.setMinimumHeight(height)
@@ -2335,6 +2426,137 @@ class AffilabsMainWindow(QMainWindow):
 
         layout.addLayout(title_row)
 
+        # Add Flag controls row (only for Active Cycle graph)
+        if show_delta_spr:
+            flag_row = QHBoxLayout()
+            flag_row.setSpacing(8)
+
+            # Flagging channel selection label
+            flag_label = QLabel("Flag:")
+            flag_label.setStyleSheet(
+                "QLabel {"
+                "  font-size: 12px;"
+                "  font-weight: 600;"
+                "  color: #1D1D1F;"
+                "  padding-right: 4px;"
+                "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "}"
+            )
+            flag_label.setToolTip("Select channel for placing flags")
+            flag_row.addWidget(flag_label)
+
+            # Flagging channel selection buttons (radio-style)
+            self.channel_selection_buttons = {}
+
+            flag_channel_names = {
+                "A": ("#1D1D1F", "Select Channel A (Black) for flagging"),
+                "B": ("#FF3B30", "Select Channel B (Red) for flagging"),
+                "C": ("#007AFF", "Select Channel C (Blue) for flagging"),
+                "D": ("#34C759", "Select Channel D (Green) for flagging"),
+            }
+            for ch, (color, tooltip) in flag_channel_names.items():
+                ch_btn = QPushButton(ch)
+                ch_btn.setCheckable(True)
+                ch_btn.setChecked(ch == "A")  # Channel A selected by default
+                ch_btn.setFixedSize(36, 32)
+                ch_btn.setToolTip(tooltip)
+                ch_btn.setStyleSheet(UIStyleManager.get_channel_button_style(color))
+                ch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+                # Store reference and connect to channel selection for flagging
+                self.channel_selection_buttons[ch] = ch_btn
+                channel_letter_lower = ch.lower()  # 'A'→'a', 'B'→'b', etc.
+                ch_btn.clicked.connect(
+                    lambda _, channel=channel_letter_lower: self._on_flag_channel_selected(channel)
+                )
+
+                flag_row.addWidget(ch_btn)
+
+            # Spacing between channel buttons and controls
+            flag_row.addSpacing(12)
+
+            # Flag counter display
+            self.flag_counter_label = QLabel("Flags: 0")
+            self.flag_counter_label.setStyleSheet(
+                "QLabel { "
+                "  font-size: 11px; "
+                "  color: #86868B; "
+                "  padding: 4px 8px; "
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; "
+                "}"
+            )
+            self.flag_counter_label.setToolTip("Number of flags on Live Sensorgram")
+            flag_row.addWidget(self.flag_counter_label)
+
+            # Spacing before action buttons
+            flag_row.addSpacing(8)
+
+            # Clear Flags button
+            self.clear_flags_btn = QPushButton("Clear All")
+            self.clear_flags_btn.setFixedHeight(32)
+            self.clear_flags_btn.setFixedWidth(80)
+            self.clear_flags_btn.setToolTip(
+                "Remove all flags from Live Sensorgram\n"
+                "• Clears all flag markers\n"
+                "• Does not affect recorded data",
+            )
+            self.clear_flags_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #FF3B30;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  font-size: 11px;"
+                "  font-weight: 600;"
+                "  padding: 0px 12px;"
+                "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #E6342B;"
+                "}"
+                "QPushButton:pressed {"
+                "  background: #CC2E26;"
+                "}"
+            )
+            self.clear_flags_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.clear_flags_btn.clicked.connect(self._clear_cycle_markers)
+            flag_row.addWidget(self.clear_flags_btn)
+
+            # Reset Timing button
+            self.reset_timing_btn = QPushButton("Reset Timing")
+            self.reset_timing_btn.setFixedHeight(32)
+            self.reset_timing_btn.setFixedWidth(95)
+            self.reset_timing_btn.setToolTip(
+                "Reset all channel time shifts to default\n"
+                "• Removes injection alignment offsets\n"
+                "• Restores original timing"
+            )
+            self.reset_timing_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #FF9500;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  font-size: 11px;"
+                "  font-weight: 600;"
+                "  padding: 0px 12px;"
+                "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #E68A00;"
+                "}"
+                "QPushButton:pressed {"
+                "  background: #CC7A00;"
+                "}"
+            )
+            self.reset_timing_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.reset_timing_btn.clicked.connect(self._reset_channel_timing)
+            flag_row.addWidget(self.reset_timing_btn)
+
+            flag_row.addStretch()
+
+            layout.addLayout(flag_row)
+
         # Create standardized time-series plot
         left_label = "Δ SPR (RU)" if show_delta_spr else "λ (nm)"
         plot_widget = create_time_plot(left_label)
@@ -2347,20 +2569,25 @@ class AffilabsMainWindow(QMainWindow):
         # Navigation concept: Live Sensorgram is the navigation space, cursors define cycle of interest region
         start_cursor = None
         stop_cursor = None
-        if not show_delta_spr:  # Only for Live Sensorgram (top graph)
-            # Enable curve clicking for channel selection
+
+        # Enable curve clicking for channel selection (ONLY on Active Cycle graph)
+        if show_delta_spr:  # Active Cycle (bottom graph)
             for i, curve in enumerate(curves):
                 try:
-                    # Make curve clickable
-                    curve.setCurveClickable(True, width=10)
-                    # Connect click signal
-                    curve.sigClicked.connect(lambda _, ch=i: self._on_curve_clicked(ch))
-                    logger.debug(f"[LIVE] Connected click handler for curve {i}")
+                    # Make curve clickable with larger tolerance (18px)
+                    curve.setCurveClickable(True, width=18)
+                    # Connect to channel selection for flagging
+                    channel_letter = chr(ord('a') + i)  # 0→'a', 1→'b', 2→'c', 3→'d'
+                    curve.sigClicked.connect(
+                        lambda *args, ch=channel_letter: self._on_flag_channel_selected(ch)
+                    )
+                    logger.debug(f"[ACTIVE CYCLE] Connected click handler for channel {channel_letter.upper()}")
                 except AttributeError as e:
-                    logger.warning(f"[LIVE] Could not make curve {i} clickable: {e}")
+                    logger.warning(f"[ACTIVE CYCLE] Could not make curve {i} clickable: {e}")
                 except Exception as e:
-                    logger.warning(f"[LIVE] Error connecting curve {i} click: {e}")
+                    logger.warning(f"[ACTIVE CYCLE] Error connecting curve {i} click: {e}")
 
+        if not show_delta_spr:  # Only for Live Sensorgram (top graph)
             # Start cursor - thicker line (3px) for easier interaction
             start_cursor = pg.InfiniteLine(
                 pos=0,
@@ -2428,40 +2655,13 @@ class AffilabsMainWindow(QMainWindow):
 
         return plot_widget, container
 
-    def _on_curve_clicked(self, channel_idx):
-        """Handle click on a channel curve in Live Sensorgram to select it for flagging."""
-        if not hasattr(self, "full_timeline_graph"):
-            return
-
-        # Get channel letter for toggle button
-        channel_letter = chr(65 + channel_idx)  # 0→A, 1→B, 2→C, 3→D
-
-        # Store the selected channel for flagging operations
-        self.selected_channel_for_flagging = channel_idx
-        self.selected_channel_letter = channel_letter
-
-        # Update all curves: highlight selected, reset others
-        for i, curve in enumerate(self.full_timeline_graph.curves):
-            if i == channel_idx:
-                # Highlight selected curve with thicker line
-                curve.setPen(curve.selected_pen)
-            else:
-                # Reset other curves to normal width
-                curve.setPen(curve.original_pen)
-
-        # Update channel toggle button to show selection (but don't change visibility)
-        if hasattr(self, "channel_toggles") and channel_letter in self.channel_toggles:
-            # Visual feedback: briefly flash the button or update its appearance
-            # For now, just ensure it's checked (visible)
-            btn = self.channel_toggles[channel_letter]
-            if not btn.isChecked():
-                btn.setChecked(True)  # Turn on if it was off
-
-        # Enable flagging mode for the selected channel
-        self._enable_flagging_mode(channel_idx, channel_letter)
-
     def _on_flag_channel_selected(self, channel: str):
         """Handle channel selection for flag placement in Active Cycle graph.
+
+        Clicking a curve in Active Cycle graph:
+        - Selects the channel for flagging
+        - Highlights the curve
+        - Enables flagging mode
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
@@ -2469,13 +2669,23 @@ class AffilabsMainWindow(QMainWindow):
         if not hasattr(self, "cycle_of_interest_graph"):
             return
 
+        # Store selected channel for flagging operations
+        channel_idx = ord(channel) - ord('a')  # 'a'→0, 'b'→1, 'c'→2, 'd'→3
+        channel_letter = channel.upper()
+
+        self.selected_channel_for_flagging = channel_idx
+        self.selected_channel_letter = channel_letter
+
+        # Update button states (radio button behavior - only one checked)
+        if hasattr(self, "channel_selection_buttons"):
+            for ch, btn in self.channel_selection_buttons.items():
+                btn.setChecked(ch == channel_letter)
+
         # Store selected channel in main app (will be used by flag placement logic)
         if hasattr(self, "app"):
             self.app._selected_flag_channel = channel
 
         # Update curve highlighting (make selected curve thicker)
-        channel_idx = ord(channel) - ord('a')  # 'a'→0, 'b'→1, 'c'→2, 'd'→3
-
         import pyqtgraph as pg
 
         # Get channel colors (same as defined in add_channel_curves)
@@ -2496,8 +2706,17 @@ class AffilabsMainWindow(QMainWindow):
 
         logger.debug(f"Channel {channel.upper()} selected for flagging (curve highlighted)")
 
-    def _enable_flagging_mode(self, channel_idx, channel_letter):
-        """Enable flagging mode for the selected channel."""
+        # Enable flagging mode for Active Cycle graph
+        self._enable_flagging_mode(channel_idx, channel_letter, graph_name="Active Cycle")
+
+    def _enable_flagging_mode(self, channel_idx, channel_letter, graph_name="Active Cycle"):
+        """Enable flagging mode for the selected channel.
+
+        Args:
+            channel_idx: Index of the channel (0-3)
+            channel_letter: Letter of the channel (A-D)
+            graph_name: Name of the graph where flagging is enabled ("Active Cycle" or "Live Sensorgram")
+        """
         if not hasattr(self, "full_timeline_graph"):
             return
 
@@ -2505,10 +2724,11 @@ class AffilabsMainWindow(QMainWindow):
         if not hasattr(self, "flagging_enabled"):
             self.flagging_enabled = False
 
-        # Inform user that they can now click on points to flag them
-        print(f"Flagging mode ready for Channel {channel_letter}")
-        print("Right-click on the Live Sensorgram to add a flag at that position")
-        print("Ctrl+Right-click to remove a flag near that position")
+        # Only show messages for Active Cycle graph (when selecting channel for flagging)
+        if graph_name == "Active Cycle":
+            print(f"Flagging mode ready for Channel {channel_letter}")
+            print(f"Right-click on the LIVE SENSORGRAM graph (top) to add a flag at absolute time")
+            print("Ctrl+Right-click to remove a flag near that position")
 
     def _on_plot_clicked(self, event, plot_widget):
         """Handle clicks on the Live Sensorgram (top graph) for adding/removing flags.
@@ -2556,12 +2776,21 @@ class AffilabsMainWindow(QMainWindow):
         # Get channel letter
         channel_letter = chr(65 + channel_idx)
 
+        # Channel colors matching the cycle curves
+        channel_colors = [
+            (0, 0, 0),        # A: Black
+            (255, 0, 0),      # B: Red
+            (0, 0, 255),      # C: Blue
+            (0, 170, 0),      # D: Green
+        ]
+        color = channel_colors[channel_idx] if channel_idx < len(channel_colors) else (255, 0, 0)
+
         # Create flag marker (vertical line with text)
         flag_line = pg.InfiniteLine(
             pos=x_pos,
             angle=90,
             pen=pg.mkPen(
-                color="#FF3B30",
+                color=color,
                 width=2,
                 style=pg.QtCore.Qt.PenStyle.DashLine,
             ),
@@ -2571,10 +2800,14 @@ class AffilabsMainWindow(QMainWindow):
         # Add text label at the top
         flag_text = pg.TextItem(
             text=f"🚩 Ch{channel_letter}",
-            color="#FF3B30",
+            color=color,
             anchor=(0.5, 1),  # Center, bottom
         )
-        flag_text.setPos(x_pos, y_pos)
+        # Position text fixed to timeline (data coordinates), not window
+        # Get the y-axis data range and position at top of range
+        y_range = self.full_timeline_graph.viewRange()[1]  # [ymin, ymax]
+        y_pos_fixed = y_range[1] * 0.95  # Position at 95% of max to keep it visible
+        flag_text.setPos(x_pos, y_pos_fixed)
 
         # Add to Live Sensorgram (top graph)
         self.full_timeline_graph.addItem(flag_line)
@@ -2595,6 +2828,9 @@ class AffilabsMainWindow(QMainWindow):
 
         # Update the table Flags column
         self._update_flags_table()
+
+        # Update flag counter
+        self._update_flag_counter()
 
         print(f"Flag added to Channel {channel_letter} at x={x_pos:.2f}, y={y_pos:.2f}")
 
@@ -2631,6 +2867,9 @@ class AffilabsMainWindow(QMainWindow):
 
         # Update table
         self._update_flags_table()
+
+        # Update flag counter
+        self._update_flag_counter()
 
         if removed_count > 0:
             channel_letter = chr(65 + channel_idx)
@@ -6017,6 +6256,13 @@ End of Debug Log
         # Demo data loader (Ctrl+Shift+D) for promotional screenshots
         demo_data_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
         demo_data_shortcut.activated.connect(self._load_demo_data)
+
+        # Channel selection shortcuts (Alt+A, Alt+B, Alt+C, Alt+D)
+        for ch_idx, ch_letter in enumerate(['A', 'B', 'C', 'D']):
+            shortcut = QShortcut(QKeySequence(f"Alt+{ch_letter}"), self)
+            shortcut.activated.connect(
+                lambda idx=ch_idx: self._on_curve_clicked(idx)
+            )
 
         # Connect cycle management buttons
         # NOTE: start_cycle_btn also connected in main-simplified.py for acquisition start

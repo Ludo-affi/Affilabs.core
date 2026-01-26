@@ -18,7 +18,19 @@ import numpy as np
 # ============================================================================
 # PHASEPHOTONICS CONSTANTS - DO NOT MODIFY
 # ============================================================================
+# OEM-Confirmed Detector Specifications
 SENSOR_DATA_LEN = 1848  # PhasePhotonics: 1848 pixels (NOT 3700!)
+ADC_RESOLUTION = 12  # 12-bit ADC
+MAX_COUNT = 4095  # 2^12 - 1
+DARK_CURRENT_COUNTS = 900  # Typical dark current baseline (counts)
+MIN_INTEGRATION_US = 100  # Minimum integration time in microseconds
+MAX_INTEGRATION_US = 5_000_000  # Maximum integration time in microseconds
+MAX_AVERAGING = 255  # Maximum hardware averaging scans
+WAVELENGTH_MIN = 536  # nm
+WAVELENGTH_MAX = 726  # nm
+FIRMWARE_VERSION = "4.2"
+
+# DLL Communication Constants
 CONFIG_TRANSFER_SIZE = 256
 STATE_MAX_SIZE = 256
 FT245_PAGE_SIZE = 1024
@@ -165,6 +177,22 @@ class PhasePhotonicsAPI:
     # ========================================================================
     # Configuration Methods
     # ========================================================================
+
+    def usb_set_trig_mode(self, ftHandle: ctypes.c_void_p, trig_mode: int) -> int:
+        """Set trigger mode.
+
+        Args:
+            ftHandle: Device handle
+            trig_mode: Trigger mode (0=INTERNAL_TRIG, 1=EXTERNAL_NEG_TRIG, 2=EXTERNAL_POS_TRIG)
+
+        Returns:
+            Error code (0 = success)
+
+        """
+        _usb_set_trig_mode = self.sensor_t_dll.usb_set_trig_mode
+        _usb_set_trig_mode.argtypes = [ctypes.c_void_p, ctypes.c_int32]
+        _usb_set_trig_mode.restype = ctypes.c_int32
+        return ctypes.c_int32(_usb_set_trig_mode(ftHandle, trig_mode)).value
 
     def usb_set_interval(self, ftHandle: ctypes.c_void_p, interval_us: int) -> int:
         """Set integration time.
