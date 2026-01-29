@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
 
+from affilabs.utils.detector_config import filter_valid_wavelength_data
 from affilabs.utils.logger import logger
 
 
@@ -34,6 +35,23 @@ class SpectroscopyPresenter:
 
         # Channel index mapping
         self._channel_to_idx = {"a": 0, "b": 1, "c": 2, "d": 3}
+
+        # Detector info for wavelength filtering (prevents noisy data display)
+        self._detector_serial = None
+        self._detector_type = None
+
+    def set_detector_info(self, detector_serial=None, detector_type=None):
+        """Update detector information for wavelength filtering.
+
+        Critical for Phase Photonics detector which has noisy data below 570nm.
+
+        Args:
+            detector_serial: Detector serial number
+            detector_type: Detector type string
+        """
+        self._detector_serial = detector_serial
+        self._detector_type = detector_type
+        logger.info(f"[FILTER DEBUG] Spectroscopy presenter detector info set: serial={detector_serial}, type={detector_type}")
 
     def check_plots_available(self):
         """Check if spectroscopy plots are available in main window.
@@ -101,11 +119,26 @@ class SpectroscopyPresenter:
                 )
                 self._first_update_logged.add(channel)
 
+            # CRITICAL: Filter out invalid wavelength data for Phase Photonics detector
+            # Phase Photonics has noisy data below 570nm that causes artifacts
+            if channel not in self._first_update_logged:
+                logger.info(f"[FILTER DEBUG] Before filter: {len(wavelengths)} pts, {wavelengths[0]:.1f}-{wavelengths[-1]:.1f}nm, detector_serial={self._detector_serial}, detector_type={self._detector_type}")
+
+            filtered_wavelengths, filtered_transmission = filter_valid_wavelength_data(
+                wavelengths,
+                transmission,
+                detector_serial=self._detector_serial,
+                detector_type=self._detector_type,
+            )
+
+            if channel not in self._first_update_logged:
+                logger.info(f"[FILTER DEBUG] After filter: {len(filtered_wavelengths)} pts, {filtered_wavelengths[0]:.1f}-{filtered_wavelengths[-1]:.1f}nm")
+
             # Update curve (try direct access first, fallback to sidebar method)
             if hasattr(self.main_window, "transmission_curves"):
                 self.main_window.transmission_curves[channel_idx].setData(
-                    wavelengths,
-                    transmission,
+                    filtered_wavelengths,
+                    filtered_transmission,
                 )
                 if not self._plots_available:
                     logger.info(
@@ -116,11 +149,11 @@ class SpectroscopyPresenter:
                 self.main_window.sidebar,
                 "update_transmission_plot",
             ):
-                # Fallback: use sidebar API
+                # Fallback: use sidebar API (already filtered above)
                 self.main_window.sidebar.update_transmission_plot(
                     channel,
-                    wavelengths,
-                    transmission,
+                    filtered_wavelengths,
+                    filtered_transmission,
                 )
 
         except Exception as e:
@@ -151,13 +184,22 @@ class SpectroscopyPresenter:
             if channel not in self._first_update_logged:
                 self._first_update_logged.add(channel)
 
+            # CRITICAL: Filter out invalid wavelength data for Phase Photonics detector
+            # Phase Photonics has noisy data below 570nm that causes artifacts
+            filtered_wavelengths, filtered_raw = filter_valid_wavelength_data(
+                wavelengths,
+                raw_spectrum,
+                detector_serial=self._detector_serial,
+                detector_type=self._detector_type,
+            )
+
             # Update curve (try direct access first, fallback to sidebar method)
             if hasattr(self.main_window, "raw_data_curves"):
                 # CRITICAL: raw_data_curves is a list indexed 0-3, so channel_idx must match
                 if channel_idx < len(self.main_window.raw_data_curves):
                     self.main_window.raw_data_curves[channel_idx].setData(
-                        wavelengths,
-                        raw_spectrum,
+                        filtered_wavelengths,
+                        filtered_raw,
                     )
                 else:
                     logger.error(
@@ -167,10 +209,10 @@ class SpectroscopyPresenter:
                 self.main_window.sidebar,
                 "update_raw_data_plot",
             ):
-                # Fallback: use sidebar API
+                # Fallback: use sidebar API (already filtered above)
                 self.main_window.sidebar.update_raw_data_plot(
                     channel,
-                    wavelengths,
+                    filtered_wavelengths,
                     raw_spectrum,
                 )
 

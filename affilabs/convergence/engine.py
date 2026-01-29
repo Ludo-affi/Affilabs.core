@@ -608,7 +608,9 @@ class ConvergenceEngine:
                     else:
                         self._log("info", "[ML] ✓ Convergence predictor: Target appears ACHIEVABLE")
                 except Exception as e:
+                    # Gracefully handle feature mismatch or other ML errors
                     self._log("warning", f"[ML] Convergence predictor failed: {e}")
+                    self._log("info", "    Continuing with algorithm-only convergence...")
 
             # Build locked set (sticky + current acceptable without saturation)
             # AGGRESSIVE LOCKING: Lock any channel that's in acceptable range
@@ -767,14 +769,14 @@ class ConvergenceEngine:
                                      f"     {ch.upper()}: LED {old_led}→{new_led} "
                                      f"({sat_pixels} sat pixels → {int((1-safety_margin)*100)}% reduction = Δ{int(led_reduction)})")
                             # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}→{new_led} (reason=saturation_model, sat_pixels={sat_pixels}, confidence=high)")
+                            self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=saturation_model, sat_pixels={sat_pixels}, confidence=high)")
                         else:
                             # Fallback if no model
                             new_led = max(10, int(old_led * safety_margin))
                             state.leds[ch] = new_led
                             self._log("info", f"     {ch.upper()}: LED {old_led}→{new_led} ({sat_pixels} sat pixels → {int((1-safety_margin)*100)}%)")
                             # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}→{new_led} (reason=saturation_fallback, sat_pixels={sat_pixels}, confidence=medium)")
+                            self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=saturation_fallback, sat_pixels={sat_pixels}, confidence=medium)")
 
                     # Continue to next iteration - integration will be increased if signals drop
                     continue
@@ -838,7 +840,7 @@ class ConvergenceEngine:
                                      f"(normalized: {weakest_slope:.1f}/{ch_slope:.1f} × 255 × {safety_margin:.2f}, {sat_pixels} sat px)")
 
                             # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {state.leds[ch]}→{new_led} (reason=weakest_normalization, weakest_ratio={weakest_slope/ch_slope:.3f}, sat_pixels={sat_pixels}, confidence=high)")
+                            self._log("info", f"    LED_DECISION: {ch.upper()} {state.leds[ch]}-{new_led} (reason=weakest_normalization, weakest_ratio={weakest_slope/ch_slope:.3f}, sat_pixels={sat_pixels}, confidence=high)")
 
                             state.leds[ch] = new_led
                         else:
@@ -848,18 +850,22 @@ class ConvergenceEngine:
                             new_led = max(10, min(255, new_led))
                             self._log("info", f"  📉 {ch.upper()} LED {old_led}→{new_led} (reduce by {int((1-safety_margin)*100)}% to clear {sat_pixels} sat px)")
                             # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}→{new_led} (reason=saturation_reduction, sat_pixels={sat_pixels}, confidence=high)")
+                            self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=saturation_reduction, sat_pixels={sat_pixels}, confidence=high)")
                             state.leds[ch] = new_led
 
-                    # Also boost non-saturated channels that are far below target
-                    # This prevents channels like B getting stuck at 60% while we handle saturation
+                    # Also boost non-saturated channels to maximize LED brightness
+                    # CRITICAL: Always try to max out LEDs (up to target) even if close to signal target
+                    # This ensures we use full LED capacity before reducing integration time
                     non_saturated = [ch for ch in recipe.channels if saturation.get(ch, 0) == 0 and ch not in locked]
                     for ch in non_saturated:
                         sig = signals.get(ch, 0.0)
                         error_pct = abs(sig - target_signal) / target_signal if target_signal > 0 else 0.0
+                        current_led = state.leds[ch]
 
-                        # Only boost if significantly below target (>10% error)
-                        if sig < target_signal * 0.90:
+                        # Boost if below target OR if LED is not yet maximized (prefer high LEDs)
+                        should_boost = (sig < target_signal * 1.10) and (current_led < recipe.led_optimization_target)
+
+                        if should_boost:
                             # Try ML prediction first
                             if self.led_predictor:
                                 try:
@@ -875,7 +881,7 @@ class ConvergenceEngine:
                                         new_led = max(10, min(255, new_led))
 
                                         self._log("info", f"  🤖 {ch.upper()} LED {old_led}→{new_led} (+{new_led-old_led}, ML boost, {error_pct*100:.1f}% below target)")
-                                        self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}→{new_led} (reason=ml_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
+                                        self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=ml_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
                                         state.leds[ch] = new_led
                                         continue
                                 except Exception:
@@ -894,16 +900,18 @@ class ConvergenceEngine:
                                     new_led = max(10, min(255, new_led))
 
                                     self._log("info", f"  📈 {ch.upper()} LED {old_led}→{new_led} (+{new_led-old_led}, slope boost, {error_pct*100:.1f}% below target)")
-                                    self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}→{new_led} (reason=slope_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
+                                    self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=slope_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
                                     state.leds[ch] = new_led
 
-                    # Don't reduce integration time - we adjusted LEDs instead
-                    # Continue to next iteration to re-measure with new LED values
-                    continue
+                    # CRITICAL FIX: Also reduce integration time to help clear saturation
+                    # Even with ≤3 channels saturating, we should still reduce integration time
+                    # The LED adjustments above are just the first step
+                    # Fall through to integration time reduction logic below
 
-                # Original saturation handling (reduce integration time)
-                # Only executed if multiple channels (3+) are saturating
-                self._log("info", f"  ⚠️  Multiple channels ({num_saturating}) saturating - reducing integration time")
+                # Saturation handling: reduce integration time
+                # This applies whether we have ≤3 channels (LED-adjusted above) or >3 channels
+                if num_saturating > 0:
+                    self._log("info", f"  ⏱️  Saturation detected - reducing integration time to help clear saturation")
                 new_time = saturation_policy.reduce_integration(
                     saturation,
                     state.integration_ms,
@@ -1167,12 +1175,103 @@ class ConvergenceEngine:
                     self._log("debug", f"  📈 {ch.upper()} empirical-only: {empirical_slope:.1f} counts/LED")
 
             # ============================================================================
-            # OPTIMIZE LED + INTEGRATION TIME COMBINATION (Phase 2-3 only)
-            # Use averaged slopes to find optimal (LED, integration_ms) combo
+            # SMART OPTIMIZATION: Lock integration time early based on weakest channel
+            # Strategy: Set weakest channel LED to max (255), calculate required integration,
+            #           then set other channels' LEDs to hit target at that integration
+            # This avoids iterative back-and-forth and converges in 2-3 iterations
             # ============================================================================
             optimization_applied = False
 
-            if averaged_normalized_slopes and phase in ["PHASE-2", "PHASE-3"] and iteration >= 5:
+            # Apply smart optimization after 2-3 iterations once we have reliable slopes
+            if averaged_normalized_slopes and iteration >= 3 and iteration <= 6 and not any(saturation.values()):
+                # Find weakest channel (needs highest LED×ms product to hit target)
+                weakest_channel = None
+                max_product_needed = 0
+
+                for ch in averaged_normalized_slopes:
+                    if ch in locked:
+                        continue
+
+                    slope_norm = averaged_normalized_slopes[ch]
+                    if slope_norm > 0:
+                        # Required LED×ms product: target_signal = slope_norm × LED × integration_ms
+                        product_needed = target_signal / slope_norm
+                        if product_needed > max_product_needed:
+                            max_product_needed = product_needed
+                            weakest_channel = ch
+
+                if weakest_channel and max_product_needed > 0:
+                    # Calculate optimal integration time with weakest channel at LED=255
+                    optimal_integration = max_product_needed / 255.0
+
+                    # Ensure within detector limits
+                    optimal_integration = max(params.min_integration_time, min(params.max_integration_time, optimal_integration))
+
+                    # Calculate LEDs for all channels at this integration time
+                    optimal_leds = {}
+                    all_feasible = True
+
+                    for ch in recipe.channels:
+                        if ch in locked:
+                            optimal_leds[ch] = state.leds[ch]
+                            continue
+
+                        slope_norm = averaged_normalized_slopes.get(ch)
+                        if slope_norm and slope_norm > 0:
+                            # LED = target_signal / (slope_norm × integration_ms)
+                            needed_led = target_signal / (slope_norm * optimal_integration)
+                            needed_led = int(needed_led)
+
+                            # Check feasibility
+                            if needed_led < 10 or needed_led > 255:
+                                all_feasible = False
+                                break
+
+                            optimal_leds[ch] = needed_led
+                        else:
+                            all_feasible = False
+                            break
+
+                    # Apply optimization if all channels feasible
+                    if all_feasible and len(optimal_leds) == len(recipe.channels):
+                        self._log("info", f"  🎯 SMART OPTIMIZATION: Locking integration based on weakest channel {weakest_channel.upper()}")
+                        self._log("info", f"      Weakest channel: {weakest_channel.upper()} needs {max_product_needed:.0f} LED×ms")
+                        self._log("info", f"      Optimal integration: {optimal_integration:.1f}ms (with {weakest_channel.upper()} LED at 255)")
+                        self._log("info", f"      Current: {state.integration_ms:.1f}ms → New: {optimal_integration:.1f}ms")
+
+                        # Log LED adjustments
+                        for ch in recipe.channels:
+                            old_led = state.leds[ch]
+                            new_led = optimal_leds[ch]
+                            if ch == weakest_channel:
+                                self._log("info", f"         {ch.upper()}: LED {old_led}→{new_led} (WEAKEST - maxed out)")
+                            else:
+                                self._log("info", f"         {ch.upper()}: LED {old_led}→{new_led}")
+
+                        # Apply the optimization
+                        state.integration_ms = optimal_integration
+                        for ch in optimal_leds:
+                            state.leds[ch] = optimal_leds[ch]
+
+                        state.clear_for_integration_change()
+                        optimization_applied = True
+                        continue  # Skip to next iteration with optimized settings
+
+            # ============================================================================
+            # FALLBACK OPTIMIZATION: Only run if convergence is STUCK
+            # ============================================================================
+            # Check if convergence is stuck (not improving significantly for last 3 iterations)
+            convergence_is_stuck = False
+            if len(state.iteration_history) >= 4:
+                recent_errors = [
+                    sum(abs(h['signals'][ch] - target_signal) for ch in recipe.channels)
+                    for h in state.iteration_history[-4:]
+                ]
+                # Stuck if error hasn't improved by at least 10% in last 3 iterations
+                error_improvement = (recent_errors[0] - recent_errors[-1]) / recent_errors[0] if recent_errors[0] > 0 else 0
+                convergence_is_stuck = error_improvement < 0.10  # Less than 10% improvement
+
+            if averaged_normalized_slopes and phase in ["PHASE-2", "PHASE-3"] and iteration >= 7 and convergence_is_stuck:
                 # Calculate required LED×ms product for each channel to hit target
                 # Formula: signal = slope_normalized × LED × integration_ms
                 required_products = {}
@@ -1348,7 +1447,7 @@ class ConvergenceEngine:
                             # ML TRAINING: Model prediction tracking
                             self._log("info", f"    MODEL_PRED: {ch.upper()} expected_counts={predicted_counts:.0f}, current={sig:.0f}, target={target_signal:.0f}, source={slope_source}")
                             # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {current_led}→{new_led} (reason=model_adjustment, error_pct={error_pct*100:.2f}%, confidence=high)")
+                            self._log("info", f"    LED_DECISION: {ch.upper()} {current_led}-{new_led} (reason=model_adjustment, error_pct={error_pct*100:.2f}%, confidence=high)")
                             state.leds[ch] = new_led
                             adjustments_made = True
 
@@ -1810,13 +1909,21 @@ class ConvergenceEngine:
                 # Use the integration time from per-channel best
                 final_integration = best_integration
             else:
-                # Mixed integration times - use final iteration complete result
-                final_leds = dict(state.leds)
-                final_signals = dict(signals)
-                final_integration = state.integration_ms
-
-                self._log("warning", f"\n⚠️  Per-channel best from mixed integration times - using final iteration")
-                self._log("info", f"\n📊 Using final iteration LEDs (complete set at {state.integration_ms:.1f}ms):")
+                # Mixed integration times - use LAST MEASURED iteration (not unmeasured phase jump values)
+                # state.leds might have been set by phase jump optimization but never measured
+                if state.iteration_history:
+                    last_measured = state.iteration_history[-1]
+                    final_leds = dict(last_measured['leds'])
+                    final_signals = dict(last_measured['signals'])
+                    final_integration = last_measured['integration_ms']
+                    self._log("info", f"\n📊 Using final MEASURED iteration LEDs (iteration {last_measured['iteration']} @ {final_integration:.1f}ms):")
+                else:
+                    # Fallback if no history (shouldn't happen)
+                    final_leds = dict(state.leds)
+                    final_signals = dict(signals)
+                    final_integration = state.integration_ms
+                    self._log("warning", f"\n⚠️  Per-channel best from mixed integration times - using final iteration")
+                    self._log("info", f"\n📊 Using final iteration LEDs (complete set at {state.integration_ms:.1f}ms):")
                 for ch in recipe.channels:
                     pct = (final_signals[ch] / target_signal * 100) if target_signal > 0 else 0
                     self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} counts ({pct:5.1f}% of target)")

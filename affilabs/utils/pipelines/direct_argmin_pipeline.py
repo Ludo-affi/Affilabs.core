@@ -107,8 +107,18 @@ class DirectArgminPipeline(ProcessingPipeline):
 
         """
         try:
+            # Get detector-specific search range
+            detector_serial = kwargs.get("detector_serial", None)
+            detector_type = kwargs.get("detector_type", None)
+
+            # Use detector-specific range if available, otherwise use defaults
+            if detector_serial or detector_type:
+                search_min, search_max = get_spr_wavelength_range(detector_serial, detector_type)
+            else:
+                search_min, search_max = self.search_min, self.search_max
+
             # Create mask for search range
-            mask = (wavelengths >= self.search_min) & (wavelengths <= self.search_max)
+            mask = (wavelengths >= search_min) & (wavelengths <= search_max)
 
             # Extract region
             region = transmission_spectrum[mask]
@@ -117,7 +127,7 @@ class DirectArgminPipeline(ProcessingPipeline):
             # Validate region
             if len(wl_region) == 0:
                 logger.warning(
-                    f"No wavelengths in search range ({self.search_min}, {self.search_max})",
+                    f"No wavelengths in search range ({search_min}, {search_max})",
                 )
                 # Fallback to full spectrum minimum
                 min_idx = np.argmin(transmission_spectrum)

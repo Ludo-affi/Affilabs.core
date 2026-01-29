@@ -121,12 +121,20 @@ UNIT = "RU"  # measurement units
 INVERT_TRANSMISSION_VISUAL = False
 
 # ==========================================
-# DETECTOR-SPECIFIC PARAMETERS (Use profiles instead!)
+# DETECTOR-SPECIFIC PARAMETERS (DEPRECATED - Use detector_config.py!)
 # ==========================================
-# DEPRECATED: These are now loaded from detector profiles
-# Use: profile = get_current_detector_profile()
-MIN_WAVELENGTH = 560  # DEPRECATED: Use profile.spr_wavelength_min_nm (GitHub: 560-720nm ROI)
-MAX_WAVELENGTH = 720  # DEPRECATED: Use profile.spr_wavelength_max_nm
+# DEPRECATED: These hardcoded values are replaced by automatic detector detection
+# The system now automatically detects detector type from serial number and uses
+# appropriate wavelength ranges. See affilabs.utils.detector_config for details.
+#
+# Phase Photonics (ST series): 570-720nm valid range
+# Ocean Optics USB4000: 560-720nm valid range
+# Ocean Optics Flame-T: 560-720nm valid range
+#
+# Use: from affilabs.utils.detector_config import get_spr_wavelength_range
+#      spr_min, spr_max = get_spr_wavelength_range(detector_serial=serial)
+MIN_WAVELENGTH = 560  # DEPRECATED: Use detector_config.get_spr_wavelength_range()
+MAX_WAVELENGTH = 720  # DEPRECATED: Use detector_config.get_spr_wavelength_range()
 POL_WAVELENGTH = 620  # index for auto polarization
 
 # ==========================================
@@ -364,7 +372,28 @@ EDGE_DEPTH_FRACTION = 0.5  # Fraction of dip depth for left/right edge (e.g., 50
 # Current system: 1 RU noise at α=2000
 # Optimized: 3430 (via optimize_fourier_alpha.py with synthetic data)
 # Test range: 500-10,000 (use optimize_fourier_alpha.py)
-FOURIER_ALPHA = 3430  # Regularization parameter for Fourier derivative (optimized)
+FOURIER_ALPHA = 3430  # Regularization parameter for Fourier derivative (optimized for USB4000)
+
+# =============================================================================
+# DETECTOR-SPECIFIC FOURIER PARAMETERS
+# =============================================================================
+# Phase Photonics has ~50% pixel density of Ocean Optics (1848 vs 3648 pixels)
+# Parameters are scaled to maintain similar physical window sizes
+
+# Ocean Optics USB4000 (3648 pixels, 0.044 nm/pixel)
+OCEAN_OPTICS_FOURIER_PARAMS = {
+    "sg_window": 21,         # SG smoothing: 21 pixels × 0.044 nm = 0.92 nm
+    "fourier_alpha": 9000,   # Regularization strength
+    "fourier_window": 165,   # Linear regression: 165 pixels × 0.044 nm = 7.3 nm
+}
+
+# Phase Photonics ST Series (1848 pixels, 0.085 nm/pixel)
+# Reduced pixel counts to maintain similar physical window sizes
+PHASE_PHOTONICS_FOURIER_PARAMS = {
+    "sg_window": 11,         # SG smoothing: 11 pixels × 0.085 nm = 0.94 nm (similar to OO)
+    "fourier_alpha": 4500,   # Reduced regularization (scales with pixel count)
+    "fourier_window": 85,    # Linear regression: 85 pixels × 0.085 nm = 7.2 nm (similar to OO)
+}
 
 # Stage 1: FFT Preprocessing Parameters (only used if ENHANCED_PEAK_TRACKING=True)
 FFT_CUTOFF_FREQUENCY = (
@@ -439,7 +468,10 @@ CONSENSUS_SAVGOL_POLYORDER = 3  # Polynomial order (2-3 recommended)
 
 # Centroid method parameters
 CONSENSUS_TARGET_PIXELS = 20  # Target pixels for adaptive thresholding (15-25)
-CONSENSUS_SEARCH_RANGE = (600, 720)  # SPR wavelength range (nm)
+# DEPRECATED: CONSENSUS_SEARCH_RANGE is now detector-agnostic
+# Pipelines automatically use correct range from detector_config.get_spr_wavelength_range()
+# Phase Photonics: (570, 720), USB4000: (560, 720)
+CONSENSUS_SEARCH_RANGE = (600, 720)  # DEPRECATED - kept for backward compatibility only
 
 # Outlier detection
 CONSENSUS_OUTLIER_THRESHOLD = 3.0  # MAD multiplier (2.0-4.0, higher = more lenient)

@@ -133,7 +133,7 @@ class SaturationPolicy:
         # P-pol: NEVER reduce integration time
         if polarization_mode.upper() == "P":
             return current_integration_ms  # No reduction for P-pol!
-        
+
         # S-pol: Less aggressive reduction, prefer LED adjustment
         total_sat = sum(saturation.values())
         if total_sat == 0:
@@ -142,14 +142,19 @@ class SaturationPolicy:
         max_sat = max(saturation.values()) if saturation else 0
         num_saturating = sum(1 for s in saturation.values() if s > 0)
 
-        # MUCH less aggressive - prefer LED brightness reduction
-        # Only cut integration when ALL channels are severely saturating
-        if num_saturating == 4 and max_sat > 100:  # All 4 channels severely saturating
-            factor = 0.85  # Max 15% reduction
-        elif num_saturating == 4 and max_sat > 50:  # All 4 channels moderately saturating  
-            factor = 0.90  # 10% reduction
-        else:  # 1-3 channels saturating - minimal reduction, let LED adjustment handle it
-            factor = 0.95  # Only 5% reduction
+        # MORE AGGRESSIVE integration reduction when saturation detected
+        # Since we also adjust LEDs, we need integration time reduction to be effective
+        # The LED boost compensation will handle maintaining signal levels
+        if num_saturating >= 3 and max_sat > 100:  # 3-4 channels severely saturating
+            factor = 0.70  # 30% reduction (was 15%)
+        elif num_saturating >= 2 and max_sat > 100:  # 2+ channels severely saturating
+            factor = 0.75  # 25% reduction
+        elif max_sat > 1000:  # Heavy saturation (>1000 pixels)
+            factor = 0.80  # 20% reduction
+        elif max_sat > 100:  # Moderate saturation
+            factor = 0.85  # 15% reduction
+        else:  # Minor saturation
+            factor = 0.90  # 10% reduction (was 5%)
 
         new_time = max(params.min_integration_time, current_integration_ms * factor)
         return new_time

@@ -25,8 +25,17 @@ def get_detector_params(usb) -> DetectorParams:
     # Physical saturation is at ~65000 counts, use 99% to allow full dynamic range
     saturation_threshold = int(max_counts * 0.99)  # 99% of max - allows use of full range
     target_counts = int(0.85 * max_counts)  # Target 85% of max for optimal SNR with headroom
-    # If usb exposes min/max integration in seconds, convert to ms
-    min_int_ms = int(getattr(usb, "min_integration_ms", 5))
+
+    # CRITICAL: Phase Photonics detector can go as low as 1-2ms integration time
+    # Don't artificially limit convergence - let it reach optimal 10-12ms range
+    # Check if detector has actual min_integration_ms, otherwise use conservative 1ms floor
+    reported_min = getattr(usb, "min_integration_ms", None)
+    if reported_min is not None:
+        min_int_ms = max(1, int(reported_min))  # Use detector's limit but floor at 1ms
+    else:
+        # No detector limit reported - use 1ms floor to allow full convergence range
+        min_int_ms = 1
+
     # Max integration: 60ms per scan (3 scans × 60ms = 180ms time budget)
     max_int_ms = int(getattr(usb, "max_integration_ms", 60))
     return DetectorParams(

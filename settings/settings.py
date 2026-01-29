@@ -272,7 +272,7 @@ MAX_READ_TIME = 200  # maximum total read time in milliseconds
 TRANSMISSION_BASELINE_METHOD = "percentile"  # Options: 'percentile', 'polynomial', 'off_spr', 'none'
 TRANSMISSION_BASELINE_PERCENTILE = 95.0  # Percentile for 'percentile' method (80-99 typical)
 TRANSMISSION_BASELINE_POLYNOMIAL_DEGREE = 2  # Polynomial degree for 'polynomial' method (1=linear, 2=quadratic)
-TRANSMISSION_OFF_SPR_WAVELENGTH_RANGE = (560.0, 570.0)  # Wavelength range (nm) for 'off_spr' method
+TRANSMISSION_OFF_SPR_WAVELENGTH_RANGE = (570.0, 580.0)  # Wavelength range (nm) for 'off_spr' method (Phase Photonics: avoid <570nm noise)
 
 # === CALIBRATION MODE ===
 USE_ALTERNATIVE_CALIBRATION = False  # Use alternative calibration method (disabled)

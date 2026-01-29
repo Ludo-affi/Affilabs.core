@@ -145,22 +145,26 @@ All spectra are processed through the batch path for consistency:
 1. Acquire raw spectrum from detector
 2. Buffer in batch (size configurable, default 12)
 3. Process batch:
-   a. Dark noise subtraction (same as S-ref/P-ref measurements)
-   b. Afterglow correction (residual LED decay from previous channel)
-   c. Transmission calculation with LED intensity correction
-   d. Baseline correction (polynomial flattening, matches QC report)
-   e. Savitzky-Golay smoothing (window=21, polynomial=3 for denoising)
-   f. Peak finding with FWHM validation
+   a. Dark noise subtraction (P-pol spectrum only; S-ref already dark-subtracted during calibration)
+   b. Transmission calculation: 100 × (P_clean / S_ref)
+   c. Savitzky-Golay smoothing (detector-aware: Phase Photonics=11, Ocean Optics=21 pixels)
+   d. Peak finding with Fourier method (detector-optimized parameters)
 4. Apply SG filter to batch wavelengths for sensorgram smoothing
 5. Emit processed data sequentially for smooth display
 
-CRITICAL PRE-PROCESSING CONSISTENCY:
-===================================
-- Live P-pol data MUST receive the same dark/afterglow corrections as P-ref
-- Transmission = (P-live - dark - afterglow) / (S-ref - dark - afterglow) × LED_correction
-- Baseline correction applied to flatten spectral tilt (matches QC report exactly)
-- Savitzky-Golay smoothing for noise reduction (preserves peak shape)
-- This ensures live transmission matches QC report visualization EXACTLY
+CURRENT TRANSMISSION PROCESSING:
+================================
+- Dark subtraction: P-pol spectrum only (S-ref pre-corrected during calibration)
+- Transmission = 100 × (P_clean / S_ref)
+- LED intensity correction: OBSOLETE (parameters ignored for compatibility)
+- Afterglow correction: OBSOLETE (removed)
+- Baseline correction: REMOVED (was over-correcting, distorting spectra)
+
+DETECTOR-AWARE FOURIER PARAMETERS:
+==================================
+- Phase Photonics ST (1848px, 0.085nm/px): window=85px, alpha=4500
+- Ocean Optics USB4000 (3648px, 0.044nm/px): window=165px, alpha=9000
+- Physical window sizes matched (~7.2nm) despite different pixel counts
 
 All operations run in background threads to avoid blocking the UI.
 """
@@ -843,14 +847,37 @@ class DataAcquisitionManager(QObject):
                     )
                     p_integration_time_effective = max_integration_per_scan_ms
 
-                # Calculate maximum scans that fit in detection window
-                max_scans_in_window = int(
-                    detector_window_ms / p_integration_time_effective,
-                )
+                # DETECTOR-SPECIFIC SCAN CALCULATION
+                # Phase Photonics: Uses measured timing multiplier (1.93×)
+                # USB4000: Uses simple division (detector_window / integration_time)
+                from affilabs.utils.phase_photonics_wrapper import PhasePhotonics
+                from affilabs.utils.hal.adapters import OceanSpectrometerAdapter
 
-                # Apply window constraint
-                if num_scans > max_scans_in_window:
-                    num_scans = max_scans_in_window if max_scans_in_window > 0 else 1
+                # Unwrap detector if it's in an adapter
+                detector = self.hardware_mgr.usb
+                if isinstance(detector, OceanSpectrometerAdapter):
+                    detector = detector._usb  # Get the wrapped detector
+
+                if isinstance(detector, PhasePhotonics):
+                    # Phase Photonics has proportional overhead: Total Time = Integration × 1.93
+                    # Use detector's built-in calculation method
+                    num_scans = detector.calculate_optimal_scans(
+                        p_integration_time_effective, detector_window_ms
+                    )
+                    logger.info(
+                        f"[PHASE] Auto-configured: {p_integration_time_effective:.1f}ms × 1.93 = "
+                        f"{p_integration_time_effective * 1.93:.1f}ms/scan → {num_scans} scans "
+                        f"(budget: {detector_window_ms:.1f}ms)"
+                    )
+                else:
+                    # USB4000 or other detectors: Simple division
+                    max_scans_in_window = int(
+                        detector_window_ms / p_integration_time_effective,
+                    )
+
+                    # Apply window constraint
+                    if num_scans > max_scans_in_window:
+                        num_scans = max_scans_in_window if max_scans_in_window > 0 else 1
 
                 # Map timing to delay parameters for _acquire_raw_spectrum
                 # PRE delay = detector wait time (LED stabilization)

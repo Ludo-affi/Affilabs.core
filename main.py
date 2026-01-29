@@ -2688,6 +2688,45 @@ class Application(QApplication):
         # Update internal pump section visibility based on P4PROPLUS detection
         self._update_internal_pump_visibility()
 
+        # Update detector info in spectrum processor for detector-agnostic processing
+        try:
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                if hasattr(self.hardware_mgr, 'usb') and self.hardware_mgr.usb:
+                    # Unwrap detector if it's in an adapter
+                    detector = self.hardware_mgr.usb
+                    if hasattr(detector, '_usb'):
+                        detector = detector._usb
+                    
+                    detector_serial = getattr(detector, 'serial_number', None)
+                    if detector_serial:
+                        # Update spectrum processor with detector info
+                        if hasattr(self, 'spectrum_viewmodels') and self.spectrum_viewmodels:
+                            for vm in self.spectrum_viewmodels.values():
+                                if hasattr(vm, '_spectrum_processor') and vm._spectrum_processor:
+                                    vm._spectrum_processor.set_detector_info(detector_serial=detector_serial)
+                                    logger.info(f"Spectrum processor updated with detector: {detector_serial}")
+                        
+                        # Update spectroscopy presenter with detector info for plot filtering
+                        if hasattr(self, 'spectroscopy_presenter') and self.spectroscopy_presenter:
+                            self.spectroscopy_presenter.set_detector_info(detector_serial)
+                            logger.info(f"Spectroscopy presenter updated with detector: {detector_serial}")
+                        
+                        # Update sidebar detector type for plot ranges
+                        if hasattr(self.main_window, 'sidebar'):
+                            # Determine detector type from serial
+                            if detector_serial.startswith('ST'):
+                                detector_type = "PhasePhotonics"
+                            elif 'USB4' in detector_serial or 'FLMT' in detector_serial:
+                                detector_type = "USB4000"
+                            else:
+                                detector_type = "USB4000"  # Default
+                            
+                            if hasattr(self.main_window.sidebar, 'set_detector_type'):
+                                self.main_window.sidebar.set_detector_type(detector_type)
+                                logger.info(f"Sidebar updated with detector type: {detector_type}")
+        except Exception as e:
+            logger.error(f"Error updating detector info: {e}")
+
     def _update_internal_pump_visibility(self):
         """Show/hide internal pump control section based on P4PROPLUS detection."""
         try:
@@ -2828,12 +2867,8 @@ class Application(QApplication):
 
     def _on_servo_calibration_needed(self):
         """Servo positions not found - trigger auto-calibration."""
-        logger.info("=" * 80)
-        logger.info("🔧 SERVO CALIBRATION NEEDED - AUTO-TRIGGERING")
-        logger.info("=" * 80)
-        logger.info("   Servo positions not found in device configuration")
-        logger.info("   Starting automatic servo calibration in 1 second...")
-        logger.info("=" * 80)
+        logger.info("🔧 Servo calibration needed signal received")
+        logger.info("   Starting automatic servo calibration...")
 
         # Use QTimer to delay calibration start (allow connection to complete)
         from PySide6.QtCore import QTimer
@@ -7813,20 +7848,8 @@ class Application(QApplication):
 
     def _run_servo_auto_calibration(self):
         """Run servo polarizer calibration automatically."""
-        logger.info("=" * 80)
-        logger.info("🔧 AUTO-TRIGGERING SERVO POLARIZER CALIBRATION")
-        logger.info("=" * 80)
-        try:
-            self._on_polarizer_calibration()
-            logger.info("[OK] Auto-calibration completed successfully")
-        except Exception as e:
-            logger.error(f"[ERROR] Auto-calibration failed: {e}", exc_info=True)
-            from affilabs.widgets.message import show_message
-            show_message(
-                f"Automatic servo calibration failed:\n\n{e}\n\n"
-                "Please run calibration manually from the Calibrations tab.",
-                "Calibration Error"
-            )
+        logger.info("🔧 Auto-triggering servo polarizer calibration...")
+        self._on_polarizer_calibration()
 
     def _update_led_intensities_for_integration_time(
         self,

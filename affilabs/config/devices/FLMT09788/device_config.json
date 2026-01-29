@@ -2,7 +2,7 @@
   "device_info": {
     "config_version": "1.0",
     "created_date": "2025-11-21T08:22:12.096448",
-    "last_modified": "2026-01-21T15:10:05.886651",
+    "last_modified": "2026-01-28T17:55:06.074144",
     "device_id": "FLMT09788"
   },
   "hardware": {
@@ -16,8 +16,8 @@
     "optical_fiber_diameter_um": 200,
     "polarizer_type": "round",
     "servo_model": "HS-55MG",
-    "servo_s_position": 133,
-    "servo_p_position": 34,
+    "servo_s_position": 5,
+    "servo_p_position": 90,
     "controller_firmware_version": "V2.4",
     "controller_type": "PicoP4SPR"
   },

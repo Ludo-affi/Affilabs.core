@@ -636,12 +636,8 @@ def run_startup_calibration(
 
             if weakest_slope > 0:
                 # Calculate optimal integration time for weakest LED at max (255)
+                # No safety multiplier - we're already at max LED so this is the optimal condition
                 optimal_integration_ms = (target_counts / (weakest_slope * 255.0)) * 10.0
-
-                # Apply 1.5x safety multiplier since model may be from different conditions
-                # (polarizer position, LED aging, etc.)
-                # REDUCED from 3x to avoid excessive initial saturation with sensitive detectors
-                optimal_integration_ms *= 1.5
 
                 # Clamp to detector limits
                 optimal_integration_ms = max(
@@ -653,7 +649,7 @@ def run_startup_calibration(
 
                 initial_integration_ms = optimal_integration_ms
                 logger.info(
-                    f"Integration time: {initial_integration_ms:.1f}ms (3x safety factor, weakest ch={weakest_ch}, model slope={weakest_slope:.1f})"
+                    f"Integration time: {initial_integration_ms:.1f}ms (weakest={weakest_ch}, slope={weakest_slope:.1f}, LED=255)"
                 )
             else:
                 # Fallback: use average slope method
@@ -746,7 +742,7 @@ def run_startup_calibration(
             # SPEED OPTIMIZATION: Prefer bright LEDs over long integration
             prefer_led_over_integration=True,  # Enable LED-first strategy
             led_optimization_target=200.0,  # Target LED brightness for weakest channel
-            min_integration_for_led_max=5.0,  # Minimum integration when maximizing LEDs
+            min_integration_for_led_max=detector_params.min_integration_time,  # Use detector's actual minimum
         )
 
         s_integration_time, s_final_signals, s_success, s_converged_leds, s_iterations = (
@@ -986,7 +982,7 @@ def run_startup_calibration(
             # SPEED OPTIMIZATION: Same as S-mode for consistent fast acquisition
             prefer_led_over_integration=True,  # Enable LED-first strategy
             led_optimization_target=200.0,  # Target LED brightness for weakest channel
-            min_integration_for_led_max=5.0,  # Minimum integration when maximizing LEDs
+            min_integration_for_led_max=detector_params.min_integration_time,  # Use detector's actual minimum
         )
 
         # Carry weakest channel override into P-mode convergence and FREEZE integration

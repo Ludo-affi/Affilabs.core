@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from affilabs.utils.detector_config import get_spr_wavelength_range
 from affilabs.utils.logger import logger
 from affilabs.utils.processing_pipeline import get_pipeline_registry
 from affilabs.utils.spr_signal_processing import (
@@ -79,6 +80,8 @@ class SpectrumProcessor:
         fourier_weights: np.ndarray | None = None,
         fourier_window_size: int = 165,
         spectral_correction: dict[str, np.ndarray] | None = None,
+        detector_serial: str | None = None,
+        detector_type: str | None = None,
     ) -> None:
         """Initialize the spectrum processor.
 
@@ -89,11 +92,15 @@ class SpectrumProcessor:
                 Dictionary mapping channel -> correction array (same length as wavelengths).
                 Used to normalize out fiber coupling differences, LED variations,
                 and detector non-uniformity.
+            detector_serial: Detector serial number for automatic wavelength range detection
+            detector_type: Detector type string (e.g., "USB4000", "PhasePhotonics")
 
         """
         self.fourier_weights = fourier_weights
         self.fourier_window_size = fourier_window_size
         self.spectral_correction = spectral_correction or {}
+        self.detector_serial = detector_serial
+        self.detector_type = detector_type
 
         # Processing statistics per channel
         self.stats = {
@@ -118,6 +125,20 @@ class SpectrumProcessor:
         # Stats update optimization - only calculate detailed stats periodically
         self._stats_update_counter = dict.fromkeys(["a", "b", "c", "d"], 0)
         self._stats_update_interval = 10  # Update detailed stats every N cycles
+
+    def set_detector_info(
+        self,
+        detector_serial: str | None = None,
+        detector_type: str | None = None,
+    ) -> None:
+        """Update detector information for automatic wavelength range detection.
+
+        Args:
+            detector_serial: Detector serial number (e.g., "ST00012", "USB4H14526")
+            detector_type: Detector type string (e.g., "USB4000", "PhasePhotonics")
+        """
+        self.detector_serial = detector_serial
+        self.detector_type = detector_type
 
     def process_transmission(
         self,
@@ -178,17 +199,44 @@ class SpectrumProcessor:
             active_pipeline = self._cached_pipeline
             pipeline_metadata = active_pipeline.get_metadata()
 
-            # Execute pipeline with SNR weighting if s_reference provided
+            # Calculate hint wavelength for peak finding guidance
+            # This prevents algorithms from finding spurious minimums in noisy regions
+            minimum_hint_nm = None
+            if (
+                transmission is not None
+                and wavelengths is not None
+                and len(transmission) == len(wavelengths)
+            ):
+                # Get detector-specific SPR region (Phase Photonics: 570-720nm, Ocean Optics: 560-720nm)
+                detector_serial_val = getattr(self, 'detector_serial', None)
+                detector_type_val = getattr(self, 'detector_type', None)
+                spr_min, spr_max = get_spr_wavelength_range(detector_serial_val, detector_type_val)
+
+                # Find minimum transmission in detector-specific SPR region as hint
+                spr_mask = (wavelengths >= spr_min) & (wavelengths <= spr_max)
+                if np.any(spr_mask):
+                    spr_transmission = transmission[spr_mask]
+                    spr_wavelengths = wavelengths[spr_mask]
+                    min_idx = np.argmin(spr_transmission)
+                    minimum_hint_nm = float(spr_wavelengths[min_idx])
+                    # Debug: Hint calculation complete
+
+            # Execute pipeline with SNR weighting and detector info
             resonance_wavelength = active_pipeline.find_resonance_wavelength(
                 transmission=transmission,
                 wavelengths=wavelengths,
                 s_reference=s_reference,
+                detector_serial=self.detector_serial,
+                detector_type=self.detector_type,
+                hint_wavelength_nm=minimum_hint_nm,  # Pass hint to guide peak finding
             )
 
             # Check for valid result
             if resonance_wavelength is None or np.isnan(resonance_wavelength):
                 msg = f"Pipeline returned invalid result: {resonance_wavelength}"
                 raise ValueError(msg)
+
+            # Dip tracking complete
 
             # Success - create result (only calculate timing every 10th cycle for efficiency)
             self._stats_update_counter[channel] += 1

@@ -103,105 +103,15 @@ class TransmissionProcessor:
             )
 
         # Step 1: Calculate transmission (P / S)
-        # Step 1: Calculate transmission (P / S)
         s_pol_safe = np.where(s_pol_ref < 1, 1, s_pol_ref)
-        raw_transmission = (p_pol_clean / s_pol_safe) * 100.0
+        transmission = (p_pol_clean / s_pol_safe) * 100.0
 
         if verbose:
             logger.info(
-                f"Step 1: Raw transmission (P/S): mean={np.mean(raw_transmission):.1f}%",
+                f"Step 1: Raw transmission (P/S): mean={np.mean(transmission):.1f}%",
             )
 
-        # Step 2: LED boost correction (P_LED / S_LED)
-        led_boost_factor = max(led_intensity_p, 1) / max(led_intensity_s, 1)
-        transmission = raw_transmission / led_boost_factor
-
-        if verbose:
-            logger.info("Step 2: LED boost correction")
-            logger.info(
-                f"   LED boost: S={led_intensity_s}, P={led_intensity_p}, factor={led_boost_factor:.3f}",
-            )
-            logger.info(
-                f"   Transmission after LED correction: mean={np.mean(transmission):.1f}%",
-            )
-
-        # Step 3: Baseline correction (method-dependent)
-        if baseline_method == "percentile":
-            # Method 1: Simple percentile (robust, fast)
-            baseline = np.percentile(transmission, baseline_percentile)
-
-            # Use multiplicative normalization instead of additive to avoid negative values
-            # This handles cases where P-mode signal > S-mode reference
-            if baseline > 0:
-                transmission = (transmission / baseline) * 100.0
-
-            if verbose:
-                logger.info("Step 3: Baseline correction (percentile method)")
-                logger.info(f"   {baseline_percentile}th percentile: {baseline:.2f}%")
-                logger.info("   Normalized to 100% baseline (multiplicative)")
-
-        elif baseline_method == "polynomial":
-            # Method 2: Polynomial fit to remove LED spectral profile skew
-            x = np.linspace(0, 1, len(transmission))
-            coeffs = np.polyfit(x, transmission, baseline_polynomial_degree)
-            baseline = np.polyval(coeffs, x)
-
-            # Avoid division by very small values
-            baseline = np.where(baseline < 1.0, 1.0, baseline)
-
-            # Divide by baseline to flatten, then re-center to 100%
-            transmission = (transmission / baseline) * 100.0
-
-            if verbose:
-                logger.info("Step 3: Baseline correction (polynomial method)")
-                logger.info(f"   Polynomial degree: {baseline_polynomial_degree}")
-                logger.info("   Flattened LED spectral profile")
-
-        elif baseline_method == "off_spr":
-            # Method 3: Physics-based off-SPR region baseline
-            if wavelengths is not None:
-                if off_spr_wavelength_range is None:
-                    off_spr_wavelength_range = (560.0, 570.0)
-
-                min_wl, max_wl = off_spr_wavelength_range
-                off_spr_mask = (wavelengths >= min_wl) & (wavelengths <= max_wl)
-
-                if np.any(off_spr_mask):
-                    baseline = np.mean(transmission[off_spr_mask])
-
-                    # Use multiplicative normalization to avoid negative values
-                    if baseline > 0:
-                        transmission = (transmission / baseline) * 100.0
-
-                    if verbose:
-                        logger.info(
-                            "Step 3: Baseline correction (off-SPR region method)",
-                        )
-                        logger.info(f"   Off-SPR region: {min_wl}-{max_wl}nm")
-                        logger.info(f"   Baseline: {baseline:.2f}%")
-                        logger.info("   Normalized to 100% baseline (multiplicative)")
-                elif verbose:
-                    logger.warning(
-                        f"Step 3: Off-SPR region {min_wl}-{max_wl}nm not available",
-                    )
-                    logger.info("   Skipping baseline correction")
-            elif verbose:
-                logger.warning("Step 3: Wavelengths not provided for off-SPR baseline")
-                logger.info("   Skipping baseline correction")
-
-        elif baseline_method == "none":
-            if verbose:
-                logger.info("Step 3: Baseline correction disabled")
-        else:
-            logger.warning(
-                f"Unknown baseline method '{baseline_method}', skipping correction",
-            )
-
-        # Step 4: No clipping - allow full dynamic range of transmission data
-        # Transmission can exceed 100% (S/P formula produces values >100%)
-        # and can go below 0% due to noise or baseline corrections
-
-        # Step 5: Savitzky-Golay filter (optional)
+        # Step 2: Savitzky-Golay filter (optional)
         if apply_sg_filter and len(transmission) >= 11:
             from scipy.signal import savgol_filter
 

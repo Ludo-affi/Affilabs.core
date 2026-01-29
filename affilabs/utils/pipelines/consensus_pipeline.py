@@ -123,6 +123,7 @@ class ConsensusPipeline:
                 transmission,
                 wavelengths,
                 minimum_hint_nm,
+                **kwargs,
             )
             weights["parabolic"] = 0.3
         except Exception as e:
@@ -158,7 +159,11 @@ class ConsensusPipeline:
             # All methods failed, use hint or simple minimum
             if minimum_hint_nm is not None:
                 return float(minimum_hint_nm)
-            mask = (wavelengths >= 600) & (wavelengths <= 690)
+            # Get detector-specific range for fallback
+            detector_serial = kwargs.get("detector_serial", None)
+            detector_type = kwargs.get("detector_type", None)
+            spr_min, spr_max = get_spr_wavelength_range(detector_serial, detector_type)
+            mask = (wavelengths >= spr_min) & (wavelengths <= spr_max)
             return float(wavelengths[mask][np.argmin(transmission[mask])])
 
         # Outlier detection: remove methods that differ by >5nm from median
@@ -207,6 +212,7 @@ class ConsensusPipeline:
         spectrum: np.ndarray,
         wavelengths: np.ndarray,
         minimum_hint_nm: float | None = None,
+        **kwargs,
     ) -> float:
         """Find peak using 3-point parabolic interpolation.
 
@@ -216,8 +222,12 @@ class ConsensusPipeline:
         if minimum_hint_nm is not None:
             min_idx = np.argmin(np.abs(wavelengths - minimum_hint_nm))
         else:
-            # SLOW PATH: Search for minimum in SPR region
-            mask = (wavelengths >= 600) & (wavelengths <= 690)
+            # SLOW PATH: Search for minimum in SPR region (detector-aware)
+            # Get detector-specific range - stored in kwargs from find_resonance_wavelength
+            detector_serial = kwargs.get("detector_serial", None)
+            detector_type = kwargs.get("detector_type", None)
+            spr_min, spr_max = get_spr_wavelength_range(detector_serial, detector_type)
+            mask = (wavelengths >= spr_min) & (wavelengths <= spr_max)
             wl_region = wavelengths[mask]
             spec_region = spectrum[mask]
             if len(wl_region) == 0:
