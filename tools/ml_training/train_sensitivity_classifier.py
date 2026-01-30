@@ -52,6 +52,11 @@ def prepare_features(iterations_df: pd.DataFrame, runs_df: pd.DataFrame) -> pd.D
 
             # Signal levels
             'avg_signal_fraction_of_target': run_iters['fraction_of_target'].mean(),
+
+            # Detector type (max counts from calibration metadata)
+            'max_counts': run_info.get('detector_max_counts', 65535.0),
+
+            # Enhanced features
             'max_signal_fraction': run_iters['fraction_of_target'].max(),
             'min_signal_fraction': run_iters['fraction_of_target'].min(),
             'signal_imbalance': run_iters['fraction_of_target'].std(),
@@ -80,6 +85,7 @@ def train_model(features_df: pd.DataFrame) -> RandomForestClassifier:
         'num_saturating',
         'total_saturated_pixels',
         'avg_signal_fraction_of_target',
+        'max_counts',  # Detector type indicator (8191=Phase, 65535=USB4000)
         'max_signal_fraction',
         'min_signal_fraction',
         'signal_imbalance',

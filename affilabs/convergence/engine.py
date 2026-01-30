@@ -463,6 +463,7 @@ class ConvergenceEngine:
                         sum(signals[ch] / target_signal for ch in recipe.channels) / len(recipe.channels)
                     ) if target_signal > 0 else 0.0,
                     avg_model_slope_10ms=avg_slope_10ms,
+                    max_counts=float(detector_params.max_counts),  # Detector type indicator
                     # Enhanced features from ML
                     max_signal_fraction=max(signal_fractions) if signal_fractions else 0.0,
                     min_signal_fraction=min(signal_fractions) if signal_fractions else 0.0,
@@ -480,6 +481,7 @@ class ConvergenceEngine:
                         features.num_saturating,
                         features.total_saturated_pixels,
                         features.avg_signal_fraction_of_target,
+                        features.max_counts,
                         features.max_signal_fraction,
                         features.min_signal_fraction,
                         features.signal_imbalance,
