@@ -174,7 +174,7 @@ os.environ["QT_NO_GLIB"] = "1"
 # ============================================================================
 # SECTION 4: Qt Core Imports
 # ============================================================================
-from PySide6.QtCore import Qt, QTimer, QtMsgType, qInstallMessageHandler
+from PySide6.QtCore import Qt, QTimer, QtMsgType, Signal, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 
 from affilabs.ui.ui_message import error as ui_error
@@ -200,14 +200,9 @@ def qt_message_handler(msg_type, context, message):
     print(f"Qt {level}: {message}")
 
 
-qInstallMessageHandler(qt_message_handler)
-
 # ============================================================================
 # SECTION 5: Application Imports (Organized by Architecture Layer)
 # ============================================================================
-
-# Qt Core
-from PySide6.QtCore import Signal
 
 # Layer 4: UI/Widgets
 from affilabs.affilabs_core_ui import AffilabsMainWindow
@@ -425,7 +420,6 @@ class Application(QApplication):
 
         # Set application icon for taskbar
         from PySide6.QtGui import QIcon
-        from pathlib import Path
         icon_path = Path(__file__).parent / "affilabs" / "ui" / "img" / "affinite2.ico"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
@@ -6863,8 +6857,7 @@ class Application(QApplication):
                 # Load the newly calibrated S and P positions from device-specific config
                 try:
                     import json
-                    from pathlib import Path
-                    
+
                     # Get detector serial number
                     serial_number = None
                     if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
@@ -6910,7 +6903,6 @@ class Application(QApplication):
                     time.sleep(0.3)
                     QApplication.processEvents()
 
-                from affilabs.ui.ui_message import info as ui_info
                 ui_info(
                     self.main_window,
                     "Calibration Complete",
@@ -7065,7 +7057,6 @@ class Application(QApplication):
                     dialog.update_status("✓ Model created successfully!")
                     dialog.hide_progress_bar()
 
-                    from affilabs.ui.ui_message import info as ui_info
                     from PySide6.QtCore import QTimer
 
                     def show_success():
@@ -7287,7 +7278,6 @@ class Application(QApplication):
         """User requested to start recording - show confirmation popup first."""
         from PySide6.QtWidgets import QMessageBox
         from affilabs.utils.time_utils import for_filename
-        from pathlib import Path
 
         logger.info("[RECORD-HANDLER] Recording start requested - showing confirmation")
 
