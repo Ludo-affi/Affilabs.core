@@ -3449,6 +3449,26 @@ class Application(QApplication):
             logger.info("Stopping recording due to acquisition stop...")
             self.recording_mgr.stop_recording()
 
+        # Handle queued cycle cancellation
+        if hasattr(self.main_window, '_current_running_cycle') and self.main_window._current_running_cycle is not None:
+            # Check if cycle completed its full duration or was cancelled early
+            if hasattr(self.main_window, 'cycle_start_time') and self.main_window.cycle_start_time is not None:
+                import time
+                elapsed = time.time() - self.main_window.cycle_start_time
+                expected_duration = self.main_window.cycle_duration_seconds if hasattr(self.main_window, 'cycle_duration_seconds') else 0
+
+                # If cycle ran for at least 90% of expected duration, consider it completed
+                if elapsed >= expected_duration * 0.9:
+                    logger.info(f"✅ Cycle completed normally (ran {elapsed:.1f}s of {expected_duration}s)")
+                    self.main_window.complete_cycle()
+                else:
+                    logger.info(f"❌ Cycle cancelled early (ran {elapsed:.1f}s of {expected_duration}s)")
+                    self.main_window.cancel_cycle()
+            else:
+                # No timing info - assume cancelled
+                logger.info("❌ Cycle cancelled (no timing info)")
+                self.main_window.cancel_cycle()
+
     # === Kinetic Operations Callbacks ===
 
     def _on_pump_initialized(self):

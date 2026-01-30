@@ -1246,6 +1246,7 @@ class AffilabsMainWindow(QMainWindow):
         # Cycle queue management
         self.cycle_queue = []
         self.max_queue_size = 5
+        self._current_running_cycle = None  # Track currently running cycle
 
         # Countdown timer for cycle tracking
         self.cycle_countdown_timer = QTimer()
@@ -5531,9 +5532,14 @@ End of Debug Log
     def start_cycle(self):
         """Start next cycle from queue or use current form values."""
         if self.cycle_queue:
-            # Consume first queued item
-            cycle_data = self.cycle_queue.pop(0)
-            cycle_data["state"] = "completed"
+            # Get first queued item (don't pop yet - wait for completion)
+            cycle_data = self.cycle_queue[0]
+            cycle_data["state"] = "running"  # Mark as running, not completed
+            self._current_running_cycle = cycle_data  # Track current cycle
+
+            # Start countdown timer with cycle duration
+            if 'length_minutes' in cycle_data:
+                self.start_cycle_countdown(cycle_data['length_minutes'])
 
             # Log cycle start event for graph marker
             if hasattr(self, 'app') and hasattr(self.app, 'recording_mgr'):
@@ -5542,17 +5548,61 @@ End of Debug Log
                     event_name += f" - {cycle_data['notes']}"
                 self.app.recording_mgr.log_event(event_name)
 
-            # Update queue display to show next item as ready
+            # Update queue display to show running state
+            self._update_queue_display()
+
+            logger.info(f"🏃 Cycle started: {cycle_data['type']} ({cycle_data.get('length_minutes', 0)} min) - {cycle_data.get('notes', 'No notes')}")
+        else:
+            # No queue items - use current form values
+            # TODO: Extract form values and create cycle
+            logger.debug("Starting immediate cycle from form values")
+
+    def complete_cycle(self):
+        """Complete the currently running cycle."""
+        if self._current_running_cycle is not None:
+            # Stop countdown timer
+            if hasattr(self, 'cycle_countdown_timer'):
+                self.cycle_countdown_timer.stop()
+            self.cycle_start_time = None
+
+            # Mark as completed and remove from queue
+            self._current_running_cycle["state"] = "completed"
+            if self.cycle_queue and self.cycle_queue[0] == self._current_running_cycle:
+                self.cycle_queue.pop(0)
+
+            logger.info(f"✅ Cycle completed: {self._current_running_cycle['type']}")
+            self._current_running_cycle = None
+
+            # Update display
             self._update_queue_display()
 
             # Re-enable Add to Queue button
             if len(self.cycle_queue) < self.max_queue_size:
                 if hasattr(self, 'add_to_queue_btn'):
                     self.add_to_queue_btn.setEnabled(True)
-        else:
-            # No queue items - use current form values
-            # TODO: Extract form values and create cycle
-            print("Starting immediate cycle from form values")
+
+    def cancel_cycle(self):
+        """Cancel the currently running cycle (stopped before completion)."""
+        if self._current_running_cycle is not None:
+            # Stop countdown timer
+            if hasattr(self, 'cycle_countdown_timer'):
+                self.cycle_countdown_timer.stop()
+            self.cycle_start_time = None
+
+            # Remove from queue without marking as completed
+            if self.cycle_queue and self.cycle_queue[0] == self._current_running_cycle:
+                self.cycle_queue.pop(0)
+
+            logger.info(f"❌ Cycle cancelled: {self._current_running_cycle['type']}")
+            self._current_running_cycle = None
+
+            # Update display to remove cancelled cycle
+            self._update_queue_display()
+
+            # Re-enable Add to Queue button
+            if len(self.cycle_queue) < self.max_queue_size:
+                if hasattr(self, 'add_to_queue_btn'):
+                    self.add_to_queue_btn.setEnabled(True)
 
     def start_cycle_countdown(self, duration_minutes: int):
         """Start countdown timer for cycle duration.
@@ -5859,6 +5909,9 @@ End of Debug Log
                 else:
                     state_text = "🟡 Queued"
                     state_color = QColor(245, 245, 245)  # Light gray
+            elif state == "running":
+                state_text = "🏃 Running"
+                state_color = QColor(255, 243, 205)  # Light yellow/amber
             elif state == "completed":
                 state_text = "✓ Done"
                 state_color = QColor(232, 245, 233)  # Light green
