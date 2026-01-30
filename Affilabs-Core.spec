@@ -15,11 +15,30 @@ a = Analysis(
         ('servo_polarizer_calibration', 'servo_polarizer_calibration'),
         ('settings', 'settings')
     ],
-    hiddenimports=['PySide6', 'pyqtgraph', 'scipy', 'numpy', 'seabreeze', 'seabreeze.cseabreeze', 'libusb_package', 'sklearn', 'joblib'],
+    hiddenimports=[
+        'PySide6', 
+        'pyqtgraph', 
+        'scipy', 
+        'scipy.special._cdflib',
+        'numpy', 
+        'seabreeze', 
+        'seabreeze.cseabreeze', 
+        'libusb_package', 
+        'sklearn', 
+        'joblib'
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'pyqtgraph.opengl',  # We don't use OpenGL features
+        'tkinter',  # We use PySide6, not tkinter
+        'matplotlib.tests',  # Don't need test modules
+        'scipy.tests',
+        'numpy.tests',
+        'pandas.tests',
+        'sklearn.tests',
+    ],
     noarchive=False,
     optimize=0,
 )

@@ -203,7 +203,7 @@ class SpectrumViewModel(QObject):
             # Emit peak result for sensorgram update - NO VALIDATION
             # If pipeline returns garbage, we WANT to see the crash
             self.peak_updated.emit(channel, result.resonance_wavelength, result.metadata)
-            logger.info(
+            logger.debug(
                 f"Peak found for {channel}: {result.resonance_wavelength:.2f} nm "
                 f"using {result.pipeline_used} ({result.processing_time_ms:.1f}ms)"
             )

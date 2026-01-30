@@ -1089,7 +1089,7 @@ class DataAcquisitionManager(QObject):
                     # This is the standard production method - reliable and predictable
                     if not self._rank_mode_enabled and self._batch_supported:
                         try:
-                            logger.info(
+                            logger.debug(
                                 f"[BATCH] Starting batch acquisition for cycle {cycle_count}"
                             )
 

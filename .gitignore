@@ -115,3 +115,5 @@ build/
 public/
 
 affilabs/local_settings.py  # Local performance overrides
+
+~$*.xlsx

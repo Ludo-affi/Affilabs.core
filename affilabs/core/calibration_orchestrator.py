@@ -820,8 +820,21 @@ def run_startup_calibration(
                     )
 
                 # POLARIZER POSITION DIAGNOSIS
+                # Check if max signal is critically low OR if any maxed LED (255) is getting <10% signal
                 critical_threshold = detector_params.max_counts * 0.05  # 5% threshold
-                if max_signal < critical_threshold:
+                maxed_led_low_signal = False
+                if s_converged_leds:
+                    for ch, led in s_converged_leds.items():
+                        if (
+                            led >= 255
+                            and s_final_signals.get(ch, 0) < detector_params.max_counts * 0.10
+                        ):
+                            maxed_led_low_signal = True
+                            logger.warning(
+                                f"   Channel {ch.upper()} has LED=255 but only {s_final_signals.get(ch, 0):.0f} counts (<10% of detector)"
+                            )
+
+                if max_signal < critical_threshold or maxed_led_low_signal:
                     logger.error("=" * 80)
                     logger.error("🔴 CONVERGENCE FAILED - POLARIZER BLOCKING DETECTED!")
                     logger.error("=" * 80)
