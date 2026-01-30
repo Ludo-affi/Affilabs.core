@@ -90,7 +90,7 @@ class AL_UIUpdateCoordinator(QObject):
             raw_spectrum: Optional raw intensity data
 
         """
-        logger.info(f"[COORDINATOR-QUEUE] *** Queuing update for ch={channel}: trans={'YES' if transmission is not None else 'NO'}, raw={'YES' if raw_spectrum is not None else 'NO'}, {len(wavelengths)} pts ***")
+        logger.debug(f"[COORDINATOR-QUEUE] *** Queuing update for ch={channel}: trans={'YES' if transmission is not None else 'NO'}, raw={'YES' if raw_spectrum is not None else 'NO'}, {len(wavelengths)} pts ***")
         self._pending_transmission_updates[channel] = {
             "wavelengths": wavelengths,
             "transmission": transmission,
@@ -113,7 +113,7 @@ class AL_UIUpdateCoordinator(QObject):
             # Log EVERY timer tick to verify timer is running
             pending_count = sum(1 for v in self._pending_transmission_updates.values() if v is not None)
             if pending_count > 0:
-                logger.info(f"[COORDINATOR-TIMER] *** TICK - {pending_count} pending updates (transmission_enabled={self._transmission_updates_enabled}, raw_enabled={self._raw_spectrum_updates_enabled}) ***")
+                logger.debug(f"[COORDINATOR-TIMER] *** TICK - {pending_count} pending updates (transmission_enabled={self._transmission_updates_enabled}, raw_enabled={self._raw_spectrum_updates_enabled}) ***")
             else:
                 logger.debug(f"[COORDINATOR-TIMER] TICK - {pending_count} pending updates (transmission_enabled={self._transmission_updates_enabled}, raw_enabled={self._raw_spectrum_updates_enabled})")
 
@@ -145,13 +145,13 @@ class AL_UIUpdateCoordinator(QObject):
 
                 # Update transmission curve via presenter (only if available)
                 if self._transmission_updates_enabled and transmission is not None:
-                    logger.info(f"[COORDINATOR] *** Calling spectroscopy_presenter.update_transmission for ch={channel} ***")
+                    logger.debug(f"[COORDINATOR] *** Calling spectroscopy_presenter.update_transmission for ch={channel} ***")
                     self.spectroscopy_presenter.update_transmission(
                         channel,
                         wavelengths,
                         transmission,
                     )
-                    logger.info(f"[COORDINATOR] *** update_transmission returned for ch={channel} ***")
+                    logger.debug(f"[COORDINATOR] *** update_transmission returned for ch={channel} ***")
                 else:
                     if transmission is None:
                         logger.warning(f"[COORDINATOR] Skipping ch={channel}: transmission is None")

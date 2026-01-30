@@ -463,7 +463,7 @@ class ConvergenceEngine:
                         sum(signals[ch] / target_signal for ch in recipe.channels) / len(recipe.channels)
                     ) if target_signal > 0 else 0.0,
                     avg_model_slope_10ms=avg_slope_10ms,
-                    max_counts=float(detector_params.max_counts),  # Detector type indicator
+                    max_counts=float(params.max_counts),  # Detector type indicator
                     # Enhanced features from ML
                     max_signal_fraction=max(signal_fractions) if signal_fractions else 0.0,
                     min_signal_fraction=min(signal_fractions) if signal_fractions else 0.0,
@@ -534,7 +534,6 @@ class ConvergenceEngine:
             # Convergence prediction (iteration 1 only, after first real signals)
             if iteration == 1 and self.convergence_predictor:
                 try:
-                    import numpy as np
                     # Calculate initial signal statistics
                     initial_leds = [state.leds[ch] for ch in recipe.channels]
                     signal_fractions = [signals[ch] / target_signal for ch in recipe.channels] if target_signal > 0 else [0.0] * len(recipe.channels)
@@ -1010,7 +1009,6 @@ class ConvergenceEngine:
 
                     # AGGRESSIVE SCALING: If LEDs are maxed, we need significant integration boost
                     # Calculate needed scale from signal ratios
-                    import numpy as np
                     factors = []
                     for ch in boundary_limited:
                         sig = max(1.0, signals[ch])
@@ -1594,19 +1592,12 @@ class ConvergenceEngine:
                         if model_slopes_at_10ms and ch in model_slopes_at_10ms:
                             model_slope = model_slopes_at_10ms[ch] * (state.integration_ms / 10.0)
 
-                        # Polarization mode encoding
-                        pol_mode = 1 if recipe.polarization_mode.upper() == "P" else 0  # 1=P-pol, 0=S-pol
-
+                        # Use only the 4 features the trained model expects
                         X_led = [
                             channel_encoding,       # 0-3 for a/b/c/d
                             target_signal,          # Target counts
                             state.integration_ms,   # Integration time
                             sensitivity_label,      # 0=BASELINE, 1=HIGH
-                            sig,                    # Current signal (counts) - NEW
-                            current_led,            # Current LED value - NEW
-                            model_slope,            # Channel slope at current integration - NEW
-                            1.0,                    # Deprecated slope_boost (kept for ML compatibility) - LEGACY
-                            pol_mode,               # Polarization mode: 0=S, 1=P - NEW
                         ]
 
                         ml_led_predicted = int(self.led_predictor.predict([X_led])[0])

@@ -46,8 +46,8 @@ def main():
         sys.exit(1)
 
     parser = CalibrationLogParser(logs_dir)
-    # Parse recent 200 logs for better training data
-    iterations_df, runs_df = parser.parse_all_logs(max_logs=200)
+    # Parse recent 50 logs for faster training (reduced from 200)
+    iterations_df, runs_df = parser.parse_all_logs(max_logs=50)
 
     # Save parsed data
     data_dir = Path("tools/ml_training/data")
