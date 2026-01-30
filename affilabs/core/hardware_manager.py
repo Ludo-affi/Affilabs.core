@@ -591,6 +591,17 @@ class HardwareManager(QObject):
         then the worker thread can use these pre-initialized objects safely.
         """
         try:
+            # Software reset USB spectrometers BEFORE attempting connection
+            # This clears stuck "already opened" states without physical disconnect
+            try:
+                from affilabs.utils.usb4000_wrapper import reset_usb_spectrometers
+
+                logger.info("Attempting software reset of USB spectrometers...")
+                reset_usb_spectrometers()
+            except Exception as reset_error:
+                # Non-fatal - continue with normal connection
+                logger.debug(f"USB reset skipped: {reset_error}")
+
             # Load device config
             import json
             from pathlib import Path

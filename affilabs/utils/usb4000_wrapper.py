@@ -47,6 +47,95 @@ except Exception as e:
 _usb_device_lock = threading.RLock()
 
 
+def reset_usb_spectrometers():
+    """Software reset of USB spectrometers (power cycle without physical disconnect).
+
+    This function attempts to reset Ocean Optics USB spectrometers that are in a
+    stuck state. Useful when the device shows "already opened" or won't reconnect
+    after an unexpected disconnect.
+
+    Returns:
+        bool: True if reset was attempted, False if no devices found or error
+    """
+    try:
+        import usb.core
+        import usb.util
+        import time
+
+        logger.info("=" * 60)
+        logger.info("🔄 SOFTWARE RESET: Attempting USB spectrometer power cycle")
+        logger.info("=" * 60)
+
+        # Ocean Optics USB4000 VID/PID
+        OCEAN_OPTICS_VID = 0x2457  # Ocean Optics vendor ID
+
+        # Try to get the backend we configured
+        backend = None
+        try:
+            from affilabs.utils.libusb_init import get_libusb_backend
+            backend = get_libusb_backend()
+        except Exception:
+            pass
+
+        # Find all Ocean Optics devices
+        devices = usb.core.find(
+            find_all=True,
+            idVendor=OCEAN_OPTICS_VID,
+            backend=backend
+        )
+
+        device_list = list(devices)
+        if not device_list:
+            logger.warning("No Ocean Optics USB devices found for reset")
+            return False
+
+        logger.info(f"Found {len(device_list)} Ocean Optics device(s)")
+
+        reset_count = 0
+        for dev in device_list:
+            try:
+                # Get device info
+                try:
+                    serial = usb.util.get_string(dev, dev.iSerialNumber)
+                    product = usb.util.get_string(dev, dev.iProduct)
+                    logger.info(f"  Resetting: {product} (S/N: {serial})")
+                except Exception:
+                    logger.info(f"  Resetting: Device VID=0x{dev.idVendor:04x} PID=0x{dev.idProduct:04x}")
+
+                # Perform USB reset (equivalent to unplug/replug)
+                dev.reset()
+                reset_count += 1
+                logger.info(f"  ✅ Reset successful")
+
+            except usb.core.USBError as e:
+                # Permission errors are common on Windows - not critical
+                if e.errno == 13:  # Permission denied
+                    logger.warning(f"  ⚠️  Reset skipped (permission denied - device may be in use)")
+                else:
+                    logger.warning(f"  ⚠️  Reset failed: {e}")
+            except Exception as e:
+                logger.warning(f"  ⚠️  Reset failed: {e}")
+
+        if reset_count > 0:
+            logger.info(f"✅ Reset {reset_count} device(s) - waiting for re-enumeration...")
+            time.sleep(2.0)  # Give USB stack time to re-enumerate devices
+            logger.info("USB reset complete - devices should be ready")
+            logger.info("=" * 60)
+            return True
+        else:
+            logger.warning("No devices were successfully reset")
+            logger.info("=" * 60)
+            return False
+
+    except ImportError:
+        logger.warning("PyUSB not available - cannot perform USB reset")
+        logger.info("Install with: pip install pyusb")
+        return False
+    except Exception as e:
+        logger.error(f"USB reset failed: {e}")
+        return False
+
+
 class USB4000:
     def __init__(self, parent=None) -> None:
         self._device = None
