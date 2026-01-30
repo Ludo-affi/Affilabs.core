@@ -293,9 +293,11 @@ def LEDconverge(
 
         # CRITICAL: Handle weakest channel at max LED
         # If weakest is at max LED BUT below target → MUST increase integration (can't brighten with LEDs)
-        # If weakest is at max LED AND in tolerance → LOCK integration (prevent oscillation)
+        # If weakest is at max LED AND significantly ABOVE target → REDUCE integration (too much signal)
+        # If weakest is at max LED AND near target → LOCK integration (prevent oscillation)
         min_acceptable_signal = target_signal - tolerance_signal
-        if weakest_led >= config.MAX_LED and not integration_locked:
+        max_acceptable_signal = target_signal + tolerance_signal
+        if weakest_led >= config.MAX_LED and not integration_locked and not freeze_integration:
             if weakest_signal < min_acceptable_signal:
                 # Weakest maxed but too dim → calculate integration increase NOW
                 _log(logger, "warning", f"\n⚡ URGENT: {weakest_ch.upper()} at max LED={weakest_led} but only {weakest_signal:.0f} counts ({weakest_signal/target_signal*100:.1f}% of target)")
@@ -324,6 +326,20 @@ def LEDconverge(
                 integration_ms = new_integration
                 # Don't lock yet - weakest still needs to reach target
                 continue  # Restart iteration with new integration
+            elif weakest_signal > max_acceptable_signal:
+                # CRITICAL: Weakest maxed but ABOVE target → reduce integration time
+                # This allows convergence to lower integration times when LEDs are bright
+                _log(logger, "info", f"\n📉 {weakest_ch.upper()} at max LED={weakest_led} but ABOVE target: {weakest_signal:.0f} counts ({weakest_signal/target_signal*100:.1f}%)")
+                # Calculate integration reduction to bring signal to target
+                reduction_scale = target_signal / max(1.0, weakest_signal)
+                reduction_scale = max(0.5, min(0.95, reduction_scale))  # 5-50% reduction
+                new_integration = integration_ms * reduction_scale
+                new_integration = max(detector_params.min_integration_time, new_integration)
+
+                _log(logger, "info", f"  📉 Reducing integration: {integration_ms:.1f}ms → {new_integration:.1f}ms (weakest above target)")
+                integration_ms = new_integration
+                # Continue to next iteration with reduced integration time
+                continue
             else:
                 # Weakest maxed and in tolerance → lock integration time
                 integration_locked = True

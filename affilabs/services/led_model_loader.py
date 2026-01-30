@@ -203,7 +203,24 @@ class LEDCalibrationModelLoader:
                 # Average linearity as pseudo-R² (1.0 = perfect, <0.95 = poor)
                 pseudo_r2 = (linearity_20 + linearity_30) / 2.0
 
-                # Store in compatible format (S and P have same values since no polarization in 3-stage)
+                # CRITICAL FIX: P-pol slopes must be derived from P/S signal ratio
+                # The 3-stage model measures S-pol slopes (high signal)
+                # P-pol has much lower signal due to polarizer blocking
+                # We need to apply extinction ratio to get realistic P-pol slopes
+
+                # Default P/S ratio if not in model (conservative estimate)
+                # Typical values: A/B channels ~0.35-0.40, C/D channels ~0.07-0.10
+                p_to_s_ratio = 0.30  # Conservative default
+
+                # If the model has P/S ratios from calibration, use them
+                if "p_to_s_ratios" in raw_data and led in raw_data["p_to_s_ratios"]:
+                    p_to_s_ratio = raw_data["p_to_s_ratios"][led]
+                    logger.debug(f"  {led}: Using measured P/S ratio = {p_to_s_ratio:.3f}")
+
+                # Calculate P-pol slope accounting for polarizer extinction
+                slope_10ms_p = slope_10ms * p_to_s_ratio
+
+                # Store in compatible format with SEPARATE P-pol slopes
                 transformed["bilinear_models"][led] = {
                     "S": {
                         "slope_10ms": slope_10ms,
@@ -211,9 +228,10 @@ class LEDCalibrationModelLoader:
                         "linearity": [linearity_20, linearity_30],
                     },
                     "P": {
-                        "slope_10ms": slope_10ms,
+                        "slope_10ms": slope_10ms_p,  # CORRECTED: Apply P/S ratio
                         "r2": pseudo_r2,
                         "linearity": [linearity_20, linearity_30],
+                        "p_to_s_ratio": p_to_s_ratio,  # Store for debugging
                     },
                 }
 

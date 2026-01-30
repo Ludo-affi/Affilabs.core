@@ -16,15 +16,16 @@ from __future__ import annotations
 
 import builtins
 import contextlib
-import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from affilabs.core.transmission_processor import TransmissionProcessor
+from affilabs.utils.detector_config import get_spr_wavelength_range
+from affilabs.utils.logger import logger
+
 if TYPE_CHECKING:
     from affilabs.domain.calibration_data import CalibrationData
-
-logger = logging.getLogger(__name__)
 
 
 class SpectrumProcessor:
@@ -69,9 +70,8 @@ class SpectrumProcessor:
         Note: Processing parameters (baseline_method, baseline_percentile, etc.)
               MUST match calibration exactly to ensure consistency.
         """
-        # Import processors here to avoid circular dependencies
+        # Import preprocessor here to avoid circular dependencies
         from affilabs.core.calibration.preprocessing import SpectrumPreprocessor
-        from affilabs.core.calibration.transmission import TransmissionProcessor
 
         # DIAGNOSTIC: Entry point logging
         if channel not in self._process_entry_count:
@@ -293,13 +293,25 @@ class SpectrumProcessor:
                 and len(transmission_spectrum) > 0
                 and len(wavelength) == len(transmission_spectrum)
             ):
-                # Find indices for SPR region (full calibration range)
-                spr_mask = (wavelength >= 560.0) & (wavelength <= 720.0)
+                # Get detector-specific SPR region (Phase Photonics: 570-720nm, Ocean Optics: 560-720nm)
+                detector_serial = getattr(self.calibration_data, "detector_serial", None)
+                detector_type = getattr(self.calibration_data, "detector_type", None)
+                spr_min, spr_max = get_spr_wavelength_range(detector_serial, detector_type)
+
+                # Find indices for SPR region using detector-specific range
+                spr_mask = (wavelength >= spr_min) & (wavelength <= spr_max)
                 if np.any(spr_mask):
                     spr_transmission = transmission_spectrum[spr_mask]
                     spr_wavelengths = wavelength[spr_mask]
                     min_idx_in_region = np.argmin(spr_transmission)
                     minimum_hint_nm = spr_wavelengths[min_idx_in_region]
+                    min_transmission_value = spr_transmission[min_idx_in_region]
+
+                    logger.debug(
+                        f"🎯 Peak tracking hint: {minimum_hint_nm:.2f} nm "
+                        f"(transmission = {min_transmission_value:.1f}%, "
+                        f"SPR region: {wavelength[spr_mask][0]:.1f}-{wavelength[spr_mask][-1]:.1f} nm)"
+                    )
 
             return {
                 "intensity": intensity,

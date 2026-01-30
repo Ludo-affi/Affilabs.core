@@ -495,7 +495,11 @@ class FlagManager:
             logger.error(f"[ERROR] Error clearing flags: {e}", exc_info=True)
 
     def clear_flags_for_new_cycle(self):
-        """Clear all flags when a cycle ends to start fresh for the next cycle."""
+        """Clear all flags when a cycle ends to start fresh for the next cycle.
+
+        This also resets channel time shifts to default (live sensorgram timing).
+        Flags are cycle-specific, so timing adjustments should not carry over.
+        """
         try:
             # Remove all flag markers from graph
             for flag in self._flag_markers:
@@ -520,7 +524,12 @@ class FlagManager:
                 )
                 self._injection_alignment_line = None
 
-            logger.info("✓ Flags cleared for new cycle")
+            # Reset channel time shifts to default (live sensorgram timing)
+            # Flags are cycle-specific, so timing adjustments should not persist across cycles
+            if hasattr(self.app, "_channel_time_shifts"):
+                self.app._channel_time_shifts = {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
+
+            logger.debug("Flags and timing cleared for new cycle")
         except Exception as e:
             logger.debug(f"Error clearing flags for new cycle: {e}")
 

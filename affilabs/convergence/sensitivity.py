@@ -28,6 +28,7 @@ class SensitivityFeatures:
     total_saturated_pixels: int
     avg_signal_fraction_of_target: float
     avg_model_slope_10ms: float
+    max_counts: float = 65535.0  # Detector ADC max (8191 for Phase Photonics, 65535 for USB4000)
     # Enhanced features from ML (available when ML attempted)
     max_signal_fraction: float = 0.0
     min_signal_fraction: float = 0.0

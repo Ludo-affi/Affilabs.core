@@ -3181,6 +3181,47 @@ class DataWindow(QWidget):
         # Don't save data yet - wait for set_start() to adjust timestamps
         # self.save_data(rec_dir) will be called after timestamps are adjusted
 
+    def add_recording_marker(self, time_position: float) -> None:
+        """Add vertical line marker on graph showing where recording started.
+
+        Args:
+            time_position: Elapsed time (seconds) when recording started
+        """
+        try:
+            import pyqtgraph as pg
+            from PySide6.QtGui import QColor
+            from PySide6.QtCore import Qt
+
+            # Create vertical line at recording start time
+            marker = pg.InfiniteLine(
+                pos=time_position,
+                angle=90,  # Vertical line
+                pen=pg.mkPen(color=QColor(34, 139, 34), width=2, style=Qt.DashLine),
+                movable=False,
+                label='REC',
+                labelOpts={
+                    'position': 0.95,
+                    'color': (34, 139, 34),
+                    'fill': (255, 255, 255, 200),
+                    'movable': False
+                }
+            )
+
+            # Add to full timeline graph
+            # Note: full_segment_view is the actual PlotWidget inside DataWindow
+            if hasattr(self, 'full_segment_view') and self.full_segment_view:
+                # Store reference to remove later if needed
+                if not hasattr(self, '_recording_markers'):
+                    self._recording_markers = []
+                self._recording_markers.append(marker)
+
+                # Add to plot - PlotWidget has addItem method
+                self.full_segment_view.addItem(marker)
+                logger.debug(f"Added recording marker at t={time_position:.1f}s")
+
+        except Exception as e:
+            logger.warning(f"Failed to add recording marker: {e}")
+
 
 if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication

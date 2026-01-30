@@ -11,6 +11,7 @@ import numpy as np
 from scipy.fftpack import dst, idct
 from scipy.stats import linregress
 
+from affilabs.utils.detector_config import get_spr_wavelength_range
 from affilabs.utils.logger import logger
 from affilabs.utils.processing_pipeline import PipelineMetadata, ProcessingPipeline
 
@@ -25,20 +26,14 @@ class FourierPipeline(ProcessingPipeline):
     def __init__(self, config=None):
         super().__init__(config)
 
-        # Default parameters
-        # CRITICAL: window_size controls linear regression refinement window around zero-crossing
-        # Too large (1500) causes it to fit the edge of the peak instead of the tip
-        # Reduced to 100 for tight localization around the true minimum
-        self.window_size = self.config.get(
-            "window_size",
-            100,
-        )  # Reduced from 1500 for better accuracy
-        # CRITICAL: alpha=9000 achieves 2nm baseline (4.5x more smoothing than previous 2000)
-        # Original implementation used 9000, providing excellent noise suppression
-        self.alpha = self.config.get(
-            "alpha",
-            9e3,
-        )  # Fourier weight parameter (9000 = original)
+        # Default parameters for all detectors
+        # CRITICAL: alpha controls Fourier regularization strength
+        default_alpha = 9000  # Standard regularization
+        default_window_nm = 7.3  # Standard fit window
+
+        # Window size is now calculated dynamically based on actual wavelength spacing
+        self.target_window_nm = self.config.get("target_window_nm", default_window_nm)
+        self.alpha = self.config.get("alpha", default_alpha)
 
     def get_metadata(self) -> PipelineMetadata:
         return PipelineMetadata(
@@ -47,7 +42,7 @@ class FourierPipeline(ProcessingPipeline):
             version="1.0",
             author="ezControl Team",
             parameters={
-                "window_size": self.window_size,
+                "target_window_nm": self.target_window_nm,
                 "alpha": self.alpha,
                 "method": "DST + SNR weighting + Zero-crossing",
             },
@@ -103,42 +98,39 @@ class FourierPipeline(ProcessingPipeline):
 
         """
         try:
-            # CRITICAL: Work ONLY on SPR region (560-720nm) - full calibration range
-            # Must match calibration wavelength range to detect all valid peaks
-            spr_mask = (wavelengths >= 560.0) & (wavelengths <= 720.0)
+            # Get detector-specific SPR wavelength range
+            detector_serial = kwargs.get("detector_serial", None)
+            detector_type = kwargs.get("detector_type", None)
+            spr_min, spr_max = get_spr_wavelength_range(detector_serial, detector_type)
+
+            # CRITICAL: Work ONLY on SPR region - detector-specific range
+            # Phase Photonics: 570-720nm, USB4000: 560-720nm
+            spr_mask = (wavelengths >= spr_min) & (wavelengths <= spr_max)
             if not np.any(spr_mask):
-                logger.warning("No SPR region (560-720nm) in wavelength array")
+                logger.warning(f"No SPR region ({spr_min}-{spr_max}nm) in wavelength array")
                 return np.nan
 
             # Extract SPR region only
             spr_wavelengths = wavelengths[spr_mask]
             spr_transmission = transmission[spr_mask]
 
-            # CRITICAL: Apply SNR weighting - REQUIRED for optimal peak finding
-            # S-reference tells us which wavelength regions have better signal quality
-            if s_reference is None or len(s_reference) != len(transmission):
-                logger.error(
-                    "CRITICAL: S-reference is REQUIRED for SNR-aware peak finding!",
-                )
-                raise ValueError(
-                    "S-reference must be provided for Fourier peak finding",
-                )
-
-            spr_s_reference = s_reference[spr_mask]
-            snr_strength = kwargs.get("snr_strength", 0.3)
-            snr_weights = self._calculate_snr_weights(spr_s_reference, snr_strength)
-            spectrum = spr_transmission * snr_weights
-            # Applied SNR weighting (strength={snr_strength:.2f})
+            # SNR weighting DISABLED per user request
+            # Use raw transmission without SNR-based adjustments
+            spectrum = spr_transmission
 
             # Find minimum hint within SPR region
-            # Use simple minimum - no triangulation needed as spectrum is already baseline-corrected
-            # in TransmissionProcessor before being passed to pipeline
-            hint_index = np.argmin(spectrum)
-
-            # Minimum hint found at index (verbose debug disabled)
-
-            # Allow window_size override
-            window_size = kwargs.get("window_size", self.window_size)
+            # CRITICAL: Use provided hint if available (already calculated with detector-specific range)
+            # Otherwise fall back to finding minimum in weighted spectrum
+            hint_wavelength_nm = kwargs.get("hint_wavelength_nm")
+            if hint_wavelength_nm is not None:
+                # Convert hint wavelength to index in SPR wavelengths array
+                hint_distances = np.abs(spr_wavelengths - hint_wavelength_nm)
+                hint_index = np.argmin(hint_distances)
+                # Using provided hint
+            else:
+                # Fallback: find minimum in weighted spectrum
+                hint_index = np.argmin(spectrum)
+                # No hint provided, using minimum of weighted spectrum
 
             # Calculate Fourier weights for SPR region size
             fourier_weights = self._calculate_fourier_weights(len(spectrum))
@@ -158,11 +150,11 @@ class FourierPipeline(ProcessingPipeline):
             derivative = idct(fourier_coeff, 1)
 
             # Find zero-crossing near the triangulated hint position
-            # Instead of searching full derivative, focus on region around hint
-            search_window = min(
-                200,
-                len(derivative) // 4,
-            )  # Search within ±200 points of hint
+            # Search window scales with SPR region size (detector-specific):
+            # ~15% of SPR pixels, bounded by quarter of derivative length
+            # Phase Photonics: ~750 SPR pixels → ±112 points
+            # Ocean Optics: ~1500 SPR pixels → ±225 points
+            search_window = min(int(len(derivative) * 0.15), len(derivative) // 4)
             search_start = max(0, hint_index - search_window)
             search_end = min(len(derivative), hint_index + search_window)
 
@@ -172,6 +164,15 @@ class FourierPipeline(ProcessingPipeline):
             zero = search_start + zero_local
 
             # Define window around zero-crossing for refinement
+            # Calculate window_size dynamically based on actual wavelength spacing
+            # Target: ±7.3 nm (total 14.6 nm window) for linear regression
+            if len(spr_wavelengths) > 1:
+                # Calculate average wavelength spacing (nm/pixel)
+                wavelength_spacing = (spr_wavelengths[-1] - spr_wavelengths[0]) / (len(spr_wavelengths) - 1)
+                window_size = int(self.target_window_nm / wavelength_spacing)
+            else:
+                window_size = 1  # Fallback for edge case
+
             start = max(zero - window_size, 0)
             end = min(zero + window_size, len(spectrum) - 1)
 
@@ -181,9 +182,8 @@ class FourierPipeline(ProcessingPipeline):
             # Calculate resonance wavelength from line intercept
             fit_lambda = -line.intercept / line.slope
 
-            # Validate result is within SPR region (should always be true now)
-            # Expanded range to 560-720nm to match actual SPR calibration range
-            if fit_lambda < 560.0 or fit_lambda > 720.0:
+            # Validate result is within detector-specific SPR region
+            if fit_lambda < spr_min or fit_lambda > spr_max:
                 # Should rarely happen since we're working only on SPR region
                 logger.warning(
                     f"Fourier fit outside SPR region: {fit_lambda:.1f}nm - using triangulated hint",

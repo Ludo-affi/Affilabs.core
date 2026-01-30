@@ -74,10 +74,11 @@ class AffilabsSidebar(QWidget):
     queue_cleared = Signal()
     queued_run_started = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, detector_type="USB4000"):
         super().__init__(parent)
         self._ui_setup_done = False
         self.cycle_table_dialog = None  # Will be created on first open
+        self.detector_type = detector_type  # Store detector type for plot configuration
 
         # Deferred loading flags (Settings tab plots now loaded immediately)
         self._settings_tab_loaded = False
@@ -663,6 +664,7 @@ class AffilabsSidebar(QWidget):
         self.transmission_plot = create_spectroscopy_plot(
             left_label="Transmission (%)",
             bottom_label="Wavelength (nm)",
+            detector_type=self.detector_type,
         )
         self.transmission_plot.setFixedHeight(180)
         self.transmission_plot.setMinimumHeight(180)
@@ -689,6 +691,7 @@ class AffilabsSidebar(QWidget):
         self.raw_data_plot = create_spectroscopy_plot(
             left_label="Intensity (counts)",
             bottom_label="Wavelength (nm)",
+            detector_type=self.detector_type,
         )
         self.raw_data_plot.setFixedHeight(180)
         self.raw_data_plot.setMinimumHeight(180)
@@ -718,6 +721,27 @@ class AffilabsSidebar(QWidget):
         # This method can be called from main window to actually move the polarizer
         # and will return the new position
         return self.current_polarizer_position
+
+    def set_detector_type(self, detector_type: str):
+        """Update detector type and adjust spectroscopy plot ranges.
+
+        Args:
+            detector_type: Detector type ("USB4000", "PhasePhotonics", or serial starting with "ST")
+        """
+        self.detector_type = detector_type
+
+        # Update x-axis range for both plots
+        if hasattr(self, 'transmission_plot'):
+            if "Phase" in detector_type or "ST" in detector_type:
+                self.transmission_plot.setXRange(570, 720, padding=0)
+            else:
+                self.transmission_plot.setXRange(560, 720, padding=0)
+
+        if hasattr(self, 'raw_data_plot'):
+            if "Phase" in detector_type or "ST" in detector_type:
+                self.raw_data_plot.setXRange(570, 720, padding=0)
+            else:
+                self.raw_data_plot.setXRange(560, 720, padding=0)
 
     def set_polarizer_position(self, position: str):
         """Set polarizer position (S or P) and update button text.

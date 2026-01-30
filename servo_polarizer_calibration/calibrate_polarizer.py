@@ -42,7 +42,7 @@ def measure_with_spectral_analysis(hm, wavelengths, method="max"):
     """Measure intensity using spectral analysis for refinement.
 
     Args:
-        method: 'max' (for S - mean top 20), 'min_spr' (for P in 610-680nm ±10)
+        method: 'max' (for S - mean top 20), 'min_spr' (for P in 570-680nm ±10)
 
     Returns:
         float: Intensity value
@@ -56,8 +56,8 @@ def measure_with_spectral_analysis(hm, wavelengths, method="max"):
         return float(spectrum[top_20_indices].mean())
 
     if method == "min_spr":
-        # P position: min in SPR range (610-680nm) + average ±10 points
-        mask = (wavelengths >= 610) & (wavelengths <= 680)
+        # P position: min in SPR range (570-680nm) + average ±10 points
+        mask = (wavelengths >= 570) & (wavelengths <= 680)
         if not np.any(mask):
             # Fallback: use middle 20% of spectrum
             q40 = np.percentile(wavelengths, 40)
@@ -76,7 +76,7 @@ def measure_with_spectral_analysis(hm, wavelengths, method="max"):
     return float(spectrum.max())
 
 
-def move_to_position(hm, target_pwm, settle_time=0.3):
+def move_to_position(hm, target_pwm, settle_time=1.0):
     """Move to position using sv + ss/sp commands (working format from test).
 
     Test results showed that Format 2 (sv + ss/sp) is the ONLY working format.
@@ -105,11 +105,11 @@ def move_to_position(hm, target_pwm, settle_time=0.3):
         # Set both S and P to the same position (will move to whichever is commanded)
         sv_cmd = f"sv{target_degrees:03d}{target_degrees:03d}\n"
         raw_ctrl._ser.write(sv_cmd.encode())
-        time.sleep(0.1)
+        time.sleep(1.0)
         
         # Move to the position using sp (P position)
         raw_ctrl._ser.write(b"sp\n")
-        time.sleep(settle_time)
+        time.sleep(max(1.0, settle_time))
         
         print(f">> Servo moved to PWM {pwm_val} ({target_degrees}deg)")
         return True
@@ -764,74 +764,104 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
 
     print(f"P region: PWM {max(1, p_center-10)} to {min(255, p_center+10)}")
     print(f"S region: PWM {max(1, s_center-10)} to {min(255, s_center+10)}")
-    print("2 scans per position with spectral analysis (optimized for speed)\n")
+    print("INTERLEAVED scanning (S1->P1->S2->P2...) for larger servo movements\n")
 
-    # === Refine P region ===
-    print("Refining P region (3 PWM steps)...")
+    # === INTERLEAVED Refinement (Meshed Approach) ===
+    # Alternate between S and P to ensure large movements that the servo can actually execute
+    print("Refining S and P regions (interleaved, 3 PWM steps)...")
+    
     p_results = []
-
-    # DON'T skip positions for BARREL - we might be scanning a blind spot!
-    # Scan full ±10 range to characterize window width and stability
-    # Use 3 PWM steps for faster scanning
-
-    for idx, pwm in enumerate(range(max(1, p_center - 10), min(256, p_center + 11), 3)):
-        # Approach from high only on first position to establish reference
-        if idx == 0:
-            move_to_position(hm, 255, settle_time=0.2)
-        move_to_position(hm, pwm, settle_time=0.1)
-
-        # 2 scans (reduced for speed)
-        measurements = []
+    s_results = []
+    
+    # Generate position lists
+    p_positions = list(range(max(1, p_center - 10), min(256, p_center + 11), 3))
+    s_positions = list(range(max(1, s_center - 10), min(256, s_center + 11), 3))
+    
+    # Make lists equal length by padding with the last value
+    max_len = max(len(p_positions), len(s_positions))
+    while len(p_positions) < max_len:
+        p_positions.append(p_positions[-1])
+    while len(s_positions) < max_len:
+        s_positions.append(s_positions[-1])
+    
+    # Interleaved scanning: S1, P1, S2, P2, S3, P3, ...
+    for idx in range(max_len):
+        # Measure S position
+        s_pwm = s_positions[idx]
+        move_to_position(hm, s_pwm, settle_time=1.0)
+        
+        # 2 scans for S
+        s_measurements = []
         for _ in range(2):
-            intensity = measure_with_spectral_analysis(
-                hm,
-                wavelengths,
-                method="min_spr",
-            )
-            measurements.append(intensity)
-
-        mean_val = np.mean(measurements)
-        std_val = np.std(measurements)
-        cv = (std_val / mean_val) * 100
-
-        p_results.append(
-            {
-                "pwm": pwm,
-                "mean": mean_val,
-                "std": std_val,
-                "cv_percent": cv,
-            },
-        )
-
-        print(f"  PWM {pwm:3d}: {mean_val:7.1f} +/- {std_val:5.1f} (CV: {cv:.2f}%)")
-
-    # BARREL: If all positions were dark (below 1000), try alternate window
+            intensity = measure_with_spectral_analysis(hm, wavelengths, method="max")
+            s_measurements.append(intensity)
+            time.sleep(0.1)
+        
+        s_mean = np.mean(s_measurements)
+        s_std = np.std(s_measurements)
+        s_cv = (s_std / s_mean) * 100
+        
+        s_results.append({
+            "pwm": s_pwm,
+            "mean": s_mean,
+            "std": s_std,
+            "cv_percent": s_cv,
+        })
+        print(f"  S PWM {s_pwm:3d}: {s_mean:7.1f} +/- {s_std:5.1f} (CV: {s_cv:.2f}%)")
+        
+        # Measure P position
+        p_pwm = p_positions[idx]
+        move_to_position(hm, p_pwm, settle_time=1.0)
+        
+        # 2 scans for P
+        p_measurements = []
+        for _ in range(2):
+            intensity = measure_with_spectral_analysis(hm, wavelengths, method="min_spr")
+            p_measurements.append(intensity)
+            time.sleep(0.1)
+        
+        p_mean = np.mean(p_measurements)
+        p_std = np.std(p_measurements)
+        p_cv = (p_std / p_mean) * 100
+        
+        p_results.append({
+            "pwm": p_pwm,
+            "mean": p_mean,
+            "std": p_std,
+            "cv_percent": p_cv,
+        })
+        print(f"  P PWM {p_pwm:3d}: {p_mean:7.1f} +/- {p_std:5.1f} (CV: {p_cv:.2f}%)")
+    
+    # Remove duplicate measurements if positions were padded
+    p_results = [dict(t) for t in {tuple(d.items()) for d in p_results}]
+    s_results = [dict(t) for t in {tuple(d.items()) for d in s_results}]
+    
+    # BARREL: If all P positions were dark (below 1000), try alternate window
     DARK_THRESHOLD = 1000
     all_p_dark = all(r["mean"] < DARK_THRESHOLD for r in p_results)
     if is_barrel and all_p_dark and alternate_p is not None:
-        print(f"\nWARNING:  All positions dark! Trying alternate P window at PWM {alternate_p}")
-        p_results = []  # Clear dark results
-        p_center = alternate_p
-        for idx, pwm in enumerate(range(max(1, p_center - 10), min(256, p_center + 11), 3)):
-            # Approach from high only on first position
-            if idx == 0:
-                move_to_position(hm, 255, settle_time=0.2)
-            move_to_position(hm, pwm, settle_time=0.1)
-
-            measurements = []
+        print(f"\nWARNING:  All P positions dark! Trying alternate P window at PWM {alternate_p}")
+        p_results = []
+        p_positions = list(range(max(1, alternate_p - 10), min(256, alternate_p + 11), 3))
+        
+        for p_pwm in p_positions:
+            move_to_position(hm, p_pwm, settle_time=1.0)
+            
+            p_measurements = []
             for _ in range(2):
                 intensity = measure_with_spectral_analysis(hm, wavelengths, method="min_spr")
-                measurements.append(intensity)
-
-            mean_val = np.mean(measurements)
-            std_val = np.std(measurements)
-            cv = (std_val / mean_val) * 100
-
-            p_results.append({"pwm": pwm, "mean": mean_val, "std": std_val, "cv_percent": cv})
-            print(f"  PWM {pwm:3d}: {mean_val:7.1f} +/- {std_val:5.1f} (CV: {cv:.2f}%)")
+                p_measurements.append(intensity)
+            
+            p_mean = np.mean(p_measurements)
+            p_std = np.std(p_measurements)
+            p_cv = (p_std / p_mean) * 100
+            
+            p_results.append({"pwm": p_pwm, "mean": p_mean, "std": p_std, "cv_percent": p_cv})
+            print(f"  P PWM {p_pwm:3d}: {p_mean:7.1f} +/- {p_std:5.1f} (CV: {p_cv:.2f}%)")
+        
+        p_center = alternate_p
 
     # Find optimal P - select brightest stable range from P window
-    # Filter out dark signals (< 1000 counts)
     p_bright = [p for p in p_results if p["mean"] > DARK_THRESHOLD]
     
     if not p_bright:
@@ -853,63 +883,29 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
     )
     print(f"Selected P: PWM {p_optimal} (middle of stable range)")
 
-    # === Refine S region ===
-    print("\nRefining S region (3 PWM steps)...")
-
-    s_results = []
-
-    for idx, pwm in enumerate(range(max(1, s_center - 10), min(256, s_center + 11), 3)):
-        # Approach from low only on first position to establish reference
-        if idx == 0:
-            move_to_position(hm, 1, settle_time=0.2)
-        move_to_position(hm, pwm, settle_time=0.3)
-
-        # 5 scans
-        measurements = []
-        for _ in range(5):
-            intensity = measure_with_spectral_analysis(hm, wavelengths, method="max")
-            measurements.append(intensity)
-            time.sleep(0.05)
-
-        mean_val = np.mean(measurements)
-        std_val = np.std(measurements)
-        cv = (std_val / mean_val) * 100
-
-        s_results.append(
-            {
-                "pwm": pwm,
-                "mean": mean_val,
-                "std": std_val,
-                "cv_percent": cv,
-            },
-        )
-
-        print(f"  PWM {pwm:3d}: {mean_val:7.1f} +/- {std_val:5.1f} (CV: {cv:.2f}%)")
-
-    # BARREL: If all positions were dark (below 1000 for S), try alternate window
-    DARK_THRESHOLD = 1000
+    # BARREL: If all S positions were dark (below 1000), try alternate window
     all_s_dark = all(r["mean"] < DARK_THRESHOLD for r in s_results)
     if is_barrel and all_s_dark and alternate_s is not None:
-        print(f"\nWARNING:  All positions dark! Trying alternate S window at PWM {alternate_s}")
-        s_results = []  # Clear dark results
-        s_center = alternate_s
-        for idx, pwm in enumerate(range(max(1, s_center - 10), min(256, s_center + 11), 3)):
-            # Approach from low only on first position
-            if idx == 0:
-                move_to_position(hm, 1, settle_time=0.1)
-            move_to_position(hm, pwm, settle_time=0.1)
-
-            measurements = []
+        print(f"\nWARNING:  All S positions dark! Trying alternate S window at PWM {alternate_s}")
+        s_results = []
+        s_positions = list(range(max(1, alternate_s - 10), min(256, alternate_s + 11), 3))
+        
+        for s_pwm in s_positions:
+            move_to_position(hm, s_pwm, settle_time=1.0)
+            
+            s_measurements = []
             for _ in range(2):
                 intensity = measure_with_spectral_analysis(hm, wavelengths, method="max")
-                measurements.append(intensity)
-
-            mean_val = np.mean(measurements)
-            std_val = np.std(measurements)
-            cv = (std_val / mean_val) * 100
-
-            s_results.append({"pwm": pwm, "mean": mean_val, "std": std_val, "cv_percent": cv})
-            print(f"  PWM {pwm:3d}: {mean_val:7.1f} +/- {std_val:5.1f} (CV: {cv:.2f}%)")
+                s_measurements.append(intensity)
+            
+            s_mean = np.mean(s_measurements)
+            s_std = np.std(s_measurements)
+            s_cv = (s_std / s_mean) * 100
+            
+            s_results.append({"pwm": s_pwm, "mean": s_mean, "std": s_std, "cv_percent": s_cv})
+            print(f"  S PWM {s_pwm:3d}: {s_mean:7.1f} +/- {s_std:5.1f} (CV: {s_cv:.2f}%)")
+        
+        s_center = alternate_s
 
     # Find optimal S - select brightest stable range
     # Filter out dark signals (< 1000 counts)
@@ -1546,7 +1542,13 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
     usb = hm.usb
 
     if not ctrl or not usb:
-        logger.error("Hardware not available for polarizer calibration")
+        logger.error("=" * 70)
+        logger.error("❌ HARDWARE NOT AVAILABLE")
+        logger.error("=" * 70)
+        logger.error(f"Controller: {ctrl}")
+        logger.error(f"Spectrometer: {usb}")
+        logger.error("Cannot run polarizer calibration without hardware connection")
+        logger.error("=" * 70)
         return False
 
     try:
@@ -1559,6 +1561,17 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
         ctrl_name = ctrl.get_device_type() if hasattr(ctrl, 'get_device_type') else 'Controller'
         logger.info(f"Connected: {ctrl_name}, {serial_number}")
         logger.info(f"Device Serial: {serial_number}")
+        
+        # Verify controller has serial connection
+        raw_ctrl = ctrl._ctrl if hasattr(ctrl, '_ctrl') else ctrl
+        if not hasattr(raw_ctrl, '_ser') or not raw_ctrl._ser or not raw_ctrl._ser.is_open:
+            logger.error("=" * 70)
+            logger.error("❌ CONTROLLER SERIAL PORT NOT OPEN")
+            logger.error("=" * 70)
+            logger.error("The controller's serial port is not available.")
+            logger.error("Cannot send servo commands without an active serial connection.")
+            logger.error("=" * 70)
+            return False
 
         # Try 20% first, fallback to 5% if saturated
         led_intensity_percent = 20
@@ -1749,9 +1762,18 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
             return False
 
     except Exception as e:
-        logger.error(f"❌ Servo calibration failed: {e}")
+        logger.error("=" * 70)
+        logger.error("❌ SERVO CALIBRATION FAILED")
+        logger.error("=" * 70)
+        logger.error(f"Error: {e}")
+        logger.error("=" * 70)
         import traceback
-        traceback.print_exc()
+        logger.error(traceback.format_exc())
+        logger.error("=" * 70)
+        
+        if progress_callback:
+            progress_callback(f"Calibration failed: {str(e)[:50]}", 0)
+        
         return False
     finally:
         # Cleanup - turn off LEDs

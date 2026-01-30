@@ -1512,8 +1512,38 @@ class CalibrationQCDialog(QDialog):
         else:
             plot_widget.setLabel("left", "Intensity", units="counts")
 
+        # Set X-axis range to start at 570 nm for all plots
+        wavelengths = self.calibration_data.get("wavelengths", None)
+        if wavelengths is not None and len(wavelengths) > 0:
+            max_wl = max(wavelengths)
+            plot_widget.setXRange(570, max_wl, padding=0)
+        else:
+            # Default range if no wavelengths available
+            plot_widget.setXRange(570, 720, padding=0)
+
         # Plot data
         self._plot_data(plot_widget, data_type)
+
+        # Set Y-axis range AFTER plotting to override auto-range
+        if data_type == "s_pol":
+            detector_serial = self.calibration_data.get("detector_serial", "")
+            if detector_serial.startswith("ST"):
+                # PhasePhotonics detector: lower count range (~2000-3000)
+                plot_widget.setYRange(0, 5000, padding=0)
+                plot_widget.disableAutoRange(axis="y")
+            else:
+                # USB4000: higher count range (~35000-50000)
+                plot_widget.setYRange(0, 70000, padding=0)
+                plot_widget.disableAutoRange(axis="y")
+        elif data_type == "p_pol":
+            # Also set appropriate range for P-pol
+            detector_serial = self.calibration_data.get("detector_serial", "")
+            if detector_serial.startswith("ST"):
+                plot_widget.setYRange(0, 3000, padding=0)
+                plot_widget.disableAutoRange(axis="y")
+            else:
+                plot_widget.setYRange(0, 50000, padding=0)
+                plot_widget.disableAutoRange(axis="y")
 
         layout.addWidget(plot_widget)
 
@@ -1556,6 +1586,9 @@ class CalibrationQCDialog(QDialog):
             # If we have per-channel darks, plot all 8 (4 channels × 2 polarizations)
             if dark_s_scans or dark_p_scans:
                 # Plot S-pol darks with solid lines
+                from affilabs.utils.detector_config import filter_valid_wavelength_data
+                detector_serial = self.calibration_data.get("detector_serial", None)
+
                 for channel in ["a", "b", "c", "d"]:
                     if channel in dark_s_scans:
                         spectrum = dark_s_scans[channel]
@@ -1568,6 +1601,12 @@ class CalibrationQCDialog(QDialog):
                                     wavelengths[-1],
                                     len(spectrum),
                                 )
+                            )
+                            # Filter for Phase Photonics (noisy data below 570nm)
+                            wavelengths_plot, spectrum = filter_valid_wavelength_data(
+                                wavelengths_plot,
+                                spectrum,
+                                detector_serial=detector_serial,
                             )
                             pen = pg.mkPen(
                                 color=colors.get(channel, (128, 128, 128, 200)),
@@ -1594,6 +1633,12 @@ class CalibrationQCDialog(QDialog):
                                     wavelengths[-1],
                                     len(spectrum),
                                 )
+                            )
+                            # Filter for Phase Photonics (noisy data below 570nm)
+                            wavelengths_plot, spectrum = filter_valid_wavelength_data(
+                                wavelengths_plot,
+                                spectrum,
+                                detector_serial=detector_serial,
                             )
                             pen = pg.mkPen(
                                 color=colors.get(channel, (128, 128, 128, 200)),
@@ -1630,6 +1675,16 @@ class CalibrationQCDialog(QDialog):
                     else:
                         wavelengths_plot = wavelengths
 
+                    # CRITICAL: Filter wavelengths for Phase Photonics detector
+                    # Phase Photonics has noisy data below 570nm
+                    from affilabs.utils.detector_config import filter_valid_wavelength_data
+                    detector_serial = self.calibration_data.get("detector_serial", None)
+                    wavelengths_plot, spectrum = filter_valid_wavelength_data(
+                        wavelengths_plot,
+                        spectrum,
+                        detector_serial=detector_serial,
+                    )
+
                     pen = pg.mkPen(
                         color=colors.get(channel, (128, 128, 128, 200)),
                         width=2,
@@ -1641,11 +1696,21 @@ class CalibrationQCDialog(QDialog):
                         name=f"Channel {channel.upper()}",
                     )
 
-        # Add pass region overlay for S-Pol (35,000-50,000 counts = acceptable range)
+        # Add pass region overlay for S-Pol
         if data_type == "s_pol":
             from pyqtgraph import LinearRegionItem
+
+            # Adapt pass region based on detector type
+            detector_serial = self.calibration_data.get("detector_serial", "")
+            if detector_serial.startswith("ST"):
+                # PhasePhotonics detector: 75%-95% of typical max (~2000)
+                pass_min, pass_max = 1500, 1900
+            else:
+                # USB4000: 35,000-50,000 counts
+                pass_min, pass_max = 35000, 50000
+
             pass_region = LinearRegionItem(
-                values=[35000, 50000],
+                values=[pass_min, pass_max],
                 orientation='horizontal',
                 brush=(0, 255, 0, 30),  # Green with transparency
                 movable=False
@@ -2132,34 +2197,66 @@ FAILURE DIAGNOSIS:
                                 s_max_values.append(max(spectrum))
 
                     # Auto-scale y-axis based on actual data
+                    detector_serial = self.calibration_data.get("detector_serial", "")
+
+                    # Determine detector max counts and target range
+                    if detector_serial.startswith("ST"):
+                        # PhasePhotonics detector (13-bit: 0-8192)
+                        detector_max = 8192
+                        target_min = 4000  # ~49% of max (acceptable lower bound)
+                        target_max = 7000  # ~85% of max (ideal target)
+                    else:
+                        # USB4000 (16-bit: 0-65535)
+                        detector_max = 65535
+                        target_min = 35000  # ~53% of max
+                        target_max = 50000  # ~76% of max
+
+                    # Set y-axis limits and green target band
                     if s_max_values:
                         y_max = max(s_max_values) * 1.2
-                        # Add pass region overlay (75%-95% of max signal)
-                        pass_min = max(s_max_values) * 0.75
-                        pass_max = max(s_max_values) * 0.95
-                        ax1.axhspan(pass_min, pass_max, alpha=0.2, color='green', zorder=1,
-                                   label=f'Pass Region ({pass_min:.0f}-{pass_max:.0f})')
-                        ax1.set_ylim(0, y_max)
+                        ax1.set_ylim(0, min(y_max, detector_max * 1.1))
                     else:
-                        # Fallback to default range if no data
-                        ax1.axhspan(35000, 50000, alpha=0.2, color='green', zorder=1, label='Pass Region (35k-50k)')
-                        ax1.set_ylim(0, 70000)
+                        ax1.set_ylim(0, detector_max)
+
+                    # Add green target band (detector-specific, not data-dependent)
+                    ax1.axhspan(target_min, target_max, alpha=0.2, color='green', zorder=1,
+                               label=f'Target Region ({target_min/1000:.1f}k-{target_max/1000:.1f}k)')
 
                     ax1.set_title('S-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
                     ax1.set_xlabel('Wavelength (nm)', fontsize=10)
                     ax1.set_ylabel('Counts', fontsize=10)
+                    ax1.set_xlim(570, max(wavelengths) if len(wavelengths) > 0 else 720)
                     ax1.legend(fontsize=9, loc='best')
                     ax1.grid(True, alpha=0.3)
 
                     # P-Pol graph
                     ax2 = fig.add_subplot(gs[1, 1])
                     p_pol_data = self.calibration_data.get('p_pol_spectra', {})
+                    p_max_values = []
                     for ch, color in zip(channels, colors):
                         if ch in p_pol_data:
-                            ax2.plot(wavelengths, p_pol_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                            spectrum = p_pol_data[ch]
+                            ax2.plot(wavelengths, spectrum, color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                            if len(spectrum) > 0:
+                                p_max_values.append(max(spectrum))
+
+                    # Auto-scale y-axis based on actual data
+                    if p_max_values:
+                        y_max = max(p_max_values) * 1.2
+                        ax2.set_ylim(0, y_max)
+                    else:
+                        # Fallback based on detector type
+                        if detector_serial.startswith("ST"):
+                            # PhasePhotonics detector (13-bit: 0-8192)
+                            ax2.set_ylim(0, 8192)
+                        else:
+                            # USB4000
+                            ax2.set_ylim(0, 70000)
+
                     ax2.set_title('P-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
                     ax2.set_xlabel('Wavelength (nm)', fontsize=10)
                     ax2.set_ylabel('Counts', fontsize=10)
+                    ax2.set_xlim(570, max(wavelengths) if len(wavelengths) > 0 else 720)
                     ax2.legend(fontsize=9, loc='best')
                     ax2.grid(True, alpha=0.3)
 
@@ -2172,6 +2269,7 @@ FAILURE DIAGNOSIS:
                     ax3.set_title('Transmission Spectra', fontsize=12, fontweight='bold', pad=8)
                     ax3.set_xlabel('Wavelength (nm)', fontsize=10)
                     ax3.set_ylabel('Transmission %', fontsize=10)
+                    ax3.set_xlim(570, max(wavelengths) if len(wavelengths) > 0 else 720)
                     ax3.legend(fontsize=9, loc='best')
                     ax3.grid(True, alpha=0.3)
 

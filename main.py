@@ -174,7 +174,7 @@ os.environ["QT_NO_GLIB"] = "1"
 # ============================================================================
 # SECTION 4: Qt Core Imports
 # ============================================================================
-from PySide6.QtCore import Qt, QTimer, QtMsgType, qInstallMessageHandler
+from PySide6.QtCore import Qt, QTimer, QtMsgType, Signal, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 
 from affilabs.ui.ui_message import error as ui_error
@@ -200,14 +200,9 @@ def qt_message_handler(msg_type, context, message):
     print(f"Qt {level}: {message}")
 
 
-qInstallMessageHandler(qt_message_handler)
-
 # ============================================================================
 # SECTION 5: Application Imports (Organized by Architecture Layer)
 # ============================================================================
-
-# Qt Core
-from PySide6.QtCore import Signal
 
 # Layer 4: UI/Widgets
 from affilabs.affilabs_core_ui import AffilabsMainWindow
@@ -425,7 +420,6 @@ class Application(QApplication):
 
         # Set application icon for taskbar
         from PySide6.QtGui import QIcon
-        from pathlib import Path
         icon_path = Path(__file__).parent / "affilabs" / "ui" / "img" / "affinite2.ico"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
@@ -746,8 +740,13 @@ class Application(QApplication):
         if self.data_mgr is None:
             raise RuntimeError("DataAcquisitionManager initialization failed")
 
+        # Data buffer manager (must be before RecordingManager)
+        self.buffer_mgr = DataBufferManager()
+        if self.buffer_mgr is None:
+            raise RuntimeError("DataBufferManager initialization failed")
+
         # Recording manager
-        self.recording_mgr = RecordingManager(self.data_mgr)
+        self.recording_mgr = RecordingManager(self.data_mgr, self.buffer_mgr)
         if self.recording_mgr is None:
             raise RuntimeError("RecordingManager initialization failed")
 
@@ -767,12 +766,6 @@ class Application(QApplication):
         self.PumpOperation = PumpOperation  # Store for handler access
         if self.pump_mgr is None:
             raise RuntimeError("PumpManager initialization failed")
-        logger.debug("✓ PumpManager")
-
-        # Data buffer manager
-        self.buffer_mgr = DataBufferManager()
-        if self.buffer_mgr is None:
-            raise RuntimeError("DataBufferManager initialization failed")
 
         # Session quality monitor
         self.quality_monitor = SessionQualityMonitor(
@@ -1128,8 +1121,8 @@ class Application(QApplication):
 
             # Connect mouse events for channel selection and flagging
             if hasattr(self.main_window, "cycle_of_interest_graph"):
-                # Disable default PyQtGraph context menu (conflicts with flag system)
-                self.main_window.cycle_of_interest_graph.setMenuEnabled(False)
+                # Enable default PyQtGraph context menu (right-click for Plot Options, Export, etc.)
+                self.main_window.cycle_of_interest_graph.setMenuEnabled(True)
 
                 self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
                     self._on_graph_clicked,
@@ -1904,6 +1897,11 @@ class Application(QApplication):
             sensorgram_time=0.0  # Will be updated when first data arrives
         )
         self._cycle_end_time = time.time() + (duration_min * 60)
+
+        # Reset channel time shifts to default (live sensorgram timing)
+        # Each cycle should start with fresh timing, not inherit adjustments from previous cycle
+        if hasattr(self, '_channel_time_shifts'):
+            self._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
 
         # Reset Active Cycle view: move start cursor to end cursor position (start fresh at t=0)
         try:
@@ -2688,6 +2686,45 @@ class Application(QApplication):
         # Update internal pump section visibility based on P4PROPLUS detection
         self._update_internal_pump_visibility()
 
+        # Update detector info in spectrum processor for detector-agnostic processing
+        try:
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                if hasattr(self.hardware_mgr, 'usb') and self.hardware_mgr.usb:
+                    # Unwrap detector if it's in an adapter
+                    detector = self.hardware_mgr.usb
+                    if hasattr(detector, '_usb'):
+                        detector = detector._usb
+                    
+                    detector_serial = getattr(detector, 'serial_number', None)
+                    if detector_serial:
+                        # Update spectrum processor with detector info
+                        if hasattr(self, 'spectrum_viewmodels') and self.spectrum_viewmodels:
+                            for vm in self.spectrum_viewmodels.values():
+                                if hasattr(vm, '_spectrum_processor') and vm._spectrum_processor:
+                                    vm._spectrum_processor.set_detector_info(detector_serial=detector_serial)
+                                    logger.info(f"Spectrum processor updated with detector: {detector_serial}")
+                        
+                        # Update spectroscopy presenter with detector info for plot filtering
+                        if hasattr(self, 'spectroscopy_presenter') and self.spectroscopy_presenter:
+                            self.spectroscopy_presenter.set_detector_info(detector_serial)
+                            logger.info(f"Spectroscopy presenter updated with detector: {detector_serial}")
+                        
+                        # Update sidebar detector type for plot ranges
+                        if hasattr(self.main_window, 'sidebar'):
+                            # Determine detector type from serial
+                            if detector_serial.startswith('ST'):
+                                detector_type = "PhasePhotonics"
+                            elif 'USB4' in detector_serial or 'FLMT' in detector_serial:
+                                detector_type = "USB4000"
+                            else:
+                                detector_type = "USB4000"  # Default
+                            
+                            if hasattr(self.main_window.sidebar, 'set_detector_type'):
+                                self.main_window.sidebar.set_detector_type(detector_type)
+                                logger.info(f"Sidebar updated with detector type: {detector_type}")
+        except Exception as e:
+            logger.error(f"Error updating detector info: {e}")
+
     def _update_internal_pump_visibility(self):
         """Show/hide internal pump control section based on P4PROPLUS detection."""
         try:
@@ -2828,12 +2865,8 @@ class Application(QApplication):
 
     def _on_servo_calibration_needed(self):
         """Servo positions not found - trigger auto-calibration."""
-        logger.info("=" * 80)
-        logger.info("🔧 SERVO CALIBRATION NEEDED - AUTO-TRIGGERING")
-        logger.info("=" * 80)
-        logger.info("   Servo positions not found in device configuration")
-        logger.info("   Starting automatic servo calibration in 1 second...")
-        logger.info("=" * 80)
+        logger.info("🔧 Servo calibration needed signal received")
+        logger.info("   Starting automatic servo calibration...")
 
         # Use QTimer to delay calibration start (allow connection to complete)
         from PySide6.QtCore import QTimer
@@ -2962,7 +2995,10 @@ class Application(QApplication):
                 self.experiment_start_time = data["timestamp"]
 
             # Calculate elapsed time (minimal work in acquisition thread)
-            data["elapsed_time"] = data["timestamp"] - self.experiment_start_time
+            # Subtract total paused time to prevent time jumps when resuming
+            wall_clock_time = data["timestamp"] - self.experiment_start_time
+            total_paused = getattr(self.data_mgr, '_total_paused_time', 0.0)
+            data["elapsed_time"] = wall_clock_time - total_paused
 
             # Tag with current session epoch for invalidation on clear
             data["_epoch"] = self._session_epoch
@@ -6821,8 +6857,7 @@ class Application(QApplication):
                 # Load the newly calibrated S and P positions from device-specific config
                 try:
                     import json
-                    from pathlib import Path
-                    
+
                     # Get detector serial number
                     serial_number = None
                     if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
@@ -6868,7 +6903,6 @@ class Application(QApplication):
                     time.sleep(0.3)
                     QApplication.processEvents()
 
-                from affilabs.ui.ui_message import info as ui_info
                 ui_info(
                     self.main_window,
                     "Calibration Complete",
@@ -7023,7 +7057,6 @@ class Application(QApplication):
                     dialog.update_status("✓ Model created successfully!")
                     dialog.hide_progress_bar()
 
-                    from affilabs.ui.ui_message import info as ui_info
                     from PySide6.QtCore import QTimer
 
                     def show_success():
@@ -7245,7 +7278,6 @@ class Application(QApplication):
         """User requested to start recording - show confirmation popup first."""
         from PySide6.QtWidgets import QMessageBox
         from affilabs.utils.time_utils import for_filename
-        from pathlib import Path
 
         logger.info("[RECORD-HANDLER] Recording start requested - showing confirmation")
 
@@ -7308,7 +7340,45 @@ class Application(QApplication):
 
         # User confirmed - start recording with file
         logger.info(f"Starting recording to file: {full_path}")
-        self.recording_mgr.start_recording(filename=str(full_path))
+        
+        # Store current elapsed time as recording start marker
+        # This allows us to: (1) draw vertical line on graph, (2) save data with t=0 at recording start
+        current_time = time.time()
+        if self.experiment_start_time is not None:
+            recording_start_elapsed = current_time - self.experiment_start_time
+        else:
+            recording_start_elapsed = 0.0
+        
+        # Start recording and pass the elapsed time offset
+        self.recording_mgr.start_recording(filename=str(full_path), time_offset=recording_start_elapsed)
+        
+        # Add visual marker on Live Sensorgram showing recording started
+        if hasattr(self.main_window, 'full_timeline_graph'):
+            try:
+                import pyqtgraph as pg
+                from PySide6.QtGui import QColor
+                from PySide6.QtCore import Qt
+                
+                # Create vertical green dashed line at recording start time
+                marker = pg.InfiniteLine(
+                    pos=recording_start_elapsed,
+                    angle=90,  # Vertical
+                    pen=pg.mkPen(color=QColor(34, 139, 34), width=2, style=Qt.DashLine),
+                    movable=False,
+                    label='REC',
+                    labelOpts={
+                        'position': 0.95,
+                        'color': (34, 139, 34),
+                        'fill': (255, 255, 255, 200),
+                        'movable': False
+                    }
+                )
+                
+                # Add to plot
+                self.main_window.full_timeline_graph.addItem(marker)
+                logger.info(f"✓ Recording marker added at t={recording_start_elapsed:.1f}s")
+            except Exception as e:
+                logger.warning(f"Could not add recording marker: {e}")
 
         # Update UI state
         self.main_window.set_recording_state(is_recording=True, filename=filename)
@@ -7813,20 +7883,8 @@ class Application(QApplication):
 
     def _run_servo_auto_calibration(self):
         """Run servo polarizer calibration automatically."""
-        logger.info("=" * 80)
-        logger.info("🔧 AUTO-TRIGGERING SERVO POLARIZER CALIBRATION")
-        logger.info("=" * 80)
-        try:
-            self._on_polarizer_calibration()
-            logger.info("[OK] Auto-calibration completed successfully")
-        except Exception as e:
-            logger.error(f"[ERROR] Auto-calibration failed: {e}", exc_info=True)
-            from affilabs.widgets.message import show_message
-            show_message(
-                f"Automatic servo calibration failed:\n\n{e}\n\n"
-                "Please run calibration manually from the Calibrations tab.",
-                "Calibration Error"
-            )
+        logger.info("🔧 Auto-triggering servo polarizer calibration...")
+        self._on_polarizer_calibration()
 
     def _update_led_intensities_for_integration_time(
         self,

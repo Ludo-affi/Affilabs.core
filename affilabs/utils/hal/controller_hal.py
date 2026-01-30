@@ -452,21 +452,54 @@ class PicoP4SPRAdapter:
                     logger.error("❌ Serial port not available!")
                     return False
 
+                # Verify controller is responding before sending servo commands
+                try:
+                    # Clear any pending data
+                    self._ser.reset_input_buffer()
+                    self._ser.reset_output_buffer()
+
+                    # Test with a simple command first
+                    self._ser.write(b"id\n")
+                    time.sleep(0.1)
+                    response = self._ser.read_all().decode('utf-8', errors='ignore').strip()
+
+                    if not response or '66' in response:
+                        logger.error(f"❌ Controller not responding correctly (got: '{response}')")
+                        logger.error("   Controller may need to be power cycled")
+                        return False
+
+                except Exception as check_err:
+                    logger.warning(f"⚠️  Controller check failed: {check_err}")
+                    # Continue anyway - might still work
+
                 # Set both positions using sv command
                 sv_cmd = f"sv{s_degrees:03d}{p_degrees:03d}\n"
                 logger.info(f"   📤 Sending sv command: {sv_cmd.strip()}")
-                self._ser.write(sv_cmd.encode())
-                time.sleep(0.2)
+                try:
+                    self._ser.write(sv_cmd.encode())
+                    time.sleep(0.2)
+                except Exception as sv_err:
+                    logger.error(f"❌ Failed to send sv command: {sv_err}")
+                    logger.error("   Controller may not support servo commands or needs reset")
+                    return False
 
                 # Move to S or P using ss/sp command
                 if m == "s":
                     logger.info(f"   📤 Sending ss command to move to S position")
-                    self._ser.write(b"ss\n")
-                    logger.info(f"   ✅ Moved to S-mode (PWM {self._servo_s_pos}, {s_degrees}°) using sv+ss")
+                    try:
+                        self._ser.write(b"ss\n")
+                        logger.info(f"   ✅ Moved to S-mode (PWM {self._servo_s_pos}, {s_degrees}°) using sv+ss")
+                    except Exception as ss_err:
+                        logger.error(f"❌ Failed to send ss command: {ss_err}")
+                        return False
                 elif m == "p":
                     logger.info(f"   📤 Sending sp command to move to P position")
-                    self._ser.write(b"sp\n")
-                    logger.info(f"   ✅ Moved to P-mode (PWM {self._servo_p_pos}, {p_degrees}°) using sv+sp")
+                    try:
+                        self._ser.write(b"sp\n")
+                        logger.info(f"   ✅ Moved to P-mode (PWM {self._servo_p_pos}, {p_degrees}°) using sv+sp")
+                    except Exception as sp_err:
+                        logger.error(f"❌ Failed to send sp command: {sp_err}")
+                        return False
                 else:
                     logger.error(f"❌ Invalid mode: {mode}")
                     return False

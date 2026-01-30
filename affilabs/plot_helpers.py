@@ -76,8 +76,16 @@ def create_spectroscopy_plot(
     left_label: str,
     bottom_label: str,
     size: str = "10pt",
+    detector_type: str = "USB4000",
 ) -> pg.PlotWidget:
-    """Create standardized spectroscopy (wavelength) plot."""
+    """Create standardized spectroscopy (wavelength) plot.
+
+    Args:
+        left_label: Label for y-axis
+        bottom_label: Label for x-axis
+        size: Font size for labels
+        detector_type: Type of detector ("USB4000" or "PhasePhotonics")
+    """
     plot = pg.PlotWidget()
     plot.setBackground(Colors.BACKGROUND_WHITE)
     plot.setLabel("left", left_label, color=AXIS_COLOR, size=size)
@@ -87,10 +95,19 @@ def create_spectroscopy_plot(
     plot.getPlotItem().getAxis("bottom").setPen(color=AXIS_PEN_COLOR, width=1)
     plot.getPlotItem().getAxis("left").setTextPen(AXIS_COLOR)
     plot.getPlotItem().getAxis("bottom").setTextPen(AXIS_COLOR)
-    # Prefer autorange by default (no hard axes to avoid clipping)
+
+    # Set x-axis range based on detector type
+    if "Phase" in detector_type or "ST" in detector_type:
+        # PhasePhotonics detector: start at 570 nm
+        plot.setXRange(570, 720, padding=0)
+    else:
+        # USB4000: full range
+        plot.setXRange(560, 720, padding=0)
+
+    # Enable autorange for y-axis only
     try:
-        plot.enableAutoRange(axis=pg.ViewBox.XYAxes, enable=True)
+        plot.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
     except Exception:
-        plot.enableAutoRange("x", True)
         plot.enableAutoRange("y", True)
+
     return plot

@@ -124,9 +124,12 @@ class SpectrumHelpers:
         # Record data point if recording is active
         try:
             if app.recording_mgr.is_recording:
+                # Adjust time to be relative to recording start (t=0 when recording started)
+                relative_time = elapsed_time - app.recording_mgr.recording_start_offset
+
                 # Record this channel's measurement immediately (simple sequential format)
                 app.recording_mgr.record_data_point({
-                    'time': elapsed_time,
+                    'time': relative_time,  # Time relative to recording start (t=0)
                     'channel': channel,
                     'value': wavelength
                 })
