@@ -529,19 +529,22 @@ class SensorgramGraph(GraphicsLayoutWidget):
     def set_right(self, r_pos, update=False, emit=True):
         if r_pos < self.left_cursor_pos:
             r_pos = self.left_cursor_pos + 1
+
+        # Always update visual position and label (consistent with set_left behavior)
+        self.right_cursor_pos = r_pos
+        self.right_cursor.setPos(r_pos)
+        # Update label with time value - single line format
+        self.right_cursor.label.setText(f"Stop {r_pos:.2f}s")
+
+        # Only skip signal emission if updates are blocked
         if update and self.block_updates:
-            logger.debug("update_blocked")
-        else:
-            self.right_cursor_pos = r_pos
-            self.right_cursor.setPos(r_pos)
-            # Update label with time value - single line format
-            self.right_cursor.label.setText(f"Stop {r_pos:.2f}s")
-            if emit:
-                self.segment_signal.emit(
-                    self.left_cursor_pos,
-                    self.right_cursor_pos,
-                    update,
-                )
+            logger.debug("update_blocked - visual updated but signal emission skipped")
+        elif emit:
+            self.segment_signal.emit(
+                self.left_cursor_pos,
+                self.right_cursor_pos,
+                update,
+            )
 
     def set_live(self, state):
         self.live = state
