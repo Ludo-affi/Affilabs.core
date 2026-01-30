@@ -1198,7 +1198,9 @@ class AffilabsMainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AI - AffiLabs.core")
+        # Import version information
+        from version import __version__
+        self.setWindowTitle(f"AffiLabs.core v{__version__}")
         # Set window icon using relative path from affilabs module
         from pathlib import Path
 
