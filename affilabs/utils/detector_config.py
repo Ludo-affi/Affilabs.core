@@ -31,7 +31,7 @@ DETECTOR_DATABASE = {
         wavelength_max=720.0,
         spr_wavelength_min=570.0,  # SPR search starts at 570nm
         spr_wavelength_max=720.0,
-        max_counts=4095,  # 12-bit ADC
+        max_counts=8191,  # 13-bit ADC (measured saturation ~8K)
         pixels=1848,
     ),
     "USB4000": DetectorCharacteristics(

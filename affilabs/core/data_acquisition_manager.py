@@ -280,6 +280,8 @@ class DataAcquisitionManager(QObject):
         self._acquisition_thread = None
         self._stop_acquisition = threading.Event()
         self._pause_acquisition = threading.Event()  # Pause flag
+        self._pause_start_time = None  # Track when pause started
+        self._total_paused_time = 0.0  # Accumulated pause duration
         self._stop_processing = threading.Event()  # Processing thread stop flag
         self._emission_queue = queue.Queue(maxsize=100)  # Queue for emitting data to UI
 
@@ -569,6 +571,8 @@ class DataAcquisitionManager(QObject):
             self._acquiring = True
             self._stop_acquisition.clear()
             self._pause_acquisition.clear()
+            self._pause_start_time = None  # Reset pause tracking
+            self._total_paused_time = 0.0  # Reset accumulated pause time
             self._stop_processing.clear()
 
             # Diagnostic: verify calibration data is present
@@ -695,6 +699,8 @@ class DataAcquisitionManager(QObject):
         if not self._acquiring:
             return
 
+        # Record when pause started
+        self._pause_start_time = time.time()
         logger.info("⏸ Acquisition paused")
         self._pause_acquisition.set()  # Set flag to pause
 
@@ -703,7 +709,17 @@ class DataAcquisitionManager(QObject):
         if not self._acquiring:
             return
 
-        logger.info("▶️ Acquisition resumed")
+        # Calculate how long we were paused and add to total
+        if self._pause_start_time is not None:
+            pause_duration = time.time() - self._pause_start_time
+            self._total_paused_time += pause_duration
+            logger.info(
+                f"▶️ Acquisition resumed (paused for {pause_duration:.1f}s, total paused: {self._total_paused_time:.1f}s)"
+            )
+            self._pause_start_time = None
+        else:
+            logger.info("▶️ Acquisition resumed")
+
         self._pause_acquisition.clear()
 
     # ========================================================================

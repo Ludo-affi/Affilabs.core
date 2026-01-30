@@ -2198,24 +2198,29 @@ FAILURE DIAGNOSIS:
 
                     # Auto-scale y-axis based on actual data
                     detector_serial = self.calibration_data.get("detector_serial", "")
+
+                    # Determine detector max counts and target range
+                    if detector_serial.startswith("ST"):
+                        # PhasePhotonics detector (13-bit: 0-8192)
+                        detector_max = 8192
+                        target_min = 4000  # ~49% of max (acceptable lower bound)
+                        target_max = 7000  # ~85% of max (ideal target)
+                    else:
+                        # USB4000 (16-bit: 0-65535)
+                        detector_max = 65535
+                        target_min = 35000  # ~53% of max
+                        target_max = 50000  # ~76% of max
+
+                    # Set y-axis limits and green target band
                     if s_max_values:
                         y_max = max(s_max_values) * 1.2
-                        # Add pass region overlay (75%-95% of max signal)
-                        pass_min = max(s_max_values) * 0.75
-                        pass_max = max(s_max_values) * 0.95
-                        ax1.axhspan(pass_min, pass_max, alpha=0.2, color='green', zorder=1,
-                                   label=f'Pass Region ({pass_min:.0f}-{pass_max:.0f})')
-                        ax1.set_ylim(0, y_max)
+                        ax1.set_ylim(0, min(y_max, detector_max * 1.1))
                     else:
-                        # Fallback based on detector type
-                        if detector_serial.startswith("ST"):
-                            # PhasePhotonics detector
-                            ax1.axhspan(1500, 1900, alpha=0.2, color='green', zorder=1, label='Pass Region (1.5k-1.9k)')
-                            ax1.set_ylim(0, 5000)
-                        else:
-                            # USB4000
-                            ax1.axhspan(35000, 50000, alpha=0.2, color='green', zorder=1, label='Pass Region (35k-50k)')
-                            ax1.set_ylim(0, 70000)
+                        ax1.set_ylim(0, detector_max)
+
+                    # Add green target band (detector-specific, not data-dependent)
+                    ax1.axhspan(target_min, target_max, alpha=0.2, color='green', zorder=1,
+                               label=f'Target Region ({target_min/1000:.1f}k-{target_max/1000:.1f}k)')
 
                     ax1.set_title('S-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
                     ax1.set_xlabel('Wavelength (nm)', fontsize=10)
@@ -2227,9 +2232,27 @@ FAILURE DIAGNOSIS:
                     # P-Pol graph
                     ax2 = fig.add_subplot(gs[1, 1])
                     p_pol_data = self.calibration_data.get('p_pol_spectra', {})
+                    p_max_values = []
                     for ch, color in zip(channels, colors):
                         if ch in p_pol_data:
-                            ax2.plot(wavelengths, p_pol_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                            spectrum = p_pol_data[ch]
+                            ax2.plot(wavelengths, spectrum, color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
+                            if len(spectrum) > 0:
+                                p_max_values.append(max(spectrum))
+
+                    # Auto-scale y-axis based on actual data
+                    if p_max_values:
+                        y_max = max(p_max_values) * 1.2
+                        ax2.set_ylim(0, y_max)
+                    else:
+                        # Fallback based on detector type
+                        if detector_serial.startswith("ST"):
+                            # PhasePhotonics detector (13-bit: 0-8192)
+                            ax2.set_ylim(0, 8192)
+                        else:
+                            # USB4000
+                            ax2.set_ylim(0, 70000)
+
                     ax2.set_title('P-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
                     ax2.set_xlabel('Wavelength (nm)', fontsize=10)
                     ax2.set_ylabel('Counts', fontsize=10)

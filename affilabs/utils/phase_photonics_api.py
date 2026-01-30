@@ -20,8 +20,8 @@ import numpy as np
 # ============================================================================
 # OEM-Confirmed Detector Specifications
 SENSOR_DATA_LEN = 1848  # PhasePhotonics: 1848 pixels (NOT 3700!)
-ADC_RESOLUTION = 12  # 12-bit ADC
-MAX_COUNT = 4095  # 2^12 - 1
+ADC_RESOLUTION = 13  # 13-bit ADC (measured saturation ~8K)
+MAX_COUNT = 8191  # 2^13 - 1
 DARK_CURRENT_COUNTS = 900  # Typical dark current baseline (counts)
 MIN_INTEGRATION_US = 100  # Minimum integration time in microseconds
 MAX_INTEGRATION_US = 5_000_000  # Maximum integration time in microseconds

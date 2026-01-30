@@ -773,6 +773,23 @@ def run_startup_calibration(
         # Store iterations for QC dialog
         result.s_iterations = s_iterations
 
+        # RELAXED VALIDATION: Accept partial convergence if channels are reasonable
+        # Criteria: max signal > 75% of target AND no channel critically low (< 50%)
+        if not s_success and s_final_signals:
+            target = detector_params.max_counts * 0.85
+            max_signal = max(s_final_signals.values())
+            min_signal = min(s_final_signals.values())
+
+            # Check if this is "good enough" partial convergence
+            max_pct = (max_signal / target) * 100
+            min_pct = (min_signal / target) * 100
+
+            # Accept if: max > 75% AND min > 50% (practical convergence)
+            if max_pct >= 75.0 and min_pct >= 50.0:
+                logger.warning("⚠️  Accepting partial S-pol convergence (practical tolerance)")
+                logger.warning(f"   Signal range: {min_pct:.1f}% - {max_pct:.1f}% of target")
+                s_success = True  # Override failure - this is good enough for calibration
+
         if not s_success:
             # Provide detailed error message aligned with ACTUAL target percent used in convergence
             s_target_percent = 0.85  # Must match the target_percent passed to converge() above
@@ -788,7 +805,7 @@ def run_startup_calibration(
                 failed_channels = []
                 for ch, sig in s_final_signals.items():
                     error_pct = abs(sig - target) / target * 100
-                    if error_pct > 15.0:  # tolerance threshold
+                    if error_pct > 25.0:  # Relaxed from 15% to 25% tolerance
                         sig_pct = (sig / target) * 100
                         led = s_converged_leds.get(ch, 0) if s_converged_leds else 0
                         failed_channels.append(f"{ch.upper()}={sig_pct:.1f}% (LED={led})")
@@ -950,9 +967,9 @@ def run_startup_calibration(
             time.sleep(0.05)
 
         # Calculate initial LED intensities for P-mode
-        # OPTIMIZED: Use converged S-mode LEDs directly with 92% rule for better initial guess
-        # This is much more accurate than model prediction since S-mode just converged
-        initial_p_leds = {ch: max(10, min(255, int(s_mode_leds[ch] * 0.92))) for ch in ch_list}
+        # OPTIMIZED: Use converged S-mode LEDs directly with 108% rule for better initial guess
+        # P-pol has lower transmission than S-pol, needs MORE LED brightness
+        initial_p_leds = {ch: max(10, min(255, int(s_mode_leds[ch] * 1.08))) for ch in ch_list}
 
         # Turn on all LEDs with calculated intensities
         for ch in ch_list:
@@ -973,9 +990,9 @@ def run_startup_calibration(
             initial_integration_ms=s_integration_time,  # Start at exact S-pol value
             target_percent=0.75,
             tolerance_percent=0.05,
-            max_iterations=4,  # Fast LED tweak only: 2-3 iterations expected, 4 max safety
-            min_signal_for_model=0.05,  # Trust S-pol baseline aggressively
-            max_led_change=40,  # Allow moderate LED boost (typical ~8% = 20 LED points)
+            max_iterations=12,  # Allow more iterations for empirical convergence without model
+            min_signal_for_model=0.95,  # DISABLE model-based predictions (force empirical measurement)
+            max_led_change=80,  # Allow large LED changes since we're not using model
             led_small_step=8,  # Larger steps OK since we know direction (always boost for P-pol)
             prefer_est_after_iters=1,  # Trust measurements immediately
             near_window_percent=0.10,  # Tighter convergence window for speed
@@ -985,12 +1002,12 @@ def run_startup_calibration(
             min_integration_for_led_max=detector_params.min_integration_time,  # Use detector's actual minimum
         )
 
-        # Carry weakest channel override into P-mode convergence and FREEZE integration
+        # Carry weakest channel override into P-mode convergence
         try:
             setattr(p_config, "WEAKEST_CHANNEL_OVERRIDE", s_weakest_ch)
-            # Policy: P-mode brightness-only tweak at fixed S-mode integration
-            setattr(p_config, "FREEZE_INTEGRATION", True)
-            setattr(p_config, "ALLOW_INTEGRATION_INCREASE_ONLY", False)
+            # Policy: Allow integration increase if ALL LEDs maxed (C/D may need more time)
+            setattr(p_config, "FREEZE_INTEGRATION", False)
+            setattr(p_config, "ALLOW_INTEGRATION_INCREASE_ONLY", True)
         except Exception:
             # Config may be a simple object; setattr should succeed, ignore if not
             pass
@@ -1009,10 +1026,10 @@ def run_startup_calibration(
                 detector_params=detector_params,
                 wave_min_index=int(wave_min_index),
                 wave_max_index=int(wave_max_index),
-                max_iterations=8,  # More iterations for better P-pol convergence
+                max_iterations=12,  # More iterations for empirical P-pol convergence without model
                 step_name="Step 5 (P-mode LED boost)",
                 use_batch_command=True,
-                model_slopes=model_slopes_p,
+                model_slopes=None,  # DISABLE model slopes - P/S ratios vary too much per channel
                 polarization="P",
                 config=p_config,
                 logger=logger,

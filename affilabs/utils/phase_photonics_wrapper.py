@@ -46,6 +46,36 @@ class PhasePhotonics:
     # This includes integration + USB readout overhead
     TIMING_MULTIPLIER = 1.93
 
+    # External wavelength calibration overrides
+    # Use these when EEPROM calibration is incorrect or missing
+    # Format: {"serial_number": [c0, c1, c2, c3]}
+    CALIBRATION_OVERRIDES = {
+        "ST00007": [
+            5.559280e2,      # c0 = 555.9280
+            2.190425e-1,     # c1 = 0.2190425
+            -1.658049e-5,    # c2 = -1.658049e-05
+            -7.303322e-9,    # c3 = -7.303322e-09
+        ],
+        "ST00011": [
+            5.303916e2,      # c0 = 530.3916
+            2.204814e-1,     # c1 = 0.2204814
+            -4.007498e-6,    # c2 = -4.007498e-06
+            -9.861940e-9,    # c3 = -9.861940e-09
+        ],
+        "ST00012": [
+            5.637917e2,      # c0 = 563.7917
+            2.089449e-1,     # c1 = 0.2089449
+            -2.302712e-6,    # c2 = -2.302712e-06
+            -1.650914e-8,    # c3 = -1.650914e-08
+        ],
+        "ST00014": [
+            5.016961e2,      # c0 = 501.6961
+            2.385570e-1,     # c1 = 0.2385570
+            -3.840143e-5,    # c2 = -3.840143e-05
+            7.718971e-9,     # c3 = 7.718971e-09
+        ],
+    }
+
     def __init__(self, parent=None) -> None:
         """Initialize PhasePhotonics driver.
 
@@ -68,7 +98,7 @@ class PhasePhotonics:
         # Detector specifications - PhasePhotonics specific
         self._wavelengths = None
         self._integration_time = 0.1  # seconds
-        self._max_counts = 4095  # 12-bit ADC (confirmed by OEM specs)
+        self._max_counts = 8191  # 13-bit ADC (measured saturation ~8K)
         self._num_pixels = SENSOR_DATA_LEN  # 1848 for PhasePhotonics (ISOLATED)
 
         # Optimal scan configuration
@@ -330,7 +360,11 @@ class PhasePhotonics:
             return False
 
     def read_wavelength(self):
-        """Read wavelength calibration from detector EEPROM.
+        """Read wavelength calibration from detector EEPROM or external override.
+
+        Priority:
+        1. CALIBRATION_OVERRIDES dictionary (if serial number present)
+        2. EEPROM calibration data
 
         Returns:
             numpy.ndarray: Wavelength array in nanometers (1848 elements), or None if failed
@@ -338,8 +372,20 @@ class PhasePhotonics:
         """
         if self.spec is not None or self.open():
             try:
-                bytes_read, config = self.api.usb_read_config(self.spec, 0)
-                if bytes_read == self.CONFIG_SIZE:
+                # Check for external calibration override first
+                if self.serial_number in self.CALIBRATION_OVERRIDES:
+                    coeffs = np.array(self.CALIBRATION_OVERRIDES[self.serial_number])
+                    logger.info(
+                        f"Using external calibration override for {self.serial_number} "
+                        f"(c0={coeffs[0]:.2f}, c1={coeffs[1]:.6e}, c2={coeffs[2]:.6e}, c3={coeffs[3]:.6e})"
+                    )
+                else:
+                    # Read from EEPROM
+                    bytes_read, config = self.api.usb_read_config(self.spec, 0)
+                    if bytes_read != self.CONFIG_SIZE:
+                        logger.error(f"Failed to read EEPROM config: expected {self.CONFIG_SIZE} bytes, got {bytes_read}")
+                        return None
+
                     # Extract calibration coefficients from config data
                     coeffs = frombuffer(
                         config.data,
@@ -350,30 +396,35 @@ class PhasePhotonics:
 
                     # Check if device is calibrated
                     if all(isnan(coeffs)):
-                        msg = "PhasePhotonics spectrometer has not been calibrated"
+                        msg = f"PhasePhotonics {self.serial_number} has not been calibrated in EEPROM"
                         logger.error(msg)
                         raise RuntimeError(msg)
 
-                    # Compute wavelength array using calibration polynomial
-                    calibration_curve = Polynomial(coeffs)
-                    wavelengths = calibration_curve(arange(SENSOR_DATA_LEN))
-
-                    # CRITICAL VALIDATION: Ensure array size
-                    if len(wavelengths) != SENSOR_DATA_LEN:
-                        msg = (
-                            f"PhasePhotonics wavelength array mismatch: "
-                            f"expected {SENSOR_DATA_LEN}, got {len(wavelengths)}"
-                        )
-                        raise ValueError(
-                            msg,
-                        )
-
                     logger.debug(
-                        f"PhasePhotonics wavelength calibration: "
-                        f"{wavelengths[0]:.2f} - {wavelengths[-1]:.2f} nm "
-                        f"({len(wavelengths)} pixels)",
+                        f"Using EEPROM calibration for {self.serial_number} "
+                        f"(c0={coeffs[0]:.2f}, c1={coeffs[1]:.6e}, c2={coeffs[2]:.6e}, c3={coeffs[3]:.6e})"
                     )
-                    return wavelengths
+
+                # Compute wavelength array using calibration polynomial
+                calibration_curve = Polynomial(coeffs)
+                wavelengths = calibration_curve(arange(SENSOR_DATA_LEN))
+
+                # CRITICAL VALIDATION: Ensure array size
+                if len(wavelengths) != SENSOR_DATA_LEN:
+                    msg = (
+                        f"PhasePhotonics wavelength array mismatch: "
+                        f"expected {SENSOR_DATA_LEN}, got {len(wavelengths)}"
+                    )
+                    raise ValueError(
+                        msg,
+                    )
+
+                logger.debug(
+                    f"PhasePhotonics wavelength calibration: "
+                    f"{wavelengths[0]:.2f} - {wavelengths[-1]:.2f} nm "
+                    f"({len(wavelengths)} pixels)",
+                )
+                return wavelengths
 
             except Exception as e:
                 logger.error(

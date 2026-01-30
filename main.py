@@ -746,8 +746,13 @@ class Application(QApplication):
         if self.data_mgr is None:
             raise RuntimeError("DataAcquisitionManager initialization failed")
 
+        # Data buffer manager (must be before RecordingManager)
+        self.buffer_mgr = DataBufferManager()
+        if self.buffer_mgr is None:
+            raise RuntimeError("DataBufferManager initialization failed")
+
         # Recording manager
-        self.recording_mgr = RecordingManager(self.data_mgr)
+        self.recording_mgr = RecordingManager(self.data_mgr, self.buffer_mgr)
         if self.recording_mgr is None:
             raise RuntimeError("RecordingManager initialization failed")
 
@@ -767,12 +772,6 @@ class Application(QApplication):
         self.PumpOperation = PumpOperation  # Store for handler access
         if self.pump_mgr is None:
             raise RuntimeError("PumpManager initialization failed")
-        logger.debug("✓ PumpManager")
-
-        # Data buffer manager
-        self.buffer_mgr = DataBufferManager()
-        if self.buffer_mgr is None:
-            raise RuntimeError("DataBufferManager initialization failed")
 
         # Session quality monitor
         self.quality_monitor = SessionQualityMonitor(
@@ -1128,8 +1127,8 @@ class Application(QApplication):
 
             # Connect mouse events for channel selection and flagging
             if hasattr(self.main_window, "cycle_of_interest_graph"):
-                # Disable default PyQtGraph context menu (conflicts with flag system)
-                self.main_window.cycle_of_interest_graph.setMenuEnabled(False)
+                # Enable default PyQtGraph context menu (right-click for Plot Options, Export, etc.)
+                self.main_window.cycle_of_interest_graph.setMenuEnabled(True)
 
                 self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
                     self._on_graph_clicked,
@@ -1904,6 +1903,11 @@ class Application(QApplication):
             sensorgram_time=0.0  # Will be updated when first data arrives
         )
         self._cycle_end_time = time.time() + (duration_min * 60)
+
+        # Reset channel time shifts to default (live sensorgram timing)
+        # Each cycle should start with fresh timing, not inherit adjustments from previous cycle
+        if hasattr(self, '_channel_time_shifts'):
+            self._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
 
         # Reset Active Cycle view: move start cursor to end cursor position (start fresh at t=0)
         try:
@@ -2997,7 +3001,10 @@ class Application(QApplication):
                 self.experiment_start_time = data["timestamp"]
 
             # Calculate elapsed time (minimal work in acquisition thread)
-            data["elapsed_time"] = data["timestamp"] - self.experiment_start_time
+            # Subtract total paused time to prevent time jumps when resuming
+            wall_clock_time = data["timestamp"] - self.experiment_start_time
+            total_paused = getattr(self.data_mgr, '_total_paused_time', 0.0)
+            data["elapsed_time"] = wall_clock_time - total_paused
 
             # Tag with current session epoch for invalidation on clear
             data["_epoch"] = self._session_epoch
@@ -7343,7 +7350,45 @@ class Application(QApplication):
 
         # User confirmed - start recording with file
         logger.info(f"Starting recording to file: {full_path}")
-        self.recording_mgr.start_recording(filename=str(full_path))
+        
+        # Store current elapsed time as recording start marker
+        # This allows us to: (1) draw vertical line on graph, (2) save data with t=0 at recording start
+        current_time = time.time()
+        if self.experiment_start_time is not None:
+            recording_start_elapsed = current_time - self.experiment_start_time
+        else:
+            recording_start_elapsed = 0.0
+        
+        # Start recording and pass the elapsed time offset
+        self.recording_mgr.start_recording(filename=str(full_path), time_offset=recording_start_elapsed)
+        
+        # Add visual marker on Live Sensorgram showing recording started
+        if hasattr(self.main_window, 'full_timeline_graph'):
+            try:
+                import pyqtgraph as pg
+                from PySide6.QtGui import QColor
+                from PySide6.QtCore import Qt
+                
+                # Create vertical green dashed line at recording start time
+                marker = pg.InfiniteLine(
+                    pos=recording_start_elapsed,
+                    angle=90,  # Vertical
+                    pen=pg.mkPen(color=QColor(34, 139, 34), width=2, style=Qt.DashLine),
+                    movable=False,
+                    label='REC',
+                    labelOpts={
+                        'position': 0.95,
+                        'color': (34, 139, 34),
+                        'fill': (255, 255, 255, 200),
+                        'movable': False
+                    }
+                )
+                
+                # Add to plot
+                self.main_window.full_timeline_graph.addItem(marker)
+                logger.info(f"✓ Recording marker added at t={recording_start_elapsed:.1f}s")
+            except Exception as e:
+                logger.warning(f"Could not add recording marker: {e}")
 
         # Update UI state
         self.main_window.set_recording_state(is_recording=True, filename=filename)

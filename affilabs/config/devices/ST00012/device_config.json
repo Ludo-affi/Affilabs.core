@@ -2,7 +2,7 @@
   "device_info": {
     "config_version": "1.0",
     "created_date": "2026-01-22T09:49:47.335315",
-    "last_modified": "2026-01-28T20:06:05.789312",
+    "last_modified": "2026-01-29T15:38:23.044745",
     "device_id": "ST00012"
   },
   "hardware": {
@@ -46,11 +46,11 @@
     "factory_calibrated": false,
     "user_calibrated": false,
     "preferred_calibration_mode": "global",
-    "integration_time_ms": 7.344014283029507,
+    "integration_time_ms": 10.600440132153572,
     "num_scans": null,
-    "led_intensity_a": 104,
-    "led_intensity_b": 131,
-    "led_intensity_c": 155,
+    "led_intensity_a": 214,
+    "led_intensity_b": 226,
+    "led_intensity_c": 238,
     "led_intensity_d": 255,
     "spr_model_path": null,
     "spr_model_calibration_date": null

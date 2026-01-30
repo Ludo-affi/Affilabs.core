@@ -448,7 +448,6 @@ class ConvergenceEngine:
                 if model_slopes_at_10ms:
                     vals = [v for v in model_slopes_at_10ms.values() if v > 0]
                     if vals:
-                        import numpy as np
                         avg_slope_10ms = float(np.mean(vals))
 
                 # Calculate enhanced features for both ML and fallback

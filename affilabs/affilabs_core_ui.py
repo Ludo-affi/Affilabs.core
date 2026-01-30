@@ -2448,13 +2448,22 @@ class AffilabsMainWindow(QMainWindow):
             # Flagging channel selection buttons (radio-style)
             self.channel_selection_buttons = {}
 
-            flag_channel_names = {
-                "A": ("#1D1D1F", "Select Channel A (Black) for flagging"),
-                "B": ("#FF3B30", "Select Channel B (Red) for flagging"),
-                "C": ("#007AFF", "Select Channel C (Blue) for flagging"),
-                "D": ("#34C759", "Select Channel D (Green) for flagging"),
-            }
-            for ch, (color, tooltip) in flag_channel_names.items():
+            # Use colorblind palette if enabled
+            from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+            is_colorblind = self.colorblind_check.isChecked() if hasattr(self, 'colorblind_check') else False
+            colors = CHANNEL_COLORS_COLORBLIND if is_colorblind else CHANNEL_COLORS
+
+            flag_channel_names = ["A", "B", "C", "D"]
+            flag_tooltips = [
+                "Select Channel A for flagging",
+                "Select Channel B for flagging",
+                "Select Channel C for flagging",
+                "Select Channel D for flagging",
+            ]
+
+            for i, ch in enumerate(flag_channel_names):
+                color = colors[i]
+                tooltip = flag_tooltips[i]
                 ch_btn = QPushButton(ch)
                 ch_btn.setCheckable(True)
                 ch_btn.setChecked(ch == "A")  # Channel A selected by default

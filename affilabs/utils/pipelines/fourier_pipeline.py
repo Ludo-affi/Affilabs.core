@@ -26,33 +26,14 @@ class FourierPipeline(ProcessingPipeline):
     def __init__(self, config=None):
         super().__init__(config)
 
-        # Detector-aware parameter selection
-        # Get detector characteristics to optimize parameters
-        detector_serial = self.config.get("detector_serial", None) if self.config else None
-        detector_type = self.config.get("detector_type", None) if self.config else None
-
-        # Auto-detect if Phase Photonics (lower pixel count, needs different params)
-        is_phase_photonics = False
-        if detector_serial and detector_serial.startswith("ST"):
-            is_phase_photonics = True
-        elif detector_type and ("PHASE" in str(detector_type).upper() or "ST" in str(detector_type).upper()):
-            is_phase_photonics = True
-
-        # Default parameters - detector-specific
+        # Default parameters for all detectors
         # CRITICAL: alpha controls Fourier regularization strength
-        # Scales with pixel density to maintain consistent smoothing
-        if is_phase_photonics:
-            default_alpha = 4500  # Reduced regularization (lower pixel count)
-        else:
-            default_alpha = 9000  # Full regularization (higher pixel count)
+        default_alpha = 9000  # Standard regularization
+        default_window_nm = 7.3  # Standard fit window
 
         # Window size is now calculated dynamically based on actual wavelength spacing
-        # Target: ±7.3 nm around zero-crossing for linear regression refinement
-        self.target_window_nm = self.config.get("target_window_nm", 7.3)
+        self.target_window_nm = self.config.get("target_window_nm", default_window_nm)
         self.alpha = self.config.get("alpha", default_alpha)
-
-        if is_phase_photonics:
-            logger.debug(f"Fourier pipeline: Phase Photonics detected - using optimized params (target_window={self.target_window_nm}nm, alpha={self.alpha})")
 
     def get_metadata(self) -> PipelineMetadata:
         return PipelineMetadata(

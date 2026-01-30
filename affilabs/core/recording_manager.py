@@ -32,11 +32,14 @@ class RecordingManager(QObject):
     recording_error = Signal(str)  # Error message
     event_logged = Signal(str, float)  # Event description, timestamp
 
-    def __init__(self, data_mgr) -> None:
+    def __init__(self, data_mgr, buffer_mgr=None) -> None:
         super().__init__()
 
         # Reference to data acquisition manager
         self.data_mgr = data_mgr
+
+        # Reference to buffer manager (for Channels XY export)
+        self.buffer_mgr = buffer_mgr
 
         # Delegate services (Separation of Concerns)
         self.data_collector = DataCollector()  # Handles in-memory data accumulation
@@ -45,6 +48,7 @@ class RecordingManager(QObject):
         # Recording state
         self.is_recording = False
         self.current_file = None
+        self.recording_start_offset = 0.0  # Elapsed time when recording started (for t=0 export)
 
         # Recording settings
         self.output_directory = Path.home() / "Documents" / "Affilabs Data"
@@ -53,12 +57,13 @@ class RecordingManager(QObject):
 
         # Initialized silently
 
-    def start_recording(self, filename: str | None = None) -> None:
+    def start_recording(self, filename: str | None = None, time_offset: float = 0.0) -> None:
         """Start recording data to file (if filename provided) or memory only.
 
         Args:
             filename: Full path to file for saving. If provided, creates file immediately.
                      If None, records to memory only until export.
+            time_offset: Elapsed time when recording started (for t=0 export)
         """
         if self.is_recording:
             logger.warning("Recording already in progress")
@@ -68,6 +73,7 @@ class RecordingManager(QObject):
             # Update state
             self.is_recording = True
             self.current_file = filename  # Store filename if provided
+            self.recording_start_offset = time_offset  # Store offset for t=0 export
             self.last_save_time = time.time()
 
             # Start data collection
@@ -159,6 +165,57 @@ class RecordingManager(QObject):
                     if self.data_collector.metadata:
                         df_meta = pd.DataFrame([self.data_collector.metadata])
                         df_meta.to_excel(writer, sheet_name="Metadata", index=False)
+
+                    # Channels XY sheet (wide format: Time_A, SPR_A, Time_B, SPR_B, etc.)
+                    # This matches the Export button format for consistency
+                    if self.buffer_mgr is not None:
+                        try:
+                            import numpy as np
+
+                            channels = ["a", "b", "c", "d"]
+                            max_len = 0
+
+                            # Find max length across all channels
+                            for ch in channels:
+                                if hasattr(self.buffer_mgr.cycle_data[ch], "time"):
+                                    max_len = max(max_len, len(self.buffer_mgr.cycle_data[ch].time))
+
+                            if max_len > 0:
+                                sheet_data = {}
+                                for ch in channels:
+                                    ch_upper = ch.upper()
+
+                                    # Get time and SPR data for this channel
+                                    if hasattr(self.buffer_mgr.cycle_data[ch], "time"):
+                                        ch_time = np.array(self.buffer_mgr.cycle_data[ch].time)
+                                        ch_spr = np.array(self.buffer_mgr.cycle_data[ch].spr)
+
+                                        # Pad to max length if needed
+                                        if len(ch_time) < max_len:
+                                            ch_time = np.pad(
+                                                ch_time,
+                                                (0, max_len - len(ch_time)),
+                                                constant_values=np.nan,
+                                            )
+                                        if len(ch_spr) < max_len:
+                                            ch_spr = np.pad(
+                                                ch_spr,
+                                                (0, max_len - len(ch_spr)),
+                                                constant_values=np.nan,
+                                            )
+                                    else:
+                                        # Channel has no data - fill with NaN
+                                        ch_time = np.full((max_len,), np.nan)
+                                        ch_spr = np.full((max_len,), np.nan)
+
+                                    sheet_data[f"Time_{ch_upper}"] = ch_time
+                                    sheet_data[f"SPR_{ch_upper}"] = ch_spr
+
+                                df_xy = pd.DataFrame(sheet_data)
+                                df_xy.to_excel(writer, sheet_name="Channels XY", index=False)
+                                logger.debug(f"Created Channels XY sheet with {max_len} rows")
+                        except Exception as e:
+                            logger.warning(f"Could not create Channels XY sheet: {e}")
 
             elif filepath.suffix == ".csv":
                 # CSV only saves raw data
