@@ -61,24 +61,34 @@ class EditsTab:
         self.edits_cycle_labels = []
 
         # Initialize table widget first (needed by panel methods)
-        # Clean 6-column table - alignment controls moved to panel below
-        self.cycle_data_table = QTableWidget(10, 6)
+        # Expanded 11-column table with analysis data
+        # STARTS EMPTY - will be populated ONLY when cycles complete during live acquisition
+        self.cycle_data_table = QTableWidget(0, 11)  # 0 rows to start (empty table)
         self.cycle_data_table.setHorizontalHeaderLabels(
-            ["Cycle", "Type", "Duration", "Conc.", "Start", "End"]
+            ["Type", "Duration\n(min)", "Start\n(s)", "Conc.", "Units", "Notes", "ΔSPR\n(RU)", "Inj.", "Flags", "Channel", "Shift\n(s)"]
         )
         # Set column widths: fixed for some, stretch for others
         header = self.cycle_data_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # Cycle
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Type
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # Duration
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Type
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)  # Duration
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # Start
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)  # Conc
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)  # Start
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # End
-        self.cycle_data_table.setColumnWidth(0, 50)   # Cycle number
-        self.cycle_data_table.setColumnWidth(2, 70)   # Duration
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)  # Units
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)  # Notes
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)  # Delta SPR
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)  # Injection
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)  # Flags
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)  # Channel
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)  # Shift
+        self.cycle_data_table.setColumnWidth(1, 60)   # Duration
+        self.cycle_data_table.setColumnWidth(2, 60)   # Start time
         self.cycle_data_table.setColumnWidth(3, 60)   # Concentration
-        self.cycle_data_table.setColumnWidth(4, 70)   # Start time
-        self.cycle_data_table.setColumnWidth(5, 70)   # End time
+        self.cycle_data_table.setColumnWidth(4, 60)   # Units
+        self.cycle_data_table.setColumnWidth(6, 70)   # Delta SPR
+        self.cycle_data_table.setColumnWidth(7, 40)   # Injection flag
+        self.cycle_data_table.setColumnWidth(8, 60)   # Other flags
+        self.cycle_data_table.setColumnWidth(9, 70)   # Channel
+        self.cycle_data_table.setColumnWidth(10, 60)  # Time shift
         self.cycle_data_table.verticalHeader().setVisible(False)  # Hide row numbers
         self.cycle_data_table.setShowGrid(True)  # Show grid lines
         self.cycle_data_table.setGridStyle(Qt.PenStyle.SolidLine)  # Solid grid lines
@@ -1685,7 +1695,7 @@ class EditsTab:
         return ([], [])
 
     def _on_table_context_menu(self, position):
-        """Show context menu for cycle table with option to load to reference graphs."""
+        """Show context menu for cycle table with option to load to reference graphs or delete."""
         from PySide6.QtWidgets import QMenu
         from affilabs.utils.logger import logger
 
@@ -1693,10 +1703,13 @@ class EditsTab:
 
         # Get selected rows
         selected_rows = sorted(set(item.row() for item in self.cycle_data_table.selectedItems()))
+        
+        if not selected_rows:
+            return  # No selection, don't show menu
 
         if len(selected_rows) == 1:
             # Single cycle selected - offer to load to reference slots
-            ref_menu = menu.addMenu("Load to Reference Graph")
+            ref_menu = menu.addMenu("📊 Load to Reference Graph")
 
             for i in range(3):
                 ref_label = f"Reference {i + 1}"
@@ -1709,6 +1722,84 @@ class EditsTab:
                 action = ref_menu.addAction(ref_label)
                 action.triggered.connect(lambda checked=False, row=selected_rows[0], idx=i:
                                         self.main_window._load_cycle_to_reference(row, idx))
+            
+            menu.addSeparator()
+        
+        # Delete option (works for single or multiple selections)
+        if len(selected_rows) == 1:
+            cycle_text = "this cycle"
+        else:
+            cycle_text = f"{len(selected_rows)} cycles"
+        
+        delete_action = menu.addAction(f"🗑️ Delete {cycle_text}")
+        delete_action.triggered.connect(lambda: self._delete_cycles_from_table(selected_rows))
 
         # Show menu at cursor position
         menu.exec(self.cycle_data_table.viewport().mapToGlobal(position))
+    
+    def _delete_cycles_from_table(self, row_indices):
+        """Delete selected cycles from the cycle data table.
+        
+        Args:
+            row_indices: List of row indices to delete
+        """
+        from PySide6.QtWidgets import QMessageBox
+        from affilabs.utils.logger import logger
+        
+        if not row_indices:
+            return
+        
+        # Confirm deletion
+        if len(row_indices) == 1:
+            msg = "Are you sure you want to delete this cycle?"
+        else:
+            msg = f"Are you sure you want to delete {len(row_indices)} cycles?"
+        
+        reply = QMessageBox.question(
+            self.main_window,
+            "Delete Cycle(s)",
+            msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Delete from table and data (reverse order to maintain indices)
+        for row in sorted(row_indices, reverse=True):
+            # Remove from loaded cycles data if it exists
+            if hasattr(self.main_window, '_loaded_cycles_data') and row < len(self.main_window._loaded_cycles_data):
+                del self.main_window._loaded_cycles_data[row]
+            
+            # Remove from cycle alignment settings
+            if hasattr(self.main_window, '_cycle_alignment') and row in self.main_window._cycle_alignment:
+                del self.main_window._cycle_alignment[row]
+            
+            # Remove row from table
+            self.cycle_data_table.removeRow(row)
+        
+        # Rebuild cycle alignment indices (they shifted after deletion)
+        if hasattr(self.main_window, '_cycle_alignment'):
+            new_alignment = {}
+            for old_idx, settings in sorted(self.main_window._cycle_alignment.items()):
+                # Calculate how many deletions occurred before this index
+                shift = sum(1 for deleted_row in row_indices if deleted_row < old_idx)
+                new_idx = old_idx - shift
+                new_alignment[new_idx] = settings
+            self.main_window._cycle_alignment = new_alignment
+        
+        logger.info(f"🗑️ Deleted {len(row_indices)} cycle(s) from data table")
+        
+        # Show confirmation
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'intel_message_label'):
+            self.main_window.sidebar.intel_message_label.setText(
+                f"🗑️ Deleted {len(row_indices)} cycle{'s' if len(row_indices) > 1 else ''} from data table"
+            )
+            self.main_window.sidebar.intel_message_label.setStyleSheet(
+                "font-size: 12px;"
+                "color: #FF9500;"  # Orange for deletion
+                "background: transparent;"
+                "font-weight: 600;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )

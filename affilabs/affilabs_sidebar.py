@@ -74,11 +74,12 @@ class AffilabsSidebar(QWidget):
     queue_cleared = Signal()
     queued_run_started = Signal()
 
-    def __init__(self, parent=None, detector_type="USB4000"):
+    def __init__(self, parent=None, detector_type="USB4000", app=None):
         super().__init__(parent)
         self._ui_setup_done = False
         self.cycle_table_dialog = None  # Will be created on first open
         self.detector_type = detector_type  # Store detector type for plot configuration
+        self.app = app  # Reference to Application instance for accessing _completed_cycles
 
         # Deferred loading flags (Settings tab plots now loaded immediately)
         self._settings_tab_loaded = False
@@ -468,8 +469,8 @@ class AffilabsSidebar(QWidget):
 
     def _build_method_tab(self, tab_layout: QVBoxLayout):
         """Build Method tab with cycle management using builder."""
-        builder = MethodTabBuilder(self)
-        builder.build(tab_layout)
+        self.method_tab_builder = MethodTabBuilder(self)
+        self.method_tab_builder.build(tab_layout)
 
     def _build_flow_tab(self, tab_layout: QVBoxLayout):
         """Build Flow tab with pump controls and cycle management using builder."""
@@ -477,60 +478,94 @@ class AffilabsSidebar(QWidget):
         builder.build(tab_layout)
 
     def _open_cycle_table_dialog(self):
-        """Open the full cycle table dialog (shared by Static and Flow tabs)."""
-        from cycle_table_dialog import CycleTableDialog
-
-        if self.cycle_table_dialog is None:
-            self.cycle_table_dialog = CycleTableDialog(self)
-
-            # Load sample/demo data matching SegmentDataFrame structure
-            # TODO: Connect to actual data source
-            sample_data = [
-                {
-                    "seg_id": 0,
-                    "name": "1",
-                    "start": 0.0,
-                    "end": 300.0,
-                    "ref_ch": None,
-                    "unit": "RU",
-                    "shift_a": 0.0,
-                    "shift_b": 0.0,
-                    "shift_c": 0.0,
-                    "shift_d": 0.0,
-                    "cycle_type": "Baseline",
-                    "cycle_time": 5,
-                    "note": "Initial baseline",
-                    "flags": None,
-                    "error": None,
-                },
-                {
-                    "seg_id": 1,
-                    "name": "2",
-                    "start": 300.0,
-                    "end": 600.0,
-                    "ref_ch": "a",
-                    "unit": "nM",
-                    "shift_a": 0.125,
-                    "shift_b": 0.143,
-                    "shift_c": 0.098,
-                    "shift_d": 0.112,
-                    "cycle_type": "Concentration",
-                    "cycle_time": 5,
-                    "note": "[A:50] Binding test",
-                    "flags": "ChA: 2",
-                    "error": None,
-                },
-            ]
-            self.cycle_table_dialog.load_cycles(sample_data)
-
-        self.cycle_table_dialog.show()
-        self.cycle_table_dialog.raise_()
-        self.cycle_table_dialog.activateWindow()
+        """Open the full cycle table dialog showing completed cycles.
+        
+        Displays all completed cycles from _completed_cycles list with
+        same column structure as Edits tab cycle_data_table.
+        """
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton
+        from affilabs.utils.logger import logger
+        
+        # DEBUG: Check what data we have
+        if hasattr(self, 'app') and self.app and hasattr(self.app, '_completed_cycles'):
+            cycles = self.app._completed_cycles
+            logger.info(f"📊 Opening Cycle Data Table - Found {len(cycles)} completed cycles")
+            for i, cycle in enumerate(cycles):
+                logger.debug(f"  Cycle {i+1}: {cycle.cycle_type} - {cycle.notes}")
+        else:
+            logger.error("❌ Cannot access _completed_cycles - app reference not set!")
+            if not hasattr(self, 'app'):
+                logger.error("  self.app does not exist")
+            elif not self.app:
+                logger.error("  self.app is None")
+            elif not hasattr(self.app, '_completed_cycles'):
+                logger.error("  self.app has no _completed_cycles attribute")
+        
+        # Create simple dialog showing cycle data
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Cycle Data Table - COMPLETED CYCLES ONLY")
+        dialog.resize(1000, 600)
+        
+        layout = QVBoxLayout()
+        
+        # Create table matching Edits tab structure
+        table = QTableWidget()
+        table.setColumnCount(11)
+        table.setHorizontalHeaderLabels([
+            "Type", "Duration", "Start", "Conc.", "Units", 
+            "Notes", "ΔSPR", "Inj.", "Flags", "Channel", "Shift"
+        ])
+        
+        # Populate table with completed cycles from Application instance
+        if hasattr(self, 'app') and self.app and hasattr(self.app, '_completed_cycles'):
+            cycles = self.app._completed_cycles
+            table.setRowCount(len(cycles))
+            
+            for row, cycle in enumerate(cycles):
+                # Format concentrations dict as string (e.g., "A:100, B:50")
+                if cycle.concentrations:
+                    conc_str = ", ".join(
+                        f"{ch}:{val}" for ch, val in sorted(cycle.concentrations.items())
+                    )
+                else:
+                    conc_str = ""
+                
+                # Format notes with cycle_id prefix
+                notes_text = f"[ID:{cycle.cycle_id}] {cycle.notes}" if cycle.notes else f"[ID:{cycle.cycle_id}]"
+                
+                # Format injection flag
+                injection_text = "Yes" if cycle.injection else "No"
+                
+                # Add row data
+                table.setItem(row, 0, QTableWidgetItem(cycle.cycle_type))
+                table.setItem(row, 1, QTableWidgetItem(str(cycle.duration)))
+                table.setItem(row, 2, QTableWidgetItem(cycle.start_time))
+                table.setItem(row, 3, QTableWidgetItem(conc_str))
+                table.setItem(row, 4, QTableWidgetItem(cycle.units or ""))
+                table.setItem(row, 5, QTableWidgetItem(notes_text))
+                table.setItem(row, 6, QTableWidgetItem(f"{cycle.delta_spr:.2f}" if cycle.delta_spr is not None else ""))
+                table.setItem(row, 7, QTableWidgetItem(injection_text))
+                table.setItem(row, 8, QTableWidgetItem(cycle.flags or ""))
+                table.setItem(row, 9, QTableWidgetItem(cycle.channel or ""))
+                table.setItem(row, 10, QTableWidgetItem(f"{cycle.shift:.2f}" if cycle.shift is not None else ""))
+        
+        # Resize columns to content
+        table.resizeColumnsToContents()
+        
+        layout.addWidget(table)
+        
+        # Add close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
 
     def _build_export_tab(self, tab_layout: QVBoxLayout):
         """Build Export tab with data export options using builder."""
-        builder = ExportTabBuilder(self)
-        builder.build(tab_layout)
+        self.export_tab_builder = ExportTabBuilder(self)
+        self.export_tab_builder.build(tab_layout)
 
     def _toggle_all_channels(self):
         """Toggle all channel checkboxes."""

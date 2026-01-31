@@ -134,6 +134,15 @@ class MethodTabBuilder:
 
         """
         self.sidebar = sidebar
+        self._app_reference = None
+
+    def set_app_reference(self, app):
+        """Set reference to main application for accessing segment_queue.
+        
+        Args:
+            app: Main application instance
+        """
+        self._app_reference = app
 
     def build(self, tab_layout: QVBoxLayout):
         """Build Method tab with cycle management and queue.
@@ -255,11 +264,11 @@ class MethodTabBuilder:
 
         self.sidebar.cycle_length_combo = QComboBox()
         self.sidebar.cycle_length_combo.addItems(
-            ["2 min", "5 min", "15 min", "30 min", "60 min"],
+            ["30 sec", "2 min", "5 min", "15 min", "30 min", "60 min"],
         )
-        self.sidebar.cycle_length_combo.setCurrentIndex(1)
+        self.sidebar.cycle_length_combo.setCurrentIndex(2)  # Default to "5 min"
         self.sidebar.cycle_length_combo.setToolTip("Duration of the experiment cycle")
-        self.sidebar.cycle_length_combo.setFixedWidth(70)
+        self.sidebar.cycle_length_combo.setFixedWidth(100)
         self.sidebar.cycle_length_combo.setStyleSheet(self._combo_style())
         length_row.addWidget(self.sidebar.cycle_length_combo)
         length_row.addStretch()
@@ -462,6 +471,37 @@ class MethodTabBuilder:
             "}",
         )
         buttons_row.addWidget(self.sidebar.start_cycle_btn)
+        
+        # Next Cycle Button (initially disabled)
+        self.sidebar.next_cycle_btn = QPushButton("⏭ Next Cycle")
+        self.sidebar.next_cycle_btn.setFixedSize(120, 36)
+        self.sidebar.next_cycle_btn.setEnabled(False)
+        self.sidebar.next_cycle_btn.setToolTip(
+            "Complete current cycle early and move to next (keeps data)",
+        )
+        self.sidebar.next_cycle_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #FF9500;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  padding: 6px 12px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #FFAA33;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #CC7A00;"
+            "}"
+            "QPushButton:disabled {"
+            "  background: rgba(0, 0, 0, 0.1);"
+            "  color: #86868B;"
+            "}",
+        )
+        buttons_row.addWidget(self.sidebar.next_cycle_btn)
 
         # Add to Queue Button
         self.sidebar.add_to_queue_btn = QPushButton("+ Add to Queue")
@@ -602,9 +642,9 @@ class MethodTabBuilder:
         summary_card_layout.setSpacing(8)
 
         # Summary table with resize capability
-        self.sidebar.summary_table = ResizableTableWidget(5, 4)
+        self.sidebar.summary_table = ResizableTableWidget(10, 5)
         self.sidebar.summary_table.setHorizontalHeaderLabels(
-            ["State", "Type", "Start", "Notes"],
+            ["State", "Type", "Duration", "Start", "Notes"],
         )
         self.sidebar.summary_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch,
@@ -657,7 +697,7 @@ class MethodTabBuilder:
         table_footer_row = QHBoxLayout()
         table_footer_row.setSpacing(10)
 
-        self.sidebar.queue_size_label = QLabel("Showing last 5 cycles")
+        self.sidebar.queue_size_label = QLabel("Showing last 10 cycles")
         self.sidebar.queue_size_label.setStyleSheet(
             "font-size: 11px;"
             "color: #86868B;"
@@ -690,6 +730,35 @@ class MethodTabBuilder:
         table_footer_row.addWidget(self.sidebar.expand_queue_btn)
         table_footer_row.addStretch()
 
+        # Method Manager button
+        self.sidebar.method_manager_btn = QPushButton("📁 Methods")
+        self.sidebar.method_manager_btn.setFixedHeight(28)
+        self.sidebar.method_manager_btn.setToolTip("Save and load methods (cycle sequences)")
+        self.sidebar.method_manager_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #34C759;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 4px 12px;"
+            "  font-size: 11px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #30B350;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #248A3D;"
+            "}",
+        )
+        self.sidebar.method_manager_btn.clicked.connect(self._open_method_manager)
+        table_footer_row.addWidget(self.sidebar.method_manager_btn)
+        
+        # Add test logging for button click
+        from affilabs.utils.logger import logger
+        logger.debug("✓ Method Manager button created and connected")
+
         # View All Cycles Button
         self.sidebar.open_table_btn = QPushButton("📊 View All Cycles")
         self.sidebar.open_table_btn.setFixedHeight(28)
@@ -720,53 +789,103 @@ class MethodTabBuilder:
         # Connect button signal
         self.sidebar.open_table_btn.clicked.connect(self._open_cycle_table_dialog)
 
-    def _open_cycle_table_dialog(self):
-        """Open the full cycle table dialog for reviewing completed cycles.
+    def _open_method_manager(self):
+        """Open method manager dialog for saving/loading methods."""
+        try:
+            from affilabs.widgets.method_manager_dialog import MethodManagerDialog
+            from affilabs.utils.logger import logger
+            
+            logger.debug("Opening Method Manager dialog...")
+            
+            # Get main window from sidebar's parent
+            main_window = self.sidebar.parent()
+            if main_window is None:
+                # Fallback: try to find main window via Qt's window() method
+                main_window = self.sidebar.window()
+                logger.debug(f"Using window() method, got: {type(main_window).__name__}")
+            else:
+                logger.debug(f"Using parent() method, got: {type(main_window).__name__}")
+            
+            if main_window is None:
+                logger.error("Could not find main window - cannot open Method Manager")
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self.sidebar,
+                    "Error",
+                    "Could not find main window. Please restart the application."
+                )
+                return
+            
+            logger.debug(f"Creating MethodManagerDialog with main_window={type(main_window).__name__}")
+            dialog = MethodManagerDialog(main_window, self.sidebar)
+            logger.debug("Dialog created, showing...")
+            dialog.exec()
+            logger.debug("Dialog closed")
+            
+        except Exception as e:
+            from affilabs.utils.logger import logger
+            logger.exception(f"Failed to open Method Manager dialog: {e}")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self.sidebar,
+                "Error",
+                f"Failed to open Method Manager:\n{e}"
+            )
 
-        This is the designated location for cycle review/analysis, keeping
-        the Live Sensorgram page focused on acquisition and monitoring.
+    def _open_cycle_table_dialog(self):
+        """Open the full cycle table dialog for reviewing queued cycles.
+
+        Shows all cycles currently in the queue (not just the first 5).
         """
+        from affilabs.utils.logger import logger
+        
+        # Get access to segment_queue from main app
+        if not hasattr(self, '_app_reference'):
+            logger.warning("Cannot open cycle table - no app reference")
+            return
+            
+        app = self._app_reference
+        if not hasattr(app, 'segment_queue'):
+            logger.warning("Cannot open cycle table - no segment_queue")
+            return
+        
         if self.sidebar.cycle_table_dialog is None:
             self.sidebar.cycle_table_dialog = CycleTableDialog(self.sidebar)
-
-            # Load sample/demo data
-            sample_data = [
-                {
-                    "seg_id": 0,
-                    "name": "1",
-                    "start": 0.0,
-                    "end": 300.0,
-                    "ref_ch": None,
-                    "unit": "RU",
-                    "shift_a": 0.0,
-                    "shift_b": 0.0,
-                    "shift_c": 0.0,
-                    "shift_d": 0.0,
-                    "cycle_type": "Baseline",
-                    "cycle_time": 5,
-                    "note": "Initial baseline",
-                    "flags": None,
-                    "error": None,
-                },
-                {
-                    "seg_id": 1,
-                    "name": "2",
-                    "start": 300.0,
-                    "end": 600.0,
-                    "ref_ch": "a",
-                    "unit": "nM",
-                    "shift_a": 0.125,
-                    "shift_b": 0.143,
-                    "shift_c": 0.098,
-                    "shift_d": 0.112,
-                    "cycle_type": "Concentration",
-                    "cycle_time": 5,
-                    "note": "[A:50] Binding test",
-                    "flags": "ChA: 2",
-                    "error": None,
-                },
-            ]
-            self.sidebar.cycle_table_dialog.load_cycles(sample_data)
+        
+        # Convert segment_queue cycles to dialog format
+        cycles_data = []
+        for i, cycle in enumerate(app.segment_queue):
+            cycle_data = {
+                "seg_id": i,
+                "name": str(i + 1),
+                "start": getattr(cycle, 'sensorgram_time', 0.0),
+                "end": 0.0,  # Not yet completed
+                "ref_ch": None,
+                "unit": getattr(cycle, '_units', 'RU'),
+                "shift_a": 0.0,
+                "shift_b": 0.0,
+                "shift_c": 0.0,
+                "shift_d": 0.0,
+                "cycle_type": cycle.type,
+                "cycle_time": cycle.length_minutes,
+                "note": cycle.note,
+                "flags": None,
+                "error": None,
+            }
+            cycles_data.append(cycle_data)
+        
+        # Load actual queue data instead of demo data
+        if cycles_data:
+            self.sidebar.cycle_table_dialog.load_cycles(cycles_data)
+            logger.info(f"📊 Loaded {len(cycles_data)} queued cycles into dialog")
+        else:
+            # Load empty/placeholder if no cycles
+            logger.info("📊 No queued cycles to display")
+            self.sidebar.cycle_table_dialog.load_cycles([])
+        
+        self.sidebar.cycle_table_dialog.show()
+        self.sidebar.cycle_table_dialog.raise_()
+        self.sidebar.cycle_table_dialog.activateWindow()
 
         self.sidebar.cycle_table_dialog.show()
         self.sidebar.cycle_table_dialog.raise_()

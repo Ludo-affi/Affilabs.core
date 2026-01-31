@@ -424,7 +424,12 @@ class DataWindow(QWidget):
                 show_cycle_data_button=True,
                 show_cycle_settings=False,
             )
-            cycle_data_widget.set_cycle_data_callback(self.open_cycle_table)
+            # Connect to sidebar's cycle history dialog (shows completed cycles, not segments)
+            if hasattr(self, 'sidebar') and hasattr(self.sidebar, '_open_cycle_table_dialog'):
+                cycle_data_widget.set_cycle_data_callback(self.sidebar._open_cycle_table_dialog)
+            else:
+                # Fallback to old segment dialog if sidebar not available
+                cycle_data_widget.set_cycle_data_callback(self.open_cycle_table)
             flow_layout.addWidget(cycle_data_widget)
 
             prime_pump_widget = PrimePumpWidget()

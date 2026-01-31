@@ -30,7 +30,7 @@ USAGE:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 CycleStatus = Literal["pending", "running", "completed", "cancelled"]
@@ -65,15 +65,27 @@ class Cycle:
     note: str = ""
     concentration_value: float | None = None
     concentration_units: str = "nM"  # Default to nM (use "ug/mL" for immobilization)
+    
+    # Concentration metadata (for multi-channel experiments)
+    units: str = "nM"  # Unit type for concentrations
+    concentrations: dict[str, float] = field(default_factory=dict)  # Channel-specific concentrations {'A': 100.0, 'B': 50.0}
+    
+    # Unique identifiers
+    cycle_id: int = 0  # Permanent ID assigned when created (never changes)
+    timestamp: float = 0.0  # Unix timestamp when cycle was created
 
     # Runtime state (set when cycle starts)
-    cycle_num: int = 0
+    cycle_num: int = 0  # Sequential position in queue (can change)
     total_cycles: int = 0
     status: CycleStatus = "pending"
 
     # Timeline positions (set during execution)
     sensorgram_time: float | None = None
     end_time_sensorgram: float | None = None
+    
+    # Analysis data (calculated after cycle completion)
+    delta_spr: float | None = None  # SPR change during cycle
+    flags: list[str] = field(default_factory=list)  # Flags that occurred during this cycle (injection, wash, spike)
 
     def __post_init__(self):
         """Validate cycle data after initialization."""
@@ -101,6 +113,10 @@ class Cycle:
             "status": self.status,
             "sensorgram_time": self.sensorgram_time,
             "end_time_sensorgram": self.end_time_sensorgram,
+            "units": self.units,
+            "concentrations": self.concentrations,
+            "cycle_id": self.cycle_id,
+            "timestamp": self.timestamp,
         }
 
     def to_export_dict(self) -> dict:
@@ -110,6 +126,7 @@ class Cycle:
             Dictionary suitable for Excel export
         """
         return {
+            "cycle_id": self.cycle_id,
             "cycle_num": self.cycle_num,
             "type": self.type,
             "name": self.name,
@@ -118,7 +135,11 @@ class Cycle:
             "duration_minutes": self.length_minutes,
             "concentration_value": self.concentration_value,
             "concentration_units": self.concentration_units,
+            "units": self.units,
+            "concentrations": self.concentrations,
             "note": self.note,
+            "delta_spr": self.delta_spr,
+            "flags": self.flags if self.flags else [],
         }
 
     @classmethod
@@ -138,6 +159,10 @@ class Cycle:
             note=data.get("note", ""),
             concentration_value=data.get("concentration_value"),
             concentration_units=data.get("concentration_units", "nM"),
+            units=data.get("units", "nM"),
+            concentrations=data.get("concentrations", {}),
+            cycle_id=data.get("cycle_id", 0),
+            timestamp=data.get("timestamp", 0.0),
             cycle_num=data.get("cycle_num", 0),
             total_cycles=data.get("total_cycles", 0),
             status=data.get("status", "pending"),
@@ -186,6 +211,58 @@ class Cycle:
     def get_duration_seconds(self) -> float:
         """Get cycle duration in seconds."""
         return self.length_minutes * 60
+
+    def to_dict(self) -> dict:
+        """Convert cycle to dictionary for serialization.
+        
+        Returns:
+            Dictionary with all cycle data
+        """
+        return {
+            'type': self.type,
+            'length_minutes': self.length_minutes,
+            'name': self.name,
+            'note': self.note,
+            'concentration_value': self.concentration_value,
+            'concentration_units': self.concentration_units,
+            'units': self.units,
+            'concentrations': self.concentrations,
+            'cycle_id': self.cycle_id,
+            'timestamp': self.timestamp,
+            'cycle_num': self.cycle_num,
+            'total_cycles': self.total_cycles,
+            'status': self.status,
+            'sensorgram_time': self.sensorgram_time,
+            'end_time_sensorgram': self.end_time_sensorgram,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Cycle:
+        """Create cycle from dictionary.
+        
+        Args:
+            data: Dictionary with cycle data
+            
+        Returns:
+            New Cycle instance
+        """
+        return cls(
+            type=data.get('type', 'Custom'),
+            length_minutes=data.get('length_minutes', 0.0),
+            name=data.get('name', ''),
+            note=data.get('note', ''),
+            concentration_value=data.get('concentration_value'),
+            concentration_units=data.get('concentration_units', 'nM'),
+            units=data.get('units', 'nM'),
+            concentrations=data.get('concentrations', {}),
+            cycle_id=data.get('cycle_id', 0),
+            timestamp=data.get('timestamp', 0.0),
+            cycle_num=data.get('cycle_num', 0),
+            total_cycles=data.get('total_cycles', 0),
+            status=data.get('status', 'pending'),
+            sensorgram_time=data.get('sensorgram_time', 0.0),
+            end_time_sensorgram=data.get('end_time_sensorgram', 0.0),
+        )
 
     def __str__(self) -> str:
         """String representation for logging."""

@@ -1245,7 +1245,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Cycle queue management
         self.cycle_queue = []
-        self.max_queue_size = 5
+        self.max_queue_size = 10
         self._current_running_cycle = None  # Track currently running cycle
 
         # Countdown timer for cycle tracking
@@ -1322,16 +1322,20 @@ class AffilabsMainWindow(QMainWindow):
         self.sidebar.setMaximumWidth(900)  # Maximum width for sidebar
         # Give sidebar reference to device_config for S/P position syncing
         self.sidebar.device_config = self.device_config
+        # Give sidebar reference to app for accessing _completed_cycles
+        # Note: Will be set by Application.__init__ after main_window creation
+        self.sidebar.app = None
         self.splitter.addWidget(self.sidebar)
         self.splitter.setCollapsible(0, False)  # Prevent sidebar from collapsing
 
         # Forward sidebar control references to main window for easy access
-        self.grid_check = self.sidebar.grid_check
-        self.autoscale_check = self.sidebar.autoscale_check
-        self.min_input = self.sidebar.min_input
-        self.max_input = self.sidebar.max_input
-        self.x_axis_btn = self.sidebar.x_axis_btn
-        self.y_axis_btn = self.sidebar.y_axis_btn
+        # Graphic display controls hidden per user request:
+        # self.grid_check = self.sidebar.grid_check
+        # self.autoscale_check = self.sidebar.autoscale_check
+        # self.min_input = self.sidebar.min_input
+        # self.max_input = self.sidebar.max_input
+        # self.x_axis_btn = self.sidebar.x_axis_btn
+        # self.y_axis_btn = self.sidebar.y_axis_btn
         self.colorblind_check = self.sidebar.colorblind_check
         self.ref_combo = self.sidebar.ref_combo
         self.export_data_btn = self.sidebar.export_data_btn
@@ -1773,8 +1777,16 @@ class AffilabsMainWindow(QMainWindow):
         # Channel selection label
         from affilabs.utils.ui_styles import UIStyleManager
 
-        channels_label = QLabel("Channels:")
-        channels_label.setStyleSheet(UIStyleManager.get_header_label_style())
+        channels_label = QLabel("Display Channels:")
+        channels_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  color: #1D1D1F;"
+            "  padding-right: 4px;"
+            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
         channels_label.setToolTip("Toggle channel visibility on graphs")
         first_row_layout.addWidget(channels_label)
 
@@ -1787,10 +1799,10 @@ class AffilabsMainWindow(QMainWindow):
             "D": ("#34C759", "Channel D (Green) - Toggle visibility"),
         }
         for ch, (color, tooltip) in channel_names.items():
-            ch_btn = QPushButton(f"Ch {ch}")
+            ch_btn = QPushButton(ch)
             ch_btn.setCheckable(True)
             ch_btn.setChecked(True)  # All visible by default
-            ch_btn.setFixedSize(56, 32)
+            ch_btn.setFixedSize(36, 32)
             ch_btn.setToolTip(tooltip)
             ch_btn.setStyleSheet(UIStyleManager.get_channel_button_style(color))
 
@@ -2435,7 +2447,7 @@ class AffilabsMainWindow(QMainWindow):
             flag_row.setSpacing(8)
 
             # Flagging channel selection label
-            flag_label = QLabel("Flag:")
+            flag_label = QLabel("Flag Controls:")
             flag_label.setStyleSheet(
                 "QLabel {"
                 "  font-size: 12px;"
@@ -2445,16 +2457,11 @@ class AffilabsMainWindow(QMainWindow):
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
             )
-            flag_label.setToolTip("Select channel for placing flags")
+            flag_label.setToolTip("Flag marker controls - Select channel and manage flags")
             flag_row.addWidget(flag_label)
 
             # Flagging channel selection buttons (radio-style)
             self.channel_selection_buttons = {}
-
-            # Use colorblind palette if enabled
-            from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
-            is_colorblind = self.colorblind_check.isChecked() if hasattr(self, 'colorblind_check') else False
-            colors = CHANNEL_COLORS_COLORBLIND if is_colorblind else CHANNEL_COLORS
 
             flag_channel_names = ["A", "B", "C", "D"]
             flag_tooltips = [
@@ -2464,15 +2471,36 @@ class AffilabsMainWindow(QMainWindow):
                 "Select Channel D for flagging",
             ]
 
+            # Monochrome style for flag selection buttons (different from display toggles)
+            flag_button_style = (
+                "QPushButton {"
+                "  background: #D1D1D6;"
+                "  color: #1D1D1F;"
+                "  border: none;"
+                "  border-radius: 4px;"
+                "  font-size: 11px;"
+                "  font-weight: 700;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "}"
+                "QPushButton:!checked {"
+                "  background: rgba(0, 0, 0, 0.05);"
+                "  color: #86868B;"
+                "  border: 1px solid rgba(0, 0, 0, 0.08);"
+                "}"
+                "QPushButton:hover:!checked {"
+                "  background: rgba(0, 0, 0, 0.08);"
+                "  border: 1px solid rgba(0, 0, 0, 0.12);"
+                "}"
+            )
+
             for i, ch in enumerate(flag_channel_names):
-                color = colors[i]
                 tooltip = flag_tooltips[i]
                 ch_btn = QPushButton(ch)
                 ch_btn.setCheckable(True)
                 ch_btn.setChecked(ch == "A")  # Channel A selected by default
                 ch_btn.setFixedSize(36, 32)
                 ch_btn.setToolTip(tooltip)
-                ch_btn.setStyleSheet(UIStyleManager.get_channel_button_style(color))
+                ch_btn.setStyleSheet(flag_button_style)
                 ch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
                 # Store reference and connect to channel selection for flagging
@@ -2504,30 +2532,33 @@ class AffilabsMainWindow(QMainWindow):
             flag_row.addSpacing(8)
 
             # Clear Flags button
-            self.clear_flags_btn = QPushButton("Clear All")
+            self.clear_flags_btn = QPushButton("C")
             self.clear_flags_btn.setFixedHeight(32)
-            self.clear_flags_btn.setFixedWidth(80)
+            self.clear_flags_btn.setFixedWidth(32)
             self.clear_flags_btn.setToolTip(
+                "Clear All Flags\n"
                 "Remove all flags from Live Sensorgram\n"
                 "• Clears all flag markers\n"
                 "• Does not affect recorded data",
             )
             self.clear_flags_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: #FF3B30;"
-                "  color: white;"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  background: rgba(0, 0, 0, 0.06);"
+                "  color: #8E8E93;"
+                "  border: 1px solid rgba(0, 0, 0, 0.08);"
+                "  border-radius: 4px;"
                 "  font-size: 11px;"
-                "  font-weight: 600;"
+                "  font-weight: 500;"
                 "  padding: 0px 12px;"
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
                 "QPushButton:hover {"
-                "  background: #E6342B;"
+                "  background: rgba(255, 59, 48, 0.15);"
+                "  color: #FF3B30;"
+                "  border: 1px solid rgba(255, 59, 48, 0.2);"
                 "}"
                 "QPushButton:pressed {"
-                "  background: #CC2E26;"
+                "  background: rgba(255, 59, 48, 0.25);"
                 "}"
             )
             self.clear_flags_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2535,30 +2566,33 @@ class AffilabsMainWindow(QMainWindow):
             flag_row.addWidget(self.clear_flags_btn)
 
             # Reset Timing button
-            self.reset_timing_btn = QPushButton("Reset Timing")
+            self.reset_timing_btn = QPushButton("R")
             self.reset_timing_btn.setFixedHeight(32)
-            self.reset_timing_btn.setFixedWidth(95)
+            self.reset_timing_btn.setFixedWidth(32)
             self.reset_timing_btn.setToolTip(
+                "Reset Timing\n"
                 "Reset all channel time shifts to default\n"
                 "• Removes injection alignment offsets\n"
                 "• Restores original timing"
             )
             self.reset_timing_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: #FF9500;"
-                "  color: white;"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  background: rgba(0, 0, 0, 0.06);"
+                "  color: #8E8E93;"
+                "  border: 1px solid rgba(0, 0, 0, 0.08);"
+                "  border-radius: 4px;"
                 "  font-size: 11px;"
-                "  font-weight: 600;"
+                "  font-weight: 500;"
                 "  padding: 0px 12px;"
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
                 "QPushButton:hover {"
-                "  background: #E68A00;"
+                "  background: rgba(255, 149, 0, 0.15);"
+                "  color: #FF9500;"
+                "  border: 1px solid rgba(255, 149, 0, 0.2);"
                 "}"
                 "QPushButton:pressed {"
-                "  background: #CC7A00;"
+                "  background: rgba(255, 149, 0, 0.25);"
                 "}"
             )
             self.reset_timing_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -5467,7 +5501,7 @@ End of Debug Log
         from PySide6.QtGui import QColor
 
         for row in range(current_rows, new_rows):
-            for col in range(4):
+            for col in range(5):  # 5 columns: State, Type, Duration, Start, Notes
                 empty_item = QTableWidgetItem("")
                 empty_item.setBackground(QColor(255, 255, 255))
                 self.sidebar.summary_table.setItem(row, col, empty_item)
@@ -5496,13 +5530,14 @@ End of Debug Log
 
     def add_cycle_to_queue(self):
         """Add current cycle form values to the queue."""
-        if len(self.cycle_queue) >= self.max_queue_size:
-            QMessageBox.warning(
-                self,
-                "Queue Full",
-                f"Maximum queue size ({self.max_queue_size}) reached. Start a cycle to free up space.",
-            )
-            return
+        # DISABLED: Queue size limit removed - no longer needed
+        # if len(self.cycle_queue) >= self.max_queue_size:
+        #     QMessageBox.warning(
+        #         self,
+        #         "Queue Full",
+        #         f"Maximum queue size ({self.max_queue_size}) reached. Start a cycle to free up space.",
+        #     )
+        #     return
 
         # Extract values from cycle settings form widgets
         cycle_type = self.sidebar.cycle_type_combo.currentText()
@@ -6427,6 +6462,185 @@ End of Debug Log
             pass
         super().closeEvent(event)
 
+    def add_cycle_to_table(self, cycle_data: dict):
+        """Add a single completed cycle to the cycle data table during live acquisition.
+        
+        CRITICAL: This method should ONLY be called when a cycle COMPLETES,
+        NOT when cycles are added to the queue. The Cycle Data Table shows
+        COMPLETED cycles only, not queued/pending cycles.
+        
+        Args:
+            cycle_data: Dictionary containing cycle information from Cycle.to_export_dict()
+        """
+        from PySide6.QtWidgets import QTableWidgetItem, QComboBox, QDoubleSpinBox
+        from affilabs.utils.logger import logger
+        
+        logger.info(f"📝 Adding COMPLETED cycle to table: {cycle_data.get('type', 'Unknown')}")
+        
+        try:
+            # Verify edits_tab exists
+            if not hasattr(self, 'edits_tab'):
+                logger.error("❌ CRITICAL: edits_tab does NOT exist on main_window! Cannot add cycle to table.")
+                logger.error(f"   main_window attributes: {dir(self)}")
+                return
+            
+            # Verify cycle_data_table exists
+            if not hasattr(self.edits_tab, 'cycle_data_table'):
+                logger.error("❌ CRITICAL: cycle_data_table does NOT exist on edits_tab! Cannot add cycle.")
+                logger.error(f"   edits_tab attributes: {dir(self.edits_tab)}")
+                return
+            
+            cycle_table = self.edits_tab.cycle_data_table
+            
+            logger.debug(f"✓ Cycle table found, current rows: {cycle_table.rowCount()}")
+                
+            # Initialize type counter if it doesn't exist
+            if not hasattr(self, '_cycle_type_counts'):
+                self._cycle_type_counts = {}
+                
+            # Get current row count (where we'll add the new row)
+            row_idx = cycle_table.rowCount()
+            cycle_table.insertRow(row_idx)
+            
+            # Get cycle type and format with numbering
+            cycle_type = cycle_data.get('type', 'Unknown')
+            
+            # Abbreviate "Concentration" to "Conc."
+            if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
+                cycle_type = 'Conc.'
+                
+            # Count this type occurrence
+            if cycle_type not in self._cycle_type_counts:
+                self._cycle_type_counts[cycle_type] = 0
+            self._cycle_type_counts[cycle_type] += 1
+            
+            # Format type with number
+            type_with_number = f"{cycle_type} {self._cycle_type_counts[cycle_type]}"
+            
+            # Column 0: Type
+            cycle_table.setItem(row_idx, 0, QTableWidgetItem(type_with_number))
+            
+            # Column 1: Duration (minutes)
+            duration = cycle_data.get('duration_minutes', cycle_data.get('length_minutes', ''))
+            if isinstance(duration, (int, float)):
+                duration = f"{duration:.2f}"
+            cycle_table.setItem(row_idx, 1, QTableWidgetItem(str(duration)))
+            
+            # Column 2: Start time (seconds)
+            start_time = cycle_data.get('start_time_sensorgram', cycle_data.get('sensorgram_time', ''))
+            if isinstance(start_time, (int, float)):
+                start_time = f"{start_time:.2f}"
+            cycle_table.setItem(row_idx, 2, QTableWidgetItem(str(start_time)))
+            
+            # Column 3: Concentration value
+            # Handle both single concentration_value and multi-channel concentrations dict
+            if cycle_data.get('concentrations'):
+                # Multi-channel concentrations - format as "A:100, B:50"
+                conc_dict = cycle_data['concentrations']
+                if isinstance(conc_dict, dict):
+                    conc_parts = [f"{ch}:{val}" for ch, val in sorted(conc_dict.items())]
+                    conc_value = ', '.join(conc_parts)
+                else:
+                    conc_value = str(conc_dict)
+            else:
+                # Single concentration value
+                conc_value = cycle_data.get('concentration_value', '')
+                if isinstance(conc_value, (int, float)):
+                    conc_value = f"{conc_value:.2f}"
+            cycle_table.setItem(row_idx, 3, QTableWidgetItem(str(conc_value)))
+            
+            # Column 4: Concentration units (use 'units' field if available, fallback to 'concentration_units')
+            conc_units = cycle_data.get('units', cycle_data.get('concentration_units', ''))
+            cycle_table.setItem(row_idx, 4, QTableWidgetItem(str(conc_units)))
+            
+            # Column 5: Notes (include cycle_id for tracking)
+            notes = cycle_data.get('note', cycle_data.get('notes', ''))
+            cycle_id = cycle_data.get('cycle_id', '')
+            if cycle_id:
+                notes_display = f"[ID:{cycle_id}] {notes}" if notes else f"[ID:{cycle_id}]"
+            else:
+                notes_display = notes
+            cycle_table.setItem(row_idx, 5, QTableWidgetItem(str(notes_display)))
+            
+            # Column 6: Delta SPR
+            delta_spr = cycle_data.get('delta_spr', '')
+            if isinstance(delta_spr, (int, float)):
+                delta_spr_text = f"{delta_spr:.1f}"
+            else:
+                delta_spr_text = str(delta_spr) if delta_spr else ''
+            cycle_table.setItem(row_idx, 6, QTableWidgetItem(delta_spr_text))
+            
+            # Column 7: Injection flag indicator
+            flags_list = cycle_data.get('flags', [])
+            has_injection = '✓' if 'injection' in flags_list else ''
+            cycle_table.setItem(row_idx, 7, QTableWidgetItem(has_injection))
+            
+            # Column 8: Other flags (wash, spike)
+            other_flags = [f for f in flags_list if f != 'injection']
+            flags_text = ', '.join(other_flags) if other_flags else ''
+            cycle_table.setItem(row_idx, 8, QTableWidgetItem(flags_text))
+            
+            # Column 9: Channel selector
+            channel_combo = QComboBox()
+            channel_combo.addItems(["All", "A", "B", "C", "D"])
+            channel_combo.setCurrentText("All")
+            channel_combo.setStyleSheet("""
+                QComboBox {
+                    background: white;
+                    border: 1px solid #D1D1D6;
+                    border-radius: 4px;
+                    padding: 2px 8px;
+                    font-size: 12px;
+                }
+                QComboBox::drop-down {
+                    border: none;
+                }
+                QComboBox:hover {
+                    border: 1px solid #007AFF;
+                }
+            """)
+            channel_combo.setProperty('cycle_index', row_idx)
+            channel_combo.currentTextChanged.connect(self._on_cycle_channel_changed)
+            cycle_table.setCellWidget(row_idx, 9, channel_combo)
+            
+            # Column 10: Time shift
+            shift_spinbox = QDoubleSpinBox()
+            shift_spinbox.setRange(-1000.0, 1000.0)
+            shift_spinbox.setValue(0.0)
+            shift_spinbox.setSuffix(" s")
+            shift_spinbox.setDecimals(2)
+            shift_spinbox.setSingleStep(0.1)
+            shift_spinbox.setStyleSheet("""
+                QDoubleSpinBox {
+                    background: white;
+                    border: 1px solid #D1D1D6;
+                    border-radius: 4px;
+                    padding: 2px 4px;
+                    font-size: 12px;
+                }
+                QDoubleSpinBox:hover {
+                    border: 1px solid #007AFF;
+                }
+            """)
+            shift_spinbox.setProperty('cycle_index', row_idx)
+            shift_spinbox.valueChanged.connect(self._on_cycle_shift_changed)
+            cycle_table.setCellWidget(row_idx, 10, shift_spinbox)
+            
+            # Initialize alignment settings for this cycle
+            if not hasattr(self, '_cycle_alignment'):
+                self._cycle_alignment = {}
+            self._cycle_alignment[row_idx] = {'channel': 'All', 'shift': 0.0}
+            
+            # Update loaded cycles data list
+            if not hasattr(self, '_loaded_cycles_data'):
+                self._loaded_cycles_data = []
+            self._loaded_cycles_data.append(cycle_data)
+            
+            logger.info(f"✓ Added cycle to table: {type_with_number} at row {row_idx}")
+            
+        except Exception as e:
+            logger.exception(f"Error adding cycle to table: {e}")
+
     def _populate_cycle_table_from_loaded_data(self, cycles_data: list):
         """Populate the cycle data table with loaded cycle information.
 
@@ -6441,8 +6655,9 @@ End of Debug Log
                 logger.warning("Cycle data table not found - cannot populate")
                 return
 
-            # Clear existing table data
+            # Clear existing table data and reset type counter
             self.cycle_data_table.setRowCount(0)
+            self._cycle_type_counts = {}  # Reset numbering for loaded data
 
             if not cycles_data:
                 logger.info("No cycles to display in table")
@@ -6487,20 +6702,54 @@ End of Debug Log
                 self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(start_time)))
 
                 # Column 3: Concentration value
-                conc_value = cycle.get('concentration_value', '')
-                if isinstance(conc_value, (int, float)):
-                    conc_value = f"{conc_value:.2f}"
+                # Handle both single concentration_value and multi-channel concentrations dict
+                if cycle.get('concentrations'):
+                    # Multi-channel concentrations - format as "A:100, B:50"
+                    conc_dict = cycle['concentrations']
+                    if isinstance(conc_dict, dict):
+                        conc_parts = [f"{ch}:{val}" for ch, val in sorted(conc_dict.items())]
+                        conc_value = ', '.join(conc_parts)
+                    else:
+                        conc_value = str(conc_dict)
+                else:
+                    # Single concentration value
+                    conc_value = cycle.get('concentration_value', '')
+                    if isinstance(conc_value, (int, float)):
+                        conc_value = f"{conc_value:.2f}"
                 self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(str(conc_value)))
 
-                # Column 4: Concentration units
-                conc_units = cycle.get('concentration_units', '')
+                # Column 4: Concentration units (use 'units' field if available)
+                conc_units = cycle.get('units', cycle.get('concentration_units', ''))
                 self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(str(conc_units)))
 
-                # Column 5: Notes
+                # Column 5: Notes (include cycle_id for tracking)
                 notes = cycle.get('note', cycle.get('notes', ''))
-                self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(str(notes)))
+                cycle_id = cycle.get('cycle_id', '')
+                if cycle_id:
+                    notes_display = f"[ID:{cycle_id}] {notes}" if notes else f"[ID:{cycle_id}]"
+                else:
+                    notes_display = notes
+                self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(str(notes_display)))
 
-                # Column 6: Channel selector (dropdown)
+                # Column 6: Delta SPR
+                delta_spr = cycle.get('delta_spr', '')
+                if isinstance(delta_spr, (int, float)):
+                    delta_spr_text = f"{delta_spr:.1f}"
+                else:
+                    delta_spr_text = str(delta_spr) if delta_spr else ''
+                self.cycle_data_table.setItem(row_idx, 6, QTableWidgetItem(delta_spr_text))
+                
+                # Column 7: Injection flag indicator
+                flags_list = cycle.get('flags', [])
+                has_injection = '✓' if 'injection' in flags_list else ''
+                self.cycle_data_table.setItem(row_idx, 7, QTableWidgetItem(has_injection))
+                
+                # Column 8: Other flags (wash, spike)
+                other_flags = [f for f in flags_list if f != 'injection']
+                flags_text = ', '.join(other_flags) if other_flags else ''
+                self.cycle_data_table.setItem(row_idx, 8, QTableWidgetItem(flags_text))
+
+                # Column 9: Channel selector (dropdown)
                 from PySide6.QtWidgets import QComboBox
                 channel_combo = QComboBox()
                 channel_combo.addItems(["All", "A", "B", "C", "D"])
@@ -6523,9 +6772,9 @@ End of Debug Log
                 # Store cycle index in widget
                 channel_combo.setProperty('cycle_index', row_idx)
                 channel_combo.currentTextChanged.connect(self._on_cycle_channel_changed)
-                self.cycle_data_table.setCellWidget(row_idx, 6, channel_combo)
+                self.cycle_data_table.setCellWidget(row_idx, 9, channel_combo)
 
-                # Column 7: Time shift (spinbox in seconds)
+                # Column 10: Time shift (spinbox in seconds)
                 from PySide6.QtWidgets import QDoubleSpinBox
                 shift_spinbox = QDoubleSpinBox()
                 shift_spinbox.setRange(-1000.0, 1000.0)
@@ -6548,7 +6797,7 @@ End of Debug Log
                 # Store cycle index in widget
                 shift_spinbox.setProperty('cycle_index', row_idx)
                 shift_spinbox.valueChanged.connect(self._on_cycle_shift_changed)
-                self.cycle_data_table.setCellWidget(row_idx, 7, shift_spinbox)
+                self.cycle_data_table.setCellWidget(row_idx, 10, shift_spinbox)
 
             # Store cycles data for graph loading
             self._loaded_cycles_data = cycles_data

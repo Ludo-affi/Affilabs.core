@@ -54,9 +54,13 @@ class DataCollector:
         """
         self.recording_start_time = start_time or time.time()
 
-        # Initialize metadata with recording start (human-readable ISO format)
+        # Initialize metadata with recording start in human-readable format
+        # Use standard datetime format that Excel and users can easily read
         self.metadata = {
-            "recording_start": dt.datetime.fromtimestamp(self.recording_start_time).isoformat(),
+            "recording_start": dt.datetime.fromtimestamp(self.recording_start_time).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "recording_start_iso": dt.datetime.fromtimestamp(self.recording_start_time).isoformat(),
         }
 
         logger.debug(f"Data collection started at {self.recording_start_time}")

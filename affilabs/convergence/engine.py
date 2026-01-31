@@ -287,7 +287,16 @@ class ConvergenceEngine:
 
         # Store slopes for use in the algorithm (AFTER state is created)
         state.model_slopes_at_10ms = model_slopes_at_10ms or {}
-        self._log("debug", f"Model slopes: {state.model_slopes_at_10ms}")
+        
+        # Log model slope availability
+        if state.model_slopes_at_10ms:
+            slope_str = ", ".join([f"{ch.upper()}={slope:.1f}" for ch, slope in state.model_slopes_at_10ms.items()])
+            self._log("info", f"  📊 Calibration slopes available: {slope_str} counts/LED @ 10ms")
+            self._log("info", f"     Strategy: 30% ML + 70% Physics Model (blended)")
+        else:
+            self._log("info", f"  🤖 No calibration slopes - using 100% ML predictions")
+            self._log("info", f"     (This is normal for P-mode or first-time calibration)")
+        
         high_sensitivity_detected = False
 
         target_signal = recipe.target_percent * params.max_counts
@@ -1646,7 +1655,7 @@ class ConvergenceEngine:
                     else:
                         # No model available, use ML directly
                         new_led = ml_led_predicted
-                        self._log("info", f"    🤖 [ML-ONLY] Using ML prediction {new_led} (no model available)")
+                        self._log("info", f"    🤖 [ML-ONLY] Using ML prediction {new_led} (no calibration slope data for this channel)")
                 else:
                     # ENHANCED FALLBACK: Use ML context for better slope-based decisions
                     # For HIGH sensitivity devices (detected by ML or rules),

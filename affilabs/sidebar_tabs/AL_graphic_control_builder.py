@@ -58,7 +58,7 @@ class GraphicControlTabBuilder:
         """
         self._build_data_filtering(tab_layout)
         self._build_reference_section(tab_layout)
-        self._build_graphic_display(tab_layout)
+        # self._build_graphic_display(tab_layout)  # Hidden per user request
         self._build_visual_accessibility(tab_layout)
         tab_layout.addStretch()
 
@@ -121,13 +121,13 @@ class GraphicControlTabBuilder:
         self.sidebar.filter_method_group.addButton(self.sidebar.filter_none_radio, 0)
         gc_layout.addWidget(self.sidebar.filter_none_radio)
 
-        # Option 2: EMA Light (α=0.50)
-        self.sidebar.filter_light_radio = QRadioButton("EMA Light (α=0.50)")
+        # Option 2: Light Smoothing
+        self.sidebar.filter_light_radio = QRadioButton("Light Smoothing")
         self.sidebar.filter_light_radio.setStyleSheet(radio_style)
         self.sidebar.filter_light_radio.setToolTip(
             "Light smoothing filter - Reduces noise while maintaining fast response\n"
             "• Minimal lag during sharp changes\n"
-            "• Less curvature overshoot\n"
+            "• May round fast changes slightly\n"
             "• Use for: General data smoothing, reducing baseline noise",
         )
         self.sidebar.filter_method_group.addButton(self.sidebar.filter_light_radio, 1)
@@ -135,7 +135,7 @@ class GraphicControlTabBuilder:
 
         # Info note
         info_label = QLabel(
-            "💡 EMA filtering is applied point-by-point to the live display only. "
+            "💡 Smoothing is applied point-by-point to the live display only. "
             "Saved data remains unfiltered. Applied after peak finding.",
         )
         info_label.setStyleSheet(
@@ -273,10 +273,6 @@ class GraphicControlTabBuilder:
         ref_layout.setContentsMargins(12, 10, 12, 10)
         ref_layout.setSpacing(8)
 
-        ref_desc = QLabel("Select a channel to subtract from others")
-        ref_desc.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
-        ref_layout.addWidget(ref_desc)
-
         ref_row = QHBoxLayout()
         ref_row.setSpacing(10)
         ref_label = QLabel("Reference:")
@@ -292,7 +288,7 @@ class GraphicControlTabBuilder:
         )
         self.sidebar.ref_combo.setFixedWidth(120)
         self.sidebar.ref_combo.setToolTip(
-            "Select channel to use as baseline reference (shown as dashed line)",
+            "Subtract selected channel from all others (shown as dashed line)",
         )
         self.sidebar.ref_combo.setStyleSheet(
             f"QComboBox {{"
@@ -322,12 +318,6 @@ class GraphicControlTabBuilder:
         )
         ref_row.addWidget(self.sidebar.ref_combo)
         ref_layout.addLayout(ref_row)
-
-        ref_info = QLabel("Selected channel shown as faded dashed line")
-        ref_info.setStyleSheet(
-            label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;",
-        )
-        ref_layout.addWidget(ref_info)
 
         # NOTE: Connection is made in affilabs_core_ui.py after app is initialized
         # self.sidebar.ref_combo.currentTextChanged.connect(self.app._on_reference_changed)

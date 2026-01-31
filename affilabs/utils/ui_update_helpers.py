@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from main_simplified import Application  # type: ignore[import-not-found]
 
 import numpy as np
+from affilabs.utils.logger import logger
 
 
 # Wavelength to Response Unit conversion constant
@@ -174,8 +175,12 @@ class UIUpdateHelpers:
             # Set X-axis range to show only the cursor region
             # Respect user's autoscale preference - only override if autoscale is enabled
             if max_cycle_time > 0:
-                if app.main_window.autoscale_check.isChecked():
+                # Check if autoscale control exists (may be hidden)
+                if hasattr(app.main_window, 'autoscale_check') and app.main_window.autoscale_check.isChecked():
                     # User wants autoscale - let it handle the range
+                    app.main_window.cycle_of_interest_graph.setXRange(0, max_cycle_time, padding=0.02)
+                elif not hasattr(app.main_window, 'autoscale_check'):
+                    # Control doesn't exist (hidden) - use autoscale by default
                     app.main_window.cycle_of_interest_graph.setXRange(0, max_cycle_time, padding=0.02)
                 else:
                     # User wants manual control - don't override their range
@@ -271,7 +276,8 @@ class UIUpdateHelpers:
                     # Skip first point and shift time axis so displayed data starts at t=0
                     if len(display_time) > 1:
                         first_time = display_time[1]
-                        # Store offset for cursor synchronization
+                        # Store offset for cursor synchronization and recording markers
+                        # (Removed verbose debug logging - offset updates every frame)
                         app._display_time_offset = first_time
                         display_time = display_time[1:] - first_time
                         display_wavelength = display_wavelength[1:]

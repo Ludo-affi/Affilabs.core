@@ -165,8 +165,16 @@ class QCHistoryDialog(QDialog):
                 f"Found {len(self.reports_list)} calibration reports",
             )
 
+            # Clear table completely before repopulating
+            self.table.clearContents()
+            self.table.setRowCount(0)
+            
             # Populate table
             self.table.setRowCount(len(self.reports_list))
+            
+            # Set row height to prevent button overlap
+            for r in range(len(self.reports_list)):
+                self.table.setRowHeight(r, 40)
 
             for row, report_info in enumerate(self.reports_list):
                 # Date/Time

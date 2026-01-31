@@ -1,0 +1,57 @@
+{
+  "queue": [
+    {
+      "type": "Auto-read",
+      "length_minutes": 30,
+      "name": "Cycle 1",
+      "note": "",
+      "concentration_value": null,
+      "concentration_units": "nM",
+      "units": "nM",
+      "concentrations": {},
+      "cycle_id": 3,
+      "timestamp": 1769888620.0635316,
+      "cycle_num": 1,
+      "total_cycles": 0,
+      "status": "pending",
+      "sensorgram_time": null,
+      "end_time_sensorgram": null
+    },
+    {
+      "type": "Auto-read",
+      "length_minutes": 30,
+      "name": "Cycle 2",
+      "note": "",
+      "concentration_value": null,
+      "concentration_units": "nM",
+      "units": "nM",
+      "concentrations": {},
+      "cycle_id": 4,
+      "timestamp": 1769888623.1222587,
+      "cycle_num": 2,
+      "total_cycles": 0,
+      "status": "pending",
+      "sensorgram_time": null,
+      "end_time_sensorgram": null
+    },
+    {
+      "type": "Auto-read",
+      "length_minutes": 30,
+      "name": "Cycle 3",
+      "note": "",
+      "concentration_value": null,
+      "concentration_units": "nM",
+      "units": "nM",
+      "concentrations": {},
+      "cycle_id": 5,
+      "timestamp": 1769888628.0861797,
+      "cycle_num": 3,
+      "total_cycles": 0,
+      "status": "pending",
+      "sensorgram_time": null,
+      "end_time_sensorgram": null
+    }
+  ],
+  "cycle_counter": 5,
+  "timestamp": 1769888628.0893793
+}

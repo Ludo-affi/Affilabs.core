@@ -828,6 +828,10 @@ class Application(QApplication):
         # Pass hardware manager reference for settings application
         # This allows Settings tab to apply LED intensities without signal routing
         self.main_window.hardware_manager = self.hardware_mgr
+        
+        # Give sidebar access to app for _completed_cycles
+        if hasattr(self.main_window, 'sidebar'):
+            self.main_window.sidebar.app = self
 
         # Wire up elapsed time getter for pause markers
         def get_elapsed_time():
@@ -1042,7 +1046,11 @@ class Application(QApplication):
         self._cycle_markers = {}  # Track cycle markers on Full Sensorgram timeline
         self._cycle_timer = QTimer()
         self._cycle_timer.timeout.connect(self._update_cycle_display)
+        self._cycle_counter = 0  # Global counter for permanent cycle IDs (never decreases)
         logger.debug("✓ Cycle management initialized")
+        
+        # Auto-read after queue setting
+        self._auto_read_after_queue = True  # Default: auto-start monitoring when queue finishes
 
         # Plunger position polling timer (5 second interval)
         self._plunger_poll_timer = QTimer()
@@ -1121,8 +1129,8 @@ class Application(QApplication):
 
             # Connect mouse events for channel selection and flagging
             if hasattr(self.main_window, "cycle_of_interest_graph"):
-                # Enable default PyQtGraph context menu (right-click for Plot Options, Export, etc.)
-                self.main_window.cycle_of_interest_graph.setMenuEnabled(True)
+                # Disable default PyQtGraph context menu (conflicts with flag system)
+                self.main_window.cycle_of_interest_graph.setMenuEnabled(False)
 
                 self.main_window.cycle_of_interest_graph.scene().sigMouseClicked.connect(
                     self._on_graph_clicked,
@@ -1423,13 +1431,13 @@ class Application(QApplication):
         """
         ui = self.main_window
 
-        # --- Graph Controls ---
-        ui.grid_check.toggled.connect(self._on_grid_toggled)
-        ui.autoscale_check.toggled.connect(self._on_autoscale_toggled)
-        ui.min_input.editingFinished.connect(self._on_manual_range_changed)
-        ui.max_input.editingFinished.connect(self._on_manual_range_changed)
-        ui.x_axis_btn.toggled.connect(self._on_axis_selected)
-        ui.y_axis_btn.toggled.connect(self._on_axis_selected)
+        # --- Graph Controls (hidden per user request) ---
+        # ui.grid_check.toggled.connect(self._on_grid_toggled)
+        # ui.autoscale_check.toggled.connect(self._on_autoscale_toggled)
+        # ui.min_input.editingFinished.connect(self._on_manual_range_changed)
+        # ui.max_input.editingFinished.connect(self._on_manual_range_changed)
+        # ui.x_axis_btn.toggled.connect(self._on_axis_selected)
+        # ui.y_axis_btn.toggled.connect(self._on_axis_selected)
         ui.colorblind_check.toggled.connect(self._on_colorblind_toggled)
 
         # --- Channel and Marker Controls ---
@@ -1524,6 +1532,11 @@ class Application(QApplication):
         logger.debug(
             "✓ start_cycle_btn connected",
         )
+        
+        # Next Cycle button: Complete current cycle early and move to next
+        if hasattr(ui.sidebar, 'next_cycle_btn'):
+            ui.sidebar.next_cycle_btn.clicked.connect(self._on_next_cycle)
+            logger.debug("✓ next_cycle_btn connected")
 
         # --- Flow Tab Controls ---
         # Pump operations buttons
@@ -1701,6 +1714,73 @@ class Application(QApplication):
             # Connect item changed signal to save edited notes
             ui.sidebar.summary_table.itemChanged.connect(self._on_queue_note_edited)
             logger.debug("✓ summary_table context menu connected")
+        
+        # Set app reference for Method tab builder (for accessing segment_queue in View All Cycles dialog)
+        if hasattr(ui, "sidebar"):
+            if hasattr(ui.sidebar, "method_tab_builder"):
+                ui.sidebar.method_tab_builder.set_app_reference(self)
+                logger.debug("✓ method_tab_builder app reference set for View All Cycles")
+            else:
+                logger.error("✗ method_tab_builder NOT found in sidebar - View All Cycles won't work!")
+        else:
+            logger.error("✗ sidebar NOT found in main_window - View All Cycles won't work!")
+        
+        # Verify cycle table connections with comprehensive diagnostic
+        self._verify_cycle_table_connections()
+
+    def _verify_cycle_table_connections(self):
+        """Verify all cycle table connections are properly set up."""
+        logger.info("=" * 80)
+        logger.info("🔍 CYCLE TABLE CONNECTION VERIFICATION")
+        logger.info("=" * 80)
+        
+        # Check 1: Main window has edits_tab
+        if hasattr(self.main_window, 'edits_tab'):
+            logger.info("✓ main_window.edits_tab EXISTS")
+            
+            # Check 2: edits_tab has cycle_data_table
+            if hasattr(self.main_window.edits_tab, 'cycle_data_table'):
+                table = self.main_window.edits_tab.cycle_data_table
+                logger.info(f"✓ edits_tab.cycle_data_table EXISTS (type: {type(table).__name__})")
+                logger.info(f"   - Current rows: {table.rowCount()}")
+                logger.info(f"   - Current columns: {table.columnCount()}")
+            else:
+                logger.error("✗ edits_tab.cycle_data_table DOES NOT EXIST!")
+        else:
+            logger.error("✗ main_window.edits_tab DOES NOT EXIST!")
+        
+        # Check 3: Main window has add_cycle_to_table method
+        if hasattr(self.main_window, 'add_cycle_to_table'):
+            logger.info("✓ main_window.add_cycle_to_table METHOD EXISTS")
+        else:
+            logger.error("✗ main_window.add_cycle_to_table METHOD DOES NOT EXIST!")
+        
+        # Check 4: Sidebar has method_tab_builder
+        if hasattr(self.main_window, 'sidebar'):
+            if hasattr(self.main_window.sidebar, 'method_tab_builder'):
+                logger.info("✓ sidebar.method_tab_builder EXISTS")
+                
+                # Check 5: method_tab_builder has app reference
+                builder = self.main_window.sidebar.method_tab_builder
+                if hasattr(builder, '_app_reference') and builder._app_reference is not None:
+                    logger.info("✓ method_tab_builder._app_reference IS SET")
+                    logger.info(f"   - Points to: {type(builder._app_reference).__name__}")
+                else:
+                    logger.error("✗ method_tab_builder._app_reference IS NOT SET!")
+            else:
+                logger.error("✗ sidebar.method_tab_builder DOES NOT EXIST!")
+        else:
+            logger.error("✗ main_window.sidebar DOES NOT EXIST!")
+        
+        # Check 6: Segment queue exists
+        if hasattr(self, 'segment_queue'):
+            logger.info(f"✓ app.segment_queue EXISTS (current size: {len(self.segment_queue)})")
+        else:
+            logger.error("✗ app.segment_queue DOES NOT EXIST!")
+        
+        logger.info("=" * 80)
+        logger.info("END VERIFICATION")
+        logger.info("=" * 80)
 
     def _connect_viewmodel_signals(self):
         """Connect ViewModel signals to handlers (Phase 4 refactoring).
@@ -1826,12 +1906,12 @@ class Application(QApplication):
         """Set EMA display filter method based on radio button selection.
 
         Args:
-            filter_id: 0=None (Raw), 1=EMA Light (╬▒=0.50)
+            filter_id: 0=None (Raw), 1=Light Smoothing
 
         """
         filter_configs = [
             {"method": "none", "alpha": 0.0, "label": "None (Raw)"},
-            {"method": "ema_light", "alpha": 0.50, "label": "EMA Light (╬▒=0.50)"},
+            {"method": "ema_light", "alpha": 0.50, "label": "Light Smoothing"},
         ]
 
         if 0 <= filter_id < len(filter_configs):
@@ -1945,6 +2025,10 @@ class Application(QApplication):
         # Start cycle display timer (1 Hz)
         self._cycle_timer.start(1000)
         logger.info(f"✓ Cycle timer started (updates every 1 second)")
+        
+        # Enable Next Cycle button during cycle execution
+        if hasattr(self.main_window.sidebar, 'next_cycle_btn'):
+            self.main_window.sidebar.next_cycle_btn.setEnabled(True)
 
         # Add cycle marker to Full Sensorgram timeline
         self._add_cycle_marker()
@@ -1953,9 +2037,15 @@ class Application(QApplication):
         self._update_cycle_display()
 
         # Schedule cycle completion
-        QTimer.singleShot(duration_min * 60 * 1000, self._on_cycle_completed)
-
-        logger.info(f"✓ Cycle started - will auto-complete in {duration_min} min")
+        # QTimer max is ~24.8 days (2^31-1 ms). For longer cycles, don't auto-complete
+        max_timer_minutes = 35000  # ~24 days, safe margin below limit
+        if duration_min < max_timer_minutes:
+            QTimer.singleShot(duration_min * 60 * 1000, self._on_cycle_completed)
+            logger.info(f"✓ Cycle started - will auto-complete in {duration_min} min")
+        else:
+            # Very long cycle (e.g., Auto-read) - no auto-completion
+            logger.info(f"✓ Cycle started - long duration ({duration_min} min), use 'Next Cycle' to complete")
+        
         logger.info(f"   Watch the Active Cycle graph for overlay timer")
 
     def _update_cycle_display(self):
@@ -1976,10 +2066,21 @@ class Application(QApplication):
         total_cycles = self._current_cycle.total_cycles
 
         # Format time for display
-        elapsed_min = int(elapsed_sec // 60)
-        elapsed_sec_rem = int(elapsed_sec % 60)
-        total_min = int(total_sec // 60)
-        total_sec_rem = int(total_sec % 60)
+        # For cycles > 99 minutes, show hours:minutes instead of minutes:seconds
+        if total_sec >= 6000:  # >= 100 minutes
+            # Display as hours:minutes
+            elapsed_hours = int(elapsed_sec // 3600)
+            elapsed_min_rem = int((elapsed_sec % 3600) // 60)
+            total_hours = int(total_sec // 3600)
+            total_min_rem = int((total_sec % 3600) // 60)
+            time_format = f"{elapsed_hours:02d}:{elapsed_min_rem:02d}/{total_hours:02d}:{total_min_rem:02d}"
+        else:
+            # Display as minutes:seconds
+            elapsed_min = int(elapsed_sec // 60)
+            elapsed_sec_rem = int(elapsed_sec % 60)
+            total_min = int(total_sec // 60)
+            total_sec_rem = int(total_sec % 60)
+            time_format = f"{elapsed_min:02d}:{elapsed_sec_rem:02d}/{total_min:02d}:{total_sec_rem:02d}"
 
         # Check if there's a next cycle and we're within 10 seconds
         next_cycle_warning = ""
@@ -1990,18 +2091,17 @@ class Application(QApplication):
             if next_type == "Concentration":
                 next_type = "Conc."
 
-            # Add concentration if available
-            if hasattr(next_cycle, '_concentrations') and next_cycle._concentrations:
-                if 'ALL' in next_cycle._concentrations:
-                    conc_value = next_cycle._concentrations['ALL']
-                    units = getattr(next_cycle, '_units', 'nM')
-                    next_type = f"{next_type} {conc_value}{units}"
+            # Add concentration if available - use proper field
+            if next_cycle.concentrations and 'ALL' in next_cycle.concentrations:
+                conc_value = next_cycle.concentrations['ALL']
+                units = next_cycle.units
+                next_type = f"{next_type} {conc_value}{units}"
 
             next_cycle_warning = f" → Next: {next_type} in {int(remaining_sec)}s"
 
         # Update intelligence bar with countdown and next cycle warning
         if hasattr(self.main_window.sidebar, "intel_message_label"):
-            message_text = f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) - {elapsed_min:02d}:{elapsed_sec_rem:02d}/{total_min:02d}:{total_sec_rem:02d}{next_cycle_warning}"
+            message_text = f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) - {time_format}{next_cycle_warning}"
             self.main_window.sidebar.intel_message_label.setText(message_text)
 
             # Change color to orange when <10s to next cycle
@@ -2141,12 +2241,26 @@ class Application(QApplication):
 
         # Mark cycle as completed using Cycle.complete() method
         self._current_cycle.complete(end_time_sensorgram=end_sensorgram_time or 0.0)
+        
+        # Calculate delta SPR and detect flags for this cycle
+        self._calculate_cycle_analysis(self._current_cycle)
 
         self._completed_cycles.append(self._current_cycle)
 
-        # Export cycle to recording manager
+        # Get cycle export data for table and recording
+        cycle_export_data = self._current_cycle.to_export_dict()
+        
+        # Always add cycle to the live cycle data table (regardless of recording state)
+        logger.debug(f"🔄 Adding cycle to table: {cycle_export_data.get('type', 'Unknown')}")
+        if hasattr(self.main_window, 'add_cycle_to_table'):
+            logger.debug("   ✓ add_cycle_to_table method exists on main_window")
+            self.main_window.add_cycle_to_table(cycle_export_data)
+            logger.debug("   ✓ add_cycle_to_table() called successfully")
+        else:
+            logger.error("   ✗ add_cycle_to_table method NOT FOUND on main_window!")
+        
+        # Export cycle to recording manager only if recording
         if self.recording_mgr.is_recording:
-            cycle_export_data = self._current_cycle.to_export_dict()
             self.recording_mgr.add_cycle(cycle_export_data)
 
         # Clear current cycle
@@ -2159,6 +2273,212 @@ class Application(QApplication):
         except:
             pass
 
+    def _calculate_cycle_analysis(self, cycle):
+        """Calculate delta SPR and detect flags for a completed cycle.
+        
+        Args:
+            cycle: Cycle object to analyze
+        """
+        try:
+            # Calculate delta SPR (change in SPR during cycle)
+            if cycle.sensorgram_time is not None and cycle.end_time_sensorgram is not None:
+                # Get data from data collector
+                if hasattr(self, 'data_collector') and self.data_collector:
+                    # Get SPR values at start and end times for all active channels
+                    # Use channel A as reference (can be enhanced to use selected channel)
+                    start_time = cycle.sensorgram_time
+                    end_time = cycle.end_time_sensorgram
+                    
+                    # Get data points near start and end times
+                    time_data = self.data_collector.time_data
+                    spr_data_ch_a = self.data_collector.get_channel_data('A')
+                    
+                    if len(time_data) > 0 and len(spr_data_ch_a) > 0:
+                        import numpy as np
+                        
+                        # Find closest indices to start and end times
+                        start_idx = np.argmin(np.abs(np.array(time_data) - start_time))
+                        end_idx = np.argmin(np.abs(np.array(time_data) - end_time))
+                        
+                        if start_idx < len(spr_data_ch_a) and end_idx < len(spr_data_ch_a):
+                            start_spr = spr_data_ch_a[start_idx]
+                            end_spr = spr_data_ch_a[end_idx]
+                            cycle.delta_spr = end_spr - start_spr
+            
+            # Detect flags within cycle time range
+            # CRITICAL: Flags use REBASED time (starting at 0 for Active Cycle)
+            # We need to convert flag times to ABSOLUTE sensorgram time by adding cycle start time
+            if cycle.sensorgram_time is not None and cycle.end_time_sensorgram is not None:
+                if hasattr(self, 'flag_mgr') and self.flag_mgr:
+                    cycle_flags = []
+                    cycle_duration = cycle.end_time_sensorgram - cycle.sensorgram_time
+                    
+                    # Check all flags to see if they fall within this cycle's duration
+                    # FlagManager stores flags in _flag_markers attribute
+                    if hasattr(self.flag_mgr, '_flag_markers'):
+                        for flag in self.flag_mgr._flag_markers:
+                            # Flag time is rebased (0-based), so just check if it's within cycle duration
+                            if 0 <= flag.time <= cycle_duration:
+                                cycle_flags.append(flag.flag_type)
+                                logger.debug(f"   Found {flag.flag_type} flag at t={flag.time:.2f}s (within cycle)")
+                        
+                        # Remove duplicates and sort
+                        cycle.flags = sorted(list(set(cycle_flags)))
+                        if cycle.flags:
+                            logger.info(f"✓ Cycle flags detected: {cycle.flags}")
+                    
+        except Exception as e:
+            logger.warning(f"Failed to calculate cycle analysis: {e}")
+            # Set defaults on error
+            if cycle.delta_spr is None:
+                cycle.delta_spr = 0.0
+            if cycle.flags is None:
+                cycle.flags = []
+
+    def _on_next_cycle(self):
+        """Complete the current cycle early and move to the next cycle in queue.
+        
+        This keeps the data from the current cycle (even if incomplete/bad) and
+        continues the acquisition sequence without breaking anything.
+        """
+        if self._current_cycle is None:
+            logger.warning("No cycle is currently running")
+            return
+        
+        # Check if there are any cycles left in the queue
+        if not self.segment_queue or len(self.segment_queue) == 0:
+            logger.warning("No cycles in queue - Next Cycle disabled")
+            if hasattr(self.main_window.sidebar, 'next_cycle_btn'):
+                self.main_window.sidebar.next_cycle_btn.setEnabled(False)
+            if hasattr(self.main_window.sidebar, 'intel_message_label'):
+                self.main_window.sidebar.intel_message_label.setText(
+                    "⚠ No more cycles in queue"
+                )
+                self.main_window.sidebar.intel_message_label.setStyleSheet(
+                    "font-size: 12px;"
+                    "color: #FF3B30;"  # Red for warning
+                    "background: transparent;"
+                    "font-weight: 600;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                )
+            return
+        
+        try:
+            logger.info(f"⏭ Skipping to next cycle - completing {self._current_cycle.name} early")
+            
+            # Stop the cycle timer
+            if hasattr(self, '_cycle_timer') and self._cycle_timer.isActive():
+                self._cycle_timer.stop()
+                logger.debug("✓ Cycle timer stopped")
+            
+            # Get current end time for this cycle
+            end_sensorgram_time = None
+            if hasattr(self.main_window, 'full_timeline_graph'):
+                timeline = self.main_window.full_timeline_graph
+                if hasattr(timeline, 'stop_cursor'):
+                    end_sensorgram_time = timeline.stop_cursor.value()
+            
+            # Mark cycle as completed (even though it's early)
+            self._current_cycle.complete(end_time_sensorgram=end_sensorgram_time or 0.0)
+            
+            # Calculate delta SPR and detect flags for this cycle
+            self._calculate_cycle_analysis(self._current_cycle)
+            
+            # Add to completed cycles list (keep the data!)
+            self._completed_cycles.append(self._current_cycle)
+            
+            # Get cycle export data for table and recording
+            cycle_export_data = self._current_cycle.to_export_dict()
+            
+            # Always add cycle to the live cycle data table (regardless of recording state)
+            if hasattr(self.main_window, 'add_cycle_to_table'):
+                self.main_window.add_cycle_to_table(cycle_export_data)
+            
+            # Export cycle to recording manager only if recording
+            if self.recording_mgr.is_recording:
+                self.recording_mgr.add_cycle(cycle_export_data)
+            
+            # Clear current cycle reference
+            self._current_cycle = None
+            self._cycle_end_time = None
+            
+            # Remove next cycle warning line if present
+            if hasattr(self, '_next_cycle_warning_line') and self._next_cycle_warning_line is not None:
+                try:
+                    if hasattr(self.main_window, 'cycle_of_interest_graph'):
+                        self.main_window.cycle_of_interest_graph.removeItem(self._next_cycle_warning_line)
+                except:
+                    pass
+                self._next_cycle_warning_line = None
+            
+            # Update intelligence bar
+            if hasattr(self.main_window.sidebar, 'intel_message_label'):
+                remaining = len(self.segment_queue)
+                if remaining > 0:
+                    self.main_window.sidebar.intel_message_label.setText(
+                        f"⏭ Moved to next cycle ({remaining} remaining in queue)"
+                    )
+                else:
+                    self.main_window.sidebar.intel_message_label.setText(
+                        "⏭ Cycle completed early - queue finished"
+                    )
+                self.main_window.sidebar.intel_message_label.setStyleSheet(
+                    "font-size: 12px;"
+                    "color: #FF9500;"  # Orange for early completion
+                    "background: transparent;"
+                    "font-weight: 600;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                )
+            
+            # Disable Next Cycle button
+            if hasattr(self.main_window.sidebar, 'next_cycle_btn'):
+                self.main_window.sidebar.next_cycle_btn.setEnabled(False)
+            
+            # Update summary table
+            try:
+                self._update_summary_table()
+            except:
+                pass
+            
+            # Auto-start next cycle if available
+            if self.segment_queue:
+                next_cycle = self.segment_queue[0]
+                logger.info(f"Auto-starting next cycle: {next_cycle.type}")
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(500, self._on_start_button_clicked)  # Brief delay for UI update
+            else:
+                # No more cycles - start auto-read
+                logger.info("All cycles complete - starting auto-read cycle")
+                from affilabs.domain.cycle import Cycle
+                import time
+                
+                autoread_cycle = Cycle(
+                    type="Auto-read",
+                    length_minutes=120,  # 2 hours
+                    name="Auto-read",
+                    note="Continuous monitoring after experiment completion",
+                )
+                
+                self.segment_queue.append(autoread_cycle)
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(500, self._on_start_button_clicked)
+            
+            logger.info("✓ Moved to next cycle - data preserved, acquisition continues")
+            
+        except Exception as e:
+            logger.exception(f"Error moving to next cycle: {e}")
+            # On error, still try to clean up and continue
+            self._current_cycle = None
+            self._cycle_end_time = None
+            if hasattr(self, '_cycle_timer'):
+                self._cycle_timer.stop()
+    
+    def _on_cycle_completed(self):
+        """Handle cycle completion event."""
+        # Disable Next Cycle button
+        if hasattr(self.main_window.sidebar, 'next_cycle_btn'):
+            self.main_window.sidebar.next_cycle_btn.setEnabled(False)
+        
         # Auto-start next cycle or switch to auto-read
         if self.segment_queue:
             next_cycle = self.segment_queue[0]
@@ -2166,20 +2486,28 @@ class Application(QApplication):
             QTimer.singleShot(1000, self._on_start_button_clicked)
         else:
             # No more cycles in queue - create and start an auto-read cycle
+            if not self._auto_read_after_queue:
+                logger.info("Queue complete - auto-read disabled, stopping")
+                return
+                
             logger.info("All cycles complete - starting auto-read cycle")
 
             import time
 
-            # Create an auto-read cycle (continuous monitoring, 999 hours)
+            # Assign permanent ID
+            self._cycle_counter += 1
+            
+            # Create an auto-read cycle (continuous monitoring, 2 hours)
             autoread_cycle = Cycle(
                 type="Auto-read",
-                length_minutes=999 * 60,  # Very long duration
+                length_minutes=120,  # 2 hours
                 name="Auto-read",
                 note="Automatic continuous monitoring after cycle queue completion",
                 status="pending",
+                units="RU",  # Use proper field
+                cycle_id=self._cycle_counter,  # Permanent ID
+                timestamp=time.time(),  # Use proper field
             )
-            autoread_cycle._units = "RU"  # Temp attribute
-            autoread_cycle._timestamp = time.time()  # Temp attribute
 
             # Add to queue and start
             self.segment_queue.append(autoread_cycle)
@@ -2305,18 +2633,37 @@ class Application(QApplication):
         import re
         import time
 
-        logger.info("≡ƒº¬ TEST MODE: Adding cycle to segment queue")
+        logger.info("🔵 TEST MODE: Adding cycle to segment queue")
+        logger.debug(f"   Current queue size: {len(self.segment_queue)} cycles")
 
         try:
             # Read form values
             cycle_type = self.main_window.sidebar.cycle_type_combo.currentText()
             length_text = self.main_window.sidebar.cycle_length_combo.currentText()
-            length_minutes = int(length_text.split()[0])  # Extract number from "5 min"
+            
+            # Parse duration - handle both "30 sec" and "5 min" formats
+            parts = length_text.split()
+            duration_value = int(parts[0])
+            duration_unit = parts[1] if len(parts) > 1 else "min"
+            
+            # Convert to minutes
+            if duration_unit == "sec":
+                length_minutes = duration_value / 60.0  # Convert seconds to minutes
+            else:
+                length_minutes = duration_value  # Already in minutes
+            
             note = self.main_window.sidebar.note_input.toPlainText()
             units = self.main_window.sidebar.units_combo.currentText().split()[
                 0
             ]  # Extract unit from "nM (Nanomolar)"
 
+            # Parse concentration tags from note
+            tags = re.findall(r"\[([A-D]|ALL):(\d+\.?\d*)\]", note)
+            concentrations_dict = {ch: float(val) for ch, val in tags} if tags else {}
+            
+            # Assign permanent ID
+            self._cycle_counter += 1
+            
             # Create segment definition using Cycle domain model
             segment = Cycle(
                 type=cycle_type,
@@ -2324,49 +2671,37 @@ class Application(QApplication):
                 name=f"Cycle {len(self.segment_queue) + 1}",
                 note=note,
                 status="pending",
+                units=units,  # Use proper field
+                concentrations=concentrations_dict,  # Use proper field
+                cycle_id=self._cycle_counter,  # Permanent ID
+                timestamp=time.time(),  # Use proper field
             )
-
-            # Store additional metadata (units, timestamp, concentrations) as temp dict
-            # TODO: Move to separate metadata structure or extend Cycle model
-            segment._units = units
-            segment._timestamp = time.time()
-
-            # Parse concentration tags from note
-            tags = re.findall(r"\[([A-D]|ALL):(\d+\.?\d*)\]", note)
-            if tags:
-                segment._concentrations = dict(tags)  # Store as temp attribute
+            
+            if concentrations_dict:
                 logger.debug(
-                    f"Parsed concentrations: {segment._concentrations} {units}",
+                    f"Parsed concentrations: {concentrations_dict} {units}",
                 )
 
             # Add to queue
             self.segment_queue.append(segment)
-
+            
+            logger.info(f"✓ Added cycle {len(self.segment_queue)}: {cycle_type}, {length_minutes}min")
+            logger.debug(f"   Cycle name: {segment.name}")
+            logger.debug(f"   Queue now has {len(self.segment_queue)} cycles")
+            
             # Renumber all cycles to keep sequential numbering
             self._renumber_cycles()
-
-            # Log success
-            logger.info(f"✓ Added cycle {len(self.segment_queue)}: {cycle_type}, {length_minutes}min")
-            logger.debug(f"   Name: {segment.name}")
-            logger.debug(f"   Note: {segment.note[:100]}...") if len(
-                segment.note,
-            ) > 100 else logger.debug(f"   Note: {segment.note}")
-
-            # Update intelligence bar
-            if hasattr(self.main_window.sidebar, "intel_message_label"):
-                self.main_window.sidebar.intel_message_label.setText(
-                    f"✓ Added {segment.name} to queue ({len(self.segment_queue)} total)",
-                )
-                self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px;"
-                    "color: #34C759;"  # Green for success
-                    "background: transparent;"
-                    "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-                )
+            
+            if len(segment.note) > 100:
+                logger.debug(f"   Note: {segment.note[:100]}...")
+            else:
+                logger.debug(f"   Note: {segment.note}")
 
             # Update summary table
             self._update_summary_table()
+            
+            # Auto-save queue for crash recovery
+            self._save_queue_backup()
 
             # Validate queue structure
             self._validate_segment_queue()
@@ -2401,10 +2736,11 @@ class Application(QApplication):
             logger.debug(f"🔢 Renumbered {len(self.segment_queue)} cycles (1-{len(self.segment_queue)})")
 
     def _update_summary_table(self):
-        """Update summary table with last 5 cycles from segment queue.
+        """Update summary table with cycles from segment queue.
 
         Displays cycle state, type (with color coding), start time, and notes.
         Color codes cycle types for easy visual distinction.
+        Adapts to table row count (5 or 10 rows depending on expansion).
         """
         from PySide6.QtGui import QColor
         from PySide6.QtWidgets import QTableWidgetItem
@@ -2416,17 +2752,21 @@ class Application(QApplication):
         # Define color scheme for cycle types
         type_colors = {
             "Auto-read": QColor(242, 242, 247),  # Light gray
+            "Auto-Read": QColor(242, 242, 247),  # Light gray (variant spelling)
             "Baseline": QColor(217, 234, 250),  # Light blue
             "Immobilization": QColor(232, 245, 233),  # Light green
             "Concentration": QColor(255, 243, 224),  # Light orange
         }
 
-        # Get first 5 segments (FIFO order - first in, first out)
-        recent_segments = self.segment_queue[:5] if len(self.segment_queue) > 0 else []
-        # No reverse - show in queue order (oldest/next at top)
+        # Get table row count (can be 5 or 10 depending on expansion)
+        table_rows = self.main_window.sidebar.summary_table.rowCount()
+        
+        # Get segments to display (FIFO order - first in, first out)
+        # Show ONLY queued cycles (not completed cycles - those go to Cycle Data Table)
+        recent_segments = self.segment_queue[:table_rows] if len(self.segment_queue) > 0 else []
 
         # Clear table and populate with segments
-        for row in range(5):
+        for row in range(table_rows):
             if row < len(recent_segments):
                 segment = recent_segments[row]
 
@@ -2457,6 +2797,18 @@ class Application(QApplication):
                 type_item.setBackground(type_color)
                 self.main_window.sidebar.summary_table.setItem(row, 1, type_item)
 
+                # Duration column (cycle length in minutes)
+                duration_min = getattr(segment, 'length_minutes', 0)
+                if duration_min >= 60:
+                    # Show as hours if >= 60 minutes
+                    hours = duration_min / 60
+                    duration_text = f"{hours:.1f}h"
+                else:
+                    duration_text = f"{int(duration_min)}min"
+                duration_item = QTableWidgetItem(duration_text)
+                duration_item.setBackground(state_color)
+                self.main_window.sidebar.summary_table.setItem(row, 2, duration_item)
+
                 # Start time column (sensorgram time in seconds)
                 sensorgram_time = getattr(segment, 'sensorgram_time', None)
                 if sensorgram_time is not None:
@@ -2466,7 +2818,7 @@ class Application(QApplication):
                     start_time = "--"
                 start_item = QTableWidgetItem(start_time)
                 start_item.setBackground(state_color)
-                self.main_window.sidebar.summary_table.setItem(row, 2, start_item)
+                self.main_window.sidebar.summary_table.setItem(row, 3, start_item)
 
                 # Notes column (truncated for display, but full text is preserved)
                 note = getattr(segment, 'note', '')
@@ -2480,22 +2832,30 @@ class Application(QApplication):
                 note_item.setToolTip(note if note else "Click to edit note")
                 # Store row index as data for later retrieval
                 note_item.setData(Qt.ItemDataRole.UserRole, row)
-                self.main_window.sidebar.summary_table.setItem(row, 3, note_item)
+                self.main_window.sidebar.summary_table.setItem(row, 4, note_item)
 
             else:
                 # Empty row
-                for col in range(4):
+                for col in range(5):
                     empty_item = QTableWidgetItem("")
                     empty_item.setBackground(QColor(255, 255, 255))  # White
                     self.main_window.sidebar.summary_table.setItem(row, col, empty_item)
 
         # Update queue size label to show actual count
         if hasattr(self.main_window.sidebar, 'queue_size_label'):
-            total = len(self.segment_queue)
-            shown = min(5, total)
-            self.main_window.sidebar.queue_size_label.setText(
-                f"Showing {shown} of {total} cycles" if total > 0 else "No cycles in queue"
-            )
+            pending = len(self.segment_queue)
+            completed = len(self._completed_cycles)
+            shown = min(table_rows, pending)
+            
+            if pending > 0:
+                status_text = f"Showing {shown} of {pending} queued"
+            else:
+                status_text = "No cycles queued"
+                
+            if completed > 0:
+                status_text += f" | {completed} completed"
+                
+            self.main_window.sidebar.queue_size_label.setText(status_text)
 
         # Unblock signals now that update is complete
         self.main_window.sidebar.summary_table.blockSignals(False)
@@ -2520,12 +2880,12 @@ class Application(QApplication):
             logger.debug(f"    Type: {seg.type}")
             logger.debug(f"    Length: {seg.length_minutes} minutes")
             logger.debug(f"    Status: {seg.status}")
+            logger.debug(f"    Cycle ID: {seg.cycle_id}")
 
-            # Check for temporary attributes (set in _on_add_to_queue)
-            if hasattr(seg, '_concentrations'):
-                units = getattr(seg, '_units', 'nM')
+            # Check for concentration data
+            if seg.concentrations:
                 logger.debug(
-                    f"    Concentrations: {seg._concentrations} {units}",
+                    f"    Concentrations: {seg.concentrations} {seg.units}",
                 )
 
             if seg.note:
@@ -2539,14 +2899,68 @@ class Application(QApplication):
         logger.debug("✓ Queue validation complete")
         logger.debug("=" * 80)
 
+    def _save_queue_backup(self):
+        """Save current cycle queue to JSON for crash recovery."""
+        try:
+            import json
+            from pathlib import Path
+            
+            backup_file = Path("cycle_queue_backup.json")
+            queue_data = [cycle.to_dict() for cycle in self.segment_queue]
+            
+            with open(backup_file, 'w') as f:
+                json.dump({
+                    'queue': queue_data,
+                    'cycle_counter': self._cycle_counter,
+                    'timestamp': time.time()
+                }, f, indent=2)
+                
+            logger.debug(f"✓ Queue backup saved: {len(queue_data)} cycles")
+        except Exception as e:
+            logger.debug(f"Could not save queue backup: {e}")
+    
+    def _load_queue_backup(self):
+        """Load cycle queue from backup file if it exists.
+        
+        Returns:
+            bool: True if backup was loaded, False otherwise
+        """
+        try:
+            import json
+            from pathlib import Path
+            
+            backup_file = Path("cycle_queue_backup.json")
+            if not backup_file.exists():
+                return False
+                
+            with open(backup_file, 'r') as f:
+                data = json.load(f)
+            
+            # Restore queue
+            self.segment_queue = [Cycle.from_dict(c) for c in data.get('queue', [])]
+            self._cycle_counter = data.get('cycle_counter', 0)
+            
+            backup_time = data.get('timestamp', 0)
+            age_minutes = (time.time() - backup_time) / 60
+            
+            logger.info(f"✅ Loaded queue backup: {len(self.segment_queue)} cycles (backup age: {age_minutes:.1f} min)")
+            
+            # Update UI
+            self._update_summary_table()
+            
+            return True
+        except Exception as e:
+            logger.debug(f"Could not load queue backup: {e}")
+            return False
+
     def _on_queue_note_edited(self, item):
         """Handle when user edits a note in the queue table.
 
         Args:
             item: QTableWidgetItem that was edited
         """
-        # Only handle notes column (column 3)
-        if item.column() != 3:
+        # Only handle notes column (column 4: State, Type, Duration, Start, Notes)
+        if item.column() != 4:
             return
 
         row = item.row()
@@ -2572,6 +2986,9 @@ class Application(QApplication):
         item.setToolTip(new_note if new_note else "Click to edit note")
 
         logger.info(f"📝 Updated note for {cycle.name}: '{new_note[:50]}{'...' if len(new_note) > 50 else ''}'")
+        
+        # Auto-save queue backup after note edit
+        self._save_queue_backup()
 
     def _on_queue_table_context_menu(self, position):
         """Show context menu for queue table (right-click to delete cycles)."""
@@ -2582,7 +2999,7 @@ class Application(QApplication):
         table = self.main_window.sidebar.summary_table
         row = table.rowAt(position.y())
 
-        logger.debug(f"Right-click at position {position}, row: {row}, queue length: {len(self.segment_queue)}")
+        logger.debug(f"Right-click at position {position}, row: {row}, segment_queue length: {len(self.segment_queue)}")
 
         # Check if row is valid
         if row < 0 or row >= table.rowCount():
@@ -2591,11 +3008,12 @@ class Application(QApplication):
 
         # Check if this row actually has a cycle (row must be < queue length)
         if row >= len(self.segment_queue):
-            logger.debug(f"Empty row clicked (row {row}, queue length {len(self.segment_queue)})")
+            logger.debug(f"Empty row clicked (row {row}, segment_queue length {len(self.segment_queue)})")
+            logger.debug(f"  segment_queue contents: {[c.name for c in self.segment_queue]}")
             QMessageBox.information(
                 self.main_window,
                 "No Cycle",
-                "This row is empty. No cycle to delete."
+                f"This row is empty. No cycle to delete.\n\nRow: {row}\nQueue has {len(self.segment_queue)} cycles"
             )
             return
 
@@ -2630,6 +3048,11 @@ class Application(QApplication):
         Args:
             row_index: Index of the row in the summary table (0-4)
         """
+        # Validate queue exists and has cycles
+        if not hasattr(self, 'segment_queue') or not self.segment_queue:
+            logger.warning("❌ Cannot delete - queue is empty")
+            return
+            
         if row_index < 0 or row_index >= len(self.segment_queue):
             logger.warning(f"❌ Invalid row index: {row_index} (queue has {len(self.segment_queue)} cycles)")
             return
@@ -2641,11 +3064,11 @@ class Application(QApplication):
 
         # Remove from queue
         del self.segment_queue[row_index]
+        
+        logger.info(f"🗑️ Deleted cycle from queue: {cycle_name} ({cycle_type}), {len(self.segment_queue)} cycles remaining")
 
         # Renumber all cycles to keep sequential numbering
         self._renumber_cycles()
-
-        logger.info(f"🗑️ Deleted cycle from queue: {cycle_name} ({cycle_type})")
 
         # Update UI intelligence bar
         if hasattr(self.main_window.sidebar, "intel_message_label"):
@@ -2661,7 +3084,7 @@ class Application(QApplication):
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
 
-        # Update queue status label
+        # Update queue status label with fresh count from segment_queue
         if hasattr(self.main_window.sidebar, "queue_status_label"):
             remaining = len(self.segment_queue)
             if remaining == 0:
@@ -2670,8 +3093,15 @@ class Application(QApplication):
                 status_text = f"Queue: {remaining} {'cycle' if remaining == 1 else 'cycles'} | Right-click to delete"
             self.main_window.sidebar.queue_status_label.setText(status_text)
 
-        # Refresh table display
+        # Refresh table display - this will update the "Showing X of Y cycles" label
         self._update_summary_table()
+        
+        logger.debug(f"✓ Queue now has {len(self.segment_queue)} cycles after deletion")
+        
+        # Log remaining cycles for verification
+        logger.info(f"📋 Remaining queue after deletion:")
+        for i, cycle in enumerate(self.segment_queue):
+            logger.info(f"  [{i}] {cycle.name} ({cycle.type}, {cycle.length_minutes} min)")
 
         logger.info(f"✓ Queue updated - {len(self.segment_queue)} cycles remaining")
 
@@ -3250,6 +3680,16 @@ class Application(QApplication):
 
         # Export initial metadata
         if self.recording_mgr.is_recording:
+            # Add user profile information
+            try:
+                if hasattr(self.main_window.sidebar, 'user_combo'):
+                    current_user = self.main_window.sidebar.user_combo.currentText()
+                    if current_user:
+                        self.recording_mgr.update_metadata('User', current_user)
+                        logger.info(f"👤 Recording user: {current_user}")
+            except Exception as e:
+                logger.debug(f"Could not add user metadata: {e}")
+            
             # Add device information
             device_id = getattr(self.hardware_mgr, 'device_id', 'Unknown')
             self.recording_mgr.update_metadata('device_id', device_id)
@@ -5537,6 +5977,10 @@ class Application(QApplication):
 
     def _on_manual_range_changed(self):
         """Manual range input values changed."""
+        # Check if controls exist (may be hidden)
+        if not hasattr(self.main_window, 'autoscale_check'):
+            return
+            
         # Only apply if autoscale is disabled (manual mode)
         if self.main_window.autoscale_check.isChecked():
             return
@@ -5579,6 +6023,10 @@ class Application(QApplication):
 
     def _on_axis_selected(self, checked: bool):
         """Axis selector button toggled."""
+        # Check if controls exist (may be hidden)
+        if not hasattr(self.main_window, 'x_axis_btn'):
+            return
+            
         if not checked:  # Button was unchecked
             return
 
@@ -5902,6 +6350,14 @@ class Application(QApplication):
 
         # Check if Ctrl key is pressed (add flag)
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Check if it's Ctrl+Right-click (remove flag)
+            if event.button() == Qt.MouseButton.RightButton:
+                self.flag_mgr.remove_flag_near_click(time_clicked, spr_clicked)
+                # Accept event to prevent default PyQtGraph context menu from appearing
+                event.accept()
+                return
+            
+            # Ctrl+Left-click (add flag)
             # Use the selected flag channel instead of auto-detecting
             # Default to 'a' if not yet initialized (defensive)
             selected_channel = getattr(self, '_selected_flag_channel', 'a')
@@ -5928,10 +6384,14 @@ class Application(QApplication):
 
             # Show flag type selection menu (use display time for alignment)
             self.flag_mgr.show_flag_type_menu(event, selected_channel, time_at_point, spr_at_time)
+            
+            # Accept event to prevent default PyQtGraph context menu from appearing
+            event.accept()
 
-        # Check if right-click (remove flag)
+        # Check if right-click WITHOUT Ctrl (just ignore, let default menu show)
         elif event.button() == Qt.MouseButton.RightButton:
-            self.flag_mgr.remove_flag_near_click(time_clicked, spr_clicked)
+            # Don't handle plain right-click here to allow PyQtGraph default menu
+            pass
 
         # Check if left-click near a flag (select for keyboard movement)
         elif event.button() == Qt.MouseButton.LeftButton:
@@ -7300,6 +7760,15 @@ class Application(QApplication):
         from affilabs.utils.time_utils import for_filename
 
         logger.info("[RECORD-HANDLER] Recording start requested - showing confirmation")
+        
+        # Log current queue state for debugging
+        logger.info(f"📋 Current queue state: {len(self.segment_queue)} cycles")
+        for i, cycle in enumerate(self.segment_queue):
+            logger.info(f"  [{i}] {cycle.name} ({cycle.type}, {cycle.length_minutes} min)")
+
+        # Reset cycle type counter for new recording session
+        if hasattr(self.main_window, '_cycle_type_counts'):
+            self.main_window._cycle_type_counts = {}
 
         # Prepare filename and destination
         timestamp = for_filename().replace(".", "_")
@@ -7309,17 +7778,21 @@ class Application(QApplication):
         # Get current export settings
         filename = self.main_window.sidebar.export_filename_input.text() or default_filename
         destination = self.main_window.sidebar.export_dest_input.text() or str(default_directory)
+        
+        # Get current user and create user-specific directory structure
+        current_user = None
+        if hasattr(self.main_window.sidebar, 'user_combo'):
+            current_user = self.main_window.sidebar.user_combo.currentText()
+        
+        if current_user:
+            # Create: output/Username/SPR_data/
+            destination_path = Path(destination) / current_user / "SPR_data"
+            destination_path.mkdir(parents=True, exist_ok=True)
+            destination = str(destination_path)
+            logger.info(f"Using user-specific directory: {destination}")
 
-        # Get format from dropdown
-        format_text = self.main_window.sidebar.format_combo.currentText()
-        if "Excel" in format_text:
-            extension = ".xlsx"
-        elif "CSV" in format_text:
-            extension = ".csv"
-        elif "JSON" in format_text:
-            extension = ".json"
-        else:
-            extension = ".xlsx"
+        # Use Excel format (format selector was removed for consistency)
+        extension = ".xlsx"
 
         # Ensure filename has extension
         if not any(filename.endswith(ext) for ext in ['.xlsx', '.csv', '.json', '.h5']):
@@ -7377,11 +7850,17 @@ class Application(QApplication):
             try:
                 import pyqtgraph as pg
                 from PySide6.QtGui import QColor
-                from PySide6.QtCore import Qt
+                
+                # CRITICAL: Adjust marker position to account for display offset
+                # The graph skips the first point and rebases time to start at 0
+                # So we need to subtract the display offset to align with what's shown
+                marker_position = recording_start_elapsed - self._display_time_offset
+                
+                logger.info(f"Recording marker: raw_time={recording_start_elapsed:.3f}s, offset={self._display_time_offset:.3f}s, display_pos={marker_position:.3f}s")
                 
                 # Create vertical green dashed line at recording start time
                 marker = pg.InfiniteLine(
-                    pos=recording_start_elapsed,
+                    pos=marker_position,
                     angle=90,  # Vertical
                     pen=pg.mkPen(color=QColor(34, 139, 34), width=2, style=Qt.DashLine),
                     movable=False,
@@ -7394,9 +7873,14 @@ class Application(QApplication):
                     }
                 )
                 
+                # Store marker reference for cleanup
+                if not hasattr(self, '_recording_markers'):
+                    self._recording_markers = []
+                self._recording_markers.append(marker)
+                
                 # Add to plot
                 self.main_window.full_timeline_graph.addItem(marker)
-                logger.info(f"✓ Recording marker added at t={recording_start_elapsed:.1f}s")
+                logger.info(f"✓ Recording marker added at display position t={marker_position:.1f}s")
             except Exception as e:
                 logger.warning(f"Could not add recording marker: {e}")
 
@@ -7448,6 +7932,17 @@ class Application(QApplication):
             if hasattr(self, "sensogram_presenter") and self.sensogram_presenter:
                 self.sensogram_presenter.clear_all_graphs()
                 logger.info("[OK] Graph visual data cleared")
+
+            # Clear recording markers from Live Sensorgram
+            if hasattr(self, '_recording_markers') and hasattr(self.main_window, 'full_timeline_graph'):
+                marker_count = len(self._recording_markers)
+                for marker in self._recording_markers:
+                    try:
+                        self.main_window.full_timeline_graph.removeItem(marker)
+                    except Exception as e:
+                        logger.debug(f"Could not remove recording marker: {e}")
+                self._recording_markers.clear()
+                logger.info(f"[OK] Cleared {marker_count} recording markers")
 
             # Reset cursors to position 0 AFTER clearing graphs
             if hasattr(self.main_window, 'full_timeline_graph'):

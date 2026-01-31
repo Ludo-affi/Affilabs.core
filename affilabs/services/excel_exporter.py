@@ -101,9 +101,41 @@ class ExcelExporter:
 
                 # Sheet 3: Cycles
                 if cycles:
-                    df_cycles = pd.DataFrame(cycles)
+                    # Convert cycles data to DataFrame with formatted concentrations
+                    cycles_formatted = []
+                    for cycle in cycles:
+                        cycle_copy = cycle.copy()
+                        
+                        # Format concentrations dict as readable string
+                        if 'concentrations' in cycle_copy and isinstance(cycle_copy['concentrations'], dict):
+                            conc_dict = cycle_copy['concentrations']
+                            if conc_dict:
+                                # Format as "A:100.0, B:50.0"
+                                conc_str = ', '.join([f"{ch}:{val}" for ch, val in sorted(conc_dict.items())])
+                                cycle_copy['concentrations_formatted'] = conc_str
+                            else:
+                                cycle_copy['concentrations_formatted'] = ''
+                        
+                        cycles_formatted.append(cycle_copy)
+                    
+                    df_cycles = pd.DataFrame(cycles_formatted)
+                    
+                    # Reorder columns for better readability
+                    preferred_order = [
+                        'cycle_id', 'cycle_num', 'type', 'name',
+                        'start_time_sensorgram', 'end_time_sensorgram', 'duration_minutes',
+                        'concentration_value', 'concentration_units', 'units',
+                        'concentrations_formatted',
+                        'note', 'delta_spr', 'flags', 'timestamp'
+                    ]
+                    # Reorder columns that exist
+                    existing_cols = [col for col in preferred_order if col in df_cycles.columns]
+                    other_cols = [col for col in df_cycles.columns if col not in preferred_order and col != 'concentrations']
+                    final_order = existing_cols + other_cols
+                    df_cycles = df_cycles[final_order]
+                    
                     df_cycles.to_excel(writer, sheet_name="Cycles", index=False)
-                    logger.debug(f"Exported {len(cycles)} cycles")
+                    logger.debug(f"Exported {len(cycles)} cycles with formatted data")
 
                 # Sheet 4: Flags
                 if flags:

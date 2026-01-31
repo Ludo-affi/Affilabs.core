@@ -473,25 +473,25 @@ class CalibrationQCDialog(QDialog):
             table.setItem(idx, 0, ch_item)
 
             # LED intensity
-            led = ch_data.get("final_led", 0)
+            led = int(ch_data.get("final_led", 0) or 0)
             led_item = QTableWidgetItem(str(led))
             led_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 1, led_item)
 
             # Integration time
-            integration = ch_data.get("final_integration_ms", 0)
+            integration = float(ch_data.get("final_integration_ms", 0) or 0)
             int_item = QTableWidgetItem(f"{integration:.2f}")
             int_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 2, int_item)
 
             # Signal (top50 counts)
-            signal = ch_data.get("final_top50_counts", 0)
+            signal = float(ch_data.get("final_top50_counts", 0) or 0)
             sig_item = QTableWidgetItem(f"{signal:.0f}")
             sig_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 3, sig_item)
 
             # Saturation percentage
-            saturation = ch_data.get("final_percentage", 0)
+            saturation = float(ch_data.get("final_percentage", 0) or 0)
             sat_item = QTableWidgetItem(f"{saturation:.1f}%")
             sat_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             if saturation > 95:
@@ -503,7 +503,7 @@ class CalibrationQCDialog(QDialog):
             table.setItem(idx, 4, sat_item)
 
             # Iteration count
-            iterations = ch_data.get("iterations", 0)
+            iterations = int(ch_data.get("iterations", 0) or 0)
             iter_item = QTableWidgetItem(str(iterations))
             iter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 5, iter_item)
@@ -707,8 +707,9 @@ class CalibrationQCDialog(QDialog):
         p_pol_spectra = self.calibration_data.get("p_pol_spectra", {})
 
         # Get iteration counts (stored directly in calibration_data now)
-        s_iterations = self.calibration_data.get("s_iterations", 0)
-        p_iterations = self.calibration_data.get("p_iterations", 0)
+        # Ensure they're integers, not strings from JSON
+        s_iterations = int(self.calibration_data.get("s_iterations", 0) or 0)
+        p_iterations = int(self.calibration_data.get("p_iterations", 0) or 0)
 
         for idx, ch in enumerate(channels):
             # Channel name
@@ -1515,8 +1516,14 @@ class CalibrationQCDialog(QDialog):
         # Set X-axis range to start at 570 nm for all plots
         wavelengths = self.calibration_data.get("wavelengths", None)
         if wavelengths is not None and len(wavelengths) > 0:
-            max_wl = max(wavelengths)
-            plot_widget.setXRange(570, max_wl, padding=0)
+            # Ensure wavelengths are numeric (convert from string if needed)
+            try:
+                wavelengths_numeric = [float(w) for w in wavelengths]
+                max_wl = max(wavelengths_numeric)
+                plot_widget.setXRange(570, max_wl, padding=0)
+            except (ValueError, TypeError):
+                # Fallback if conversion fails
+                plot_widget.setXRange(570, 720, padding=0)
         else:
             # Default range if no wavelengths available
             plot_widget.setXRange(570, 720, padding=0)
@@ -1560,9 +1567,47 @@ class CalibrationQCDialog(QDialog):
         data = self.calibration_data
         wavelengths = data.get("wavelengths", None)
 
+        # Default wavelength array
+        default_wavelengths = np.linspace(560, 720, 3648)
+
         if wavelengths is None:
-            wavelengths = np.linspace(560, 720, 3648)  # Default wavelength array
+            wavelengths = default_wavelengths
             logger.warning("No wavelengths in QC data, using default range")
+        else:
+            # Convert to numeric numpy array (wavelengths may be stored as strings in JSON)
+            try:
+                # If wavelengths is a string representation of a list, parse it first
+                if isinstance(wavelengths, str):
+                    import json
+                    import ast
+                    # Try JSON first
+                    try:
+                        parsed = json.loads(wavelengths)
+                    except:
+                        # Try ast.literal_eval as fallback
+                        try:
+                            parsed = ast.literal_eval(wavelengths)
+                        except:
+                            # Give up, use default
+                            logger.warning(f"Failed to parse wavelengths string, using default")
+                            wavelengths = default_wavelengths
+                            parsed = None
+                    
+                    if parsed is not None:
+                        wavelengths = parsed
+                
+                # Now convert to numpy array (only if not already set to default)
+                if not isinstance(wavelengths, np.ndarray):
+                    wavelengths = np.array([float(w) for w in wavelengths], dtype=float)
+                    
+            except Exception as e:
+                logger.warning(f"Failed to convert wavelengths to numeric array: {e}")
+                wavelengths = default_wavelengths
+        
+        # Final safety check - ensure wavelengths is a valid numpy array
+        if not isinstance(wavelengths, np.ndarray) or len(wavelengths) == 0:
+            logger.warning(f"Wavelengths invalid (type: {type(wavelengths)}, len: {len(wavelengths) if hasattr(wavelengths, '__len__') else 'N/A'}), using default")
+            wavelengths = default_wavelengths
 
         # Channel colors (matching existing UI)
         colors = {
@@ -2129,7 +2174,7 @@ FAILURE DIAGNOSIS:
         plt.tight_layout()
 
     def _export_to_pdf(self):
-        """Export QC report to PDF file with graphs and tables - SINGLE PAGE like the dialog."""
+        """Export QC report to PDF file with graphs and ALL tables - comprehensive report."""
         try:
             from pathlib import Path
 
@@ -2137,6 +2182,7 @@ FAILURE DIAGNOSIS:
             from matplotlib.backends.backend_pdf import PdfPages
             import matplotlib.pyplot as plt
             from datetime import datetime
+            import numpy as np
 
             device_serial = self.calibration_data.get("detector_serial", "Unknown")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -2150,35 +2196,36 @@ FAILURE DIAGNOSIS:
             )
 
             if file_path:
-                # Create SINGLE-PAGE PDF matching the dialog layout
+                # Create COMPREHENSIVE PDF with all data
                 with PdfPages(file_path) as pdf:
-                    # Single page layout (landscape)
-                    fig = plt.figure(figsize=(17, 11))  # Landscape A3-like for better graph visibility
+                    # PAGE 1: Graphs and Summary Tables
+                    fig = plt.figure(figsize=(17, 11))  # Landscape A3-like
 
                     # Use GridSpec for precise layout control
                     import matplotlib.gridspec as gridspec
-                    gs = gridspec.GridSpec(3, 3, figure=fig, height_ratios=[0.8, 5, 2],
-                                          hspace=0.35, wspace=0.3,
-                                          left=0.06, right=0.97, top=0.95, bottom=0.06)
+                    gs = gridspec.GridSpec(4, 3, figure=fig, height_ratios=[0.6, 5, 1.8, 1.8],
+                                          hspace=0.4, wspace=0.3,
+                                          left=0.06, right=0.97, top=0.96, bottom=0.05)
 
-                    # Header section (title and metadata)
+                    # === HEADER SECTION ===
                     header_ax = fig.add_subplot(gs[0, :])
                     header_ax.axis('off')
 
                     # Title
-                    header_ax.text(0.01, 0.6, f"📊 Calibration QC Report - {device_serial}",
+                    header_ax.text(0.01, 0.7, f"📊 Calibration QC Report - {device_serial}",
                                   fontsize=18, fontweight='bold', va='center')
 
                     # Metadata (right side)
                     from version import __version__
-                    metadata = f"📅 {self.calibration_data.get('timestamp', 'N/A')}  |  " \
-                              f"Device: {self.calibration_data.get('device_type', 'N/A')}  |  " \
-                              f"FW: {self.calibration_data.get('firmware_version', 'N/A')}  |  " \
-                              f"Integration: {self.calibration_data.get('integration_time_ms', 'N/A')} ms  |  " \
-                              f"v{__version__}"
+                    cal_timestamp = self.calibration_data.get('timestamp', 'N/A')
+                    device_type = self.calibration_data.get('device_type', 'N/A')
+                    fw_version = self.calibration_data.get('firmware_version', 'N/A')
+                    integration = self.calibration_data.get('integration_time_ms', 'N/A')
+                    
+                    metadata = f"📅 {cal_timestamp}  |  Device: {device_type}  |  FW: {fw_version}  |  Integration: {integration} ms  |  v{__version__}"
                     header_ax.text(0.01, 0.1, metadata, fontsize=10, color='#666666', va='center')
 
-                    # Three graphs in one row (matching dialog layout)
+                    # === THREE GRAPHS IN ONE ROW ===
                     wavelengths = self.calibration_data.get('wavelengths', [])
                     channels = ['a', 'b', 'c', 'd']
                     colors = ['black', 'red', 'blue', 'green']
@@ -2196,31 +2243,23 @@ FAILURE DIAGNOSIS:
                             if len(spectrum) > 0:
                                 s_max_values.append(max(spectrum))
 
-                    # Auto-scale y-axis based on actual data
-                    detector_serial = self.calibration_data.get("detector_serial", "")
-
-                    # Determine detector max counts and target range
-                    if detector_serial.startswith("ST"):
-                        # PhasePhotonics detector (13-bit: 0-8192)
+                    # Auto-scale y-axis based on detector type
+                    detector_serial_str = str(device_serial)
+                    if detector_serial_str.startswith("ST"):
                         detector_max = 8192
-                        target_min = 4000  # ~49% of max (acceptable lower bound)
-                        target_max = 7000  # ~85% of max (ideal target)
+                        target_min, target_max = 4000, 7000
                     else:
-                        # USB4000 (16-bit: 0-65535)
                         detector_max = 65535
-                        target_min = 35000  # ~53% of max
-                        target_max = 50000  # ~76% of max
+                        target_min, target_max = 35000, 50000
 
-                    # Set y-axis limits and green target band
                     if s_max_values:
                         y_max = max(s_max_values) * 1.2
                         ax1.set_ylim(0, min(y_max, detector_max * 1.1))
                     else:
                         ax1.set_ylim(0, detector_max)
 
-                    # Add green target band (detector-specific, not data-dependent)
                     ax1.axhspan(target_min, target_max, alpha=0.2, color='green', zorder=1,
-                               label=f'Target Region ({target_min/1000:.1f}k-{target_max/1000:.1f}k)')
+                               label=f'Target ({target_min/1000:.1f}k-{target_max/1000:.1f}k)')
 
                     ax1.set_title('S-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
                     ax1.set_xlabel('Wavelength (nm)', fontsize=10)
@@ -2240,18 +2279,11 @@ FAILURE DIAGNOSIS:
                             if len(spectrum) > 0:
                                 p_max_values.append(max(spectrum))
 
-                    # Auto-scale y-axis based on actual data
                     if p_max_values:
                         y_max = max(p_max_values) * 1.2
                         ax2.set_ylim(0, y_max)
                     else:
-                        # Fallback based on detector type
-                        if detector_serial.startswith("ST"):
-                            # PhasePhotonics detector (13-bit: 0-8192)
-                            ax2.set_ylim(0, 8192)
-                        else:
-                            # USB4000
-                            ax2.set_ylim(0, 70000)
+                        ax2.set_ylim(0, 8192 if detector_serial_str.startswith("ST") else 70000)
 
                     ax2.set_title('P-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
                     ax2.set_xlabel('Wavelength (nm)', fontsize=10)
@@ -2273,58 +2305,145 @@ FAILURE DIAGNOSIS:
                     ax3.legend(fontsize=9, loc='best')
                     ax3.grid(True, alpha=0.3)
 
-                    # QC Table section below graphs
-                    table_ax = fig.add_subplot(gs[2, :])
-                    table_ax.axis('off')
-
-                    # Build two-column layout: LED Convergence | QC Validation
+                    # === LED CONVERGENCE TABLE (Row 2) ===
+                    conv_ax = fig.add_subplot(gs[2, :])
+                    conv_ax.axis('off')
+                    
                     convergence_summary = self.calibration_data.get('convergence_summary', {})
-                    qc_results = self.calibration_data.get('qc_results', {})
-
-                    # Left column: LED Convergence Results
                     if convergence_summary:
-                        table_ax.text(0.01, 0.95, 'LED Convergence Results:',
-                                     fontsize=11, fontweight='bold', va='top')
-
+                        conv_ax.text(0.01, 0.95, '📋 LED Convergence Results',
+                                    fontsize=12, fontweight='bold', va='top')
+                        
                         channels_data = convergence_summary.get('channels', {})
-                        table_y = 0.70
+                        
+                        # Create table data
+                        table_data = []
+                        headers = ['Ch', 'LED', 'Integration (ms)', 'Signal', 'Saturation %', 'Iterations']
+                        
                         for ch in ['a', 'b', 'c', 'd']:
                             if ch in channels_data:
                                 ch_data = channels_data[ch]
-                                led_val = ch_data.get('led', 'N/A')
-                                signal_val = ch_data.get('signal', 'N/A')
-                                table_ax.text(0.05, table_y, f"Ch {ch.upper()}:", fontsize=10, va='top', fontweight='bold')
-                                table_ax.text(0.15, table_y, f"LED: {led_val}", fontsize=10, va='top', family='monospace')
-                                table_ax.text(0.35, table_y, f"Signal: {signal_val}", fontsize=10, va='top', family='monospace')
-                                table_y -= 0.25
+                                led = int(ch_data.get('final_led', 0) or 0)
+                                integ = float(ch_data.get('final_integration_ms', 0) or 0)
+                                signal = float(ch_data.get('final_top50_counts', 0) or 0)
+                                sat = float(ch_data.get('final_percentage', 0) or 0)
+                                iters = int(ch_data.get('iterations', 0) or 0)
+                                
+                                table_data.append([
+                                    ch.upper(),
+                                    f'{led}',
+                                    f'{integ:.2f}',
+                                    f'{signal:.0f}',
+                                    f'{sat:.1f}%',
+                                    f'{iters}'
+                                ])
+                        
+                        if table_data:
+                            # Draw table
+                            table = conv_ax.table(cellText=table_data, colLabels=headers,
+                                                cellLoc='center', loc='center',
+                                                bbox=[0.05, 0.0, 0.9, 0.8])
+                            table.auto_set_font_size(False)
+                            table.set_fontsize(10)
+                            table.scale(1, 1.8)
+                            
+                            # Style headers
+                            for i in range(len(headers)):
+                                table[(0, i)].set_facecolor('#F5F5F7')
+                                table[(0, i)].set_text_props(weight='bold')
 
-                    # Right column: QC Validation Results
-                    if qc_results:
-                        table_ax.text(0.52, 0.95, 'QC Validation Results:',
-                                     fontsize=11, fontweight='bold', va='top')
-
-                        table_y = 0.70
+                    # === QC VALIDATION TABLES (Row 3) - Split into two columns ===
+                    qc_left_ax = fig.add_subplot(gs[3, :2])
+                    qc_left_ax.axis('off')
+                    
+                    # Left: Transmission & FWHM Data
+                    qc_left_ax.text(0.01, 0.95, '✅ Transmission & Spectral Quality',
+                                   fontsize=12, fontweight='bold', va='top')
+                    
+                    transmission_validation = self.calibration_data.get('transmission_validation', {})
+                    if transmission_validation:
+                        trans_data = []
+                        trans_headers = ['Ch', 'Min Trans %', 'FWHM (nm)', 'Status']
+                        
                         for ch in ['a', 'b', 'c', 'd']:
-                            if ch in qc_results:
-                                ch_qc = qc_results[ch]
-                                s_max = ch_qc.get('s_max', 0)
-                                p_max = ch_qc.get('p_max', 0)
-                                trans_pass = ch_qc.get('transmission_pass', False)
+                            if ch in transmission_validation:
+                                ch_data = transmission_validation[ch]
+                                trans_min = ch_data.get('transmission_min')
+                                fwhm = ch_data.get('fwhm')
+                                status = ch_data.get('status', 'UNKNOWN')
+                                
+                                # Simplify status
+                                if '[OK]' in status or 'PASS' in status:
+                                    status_text = 'GOOD'
+                                elif '[ERROR]' in status or 'FAIL' in status:
+                                    status_text = 'BAD'
+                                else:
+                                    status_text = 'CHECK'
+                                
+                                trans_data.append([
+                                    ch.upper(),
+                                    f'{trans_min:.1f}' if trans_min is not None else 'N/A',
+                                    f'{fwhm:.1f}' if fwhm is not None else 'N/A',
+                                    status_text
+                                ])
+                        
+                        if trans_data:
+                            trans_table = qc_left_ax.table(cellText=trans_data, colLabels=trans_headers,
+                                                          cellLoc='center', loc='center',
+                                                          bbox=[0.05, 0.0, 0.9, 0.8])
+                            trans_table.auto_set_font_size(False)
+                            trans_table.set_fontsize(10)
+                            trans_table.scale(1, 1.8)
+                            
+                            for i in range(len(trans_headers)):
+                                trans_table[(0, i)].set_facecolor('#F5F5F7')
+                                trans_table[(0, i)].set_text_props(weight='bold')
+                    
+                    # Right: P-Pol Brightness & Convergence
+                    qc_right_ax = fig.add_subplot(gs[3, 2])
+                    qc_right_ax.axis('off')
+                    
+                    qc_right_ax.text(0.01, 0.95, '💡 P-Pol Signal & Convergence',
+                                    fontsize=12, fontweight='bold', va='top')
+                    
+                    p_pol_spectra = self.calibration_data.get('p_pol_spectra', {})
+                    s_iterations = int(self.calibration_data.get('s_iterations', 0) or 0)
+                    p_iterations = int(self.calibration_data.get('p_iterations', 0) or 0)
+                    
+                    if p_pol_spectra:
+                        ppol_data = []
+                        ppol_headers = ['Ch', 'P-Pol Max', 'Conv Iter']
+                        
+                        for ch in ['a', 'b', 'c', 'd']:
+                            if ch in p_pol_spectra and p_pol_spectra[ch] is not None:
+                                try:
+                                    p_arr = np.asarray(p_pol_spectra[ch], dtype=float)
+                                    p_max = float(np.max(p_arr))
+                                    iter_text = f"{s_iterations}/{p_iterations}" if p_iterations > 0 else str(s_iterations)
+                                    
+                                    ppol_data.append([
+                                        ch.upper(),
+                                        f'{p_max:.0f}',
+                                        iter_text
+                                    ])
+                                except:
+                                    ppol_data.append([ch.upper(), 'N/A', 'N/A'])
+                            else:
+                                ppol_data.append([ch.upper(), 'N/A', 'N/A'])
+                        
+                        if ppol_data:
+                            ppol_table = qc_right_ax.table(cellText=ppol_data, colLabels=ppol_headers,
+                                                          cellLoc='center', loc='center',
+                                                          bbox=[0.05, 0.0, 0.9, 0.8])
+                            ppol_table.auto_set_font_size(False)
+                            ppol_table.set_fontsize(10)
+                            ppol_table.scale(1, 1.8)
+                            
+                            for i in range(len(ppol_headers)):
+                                ppol_table[(0, i)].set_facecolor('#F5F5F7')
+                                ppol_table[(0, i)].set_text_props(weight='bold')
 
-                                # Format values
-                                s_max_str = f"{s_max:,.0f}" if s_max else "N/A"
-                                p_max_str = f"{p_max:,.0f}" if p_max else "N/A"
-                                trans_status = "✓ PASS" if trans_pass else "✗ FAIL"
-                                trans_color = 'green' if trans_pass else 'red'
-
-                                table_ax.text(0.55, table_y, f"Ch {ch.upper()}:", fontsize=10, va='top', fontweight='bold')
-                                table_ax.text(0.63, table_y, f"S-Max: {s_max_str}", fontsize=9, va='top', family='monospace')
-                                table_ax.text(0.78, table_y, f"P-Max: {p_max_str}", fontsize=9, va='top', family='monospace')
-                                table_ax.text(0.92, table_y, trans_status, fontsize=9, va='top',
-                                            fontweight='bold', color=trans_color)
-                                table_y -= 0.25
-
-                    pdf.savefig(fig, dpi=150)  # Higher DPI for better quality
+                    pdf.savefig(fig, dpi=150)
                     plt.close()
 
                 from affilabs.widgets.message import show_message

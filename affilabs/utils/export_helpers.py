@@ -501,7 +501,22 @@ class ExportHelpers:
                                 df_cycles = pd.DataFrame(cycles_data)
                                 df_cycles.to_excel(writer, sheet_name='Cycles', index=False)
 
-                            # Sheet 3: Per-Channel XY (time and SPR per channel)
+                            # Sheet 3: Flags (if available from recording manager)
+                            if hasattr(app, 'recording_mgr') and app.recording_mgr.data_collector.flags:
+                                df_flags = pd.DataFrame(app.recording_mgr.data_collector.flags)
+                                df_flags.to_excel(writer, sheet_name='Flags', index=False)
+
+                            # Sheet 4: Events (if available from recording manager)
+                            if hasattr(app, 'recording_mgr') and app.recording_mgr.data_collector.events:
+                                df_events = pd.DataFrame(app.recording_mgr.data_collector.events)
+                                df_events.to_excel(writer, sheet_name='Events', index=False)
+
+                            # Sheet 5: Metadata (if available from recording manager)
+                            if hasattr(app, 'recording_mgr') and app.recording_mgr.data_collector.metadata:
+                                df_meta = pd.DataFrame([app.recording_mgr.data_collector.metadata])
+                                df_meta.to_excel(writer, sheet_name='Metadata', index=False)
+
+                            # Sheet 6: Per-Channel XY (time and SPR per channel)
                             try:
                                 all_channels = channels
                                 max_len = 0

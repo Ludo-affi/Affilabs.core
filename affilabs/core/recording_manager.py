@@ -156,6 +156,11 @@ class RecordingManager(QObject):
                         df_cycles = pd.DataFrame(self.data_collector.cycles)
                         df_cycles.to_excel(writer, sheet_name="Cycles", index=False)
 
+                    # Flags sheet if available
+                    if self.data_collector.flags:
+                        df_flags = pd.DataFrame(self.data_collector.flags)
+                        df_flags.to_excel(writer, sheet_name="Flags", index=False)
+
                     # Events sheet if available
                     if self.data_collector.events:
                         df_events = pd.DataFrame(self.data_collector.events)

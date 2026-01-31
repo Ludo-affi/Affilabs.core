@@ -941,9 +941,9 @@ class CalibrationService(QObject):
 
             # Handle post-calibration UI - KEEP DIALOG OPEN and ENABLE START BUTTON
             if self._calibration_dialog:
-                self._calibration_dialog.update_title("[OK] Calibration Complete!")
+                self._calibration_dialog.update_title("✅ Calibration Successful!")
                 self._calibration_dialog.update_status(
-                    "Review QC results, then click Start to begin live data acquisition.",
+                    "🎉 Your system is ready! Review the QC graphs below, then click Start when you're ready to begin live acquisition.",
                 )
                 self._calibration_dialog.set_progress(100, 100)
                 self._calibration_dialog.enable_start_button()
