@@ -5678,6 +5678,27 @@ End of Debug Log
         """Handle export data button click - emit signal with export configuration."""
         export_config = self._get_export_config()
         self.export_requested.emit(export_config)
+    
+    def _on_export_animl(self):
+        """Handle AnIML export button click - check license then export."""
+        from PySide6.QtWidgets import QMessageBox
+        
+        # Check if feature is available (this will show upgrade prompt if locked)
+        if hasattr(self, 'app') and self.app:
+            if not self.app.check_feature_access("AnIML Export", "pro"):
+                return  # Feature locked, upgrade prompt shown
+        
+        # Feature is available - proceed with AnIML export
+        # For now, show a message (Phase 2 will implement actual AnIML export)
+        QMessageBox.information(
+            self,
+            "AnIML Export",
+            "AnIML export functionality will be implemented in Phase 2.\n\n"
+            "This is a Pro/Enterprise feature that exports data in AnIML XML format\n"
+            "for regulatory compliance and LIMS integration."
+        )
+        
+        logger.info("📋 AnIML export requested (Pro feature)")
 
     def _on_send_to_edits_clicked(self):
         """Transfer live recording data to Edits tab for review and modification."""
@@ -6375,6 +6396,7 @@ End of Debug Log
 
         # Connect export buttons
         self.sidebar.export_data_btn.clicked.connect(self._on_export_data)
+        self.sidebar.export_animl_btn.clicked.connect(self._on_export_animl)
         self.sidebar.send_to_edits_btn.clicked.connect(self._on_send_to_edits_clicked)
 
         # Connect settings tab controls

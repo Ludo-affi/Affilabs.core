@@ -388,12 +388,40 @@ class ExportTabBuilder:
         file_card_layout.addWidget(self.sidebar.send_to_edits_btn)
         file_card_layout.addSpacing(4)
 
-        # Export button
-        self.sidebar.export_data_btn = QPushButton("📁 Export Data")
+        # Export button (Excel - always available)
+        self.sidebar.export_data_btn = QPushButton("📁 Export Data (Excel)")
         self.sidebar.export_data_btn.setFixedHeight(40)
         self.sidebar.export_data_btn.setStyleSheet(primary_button_style())
         # Note: Connected in affilabs_core_ui.py to _on_export_data
         file_card_layout.addWidget(self.sidebar.export_data_btn)
+        
+        # AnIML Export button (Pro/Enterprise feature)
+        file_card_layout.addSpacing(8)
+        self.sidebar.export_animl_btn = QPushButton("📋 Export AnIML (Pro)")
+        self.sidebar.export_animl_btn.setFixedHeight(36)
+        self.sidebar.export_animl_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: {Colors.BUTTON_PRIMARY};"
+            f"  color: white;"
+            f"  border: none;"
+            f"  border-radius: 6px;"
+            f"  padding: 8px 16px;"
+            f"  font-size: 12px;"
+            f"  font-weight: 600;"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{ background: #005BBB; }}"
+            f"QPushButton:disabled {{"
+            f"  background: {Colors.OVERLAY_LIGHT_10};"
+            f"  color: {Colors.SECONDARY_TEXT};"
+            f"}}"
+        )
+        self.sidebar.export_animl_btn.setToolTip(
+            "Export data in AnIML format for regulatory compliance\n"
+            "(Requires Pro or Enterprise license)"
+        )
+        # Note: Will be connected in affilabs_core_ui.py to _on_export_animl
+        file_card_layout.addWidget(self.sidebar.export_animl_btn)
 
         tab_layout.addWidget(file_card)
         tab_layout.addSpacing(16)

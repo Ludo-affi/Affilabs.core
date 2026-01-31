@@ -791,6 +791,17 @@ class Application(QApplication):
             Exception: If any critical service fails to initialize
 
         """
+        # License and feature flags system
+        from affilabs.config.license_manager import LicenseManager
+        
+        self.license_mgr = LicenseManager()
+        self.features = self.license_mgr.load_license()
+        
+        license_info = self.license_mgr.get_license_info()
+        logger.info(f"✓ License: {license_info['tier_name']} tier")
+        if not license_info['is_valid'] and license_info.get('errors'):
+            logger.warning(f"License validation issues: {', '.join(license_info['errors'])}")
+        
         # Phase 1.2 business services
         self.transmission_calc = TransmissionCalculator()
         if self.transmission_calc is None:
@@ -8735,6 +8746,64 @@ class Application(QApplication):
             logger.error(f"Failed to apply settings: {e}")
             from affilabs.widgets.message import show_message
             show_message(f"Failed to apply settings:\n{e}", "Error")
+
+    # ========================================================================
+    # LICENSE & FEATURE MANAGEMENT
+    # ========================================================================
+    
+    def show_license_dialog(self):
+        """Open license management dialog."""
+        from affilabs.widgets.license_dialog import LicenseDialog
+        
+        dialog = LicenseDialog(self.license_mgr, self.main_window)
+        if dialog.exec():
+            # License may have changed - reload
+            self.features = self.license_mgr.load_license()
+            logger.info(f"License reloaded: {self.features.tier_name} tier")
+    
+    def check_feature_access(self, feature_name: str, required_tier: str = None) -> bool:
+        """
+        Check if a feature is accessible with current license.
+        Shows upgrade prompt if locked.
+        
+        Args:
+            feature_name: Human-readable feature name
+            required_tier: Required tier (pro/enterprise)
+        
+        Returns:
+            bool: True if feature is accessible
+        """
+        # Determine required tier if not specified
+        if required_tier is None:
+            # Map feature names to tiers
+            pro_features = ['animl_export', 'audit_trail', 'advanced_analytics']
+            enterprise_features = ['sila_integration', 'lims_integration', 
+                                  'electronic_signatures', 'cfr_part11_compliance']
+            
+            feature_attr = feature_name.lower().replace(' ', '_').replace('-', '_')
+            if feature_attr in pro_features:
+                required_tier = 'pro'
+            elif feature_attr in enterprise_features:
+                required_tier = 'enterprise'
+            else:
+                return True  # Free feature
+        
+        # Check if feature is available
+        feature_attr = feature_name.lower().replace(' ', '_').replace('-', '_')
+        if hasattr(self.features, feature_attr):
+            is_available = getattr(self.features, feature_attr)
+            
+            if not is_available:
+                # Show upgrade prompt
+                from affilabs.widgets.license_dialog import UpgradePromptDialog
+                dialog = UpgradePromptDialog(feature_name, required_tier, self.main_window)
+                dialog.exec()
+                return False
+            
+            return True
+        
+        # Unknown feature - allow by default
+        return True
 
     def _print_profiling_stats(self):
         """Print profiling statistics (called periodically by timer)."""
