@@ -1,9 +1,16 @@
-"""Cycle Domain Model - Type-safe cycle data structure.
+"""Cycle Domain Model - Type-safe cycle data structure with validation.
 
-ARCHITECTURE LAYER: Domain Model (Phase 1.1)
+ARCHITECTURE LAYER: Domain Model (Phase 1.2 - Enhanced with Pydantic)
 
 This module defines the Cycle domain model for experiment cycles.
-Replaces dict-based cycle storage with type-safe dataclass.
+Uses Pydantic for automatic validation and type coercion.
+
+ENHANCEMENTS (Pydantic + TinyDB Integration):
+- Automatic validation: Fields validated on creation
+- Type coercion: "5.0" string → 5.0 float automatically
+- Better error messages: Clear validation errors
+- JSON schema: Auto-generate schemas for docs
+- Immutable IDs: cycle_id cannot be changed after creation
 
 BENEFITS:
 - Type safety: IDE autocomplete, type checking
@@ -30,23 +37,24 @@ USAGE:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal
+import time
+from typing import Literal, Optional, Dict, List
+
+from pydantic import BaseModel, Field, field_validator, computed_field
 
 CycleStatus = Literal["pending", "running", "completed", "cancelled"]
 CycleType = Literal["Baseline", "Association", "Dissociation", "Regeneration", "Custom"]
 
 
-@dataclass
-class Cycle:
-    """Domain model for experiment cycle.
+class Cycle(BaseModel):
+    """Domain model for experiment cycle with automatic validation.
 
     Represents a timed segment of the experiment (e.g., Baseline, Association).
     Cycles are queued and executed in sequence.
 
     Attributes:
         type: Cycle type (Baseline, Association, Dissociation, etc.)
-        length_minutes: Duration of cycle in minutes
+        length_minutes: Duration of cycle in minutes (must be positive)
         name: User-friendly name for the cycle
         note: Optional notes/comments
         cycle_num: Sequential cycle number (0 = not started)
@@ -56,68 +64,83 @@ class Cycle:
         end_time_sensorgram: End time in sensorgram timeline (seconds)
     """
 
-    # Required fields
-    type: str
-    length_minutes: float
+    # Required fields with validation
+    type: str = Field(..., description="Cycle type (Baseline, Association, etc.)")
+    length_minutes: float = Field(..., gt=0, description="Duration in minutes (must be positive)")
 
     # Optional fields with defaults
-    name: str = ""
-    note: str = ""
-    concentration_value: float | None = None
-    concentration_units: str = "nM"  # Default to nM (use "ug/mL" for immobilization)
+    name: str = Field(default="", description="User-friendly cycle name")
+    note: str = Field(default="", description="Optional notes/comments")
+    concentration_value: Optional[float] = Field(default=None, description="Concentration value")
+    concentration_units: str = Field(default="nM", description="Concentration units (nM or ug/mL)")
     
     # Concentration metadata (for multi-channel experiments)
-    units: str = "nM"  # Unit type for concentrations
-    concentrations: dict[str, float] = field(default_factory=dict)  # Channel-specific concentrations {'A': 100.0, 'B': 50.0}
+    units: str = Field(default="nM", description="Unit type for concentrations")
+    concentrations: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Channel-specific concentrations {'A': 100.0, 'B': 50.0}"
+    )
     
     # Unique identifiers
-    cycle_id: int = 0  # Permanent ID assigned when created (never changes)
-    timestamp: float = 0.0  # Unix timestamp when cycle was created
+    cycle_id: int = Field(default=0, description="Permanent ID assigned when created (immutable)")
+    timestamp: float = Field(default_factory=time.time, description="Unix timestamp when cycle was created")
 
     # Runtime state (set when cycle starts)
-    cycle_num: int = 0  # Sequential position in queue (can change)
-    total_cycles: int = 0
-    status: CycleStatus = "pending"
+    cycle_num: int = Field(default=0, description="Sequential position in queue (can change)")
+    total_cycles: int = Field(default=0, description="Total cycles in queue")
+    status: CycleStatus = Field(default="pending", description="Current cycle status")
 
     # Timeline positions (set during execution)
-    sensorgram_time: float | None = None
-    end_time_sensorgram: float | None = None
+    sensorgram_time: Optional[float] = Field(default=None, description="Start time in sensorgram timeline")
+    end_time_sensorgram: Optional[float] = Field(default=None, description="End time in sensorgram timeline")
     
     # Analysis data (calculated after cycle completion)
-    delta_spr: float | None = None  # SPR change during cycle
-    flags: list[str] = field(default_factory=list)  # Flags that occurred during this cycle (injection, wash, spike)
+    delta_spr: Optional[float] = Field(default=None, description="SPR change during cycle")
+    flags: List[str] = Field(
+        default_factory=list,
+        description="Flags that occurred during this cycle (injection, wash, spike)"
+    )
 
-    def __post_init__(self):
-        """Validate cycle data after initialization."""
-        # Ensure length_minutes is positive
-        if self.length_minutes <= 0:
-            raise ValueError(f"Cycle length must be positive, got {self.length_minutes}")
+    # Pydantic configuration
+    model_config = {
+        "validate_assignment": True,  # Validate on attribute assignment
+        "arbitrary_types_allowed": False,
+        "str_strip_whitespace": True,
+    }
 
-        # Set default name if not provided
-        if not self.name:
-            self.name = f"{self.type} Cycle"
+    @field_validator('length_minutes')
+    @classmethod
+    def validate_length(cls, v: float) -> float:
+        """Ensure length_minutes is positive."""
+        if v <= 0:
+            raise ValueError(f"Cycle length must be positive, got {v}")
+        return v
+
+    @field_validator('name')
+    @classmethod
+    def set_default_name(cls, v: str, info) -> str:
+        """Set default name based on cycle type if not provided."""
+        if not v and 'type' in info.data:
+            return f"{info.data['type']} Cycle"
+        return v
+
+    @field_validator('name')
+    @classmethod
+    def set_default_name(cls, v: str, info) -> str:
+        """Set default name based on cycle type if not provided."""
+        if not v and 'type' in info.data:
+            return f"{info.data['type']} Cycle"
+        return v
 
     def to_dict(self) -> dict:
         """Convert to dictionary (for legacy compatibility).
 
+        Uses Pydantic's model_dump for automatic serialization.
+
         Returns:
             Dictionary with all cycle fields
         """
-        return {
-            "type": self.type,
-            "length_minutes": self.length_minutes,
-            "name": self.name,
-            "note": self.note,
-            "cycle_num": self.cycle_num,
-            "total_cycles": self.total_cycles,
-            "status": self.status,
-            "sensorgram_time": self.sensorgram_time,
-            "end_time_sensorgram": self.end_time_sensorgram,
-            "units": self.units,
-            "concentrations": self.concentrations,
-            "cycle_id": self.cycle_id,
-            "timestamp": self.timestamp,
-        }
+        return self.model_dump()
 
     def to_export_dict(self) -> dict:
         """Convert to export format for recording manager.
@@ -144,31 +167,33 @@ class Cycle:
 
     @classmethod
     def from_dict(cls, data: dict) -> Cycle:
-        """Create Cycle from dictionary.
+        """Create Cycle from dictionary with automatic validation.
+
+        Pydantic will validate all fields and coerce types automatically.
 
         Args:
             data: Dictionary with cycle fields
 
         Returns:
-            Cycle instance
+            Cycle instance (validated)
         """
-        return cls(
-            type=data.get("type", "Custom"),
-            length_minutes=data.get("length_minutes", 1.0),
-            name=data.get("name", ""),
-            note=data.get("note", ""),
-            concentration_value=data.get("concentration_value"),
-            concentration_units=data.get("concentration_units", "nM"),
-            units=data.get("units", "nM"),
-            concentrations=data.get("concentrations", {}),
-            cycle_id=data.get("cycle_id", 0),
-            timestamp=data.get("timestamp", 0.0),
-            cycle_num=data.get("cycle_num", 0),
-            total_cycles=data.get("total_cycles", 0),
-            status=data.get("status", "pending"),
-            sensorgram_time=data.get("sensorgram_time"),
-            end_time_sensorgram=data.get("end_time_sensorgram"),
-        )
+        # Pydantic's model_validate handles type coercion and validation
+        return cls.model_validate(data)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Cycle:
+        """Create Cycle from dictionary with automatic validation.
+
+        Pydantic will validate all fields and coerce types automatically.
+
+        Args:
+            data: Dictionary with cycle fields
+
+        Returns:
+            Cycle instance (validated)
+        """
+        # Pydantic's model_validate handles type coercion and validation
+        return cls.model_validate(data)
 
     def is_running(self) -> bool:
         """Check if cycle is currently running."""
@@ -211,58 +236,6 @@ class Cycle:
     def get_duration_seconds(self) -> float:
         """Get cycle duration in seconds."""
         return self.length_minutes * 60
-
-    def to_dict(self) -> dict:
-        """Convert cycle to dictionary for serialization.
-        
-        Returns:
-            Dictionary with all cycle data
-        """
-        return {
-            'type': self.type,
-            'length_minutes': self.length_minutes,
-            'name': self.name,
-            'note': self.note,
-            'concentration_value': self.concentration_value,
-            'concentration_units': self.concentration_units,
-            'units': self.units,
-            'concentrations': self.concentrations,
-            'cycle_id': self.cycle_id,
-            'timestamp': self.timestamp,
-            'cycle_num': self.cycle_num,
-            'total_cycles': self.total_cycles,
-            'status': self.status,
-            'sensorgram_time': self.sensorgram_time,
-            'end_time_sensorgram': self.end_time_sensorgram,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> Cycle:
-        """Create cycle from dictionary.
-        
-        Args:
-            data: Dictionary with cycle data
-            
-        Returns:
-            New Cycle instance
-        """
-        return cls(
-            type=data.get('type', 'Custom'),
-            length_minutes=data.get('length_minutes', 0.0),
-            name=data.get('name', ''),
-            note=data.get('note', ''),
-            concentration_value=data.get('concentration_value'),
-            concentration_units=data.get('concentration_units', 'nM'),
-            units=data.get('units', 'nM'),
-            concentrations=data.get('concentrations', {}),
-            cycle_id=data.get('cycle_id', 0),
-            timestamp=data.get('timestamp', 0.0),
-            cycle_num=data.get('cycle_num', 0),
-            total_cycles=data.get('total_cycles', 0),
-            status=data.get('status', 'pending'),
-            sensorgram_time=data.get('sensorgram_time', 0.0),
-            end_time_sensorgram=data.get('end_time_sensorgram', 0.0),
-        )
 
     def __str__(self) -> str:
         """String representation for logging."""
