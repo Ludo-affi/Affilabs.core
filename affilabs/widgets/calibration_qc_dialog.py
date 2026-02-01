@@ -1564,206 +1564,241 @@ class CalibrationQCDialog(QDialog):
             data_type: Type of data to plot
 
         """
-        data = self.calibration_data
-        wavelengths = data.get("wavelengths", None)
+        try:
+            data = self.calibration_data
+            
+            # Debug logging
+            logger.debug(f"Plotting {data_type} - calibration_data keys: {list(data.keys())}")
+            
+            wavelengths = data.get("wavelengths", None)
 
-        # Default wavelength array
-        default_wavelengths = np.linspace(560, 720, 3648)
+            # Default wavelength array
+            default_wavelengths = np.linspace(560, 720, 3648)
 
-        if wavelengths is None:
-            wavelengths = default_wavelengths
-            logger.warning("No wavelengths in QC data, using default range")
-        else:
-            # Convert to numeric numpy array (wavelengths may be stored as strings in JSON)
-            try:
-                # If wavelengths is a string representation of a list, parse it first
-                if isinstance(wavelengths, str):
-                    import json
-                    import ast
-                    # Try JSON first
-                    try:
-                        parsed = json.loads(wavelengths)
-                    except:
-                        # Try ast.literal_eval as fallback
+            if wavelengths is None:
+                wavelengths = default_wavelengths
+                logger.warning("No wavelengths in QC data, using default range")
+            else:
+                # Convert to numeric numpy array (wavelengths may be stored as strings in JSON)
+                try:
+                    # If wavelengths is a string representation of a list, parse it first
+                    if isinstance(wavelengths, str):
+                        import json
+                        import ast
+                        # Try JSON first
                         try:
-                            parsed = ast.literal_eval(wavelengths)
+                            parsed = json.loads(wavelengths)
                         except:
-                            # Give up, use default
-                            logger.warning(f"Failed to parse wavelengths string, using default")
-                            wavelengths = default_wavelengths
-                            parsed = None
-                    
+                            # Try ast.literal_eval as fallback
+                            try:
+                                parsed = ast.literal_eval(wavelengths)
+                            except:
+                                # Give up, use default
+                                logger.warning(f"Failed to parse wavelengths string, using default")
+                                wavelengths = default_wavelengths
+                                parsed = None
+                    else:
+                        parsed = wavelengths
+
                     if parsed is not None:
                         wavelengths = parsed
-                
-                # Now convert to numpy array (only if not already set to default)
-                if not isinstance(wavelengths, np.ndarray):
-                    wavelengths = np.array([float(w) for w in wavelengths], dtype=float)
-                    
-            except Exception as e:
-                logger.warning(f"Failed to convert wavelengths to numeric array: {e}")
-                wavelengths = default_wavelengths
-        
-        # Final safety check - ensure wavelengths is a valid numpy array
-        if not isinstance(wavelengths, np.ndarray) or len(wavelengths) == 0:
-            logger.warning(f"Wavelengths invalid (type: {type(wavelengths)}, len: {len(wavelengths) if hasattr(wavelengths, '__len__') else 'N/A'}), using default")
-            wavelengths = default_wavelengths
 
-        # Channel colors (matching existing UI)
-        colors = {
+                    # Now convert to numpy array (only if not already set to default)
+                    if not isinstance(wavelengths, np.ndarray):
+                        wavelengths = np.array([float(w) for w in wavelengths], dtype=float)
+
+                except Exception as e:
+                    logger.warning(f"Failed to convert wavelengths to numeric array: {e}")
+                    wavelengths = default_wavelengths
+
+            # Final safety check - ensure wavelengths is a valid numpy array
+            if not isinstance(wavelengths, np.ndarray) or len(wavelengths) == 0:
+                logger.warning(f"Wavelengths invalid (type: {type(wavelengths)}, len: {len(wavelengths) if hasattr(wavelengths, '__len__') else 'N/A'}), using default")
+                wavelengths = default_wavelengths
+
+            # Channel colors (matching existing UI)
+            colors = {
             "a": (0, 0, 0, 200),  # Black
             "b": (255, 0, 81, 200),  # Red
             "c": (0, 174, 255, 200),  # Blue
             "d": (0, 150, 80, 200),  # Green (matches main UI)
-        }
+            }
 
-        # Get data based on type
-        data_dict = {}
-        if data_type == "s_pol":
-            data_dict = data.get("s_pol_spectra", {})
-        elif data_type == "p_pol":
-            data_dict = data.get("p_pol_spectra", {})
-        elif data_type == "dark":
-            # NEW: Support per-channel darks for both S-pol and P-pol
-            dark_s_scans = data.get("dark_s_scans", {})
-            dark_p_scans = data.get("dark_p_scans", {})
+            # Get data based on type
+            data_dict = {}
+            if data_type == "s_pol":
+                data_dict = data.get("s_pol_spectra", {})
+                logger.debug(f"S-pol channels found: {list(data_dict.keys())}")
+            elif data_type == "p_pol":
+                data_dict = data.get("p_pol_spectra", {})
+                logger.debug(f"P-pol channels found: {list(data_dict.keys())}")
+            elif data_type == "dark":
+                # NEW: Support per-channel darks for both S-pol and P-pol
+                dark_s_scans = data.get("dark_s_scans", {})
+                dark_p_scans = data.get("dark_p_scans", {})
 
-            # If we have per-channel darks, plot all 8 (4 channels × 2 polarizations)
-            if dark_s_scans or dark_p_scans:
-                # Plot S-pol darks with solid lines
-                from affilabs.utils.detector_config import filter_valid_wavelength_data
-                detector_serial = self.calibration_data.get("detector_serial", None)
+                # If we have per-channel darks, plot all 8 (4 channels × 2 polarizations)
+                if dark_s_scans or dark_p_scans:
+                    # Plot S-pol darks with solid lines
+                    from affilabs.utils.detector_config import filter_valid_wavelength_data
+                    detector_serial = self.calibration_data.get("detector_serial", None)
 
-                for channel in ["a", "b", "c", "d"]:
-                    if channel in dark_s_scans:
-                        spectrum = dark_s_scans[channel]
-                        if spectrum is not None and len(spectrum) > 0:
-                            wavelengths_plot = (
-                                wavelengths
-                                if len(wavelengths) == len(spectrum)
-                                else np.linspace(
-                                    wavelengths[0],
-                                    wavelengths[-1],
-                                    len(spectrum),
+                    for channel in ["a", "b", "c", "d"]:
+                        if channel in dark_s_scans:
+                            spectrum = dark_s_scans[channel]
+                            if spectrum is not None and len(spectrum) > 0:
+                                wavelengths_plot = (
+                                    wavelengths
+                                    if len(wavelengths) == len(spectrum)
+                                    else np.linspace(
+                                        wavelengths[0],
+                                        wavelengths[-1],
+                                        len(spectrum),
+                                    )
                                 )
-                            )
-                            # Filter for Phase Photonics (noisy data below 570nm)
-                            wavelengths_plot, spectrum = filter_valid_wavelength_data(
-                                wavelengths_plot,
-                                spectrum,
-                                detector_serial=detector_serial,
-                            )
-                            pen = pg.mkPen(
-                                color=colors.get(channel, (128, 128, 128, 200)),
-                                width=2,
-                                style=Qt.PenStyle.SolidLine,
-                            )
-                            plot_widget.plot(
-                                wavelengths_plot,
-                                spectrum,
-                                pen=pen,
-                                name=f"{channel.upper()}-S (S-pol dark)",
-                            )
-
-                # Plot P-pol darks with dashed lines
-                for channel in ["a", "b", "c", "d"]:
-                    if channel in dark_p_scans:
-                        spectrum = dark_p_scans[channel]
-                        if spectrum is not None and len(spectrum) > 0:
-                            wavelengths_plot = (
-                                wavelengths
-                                if len(wavelengths) == len(spectrum)
-                                else np.linspace(
-                                    wavelengths[0],
-                                    wavelengths[-1],
-                                    len(spectrum),
+                                # Filter for Phase Photonics (noisy data below 570nm)
+                                wavelengths_plot, spectrum = filter_valid_wavelength_data(
+                                    wavelengths_plot,
+                                    spectrum,
+                                    detector_serial=detector_serial,
                                 )
+                                pen = pg.mkPen(
+                                    color=colors.get(channel, (128, 128, 128, 200)),
+                                    width=2,
+                                    style=Qt.PenStyle.SolidLine,
+                                )
+                                plot_widget.plot(
+                                    wavelengths_plot,
+                                    spectrum,
+                                    pen=pen,
+                                    name=f"{channel.upper()}-S (S-pol dark)",
+                                )
+                    # Plot P-pol darks with dashed lines
+                    for channel in ["a", "b", "c", "d"]:
+                        if channel in dark_p_scans:
+                            spectrum = dark_p_scans[channel]
+                            if spectrum is not None and len(spectrum) > 0:
+                                wavelengths_plot = (
+                                    wavelengths
+                                    if len(wavelengths) == len(spectrum)
+                                    else np.linspace(
+                                        wavelengths[0],
+                                        wavelengths[-1],
+                                        len(spectrum),
+                                    )
+                                )
+                                # Filter for Phase Photonics (noisy data below 570nm)
+                                wavelengths_plot, spectrum = filter_valid_wavelength_data(
+                                    wavelengths_plot,
+                                    spectrum,
+                                    detector_serial=detector_serial,
+                                )
+                                pen = pg.mkPen(
+                                    color=colors.get(channel, (128, 128, 128, 200)),
+                                    width=2,
+                                    style=Qt.PenStyle.DashLine,
+                                )
+                                plot_widget.plot(
+                                    wavelengths_plot,
+                                    spectrum,
+                                    pen=pen,
+                                    name=f"{channel.upper()}-P (P-pol dark)",
+                                )
+                    # Add legend
+                    plot_widget.addLegend(offset=(10, 10))
+                    return  # Skip normal plotting below
+                # Fallback to legacy single dark per channel
+                data_dict = data.get("dark_scan", {})
+                logger.debug(f"Dark channels found: {list(data_dict.keys())}")
+            elif data_type == "transmission":
+                data_dict = data.get("transmission_spectra", {})
+                logger.debug(f"Transmission channels found: {list(data_dict.keys())}")
+
+            # Log if no data found
+            if not data_dict:
+                logger.warning(f"No {data_type} data found in calibration_data!")
+                # Show "No Data" message on plot
+                plot_widget.clear()
+                text_item = pg.TextItem(
+                    text=f"No {data_type} data available",
+                    anchor=(0.5, 0.5),
+                    color=(128, 128, 128)
+                )
+                plot_widget.addItem(text_item)
+                text_item.setPos(640, 2000)  # Center position
+                return
+
+            # Plot each channel
+            for channel in ["a", "b", "c", "d"]:
+                if channel in data_dict:
+                    spectrum = data_dict[channel]
+                    if spectrum is not None and len(spectrum) > 0:
+                        # Handle wavelength array length mismatch
+                        if len(wavelengths) != len(spectrum):
+                            wavelengths_plot = np.linspace(
+                                wavelengths[0],
+                                wavelengths[-1],
+                                len(spectrum),
                             )
-                            # Filter for Phase Photonics (noisy data below 570nm)
-                            wavelengths_plot, spectrum = filter_valid_wavelength_data(
-                                wavelengths_plot,
-                                spectrum,
-                                detector_serial=detector_serial,
-                            )
-                            pen = pg.mkPen(
-                                color=colors.get(channel, (128, 128, 128, 200)),
-                                width=2,
-                                style=Qt.PenStyle.DashLine,
-                            )
-                            plot_widget.plot(
-                                wavelengths_plot,
-                                spectrum,
-                                pen=pen,
-                                name=f"{channel.upper()}-P (P-pol dark)",
-                            )
+                        else:
+                            wavelengths_plot = wavelengths
+
+                            # CRITICAL: Filter wavelengths for Phase Photonics detector
+                        # Phase Photonics has noisy data below 570nm
+                        from affilabs.utils.detector_config import filter_valid_wavelength_data
+                        detector_serial = self.calibration_data.get("detector_serial", None)
+                        wavelengths_plot, spectrum = filter_valid_wavelength_data(
+                            wavelengths_plot,
+                            spectrum,
+                            detector_serial=detector_serial,
+                        )
+
+                        pen = pg.mkPen(
+                            color=colors.get(channel, (128, 128, 128, 200)),
+                            width=2,
+                        )
+                        plot_widget.plot(
+                            wavelengths_plot,
+                            spectrum,
+                            pen=pen,
+                            name=f"Channel {channel.upper()}",
+                        )
+
+            # Add pass region overlay for S-Pol
+            if data_type == "s_pol":
+                from pyqtgraph import LinearRegionItem
+
+                # Adapt pass region based on detector type
+                detector_serial = self.calibration_data.get("detector_serial", "")
+                if detector_serial.startswith("ST"):
+                    # PhasePhotonics detector: 75%-95% of typical max (~2000)
+                    pass_min, pass_max = 1500, 1900
+                else:
+                    # USB4000: 35,000-50,000 counts
+                    pass_min, pass_max = 35000, 50000
+
+                pass_region = LinearRegionItem(
+                    values=[pass_min, pass_max],
+                    orientation='horizontal',
+                    brush=(0, 255, 0, 30),  # Green with transparency
+                    movable=False
+                )
+                plot_widget.addItem(pass_region)
 
                 # Add legend
                 plot_widget.addLegend(offset=(10, 10))
-                return  # Skip normal plotting below
-            # Fallback to legacy single dark per channel
-            data_dict = data.get("dark_scan", {})
-        elif data_type == "transmission":
-            data_dict = data.get("transmission_spectra", {})
 
-        # Plot each channel
-        for channel in ["a", "b", "c", "d"]:
-            if channel in data_dict:
-                spectrum = data_dict[channel]
-                if spectrum is not None and len(spectrum) > 0:
-                    # Handle wavelength array length mismatch
-                    if len(wavelengths) != len(spectrum):
-                        wavelengths_plot = np.linspace(
-                            wavelengths[0],
-                            wavelengths[-1],
-                            len(spectrum),
-                        )
-                    else:
-                        wavelengths_plot = wavelengths
-
-                    # CRITICAL: Filter wavelengths for Phase Photonics detector
-                    # Phase Photonics has noisy data below 570nm
-                    from affilabs.utils.detector_config import filter_valid_wavelength_data
-                    detector_serial = self.calibration_data.get("detector_serial", None)
-                    wavelengths_plot, spectrum = filter_valid_wavelength_data(
-                        wavelengths_plot,
-                        spectrum,
-                        detector_serial=detector_serial,
-                    )
-
-                    pen = pg.mkPen(
-                        color=colors.get(channel, (128, 128, 128, 200)),
-                        width=2,
-                    )
-                    plot_widget.plot(
-                        wavelengths_plot,
-                        spectrum,
-                        pen=pen,
-                        name=f"Channel {channel.upper()}",
-                    )
-
-        # Add pass region overlay for S-Pol
-        if data_type == "s_pol":
-            from pyqtgraph import LinearRegionItem
-
-            # Adapt pass region based on detector type
-            detector_serial = self.calibration_data.get("detector_serial", "")
-            if detector_serial.startswith("ST"):
-                # PhasePhotonics detector: 75%-95% of typical max (~2000)
-                pass_min, pass_max = 1500, 1900
-            else:
-                # USB4000: 35,000-50,000 counts
-                pass_min, pass_max = 35000, 50000
-
-            pass_region = LinearRegionItem(
-                values=[pass_min, pass_max],
-                orientation='horizontal',
-                brush=(0, 255, 0, 30),  # Green with transparency
-                movable=False
+        except Exception as e:
+            logger.error(f"Error plotting {data_type} data: {e}", exc_info=True)
+            # Show error text on plot
+            plot_widget.clear()
+            text_item = pg.TextItem(
+                text=f"Error displaying data:\n{str(e)[:200]}",
+                anchor=(0.5, 0.5),
+                color=(255, 0, 0)
             )
-            plot_widget.addItem(pass_region)
-
-        # Add legend
-        plot_widget.addLegend(offset=(10, 10))
+            plot_widget.addItem(text_item)
+            text_item.setPos(640, 2000)  # Center-ish position
 
     def _create_analysis_visualization(self) -> QWidget:
         """Create calibration analysis visualization tab with matplotlib charts."""
@@ -2221,7 +2256,7 @@ FAILURE DIAGNOSIS:
                     device_type = self.calibration_data.get('device_type', 'N/A')
                     fw_version = self.calibration_data.get('firmware_version', 'N/A')
                     integration = self.calibration_data.get('integration_time_ms', 'N/A')
-                    
+
                     metadata = f"📅 {cal_timestamp}  |  Device: {device_type}  |  FW: {fw_version}  |  Integration: {integration} ms  |  v{__version__}"
                     header_ax.text(0.01, 0.1, metadata, fontsize=10, color='#666666', va='center')
 
@@ -2308,18 +2343,18 @@ FAILURE DIAGNOSIS:
                     # === LED CONVERGENCE TABLE (Row 2) ===
                     conv_ax = fig.add_subplot(gs[2, :])
                     conv_ax.axis('off')
-                    
+
                     convergence_summary = self.calibration_data.get('convergence_summary', {})
                     if convergence_summary:
                         conv_ax.text(0.01, 0.95, '📋 LED Convergence Results',
                                     fontsize=12, fontweight='bold', va='top')
-                        
+
                         channels_data = convergence_summary.get('channels', {})
-                        
+
                         # Create table data
                         table_data = []
                         headers = ['Ch', 'LED', 'Integration (ms)', 'Signal', 'Saturation %', 'Iterations']
-                        
+
                         for ch in ['a', 'b', 'c', 'd']:
                             if ch in channels_data:
                                 ch_data = channels_data[ch]
@@ -2328,7 +2363,7 @@ FAILURE DIAGNOSIS:
                                 signal = float(ch_data.get('final_top50_counts', 0) or 0)
                                 sat = float(ch_data.get('final_percentage', 0) or 0)
                                 iters = int(ch_data.get('iterations', 0) or 0)
-                                
+
                                 table_data.append([
                                     ch.upper(),
                                     f'{led}',
@@ -2337,7 +2372,7 @@ FAILURE DIAGNOSIS:
                                     f'{sat:.1f}%',
                                     f'{iters}'
                                 ])
-                        
+
                         if table_data:
                             # Draw table
                             table = conv_ax.table(cellText=table_data, colLabels=headers,
@@ -2346,7 +2381,7 @@ FAILURE DIAGNOSIS:
                             table.auto_set_font_size(False)
                             table.set_fontsize(10)
                             table.scale(1, 1.8)
-                            
+
                             # Style headers
                             for i in range(len(headers)):
                                 table[(0, i)].set_facecolor('#F5F5F7')
@@ -2355,23 +2390,23 @@ FAILURE DIAGNOSIS:
                     # === QC VALIDATION TABLES (Row 3) - Split into two columns ===
                     qc_left_ax = fig.add_subplot(gs[3, :2])
                     qc_left_ax.axis('off')
-                    
+
                     # Left: Transmission & FWHM Data
                     qc_left_ax.text(0.01, 0.95, '✅ Transmission & Spectral Quality',
                                    fontsize=12, fontweight='bold', va='top')
-                    
+
                     transmission_validation = self.calibration_data.get('transmission_validation', {})
                     if transmission_validation:
                         trans_data = []
                         trans_headers = ['Ch', 'Min Trans %', 'FWHM (nm)', 'Status']
-                        
+
                         for ch in ['a', 'b', 'c', 'd']:
                             if ch in transmission_validation:
                                 ch_data = transmission_validation[ch]
                                 trans_min = ch_data.get('transmission_min')
                                 fwhm = ch_data.get('fwhm')
                                 status = ch_data.get('status', 'UNKNOWN')
-                                
+
                                 # Simplify status
                                 if '[OK]' in status or 'PASS' in status:
                                     status_text = 'GOOD'
@@ -2379,14 +2414,14 @@ FAILURE DIAGNOSIS:
                                     status_text = 'BAD'
                                 else:
                                     status_text = 'CHECK'
-                                
+
                                 trans_data.append([
                                     ch.upper(),
                                     f'{trans_min:.1f}' if trans_min is not None else 'N/A',
                                     f'{fwhm:.1f}' if fwhm is not None else 'N/A',
                                     status_text
                                 ])
-                        
+
                         if trans_data:
                             trans_table = qc_left_ax.table(cellText=trans_data, colLabels=trans_headers,
                                                           cellLoc='center', loc='center',
@@ -2394,33 +2429,33 @@ FAILURE DIAGNOSIS:
                             trans_table.auto_set_font_size(False)
                             trans_table.set_fontsize(10)
                             trans_table.scale(1, 1.8)
-                            
+
                             for i in range(len(trans_headers)):
                                 trans_table[(0, i)].set_facecolor('#F5F5F7')
                                 trans_table[(0, i)].set_text_props(weight='bold')
-                    
+
                     # Right: P-Pol Brightness & Convergence
                     qc_right_ax = fig.add_subplot(gs[3, 2])
                     qc_right_ax.axis('off')
-                    
+
                     qc_right_ax.text(0.01, 0.95, '💡 P-Pol Signal & Convergence',
                                     fontsize=12, fontweight='bold', va='top')
-                    
+
                     p_pol_spectra = self.calibration_data.get('p_pol_spectra', {})
                     s_iterations = int(self.calibration_data.get('s_iterations', 0) or 0)
                     p_iterations = int(self.calibration_data.get('p_iterations', 0) or 0)
-                    
+
                     if p_pol_spectra:
                         ppol_data = []
                         ppol_headers = ['Ch', 'P-Pol Max', 'Conv Iter']
-                        
+
                         for ch in ['a', 'b', 'c', 'd']:
                             if ch in p_pol_spectra and p_pol_spectra[ch] is not None:
                                 try:
                                     p_arr = np.asarray(p_pol_spectra[ch], dtype=float)
                                     p_max = float(np.max(p_arr))
                                     iter_text = f"{s_iterations}/{p_iterations}" if p_iterations > 0 else str(s_iterations)
-                                    
+
                                     ppol_data.append([
                                         ch.upper(),
                                         f'{p_max:.0f}',
@@ -2430,7 +2465,7 @@ FAILURE DIAGNOSIS:
                                     ppol_data.append([ch.upper(), 'N/A', 'N/A'])
                             else:
                                 ppol_data.append([ch.upper(), 'N/A', 'N/A'])
-                        
+
                         if ppol_data:
                             ppol_table = qc_right_ax.table(cellText=ppol_data, colLabels=ppol_headers,
                                                           cellLoc='center', loc='center',
@@ -2438,7 +2473,7 @@ FAILURE DIAGNOSIS:
                             ppol_table.auto_set_font_size(False)
                             ppol_table.set_fontsize(10)
                             ppol_table.scale(1, 1.8)
-                            
+
                             for i in range(len(ppol_headers)):
                                 ppol_table[(0, i)].set_facecolor('#F5F5F7')
                                 ppol_table[(0, i)].set_text_props(weight='bold')

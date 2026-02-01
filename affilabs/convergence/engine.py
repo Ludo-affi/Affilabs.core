@@ -287,7 +287,7 @@ class ConvergenceEngine:
 
         # Store slopes for use in the algorithm (AFTER state is created)
         state.model_slopes_at_10ms = model_slopes_at_10ms or {}
-        
+
         # Log model slope availability
         if state.model_slopes_at_10ms:
             slope_str = ", ".join([f"{ch.upper()}={slope:.1f}" for ch, slope in state.model_slopes_at_10ms.items()])
@@ -296,7 +296,7 @@ class ConvergenceEngine:
         else:
             self._log("info", f"  🤖 No calibration slopes - using 100% ML predictions")
             self._log("info", f"     (This is normal for P-mode or first-time calibration)")
-        
+
         high_sensitivity_detected = False
 
         target_signal = recipe.target_percent * params.max_counts

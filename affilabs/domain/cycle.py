@@ -73,14 +73,14 @@ class Cycle(BaseModel):
     note: str = Field(default="", description="Optional notes/comments")
     concentration_value: Optional[float] = Field(default=None, description="Concentration value")
     concentration_units: str = Field(default="nM", description="Concentration units (nM or ug/mL)")
-    
+
     # Concentration metadata (for multi-channel experiments)
     units: str = Field(default="nM", description="Unit type for concentrations")
     concentrations: Dict[str, float] = Field(
         default_factory=dict,
         description="Channel-specific concentrations {'A': 100.0, 'B': 50.0}"
     )
-    
+
     # Unique identifiers
     cycle_id: int = Field(default=0, description="Permanent ID assigned when created (immutable)")
     timestamp: float = Field(default_factory=time.time, description="Unix timestamp when cycle was created")
@@ -93,7 +93,7 @@ class Cycle(BaseModel):
     # Timeline positions (set during execution)
     sensorgram_time: Optional[float] = Field(default=None, description="Start time in sensorgram timeline")
     end_time_sensorgram: Optional[float] = Field(default=None, description="End time in sensorgram timeline")
-    
+
     # Analysis data (calculated after cycle completion)
     delta_spr: Optional[float] = Field(default=None, description="SPR change during cycle")
     flags: List[str] = Field(

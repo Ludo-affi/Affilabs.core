@@ -16,7 +16,7 @@ class UserProfileManager:
 
     def __init__(self, config_file: str = "user_profiles.json"):
         """Initialize user profile manager.
-        
+
         Args:
             config_file: Name of JSON file to store profiles
         """
@@ -59,7 +59,7 @@ class UserProfileManager:
 
     def get_profiles(self) -> List[str]:
         """Get list of all user profiles.
-        
+
         Returns:
             List of user profile names
         """
@@ -67,7 +67,7 @@ class UserProfileManager:
 
     def get_current_user(self) -> str:
         """Get currently selected user profile.
-        
+
         Returns:
             Current user name
         """
@@ -75,7 +75,7 @@ class UserProfileManager:
 
     def set_current_user(self, username: str) -> None:
         """Set the current active user.
-        
+
         Args:
             username: Name of user to set as current
         """
@@ -88,23 +88,23 @@ class UserProfileManager:
 
     def add_user(self, username: str) -> bool:
         """Add a new user profile.
-        
+
         Args:
             username: Name of user to add
-            
+
         Returns:
             True if user was added, False if already exists
         """
         if not username or username.strip() == "":
             logger.warning("Cannot add empty username")
             return False
-            
+
         username = username.strip()
-        
+
         if username in self.profiles:
             logger.warning(f"User '{username}' already exists")
             return False
-        
+
         self.profiles.append(username)
         self.profiles.sort()  # Keep alphabetically sorted
         self._save_profiles()
@@ -113,35 +113,35 @@ class UserProfileManager:
 
     def remove_user(self, username: str) -> bool:
         """Remove a user profile.
-        
+
         Args:
             username: Name of user to remove
-            
+
         Returns:
             True if user was removed, False if not found
         """
         if username not in self.profiles:
             logger.warning(f"User '{username}' not found")
             return False
-        
+
         # Don't allow removing the last user
         if len(self.profiles) == 1:
             logger.warning("Cannot remove the last user profile")
             return False
-        
+
         self.profiles.remove(username)
-        
+
         # If current user was removed, switch to first available
         if self.current_user == username:
             self.current_user = self.profiles[0]
-        
+
         self._save_profiles()
         logger.info(f"Removed user: {username}")
         return True
 
     def get_user_for_metadata(self) -> dict:
         """Get user information for Excel metadata.
-        
+
         Returns:
             Dictionary with user information
         """

@@ -16,12 +16,12 @@ TEMPLATES:
 
 USAGE:
     templates = MethodTemplates()
-    
+
     # Check if user has access
     if app.features.method_templates:
         # Get available templates
         template_list = templates.get_templates_list()
-        
+
         # Apply template
         cycles = templates.apply_template(
             "kinetics_analysis",
@@ -48,7 +48,7 @@ class MethodTemplates:
 
     def get_templates_list(self) -> List[Dict[str, str]]:
         """Get list of available templates.
-        
+
         Returns:
             List of template info dicts
         """
@@ -96,14 +96,14 @@ class MethodTemplates:
         **params
     ) -> List[Cycle]:
         """Apply a method template with parameters.
-        
+
         Args:
             template_id: Template identifier
             **params: Template-specific parameters
-            
+
         Returns:
             List of Cycle objects
-            
+
         Raises:
             ValueError: If template_id is unknown
         """
@@ -114,10 +114,10 @@ class MethodTemplates:
             "regeneration_screening": self._regeneration_screening,
             "binding_analysis": self._binding_analysis,
         }
-        
+
         if template_id not in template_map:
             raise ValueError(f"Unknown template: {template_id}")
-        
+
         cycles = template_map[template_id](**params)
         logger.info(f"✓ Template applied: {template_id} ({len(cycles)} cycles)")
         return cycles
@@ -132,7 +132,7 @@ class MethodTemplates:
         concentration_units: str = "nM",
     ) -> List[Cycle]:
         """Kinetics analysis template.
-        
+
         Args:
             concentrations: List of analyte concentrations (default: [100, 50, 25, 12.5, 6.25])
             baseline_minutes: Baseline duration
@@ -140,15 +140,15 @@ class MethodTemplates:
             dissociation_minutes: Dissociation phase duration
             regeneration_minutes: Regeneration duration
             concentration_units: Concentration units (nM, µM, etc.)
-            
+
         Returns:
             List of Cycle objects
         """
         if concentrations is None:
             concentrations = [100, 50, 25, 12.5, 6.25]
-        
+
         cycles = []
-        
+
         # Initial baseline
         cycles.append(Cycle(
             type="Baseline",
@@ -156,7 +156,7 @@ class MethodTemplates:
             name="Initial Baseline",
             note="Stabilization before kinetics series"
         ))
-        
+
         # Concentration series
         for i, conc in enumerate(concentrations):
             # Association
@@ -168,7 +168,7 @@ class MethodTemplates:
                 concentration_units=concentration_units,
                 note=f"Analyte injection: {conc} {concentration_units}"
             ))
-            
+
             # Dissociation
             cycles.append(Cycle(
                 type="Dissociation",
@@ -176,7 +176,7 @@ class MethodTemplates:
                 name=f"Dissociation {i+1}",
                 note="Buffer flow, no analyte"
             ))
-            
+
             # Regeneration
             cycles.append(Cycle(
                 type="Regeneration",
@@ -184,7 +184,7 @@ class MethodTemplates:
                 name=f"Regeneration {i+1}",
                 note="Surface regeneration"
             ))
-            
+
             # Inter-cycle baseline
             if i < len(concentrations) - 1:
                 cycles.append(Cycle(
@@ -193,7 +193,7 @@ class MethodTemplates:
                     name=f"Baseline {i+2}",
                     note="Stabilization between cycles"
                 ))
-        
+
         # Final baseline
         cycles.append(Cycle(
             type="Baseline",
@@ -201,7 +201,7 @@ class MethodTemplates:
             name="Final Baseline",
             note="Final stabilization"
         ))
-        
+
         return cycles
 
     def _affinity_screening(
@@ -212,21 +212,21 @@ class MethodTemplates:
         concentration_units: str = "nM",
     ) -> List[Cycle]:
         """Affinity screening template for high-throughput.
-        
+
         Args:
             concentrations: List of screening concentrations
             flow_minutes: Flow phase duration
             static_minutes: Static phase duration
             concentration_units: Concentration units
-            
+
         Returns:
             List of Cycle objects
         """
         if concentrations is None:
             concentrations = [1000, 500, 250, 100, 50, 25, 10]
-        
+
         cycles = []
-        
+
         # Baseline
         cycles.append(Cycle(
             type="Baseline",
@@ -234,7 +234,7 @@ class MethodTemplates:
             name="Baseline",
             note="Initial baseline"
         ))
-        
+
         # Screening series
         for i, conc in enumerate(concentrations):
             cycles.append(Cycle(
@@ -245,7 +245,7 @@ class MethodTemplates:
                 concentration_units=concentration_units,
                 note=f"Screening: {conc} {concentration_units}"
             ))
-        
+
         return cycles
 
     def _single_cycle_kinetics(
@@ -256,21 +256,21 @@ class MethodTemplates:
         concentration_units: str = "nM",
     ) -> List[Cycle]:
         """Single-cycle kinetics template (rapid method).
-        
+
         Args:
             concentrations: Concentration series
             injection_minutes: Each injection duration
             dissociation_minutes: Final dissociation duration
             concentration_units: Concentration units
-            
+
         Returns:
             List of Cycle objects
         """
         if concentrations is None:
             concentrations = [6.25, 12.5, 25, 50, 100]
-        
+
         cycles = []
-        
+
         # Baseline
         cycles.append(Cycle(
             type="Baseline",
@@ -278,7 +278,7 @@ class MethodTemplates:
             name="Baseline",
             note="Initial baseline"
         ))
-        
+
         # Sequential injections
         for i, conc in enumerate(concentrations):
             cycles.append(Cycle(
@@ -289,7 +289,7 @@ class MethodTemplates:
                 concentration_units=concentration_units,
                 note=f"Sequential injection: {conc} {concentration_units}"
             ))
-        
+
         # Long dissociation
         cycles.append(Cycle(
             type="Dissociation",
@@ -297,7 +297,7 @@ class MethodTemplates:
             name="Dissociation",
             note="Extended dissociation phase"
         ))
-        
+
         # Regeneration
         cycles.append(Cycle(
             type="Regeneration",
@@ -305,7 +305,7 @@ class MethodTemplates:
             name="Regeneration",
             note="Surface regeneration"
         ))
-        
+
         return cycles
 
     def _regeneration_screening(
@@ -315,12 +315,12 @@ class MethodTemplates:
         test_injection_minutes: float = 2.0,
     ) -> List[Cycle]:
         """Regeneration screening template.
-        
+
         Args:
             regeneration_conditions: List of condition names
             flow_minutes: Regeneration flow duration
             test_injection_minutes: Test injection duration
-            
+
         Returns:
             List of Cycle objects
         """
@@ -331,9 +331,9 @@ class MethodTemplates:
                 "50 mM NaOH",
                 "10 mM HCl",
             ]
-        
+
         cycles = []
-        
+
         for i, condition in enumerate(regeneration_conditions):
             # Baseline
             cycles.append(Cycle(
@@ -342,7 +342,7 @@ class MethodTemplates:
                 name=f"Baseline {i+1}",
                 note=f"Before condition: {condition}"
             ))
-            
+
             # Test injection
             cycles.append(Cycle(
                 type="Association",
@@ -350,7 +350,7 @@ class MethodTemplates:
                 name=f"Test Injection {i+1}",
                 note="Analyte binding before regeneration"
             ))
-            
+
             # Regeneration
             cycles.append(Cycle(
                 type="Regeneration",
@@ -358,7 +358,7 @@ class MethodTemplates:
                 name=f"Regen {i+1}",
                 note=condition
             ))
-        
+
         return cycles
 
     def _binding_analysis(
@@ -369,13 +369,13 @@ class MethodTemplates:
         concentration_units: str = "nM",
     ) -> List[Cycle]:
         """Simple binding analysis template.
-        
+
         Args:
             concentration: Analyte concentration
             association_minutes: Association duration
             dissociation_minutes: Dissociation duration
             concentration_units: Concentration units
-            
+
         Returns:
             List of Cycle objects
         """
@@ -410,11 +410,11 @@ class MethodTemplates:
 
     def export_template(self, template_id: str, **params) -> Dict[str, Any]:
         """Export template as method data for saving.
-        
+
         Args:
             template_id: Template to export
             **params: Template parameters
-            
+
         Returns:
             Method data dict ready for MethodStorage
         """
@@ -422,12 +422,12 @@ class MethodTemplates:
             (t for t in self.get_templates_list() if t['id'] == template_id),
             None
         )
-        
+
         if not template_info:
             raise ValueError(f"Unknown template: {template_id}")
-        
+
         cycles = self.apply_template(template_id, **params)
-        
+
         return {
             "name": template_info['name'],
             "description": f"{template_info['description']} (from template)",

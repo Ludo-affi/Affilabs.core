@@ -422,13 +422,21 @@ class CycleTableDialog(QDialog):
             cycle_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.cycle_table.setItem(row, 0, cycle_item)
 
-            # Column 1: Start Time
-            start_val = get_val(cycle, "start", 0.0)
+            # Column 1: Start Time (sensorgram_time for Cycle objects, start for dicts)
+            start_val = get_val(cycle, "sensorgram_time", None)
+            if start_val is None:
+                start_val = get_val(cycle, "start_time_sensorgram", 0.0)
+            if start_val is None:
+                start_val = 0.0
             start_item = QTableWidgetItem(f"{float(start_val):.2f}")
             self.cycle_table.setItem(row, 1, start_item)
 
-            # Column 2: End Time
-            end_val = get_val(cycle, "end", 0.0)
+            # Column 2: End Time (end_time_sensorgram for Cycle objects, end for dicts)
+            end_val = get_val(cycle, "end_time_sensorgram", None)
+            if end_val is None:
+                end_val = get_val(cycle, "end", 0.0)
+            if end_val is None:
+                end_val = 0.0
             end_item = QTableWidgetItem(f"{float(end_val):.2f}")
             self.cycle_table.setItem(row, 2, end_item)
 

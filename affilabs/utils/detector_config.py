@@ -165,6 +165,20 @@ def filter_valid_wavelength_data(
     """
     import numpy as np
 
+    # Ensure wavelengths and data are proper numpy arrays
+    if not isinstance(wavelengths, np.ndarray):
+        wavelengths = np.array(wavelengths, dtype=float)
+    if not isinstance(data, np.ndarray):
+        data = np.array(data, dtype=float)
+
+    # Handle edge cases
+    if len(wavelengths) == 0 or len(data) == 0:
+        return np.array([]), np.array([])
+
+    if len(wavelengths) != len(data):
+        # Return unfiltered if lengths don't match - caller will handle
+        return wavelengths, data
+
     characteristics = get_detector_characteristics(detector_serial, detector_type)
     valid_min = characteristics.wavelength_min
 

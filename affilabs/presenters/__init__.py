@@ -9,18 +9,28 @@ Contains:
 - SpectroscopyPresenter: Handles transmission and raw spectrum plot updates
 - BaselineRecordingPresenter: Handles baseline recording UI state and interactions
 - NavigationPresenter: Handles navigation bar creation and page switching
+- QueuePresenter: Handles queue management with undo/redo support (NEW)
 """
 
-from .baseline_recording_presenter import BaselineRecordingPresenter
-from .navigation_presenter import NavigationPresenter
-from .sensogram_presenter import SensogramPresenter
-from .spectroscopy_presenter import SpectroscopyPresenter
-from .status_presenter import StatusPresenter
+# Import QueuePresenter separately (no UI dependencies)
+from .queue_presenter import QueuePresenter
 
-__all__ = [
-    "SensogramPresenter",
-    "StatusPresenter",
-    "SpectroscopyPresenter",
-    "BaselineRecordingPresenter",
-    "NavigationPresenter",
-]
+# Import UI-dependent presenters conditionally
+try:
+    from .baseline_recording_presenter import BaselineRecordingPresenter
+    from .navigation_presenter import NavigationPresenter
+    from .sensogram_presenter import SensogramPresenter
+    from .spectroscopy_presenter import SpectroscopyPresenter
+    from .status_presenter import StatusPresenter
+
+    __all__ = [
+        "SensogramPresenter",
+        "StatusPresenter",
+        "SpectroscopyPresenter",
+        "BaselineRecordingPresenter",
+        "NavigationPresenter",
+        "QueuePresenter",
+    ]
+except ImportError:
+    # UI dependencies not available (e.g., in tests)
+    __all__ = ["QueuePresenter"]

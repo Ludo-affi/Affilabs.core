@@ -164,3 +164,88 @@ class CycleTableDialog(QDialog):
     def toggle_table_style(self):
         """Toggle table display style using table manager."""
         self.table_manager.toggle_display_mode()
+
+    def load_cycles(self, cycles: list):
+        """Load cycle data into the table.
+
+        Shows queued cycles with their current data. Matches Excel export format
+        from Cycle.to_export_dict() for consistency.
+
+        Args:
+            cycles: List of Cycle objects from the queue
+        """
+        self.clear_table()
+
+        # Set column count and headers to match Excel export
+        self.ui.data_table.setColumnCount(11)
+        self.ui.data_table.setHorizontalHeaderLabels([
+            "#",                    # Column 0: Cycle number
+            "Type",                 # Column 1: Cycle type
+            "Duration (min)",       # Column 2: Length in minutes
+            "Start (s)",            # Column 3: Start time in sensorgram
+            "Conc.",                # Column 4: Concentration value
+            "Units",                # Column 5: Concentration units
+            "ΔSP R",                # Column 6: Delta SPR (if calculated)
+            "Flags",                # Column 7: Flags (injection, wash, spike)
+            "Status",               # Column 8: pending/running/completed
+            "Note",                 # Column 9: User notes
+            "ID"                    # Column 10: Cycle ID
+        ])
+
+        if not cycles:
+            return
+
+        # Set row count
+        self.ui.data_table.setRowCount(len(cycles))
+
+        # Populate rows
+        for row, cycle in enumerate(cycles):
+            # Column 0: Cycle number (position in queue)
+            self.ui.data_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
+
+            # Column 1: Type
+            self.ui.data_table.setItem(row, 1, QTableWidgetItem(cycle.type))
+
+            # Column 2: Duration (minutes) - matches duration_minutes in export
+            self.ui.data_table.setItem(row, 2, QTableWidgetItem(f"{cycle.length_minutes:.1f}"))
+
+            # Column 3: Start Time - matches start_time_sensorgram in export
+            start_text = f"{cycle.sensorgram_time:.1f}" if cycle.sensorgram_time else "—"
+            self.ui.data_table.setItem(row, 3, QTableWidgetItem(start_text))
+
+            # Column 4: Concentration value - matches concentration_value in export
+            if cycle.concentrations:
+                # Multi-channel concentrations - format as "A:100, B:50"
+                conc_parts = [f"{ch}:{val}" for ch, val in sorted(cycle.concentrations.items())]
+                conc_text = ', '.join(conc_parts)
+            elif cycle.concentration_value is not None:
+                conc_text = f"{cycle.concentration_value:.2f}"
+            else:
+                conc_text = "—"
+            self.ui.data_table.setItem(row, 4, QTableWidgetItem(conc_text))
+
+            # Column 5: Units - matches concentration_units/units in export
+            units_text = cycle.concentration_units if cycle.concentration_units else cycle.units
+            self.ui.data_table.setItem(row, 5, QTableWidgetItem(units_text))
+
+            # Column 6: Delta SPR - matches delta_spr in export
+            delta_text = f"{cycle.delta_spr:.1f}" if cycle.delta_spr is not None else "—"
+            self.ui.data_table.setItem(row, 6, QTableWidgetItem(delta_text))
+
+            # Column 7: Flags - matches flags in export
+            flags_text = ", ".join(cycle.flags) if cycle.flags else "—"
+            self.ui.data_table.setItem(row, 7, QTableWidgetItem(flags_text))
+
+            # Column 8: Status (pending/running/completed)
+            status_icon = {"pending": "⏳", "running": "▶️", "completed": "✅", "cancelled": "❌"}
+            status_display = f"{status_icon.get(cycle.status, '')} {cycle.status}"
+            self.ui.data_table.setItem(row, 8, QTableWidgetItem(status_display))
+
+            # Column 9: Note - matches note in export
+            self.ui.data_table.setItem(row, 9, QTableWidgetItem(cycle.note))
+
+            # Column 10: Cycle ID - matches cycle_id in export
+            self.ui.data_table.setItem(row, 10, QTableWidgetItem(str(cycle.cycle_id)))
+
+        # Resize columns to content
+        self.ui.data_table.resizeColumnsToContents()

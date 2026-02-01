@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from affilabs.cycle_table_dialog import CycleTableDialog
 from affilabs.sections import CollapsibleSection
 from affilabs.ui_styles import card_style, section_header_style
+from affilabs.widgets.queue_summary_widget import QueueSummaryWidget
 
 
 class ResizableTableWidget(QTableWidget):
@@ -138,7 +139,7 @@ class MethodTabBuilder:
 
     def set_app_reference(self, app):
         """Set reference to main application for accessing segment_queue.
-        
+
         Args:
             app: Main application instance
         """
@@ -159,7 +160,7 @@ class MethodTabBuilder:
         """Build intelligence bar section."""
         intel_section = QLabel("INTELLIGENCE BAR")
         intel_section.setStyleSheet(section_header_style())
-        intel_section.setFixedHeight(20)  # Reduced height from default 27 to 20
+        intel_section.setFixedHeight(20)
         intel_section.setToolTip(
             "Real-time system status and guidance powered by AI diagnostics",
         )
@@ -205,383 +206,55 @@ class MethodTabBuilder:
         intel_bar_layout.addStretch()
 
         tab_layout.addWidget(intel_bar)
+
+        # Compact queue progress bar (real-time monitoring)
+        from affilabs.widgets.queue_progress_bar import QueueProgressBar
+        self.sidebar.queue_progress_bar = QueueProgressBar()
+        tab_layout.addWidget(self.sidebar.queue_progress_bar)
         tab_layout.addSpacing(8)
 
     def _build_cycle_settings(self, tab_layout: QVBoxLayout):
-        """Build cycle configuration section."""
-        cycle_settings_section = CollapsibleSection(
-            "⚙ Configure Next Cycle",
-            is_expanded=True,
+        """Build method builder section (replaced with button to open popup)."""
+        # Build Method button
+        self.sidebar.build_method_btn = QPushButton("➕ Build Method")
+        self.sidebar.build_method_btn.setFixedHeight(32)
+        self.sidebar.build_method_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 6px 12px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #0051D5;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #003D99;"
+            "}"
         )
-
-        cycle_settings_card = QFrame()
-        cycle_settings_card.setStyleSheet(card_style())
-        cycle_settings_card_layout = QVBoxLayout(cycle_settings_card)
-        cycle_settings_card_layout.setContentsMargins(10, 8, 10, 8)
-        cycle_settings_card_layout.setSpacing(8)
-
-        # Type row
-        type_row = QHBoxLayout()
-        type_row.setSpacing(8)
-        type_label = QLabel("Type:")
-        type_label.setFixedWidth(70)
-        type_label.setStyleSheet(
-            "font-size: 12px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        type_row.addWidget(type_label)
-
-        self.sidebar.cycle_type_combo = QComboBox()
-        self.sidebar.cycle_type_combo.addItems(
-            ["Auto-read", "Baseline", "Immobilization", "Concentration"],
-        )
-        self.sidebar.cycle_type_combo.setCurrentIndex(0)
-        self.sidebar.cycle_type_combo.setToolTip(
-            "Select experiment type: Auto-read (automatic), Baseline (reference), Immobilization (binding), or Concentration (dose-response)",
-        )
-        self.sidebar.cycle_type_combo.setFixedWidth(180)
-        self.sidebar.cycle_type_combo.setStyleSheet(self._combo_style())
-        type_row.addWidget(self.sidebar.cycle_type_combo)
-        type_row.addStretch()
-        cycle_settings_card_layout.addLayout(type_row)
-
-        # Length row
-        length_row = QHBoxLayout()
-        length_row.setSpacing(8)
-        length_label = QLabel("Length:")
-        length_label.setFixedWidth(70)
-        length_label.setStyleSheet(
-            "font-size: 12px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        length_row.addWidget(length_label)
-
-        self.sidebar.cycle_length_combo = QComboBox()
-        self.sidebar.cycle_length_combo.addItems(
-            ["30 sec", "2 min", "5 min", "15 min", "30 min", "60 min"],
-        )
-        self.sidebar.cycle_length_combo.setCurrentIndex(2)  # Default to "5 min"
-        self.sidebar.cycle_length_combo.setToolTip("Duration of the experiment cycle")
-        self.sidebar.cycle_length_combo.setFixedWidth(100)
-        self.sidebar.cycle_length_combo.setStyleSheet(self._combo_style())
-        length_row.addWidget(self.sidebar.cycle_length_combo)
-        length_row.addStretch()
-        cycle_settings_card_layout.addLayout(length_row)
-
-        # Note input
-        self._build_note_input(cycle_settings_card_layout)
-
-        # Units row
-        self._build_units_row(cycle_settings_card_layout)
-
-        # Execution section
-        self._build_execution_section(cycle_settings_card_layout)
-
-        cycle_settings_section.add_content_widget(cycle_settings_card)
-        tab_layout.addWidget(cycle_settings_section)
-        tab_layout.addSpacing(8)
+        self.sidebar.build_method_btn.setToolTip("Open method builder to create and queue cycles")
+        tab_layout.addWidget(self.sidebar.build_method_btn)
+        tab_layout.addSpacing(12)
 
     def _build_note_input(self, parent_layout: QVBoxLayout):
-        """Build note input with syntax highlighting."""
-        note_label = QLabel("Note:")
-        note_label.setStyleSheet(
-            "font-size: 12px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        parent_layout.addWidget(note_label)
-
-        self.sidebar.note_input = QTextEdit()
-        self.sidebar.note_input.setPlaceholderText(
-            "Use tags: [A] [B] [C] [D] [ALL] or with concentration [A:10] [ALL:50]  (max 250 chars)",
-        )
-        self.sidebar.note_input.setMaximumHeight(60)
-        self.sidebar.note_input.setStyleSheet(
-            "QTextEdit {"
-            "  background: white;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 4px;"
-            "  padding: 6px 8px;"
-            "  font-size: 12px;"
-            "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QTextEdit:focus {"
-            "  border: 2px solid #1D1D1F;"
-            "}",
-        )
-
-        # Apply syntax highlighter
-        self.sidebar.note_highlighter = ChannelTagHighlighter(
-            self.sidebar.note_input.document(),
-        )
-
-        # Character counter
-        self.sidebar.char_count_label = QLabel("0/250 characters")
-        self.sidebar.char_count_label.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-
-        def update_note_counter():
-            text = self.sidebar.note_input.toPlainText()
-            if len(text) > 250:
-                self.sidebar.note_input.setPlainText(text[:250])
-                self.sidebar.note_input.moveCursor(
-                    self.sidebar.note_input.textCursor().End,
-                )
-            self.sidebar.char_count_label.setText(
-                f"{len(self.sidebar.note_input.toPlainText())}/250 characters",
-            )
-
-        self.sidebar.note_input.textChanged.connect(update_note_counter)
-        parent_layout.addWidget(self.sidebar.note_input)
-
-        # Character count and tag help
-        note_info_row = QHBoxLayout()
-        note_info_row.setSpacing(10)
-        note_info_row.addWidget(self.sidebar.char_count_label)
-        note_info_row.addStretch()
-
-        tag_help_label = QLabel("💡 Tip: Tag channels with concentrations")
-        tag_help_label.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-style: italic;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        note_info_row.addWidget(tag_help_label)
-        parent_layout.addLayout(note_info_row)
+        """Deprecated - note input now in Method Builder dialog."""
+        pass
 
     def _build_units_row(self, parent_layout: QVBoxLayout):
-        """Build concentration units selector."""
-        units_row = QHBoxLayout()
-        units_row.setSpacing(8)
-        units_label = QLabel("Units:")
-        units_label.setFixedWidth(70)
-        units_label.setStyleSheet(
-            "font-size: 12px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        units_row.addWidget(units_label)
-
-        self.sidebar.units_combo = QComboBox()
-        self.sidebar.units_combo.addItems(
-            [
-                "M (Molar)",
-                "mM (Millimolar)",
-                "µM (Micromolar)",
-                "nM (Nanomolar)",
-                "pM (Picomolar)",
-                "mg/mL",
-                "µg/mL",
-                "ng/mL",
-            ],
-        )
-        self.sidebar.units_combo.setCurrentIndex(3)  # Default to nM
-        self.sidebar.units_combo.setToolTip(
-            "Concentration units for tagged channels (applies to [A:10] style tags)",
-        )
-        self.sidebar.units_combo.setFixedWidth(120)
-        self.sidebar.units_combo.setStyleSheet(self._combo_style())
-        units_row.addWidget(self.sidebar.units_combo)
-        units_row.addStretch()
-
-        # Info about units applying to tags
-        units_info = QLabel(
-            "Units apply to concentrations in tags (e.g., [A:10] = 10 nM)",
-        )
-        units_info.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-style: italic;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        parent_layout.addWidget(units_info)
+        """Deprecated - units selector now in Method Builder dialog."""
+        pass
 
     def _build_execution_section(self, parent_layout: QVBoxLayout):
-        """Build execution controls (Start Cycle, Add to Queue)."""
-        # Separator
-        execution_separator = QFrame()
-        execution_separator.setFixedHeight(1)
-        execution_separator.setStyleSheet(
-            "background: rgba(0, 0, 0, 0.06);"
-            "border: none;"
-            "margin: 12px 0px 8px 0px;",
-        )
-        parent_layout.addWidget(execution_separator)
-
-        # Execution header
-        execution_header = QLabel("🚀 Execution")
-        execution_header.setStyleSheet(
-            "font-size: 13px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 600;"
-            "margin-bottom: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        parent_layout.addWidget(execution_header)
-
-        # Action Buttons
-        buttons_row = QHBoxLayout()
-        buttons_row.setSpacing(8)
-
-        # Start Cycle Button
-        self.sidebar.start_cycle_btn = QPushButton("▶ Start Cycle")
-        self.sidebar.start_cycle_btn.setFixedSize(120, 36)
-        self.sidebar.start_cycle_btn.setToolTip(
-            "Begin experiment immediately with current settings",
-        )
-        self.sidebar.start_cycle_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #1D1D1F;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
-            "  padding: 6px 12px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #3A3A3C;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #48484A;"
-            "}"
-            "QPushButton:disabled {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "  color: #86868B;"
-            "}",
-        )
-        buttons_row.addWidget(self.sidebar.start_cycle_btn)
-        
-        # Next Cycle Button (initially disabled)
-        self.sidebar.next_cycle_btn = QPushButton("⏭ Next Cycle")
-        self.sidebar.next_cycle_btn.setFixedSize(120, 36)
-        self.sidebar.next_cycle_btn.setEnabled(False)
-        self.sidebar.next_cycle_btn.setToolTip(
-            "Complete current cycle early and move to next (keeps data)",
-        )
-        self.sidebar.next_cycle_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #FF9500;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
-            "  padding: 6px 12px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #FFAA33;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #CC7A00;"
-            "}"
-            "QPushButton:disabled {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "  color: #86868B;"
-            "}",
-        )
-        buttons_row.addWidget(self.sidebar.next_cycle_btn)
-
-        # Add to Queue Button
-        self.sidebar.add_to_queue_btn = QPushButton("+ Add to Queue")
-        self.sidebar.add_to_queue_btn.setFixedSize(140, 36)
-        self.sidebar.add_to_queue_btn.setToolTip(
-            "Add cycle to queue for batch execution (max 5 cycles)",
-        )
-        self.sidebar.add_to_queue_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #636366;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
-            "  padding: 6px 12px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #7C7C80;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #8E8E93;"
-            "}"
-            "QPushButton:disabled {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "  color: #86868B;"
-            "}",
-        )
-        buttons_row.addWidget(self.sidebar.add_to_queue_btn)
-        buttons_row.addStretch()
-
-        parent_layout.addLayout(buttons_row)
-
-        # Help text
-        help_text = QLabel(
-            "💡 Start Cycle: Begin immediately  |  Add to Queue: Plan batch runs (max 5 cycles)",
-        )
-        help_text.setWordWrap(True)
-        help_text.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: rgba(0, 122, 255, 0.06);"
-            "border-radius: 4px;"
-            "padding: 6px 8px;"
-            "margin-top: 6px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        parent_layout.addWidget(help_text)
+        """Deprecated - execution buttons now in Method Builder dialog."""
+        pass
 
     def _build_cycle_history_queue(self, tab_layout: QVBoxLayout):
-        """Build cycle history and queue management section."""
-        summary_section = CollapsibleSection("Cycle History & Queue", is_expanded=True)
-
-        # Start Run Button
-        self.sidebar.start_run_btn = QPushButton("▶ Start Queued Run")
-        self.sidebar.start_run_btn.setFixedHeight(36)
-        self.sidebar.start_run_btn.setToolTip(
-            "Execute all cycles in queue sequentially",
-        )
-        self.sidebar.start_run_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #3A3A3C;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
-            "  padding: 8px 16px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #48484A;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #636366;"
-            "}",
-        )
-        self.sidebar.start_run_btn.setVisible(False)
-        tab_layout.addWidget(self.sidebar.start_run_btn)
+        """Build cycle queue management section."""
+        summary_section = CollapsibleSection("Cycle Queue", is_expanded=True)
 
         # Queue status row
         queue_status_row = QHBoxLayout()
@@ -623,6 +296,33 @@ class MethodTabBuilder:
             "}",
         )
         queue_status_row.addWidget(self.sidebar.clear_queue_btn)
+
+        # Pause/Resume Queue button
+        self.sidebar.pause_queue_btn = QPushButton("⏸ Pause Queue")
+        self.sidebar.pause_queue_btn.setFixedHeight(24)
+        self.sidebar.pause_queue_btn.setVisible(False)  # Hidden until queue is running
+        self.sidebar.pause_queue_btn.setToolTip("Pause queue after current cycle completes")
+        self.sidebar.pause_queue_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  color: #FF9500;"
+            "  border: 1px solid rgba(255, 149, 0, 0.3);"
+            "  border-radius: 4px;"
+            "  padding: 2px 8px;"
+            "  font-size: 11px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(255, 149, 0, 0.1);"
+            "  border-color: #FF9500;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(255, 149, 0, 0.2);"
+            "}",
+        )
+        queue_status_row.addWidget(self.sidebar.pause_queue_btn)
+
         queue_status_row.addStretch()
 
         tab_layout.addLayout(queue_status_row)
@@ -634,23 +334,16 @@ class MethodTabBuilder:
         tab_layout.addWidget(summary_section)
 
     def _build_summary_table(self, parent_section: CollapsibleSection):
-        """Build summary table with cycle history."""
+        """Build summary table with cycle history using new QueueSummaryWidget."""
         summary_card = QFrame()
         summary_card.setStyleSheet(card_style())
         summary_card_layout = QVBoxLayout(summary_card)
         summary_card_layout.setContentsMargins(12, 8, 12, 8)
         summary_card_layout.setSpacing(8)
 
-        # Summary table with resize capability
-        self.sidebar.summary_table = ResizableTableWidget(10, 5)
-        self.sidebar.summary_table.setHorizontalHeaderLabels(
-            ["State", "Type", "Duration", "Start", "Notes"],
-        )
-        self.sidebar.summary_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch,
-        )
-        self.sidebar.summary_table.setColumnWidth(0, 80)
-        self.sidebar.summary_table.setMaximumHeight(200)
+        # NEW: Queue Summary Widget with drag-drop support - styled to match original
+        self.sidebar.summary_table = QueueSummaryWidget()
+        self.sidebar.summary_table.setMaximumHeight(300)
         self.sidebar.summary_table.setMinimumHeight(200)
         self.sidebar.summary_table.setStyleSheet(
             "QTableWidget {"
@@ -666,7 +359,7 @@ class MethodTabBuilder:
             "  color: #1D1D1F;"
             "}"
             "QTableWidget::item:selected {"
-            "  background: rgba(0, 0, 0, 0.08);"
+            "  background: rgba(0, 122, 255, 0.1);"
             "  color: #1D1D1F;"
             "}"
             "QHeaderView::section {"
@@ -677,21 +370,58 @@ class MethodTabBuilder:
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 600;"
             "  font-size: 11px;"
-            "}",
+            "}"
         )
-        self.sidebar.summary_table.setToolTip(
-            "Drag bottom edge to expand/collapse table • Right-click to delete cycles"
-        )
-
-        # Populate with empty data
-        for row in range(5):
-            for col in range(4):
-                self.sidebar.summary_table.setItem(row, col, QTableWidgetItem(""))
-
-        # Enable right-click context menu for deleting cycles
-        self.sidebar.summary_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
         summary_card_layout.addWidget(self.sidebar.summary_table)
+
+        # Queue control buttons (Start, Pause, Next)
+        controls_row = QHBoxLayout()
+        controls_row.setSpacing(8)
+
+        self.sidebar.start_queue_btn = QPushButton("▶ Start Run")
+        self.sidebar.start_queue_btn.setFixedHeight(32)
+        self.sidebar.start_queue_btn.setToolTip("Start executing the queued cycles")
+        self.sidebar.start_queue_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #34C759;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 6px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover { background: #30B350; }"
+            "QPushButton:pressed { background: #2A9D46; }"
+            "QPushButton:disabled { background: #C7C7CC; }"
+        )
+        controls_row.addWidget(self.sidebar.start_queue_btn)
+
+        self.sidebar.next_cycle_btn = QPushButton("⏭ Next Cycle")
+        self.sidebar.next_cycle_btn.setFixedHeight(32)
+        self.sidebar.next_cycle_btn.setEnabled(False)
+        self.sidebar.next_cycle_btn.setToolTip("Skip to the next cycle")
+        self.sidebar.next_cycle_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 6px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover { background: #0051D5; }"
+            "QPushButton:pressed { background: #003D99; }"
+            "QPushButton:disabled { background: #C7C7CC; }"
+        )
+        controls_row.addWidget(self.sidebar.next_cycle_btn)
+
+        summary_card_layout.addLayout(controls_row)
+        summary_card_layout.addSpacing(8)
 
         # Table footer
         table_footer_row = QHBoxLayout()
@@ -705,68 +435,17 @@ class MethodTabBuilder:
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         table_footer_row.addWidget(self.sidebar.queue_size_label)
-
-        # Expand Queue button
-        self.sidebar.expand_queue_btn = QPushButton("+5")
-        self.sidebar.expand_queue_btn.setFixedSize(32, 22)
-        self.sidebar.expand_queue_btn.setToolTip("Expand queue capacity by 5 cycles")
-        self.sidebar.expand_queue_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 4px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #0051D5;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #003D99;"
-            "}",
-        )
-        table_footer_row.addWidget(self.sidebar.expand_queue_btn)
         table_footer_row.addStretch()
 
-        # Method Manager button
-        self.sidebar.method_manager_btn = QPushButton("📁 Methods")
-        self.sidebar.method_manager_btn.setFixedHeight(28)
-        self.sidebar.method_manager_btn.setToolTip("Save and load methods (cycle sequences)")
-        self.sidebar.method_manager_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 4px 12px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #30B350;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #248A3D;"
-            "}",
-        )
-        self.sidebar.method_manager_btn.clicked.connect(self._open_method_manager)
-        table_footer_row.addWidget(self.sidebar.method_manager_btn)
-        
-        # Add test logging for button click
-        from affilabs.utils.logger import logger
-        logger.debug("✓ Method Manager button created and connected")
-
         # View All Cycles Button
-        self.sidebar.open_table_btn = QPushButton("📊 View All Cycles")
+        self.sidebar.open_table_btn = QPushButton("📊 View All")
         self.sidebar.open_table_btn.setFixedHeight(28)
+        self.sidebar.open_table_btn.setToolTip("View all completed/recorded cycles")
         self.sidebar.open_table_btn.setStyleSheet(
             "QPushButton {"
-            "  background: #636366;"
-            "  color: white;"
-            "  border: none;"
+            "  background: transparent;"
+            "  color: #636366;"
+            "  border: 1px solid rgba(99, 99, 102, 0.3);"
             "  border-radius: 6px;"
             "  padding: 4px 12px;"
             "  font-size: 11px;"
@@ -774,10 +453,11 @@ class MethodTabBuilder:
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QPushButton:hover {"
-            "  background: #7C7C80;"
+            "  background: rgba(99, 99, 102, 0.08);"
+            "  border-color: #636366;"
             "}"
             "QPushButton:pressed {"
-            "  background: #8E8E93;"
+            "  background: rgba(99, 99, 102, 0.15);"
             "}",
         )
         table_footer_row.addWidget(self.sidebar.open_table_btn)
@@ -789,107 +469,32 @@ class MethodTabBuilder:
         # Connect button signal
         self.sidebar.open_table_btn.clicked.connect(self._open_cycle_table_dialog)
 
-    def _open_method_manager(self):
-        """Open method manager dialog for saving/loading methods."""
-        try:
-            from affilabs.widgets.method_manager_dialog import MethodManagerDialog
-            from affilabs.utils.logger import logger
-            
-            logger.debug("Opening Method Manager dialog...")
-            
-            # Get main window from sidebar's parent
-            main_window = self.sidebar.parent()
-            if main_window is None:
-                # Fallback: try to find main window via Qt's window() method
-                main_window = self.sidebar.window()
-                logger.debug(f"Using window() method, got: {type(main_window).__name__}")
-            else:
-                logger.debug(f"Using parent() method, got: {type(main_window).__name__}")
-            
-            if main_window is None:
-                logger.error("Could not find main window - cannot open Method Manager")
-                from PySide6.QtWidgets import QMessageBox
-                QMessageBox.warning(
-                    self.sidebar,
-                    "Error",
-                    "Could not find main window. Please restart the application."
-                )
-                return
-            
-            logger.debug(f"Creating MethodManagerDialog with main_window={type(main_window).__name__}")
-            dialog = MethodManagerDialog(main_window, self.sidebar)
-            logger.debug("Dialog created, showing...")
-            dialog.exec()
-            logger.debug("Dialog closed")
-            
-        except Exception as e:
-            from affilabs.utils.logger import logger
-            logger.exception(f"Failed to open Method Manager dialog: {e}")
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(
-                self.sidebar,
-                "Error",
-                f"Failed to open Method Manager:\n{e}"
-            )
-
     def _open_cycle_table_dialog(self):
-        """Open the full cycle table dialog for reviewing queued cycles.
+        """Open the full cycle table dialog for reviewing completed/recorded cycles.
 
-        Shows all cycles currently in the queue (not just the first 5).
+        Shows all cycles that have been completed and recorded (not the queue).
+        This is the same as the Cycle Data Table accessible from the main window.
         """
         from affilabs.utils.logger import logger
-        
-        # Get access to segment_queue from main app
+
+        # Get access to main window from app reference
         if not hasattr(self, '_app_reference'):
             logger.warning("Cannot open cycle table - no app reference")
             return
-            
-        app = self._app_reference
-        if not hasattr(app, 'segment_queue'):
-            logger.warning("Cannot open cycle table - no segment_queue")
-            return
-        
-        if self.sidebar.cycle_table_dialog is None:
-            self.sidebar.cycle_table_dialog = CycleTableDialog(self.sidebar)
-        
-        # Convert segment_queue cycles to dialog format
-        cycles_data = []
-        for i, cycle in enumerate(app.segment_queue):
-            cycle_data = {
-                "seg_id": i,
-                "name": str(i + 1),
-                "start": getattr(cycle, 'sensorgram_time', 0.0),
-                "end": 0.0,  # Not yet completed
-                "ref_ch": None,
-                "unit": getattr(cycle, '_units', 'RU'),
-                "shift_a": 0.0,
-                "shift_b": 0.0,
-                "shift_c": 0.0,
-                "shift_d": 0.0,
-                "cycle_type": cycle.type,
-                "cycle_time": cycle.length_minutes,
-                "note": cycle.note,
-                "flags": None,
-                "error": None,
-            }
-            cycles_data.append(cycle_data)
-        
-        # Load actual queue data instead of demo data
-        if cycles_data:
-            self.sidebar.cycle_table_dialog.load_cycles(cycles_data)
-            logger.info(f"📊 Loaded {len(cycles_data)} queued cycles into dialog")
-        else:
-            # Load empty/placeholder if no cycles
-            logger.info("📊 No queued cycles to display")
-            self.sidebar.cycle_table_dialog.load_cycles([])
-        
-        self.sidebar.cycle_table_dialog.show()
-        self.sidebar.cycle_table_dialog.raise_()
-        self.sidebar.cycle_table_dialog.activateWindow()
 
-        self.sidebar.cycle_table_dialog.show()
-        self.sidebar.cycle_table_dialog.raise_()
-        self.sidebar.cycle_table_dialog.activateWindow()
+        app = self._app_reference
+        if not hasattr(app, 'main_window'):
+            logger.warning("Cannot open cycle table - no main_window")
+            return
+
+        # Switch to Edits tab to show cycle data table
+        # This shows completed/recorded cycles, not the queue
+        # Edits tab is always at index 1 in content_stack (Sensorgram=0, Edits=1, Analyze=2, Report=3)
+        if hasattr(app.main_window, 'content_stack'):
+            app.main_window.content_stack.setCurrentIndex(1)  # Edits tab
+            logger.info("📊 Switched to Edits tab (Cycle Data Table)")
+        else:
+            logger.warning("Cannot open cycle table - main_window missing content_stack")
 
     def _combo_style(self):
         """Return consistent combobox style."""

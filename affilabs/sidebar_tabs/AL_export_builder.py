@@ -394,7 +394,7 @@ class ExportTabBuilder:
         self.sidebar.export_data_btn.setStyleSheet(primary_button_style())
         # Note: Connected in affilabs_core_ui.py to _on_export_data
         file_card_layout.addWidget(self.sidebar.export_data_btn)
-        
+
         # AnIML Export button (Pro/Enterprise feature)
         file_card_layout.addSpacing(8)
         self.sidebar.export_animl_btn = QPushButton("📋 Export AnIML (Pro)")

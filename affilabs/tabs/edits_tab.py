@@ -1703,7 +1703,7 @@ class EditsTab:
 
         # Get selected rows
         selected_rows = sorted(set(item.row() for item in self.cycle_data_table.selectedItems()))
-        
+
         if not selected_rows:
             return  # No selection, don't show menu
 
@@ -1722,39 +1722,39 @@ class EditsTab:
                 action = ref_menu.addAction(ref_label)
                 action.triggered.connect(lambda checked=False, row=selected_rows[0], idx=i:
                                         self.main_window._load_cycle_to_reference(row, idx))
-            
+
             menu.addSeparator()
-        
+
         # Delete option (works for single or multiple selections)
         if len(selected_rows) == 1:
             cycle_text = "this cycle"
         else:
             cycle_text = f"{len(selected_rows)} cycles"
-        
+
         delete_action = menu.addAction(f"🗑️ Delete {cycle_text}")
         delete_action.triggered.connect(lambda: self._delete_cycles_from_table(selected_rows))
 
         # Show menu at cursor position
         menu.exec(self.cycle_data_table.viewport().mapToGlobal(position))
-    
+
     def _delete_cycles_from_table(self, row_indices):
         """Delete selected cycles from the cycle data table.
-        
+
         Args:
             row_indices: List of row indices to delete
         """
         from PySide6.QtWidgets import QMessageBox
         from affilabs.utils.logger import logger
-        
+
         if not row_indices:
             return
-        
+
         # Confirm deletion
         if len(row_indices) == 1:
             msg = "Are you sure you want to delete this cycle?"
         else:
             msg = f"Are you sure you want to delete {len(row_indices)} cycles?"
-        
+
         reply = QMessageBox.question(
             self.main_window,
             "Delete Cycle(s)",
@@ -1762,23 +1762,23 @@ class EditsTab:
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
-        
+
         if reply != QMessageBox.StandardButton.Yes:
             return
-        
+
         # Delete from table and data (reverse order to maintain indices)
         for row in sorted(row_indices, reverse=True):
             # Remove from loaded cycles data if it exists
             if hasattr(self.main_window, '_loaded_cycles_data') and row < len(self.main_window._loaded_cycles_data):
                 del self.main_window._loaded_cycles_data[row]
-            
+
             # Remove from cycle alignment settings
             if hasattr(self.main_window, '_cycle_alignment') and row in self.main_window._cycle_alignment:
                 del self.main_window._cycle_alignment[row]
-            
+
             # Remove row from table
             self.cycle_data_table.removeRow(row)
-        
+
         # Rebuild cycle alignment indices (they shifted after deletion)
         if hasattr(self.main_window, '_cycle_alignment'):
             new_alignment = {}
@@ -1788,9 +1788,9 @@ class EditsTab:
                 new_idx = old_idx - shift
                 new_alignment[new_idx] = settings
             self.main_window._cycle_alignment = new_alignment
-        
+
         logger.info(f"🗑️ Deleted {len(row_indices)} cycle(s) from data table")
-        
+
         # Show confirmation
         if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'intel_message_label'):
             self.main_window.sidebar.intel_message_label.setText(

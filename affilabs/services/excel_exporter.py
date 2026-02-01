@@ -105,7 +105,7 @@ class ExcelExporter:
                     cycles_formatted = []
                     for cycle in cycles:
                         cycle_copy = cycle.copy()
-                        
+
                         # Format concentrations dict as readable string
                         if 'concentrations' in cycle_copy and isinstance(cycle_copy['concentrations'], dict):
                             conc_dict = cycle_copy['concentrations']
@@ -115,11 +115,11 @@ class ExcelExporter:
                                 cycle_copy['concentrations_formatted'] = conc_str
                             else:
                                 cycle_copy['concentrations_formatted'] = ''
-                        
+
                         cycles_formatted.append(cycle_copy)
-                    
+
                     df_cycles = pd.DataFrame(cycles_formatted)
-                    
+
                     # Reorder columns for better readability
                     preferred_order = [
                         'cycle_id', 'cycle_num', 'type', 'name',
@@ -133,7 +133,7 @@ class ExcelExporter:
                     other_cols = [col for col in df_cycles.columns if col not in preferred_order and col != 'concentrations']
                     final_order = existing_cols + other_cols
                     df_cycles = df_cycles[final_order]
-                    
+
                     df_cycles.to_excel(writer, sheet_name="Cycles", index=False)
                     logger.debug(f"Exported {len(cycles)} cycles with formatted data")
 

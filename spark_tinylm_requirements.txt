@@ -1,0 +1,13 @@
+# Spark AI Required Dependencies
+# Bundled with ezControl installer
+
+# Core dependencies for Spark AI assistant
+transformers>=4.35.0
+torch>=2.1.0
+
+# Notes:
+# - These are REQUIRED and bundled with software installer
+# - TinyLlama-1.1B model (~637 MB) included in install package
+# - Requires ~1 GB free disk space for model cache
+# - GPU support automatic if CUDA available, otherwise uses CPU
+# - Users never see technical details - all loading is silent

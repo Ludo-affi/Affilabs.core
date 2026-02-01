@@ -141,6 +141,8 @@ class RoundedFrame(QWidget):
         # Draw border
         painter.setClipRect(self.rect())
         painter.drawPath(path)
+        
+        painter.end()
 
 
 class DataDict(TypedDict, total=False):

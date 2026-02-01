@@ -1,0 +1,160 @@
+{
+  "methods": {
+    "1": {
+      "name": "Test Kinetics",
+      "description": "Test kinetics analysis",
+      "author": "Test User",
+      "tags": [
+        "kinetics",
+        "test"
+      ],
+      "created": 1769893870.0648758,
+      "modified": 1769893870.0648758,
+      "cycles": [
+        {
+          "type": "Baseline",
+          "length_minutes": 5.0,
+          "name": "Baseline",
+          "note": "",
+          "concentration_value": null,
+          "concentration_units": "nM",
+          "units": "nM",
+          "concentrations": {},
+          "cycle_id": 0,
+          "timestamp": 1769893870.0648758,
+          "cycle_num": 0,
+          "total_cycles": 0,
+          "status": "pending",
+          "sensorgram_time": null,
+          "end_time_sensorgram": null,
+          "delta_spr": null,
+          "flags": []
+        },
+        {
+          "type": "Association",
+          "length_minutes": 3.0,
+          "name": "Association",
+          "note": "",
+          "concentration_value": 100.0,
+          "concentration_units": "nM",
+          "units": "nM",
+          "concentrations": {},
+          "cycle_id": 0,
+          "timestamp": 1769893870.0648758,
+          "cycle_num": 0,
+          "total_cycles": 0,
+          "status": "pending",
+          "sensorgram_time": null,
+          "end_time_sensorgram": null,
+          "delta_spr": null,
+          "flags": []
+        },
+        {
+          "type": "Dissociation",
+          "length_minutes": 5.0,
+          "name": "Dissociation",
+          "note": "",
+          "concentration_value": null,
+          "concentration_units": "nM",
+          "units": "nM",
+          "concentrations": {},
+          "cycle_id": 0,
+          "timestamp": 1769893870.0648758,
+          "cycle_num": 0,
+          "total_cycles": 0,
+          "status": "pending",
+          "sensorgram_time": null,
+          "end_time_sensorgram": null,
+          "delta_spr": null,
+          "flags": []
+        }
+      ],
+      "cycle_count": 3,
+      "metadata": {},
+      "user": "TestUser"
+    },
+    "2": {
+      "name": "Test Kinetics",
+      "description": "Test kinetics analysis",
+      "author": "Test User",
+      "tags": [
+        "kinetics",
+        "test"
+      ],
+      "created": 1769893915.9369564,
+      "modified": 1769893915.9369564,
+      "cycles": [
+        {
+          "type": "Baseline",
+          "length_minutes": 5.0,
+          "name": "Baseline",
+          "note": "",
+          "concentration_value": null,
+          "concentration_units": "nM",
+          "units": "nM",
+          "concentrations": {},
+          "cycle_id": 0,
+          "timestamp": 1769893915.9369564,
+          "cycle_num": 0,
+          "total_cycles": 0,
+          "status": "pending",
+          "sensorgram_time": null,
+          "end_time_sensorgram": null,
+          "delta_spr": null,
+          "flags": []
+        },
+        {
+          "type": "Association",
+          "length_minutes": 3.0,
+          "name": "Association",
+          "note": "",
+          "concentration_value": 100.0,
+          "concentration_units": "nM",
+          "units": "nM",
+          "concentrations": {},
+          "cycle_id": 0,
+          "timestamp": 1769893915.9369564,
+          "cycle_num": 0,
+          "total_cycles": 0,
+          "status": "pending",
+          "sensorgram_time": null,
+          "end_time_sensorgram": null,
+          "delta_spr": null,
+          "flags": []
+        },
+        {
+          "type": "Dissociation",
+          "length_minutes": 5.0,
+          "name": "Dissociation",
+          "note": "",
+          "concentration_value": null,
+          "concentration_units": "nM",
+          "units": "nM",
+          "concentrations": {},
+          "cycle_id": 0,
+          "timestamp": 1769893915.9369564,
+          "cycle_num": 0,
+          "total_cycles": 0,
+          "status": "pending",
+          "sensorgram_time": null,
+          "end_time_sensorgram": null,
+          "delta_spr": null,
+          "flags": []
+        }
+      ],
+      "cycle_count": 3,
+      "metadata": {},
+      "user": "TestUser"
+    }
+  },
+  "tags": {
+    "1": {
+      "name": "kinetics",
+      "created": 1769893870.0648758
+    },
+    "2": {
+      "name": "test",
+      "created": 1769893870.0648758
+    }
+  }
+}

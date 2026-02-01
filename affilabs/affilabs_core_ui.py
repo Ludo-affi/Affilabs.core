@@ -5678,16 +5678,16 @@ End of Debug Log
         """Handle export data button click - emit signal with export configuration."""
         export_config = self._get_export_config()
         self.export_requested.emit(export_config)
-    
+
     def _on_export_animl(self):
         """Handle AnIML export button click - check license then export."""
         from PySide6.QtWidgets import QMessageBox
-        
+
         # Check if feature is available (this will show upgrade prompt if locked)
         if hasattr(self, 'app') and self.app:
             if not self.app.check_feature_access("AnIML Export", "pro"):
                 return  # Feature locked, upgrade prompt shown
-        
+
         # Feature is available - proceed with AnIML export
         # For now, show a message (Phase 2 will implement actual AnIML export)
         QMessageBox.information(
@@ -5697,7 +5697,7 @@ End of Debug Log
             "This is a Pro/Enterprise feature that exports data in AnIML XML format\n"
             "for regulatory compliance and LIMS integration."
         )
-        
+
         logger.info("📋 AnIML export requested (Pro feature)")
 
     def _on_send_to_edits_clicked(self):
@@ -6385,14 +6385,17 @@ End of Debug Log
             )
 
         # Connect cycle management buttons
-        # NOTE: start_cycle_btn also connected in main-simplified.py for acquisition start
-        # This handler manages experiment cycle queue (different responsibility)
-        self.sidebar.start_cycle_btn.clicked.connect(self.start_cycle)
-        self.sidebar.add_to_queue_btn.clicked.connect(self.add_cycle_to_queue)
-        self.sidebar.start_run_btn.clicked.connect(self._on_start_queued_run)
-        self.sidebar.clear_queue_btn.clicked.connect(self._on_clear_queue)
-        self.sidebar.expand_queue_btn.clicked.connect(self._on_expand_queue)
-        self.sidebar.open_table_btn.clicked.connect(self.open_full_cycle_table)
+        # NOTE: start_cycle_btn, add_to_queue_btn, start_run_btn removed - now in Method Builder dialog
+        # Queue management buttons are connected in sidebar itself via QueuePresenter
+        # self.sidebar.start_cycle_btn.clicked.connect(self.start_cycle)  # DEPRECATED - moved to dialog
+        # self.sidebar.add_to_queue_btn.clicked.connect(self.add_cycle_to_queue)  # DEPRECATED - moved to dialog
+        # self.sidebar.start_run_btn.clicked.connect(self._on_start_queued_run)  # DELETED - duplicate button removed
+        
+        # Connect remaining queue buttons (if they exist)
+        if hasattr(self.sidebar, 'clear_queue_btn'):
+            self.sidebar.clear_queue_btn.clicked.connect(self._on_clear_queue)
+        if hasattr(self.sidebar, 'open_table_btn'):
+            self.sidebar.open_table_btn.clicked.connect(self.open_full_cycle_table)
 
         # Connect export buttons
         self.sidebar.export_data_btn.clicked.connect(self._on_export_data)
@@ -6486,74 +6489,80 @@ End of Debug Log
 
     def add_cycle_to_table(self, cycle_data: dict):
         """Add a single completed cycle to the cycle data table during live acquisition.
-        
+
         CRITICAL: This method should ONLY be called when a cycle COMPLETES,
         NOT when cycles are added to the queue. The Cycle Data Table shows
         COMPLETED cycles only, not queued/pending cycles.
-        
+
         Args:
             cycle_data: Dictionary containing cycle information from Cycle.to_export_dict()
         """
         from PySide6.QtWidgets import QTableWidgetItem, QComboBox, QDoubleSpinBox
         from affilabs.utils.logger import logger
-        
+
         logger.info(f"📝 Adding COMPLETED cycle to table: {cycle_data.get('type', 'Unknown')}")
-        
+
         try:
             # Verify edits_tab exists
             if not hasattr(self, 'edits_tab'):
                 logger.error("❌ CRITICAL: edits_tab does NOT exist on main_window! Cannot add cycle to table.")
                 logger.error(f"   main_window attributes: {dir(self)}")
                 return
-            
+
             # Verify cycle_data_table exists
             if not hasattr(self.edits_tab, 'cycle_data_table'):
                 logger.error("❌ CRITICAL: cycle_data_table does NOT exist on edits_tab! Cannot add cycle.")
                 logger.error(f"   edits_tab attributes: {dir(self.edits_tab)}")
                 return
-            
+
             cycle_table = self.edits_tab.cycle_data_table
-            
+
             logger.debug(f"✓ Cycle table found, current rows: {cycle_table.rowCount()}")
-                
+
             # Initialize type counter if it doesn't exist
             if not hasattr(self, '_cycle_type_counts'):
                 self._cycle_type_counts = {}
-                
+
             # Get current row count (where we'll add the new row)
             row_idx = cycle_table.rowCount()
             cycle_table.insertRow(row_idx)
-            
+
             # Get cycle type and format with numbering
             cycle_type = cycle_data.get('type', 'Unknown')
-            
-            # Abbreviate "Concentration" to "Conc."
-            if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
-                cycle_type = 'Conc.'
-                
+
+            # Use centralized abbreviation method if available from app
+            from PySide6.QtWidgets import QApplication
+            app_instance = QApplication.instance()
+            if app_instance and hasattr(app_instance, '_abbreviate_cycle_type'):
+                cycle_type = app_instance._abbreviate_cycle_type(cycle_type)
+            else:
+                # Fallback: inline abbreviation
+                if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
+                    cycle_type = 'Conc.'
+
             # Count this type occurrence
             if cycle_type not in self._cycle_type_counts:
                 self._cycle_type_counts[cycle_type] = 0
             self._cycle_type_counts[cycle_type] += 1
-            
+
             # Format type with number
             type_with_number = f"{cycle_type} {self._cycle_type_counts[cycle_type]}"
-            
+
             # Column 0: Type
             cycle_table.setItem(row_idx, 0, QTableWidgetItem(type_with_number))
-            
+
             # Column 1: Duration (minutes)
             duration = cycle_data.get('duration_minutes', cycle_data.get('length_minutes', ''))
             if isinstance(duration, (int, float)):
                 duration = f"{duration:.2f}"
             cycle_table.setItem(row_idx, 1, QTableWidgetItem(str(duration)))
-            
+
             # Column 2: Start time (seconds)
             start_time = cycle_data.get('start_time_sensorgram', cycle_data.get('sensorgram_time', ''))
             if isinstance(start_time, (int, float)):
                 start_time = f"{start_time:.2f}"
             cycle_table.setItem(row_idx, 2, QTableWidgetItem(str(start_time)))
-            
+
             # Column 3: Concentration value
             # Handle both single concentration_value and multi-channel concentrations dict
             if cycle_data.get('concentrations'):
@@ -6570,11 +6579,11 @@ End of Debug Log
                 if isinstance(conc_value, (int, float)):
                     conc_value = f"{conc_value:.2f}"
             cycle_table.setItem(row_idx, 3, QTableWidgetItem(str(conc_value)))
-            
+
             # Column 4: Concentration units (use 'units' field if available, fallback to 'concentration_units')
             conc_units = cycle_data.get('units', cycle_data.get('concentration_units', ''))
             cycle_table.setItem(row_idx, 4, QTableWidgetItem(str(conc_units)))
-            
+
             # Column 5: Notes (include cycle_id for tracking)
             notes = cycle_data.get('note', cycle_data.get('notes', ''))
             cycle_id = cycle_data.get('cycle_id', '')
@@ -6583,7 +6592,7 @@ End of Debug Log
             else:
                 notes_display = notes
             cycle_table.setItem(row_idx, 5, QTableWidgetItem(str(notes_display)))
-            
+
             # Column 6: Delta SPR
             delta_spr = cycle_data.get('delta_spr', '')
             if isinstance(delta_spr, (int, float)):
@@ -6591,17 +6600,17 @@ End of Debug Log
             else:
                 delta_spr_text = str(delta_spr) if delta_spr else ''
             cycle_table.setItem(row_idx, 6, QTableWidgetItem(delta_spr_text))
-            
+
             # Column 7: Injection flag indicator
             flags_list = cycle_data.get('flags', [])
             has_injection = '✓' if 'injection' in flags_list else ''
             cycle_table.setItem(row_idx, 7, QTableWidgetItem(has_injection))
-            
+
             # Column 8: Other flags (wash, spike)
             other_flags = [f for f in flags_list if f != 'injection']
             flags_text = ', '.join(other_flags) if other_flags else ''
             cycle_table.setItem(row_idx, 8, QTableWidgetItem(flags_text))
-            
+
             # Column 9: Channel selector
             channel_combo = QComboBox()
             channel_combo.addItems(["All", "A", "B", "C", "D"])
@@ -6624,7 +6633,7 @@ End of Debug Log
             channel_combo.setProperty('cycle_index', row_idx)
             channel_combo.currentTextChanged.connect(self._on_cycle_channel_changed)
             cycle_table.setCellWidget(row_idx, 9, channel_combo)
-            
+
             # Column 10: Time shift
             shift_spinbox = QDoubleSpinBox()
             shift_spinbox.setRange(-1000.0, 1000.0)
@@ -6647,19 +6656,19 @@ End of Debug Log
             shift_spinbox.setProperty('cycle_index', row_idx)
             shift_spinbox.valueChanged.connect(self._on_cycle_shift_changed)
             cycle_table.setCellWidget(row_idx, 10, shift_spinbox)
-            
+
             # Initialize alignment settings for this cycle
             if not hasattr(self, '_cycle_alignment'):
                 self._cycle_alignment = {}
             self._cycle_alignment[row_idx] = {'channel': 'All', 'shift': 0.0}
-            
+
             # Update loaded cycles data list
             if not hasattr(self, '_loaded_cycles_data'):
                 self._loaded_cycles_data = []
             self._loaded_cycles_data.append(cycle_data)
-            
+
             logger.info(f"✓ Added cycle to table: {type_with_number} at row {row_idx}")
-            
+
         except Exception as e:
             logger.exception(f"Error adding cycle to table: {e}")
 
@@ -6696,9 +6705,15 @@ End of Debug Log
                 # Get cycle type and format with numbering
                 cycle_type = cycle.get('type', 'Unknown')
 
-                # Abbreviate "Concentration" to "Conc."
-                if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
-                    cycle_type = 'Conc.'
+                # Use centralized abbreviation method if available from app
+                from PySide6.QtWidgets import QApplication
+                app_instance = QApplication.instance()
+                if app_instance and hasattr(app_instance, '_abbreviate_cycle_type'):
+                    cycle_type = app_instance._abbreviate_cycle_type(cycle_type)
+                else:
+                    # Fallback: inline abbreviation
+                    if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
+                        cycle_type = 'Conc.'
 
                 # Count this type occurrence
                 if cycle_type not in type_counts:
@@ -6760,12 +6775,12 @@ End of Debug Log
                 else:
                     delta_spr_text = str(delta_spr) if delta_spr else ''
                 self.cycle_data_table.setItem(row_idx, 6, QTableWidgetItem(delta_spr_text))
-                
+
                 # Column 7: Injection flag indicator
                 flags_list = cycle.get('flags', [])
                 has_injection = '✓' if 'injection' in flags_list else ''
                 self.cycle_data_table.setItem(row_idx, 7, QTableWidgetItem(has_injection))
-                
+
                 # Column 8: Other flags (wash, spike)
                 other_flags = [f for f in flags_list if f != 'injection']
                 flags_text = ', '.join(other_flags) if other_flags else ''

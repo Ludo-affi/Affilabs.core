@@ -14,7 +14,7 @@ BENEFITS:
 
 USAGE:
     storage = MethodStorage()
-    
+
     # Save method with tags
     method_id = storage.save_method(
         name="Kinetics Analysis",
@@ -22,11 +22,11 @@ USAGE:
         tags=["kinetics", "antibody"],
         author="John Doe"
     )
-    
+
     # Query methods
     kinetics_methods = storage.search_by_tags(["kinetics"])
     recent_methods = storage.get_recent_methods(limit=10)
-    
+
     # Full-text search
     results = storage.search_methods("antibody")
 """
@@ -47,22 +47,22 @@ class MethodStorage:
 
     def __init__(self, db_path: str = "methods/methods.db", current_user: Optional[str] = None):
         """Initialize method storage with TinyDB.
-        
+
         Args:
             db_path: Path to TinyDB database file
             current_user: Current user name for organizing methods
         """
         self.current_user = current_user
-        
+
         # Setup database path
         db_file = Path(db_path)
         if current_user:
             # User-specific database: methods/Username/methods.db
             db_file = Path("methods") / current_user / "methods.db"
-        
+
         # Create directory if needed
         db_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Initialize TinyDB with caching middleware for performance
         self.db = TinyDB(
             db_file,
@@ -70,13 +70,13 @@ class MethodStorage:
             indent=2,
             ensure_ascii=False
         )
-        
+
         # Table for methods
         self.methods_table = self.db.table('methods')
-        
+
         # Table for tags (for fast tag queries)
         self.tags_table = self.db.table('tags')
-        
+
         logger.info(f"Method storage initialized: {db_file} (user: {current_user or 'none'})")
 
     def save_method(
@@ -89,7 +89,7 @@ class MethodStorage:
         metadata: Dict[str, Any] = None,
     ) -> int:
         """Save a method to the database.
-        
+
         Args:
             name: Method name
             cycles: List of Cycle objects
@@ -97,7 +97,7 @@ class MethodStorage:
             author: Optional author name
             tags: Optional list of tags (e.g., ["kinetics", "antibody"])
             metadata: Optional additional metadata
-            
+
         Returns:
             Method ID (TinyDB document ID)
         """
@@ -112,7 +112,7 @@ class MethodStorage:
                 else:
                     logger.warning(f"Unknown cycle format: {type(cycle)}")
                     continue
-            
+
             # Create method document
             method_doc = {
                 "name": name,
@@ -126,27 +126,27 @@ class MethodStorage:
                 "metadata": metadata or {},
                 "user": self.current_user,
             }
-            
+
             # Insert into database
             method_id = self.methods_table.insert(method_doc)
-            
+
             # Update tags index
             if tags:
                 self._update_tags_index(tags)
-            
+
             logger.info(f"✓ Method saved: {name} (ID: {method_id}, {len(cycles_data)} cycles)")
             return method_id
-            
+
         except Exception as e:
             logger.exception(f"Failed to save method: {e}")
             raise
 
     def get_method(self, method_id: int) -> Optional[Dict[str, Any]]:
         """Get a method by ID.
-        
+
         Args:
             method_id: TinyDB document ID
-            
+
         Returns:
             Method document or None if not found
         """
@@ -161,10 +161,10 @@ class MethodStorage:
 
     def get_method_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """Get a method by name.
-        
+
         Args:
             name: Method name
-            
+
         Returns:
             Method document or None if not found
         """
@@ -188,7 +188,7 @@ class MethodStorage:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Update an existing method.
-        
+
         Args:
             method_id: Method ID to update
             name: New name (optional)
@@ -196,13 +196,13 @@ class MethodStorage:
             description: New description (optional)
             tags: New tags list (optional)
             metadata: New metadata (optional)
-            
+
         Returns:
             True if updated successfully
         """
         try:
             updates = {"modified": time.time()}
-            
+
             if name is not None:
                 updates["name"] = name
             if description is not None:
@@ -212,7 +212,7 @@ class MethodStorage:
                 self._update_tags_index(tags)
             if metadata is not None:
                 updates["metadata"] = metadata
-            
+
             if cycles is not None:
                 cycles_data = []
                 for cycle in cycles:
@@ -222,21 +222,21 @@ class MethodStorage:
                         cycles_data.append(cycle)
                 updates["cycles"] = cycles_data
                 updates["cycle_count"] = len(cycles_data)
-            
+
             self.methods_table.update(updates, doc_ids=[method_id])
             logger.info(f"✓ Method updated: ID {method_id}")
             return True
-            
+
         except Exception as e:
             logger.exception(f"Failed to update method {method_id}: {e}")
             return False
 
     def delete_method(self, method_id: int) -> bool:
         """Delete a method.
-        
+
         Args:
             method_id: Method ID to delete
-            
+
         Returns:
             True if deleted successfully
         """
@@ -250,10 +250,10 @@ class MethodStorage:
 
     def search_by_tags(self, tags: List[str]) -> List[Dict[str, Any]]:
         """Search methods by tags (any match).
-        
+
         Args:
             tags: List of tags to search for
-            
+
         Returns:
             List of matching method documents
         """
@@ -270,17 +270,17 @@ class MethodStorage:
 
     def search_methods(self, search_text: str) -> List[Dict[str, Any]]:
         """Full-text search in method names and descriptions.
-        
+
         Args:
             search_text: Text to search for
-            
+
         Returns:
             List of matching method documents
         """
         try:
             Method = Query()
             search_lower = search_text.lower()
-            
+
             results = self.methods_table.search(
                 (Method.name.search(search_lower, flags=0)) |
                 (Method.description.search(search_lower, flags=0))
@@ -293,7 +293,7 @@ class MethodStorage:
 
     def get_all_methods(self) -> List[Dict[str, Any]]:
         """Get all methods.
-        
+
         Returns:
             List of all method documents
         """
@@ -301,10 +301,10 @@ class MethodStorage:
 
     def get_recent_methods(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get most recently modified methods.
-        
+
         Args:
             limit: Maximum number of methods to return
-            
+
         Returns:
             List of method documents sorted by modification time
         """
@@ -314,10 +314,10 @@ class MethodStorage:
 
     def get_methods_by_author(self, author: str) -> List[Dict[str, Any]]:
         """Get all methods by a specific author.
-        
+
         Args:
             author: Author name
-            
+
         Returns:
             List of method documents
         """
@@ -332,7 +332,7 @@ class MethodStorage:
 
     def get_all_tags(self) -> List[str]:
         """Get all unique tags used in methods.
-        
+
         Returns:
             List of unique tags
         """
@@ -343,7 +343,7 @@ class MethodStorage:
 
     def _update_tags_index(self, tags: List[str]):
         """Update the tags index for fast queries.
-        
+
         Args:
             tags: List of tags to index
         """

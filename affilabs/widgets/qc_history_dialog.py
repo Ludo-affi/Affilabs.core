@@ -168,10 +168,10 @@ class QCHistoryDialog(QDialog):
             # Clear table completely before repopulating
             self.table.clearContents()
             self.table.setRowCount(0)
-            
+
             # Populate table
             self.table.setRowCount(len(self.reports_list))
-            
+
             # Set row height to prevent button overlap
             for r in range(len(self.reports_list)):
                 self.table.setRowHeight(r, 40)
@@ -254,6 +254,76 @@ class QCHistoryDialog(QDialog):
             if report:
                 # Extract calibration data from raw_calibration_data
                 calibration_data = report.get("raw_calibration_data", {})
+
+                # If raw_calibration_data is missing or incomplete, reconstruct from report structure
+                if not calibration_data or not calibration_data.get("s_pol_spectra"):
+                    logger.info("Reconstructing calibration data from report structure")
+                    
+                    # Deserialize spectra data
+                    spectra_data = report.get("spectra_data", {})
+                    
+                    def deserialize_channel_data(data_dict):
+                        """Convert serialized channel data back to dict of numpy arrays."""
+                        if not data_dict:
+                            return {}
+                        result = {}
+                        for channel, values in data_dict.items():
+                            if values:
+                                import numpy as np
+                                # Handle string representations of numpy arrays
+                                if isinstance(values, str):
+                                    # Remove numpy formatting and convert
+                                    values_str = values.strip()
+                                    # Remove array markers if present
+                                    if values_str.startswith('[') and values_str.endswith(']'):
+                                        values_str = values_str[1:-1]
+                                    # Split on whitespace and convert to float
+                                    try:
+                                        result[channel] = np.fromstring(values_str, sep=' ', dtype=float)
+                                    except ValueError:
+                                        # Fallback: try splitting manually
+                                        numbers = []
+                                        for val in values_str.split():
+                                            try:
+                                                if '...' not in val:  # Skip ellipsis markers
+                                                    numbers.append(float(val))
+                                            except:
+                                                pass
+                                        if numbers:
+                                            result[channel] = np.array(numbers, dtype=float)
+                                elif isinstance(values, list):
+                                    result[channel] = np.array(values, dtype=float)
+                                else:
+                                    result[channel] = np.array(values, dtype=float)
+                        return result
+                    
+                    # Reconstruct calibration_data structure expected by QC dialog
+                    calibration_data = {
+                        "wavelengths": spectra_data.get("wavelengths"),
+                        "s_pol_spectra": deserialize_channel_data(spectra_data.get("s_pol", {})),
+                        "p_pol_spectra": deserialize_channel_data(spectra_data.get("p_pol", {})),
+                        "dark_spectra": deserialize_channel_data(spectra_data.get("dark", {})),
+                        "transmission_spectra": deserialize_channel_data(spectra_data.get("transmission", {})),
+                        
+                        # Metadata
+                        "detector_serial": report.get("metadata", {}).get("device_serial", self.device_serial),
+                        "firmware_version": report.get("metadata", {}).get("firmware_version", "Unknown"),
+                        "timestamp": report.get("metadata", {}).get("timestamp", "Unknown"),
+                        
+                        # Calibration parameters
+                        "integration_time_ms": report.get("calibration_parameters", {}).get("integration_time_ms"),
+                        "led_intensities": report.get("calibration_parameters", {}).get("led_intensities", {}),
+                        
+                        # QC results
+                        "s_ref_qc_results": report.get("qc_validation", {}).get("s_ref_qc", {}),
+                        "p_ref_qc_results": report.get("qc_validation", {}).get("p_ref_qc", {}),
+                        "qc_overall_status": report.get("qc_validation", {}).get("overall_status", "UNKNOWN"),
+                        "ch_error_list": report.get("qc_validation", {}).get("failed_channels", []),
+                        
+                        # Model performance
+                        "s_model_accuracy": report.get("model_performance", {}).get("s_pol_predictions_accuracy"),
+                        "p_model_accuracy": report.get("model_performance", {}).get("p_pol_predictions_accuracy"),
+                    }
 
                 # Show QC dialog
                 from affilabs.widgets.calibration_qc_dialog import CalibrationQCDialog

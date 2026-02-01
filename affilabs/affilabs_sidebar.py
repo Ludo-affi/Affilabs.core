@@ -73,6 +73,7 @@ class AffilabsSidebar(QWidget):
     cycle_queued = Signal(object)  # CycleConfigViewModel
     queue_cleared = Signal()
     queued_run_started = Signal()
+    next_cycle_requested = Signal()  # Skip to next cycle
 
     def __init__(self, parent=None, detector_type="USB4000", app=None):
         super().__init__(parent)
@@ -223,6 +224,12 @@ class AffilabsSidebar(QWidget):
                 "Calibration and maintenance",
                 self._build_settings_tab,
             ),
+            (
+                "⚡",
+                "⚡ Spark AI Help",
+                "Ask questions about using ezControl",
+                self._build_spark_tab,
+            ),
         ]
 
         # Store tab references for dynamic control
@@ -277,6 +284,29 @@ class AffilabsSidebar(QWidget):
             self.tab_indices[label] = tab_index
             tab_index += 1
 
+        # Apply light green background to Spark tab button
+        spark_tab_index = self.tab_indices.get("⚡")
+        if spark_tab_index is not None:
+            # Update stylesheet to include green background for Spark tab
+            current_style = self.tab_widget.styleSheet()
+            # Add specific styling that matches based on tab text
+            enhanced_style = current_style.replace(
+                "QTabBar::tab:selected:!disabled {",
+                """QTabBar::tab[text="⚡"] {
+                background: #E8F5E9 !important;
+                color: #1B5E20 !important;
+            }
+            QTabBar::tab[text="⚡"]:selected {
+                background: #C8E6C9 !important;
+                color: #1B5E20 !important;
+            }
+            QTabBar::tab[text="⚡"]:hover:!selected {
+                background: #D4EDD6 !important;
+            }
+            QTabBar::tab:selected:!disabled {"""
+            )
+            self.tab_widget.setStyleSheet(enhanced_style)
+
         container_layout.addWidget(self.tab_widget)
         # Compatibility alias expected by main code
         self.tabs = self.tab_widget
@@ -320,6 +350,10 @@ class AffilabsSidebar(QWidget):
             self.clear_queue_btn.clicked.connect(self._on_clear_queue_clicked)
         if hasattr(self, "start_run_btn"):
             self.start_run_btn.clicked.connect(self._on_start_run_clicked)
+        if hasattr(self, "start_queue_btn"):
+            self.start_queue_btn.clicked.connect(self._on_start_run_clicked)
+        if hasattr(self, "next_cycle_btn"):
+            self.next_cycle_btn.clicked.connect(self._on_next_cycle_clicked)
 
     def _on_start_cycle_clicked(self):
         """Handle start cycle button click - emit high-level signal with config."""
@@ -351,6 +385,10 @@ class AffilabsSidebar(QWidget):
     def _on_start_run_clicked(self):
         """Handle start queued run button click - emit high-level signal."""
         self.queued_run_started.emit()
+
+    def _on_next_cycle_clicked(self):
+        """Handle next cycle button click - emit high-level signal."""
+        self.next_cycle_requested.emit()
 
     # === State Management Methods (Change #2: Encapsulation) ===
 
@@ -479,13 +517,13 @@ class AffilabsSidebar(QWidget):
 
     def _open_cycle_table_dialog(self):
         """Open the full cycle table dialog showing completed cycles.
-        
+
         Displays all completed cycles from _completed_cycles list with
         same column structure as Edits tab cycle_data_table.
         """
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton
         from affilabs.utils.logger import logger
-        
+
         # DEBUG: Check what data we have
         if hasattr(self, 'app') and self.app and hasattr(self.app, '_completed_cycles'):
             cycles = self.app._completed_cycles
@@ -500,27 +538,27 @@ class AffilabsSidebar(QWidget):
                 logger.error("  self.app is None")
             elif not hasattr(self.app, '_completed_cycles'):
                 logger.error("  self.app has no _completed_cycles attribute")
-        
+
         # Create simple dialog showing cycle data
         dialog = QDialog(self)
         dialog.setWindowTitle("Cycle Data Table - COMPLETED CYCLES ONLY")
         dialog.resize(1000, 600)
-        
+
         layout = QVBoxLayout()
-        
+
         # Create table matching Edits tab structure
         table = QTableWidget()
         table.setColumnCount(11)
         table.setHorizontalHeaderLabels([
-            "Type", "Duration", "Start", "Conc.", "Units", 
+            "Type", "Duration", "Start", "Conc.", "Units",
             "Notes", "ΔSPR", "Inj.", "Flags", "Channel", "Shift"
         ])
-        
+
         # Populate table with completed cycles from Application instance
         if hasattr(self, 'app') and self.app and hasattr(self.app, '_completed_cycles'):
             cycles = self.app._completed_cycles
             table.setRowCount(len(cycles))
-            
+
             for row, cycle in enumerate(cycles):
                 # Format concentrations dict as string (e.g., "A:100, B:50")
                 if cycle.concentrations:
@@ -529,13 +567,13 @@ class AffilabsSidebar(QWidget):
                     )
                 else:
                     conc_str = ""
-                
+
                 # Format notes with cycle_id prefix
                 notes_text = f"[ID:{cycle.cycle_id}] {cycle.notes}" if cycle.notes else f"[ID:{cycle.cycle_id}]"
-                
+
                 # Format injection flag
                 injection_text = "Yes" if cycle.injection else "No"
-                
+
                 # Add row data
                 table.setItem(row, 0, QTableWidgetItem(cycle.cycle_type))
                 table.setItem(row, 1, QTableWidgetItem(str(cycle.duration)))
@@ -548,17 +586,17 @@ class AffilabsSidebar(QWidget):
                 table.setItem(row, 8, QTableWidgetItem(cycle.flags or ""))
                 table.setItem(row, 9, QTableWidgetItem(cycle.channel or ""))
                 table.setItem(row, 10, QTableWidgetItem(f"{cycle.shift:.2f}" if cycle.shift is not None else ""))
-        
+
         # Resize columns to content
         table.resizeColumnsToContents()
-        
+
         layout.addWidget(table)
-        
+
         # Add close button
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(dialog.close)
         layout.addWidget(close_btn)
-        
+
         dialog.setLayout(layout)
         dialog.exec()
 
@@ -630,6 +668,14 @@ class AffilabsSidebar(QWidget):
             size_str = f"{bytes_estimate / (1024 * 1024 * 1024):.2f} GB"
 
         self.export_filesize_label.setText(f"Estimated file size: ~{size_str}")
+
+    def _build_spark_tab(self, tab_layout: QVBoxLayout):
+        """Build Spark AI Help tab with Q&A interface."""
+        from affilabs.widgets.spark_help_widget import SparkHelpWidget
+
+        # Create Spark widget and add with stretch to fill all vertical space
+        self.spark_widget = SparkHelpWidget()
+        tab_layout.addWidget(self.spark_widget, stretch=1)
 
     def _build_settings_tab(self, tab_layout: QVBoxLayout):
         """Build Settings tab with diagnostics, hardware, and calibration using builder."""

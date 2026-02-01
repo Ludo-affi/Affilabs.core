@@ -27,6 +27,7 @@ from affilabs.ui_styles import (
     label_style,
     primary_button_style,
 )
+from affilabs.services.diagnostic_uploader import DiagnosticUploader
 
 
 class DeviceStatusTabBuilder:
@@ -365,6 +366,36 @@ class DeviceStatusTabBuilder:
         debug_btn_layout.addWidget(self.sidebar.debug_log_btn)
         tab_layout.addWidget(debug_btn_container)
 
+        tab_layout.addSpacing(8)
+
+        # Send Diagnostic Files Button
+        diagnostic_btn_container = QFrame()
+        diagnostic_btn_container.setStyleSheet(card_style())
+        diagnostic_btn_layout = QVBoxLayout(diagnostic_btn_container)
+        diagnostic_btn_layout.setContentsMargins(12, 10, 12, 10)
+
+        self.sidebar.send_diagnostics_btn = QPushButton("📤 Send Diagnostic Files to AffiLabs")
+        self.sidebar.send_diagnostics_btn.setFixedHeight(36)
+        self.sidebar.send_diagnostics_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF; "
+            "  color: white; "
+            "  border: none; "
+            "  border-radius: 6px; "
+            "  font-size: 13px; "
+            "  font-weight: 600; "
+            "  padding: 0px 16px;"
+            "}"
+            "QPushButton:hover { background: #0051D5; }"
+            "QPushButton:pressed { background: #003D99; }"
+        )
+        self.sidebar.send_diagnostics_btn.setToolTip(
+            "Upload diagnostic bundle (Spark transcripts, calibration files, debug logs) to AffiLabs OEM database",
+        )
+        self.sidebar.send_diagnostics_btn.clicked.connect(self._handle_send_diagnostics)
+        diagnostic_btn_layout.addWidget(self.sidebar.send_diagnostics_btn)
+        tab_layout.addWidget(diagnostic_btn_container)
+
         tab_layout.addSpacing(16)
 
         # Software Version
@@ -375,3 +406,73 @@ class DeviceStatusTabBuilder:
             label_style(11, Colors.SECONDARY_TEXT) + "font-weight: 500;",
         )
         tab_layout.addWidget(version_label)
+
+    def _handle_send_diagnostics(self):
+        """Handle Send Diagnostic Files button click."""
+        from PySide6.QtWidgets import QMessageBox, QInputDialog
+        
+        # Confirm upload
+        reply = QMessageBox.question(
+            self.sidebar,
+            "Report Issue & Send Diagnostics",
+            "This will:\n\n"
+            "1. Sync Spark AI data to cloud (backup)\n"
+            "2. Upload diagnostic files to SharePoint\n"
+            "3. Open ticket form in your browser\n\n"
+            "Files included:\n"
+            "• Spark AI conversation transcripts\n"
+            "• Calibration files and logs\n"
+            "• Debug logs\n"
+            "• System information\n\n"
+            "Continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Optional: ask for email
+        email, ok = QInputDialog.getText(
+            self.sidebar,
+            "Your Email (Optional)",
+            "Email address (for ticket updates and follow-up):",
+        )
+        
+        # Show progress
+        progress = QMessageBox(self.sidebar)
+        progress.setWindowTitle("Uploading Diagnostics")
+        progress.setText("Syncing database to cloud...\nCollecting diagnostic files...\nThis may take a moment...")
+        progress.setStandardButtons(QMessageBox.StandardButton.NoButton)
+        progress.show()
+        
+        # Process events to show dialog
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        
+        # Upload and open form
+        uploader = DiagnosticUploader()
+        success, message = uploader.send_diagnostics_and_open_form(
+            user_email=email if email else None
+        )
+        
+        progress.close()
+        
+        # Show result
+        if success:
+            QMessageBox.information(
+                self.sidebar,
+                "Diagnostics Uploaded",
+                message + "\n\n"
+                "Please complete the ticket form that opened in your browser.\n\n"
+                "Your Spark AI data has been backed up to the cloud.\n\n"
+                "We'll respond to your ticket within 24 hours!"
+            )
+        else:
+            QMessageBox.warning(
+                self.sidebar,
+                "Upload Issue",
+                message + "\n\n"
+                "You can manually send the diagnostic bundle to:\n"
+                "support@affinitylabs.com"
+            )
