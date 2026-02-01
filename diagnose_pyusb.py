@@ -1,6 +1,5 @@
 """Check pyusb backend status and attempt to fix."""
 import sys
-import os
 
 print("=" * 70)
 print("PYUSB BACKEND DIAGNOSTIC")
@@ -52,7 +51,7 @@ print("\n" + "=" * 70)
 print("RECOMMENDED FIX:")
 print("=" * 70)
 print("\nRun this command to install libusb:")
-print(f"   pip install libusb")
+print("   pip install libusb")
 print("\nOr install libusb-package:")
-print(f"   pip install libusb-package")
+print("   pip install libusb-package")
 print("\n" + "=" * 70)

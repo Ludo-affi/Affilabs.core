@@ -39,8 +39,8 @@ for s_pwm, p_pwm in positions:
 # Test single servo command if it exists
 print("\n3. Test if there's a single-servo command")
 single_commands = [
-    f"ss090\n",  # set servo to 90
-    f"s090\n",   # servo 90
+    "ss090\n",  # set servo to 90
+    "s090\n",   # servo 90
 ]
 
 for cmd in single_commands:

@@ -12,7 +12,6 @@ import time
 import re
 import logging
 import threading
-import queue
 from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
@@ -801,7 +800,7 @@ class AffipumpController:
                         else:
                             # No auto-recovery or already tried - mark as failed
                             pump1_failed = True
-                            logger.error(f"[PUMP1] FAILED - no recovery possible")
+                            logger.error("[PUMP1] FAILED - no recovery possible")
 
                     # Only mark ready if NO error AND not busy
                     elif not status1.get('busy', True):
@@ -811,7 +810,7 @@ class AffipumpController:
                         # BUT: Allow fast completion if pump was externally terminated (stop/home button)
                         if pump1_finish_time < min_expected_time and not allow_early_termination:
                             logger.error(f"[PUMP1] JAMMED - completed in {pump1_finish_time:.3f}s (< {min_expected_time}s minimum)")
-                            logger.error(f"[PUMP1] Pump reports 'not busy' but completion time is physically impossible")
+                            logger.error("[PUMP1] Pump reports 'not busy' but completion time is physically impossible")
                             pump1_failed = True
                         elif check_position_change and not allow_early_termination:
                             # Verify actual position change (only for aspirate/dispense, NOT initialization)
@@ -822,7 +821,7 @@ class AffipumpController:
                             if pos1_start is not None and pos1_end is not None:
                                 pos_change = abs(pos1_end - pos1_start)
                                 logger.debug(f"[PUMP1] Position check: {pos1_start:.1f} → {pos1_end:.1f} µL (change: {pos_change:.1f}µL)")
-                                
+
                                 if pos_change < 10.0:  # Less than 10µL movement
                                     # Check if pump was already at/near a reasonable target position
                                     # Common targets: 0 (home), 300 (flush), 1000 (buffer/prime)
@@ -838,7 +837,7 @@ class AffipumpController:
                                         pump1_ready = True
                                     else:
                                         logger.error(f"[PUMP1] JAMMED - position barely changed ({pos1_start:.1f} → {pos1_end:.1f} µL)")
-                                        logger.error(f"[PUMP1] Pump may be physically stuck")
+                                        logger.error("[PUMP1] Pump may be physically stuck")
                                         pump1_failed = True
                                 else:
                                     pump1_ready = True
@@ -858,7 +857,7 @@ class AffipumpController:
                                 logger.debug(f"[PUMP1] Initialized after {pump1_finish_time:.1f}s (at zero: {pos1_end:.1f}µL)")
                             else:
                                 logger.error(f"[PUMP1] NOT AT ZERO - initialization failed (position: {pos1_end}µL)")
-                                logger.error(f"[PUMP1] Expected position near 0µL after initialization")
+                                logger.error("[PUMP1] Expected position near 0µL after initialization")
                                 pump1_failed = True
                 else:
                     logger.warning("[PUMP1] No status response received")
@@ -894,7 +893,7 @@ class AffipumpController:
                         else:
                             # No auto-recovery or already tried - mark as failed
                             pump2_failed = True
-                            logger.error(f"[PUMP2] FAILED - no recovery possible")
+                            logger.error("[PUMP2] FAILED - no recovery possible")
 
                     # Only mark ready if NO error AND not busy
                     elif not status2.get('busy', True):
@@ -904,7 +903,7 @@ class AffipumpController:
                         # BUT: Allow fast completion if pump was externally terminated (stop/home button)
                         if pump2_finish_time < min_expected_time and not allow_early_termination:
                             logger.error(f"[PUMP2] JAMMED - completed in {pump2_finish_time:.3f}s (< {min_expected_time}s minimum)")
-                            logger.error(f"[PUMP2] Pump reports 'not busy' but completion time is physically impossible")
+                            logger.error("[PUMP2] Pump reports 'not busy' but completion time is physically impossible")
                             pump2_failed = True
                         elif check_position_change and not allow_early_termination:
                             # Verify actual position change (only for aspirate/dispense, NOT initialization)
@@ -915,7 +914,7 @@ class AffipumpController:
                             if pos2_start is not None and pos2_end is not None:
                                 pos_change = abs(pos2_end - pos2_start)
                                 logger.debug(f"[PUMP2] Position check: {pos2_start:.1f} → {pos2_end:.1f} µL (change: {pos_change:.1f}µL)")
-                                
+
                                 if pos_change < 10.0:  # Less than 10µL movement
                                     # Check if pump was already at/near a reasonable target position
                                     # Common targets: 0 (home), 300 (flush), 1000 (buffer/prime)
@@ -931,7 +930,7 @@ class AffipumpController:
                                         pump2_ready = True
                                     else:
                                         logger.error(f"[PUMP2] JAMMED - position barely changed ({pos2_start:.1f} → {pos2_end:.1f} µL)")
-                                        logger.error(f"[PUMP2] Pump may be physically stuck")
+                                        logger.error("[PUMP2] Pump may be physically stuck")
                                         pump2_failed = True
                                 else:
                                     pump2_ready = True
@@ -951,7 +950,7 @@ class AffipumpController:
                                 logger.debug(f"[PUMP2] Initialized after {pump2_finish_time:.1f}s (at zero: {pos2_end:.1f}µL)")
                             else:
                                 logger.error(f"[PUMP2] NOT AT ZERO - initialization failed (position: {pos2_end}µL)")
-                                logger.error(f"[PUMP2] Expected position near 0µL after initialization")
+                                logger.error("[PUMP2] Expected position near 0µL after initialization")
                                 pump2_failed = True
                 else:
                     logger.warning("[PUMP2] No status response received")
@@ -1274,7 +1273,7 @@ class AffipumpController:
             self.dispense(pump_num, volume_ul, speed_ul_s)
             time.sleep(0.5)
 
-        print(f"Priming complete")
+        print("Priming complete")
 
     def flush(self, pump_num, cycles=5, speed_ul_s=500):
         """Flush syringe with fast fill/empty cycles"""
@@ -1367,7 +1366,7 @@ class AffipumpController:
         # Aspirate to destination
         self.send_command(f"/{to_pump}P{volume_ul:.3f},1R")
 
-        print(f"Transfer complete")
+        print("Transfer complete")
 
     def dilute(self, pump_num, diluent_volume_ul, sample_volume_ul,
               diluent_port='I', sample_port='O', output_port='B', speed_ul_s=100):
@@ -1421,7 +1420,7 @@ class AffipumpController:
         time.sleep(0.3)
         self.dispense(pump_num, total_volume, speed_ul_s)
 
-        print(f"Dilution complete")
+        print("Dilution complete")
 
     def abort(self, pump_num):
         """Emergency stop - terminates current command immediately (T command)
@@ -1474,15 +1473,15 @@ class AffipumpController:
         # Estimate number of cycles needed
         estimated_cycles = int(total_volume_needed / refill_volume) + 1
 
-        print(f"="*60)
-        print(f"RUN-BUFFER OPERATION")
-        print(f"="*60)
+        print("="*60)
+        print("RUN-BUFFER OPERATION")
+        print("="*60)
         print(f"Duration: {duration_minutes} minutes")
         print(f"Flow Rate: {flow_rate_ul_min} µL/min ({flow_rate_ul_s:.2f} µL/s)")
         print(f"Total Volume: {total_volume_needed} µL")
         print(f"Estimated Cycles: {estimated_cycles}")
         print(f"Refill Volume: {refill_volume} µL")
-        print(f"="*60)
+        print("="*60)
 
         # Initialize tracking
         cycle_count = 0
@@ -1493,7 +1492,7 @@ class AffipumpController:
         total_delivered = 0
 
         # Initial refill
-        print(f"\nInitial refill from reservoir...")
+        print("\nInitial refill from reservoir...")
         self._set_valve_by_name(pump_num, reservoir_port)
         time.sleep(0.3)
         self.aspirate(pump_num, refill_volume, refill_speed_ul_s)
@@ -1574,7 +1573,7 @@ class AffipumpController:
             # Check if we've used up all the time
             time_remaining_seconds = end_time - time.time()
             if time_remaining_seconds <= 0:
-                print(f"\nTime limit reached after dispensing")
+                print("\nTime limit reached after dispensing")
                 break
 
             # Check if we need to refill for another cycle
@@ -1600,15 +1599,15 @@ class AffipumpController:
         # Final stats
         elapsed_total = (time.time() - start_time) / 60.0
 
-        print(f"\n" + "="*60)
-        print(f"RUN-BUFFER COMPLETE")
-        print(f"="*60)
+        print("\n" + "="*60)
+        print("RUN-BUFFER COMPLETE")
+        print("="*60)
         print(f"Cycles Completed: {cycle_count}")
         print(f"Volume Delivered: {total_delivered:.1f} µL")
         print(f"Total Elapsed Time: {elapsed_total:.1f} minutes")
         print(f"Dispense Flow Rate: {flow_rate_ul_min:.1f} µL/min (as requested)")
         print(f"Stopped Early: {stopped_early}")
-        print(f"="*60)
+        print("="*60)
 
         return {
             'total_volume_delivered': total_delivered,
@@ -1682,33 +1681,33 @@ class AffipumpController:
         print(f"PUMP {pump_num} DIAGNOSTICS")
         print("="*60)
 
-        print(f"\nStatus:")
+        print("\nStatus:")
         if diag.get('status'):
             print(f"  Busy: {diag['status'].get('busy')}")
             print(f"  Error: {diag['status'].get('error_msg')}")
             print(f"  Initialized: {diag['status'].get('initialized')}")
 
-        print(f"\nPosition:")
+        print("\nPosition:")
         print(f"  Current: {diag.get('position_ul')} µL ({diag.get('position_steps')} steps)")
         print(f"  Remaining: {diag.get('remaining_volume_ul')} µL")
         print(f"  Valve: {diag.get('valve_position')}")
 
-        print(f"\nConfiguration:")
+        print("\nConfiguration:")
         print(f"  Syringe Volume: {diag.get('syringe_volume_ul')} µL")
         print(f"  Backlash: {diag.get('backlash')} steps")
         print(f"  Firmware: {diag.get('firmware_version')}")
 
-        print(f"\nSpeed Settings:")
+        print("\nSpeed Settings:")
         print(f"  Start Speed: {diag.get('start_speed')} pulses/sec")
         print(f"  Top Speed: {diag.get('top_speed')} pulses/sec")
         print(f"  Cutoff Speed: {diag.get('cutoff_speed')} pulses/sec")
 
-        print(f"\nPressure:")
+        print("\nPressure:")
         print(f"  Current: {diag.get('pressure')}")
         print(f"  Limit: {diag.get('pressure_limit')}")
 
         if diag.get('error_info'):
-            print(f"\nError Info:")
+            print("\nError Info:")
             print(f"  Code: {diag['error_info'].get('error_code')}")
             print(f"  Message: {diag['error_info'].get('error_msg')}")
 

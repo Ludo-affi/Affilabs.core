@@ -22,7 +22,7 @@ for port in ports:
     # Check if it's a Pico (VID=0x2E8A, PID=0x000A)
     if port.vid == 0x2E8A and port.pid == 0x000A:
         pico_ports.append(port.device)
-        print(f"  ✅ THIS IS A PICO CONTROLLER!")
+        print("  ✅ THIS IS A PICO CONTROLLER!")
 
 print("\n" + "=" * 70)
 print(f"FOUND {len(pico_ports)} PICO CONTROLLER(S):")

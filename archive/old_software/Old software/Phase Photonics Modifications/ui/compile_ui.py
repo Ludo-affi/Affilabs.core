@@ -36,10 +36,7 @@ if __name__ == "__main__":
                 with open(rc) as sources:
                     lines = sources.readlines()
                 with open(rc, "w") as sources:
-                    for line in lines:
-                        sources.write(
-                            line.replace(
+                    sources.writelines(line.replace(
                                 f"import {RC_NAME}_rc",
                                 f"import ui.{RC_NAME}_rc",
-                            ),
-                        )
+                            ) for line in lines)

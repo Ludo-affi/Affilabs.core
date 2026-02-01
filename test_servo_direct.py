@@ -7,7 +7,6 @@ import sys
 sys.stdout.reconfigure(encoding='utf-8') if hasattr(sys.stdout, 'reconfigure') else None
 
 # Find P4PRO controller
-from affilabs.utils import controller
 
 print("\n" + "="*60)
 print("Scanning for P4PRO controller...")
@@ -24,7 +23,7 @@ for port in ports_to_test:
         time.sleep(0.1)
         resp = ser.read(100).decode('utf-8', errors='ignore')
         ser.close()
-        
+
         if "P4PRO" in resp:
             print(f"FOUND! Response: {resp.strip()}")
             p4pro_port = port

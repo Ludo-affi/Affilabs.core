@@ -89,10 +89,10 @@ def test_read_speed():
         print(f"           Expected: {8 * 22.4:.1f}ms (8 scans × 22.4ms)")
 
     print("-" * 80)
-    print(f"\n💡 DIAGNOSIS:")
-    print(f"   Each read_intensity() should take ~integration_time")
-    print(f"   If much longer → driver overhead, buffering, or trigger mode issue")
-    print(f"   For batch mode: 8 reads × actual_time = total delay per channel")
+    print("\n💡 DIAGNOSIS:")
+    print("   Each read_intensity() should take ~integration_time")
+    print("   If much longer → driver overhead, buffering, or trigger mode issue")
+    print("   For batch mode: 8 reads × actual_time = total delay per channel")
 
     return True
 

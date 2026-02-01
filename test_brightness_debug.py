@@ -40,7 +40,7 @@ for ch, val in test_brightnesses:
     time.sleep(0.02)
     resp = ser.read(10)
     print(f"  Response: {resp!r}")
-    
+
     # Check if LED turned on (firmware sets PWM immediately)
     print(f"  LED {ch.upper()} should be ON at {val}/255 = {val/255*100:.0f}%")
     input("  Press Enter to continue...")

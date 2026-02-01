@@ -31,9 +31,9 @@ FILES_TO_INSTALL = [
 def create_init_file(target_utils_dir: Path):
     """Create or update __init__.py in the utils directory."""
     init_file = target_utils_dir / "__init__.py"
-    
+
     import_line = "from .phase_photonics_wrapper import SpectrometerAPI"
-    
+
     if init_file.exists():
         content = init_file.read_text()
         if import_line not in content:
@@ -60,43 +60,43 @@ def install_detector(target_dir: Path):
     print("Phase Photonics ST00012 Detector Installer")
     print("=" * 60)
     print()
-    
+
     # Validate target directory
     if not target_dir.exists():
         print(f"Creating target directory: {target_dir}")
         target_dir.mkdir(parents=True)
-    
+
     target_utils_dir = target_dir / "utils"
     if not target_utils_dir.exists():
         print(f"Creating utils directory: {target_utils_dir}")
         target_utils_dir.mkdir(parents=True)
-    
+
     print()
     print("Installing files...")
     print("-" * 40)
-    
+
     # Install each file
     for src_name, dest_rel_path in FILES_TO_INSTALL:
         src_path = INSTALLER_DIR / src_name
         dest_path = target_dir / dest_rel_path
-        
+
         if not src_path.exists():
             print(f"  ERROR: Source file not found: {src_path}")
             continue
-        
+
         # Create destination directory if needed
         dest_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Copy file
         shutil.copy2(src_path, dest_path)
         print(f"  Installed: {dest_rel_path}")
-    
+
     # Create/update __init__.py
     print()
     print("Configuring package...")
     print("-" * 40)
     create_init_file(target_utils_dir)
-    
+
     print()
     print("=" * 60)
     print("Installation Complete!")
@@ -137,16 +137,16 @@ def main():
         target_dir = Path(sys.argv[1]).resolve()
     else:
         target_dir = Path.cwd()
-    
+
     print(f"Target directory: {target_dir}")
     print()
-    
+
     # Confirm installation
     response = input("Proceed with installation? [Y/n]: ").strip().lower()
     if response and response != 'y':
         print("Installation cancelled.")
         return
-    
+
     print()
     install_detector(target_dir)
 

@@ -1,6 +1,4 @@
 """Comprehensive cleanup verification - All phases"""
-import os
-import json
 from pathlib import Path
 
 def verify_all_cleanup_phases():
@@ -154,7 +152,7 @@ def verify_all_cleanup_phases():
     total_tests += 1
     blur8_count = ui_content.count('shadow.setBlurRadius(8)')
     if blur8_count == 0:
-        print(f"✓ Duplicate shadow pattern removed")
+        print("✓ Duplicate shadow pattern removed")
         passed_tests += 1
     else:
         print(f"✗ Duplicate shadow pattern still present ({blur8_count} instances)")
@@ -222,15 +220,15 @@ def verify_all_cleanup_phases():
         print("  • Removed stub profiling.py usage")
         print()
         print("Phase 4 - Shadow Effect Consolidation:")
-        print(f"  • Created create_card_shadow() helper function")
+        print("  • Created create_card_shadow() helper function")
         print(f"  • Replaced {helper_calls} instances of duplicate shadow code")
-        print(f"  • Additional reduction: 45 lines")
+        print("  • Additional reduction: 45 lines")
         print()
         print("Phase 5 - Layout Constants Consolidation:")
-        print(f"  • Added 6 layout constants to Dimensions class")
+        print("  • Added 6 layout constants to Dimensions class")
         print(f"  • Centralized {margin_usage} margin settings")
-        print(f"  • Centralized 15+ spacing settings")
-        print(f"  • Improved UI consistency and maintainability")
+        print("  • Centralized 15+ spacing settings")
+        print("  • Improved UI consistency and maintainability")
         print()
         print(f"Total Lines Saved: {7491 - ui_lines} lines from affilabs_core_ui.py")
         print()

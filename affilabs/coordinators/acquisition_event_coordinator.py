@@ -23,7 +23,6 @@ from PySide6.QtCore import QTimer
 from affilabs.ui.ui_message import error as ui_error
 from affilabs.ui.ui_message import warn as ui_warn
 from affilabs.utils.logger import logger
-from affilabs.utils.time_utils import monotonic
 
 if TYPE_CHECKING:
     from affilabs.affilabs_core_ui import AffilabsMainWindow

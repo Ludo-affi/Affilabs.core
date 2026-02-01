@@ -2,24 +2,23 @@
 """Test the sequential LED batch control on P4PRO controller."""
 
 import sys
-import time
 from affilabs.utils.controller import PicoP4PRO
 
 def main():
     print("=" * 60)
     print("P4PRO Sequential LED Batch Test")
     print("=" * 60)
-    
+
     # Initialize controller
     ctrl = PicoP4PRO()
-    
+
     if not ctrl.open():
         print("❌ Failed to open P4PRO controller")
         return 1
-    
-    print(f"✓ Connected to P4PRO")
+
+    print("✓ Connected to P4PRO")
     print()
-    
+
     # TEST 1: All LEDs at same intensity (51 = 20%)
     print("TEST 1: All LEDs at intensity 51 (20%)")
     print("-" * 40)
@@ -28,7 +27,7 @@ def main():
     print("All 4 LEDs should be ON at ~20% brightness")
     input("Press Enter to continue...")
     print()
-    
+
     # TEST 2: Turn off
     print("TEST 2: Turn off all LEDs")
     print("-" * 40)
@@ -37,7 +36,7 @@ def main():
     print("All LEDs should be OFF")
     input("Press Enter to continue...")
     print()
-    
+
     # TEST 3: Different intensities (the critical test!)
     print("TEST 3: Different intensities per LED")
     print("-" * 40)
@@ -53,7 +52,7 @@ def main():
     print("⚠️  CRITICAL: All LEDs should have VISIBLY DIFFERENT brightness!")
     input("Press Enter to continue...")
     print()
-    
+
     # TEST 4: Turn off
     print("TEST 4: Turn off all LEDs")
     print("-" * 40)
@@ -61,7 +60,7 @@ def main():
     print(f"Command result: {'✓ SUCCESS' if result else '❌ FAILED'}")
     print("All LEDs should be OFF")
     print()
-    
+
     # TEST 5: Only some LEDs (verify atomicity)
     print("TEST 5: Only LED A and C (atomicity test)")
     print("-" * 40)
@@ -73,11 +72,11 @@ def main():
     print("  LED C: Medium brightness (50%)")
     input("Press Enter to continue...")
     print()
-    
+
     # Final cleanup
     print("Cleanup: Turning off all LEDs")
     ctrl.turn_off_channels()
-    
+
     ctrl.close()
     print()
     print("=" * 60)
@@ -91,7 +90,7 @@ def main():
     print()
     print("If TEST 3 shows DIFFERENT brightness levels, the atomic")
     print("leds: command is working correctly! 🎉")
-    
+
     return 0
 
 if __name__ == "__main__":

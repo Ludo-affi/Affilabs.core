@@ -259,7 +259,7 @@ def main():
     test_calibrated_positions(ser, s_config, p_config)
 
     # Final summary
-    print("\Device config positions: S={s_config}, P={p_config}")
+    print(r"\Device config positions: S={s_config}, P={p_config}")
     if s_eeprom is not None:
         print(f"EEPROM positions: S={s_eeprom}, P={p_eeprom}")
         if s_eeprom != s_config or p_eeprom != p_config:

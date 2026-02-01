@@ -1,5 +1,4 @@
 """Apply Phase 8 (Font Family) and Phase 9 (Border Radius) consolidation."""
-import re
 
 file_path = "affilabs/affilabs_core_ui.py"
 

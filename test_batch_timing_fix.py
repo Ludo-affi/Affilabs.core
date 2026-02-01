@@ -114,7 +114,7 @@ def test_batch_timing():
     avg_time = sum(cycle_times) / len(cycle_times)
     target_time = 4 * settings.LED_ON_TIME_MS
 
-    print(f"\nRESULTS:")
+    print("\nRESULTS:")
     print(f"  Average cycle time: {avg_time:.1f}ms")
     print(f"  Target cycle time:  {target_time:.1f}ms")
     print(f"  Difference:         {avg_time - target_time:+.1f}ms")

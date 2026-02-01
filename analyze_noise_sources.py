@@ -93,9 +93,9 @@ print(f"Transmission at peak ({peak_wavelength:.2f} nm): {peak_transmission:.2f}
 # Shot noise scales with sqrt(N) where N is photon count
 # Lower transmission = fewer photons = higher relative noise
 shot_noise_ratio = np.sqrt(peak_transmission / dip_transmission)
-print(f"\nShot noise (relative):")
+print("\nShot noise (relative):")
 print(f"  At dip: {shot_noise_ratio:.2f}× higher than at peak")
-print(f"  Impact: Dip region has worse SNR due to low photon count")
+print("  Impact: Dip region has worse SNR due to low photon count")
 
 # ============================================================================
 # SOURCE 2: SPECTRAL NOISE (Pixel-to-Pixel Variation)
@@ -132,7 +132,7 @@ dip_positions = np.array(dip_positions)
 temporal_noise_nm = np.std(dip_positions)
 temporal_noise_RU = temporal_noise_nm * 355
 
-print(f"Dip position variation (first 10 spectra):")
+print("Dip position variation (first 10 spectra):")
 print(f"  Mean: {np.mean(dip_positions):.6f} nm")
 print(f"  Std: {temporal_noise_nm*1000:.3f} pm = {temporal_noise_RU:.2f} RU")
 print(f"  Range: {np.min(dip_positions):.6f} - {np.max(dip_positions):.6f} nm")
@@ -161,9 +161,9 @@ print("-" * 80)
 
 # Check if data is normalized
 print(f"Transmission range: {avg_spectrum.min():.2f}% - {avg_spectrum.max():.2f}%")
-print(f"Expected for normalized SPR: 40-60%")
-print(f"⚠️ This data shows 14-182% range → NOT properly normalized!")
-print(f"   LED P-pol / S-ref ratio may be drifting")
+print("Expected for normalized SPR: 40-60%")
+print("⚠️ This data shows 14-182% range → NOT properly normalized!")
+print("   LED P-pol / S-ref ratio may be drifting")
 
 # ============================================================================
 # SOURCE 6: AVERAGING COMPARISON
@@ -202,8 +202,8 @@ ax1.grid(True, alpha=0.3)
 # Plot 2: Temporal variation (first 10 spectra)
 for i in range(10):
     ax2.plot(wavelengths, spectra[i], alpha=0.5, linewidth=1)
-ax2.plot(wavelengths, avg_spectrum, 'k-', linewidth=2, label=f'Mean (n=10)')
-ax2.axvline(np.mean(dip_positions), color='r', linestyle='--', linewidth=2, 
+ax2.plot(wavelengths, avg_spectrum, 'k-', linewidth=2, label='Mean (n=10)')
+ax2.axvline(np.mean(dip_positions), color='r', linestyle='--', linewidth=2,
             label=f'Dip: {np.mean(dip_positions):.3f} ± {temporal_noise_nm*1000:.1f} pm')
 ax2.set_xlabel('Wavelength (nm)', fontsize=11)
 ax2.set_ylabel('Transmission (%)', fontsize=11)
@@ -213,9 +213,9 @@ ax2.grid(True, alpha=0.3)
 
 # Plot 3: Dip position variation
 ax3.plot(range(10), dip_positions, 'bo-', markersize=8)
-ax3.axhline(np.mean(dip_positions), color='r', linestyle='--', linewidth=2, 
+ax3.axhline(np.mean(dip_positions), color='r', linestyle='--', linewidth=2,
             label=f'Mean: {np.mean(dip_positions):.6f} nm')
-ax3.fill_between(range(10), 
+ax3.fill_between(range(10),
                  np.mean(dip_positions) - temporal_noise_nm,
                  np.mean(dip_positions) + temporal_noise_nm,
                  alpha=0.3, color='red', label=f'±1σ: {temporal_noise_nm*1000:.1f} pm')
@@ -230,7 +230,7 @@ noise_levels = [no_avg_noise, avg_8_scans, avg_12_batch]
 noise_labels = ['No avg\n(current)', '8-scan\navg', '8-scan +\n12-batch']
 colors_bar = ['red', 'orange', 'green']
 bars = ax4.bar(range(3), noise_levels, color=colors_bar, alpha=0.7, edgecolor='black', linewidth=2)
-ax4.axhline(8, color='blue', linestyle='--', linewidth=2, alpha=0.7, 
+ax4.axhline(8, color='blue', linestyle='--', linewidth=2, alpha=0.7,
             label='Biacore target: <8 RU (GOLD STANDARD)')
 ax4.set_xticks(range(3))
 ax4.set_xticklabels(noise_labels, fontsize=11)
@@ -240,12 +240,12 @@ ax4.legend(fontsize=10)
 ax4.grid(True, alpha=0.3, axis='y')
 # Add values on bars
 for i, (bar, val) in enumerate(zip(bars, noise_levels)):
-    ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2, 
+    ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2,
              f'{val:.1f} RU', ha='center', va='bottom', fontsize=11, fontweight='bold')
 
 plt.tight_layout()
 plt.savefig('noise_source_analysis.png', dpi=300, bbox_inches='tight')
-print(f"\n✓ Saved: noise_source_analysis.png")
+print("\n✓ Saved: noise_source_analysis.png")
 
 # ============================================================================
 # CONCLUSIONS

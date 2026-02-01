@@ -20,7 +20,7 @@ for a, b, c, d in test_values:
     print(f"\nSetting batch({a}, {b}, {c}, {d})...")
     ctrl.set_batch_intensities(a=a, b=b, c=c, d=d)
     time.sleep(0.5)
-    
+
     spec = usb.intensities()
     max_signal = max(spec)
     print(f"  Max signal: {max_signal:.1f} counts")

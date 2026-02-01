@@ -57,11 +57,11 @@ try:
         text=True,
         timeout=10
     )
-    
+
     if result.returncode == 0 and result.stdout.strip():
         print("✅ Found FTDI devices in Windows:")
         print(result.stdout)
-        
+
         # Check if devices are using VCP drivers (COM ports)
         if "COM" in result.stdout or "Serial" in result.stdout:
             print("⚠️  WARNING: Devices appear to be using VCP (COM port) drivers!")
@@ -130,7 +130,7 @@ if devices is None:
     print("3. Restart computer")
     print("4. Install D2XX drivers")
     print("5. Test again")
-    
+
 elif len(devices) == 0:
     print("\n⚠️  D2XX drivers are working, but no devices detected\n")
     print("TROUBLESHOOTING:")
@@ -140,7 +140,7 @@ elif len(devices) == 0:
     print("3. Check if devices are powered on")
     print("4. Try unplugging and replugging the devices")
     print("5. Check Device Manager for any error icons")
-    
+
 else:
     phase_devices = [d for d in devices if (d.decode() if isinstance(d, bytes) else d).startswith("ST")]
     if phase_devices:

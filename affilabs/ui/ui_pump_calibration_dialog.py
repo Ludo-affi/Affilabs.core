@@ -8,18 +8,10 @@
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
 
-from PySide6.QtCore import (QCoreApplication, QDate, QDateTime, QLocale,
-    QMetaObject, QObject, QPoint, QRect,
-    QSize, QTime, QUrl, Qt)
-from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
-    QFont, QFontDatabase, QGradient, QIcon,
-    QImage, QKeySequence, QLinearGradient, QPainter,
-    QPalette, QPainter, QPixmap, QRadialGradient,
-    QTransform)
-from PySide6.QtWidgets import (QAbstractButton, QApplication, QDialog, QDialogButtonBox,
+from PySide6.QtCore import (QCoreApplication, QMetaObject, QSize, Qt)
+from PySide6.QtWidgets import (QDialogButtonBox,
     QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QSpacerItem, QVBoxLayout,
-    QWidget)
+    QPushButton, QSizePolicy, QSpacerItem, QVBoxLayout)
 
 class Ui_PumpCalibrationDialog(object):
     def setupUi(self, PumpCalibrationDialog):

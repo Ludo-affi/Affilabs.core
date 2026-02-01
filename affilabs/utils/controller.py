@@ -410,7 +410,7 @@ class PicoP4SPR(StaticController):
                     if self._ser is not None:
                         try:
                             self._ser.close()
-                            print(f"DEBUG: Port closed successfully")
+                            print("DEBUG: Port closed successfully")
                         except Exception as close_err:
                             print(f"DEBUG: Error closing port: {close_err}")
                             logger.error(f"Error closing port after ID mismatch: {close_err}")
@@ -1468,11 +1468,11 @@ class PicoP4SPR(StaticController):
 
             # Debug: Check serial port state
             if self._ser is None:
-                logger.warning(f"⚠️ Serial port is None - attempting to open...")
+                logger.warning("⚠️ Serial port is None - attempting to open...")
                 if not self.open():
                     logger.error("❌ Failed to open serial port!")
                     return False
-                logger.info(f"✅ Serial port opened successfully")
+                logger.info("✅ Serial port opened successfully")
 
             if self._ser is not None:
                 logger.debug(f"🔍 Serial port: {self._ser.port}, is_open={self._ser.is_open}")
@@ -1898,7 +1898,7 @@ class PicoKNX2(FlowController):
             print(f"DEBUG knx_three: Sending command: {cmd.strip()!r} (ch={ch}, state={state})")
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
-                print(f"DEBUG knx_three: Command sent successfully")
+                print("DEBUG knx_three: Command sent successfully")
                 return True
             logger.error("failed to send cmd knx_three")
             return False
@@ -1911,7 +1911,7 @@ class PicoKNX2(FlowController):
             print(f"DEBUG knx_six: Sending command: {cmd.strip()!r} (ch={ch}, state={state})")
             if self._ser is not None or self.open():
                 self._ser.write(cmd.encode())
-                print(f"DEBUG knx_six: Command sent successfully")
+                print("DEBUG knx_six: Command sent successfully")
                 return True
             logger.error("failed to send cmd knx_six")
             return False
@@ -2004,7 +2004,6 @@ class PicoEZSPR(FlowController):
         across physical devices. Falls back to controller name if unavailable.
         """
         from pathlib import Path
-        import os
 
         home = Path.home()
         affilabs_dir = home / ".affilabs"
@@ -3110,7 +3109,6 @@ class PicoP4PRO(FlowController):
         across physical devices. Falls back to controller name if unavailable.
         """
         from pathlib import Path
-        import os
 
         home = Path.home()
         affilabs_dir = home / ".affilabs"
@@ -3230,7 +3228,7 @@ class PicoP4PRO(FlowController):
                     except Exception:
                         pass
                     cmd = "id\n"
-                    print(f"DEBUG: PicoP4PRO - Sending 'id' command...")
+                    print("DEBUG: PicoP4PRO - Sending 'id' command...")
                     self._ser.write(cmd.encode())
                     import time
                     time.sleep(0.10)
@@ -3238,7 +3236,7 @@ class PicoP4PRO(FlowController):
                     print(f"DEBUG: PicoP4PRO - Got ID reply: '{reply}'")
 
                     if reply == "P4PRO" or "P4PRO" in reply or reply == "p4proplus" or "p4proplus" in reply:
-                        print(f"DEBUG: PicoP4PRO - ID match! This is a P4PRO/P4PROPLUS!")
+                        print("DEBUG: PicoP4PRO - ID match! This is a P4PRO/P4PROPLUS!")
                         self.firmware_id = reply
                         # Clear any leftover data before version query
                         try:
@@ -3253,7 +3251,7 @@ class PicoP4PRO(FlowController):
                         logger.info(f"✅ Found Pico P4PRO firmware: {reply} (version {self.version})")
                         # Load valve cycles now that serial port is established
                         self._load_valve_cycles()
-                        print(f"DEBUG: PicoP4PRO - Returning True (success!)")
+                        print("DEBUG: PicoP4PRO - Returning True (success!)")
                         return True
                     else:
                         print(f"DEBUG: PicoP4PRO - ID mismatch, expected 'P4PRO', got '{reply}'")

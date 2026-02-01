@@ -4,10 +4,10 @@ Shows 3 cycles at a time: Previous (done) → Current (in progress) → Next (up
 Designed to be embedded in sidebar for at-a-glance status.
 """
 
-from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout
+from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPainter, QColor, QFont, QPen
-from typing import List, Optional
+from typing import List
 
 
 class QueueProgressBar(QWidget):

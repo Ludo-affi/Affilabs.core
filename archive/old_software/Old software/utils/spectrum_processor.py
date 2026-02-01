@@ -108,7 +108,7 @@ class SpectrumProcessor:
         }
 
         # For periodic logging
-        self._log_counter = {ch: 0 for ch in ["a", "b", "c", "d"]}
+        self._log_counter = dict.fromkeys(["a", "b", "c", "d"], 0)
         self._log_interval = 100  # Log every N spectra
 
         # Pipeline caching for performance (avoid registry lookup every call)
@@ -116,7 +116,7 @@ class SpectrumProcessor:
         self._cached_pipeline_id = None
 
         # Stats update optimization - only calculate detailed stats periodically
-        self._stats_update_counter = {ch: 0 for ch in ["a", "b", "c", "d"]}
+        self._stats_update_counter = dict.fromkeys(["a", "b", "c", "d"], 0)
         self._stats_update_interval = 10  # Update detailed stats every N cycles
 
     def process_transmission(

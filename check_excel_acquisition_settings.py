@@ -28,12 +28,12 @@ else:
 
 # Check Channel A for acquisition info in column headers or first rows
 df = pd.read_excel(DATA_FILE, sheet_name="Channel_A")
-print(f"\n📊 Channel A Data:")
+print("\n📊 Channel A Data:")
 print(f"  Shape: {df.shape}")
 print(f"  Columns (first 10): {list(df.columns[:10])}")
 
 # Check if there's any metadata in the first few rows before data starts
-print(f"\n  First 3 rows:")
+print("\n  First 3 rows:")
 print(df.head(3))
 
 # Timing analysis
@@ -44,12 +44,12 @@ num_timepoints = len(time_columns)
 if num_timepoints > 1:
     # Extract time indices
     times = [int(col.split('_')[1]) for col in time_columns]
-    print(f"\n⏱️  TIMING ANALYSIS:")
+    print("\n⏱️  TIMING ANALYSIS:")
     print(f"  Timepoints: {num_timepoints}")
     print(f"  Time indices: {min(times)} to {max(times)}")
     print(f"  Expected duration: ~{max(times)} seconds (if 1 Hz sampling)")
     print(f"  Actual duration: {num_timepoints / 1.0:.1f} seconds at 1 Hz")
-    
+
 # What we expect for live mode vs what might be in Excel
 print("\n" + "=" * 80)
 print("EXPECTED vs ACTUAL ACQUISITION SETTINGS")
@@ -72,16 +72,16 @@ print("  Processing: Unknown (saved raw spectra)")
 print("  Baseline noise: ~58 RU RMS (measured)")
 
 print("\n🔍 KEY OBSERVATION:")
-print(f"  Expected baseline: ~6 RU RMS")
-print(f"  Measured baseline: ~58 RU RMS") 
+print("  Expected baseline: ~6 RU RMS")
+print("  Measured baseline: ~58 RU RMS")
 print(f"  Ratio: {58/6:.1f}× WORSE")
-print(f"  User reports: ~100× worse than expected")
-print(f"  ")
-print(f"  This suggests:")
-print(f"  1. Excel data has NO hardware averaging (8-scan)")
-print(f"  2. Excel data has NO batch smoothing (12-spectrum)")
-print(f"  3. Integration time may be SHORTER (less photons)")
-print(f"  4. Data saved BEFORE processing pipeline applied")
+print("  User reports: ~100× worse than expected")
+print("  ")
+print("  This suggests:")
+print("  1. Excel data has NO hardware averaging (8-scan)")
+print("  2. Excel data has NO batch smoothing (12-spectrum)")
+print("  3. Integration time may be SHORTER (less photons)")
+print("  4. Data saved BEFORE processing pipeline applied")
 
 print("\n💡 HYPOTHESIS:")
 print("  Your Excel file contains RAW spectra from test acquisitions,")
@@ -89,7 +89,7 @@ print("  NOT production-mode data with full averaging/processing.")
 print("  ")
 print("  The 100× worse noise is because:")
 print("  - Single acquisitions (no 8-scan averaging) = 2.8× worse")
-print("  - No batch processing (no 12-window smoothing) = 3.5× worse") 
+print("  - No batch processing (no 12-window smoothing) = 3.5× worse")
 print("  - Possibly shorter integration time = 2-5× worse")
 print("  - Combined effect: 2.8 × 3.5 × 2 = ~20-100× worse")
 

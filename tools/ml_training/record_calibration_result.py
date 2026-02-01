@@ -242,7 +242,7 @@ def record_calibration_to_database(
 
     record_id = db.add_record(record)
 
-    print(f"✓ Recorded calibration to device history database")
+    print("✓ Recorded calibration to device history database")
     print(f"  Device Serial: {record.detector_serial}")
     print(f"  Success: {record.success}")
     print(f"  Total Iterations: {record.total_iterations}")

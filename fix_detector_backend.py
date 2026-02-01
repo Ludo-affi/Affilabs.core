@@ -1,8 +1,4 @@
 """Fix pyusb backend for Ocean Optics detector."""
-import urllib.request
-import os
-import zipfile
-import shutil
 
 print("=" * 80)
 print("FIXING PYUSB BACKEND FOR OCEAN OPTICS DETECTOR")
@@ -26,12 +22,12 @@ try:
     print("4. Select 'Ocean Optics FLAME-T'")
     print("5. Select 'libusb-win32' or 'libusbK' driver")
     print("6. Click 'Replace Driver'")
-    
+
     print("\n" + "=" * 80)
     print("Current detection status:")
     print("  ✅ Pico: WORKING (COM3)")
     print("  ⚠️  FLAME-T: Hardware detected but driver issue")
     print("=" * 80)
-    
+
 except Exception as e:
     print(f"Error: {e}")

@@ -10,11 +10,10 @@ Tracks per-device calibration patterns to improve ML predictions:
 This enables device-specific learning, adding ~5-10% accuracy to convergence prediction.
 """
 
-import json
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, asdict
+from typing import List, Optional
+from dataclasses import dataclass
 from datetime import datetime
 import statistics
 

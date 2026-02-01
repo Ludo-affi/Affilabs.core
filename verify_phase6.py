@@ -27,7 +27,7 @@ def verify_phase6():
     # Test 2: Check hardcoded SECONDARY_TEXT color reduced
     secondary_text_hardcoded = len(re.findall(r'color:\s*#86868B;', content))
     if secondary_text_hardcoded == 0:
-        print(f"✓ All hardcoded #86868B replaced")
+        print("✓ All hardcoded #86868B replaced")
         tests_passed += 1
     else:
         print(f"✗ Still {secondary_text_hardcoded} hardcoded #86868B instances")

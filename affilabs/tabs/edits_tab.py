@@ -11,12 +11,14 @@ This tab provides:
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QSplitter, QLabel, QPushButton,
     QTableWidget, QHeaderView, QAbstractItemView, QSlider, QGraphicsDropShadowEffect,
-    QComboBox, QDoubleSpinBox, QWidget
+    QComboBox, QDoubleSpinBox
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 import pyqtgraph as pg
 import pandas as pd
+
+from affilabs.utils.logger import logger
 
 
 class EditsTab:
@@ -1442,7 +1444,7 @@ class EditsTab:
                 # Get raw data (list of dicts with 'time', 'channel', 'value')
                 raw_data_list = self.main_window._loaded_raw_data
                 if not raw_data_list:
-                    logger.warning(f"      No raw data available")
+                    logger.warning("      No raw data available")
                     continue
 
                 # Filter to cycle time range and extract selected channel(s)
@@ -1697,7 +1699,6 @@ class EditsTab:
     def _on_table_context_menu(self, position):
         """Show context menu for cycle table with option to load to reference graphs or delete."""
         from PySide6.QtWidgets import QMenu
-        from affilabs.utils.logger import logger
 
         menu = QMenu()
 

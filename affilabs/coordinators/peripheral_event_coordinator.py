@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from main_simplified import Application
-    import numpy as np
 
 from affilabs.utils.logger import logger
 

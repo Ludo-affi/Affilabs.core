@@ -41,7 +41,7 @@ def show_capabilities(ctrl):
     if not ctrl.has_internal_pumps():
         print("[ERROR] No internal pumps detected!")
         return
-    
+
     caps = ctrl.get_pump_capabilities()
     print("\n" + "="*70)
     print("PUMP CAPABILITIES")
@@ -71,59 +71,59 @@ def show_status(ctrl):
 def process_command(ctrl, cmd):
     """Process user command."""
     cmd = cmd.strip().lower()
-    
+
     if cmd in ['q', 'quit', 'exit']:
         return False
-    
+
     if cmd == 'info':
         show_capabilities(ctrl)
         return True
-    
+
     if cmd == 'status':
         show_status(ctrl)
         return True
-    
+
     if cmd in ['s3', 'stop', 'stopall']:
         print("\n[CMD] Stopping ALL pumps...")
         result = ctrl.pump_stop(ch=3)
         print(f"[RESULT] {'Success' if result else 'Failed'}")
         return True
-    
+
     if cmd == 's1':
         print("\n[CMD] Stopping Pump 1...")
         result = ctrl.pump_stop(ch=1)
         print(f"[RESULT] {'Success' if result else 'Failed'}")
         return True
-    
+
     if cmd == 's2':
         print("\n[CMD] Stopping Pump 2...")
         result = ctrl.pump_stop(ch=2)
         print(f"[RESULT] {'Success' if result else 'Failed'}")
         return True
-    
+
     # Parse start commands: "1 100", "2 150", "3 200"
     parts = cmd.split()
     if len(parts) == 2 and parts[0] in ['1', '2', '3']:
         try:
             channel = int(parts[0])
             rate = float(parts[1])
-            
+
             # Convert to RPM for display
             rpm = ctrl._ul_min_to_rpm(rate)
-            
+
             pump_name = {1: "Pump 1", 2: "Pump 2", 3: "BOTH pumps"}[channel]
             print(f"\n[CMD] Starting {pump_name} at {rate} uL/min ({rpm} RPM)...")
-            
+
             result = ctrl.pump_start(rate_ul_min=rate, ch=channel)
             print(f"[RESULT] {'Success' if result else 'Failed'}")
-            
+
         except ValueError:
             print(f"[ERROR] Invalid flow rate: {parts[1]}")
         except Exception as e:
             print(f"[ERROR] {e}")
-        
+
         return True
-    
+
     print("[ERROR] Unknown command. Type 'help' or see menu above.")
     return True
 
@@ -134,54 +134,54 @@ def main():
     print("  P4PROPLUS INTERNAL PUMP INTERACTIVE CONTROL")
     print("="*70)
     print("\nInitializing controller...")
-    
+
     ctrl = PicoP4PRO()
-    
+
     # Try to connect
     if not ctrl.open():
         print("[ERROR] Could not connect to P4PROPLUS controller!")
         print("Make sure the device is connected and powered on.")
         return
-    
+
     print(f"[OK] Connected to {ctrl.firmware_id} version {ctrl.version}")
-    
+
     # Check for internal pumps
     if not ctrl.has_internal_pumps():
         print(f"[ERROR] This firmware version ({ctrl.version}) does not have internal pumps!")
         print("P4PROPLUS V2.3+ required.")
         ctrl.close()
         return
-    
-    print(f"[OK] Internal pumps detected!")
-    
+
+    print("[OK] Internal pumps detected!")
+
     # Show initial info
     show_capabilities(ctrl)
     print_menu()
-    
+
     # Interactive loop
     try:
         while True:
             try:
                 user_input = input("\n>>> ").strip()
-                
+
                 if not user_input:
                     continue
-                
+
                 if user_input.lower() == 'help':
                     print_menu()
                     continue
-                
+
                 should_continue = process_command(ctrl, user_input)
                 if not should_continue:
                     break
-                    
+
             except KeyboardInterrupt:
                 print("\n\n[INFO] Interrupted by user (Ctrl+C)")
                 break
             except EOFError:
                 print("\n\n[INFO] EOF detected")
                 break
-    
+
     finally:
         # Stop all pumps on exit
         print("\n[CLEANUP] Stopping all pumps before exit...")
@@ -189,7 +189,7 @@ def main():
             ctrl.pump_stop(ch=3)
         except Exception as e:
             print(f"[WARN] Error stopping pumps: {e}")
-        
+
         print("[CLEANUP] Closing controller...")
         ctrl.close()
         print("\n[DONE] Goodbye!")

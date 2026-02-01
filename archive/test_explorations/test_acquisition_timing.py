@@ -127,10 +127,10 @@ def test_timing_validation(cal_data, settings):
     has_per_channel = bool(cal_data['integration_times']['channel_integration_times'])
     if has_per_channel:
         print(f"  {YELLOW}⚠ DISABLED{RESET}: Using per-channel integration times")
-        print(f"  → Integration set individually for each channel")
+        print("  → Integration set individually for each channel")
     else:
         print(f"  {GREEN}✓ ENABLED{RESET}: Single integration time for all channels")
-        print(f"  → Integration set ONCE before cycle (saves ~7ms × 4 = 28ms/cycle)")
+        print("  → Integration set ONCE before cycle (saves ~7ms × 4 = 28ms/cycle)")
 
     # Test 5: Total cycle time per channel
     print(f"\n{BLUE}Test 5: Total Cycle Time per Channel{RESET}")
@@ -155,7 +155,7 @@ def test_timing_validation(cal_data, settings):
     pre_arm_overhead = 7.0 if not has_per_channel else 0
     total_4ch_cycle = (cycle_time_per_channel * 4) + pre_arm_overhead
 
-    print(f"  Per Channel:")
+    print("  Per Channel:")
     print(f"    LED Batch Command: {led_command_time:.1f}ms")
     if has_per_channel:
         print(f"    Set Integration: {set_integration_time:.1f}ms")
@@ -191,7 +191,7 @@ def test_timing_validation(cal_data, settings):
         if total_acquisition_time > detector_window:
             required_led_time = settings['DETECTOR_WAIT_MS'] + total_acquisition_time + settings['SAFETY_BUFFER_MS']
             print(f"  → Increase LED_ON_TIME_MS to at least {required_led_time:.1f}ms")
-            print(f"  → OR accept that num_scans will be reduced to fit window")
+            print("  → OR accept that num_scans will be reduced to fit window")
 
         if detection_start < led_stable_region_start:
             print(f"  → Consider increasing DETECTOR_WAIT_MS to {led_stable_region_start:.1f}ms for better LED stabilization")

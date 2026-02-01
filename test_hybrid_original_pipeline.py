@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 
 # Import the pipeline
 from affilabs.utils.pipelines.hybrid_original_pipeline import HybridOriginalPipeline
-from affilabs.utils.logger import logger
 
 def load_latest_baseline():
     """Load the most recent baseline recording"""
@@ -74,7 +73,7 @@ def load_latest_baseline():
     try:
         meta_df = pd.read_excel(latest_file, sheet_name="Metadata")
         data['metadata'] = meta_df
-        print(f"   Metadata loaded")
+        print("   Metadata loaded")
     except Exception as e:
         print(f"   ⚠️  Metadata not found: {e}")
 
@@ -131,13 +130,13 @@ def test_pipeline_on_channel(transmission_df, channel_name):
     detected_wavelengths = np.array(detected_wavelengths)
     valid_wavelengths = detected_wavelengths[~np.isnan(detected_wavelengths)]
 
-    print(f"\n📊 RESULTS:")
+    print("\n📊 RESULTS:")
     print(f"   Total spectra: {len(detected_wavelengths)}")
     print(f"   Successfully detected: {len(valid_wavelengths)}")
     print(f"   Failed: {len(detected_wavelengths) - len(valid_wavelengths)}")
 
     if len(valid_wavelengths) > 0:
-        print(f"\n📈 STATISTICS:")
+        print("\n📈 STATISTICS:")
         print(f"   Mean wavelength: {np.mean(valid_wavelengths):.4f} nm")
         print(f"   Std deviation: {np.std(valid_wavelengths):.4f} nm")
         print(f"   Min: {np.min(valid_wavelengths):.4f} nm")
@@ -147,7 +146,7 @@ def test_pipeline_on_channel(transmission_df, channel_name):
         # Calculate RU noise (assuming ~1000 RU per nm for typical SPR)
         ru_per_nm = 1000  # Approximate conversion
         std_ru = np.std(valid_wavelengths) * ru_per_nm
-        print(f"\n🎯 BASELINE NOISE (estimated):")
+        print("\n🎯 BASELINE NOISE (estimated):")
         print(f"   {std_ru:.2f} RU  (assuming {ru_per_nm} RU/nm sensitivity)")
 
     return detected_wavelengths

@@ -410,7 +410,7 @@ class DeviceStatusTabBuilder:
     def _handle_send_diagnostics(self):
         """Handle Send Diagnostic Files button click."""
         from PySide6.QtWidgets import QMessageBox, QInputDialog
-        
+
         # Confirm upload
         reply = QMessageBox.question(
             self.sidebar,
@@ -428,36 +428,36 @@ class DeviceStatusTabBuilder:
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes
         )
-        
+
         if reply != QMessageBox.StandardButton.Yes:
             return
-        
+
         # Optional: ask for email
         email, ok = QInputDialog.getText(
             self.sidebar,
             "Your Email (Optional)",
             "Email address (for ticket updates and follow-up):",
         )
-        
+
         # Show progress
         progress = QMessageBox(self.sidebar)
         progress.setWindowTitle("Uploading Diagnostics")
         progress.setText("Syncing database to cloud...\nCollecting diagnostic files...\nThis may take a moment...")
         progress.setStandardButtons(QMessageBox.StandardButton.NoButton)
         progress.show()
-        
+
         # Process events to show dialog
         from PySide6.QtWidgets import QApplication
         QApplication.processEvents()
-        
+
         # Upload and open form
         uploader = DiagnosticUploader()
         success, message = uploader.send_diagnostics_and_open_form(
             user_email=email if email else None
         )
-        
+
         progress.close()
-        
+
         # Show result
         if success:
             QMessageBox.information(

@@ -76,7 +76,7 @@ def verify_layout_constants():
         print("  • Added 6 new layout constants to Dimensions class")
         print("  • MARGIN_SM=12, MARGIN_MD=16, MARGIN_LG=20")
         print("  • SPACING_SM=8, SPACING_MD=12, SPACING_LG=16")
-        print(f"  • Replaced 16 hardcoded margin values")
+        print("  • Replaced 16 hardcoded margin values")
         print(f"  • Replaced {spacing_usage} hardcoded spacing values")
         print("  • Centralized layout configuration")
         return 0

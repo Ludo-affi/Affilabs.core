@@ -40,18 +40,18 @@ print()
 
 for i, pwm in enumerate(test_positions, 1):
     print(f"\nMove {i}/{len(test_positions)}: Moving to PWM {pwm}...")
-    
+
     # Use the raw controller method
     success = hm.ctrl.servo_move_raw_pwm(pwm)
-    
+
     if success:
-        print(f"  ✅ Command sent successfully")
+        print("  ✅ Command sent successfully")
     else:
-        print(f"  ❌ Command FAILED")
-    
+        print("  ❌ Command FAILED")
+
     # Wait for movement to complete
     time.sleep(0.7)
-    
+
     # Ask user for confirmation
     response = input(f"  Did servo move to position {pwm}? (y/n/q to quit): ").strip().lower()
     if response == 'q':

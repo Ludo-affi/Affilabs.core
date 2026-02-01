@@ -25,13 +25,12 @@ except ImportError as e:
     import seabreeze
     seabreeze.use('pyseabreeze')
     import seabreeze.spectrometers as sb
-    import serial
-    
+
     # Minimal USB4000 wrapper
     class USB4000:
         def __init__(self):
             self.spec = None
-        
+
         def connect(self):
             try:
                 devices = sb.list_devices()
@@ -43,26 +42,26 @@ except ImportError as e:
             except Exception as e:
                 print(f"Failed to connect spectrometer: {e}")
                 return False
-        
+
         def set_integration(self, ms):
             if self.spec:
                 self.spec.integration_time_micros(int(ms * 1000))
-        
+
         def read_intensity(self):
             if self.spec:
                 return self.spec.intensities()
             return None
-        
+
         def disconnect(self):
             if self.spec:
                 self.spec.close()
-    
+
     # Minimal controller wrapper
     class ControllerInterface:
         def __init__(self, port=None):
             self.ser = None
             self.port = port
-        
+
         def connect(self):
             try:
                 import serial.tools.list_ports
@@ -82,7 +81,7 @@ except ImportError as e:
             except Exception as e:
                 print(f"Failed to connect controller: {e}")
                 return False
-        
+
         def set_mode(self, mode):
             if self.ser:
                 cmd = 's\n' if mode.lower() == 's' else 'p\n'
@@ -90,29 +89,29 @@ except ImportError as e:
                 time.sleep(0.1)
                 return True
             return False
-        
+
         def set_intensity(self, ch, val):
             if self.ser:
                 cmd = f"{ch}{val}\n"
                 self.ser.write(cmd.encode())
                 time.sleep(0.05)
-        
+
         def get_intensity(self, ch):
             return 0  # Not implemented in minimal version
-        
+
         def turn_off_channels(self):
             if self.ser:
                 self.ser.write(b"lx\n")
                 time.sleep(0.1)
-        
+
         def set_all_led_intensities(self, intensities):
             for ch, val in intensities.items():
                 self.set_intensity(ch, val)
             return True
-        
+
         def get_all_led_intensities(self):
             return {'a': 0, 'b': 0, 'c': 0, 'd': 0}
-        
+
         def disconnect(self):
             if self.ser:
                 self.ser.close()
@@ -123,7 +122,7 @@ def test_servo_commands(ctrl):
     print("\n" + "=" * 80)
     print("TESTING SERVO COMMANDS")
     print("=" * 80)
-    
+
     try:
         # Test S-mode
         print("\n1. Setting servo to S-mode...")
@@ -134,7 +133,7 @@ def test_servo_commands(ctrl):
         else:
             print("   ✗ S-mode command failed")
         time.sleep(2)
-        
+
         # Test P-mode
         print("\n2. Setting servo to P-mode...")
         result = ctrl.set_mode("p")
@@ -144,16 +143,16 @@ def test_servo_commands(ctrl):
         else:
             print("   ✗ P-mode command failed")
         time.sleep(2)
-        
+
         # Return to S-mode
         print("\n3. Returning to S-mode...")
         result = ctrl.set_mode("s")
         print(f"   Result: {result}")
         time.sleep(1)
-        
+
         print("\n✓ Servo tests complete")
         return True
-        
+
     except Exception as e:
         print(f"\n✗ Servo test failed: {e}")
         return False
@@ -164,14 +163,14 @@ def test_led_commands(ctrl):
     print("\n" + "=" * 80)
     print("TESTING LED COMMANDS")
     print("=" * 80)
-    
+
     try:
         # Turn off all LEDs first
         print("\n1. Turning off all LEDs...")
         ctrl.turn_off_channels()
         print("   ✓ All LEDs OFF")
         time.sleep(0.5)
-        
+
         # Test individual LED control
         channels = ['a', 'b', 'c', 'd']
         for ch in channels:
@@ -180,12 +179,12 @@ def test_led_commands(ctrl):
             ctrl.set_intensity(ch, 255)
             time.sleep(0.3)
             print(f"   ✓ LED {ch.upper()} turned ON")
-            
+
             print(f"   - Turning OFF LED {ch.upper()}...")
             ctrl.set_intensity(ch, 0)
             time.sleep(0.2)
             print(f"   ✓ LED {ch.upper()} turned OFF")
-        
+
         # Test batch LED command (if supported)
         print("\n3. Testing batch LED command...")
         try:
@@ -203,7 +202,7 @@ def test_led_commands(ctrl):
                 ctrl.set_intensity(ch, 128)
             time.sleep(0.5)
             print("   ✓ Individual commands successful")
-        
+
         # Read back all intensities (if supported)
         print("\n4. Testing batch LED readback...")
         try:
@@ -216,15 +215,15 @@ def test_led_commands(ctrl):
                 print("   ⚠ Read returned empty (may not be supported)")
         except AttributeError:
             print("   ⚠ Readback not supported by controller (this is OK)")
-        
+
         # Turn off all LEDs
         print("\n5. Final cleanup - turning off all LEDs...")
         ctrl.turn_off_channels()
         print("   ✓ All LEDs OFF")
-        
+
         print("\n✓ LED tests complete")
         return True
-        
+
     except Exception as e:
         print(f"\n✗ LED test failed: {e}")
         return False
@@ -235,14 +234,14 @@ def test_spectrometer(usb):
     print("\n" + "=" * 80)
     print("TESTING SPECTROMETER")
     print("=" * 80)
-    
+
     try:
         # Test integration time
         print("\n1. Setting integration time to 50ms...")
         usb.set_integration(50.0)
         time.sleep(0.1)
         print("   ✓ Integration time set")
-        
+
         # Test spectrum acquisition
         print("\n2. Acquiring spectrum...")
         spectrum = usb.read_intensity()
@@ -252,10 +251,10 @@ def test_spectrometer(usb):
             print(f"   - Max intensity: {spectrum.max():.1f}")
         else:
             print("   ✗ Failed to acquire spectrum")
-        
+
         print("\n✓ Spectrometer tests complete")
         return True
-        
+
     except Exception as e:
         print(f"\n✗ Spectrometer test failed: {e}")
         return False
@@ -268,10 +267,10 @@ def main():
     print("=" * 80)
     print("Testing servo movements and LED control commands")
     print("=" * 80)
-    
+
     ctrl = None
     usb = None
-    
+
     try:
         # Connect to controller
         print("\n1. Connecting to controller...")
@@ -279,12 +278,12 @@ def main():
         if not raw_ctrl.open():
             print("✗ Failed to connect to controller")
             return False
-        
+
         # Wrap with HAL (like the real application does)
         device_config = DeviceConfiguration()
         ctrl = create_controller_hal(raw_ctrl, device_config)
         print("✓ Controller connected (via HAL)")
-        
+
         # Connect to spectrometer
         print("\n2. Connecting to spectrometer...")
         usb = USB4000()
@@ -292,12 +291,12 @@ def main():
             print("✗ Failed to connect to spectrometer")
             return False
         print("✓ Spectrometer connected")
-        
+
         # Run tests
         servo_ok = test_servo_commands(ctrl)
         led_ok = test_led_commands(ctrl)
         spec_ok = test_spectrometer(usb)
-        
+
         # Summary
         print("\n" + "=" * 80)
         print("TEST SUMMARY")
@@ -306,20 +305,20 @@ def main():
         print(f"LED commands:   {'✓ PASS' if led_ok else '✗ FAIL'}")
         print(f"Spectrometer:   {'✓ PASS' if spec_ok else '✗ FAIL'}")
         print("=" * 80)
-        
+
         if servo_ok and led_ok and spec_ok:
             print("\n✓ ALL TESTS PASSED")
             return True
         else:
             print("\n✗ SOME TESTS FAILED")
             return False
-        
+
     except Exception as e:
         print(f"\n✗ Test failed with exception: {e}")
         import traceback
         traceback.print_exc()
         return False
-        
+
     finally:
         # Cleanup
         print("\n3. Cleaning up...")
@@ -332,7 +331,7 @@ def main():
                 print("   ✓ Controller disconnected")
             except:
                 pass
-        
+
         if usb:
             try:
                 usb.close()

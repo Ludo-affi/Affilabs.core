@@ -107,12 +107,12 @@ def train_model(features_df: pd.DataFrame) -> GradientBoostingRegressor:
     y_train_pred = model.predict(X_train)
     y_test_pred = model.predict(X_test)
 
-    print(f"\n=== Training Results ===")
+    print("\n=== Training Results ===")
     print(f"Training MAE: {mean_absolute_error(y_train, y_train_pred):.2f} LED units")
     print(f"Training RMSE: {np.sqrt(mean_squared_error(y_train, y_train_pred)):.2f} LED units")
     print(f"Training R²: {r2_score(y_train, y_train_pred):.3f}")
 
-    print(f"\n=== Test Results ===")
+    print("\n=== Test Results ===")
     print(f"Test MAE: {mean_absolute_error(y_test, y_test_pred):.2f} LED units")
     print(f"Test RMSE: {np.sqrt(mean_squared_error(y_test, y_test_pred)):.2f} LED units")
     print(f"Test R²: {r2_score(y_test, y_test_pred):.3f}")
@@ -126,20 +126,20 @@ def train_model(features_df: pd.DataFrame) -> GradientBoostingRegressor:
         print(f"\nCross-validation: Skipped (insufficient samples: {len(X)})")
 
     # Feature importance
-    print(f"\n=== Feature Importance ===")
+    print("\n=== Feature Importance ===")
     for feat, imp in sorted(zip(feature_cols, model.feature_importances_),
                            key=lambda x: x[1], reverse=True):
         print(f"  {feat:30s}: {imp:.4f}")
 
     # Error analysis
-    print(f"\n=== Error Analysis (Test Set) ===")
+    print("\n=== Error Analysis (Test Set) ===")
     errors = y_test_pred - y_test
     print(f"Mean error: {errors.mean():.2f} LED units")
     print(f"Median error: {np.median(errors):.2f} LED units")
     print(f"95th percentile |error|: {np.percentile(np.abs(errors), 95):.2f} LED units")
 
     # Check predictions stay in valid range
-    print(f"\n=== Prediction Range ===")
+    print("\n=== Prediction Range ===")
     print(f"Min predicted LED: {y_test_pred.min():.1f}")
     print(f"Max predicted LED: {y_test_pred.max():.1f}")
     out_of_range = np.sum((y_test_pred < 10) | (y_test_pred > 255))

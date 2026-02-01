@@ -4,7 +4,6 @@ USB Adapter Diagnostic Tool
 Helps diagnose why hardware isn't detected through USB-C adapters.
 """
 
-import sys
 
 print("="*70)
 print("  USB ADAPTER DIAGNOSTIC TOOL")
@@ -17,7 +16,7 @@ try:
     import serial.tools.list_ports
     ports = list(serial.tools.list_ports.comports())
     print(f"Total COM ports found: {len(ports)}")
-    
+
     if ports:
         for p in ports:
             print(f"\n  Port: {p.device}")
@@ -42,12 +41,12 @@ try:
     import usb.core
     devices = list(usb.core.find(find_all=True))
     print(f"Total USB devices found: {len(devices)}")
-    
+
     if devices:
         # Look for Pico (0x2e8a) and Ocean Optics (0x2457)
         pico_devices = [d for d in devices if d.idVendor == 0x2e8a]
         ocean_devices = [d for d in devices if d.idVendor == 0x2457]
-        
+
         if pico_devices:
             print(f"\n  ✓ Found {len(pico_devices)} Raspberry Pi Pico device(s):")
             for d in pico_devices:
@@ -57,7 +56,7 @@ try:
                     print(f"    Product: {usb.util.get_string(d, d.iProduct)}")
                 except:
                     pass
-        
+
         if ocean_devices:
             print(f"\n  ✓ Found {len(ocean_devices)} Ocean Optics device(s):")
             for d in ocean_devices:
@@ -69,7 +68,7 @@ try:
                         print(f"    Serial: {d.serial_number}")
                 except:
                     pass
-        
+
         if not pico_devices and not ocean_devices:
             print("\n  ⚠️  No Pico or Ocean Optics devices found")
             print(f"  Found {len(devices)} other USB devices")
@@ -93,7 +92,7 @@ try:
     import ftd2xx
     num_devices = ftd2xx.createDeviceInfoList()
     print(f"Total FTDI devices found: {num_devices}")
-    
+
     if num_devices > 0:
         for i in range(num_devices):
             info = ftd2xx.getDeviceInfoDetail(i)
@@ -124,17 +123,17 @@ else:
     print("   - Look for devices with yellow exclamation marks")
     print("   - Check 'Ports (COM & LPT)' section")
     print("   - Check 'Universal Serial Bus devices' section")
-    
+
     print("\n2. Install USB drivers:")
     print("   - Pico: Windows should auto-detect")
     print("   - Ocean Optics: Install OmniDriver or OceanView")
     print("   - Try different USB-C adapter (some don't pass through properly)")
-    
+
     print("\n3. Test with different USB ports:")
     print("   - Try USB-A ports directly (bypass adapter)")
     print("   - Try different USB-C ports on your computer")
     print("   - Some USB-C adapters only support charging, not data")
-    
+
     print("\n4. Verify USB-C adapter specifications:")
     print("   - Must support DATA transfer (not just power)")
     print("   - Should be USB 3.0 or higher")

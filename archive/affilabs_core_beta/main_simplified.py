@@ -2431,7 +2431,6 @@ class Application(QApplication):
             return
 
         try:
-            import numpy as np
 
             # Get cursor positions from full timeline graph
             start_time = self.main_window.full_timeline_graph.start_cursor.value()

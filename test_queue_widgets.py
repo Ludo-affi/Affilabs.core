@@ -157,7 +157,7 @@ def test_widget_integration():
     print("\n" + "="*70)
     print("✅ ALL INTEGRATION TESTS PASSED")
     print("="*70)
-    print(f"\nSignal tracking:")
+    print("\nSignal tracking:")
     print(f"  - Table refreshed: {signals_received['table_refreshed']} times")
     print(f"  - Undo state changes: {len(signals_received['toolbar_undo_enabled'])}")
     print(f"  - Selection changes: {len(signals_received['selection_changed'])}")

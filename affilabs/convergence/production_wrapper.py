@@ -95,7 +95,7 @@ def LEDconverge_engine(
     # Log engine usage
     if logger:
         logger.info(f"\n{'='*80}")
-        logger.info(f"🔬 USING CONVERGENCE ENGINE (EXPERIMENTAL)")
+        logger.info("🔬 USING CONVERGENCE ENGINE (EXPERIMENTAL)")
         logger.info(f"{step_name}: LED Convergence - {polarization} polarization")
         logger.info(f"{'='*80}\n")
 
@@ -192,12 +192,12 @@ def LEDconverge_engine(
 
         if logger:
             if converged:
-                logger.info(f"\n✅ ENGINE CONVERGED!")
+                logger.info("\n✅ ENGINE CONVERGED!")
                 logger.info(f"   Final integration time: {integration_ms:.1f}ms")
                 logger.info(f"   Converged at iteration: {best_iteration}")
                 logger.info(f"   Final signals: {signals}")
             else:
-                logger.warning(f"\n⚠️  ENGINE DID NOT CONVERGE")
+                logger.warning("\n⚠️  ENGINE DID NOT CONVERGE")
                 logger.warning(f"   Final integration time: {integration_ms:.1f}ms")
                 logger.warning(f"   Best iteration: {best_iteration}")
 

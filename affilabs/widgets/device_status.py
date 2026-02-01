@@ -424,7 +424,7 @@ class DeviceStatusWidget(QWidget):
         # Determine if devices are connected
         spr_connected = bool(ctrl_type and ctrl_type != "")
         knx_connected = bool(knx_type and knx_type != "")
-        
+
         # Check if controller has internal pumps (P4PROPLUS)
         has_internal_pumps = ctrl_type == "P4PROPLUS"
 

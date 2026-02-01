@@ -352,36 +352,36 @@ class SettingsHelpers:
                 # Calibration has already verified the hardware is working
                 # Check if pump is connected (external AffiPump/KNX OR internal P4PROPLUS pumps)
                 external_pump_connected = (
-                    hasattr(app.hardware_mgr, 'pump') and 
+                    hasattr(app.hardware_mgr, 'pump') and
                     app.hardware_mgr.pump is not None
                 )
-                
+
                 # Check for P4PROPLUS internal pumps - try multiple access paths
                 internal_pump_available = False
-                
+
                 # Method 1: Try _ctrl_raw (raw controller, most reliable)
                 if hasattr(app.hardware_mgr, '_ctrl_raw') and app.hardware_mgr._ctrl_raw:
                     raw_ctrl = app.hardware_mgr._ctrl_raw
                     if hasattr(raw_ctrl, 'has_internal_pumps'):
                         internal_pump_available = raw_ctrl.has_internal_pumps()
                         logger.info(f"🔧 P4PROPLUS internal pumps check (_ctrl_raw): {internal_pump_available}")
-                
+
                 # Method 2: Fallback to ctrl (HAL adapter)
                 if not internal_pump_available and hasattr(app.hardware_mgr, 'ctrl') and app.hardware_mgr.ctrl:
                     if hasattr(app.hardware_mgr.ctrl, 'has_internal_pumps'):
                         internal_pump_available = app.hardware_mgr.ctrl.has_internal_pumps()
                         logger.info(f"🔧 P4PROPLUS internal pumps check (ctrl): {internal_pump_available}")
-                
+
                 # Flow mode available if EITHER external pump OR internal pumps present
                 pump_is_connected = external_pump_connected or internal_pump_available
-                
+
                 logger.info(f"🔧 Pump detection: external={external_pump_connected}, internal={internal_pump_available}, total={pump_is_connected}")
-                
+
                 # Mark flow as calibrated after successful calibration with pump
                 if pump_is_connected:
                     app.hardware_mgr._flow_calibrated = True
-                    logger.info(f"✅ Flow mode calibrated - _flow_calibrated flag set to True")
-                
+                    logger.info("✅ Flow mode calibrated - _flow_calibrated flag set to True")
+
                 # Save calibrated LED brightness and integration time to device_config for persistence
                 try:
                     if hasattr(calibration_data, 'p_mode_intensities') and calibration_data.p_mode_intensities:
@@ -393,7 +393,7 @@ class SettingsHelpers:
                             led_d=int(calibration_data.p_mode_intensities.get('d', 0)),
                         )
                         logger.info(f"   ✓ Saved LED brightness: A={calibration_data.p_mode_intensities['a']}, B={calibration_data.p_mode_intensities['b']}, C={calibration_data.p_mode_intensities['c']}, D={calibration_data.p_mode_intensities['d']}")
-                    
+
                     # Save integration time (prefer S-mode, then P-mode)
                     integration_time = None
                     if hasattr(calibration_data, 's_integration_time') and calibration_data.s_integration_time:
@@ -402,15 +402,15 @@ class SettingsHelpers:
                     elif hasattr(calibration_data, 'p_integration_time') and calibration_data.p_integration_time:
                         integration_time = calibration_data.p_integration_time
                         logger.info(f"💾 Saving P-mode integration time to device_config: {integration_time} ms")
-                    
+
                     if integration_time:
                         app.main_window.device_config.set_integration_time(integration_time)
-                    
+
                     # Save to disk once for all changes
                     app.main_window.device_config.save()
                     if integration_time:
                         logger.info(f"   ✓ Saved integration time: {integration_time} ms")
-                    
+
                     # Refresh Settings sidebar to show new calibrated values
                     if hasattr(app, 'main_window') and hasattr(app.main_window, 'sidebar'):
                         try:
@@ -429,7 +429,7 @@ class SettingsHelpers:
                             logger.warning(f"Could not refresh Settings sidebar: {refresh_error}")
                 except Exception as e:
                     logger.warning(f"Failed to save calibration data to device_config: {e}")
-                
+
                 status_update = {
                     "sensor_ready": True,
                     "optics_ready": True,
@@ -441,20 +441,20 @@ class SettingsHelpers:
                     "pump_connected": pump_is_connected,  # Enable/disable Flow operation mode
                     "flow_calibrated": pump_is_connected,  # Flow mode ready after calibration
                 }
-                
+
                 pump_type = "P4PROPLUS internal" if internal_pump_available else ("external" if external_pump_connected else "none")
-                logger.info(f"📋 Calibration complete - updating device status:")
-                logger.info(f"   Sensor: Ready")
-                logger.info(f"   Optics: Ready")
+                logger.info("📋 Calibration complete - updating device status:")
+                logger.info("   Sensor: Ready")
+                logger.info("   Optics: Ready")
                 logger.info(f"   Fluidics: {'Ready' if pump_is_connected else 'Not Ready'} (pump: {pump_type})")
                 logger.info(f"   STATUS UPDATE DICT: {status_update}")
-                
+
                 app._update_device_status_ui(status_update)
-                
+
                 # Now enable operation mode indicators based on calibration completion
                 static_available = True  # Static mode ready after calibration
                 flow_available = pump_is_connected  # Flow mode ready if pump is present (external OR internal)
-                
+
                 if hasattr(app, 'sidebar') and hasattr(app.sidebar, 'set_operation_mode_availability'):
                     app.sidebar.set_operation_mode_availability(static_available, flow_available)
                     logger.info(f"✅ Operation mode indicators updated: Static={'Available' if static_available else 'Disabled'}, Flow={'Available' if flow_available else 'Disabled'}")

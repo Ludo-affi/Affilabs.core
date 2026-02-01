@@ -1,7 +1,6 @@
 """Diagnose servo communication - show raw firmware responses."""
 
 from affilabs.core.hardware_manager import HardwareManager
-from affilabs.utils.logger import logger
 import time
 
 print("=" * 80)
@@ -32,41 +31,41 @@ test_positions = [1, 50, 100, 150, 200]
 
 for pwm in test_positions:
     print(f"\nSending servo command for PWM {pwm}...")
-    
+
     # Calculate degrees (same as servo_move_raw_pwm does)
     degrees = int(5 + (pwm * 170 / 255))
     degrees = max(5, min(175, degrees))
     duration_ms = 500
-    
+
     cmd = f"servo:{degrees},{duration_ms}\n"
     print(f"  Command: {cmd.strip()}")
-    
+
     try:
         with raw_ctrl._serial_lock:
             raw_ctrl._ser.reset_input_buffer()
             raw_ctrl._ser.write(cmd.encode())
-            print(f"  Command sent, waiting 0.6s for response...")
+            print("  Command sent, waiting 0.6s for response...")
             time.sleep(0.6)
-            
+
             response = raw_ctrl._ser.read(10)
             print(f"  Response bytes: {response!r}")
             print(f"  Response length: {len(response)}")
-            
+
             has_x01 = b'\x01' in response
             has_1 = b'1' in response
-            
+
             if len(response) > 0:
                 print(f"  Contains \\x01: {has_x01}")
                 print(f"  Contains '1': {has_1}")
                 if has_x01 or has_1:
-                    print(f"  ✅ Valid response")
+                    print("  ✅ Valid response")
                 else:
-                    print(f"  ❌ Invalid response - servo should not move")
+                    print("  ❌ Invalid response - servo should not move")
             else:
-                print(f"  ❌ NO RESPONSE from firmware!")
+                print("  ❌ NO RESPONSE from firmware!")
     except Exception as e:
         print(f"  ❌ ERROR: {e}")
-    
+
     time.sleep(0.5)
 
 print("\n" + "=" * 80)

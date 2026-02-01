@@ -198,25 +198,6 @@ class P4SPRWidget(ControlWidgetBase):
 
     def update_temp(self, temp):
         try:
-            # Show only when a non-empty reading is provided
-            if temp is None:
-                self.ui.temp_display.hide()
-                return
-            if isinstance(temp, (float, int)):
-                temp_str = f"{float(temp):.1f}"
-            else:
-                temp_str = str(temp).strip()
-            if temp_str == "" or temp_str.lower() in {"nan", "none", "-"}:
-                self.ui.temp_display.hide()
-                return
-            if not self.ui.temp_display.isVisible():
-                self.ui.temp_display.show()
-            self.ui.temp1.setText(temp_str)
-        except Exception:
-            self.ui.temp_display.hide()
-
-    def update_temp(self, temp):
-        try:
             if temp is None:
                 self.ui.temp_display.hide()
                 return

@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 
 # Find files with large blocks of commented code
@@ -40,7 +39,7 @@ for file_path in python_files:
         blocks = find_commented_blocks(file_path)
         if blocks:
             found_blocks.append((file_path, blocks))
-    except Exception as e:
+    except Exception:
         pass
 
 if found_blocks:

@@ -31,7 +31,7 @@ USAGE:
 """
 
 from PySide6.QtWidgets import QToolBar, QWidget, QPushButton, QLabel, QSizePolicy
-from PySide6.QtCore import Signal, Slot, Qt
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 
 from affilabs.utils.logger import logger

@@ -27,19 +27,19 @@ def send_and_read_all(command_str, description):
     """Send command and read ALL available data"""
     print(f"\n{description}")
     print(f"  Sending: {command_str}")
-    
+
     # Send command
     ser.write(command_str.encode() + b'\r')
     time.sleep(0.5)  # Wait for response
-    
+
     # Read everything available
     data = ser.read(ser.in_waiting)
-    
+
     print(f"  Raw bytes: {data}")
     print(f"  As hex: {data.hex()}")
     print(f"  As ASCII: {data.decode('latin-1', errors='replace')}")
     print(f"  Length: {len(data)} bytes")
-    
+
     return data
 
 # Test initialization

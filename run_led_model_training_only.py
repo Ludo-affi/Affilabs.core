@@ -57,7 +57,7 @@ print()
 # Run LED model training workflow
 try:
     success = run_oem_model_training_workflow(hardware_mgr=hm)
-    
+
     if success:
         print()
         print("=" * 80)
@@ -69,7 +69,7 @@ try:
         print("❌ LED MODEL TRAINING FAILED")
         print("=" * 80)
         sys.exit(1)
-        
+
 except Exception as e:
     print()
     print("=" * 80)

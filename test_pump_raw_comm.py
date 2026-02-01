@@ -1,5 +1,4 @@
 """Test raw pump communication"""
-import sys
 import time
 import serial
 import serial.tools.list_ports

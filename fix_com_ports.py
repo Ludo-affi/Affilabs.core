@@ -3,7 +3,6 @@
 This script will attempt to trigger Windows to reinstall drivers for the COM ports.
 """
 import subprocess
-import sys
 
 print("=" * 70)
 print("WINDOWS USB SERIAL DRIVER FIX")

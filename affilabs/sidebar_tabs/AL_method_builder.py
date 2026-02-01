@@ -11,23 +11,17 @@ The Method sidebar is the main interface for building and managing SPR assays.
 Extracted from sidebar.py to improve modularity.
 """
 
-from PySide6.QtCore import Qt, QRegularExpression, QPoint
+from PySide6.QtCore import Qt, QRegularExpression
 from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QCursor
 from PySide6.QtWidgets import (
-    QComboBox,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QPushButton,
     QTableWidget,
-    QTableWidgetItem,
-    QTextEdit,
     QVBoxLayout,
-    QSizeGrip,
 )
 
-from affilabs.cycle_table_dialog import CycleTableDialog
 from affilabs.sections import CollapsibleSection
 from affilabs.ui_styles import card_style, section_header_style
 from affilabs.widgets.queue_summary_widget import QueueSummaryWidget

@@ -21,23 +21,23 @@ def send_servo_command(ser, angle_degrees, duration_ms=2000):
     """
     # Clamp angle to firmware range (5-175 degrees)
     angle = max(5, min(175, angle_degrees))
-    
+
     # Build command
     cmd = f"servo:{angle},{duration_ms}\n"
-    
+
     print(f"   Sending: {cmd.strip()}")
-    
+
     # Clear input buffer
     ser.reset_input_buffer()
-    
+
     # Send command
     ser.write(cmd.encode())
     time.sleep(0.05)
-    
+
     # Read response
     response = ser.read(10)
     print(f"   Response: {response!r}")
-    
+
     # V2.4 responds with '1', older firmware with '6'
     if response in (b"1", b"6"):
         print(f"   ✅ Command accepted - waiting {duration_ms}ms for movement...")
@@ -45,7 +45,7 @@ def send_servo_command(ser, angle_degrees, duration_ms=2000):
         time.sleep(duration_ms / 1000.0 + 0.5)
         return True
     else:
-        print(f"   ❌ Unexpected response")
+        print("   ❌ Unexpected response")
         return False
 
 def pwm_to_degrees(pwm):
@@ -58,57 +58,57 @@ def pwm_to_degrees(pwm):
 
 def test_raw_servo():
     """Test servo using raw serial commands."""
-    
+
     print("=" * 70)
     print("RAW SERVO COMMAND TEST (V2.4 firmware)")
     print("=" * 70)
-    
+
     # Find COM port
     port = find_p4spr_port()
     if not port:
         print("❌ PicoP4SPR not found")
         return
-    
+
     print(f"\n✅ Found PicoP4SPR on {port}")
-    
+
     # Open serial connection
     ser = serial.Serial(port, baudrate=115200, timeout=1)
     time.sleep(0.5)  # Let connection stabilize
-    
-    print(f"✅ Serial connection opened")
-    
+
+    print("✅ Serial connection opened")
+
     # Get calibrated positions (use same as test)
     s_pwm = 210  # S position
     p_pwm = 86   # P position
-    
+
     s_deg = pwm_to_degrees(s_pwm)
     p_deg = pwm_to_degrees(p_pwm)
-    
-    print(f"\nCalibrated positions:")
+
+    print("\nCalibrated positions:")
     print(f"   S: PWM {s_pwm} = {s_deg}°")
     print(f"   P: PWM {p_pwm} = {p_deg}°")
-    
+
     # Enable servo power (CRITICAL for V2.4!)
-    print(f"\n[1] Enabling servo power...")
+    print("\n[1] Enabling servo power...")
     ser.write(b"sp1\n")
     time.sleep(0.05)
     resp = ser.read(10)
     print(f"   Response: {resp!r}")
     time.sleep(0.2)
-    
+
     # Test movements
     print(f"\n[2] Moving to S position ({s_deg}°)...")
     send_servo_command(ser, s_deg, 2000)  # 2 second movement
-    
+
     print(f"\n[3] Moving to P position ({p_deg}°)...")
     send_servo_command(ser, p_deg, 2000)  # 2 second movement
-    
+
     print(f"\n[4] Returning to S position ({s_deg}°)...")
     send_servo_command(ser, s_deg, 2000)  # 2 second movement
-    
+
     # Close connection
     ser.close()
-    
+
     print("\n" + "=" * 70)
     print("TEST COMPLETE")
     print("=" * 70)

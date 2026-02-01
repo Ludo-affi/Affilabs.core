@@ -15,7 +15,7 @@ class PumpCalibrationDialog(QDialog):
     Provides UI to adjust pump correction factors that compensate for
     mechanical variations between the two peristaltic pumps.
     """
-    
+
     def __init__(self, controller=None, parent=None):
         """Initialize the pump calibration dialog.
         
@@ -25,29 +25,29 @@ class PumpCalibrationDialog(QDialog):
         """
         super().__init__(parent)
         self.controller = controller
-        
+
         # Setup UI
         self.ui = Ui_PumpCalibrationDialog()
         self.ui.setupUi(self)
-        
+
         # Connect signals
         self._connect_signals()
-        
+
         # Load current values
         self._load_current_corrections()
-        
+
     def _connect_signals(self):
         """Connect button signals to handlers."""
         self.ui.pump1_reset_btn.clicked.connect(self._reset_pump1)
         self.ui.pump2_reset_btn.clicked.connect(self._reset_pump2)
         self.ui.buttonBox.button(self.ui.buttonBox.StandardButton.Apply).clicked.connect(self._apply_corrections)
-        
+
     def _load_current_corrections(self):
         """Load current pump corrections from controller."""
         if not self.controller:
             logger.warning("No controller available for pump calibration")
             return
-            
+
         try:
             corrections = self.controller.get_pump_corrections()
             if corrections and len(corrections) >= 2:
@@ -65,17 +65,17 @@ class PumpCalibrationDialog(QDialog):
                 "Load Error",
                 f"Could not load pump corrections:\n{e}\n\nUsing default values."
             )
-            
+
     def _reset_pump1(self):
         """Reset KC1 correction to 1.0."""
         self.ui.pump1_spinbox.setValue(1.000)
         logger.debug("KC1 correction reset to 1.000")
-        
+
     def _reset_pump2(self):
         """Reset KC2 correction to 1.0."""
         self.ui.pump2_spinbox.setValue(1.000)
         logger.debug("KC2 correction reset to 1.000")
-        
+
     def _apply_corrections(self):
         """Apply current corrections to controller."""
         if not self.controller:
@@ -85,10 +85,10 @@ class PumpCalibrationDialog(QDialog):
                 "Controller not connected. Connect to P4PRO/EZSPR to apply corrections."
             )
             return
-            
+
         kc1_correction = self.ui.pump1_spinbox.value()
         kc2_correction = self.ui.pump2_spinbox.value()
-        
+
         try:
             success = self.controller.set_pump_corrections(kc1_correction, kc2_correction)
             if success:
@@ -115,12 +115,12 @@ class PumpCalibrationDialog(QDialog):
                 "Error",
                 f"Error applying pump corrections:\n{e}"
             )
-            
+
     def accept(self):
         """Handle OK button - apply and close."""
         self._apply_corrections()
         super().accept()
-        
+
     def get_corrections(self):
         """Get current correction values from dialog.
         

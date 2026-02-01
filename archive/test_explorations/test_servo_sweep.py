@@ -13,13 +13,13 @@ test_pwm_values = [1, 30, 60, 90, 120, 150, 180, 210, 240]
 for pwm in test_pwm_values:
     degrees = int(5 + (pwm / 255.0) * 170)
     print(f"PWM {pwm:3d} -> {degrees:3d}° ... ", end='', flush=True)
-    
+
     result = ctrl.servo_move_raw_pwm(pwm)
     if result:
         print("✓ ACK")
     else:
         print("✗ NAK")
-    
+
     time.sleep(1.5)  # Wait for servo to settle
 
 ctrl.close()

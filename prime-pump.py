@@ -79,7 +79,7 @@ async def run_prime_pump(
 
     # Initialize hardware
     hm = HardwareManager()
-    
+
     try:
         logger.info("\n=== Connecting to Hardware ===")
         hm._connect_pump()

@@ -1,5 +1,4 @@
 """Verification script for shadow effect cleanup"""
-import os
 import re
 from pathlib import Path
 
@@ -55,7 +54,7 @@ def verify_shadow_cleanup():
     # Test 5: Check blur=8 pattern is mostly removed
     blur8_count = len(re.findall(r'shadow\.setBlurRadius\(8\)', ui_content))
     if blur8_count == 0:
-        print(f"✓ shadow.setBlurRadius(8) pattern removed")
+        print("✓ shadow.setBlurRadius(8) pattern removed")
         tests_passed += 1
     else:
         print(f"✗ shadow.setBlurRadius(8) still present ({blur8_count} instances)")
@@ -75,7 +74,7 @@ def verify_shadow_cleanup():
         print("ALL VERIFICATION TESTS PASSED!")
         print()
         print("Cleanup Summary:")
-        print(f"  • Created create_card_shadow() helper in ui_styles.py")
+        print("  • Created create_card_shadow() helper in ui_styles.py")
         print(f"  • Replaced {helper_calls} instances of manual shadow creation")
         print(f"  • Reduced affilabs_core_ui.py to {line_count} lines")
         print(f"  • Saved ~{7124 - line_count} lines of duplicate code")

@@ -5,16 +5,14 @@ UI for viewing license status, entering license keys, and upgrading.
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QGroupBox, QMessageBox, QFileDialog, QTableWidget,
+    QGroupBox, QMessageBox, QFileDialog, QTableWidget,
     QTableWidgetItem, QHeaderView
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from pathlib import Path
 import json
 
 from affilabs.config.license_manager import LicenseManager
-from affilabs.config.feature_flags import FeatureTier
 
 
 class LicenseDialog(QDialog):
@@ -102,7 +100,7 @@ class LicenseDialog(QDialog):
         """
 
         if not info['is_valid'] and info.get('errors'):
-            details_text += f"<br><br><b>Errors:</b><br>"
+            details_text += "<br><br><b>Errors:</b><br>"
             for error in info['errors']:
                 details_text += f"• {error}<br>"
 
@@ -223,7 +221,7 @@ class LicenseDialog(QDialog):
                 QMessageBox.critical(
                     self,
                     "Error",
-                    f"Failed to save license:\n" + "\n".join(self.license_manager.validation_errors)
+                    "Failed to save license:\n" + "\n".join(self.license_manager.validation_errors)
                 )
 
         except Exception as e:
@@ -235,7 +233,7 @@ class LicenseDialog(QDialog):
 
     def _generate_test_license(self):
         """Generate a test license (for development)."""
-        from PySide6.QtWidgets import QInputDialog, QComboBox
+        from PySide6.QtWidgets import QInputDialog
 
         # Ask for tier
         tier, ok = QInputDialog.getItem(

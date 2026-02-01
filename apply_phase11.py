@@ -1,5 +1,4 @@
 """Apply Phase 11 (Transparent Background) consolidation."""
-import re
 
 file_path = "affilabs/affilabs_core_ui.py"
 

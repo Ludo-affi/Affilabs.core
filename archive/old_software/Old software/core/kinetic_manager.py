@@ -33,9 +33,9 @@ class KineticManager(QObject):
         self.hardware_mgr = hardware_mgr
 
         # Pump state tracking
-        self.pump_running = {ch: False for ch in ["a", "b", "c", "d"]}
-        self.flow_rates = {ch: 0 for ch in ["a", "b", "c", "d"]}
-        self.valve_positions = {ch: "unknown" for ch in ["a", "b", "c", "d"]}
+        self.pump_running = dict.fromkeys(["a", "b", "c", "d"], False)
+        self.flow_rates = dict.fromkeys(["a", "b", "c", "d"], 0)
+        self.valve_positions = dict.fromkeys(["a", "b", "c", "d"], "unknown")
 
         # Pump settings
         self.default_flow_rate = 100  # μL/min

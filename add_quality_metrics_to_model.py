@@ -26,11 +26,11 @@ quality_metrics = {}
 for led_name in ['A', 'B', 'C', 'D']:
     if led_name not in model['led_models']:
         continue
-        
+
     stages = model['led_models'][led_name]
     if len(stages) < 2:
         continue
-    
+
     # Get base slope (first stage)
     if isinstance(stages[0], dict):
         base_time = stages[0]['time_ms']
@@ -38,9 +38,9 @@ for led_name in ['A', 'B', 'C', 'D']:
     else:
         base_time = stages[0][0]
         base_slope = stages[0][1]
-    
+
     metrics = {}
-    
+
     for stage in stages[1:]:
         if isinstance(stage, dict):
             time_ms = stage['time_ms']
@@ -48,10 +48,10 @@ for led_name in ['A', 'B', 'C', 'D']:
         else:
             time_ms = stage[0]
             slope = stage[1]
-        
+
         expected_slope = base_slope * (time_ms / base_time)
         linearity = slope / expected_slope if expected_slope > 0 else 0
-        
+
         # Flag saturation if linearity drops below thresholds
         status = "good"
         if linearity < 0.70:
@@ -60,14 +60,14 @@ for led_name in ['A', 'B', 'C', 'D']:
             status = "saturated"
         elif linearity < 0.95:
             status = "degraded"
-        
+
         metrics[f"{int(time_ms)}ms"] = {
             "linearity": round(linearity, 4),
             "status": status,
             "slope": round(slope, 2),
             "expected_slope": round(expected_slope, 2)
         }
-    
+
     quality_metrics[led_name] = metrics
 
 # Add to model
@@ -87,7 +87,7 @@ for led_name in ['A', 'B', 'C', 'D']:
             "saturated": "SAT",
             "severely_saturated": "CRIT"
         }.get(metrics["status"], "?")
-        
+
         print(f"  {time_label}: [{status_icon:4s}] {metrics['status']:20s} "
               f"(linearity={metrics['linearity']:.3f}, "
               f"slope={metrics['slope']:.1f} vs expected {metrics['expected_slope']:.1f})")

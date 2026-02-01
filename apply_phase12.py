@@ -2,7 +2,6 @@
 
 Replace print() with logger.debug() for proper logging infrastructure.
 """
-import re
 
 file_path = "affilabs/affilabs_core_ui.py"
 
@@ -91,7 +90,7 @@ for i, line in enumerate(lines):
 with open(file_path, 'w', encoding='utf-8') as f:
     f.writelines(lines)
 
-print(f"✓ Phase 12: Debug Print Cleanup")
+print("✓ Phase 12: Debug Print Cleanup")
 print(f"  - Removed {removed_count} debug print statements")
 print(f"  - Converted {converted_count} prints to logger calls")
 print(f"  Total: {removed_count + converted_count} improvements")

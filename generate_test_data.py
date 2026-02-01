@@ -128,12 +128,12 @@ def generate_test_data():
     print(f"  - {len(raw_data_rows)} raw data points")
     print(f"  - {len(cycles_data)} cycles")
     print(f"  - Duration: {total_duration/60:.1f} minutes")
-    print(f"\nTo use:")
-    print(f"  1. Run the application")
-    print(f"  2. Go to Edits tab")
+    print("\nTo use:")
+    print("  1. Run the application")
+    print("  2. Go to Edits tab")
     print(f"  3. Click 'Load Data' and select: {output_file}")
-    print(f"  4. Select cycles from the table to view them on the graph")
-    print(f"  5. Test multi-cycle selection and segment creation")
+    print("  4. Select cycles from the table to view them on the graph")
+    print("  5. Test multi-cycle selection and segment creation")
 
     return output_file
 

@@ -22,7 +22,6 @@ from tools.ml_training.train_led_predictor import prepare_features as prep_led, 
 from tools.ml_training.train_convergence_predictor import prepare_features as prep_convergence, train_model as train_convergence
 from tools.ml_training.device_history import DeviceHistoryDatabase
 
-import pandas as pd
 import joblib
 
 
@@ -100,7 +99,7 @@ def main():
     led_features = prep_led(iterations_df, runs_df)
     print(f"LED features shape: {led_features.shape}")
     print(f"LED features columns: {led_features.columns.tolist()}")
-    
+
     if len(led_features) == 0:
         print("WARNING: No LED features generated - skipping LED predictor training")
         led_model = None
@@ -127,20 +126,20 @@ def main():
     print("TRAINING COMPLETE!")
     print("=" * 80)
     print(f"\nModels saved to: {model_dir.absolute()}/")
-    print(f"  1. sensitivity_classifier.joblib")
-    print(f"  2. led_predictor.joblib")
-    print(f"  3. convergence_predictor.joblib")
+    print("  1. sensitivity_classifier.joblib")
+    print("  2. led_predictor.joblib")
+    print("  3. convergence_predictor.joblib")
 
-    print(f"\nTo enable ML in calibration, update led_convergence.py:")
-    print(f"  engine = ConvergenceEngine(")
-    print(f"      spectrometer=spect,")
-    print(f"      roi_extractor=roi,")
-    print(f"      scheduler=ThreadScheduler(1),")
-    print(f"      logger=logger,")
+    print("\nTo enable ML in calibration, update led_convergence.py:")
+    print("  engine = ConvergenceEngine(")
+    print("      spectrometer=spect,")
+    print("      roi_extractor=roi,")
+    print("      scheduler=ThreadScheduler(1),")
+    print("      logger=logger,")
     print(f"      sensitivity_model_path='{sensitivity_path.absolute()}',")
     print(f"      led_predictor_path='{led_path.absolute()}',")
     print(f"      convergence_predictor_path='{convergence_path.absolute()}',")
-    print(f"  )")
+    print("  )")
 
     print("\n[OK] Ready to use ML-powered calibration!")
 

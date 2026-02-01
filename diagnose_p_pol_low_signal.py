@@ -8,7 +8,6 @@ This script tests:
 
 from affilabs.core.hardware_manager import HardwareManager
 from affilabs.utils.detector_factory import create_detector
-from affilabs.utils.logger import logger
 import time
 import numpy as np
 
@@ -68,7 +67,7 @@ try:
         p_pos = config['hardware'].get('servo_p_position', 32)
         print(f"✓ Loaded positions from config: S={s_pos}, P={p_pos}")
     else:
-        print(f"⚠ Config not found, using ST00011 defaults: S=195, P=32")
+        print("⚠ Config not found, using ST00011 defaults: S=195, P=32")
         s_pos = 195
         p_pos = 32
 except Exception as e:
@@ -98,7 +97,7 @@ for ch in ['a', 'b', 'c', 'd']:
         255 if ch == 'd' else 0
     )
     time.sleep(0.05)
-    
+
     # Read signal
     spectrum = detector.read_intensity()
     if spectrum is not None:
@@ -130,7 +129,7 @@ for ch in ['a', 'b', 'c', 'd']:
         255 if ch == 'd' else 0
     )
     time.sleep(0.05)
-    
+
     # Read signal
     spectrum = detector.read_intensity()
     if spectrum is not None:
@@ -154,18 +153,18 @@ print("\nP-pol / S-pol Ratio (P-pol extinction):")
 for ch in ['a', 'b', 'c', 'd']:
     s_max = s_pol_results[ch]['max']
     p_max = p_pol_results[ch]['max']
-    
+
     if s_max > 0:
         ratio = p_max / s_max
         extinction_pct = (1 - ratio) * 100
         status = "✓ OK" if extinction_pct > 50 else "❌ BAD"
         print(f"  Ch {ch.upper()}: P/S = {ratio:.3f} → {extinction_pct:.1f}% extinction {status}")
-        
+
         if extinction_pct < 50:
-            print(f"       ⚠ WARNING: Poor extinction! P-pol should block >70% of light")
-            print(f"       Possible causes:")
+            print("       ⚠ WARNING: Poor extinction! P-pol should block >70% of light")
+            print("       Possible causes:")
             print(f"         • Servo P position ({p_pos}) is incorrect")
-            print(f"         • Polarizer not aligned properly for this channel")
+            print("         • Polarizer not aligned properly for this channel")
             print(f"         • LED {ch.upper()} wavelength outside polarizer range")
     else:
         print(f"  Ch {ch.upper()}: ❌ No S-pol signal!")
@@ -174,14 +173,14 @@ print("\nChannel Quality Assessment:")
 for ch in ['a', 'b', 'c', 'd']:
     s_max = s_pol_results[ch]['max']
     p_max = p_pol_results[ch]['max']
-    
+
     # Check if channel is working
     if s_max < 1000:
         print(f"  Ch {ch.upper()}: ❌ FAILED - S-pol signal too low ({s_max:.0f})")
-        print(f"       Possible LED failure or connection issue")
+        print("       Possible LED failure or connection issue")
     elif p_max > s_max * 0.5:
         print(f"  Ch {ch.upper()}: ❌ FAILED - P-pol not blocking light properly")
-        print(f"       Servo position likely wrong for this channel")
+        print("       Servo position likely wrong for this channel")
     elif p_max < s_max * 0.2:
         print(f"  Ch {ch.upper()}: ✓ GOOD - Proper S/P separation")
     else:
@@ -195,24 +194,24 @@ print("=" * 80)
 for ch in ['c', 'd']:
     s_max = s_pol_results[ch]['max']
     p_max = p_pol_results[ch]['max']
-    
+
     print(f"\nChannel {ch.upper()}:")
     print(f"  S-pol max: {s_max:.0f} counts")
     print(f"  P-pol max: {p_max:.0f} counts")
-    
+
     if s_max < 1000:
         print(f"  ❌ LED {ch.upper()} appears to be FAILED or disconnected")
-        print(f"     Action: Check LED wiring/connection or replace LED")
+        print("     Action: Check LED wiring/connection or replace LED")
     elif p_max > s_max * 0.7:
-        print(f"  ❌ Polarizer not blocking this channel's light")
+        print("  ❌ Polarizer not blocking this channel's light")
         print(f"     P-pol position {p_pos} is WRONG for this LED wavelength")
-        print(f"     Action: Re-run servo calibration to find correct P position")
+        print("     Action: Re-run servo calibration to find correct P position")
     elif p_max < 100:
-        print(f"  ⚠ P-pol signal extremely low (< 100 counts)")
-        print(f"     This is actually TOO MUCH blocking - polarizer might be at wrong angle")
-        print(f"     Action: Verify P servo position, might need adjustment +/- 5-10 degrees")
+        print("  ⚠ P-pol signal extremely low (< 100 counts)")
+        print("     This is actually TOO MUCH blocking - polarizer might be at wrong angle")
+        print("     Action: Verify P servo position, might need adjustment +/- 5-10 degrees")
     else:
-        print(f"  ℹ️ LED working, but P/S ratio unusual")
+        print("  ℹ️ LED working, but P/S ratio unusual")
 
 # Cleanup
 detector.close()

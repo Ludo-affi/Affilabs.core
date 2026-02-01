@@ -5,7 +5,6 @@ devices. Regular P4PRO devices will show a warning that pumps are not available.
 """
 import time
 from affilabs.utils.controller import PicoP4PRO
-from affilabs.utils.logger import logger
 
 print("=" * 70)
 print("P4PRO/P4PROPLUS PUMP CONTROL TEST")
@@ -68,9 +67,9 @@ try:
             print("   ❌ Failed to stop pump 1")
     else:
         print("   ❌ Failed to start pump 1")
-    
+
     time.sleep(1)
-    
+
     # Run pump 2 at 25 RPM
     print("\n   Running pump 2 at 25 RPM for 3 seconds...")
     if ctrl.pump_run(2, 25):
@@ -81,9 +80,9 @@ try:
             print("   ❌ Failed to stop pump 2")
     else:
         print("   ❌ Failed to start pump 2")
-    
+
     time.sleep(1)
-    
+
     # Run both pumps at 25 RPM
     print("\n   Running both pumps at 25 RPM for 3 seconds...")
     if ctrl.pump_run(3, 25):
@@ -94,9 +93,9 @@ try:
             print("   ❌ Failed to stop both pumps")
     else:
         print("   ❌ Failed to start both pumps")
-    
+
     print("\n✅ Pump control test completed successfully!")
-    
+
 except KeyboardInterrupt:
     print("\n\n⚠️  Test interrupted - stopping all pumps...")
     ctrl.pump_stop(3)

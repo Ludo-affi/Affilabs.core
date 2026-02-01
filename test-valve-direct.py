@@ -26,49 +26,49 @@ def test_valve(ser, valve_type, state):
         cmd = f"v6B{state}\n"
     else:  # 3way
         cmd = f"v3B{state}\n"
-    
+
     print(f"\n📤 Sending: {cmd.strip()}")
     ser.write(cmd.encode())
     time.sleep(0.1)
     response = ser.read(100)
     print(f"📥 Response: {response!r}")
-    
+
     if response == b'1':
         print("✅ Firmware acknowledged command")
         print("🔊 LISTEN FOR VALVE CLICK - did you hear it?")
     else:
         print(f"❌ Unexpected response: {response}")
-    
+
     return response == b'1'
 
 if __name__ == "__main__":
     print("="*60)
     print("P4PRO VALVE HARDWARE TEST")
     print("="*60)
-    
+
     ser = find_p4pro()
     if not ser:
         print("❌ P4PRO not found!")
         exit(1)
-    
+
     print("\nThis will test the valve hardware directly.")
     print("You should hear LOUD CLICKS when valves activate.\n")
-    
+
     input("Press ENTER to test 6-port valves (OPEN)...")
     test_valve(ser, "6port", 1)
     time.sleep(2)
-    
+
     input("Press ENTER to test 6-port valves (CLOSE)...")
     test_valve(ser, "6port", 0)
     time.sleep(2)
-    
+
     input("Press ENTER to test 3-way valves (OPEN)...")
     test_valve(ser, "3way", 1)
     time.sleep(2)
-    
+
     input("Press ENTER to test 3-way valves (CLOSE)...")
     test_valve(ser, "3way", 0)
-    
+
     ser.close()
     print("\n✅ Test complete")
     print("\nIf you heard NO clicks, check:")

@@ -33,7 +33,7 @@ print(f"  Range: {wavelengths[0]:.2f} - {wavelengths[-1]:.2f} nm")
 
 # Get first time point as example
 first_spectrum = df['t_0000'].values
-print(f"\n[STEP 2] Example spectrum at t=0:")
+print("\n[STEP 2] Example spectrum at t=0:")
 print(f"  Wavelengths: {len(wavelengths)} points")
 print(f"  Transmission values: {len(first_spectrum)} points")
 print(f"  Transmission range: {np.min(first_spectrum):.2f}% - {np.max(first_spectrum):.2f}%")
@@ -59,7 +59,7 @@ print(f"  Dip wavelength: {peak_wavelength:.3f} nm")
 print(f"  Dip transmission: {peak_transmission:.2f}%")
 
 # Show neighbors
-print(f"\n  Peak context (±3 points):")
+print("\n  Peak context (±3 points):")
 for i in range(max(0, peak_idx-3), min(len(filtered_wavelengths), peak_idx+4)):
     marker = "👉" if i == peak_idx else "  "
     print(f"    {marker} λ={filtered_wavelengths[i]:.3f} nm → T={filtered_transmission[i]:.2f}%")
@@ -70,13 +70,13 @@ if 0 < peak_idx < len(filtered_transmission) - 1:
     # Use 3-point parabolic fit
     y0, y1, y2 = filtered_transmission[peak_idx-1:peak_idx+2]
     x0, x1, x2 = filtered_wavelengths[peak_idx-1:peak_idx+2]
-    
+
     # Parabolic interpolation formula
     denom = (y0 - y1) * (x0 - x2) - (y0 - y2) * (x0 - x1)
     if abs(denom) > 1e-10:
         numer = (y0 - y1) * (x0**2 - x2**2) - (y0 - y2) * (x0**2 - x1**2)
         refined_peak = numer / (2 * denom)
-        
+
         print(f"  Discrete peak: {peak_wavelength:.3f} nm")
         print(f"  Refined peak:  {refined_peak:.3f} nm")
         print(f"  Improvement:   {abs(refined_peak - peak_wavelength)*1000:.3f} pm (picometers)")
@@ -98,12 +98,12 @@ peak_transmissions = []
 for col in time_columns:
     spectrum = df[col].values
     filtered_spectrum = spectrum[valid_mask]
-    
+
     # Find dip (SAME AS MAIN.PY)
     idx = np.argmin(filtered_spectrum)
     peak_wl = filtered_wavelengths[idx]
     peak_t = filtered_spectrum[idx]
-    
+
     peak_wavelengths.append(peak_wl)
     peak_transmissions.append(peak_t)
 
@@ -111,14 +111,14 @@ peak_wavelengths = np.array(peak_wavelengths)
 peak_transmissions = np.array(peak_transmissions)
 
 print(f"✓ Processed {num_timepoints} spectra")
-print(f"\n  Peak wavelength statistics:")
+print("\n  Peak wavelength statistics:")
 print(f"    Mean: {np.mean(peak_wavelengths):.3f} nm")
 print(f"    Std:  {np.std(peak_wavelengths):.4f} nm")
 print(f"    Min:  {np.min(peak_wavelengths):.3f} nm")
 print(f"    Max:  {np.max(peak_wavelengths):.3f} nm")
 print(f"    Range: {np.max(peak_wavelengths) - np.min(peak_wavelengths):.4f} nm")
 
-print(f"\n  Peak transmission statistics:")
+print("\n  Peak transmission statistics:")
 print(f"    Mean: {np.mean(peak_transmissions):.2f}%")
 print(f"    Std:  {np.std(peak_transmissions):.2f}%")
 
@@ -144,9 +144,9 @@ ax2 = axes[0, 1]
 zoom_range = 20  # nm
 zoom_mask = (filtered_wavelengths >= peak_wavelength - zoom_range) & \
             (filtered_wavelengths <= peak_wavelength + zoom_range)
-ax2.plot(filtered_wavelengths[zoom_mask], filtered_transmission[zoom_mask], 
+ax2.plot(filtered_wavelengths[zoom_mask], filtered_transmission[zoom_mask],
          'b-', linewidth=2, marker='o', markersize=4)
-ax2.plot(peak_wavelength, peak_transmission, 'ro', markersize=12, 
+ax2.plot(peak_wavelength, peak_transmission, 'ro', markersize=12,
          label=f'Peak: {peak_wavelength:.3f} nm')
 ax2.set_xlabel('Wavelength (nm)')
 ax2.set_ylabel('Transmission (%)')
@@ -161,7 +161,7 @@ duration = metadata['duration_seconds'].iloc[0]
 time_axis = np.linspace(0, duration, num_timepoints)
 ax3.plot(time_axis, peak_wavelengths, 'b-', linewidth=1.5)
 mean_wl = np.mean(peak_wavelengths)
-ax3.axhline(mean_wl, color='red', linestyle='--', alpha=0.5, 
+ax3.axhline(mean_wl, color='red', linestyle='--', alpha=0.5,
             label=f'Mean: {mean_wl:.3f} nm')
 ax3.set_xlabel('Time (seconds)')
 ax3.set_ylabel('Dip Wavelength (nm)')
@@ -173,7 +173,7 @@ ax3.legend()
 ax4 = axes[1, 1]
 ax4.plot(time_axis, peak_transmissions, 'g-', linewidth=1.5)
 mean_t = np.mean(peak_transmissions)
-ax4.axhline(mean_t, color='red', linestyle='--', alpha=0.5, 
+ax4.axhline(mean_t, color='red', linestyle='--', alpha=0.5,
             label=f'Mean: {mean_t:.2f}%')
 ax4.set_xlabel('Time (seconds)')
 ax4.set_ylabel('Dip Transmission (%)')

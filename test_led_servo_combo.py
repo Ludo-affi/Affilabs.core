@@ -55,7 +55,7 @@ detector_reading = input("Enter detector reading (or 'low' if blocked): ")
 if detector_reading.lower() == 'low' or (detector_reading.isdigit() and int(detector_reading) < 5000):
     print("\n⚠️  POLARIZER IS BLOCKING LIGHT at PWM 128")
     print("    Let's try different servo positions...")
-    
+
     for test_pwm in [1, 65, 128, 191, 255]:
         print(f"\n5. Moving servo to PWM {test_pwm}")
         cmd = f"servo:{test_pwm},500\n"

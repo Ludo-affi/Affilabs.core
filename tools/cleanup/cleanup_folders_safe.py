@@ -5,7 +5,6 @@ Conservative folder cleanup - only moves definitely safe folders.
 Preserves all active code modules and frequently accessed data paths.
 """
 
-import os
 from pathlib import Path
 import shutil
 
@@ -19,23 +18,23 @@ SAFE_MOVES = {
     'firmware_v2.1/': 'firmware_archive/v2.1/',
     'pico-p4spr-firmware/': 'firmware_archive/pico_p4spr/',
     'elf2uf2/': 'firmware_archive/elf2uf2/',
-    
+
     # Archive folders (old code)
     '_archived_Affilabs.core_beta/': 'archive/affilabs_core_beta/',
     'Old software/': 'archive/old_software/',
     'LED-Counts relationship/': 'archive/led_counts_relationship/',
-    
+
     # Build artifacts (temporary, regenerated)
     'build/': 'build_artifacts/build/',
     'dist/': 'build_artifacts/dist/',
     'generated-files/': 'build_artifacts/generated/',
-    
+
     # Output/results folders (data only, not in hot path)
     'analysis_results/': 'data_results/analysis/',
     'results/': 'data_results/results/',
     'training_data/': 'data_results/training/',
     'spectral_training_data/': 'data_results/spectral_training/',
-    
+
     # Log folders (output only)
     'debug_logs/': 'logs/debug/',
     'fmea_reports/': 'logs/fmea_reports/',
@@ -57,14 +56,14 @@ def find_folders_to_move():
     """Find folders that exist and can be moved."""
     moves = {}
     missing = []
-    
+
     for source, dest in SAFE_MOVES.items():
         source_path = WORKSPACE_ROOT / source
         if source_path.exists() and source_path.is_dir():
             moves[source] = dest
         else:
             missing.append(source)
-    
+
     return moves, missing
 
 
@@ -73,9 +72,9 @@ def display_plan(moves, missing):
     if not moves:
         print("✓ No folders to move - already organized!")
         return False
-    
+
     print(f"Found {len(moves)} folders to organize:\n")
-    
+
     # Group by category
     categories = {
         'FIRMWARE': [],
@@ -84,7 +83,7 @@ def display_plan(moves, missing):
         'DATA/RESULTS': [],
         'LOGS': [],
     }
-    
+
     for source, dest in sorted(moves.items()):
         if 'firmware' in dest:
             categories['FIRMWARE'].append((source, dest))
@@ -96,17 +95,17 @@ def display_plan(moves, missing):
             categories['DATA/RESULTS'].append((source, dest))
         elif 'logs' in dest:
             categories['LOGS'].append((source, dest))
-    
+
     for category, items in categories.items():
         if items:
             print(f"{category}:")
             for source, dest in items:
                 print(f"  {source} → {dest}")
             print()
-    
+
     if missing:
         print(f"Note: {len(missing)} folders already moved or not found")
-    
+
     print("=" * 70)
     print("KEEPING IN ROOT (active modules):")
     for folder in sorted(KEEP_IN_ROOT):
@@ -114,7 +113,7 @@ def display_plan(moves, missing):
         if path.exists():
             print(f"  ✓ {folder}")
     print("=" * 70)
-    
+
     return True
 
 
@@ -122,15 +121,15 @@ def move_folders(moves):
     """Move folders to new locations."""
     moved_count = 0
     failed_count = 0
-    
+
     for source, dest in moves.items():
         source_path = WORKSPACE_ROOT / source
         dest_path = WORKSPACE_ROOT / dest
-        
+
         try:
             # Create parent directory
             dest_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Move the folder
             shutil.move(str(source_path), str(dest_path))
             print(f"✓ Moved: {source} → {dest}")
@@ -138,12 +137,12 @@ def move_folders(moves):
         except Exception as e:
             print(f"✗ Failed: {source} - {e}")
             failed_count += 1
-    
+
     print()
     print(f"✅ Successfully moved {moved_count} folders")
     if failed_count > 0:
         print(f"❌ Failed to move {failed_count} folders")
-    
+
     print()
     print("Root directory now organized:")
     print("  • Active code modules remain in place")
@@ -163,17 +162,17 @@ def main():
     print("Moving only SAFE folders (no active imports)")
     print("=" * 70)
     print()
-    
+
     # Find and display plan
     moves, missing = find_folders_to_move()
     has_moves = display_plan(moves, missing)
-    
+
     if not has_moves:
         return
-    
+
     # Ask for confirmation
     response = input("\nMove these folders? (yes/no): ").strip().lower()
-    
+
     if response == "yes":
         print()
         move_folders(moves)

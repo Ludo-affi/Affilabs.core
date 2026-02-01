@@ -32,7 +32,7 @@ for file_path in python_files:
         functions = extract_functions(file_path)
         for func in functions:
             function_locations[func].append(str(file_path))
-    except Exception as e:
+    except Exception:
         pass
 
 # Find duplicates

@@ -81,7 +81,7 @@ print(f"Filtered transmission range: {transmission_spectrum.min():.4f} - {transm
 print("\n" + "=" * 80)
 print("STEP 2: SAVITZKY-GOLAY SPECTRAL SMOOTHING (STAGE 3)")
 print("=" * 80)
-print(f"\nParameters:")
+print("\nParameters:")
 print(f"  Window length: {TRANSMISSION_SAVGOL_WINDOW} points")
 print(f"  Polynomial order: {TRANSMISSION_SAVGOL_POLY} (cubic)")
 print(f"  Wavelength span: ~{TRANSMISSION_SAVGOL_WINDOW * 0.2:.1f} nm @ 0.2nm/pixel")
@@ -93,14 +93,14 @@ if len(transmission_spectrum) >= TRANSMISSION_SAVGOL_WINDOW:
         window_length=TRANSMISSION_SAVGOL_WINDOW,
         polyorder=TRANSMISSION_SAVGOL_POLY,
     )
-    print(f"\nSavitzky-Golay filter applied successfully")
+    print("\nSavitzky-Golay filter applied successfully")
     print(f"RMS noise before SG: {np.std(transmission_spectrum):.6f}%")
     print(f"RMS noise after SG: {np.std(filtered_transmission):.6f}%")
     print(f"Noise reduction: {(1 - np.std(filtered_transmission)/np.std(transmission_spectrum))*100:.1f}%")
 else:
     filtered_transmission = transmission_spectrum
     print(f"\n⚠ WARNING: Spectrum too short ({len(transmission_spectrum)} < {TRANSMISSION_SAVGOL_WINDOW})")
-    print(f"Skipping SG filter, using raw transmission")
+    print("Skipping SG filter, using raw transmission")
 
 # ============================================================================
 # STEP 3: FOURIER TRANSFORM DERIVATIVE CALCULATION (STAGE 4)
@@ -109,9 +109,9 @@ else:
 print("\n" + "=" * 80)
 print("STEP 3: FOURIER TRANSFORM DERIVATIVE (STAGE 4)")
 print("=" * 80)
-print(f"\nParameters:")
+print("\nParameters:")
 print(f"  Alpha (smoothing): {FOURIER_ALPHA}")
-print(f"  Method: DST (Discrete Sine Transform) + IDCT (Inverse DCT)")
+print("  Method: DST (Discrete Sine Transform) + IDCT (Inverse DCT)")
 
 spectrum = filtered_transmission
 n = len(spectrum) - 1
@@ -128,19 +128,19 @@ fourier_coeff = np.zeros_like(spectrum)
 fourier_coeff[0] = 2 * (spectrum[-1] - spectrum[0])
 
 # Linear detrending
-print(f"\nLinear detrending...")
+print("\nLinear detrending...")
 linear_baseline = np.linspace(spectrum[0], spectrum[-1], len(spectrum))
 detrended = spectrum[1:-1] - linear_baseline[1:-1]
 print(f"Detrended range: {detrended.min():.6f} - {detrended.max():.6f}%")
 
 # Apply DST with weights
-print(f"\nApplying DST (Discrete Sine Transform)...")
+print("\nApplying DST (Discrete Sine Transform)...")
 dst_result = dst(detrended, type=1)
 fourier_coeff[1:-1] = fourier_weights * dst_result
 print(f"DST result range: {dst_result.min():.6e} - {dst_result.max():.6e}")
 
 # Inverse transform to get derivative
-print(f"\nApplying IDCT (Inverse Discrete Cosine Transform)...")
+print("\nApplying IDCT (Inverse Discrete Cosine Transform)...")
 derivative = idct(fourier_coeff, type=1)
 print(f"Derivative calculated: {len(derivative)} points")
 print(f"Derivative range: {derivative.min():.6e} - {derivative.max():.6e}")
@@ -162,7 +162,7 @@ print(f"Derivative after zero: {derivative[zero_idx]:.6e}")
 
 # Check if zero-crossing is at boundary
 if zero_idx == 0 or zero_idx >= len(derivative) - 1:
-    print(f"\n⚠ WARNING: Zero-crossing at boundary!")
+    print("\n⚠ WARNING: Zero-crossing at boundary!")
     min_idx = np.argmin(spectrum)
     peak_wavelength_fallback = wavelengths[min_idx]
     print(f"Fallback to minimum: {peak_wavelength_fallback:.3f} nm")
@@ -170,25 +170,25 @@ else:
     # ============================================================================
     # STEP 5: LINEAR REGRESSION REFINEMENT
     # ============================================================================
-    
+
     print("\n" + "=" * 80)
     print("STEP 5: LINEAR REGRESSION REFINEMENT")
     print("=" * 80)
-    print(f"\nParameters:")
+    print("\nParameters:")
     print(f"  Window size: ±{FOURIER_WINDOW} points")
-    
+
     # Define window around zero-crossing
     start_idx = max(zero_idx - FOURIER_WINDOW, 0)
     end_idx = min(zero_idx + FOURIER_WINDOW, len(derivative) - 1)
-    
+
     wl_window = wavelengths[start_idx:end_idx]
     deriv_window = derivative[start_idx:end_idx]
-    
-    print(f"\nWindow range:")
+
+    print("\nWindow range:")
     print(f"  Indices: {start_idx} to {end_idx} ({len(wl_window)} points)")
     print(f"  Wavelengths: {wl_window.min():.3f} - {wl_window.max():.3f} nm")
     print(f"  Derivative range: {deriv_window.min():.6e} - {deriv_window.max():.6e}")
-    
+
     if len(wl_window) < 3:
         print(f"\n⚠ WARNING: Not enough points for regression ({len(wl_window)} < 3)")
         peak_wavelength = wavelengths[zero_idx]
@@ -196,14 +196,14 @@ else:
     else:
         # Linear regression: derivative = slope * wavelength + intercept
         slope, intercept, r_value, p_value, std_err = linregress(wl_window, deriv_window)
-        
-        print(f"\nLinear regression results:")
+
+        print("\nLinear regression results:")
         print(f"  Slope: {slope:.6e} (derivative change per nm)")
         print(f"  Intercept: {intercept:.6e}")
         print(f"  R²: {r_value**2:.6f} (goodness of fit)")
         print(f"  P-value: {p_value:.6e}")
         print(f"  Std error: {std_err:.6e}")
-        
+
         if abs(slope) < 1e-10:
             print(f"\n⚠ WARNING: Slope too small ({abs(slope):.6e} < 1e-10)")
             peak_wavelength = wavelengths[zero_idx]
@@ -212,11 +212,11 @@ else:
             # Solve for zero-crossing: 0 = slope * λ + intercept
             # λ = -intercept / slope
             peak_wavelength = -intercept / slope
-            
-            print(f"\nRefined zero-crossing:")
+
+            print("\nRefined zero-crossing:")
             print(f"  Peak wavelength: {peak_wavelength:.6f} nm")
             print(f"  Improvement: {abs(peak_wavelength - wavelengths[zero_idx])*1000:.3f} pm from index")
-            
+
             # Sanity check
             if peak_wavelength < wl_window.min() or peak_wavelength > wl_window.max():
                 print(f"\n⚠ WARNING: Peak outside window! ({peak_wavelength:.3f} nm)")
@@ -311,7 +311,7 @@ ax4.grid(True, alpha=0.3)
 
 plt.tight_layout()
 plt.savefig('gold_standard_pipeline_detailed.png', dpi=300, bbox_inches='tight')
-print(f"\nSaved: gold_standard_pipeline_detailed.png")
+print("\nSaved: gold_standard_pipeline_detailed.png")
 
 # ============================================================================
 # SUMMARY
@@ -321,23 +321,23 @@ print("\n" + "=" * 80)
 print("SUMMARY - GOLD STANDARD PIPELINE")
 print("=" * 80)
 
-print(f"\n📊 INPUT DATA:")
+print("\n📊 INPUT DATA:")
 print(f"  File: {DATA_FILE.name}")
 print(f"  Raw wavelengths: {len(wavelengths_raw)} points ({wavelengths_raw.min():.2f}-{wavelengths_raw.max():.2f} nm)")
 print(f"  Filtered wavelengths: {len(wavelengths)} points ({wavelengths.min():.2f}-{wavelengths.max():.2f} nm)")
 
-print(f"\n🔧 PROCESSING STAGES:")
-print(f"  Stage 1: Wavelength filtering (570-720 nm)")
+print("\n🔧 PROCESSING STAGES:")
+print("  Stage 1: Wavelength filtering (570-720 nm)")
 print(f"  Stage 2: Savitzky-Golay spectral smoothing (window={TRANSMISSION_SAVGOL_WINDOW}, poly={TRANSMISSION_SAVGOL_POLY})")
 print(f"  Stage 3: Fourier transform derivative (alpha={FOURIER_ALPHA})")
-print(f"  Stage 4: Zero-crossing detection")
+print("  Stage 4: Zero-crossing detection")
 print(f"  Stage 5: Linear regression refinement (window=±{FOURIER_WINDOW})")
 
-print(f"\n🎯 RESULTS:")
+print("\n🎯 RESULTS:")
 print(f"  Simple argmin (raw): {argmin_raw_wavelength:.6f} nm")
 print(f"  Simple argmin (SG): {argmin_sg_wavelength:.6f} nm")
 print(f"  GOLD STANDARD: {peak_wavelength:.6f} nm ⭐")
 print(f"  Refinement: {abs(peak_wavelength - argmin_sg_wavelength)*1000:.3f} pm from argmin")
 
-print(f"\n✅ GOLD STANDARD PIPELINE COMPLETE")
+print("\n✅ GOLD STANDARD PIPELINE COMPLETE")
 print("=" * 80)

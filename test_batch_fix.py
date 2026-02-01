@@ -47,20 +47,20 @@ if reading.isdigit() and int(reading) > 5000:
 elif reading.isdigit() and int(reading) < 4000:
     print("\n❌ FAIL! LEDs still OFF - lm:ABCD command not working")
     print("   Checking what was actually sent...")
-    
+
     # Try manual commands
     print("\n5. Manual test - send lm:ABCD directly...")
     ctrl._ser.write(b"lm:ABCD\n")
     time.sleep(0.1)
     resp = ctrl._ser.read(10)
     print(f"   Response: {resp!r} {'✓' if resp == b'1' else '✗'}")
-    
+
     print("\n6. Manual test - send la:51 directly...")
     ctrl._ser.write(b"la:51\n")
     time.sleep(0.1)
     resp = ctrl._ser.read(10)
     print(f"   Response: {resp!r} {'✓' if resp == b'1' else '✗'}")
-    
+
     reading2 = input("\n   Check detector again - what's the reading? ")
     if reading2.isdigit() and int(reading2) > 5000:
         print("\n   Manual commands work but set_batch_intensities() doesn't!")

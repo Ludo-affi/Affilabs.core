@@ -1,6 +1,5 @@
 """Phase 6: Replace hardcoded color values with Colors constants"""
 from pathlib import Path
-import re
 
 def replace_hardcoded_colors():
     """Replace hardcoded hex colors with Colors class constants"""
@@ -15,15 +14,15 @@ def replace_hardcoded_colors():
     # Replace color values (order matters - do specific patterns first)
     replacements = [
         # Primary text color
-        ('color: #1D1D1F;', f'color: {{Colors.PRIMARY_TEXT}};'),
+        ('color: #1D1D1F;', 'color: {Colors.PRIMARY_TEXT};'),
         # Secondary text color
-        ('color: #86868B;', f'color: {{Colors.SECONDARY_TEXT}};'),
+        ('color: #86868B;', 'color: {Colors.SECONDARY_TEXT};'),
         # Background white
-        ('background: #FFFFFF;', f'background: {{Colors.BACKGROUND_WHITE}};'),
+        ('background: #FFFFFF;', 'background: {Colors.BACKGROUND_WHITE};'),
         # Background in QFrame stylesheets
-        ('{ background: #FFFFFF;', f'{{ background: {{Colors.BACKGROUND_WHITE}};'),
+        ('{ background: #FFFFFF;', '{ background: {Colors.BACKGROUND_WHITE};'),
         # Background in QDialog
-        ('QDialog { background: #FFFFFF;', f'QDialog {{ background: {{Colors.BACKGROUND_WHITE}};'),
+        ('QDialog { background: #FFFFFF;', 'QDialog { background: {Colors.BACKGROUND_WHITE};'),
     ]
 
     changes_made = 0

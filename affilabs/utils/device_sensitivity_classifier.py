@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Tuple
+from typing import Tuple
 
 
 class SensitivityLabel(str, Enum):

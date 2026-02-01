@@ -29,7 +29,7 @@ else:
     print("\n✓ Serial ports detected!")
     print("\nDetailed port information:")
     print("-" * 70)
-    
+
     for i, port in enumerate(ports, 1):
         print(f"\nPort {i}: {port.device}")
         print(f"   Description: {port.description}")
@@ -38,7 +38,7 @@ else:
         print(f"   PID: {hex(port.pid) if port.pid else 'None'}")
         print(f"   Serial Number: {port.serial_number}")
         print(f"   Location: {port.location}")
-        
+
         # Check if this matches Pico
         if port.vid == 0x2e8a and port.pid == 0xa:
             print("   ⭐ MATCHES RASPBERRY PI PICO (P4PRO/P4PROPLUS)")

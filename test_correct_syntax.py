@@ -27,7 +27,7 @@ for val in [0, 5, 20, 50, 100]:
         resp = ctrl._ser.read(10)
         if resp:
             print(f"  l{ch}:{val} -> {resp!r}")
-    
+
     time.sleep(0.5)
     spec = usb.intensities()
     max_signal = max(spec)

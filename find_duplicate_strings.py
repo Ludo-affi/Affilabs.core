@@ -1,5 +1,4 @@
 import re
-from pathlib import Path
 from collections import Counter
 
 # Find duplicate string literals that could be constants
@@ -33,7 +32,7 @@ for file_path in main_files:
         duplicates = find_duplicate_strings(file_path)
         if duplicates:
             all_duplicates[file_path] = duplicates
-    except Exception as e:
+    except Exception:
         pass
 
 if all_duplicates:

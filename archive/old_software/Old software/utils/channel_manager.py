@@ -67,7 +67,7 @@ class ChannelManager:
         self._buffer_capacity = 10000
 
         # Track current length PER CHANNEL (each channel may have different lengths)
-        self._current_length = {ch: 0 for ch in CH_LIST}
+        self._current_length = dict.fromkeys(CH_LIST, 0)
 
         # Raw wavelength values (unfiltered) - preallocated
         self.lambda_values = {
@@ -319,7 +319,7 @@ class ChannelManager:
         """Clear all data buffers and reset state."""
         # Reset to initial preallocated state
         self._buffer_capacity = 10000
-        self._current_length = {ch: 0 for ch in CH_LIST}
+        self._current_length = dict.fromkeys(CH_LIST, 0)
 
         for ch in CH_LIST:
             self.lambda_values[ch] = np.full(self._buffer_capacity, np.nan)

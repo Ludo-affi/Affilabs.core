@@ -26,7 +26,7 @@ time.sleep(0.5)
 tests = [
     "batch:51,51,51,51",     # P4SPR style (we know this fails)
     "lb:51,51,51,51",        # Batch with lb prefix
-    "li:51,51,51,51",        # Batch with li prefix  
+    "li:51,51,51,51",        # Batch with li prefix
     "lset:51,51,51,51",      # Set all
     "lall:51",               # Set all to same value
     "l:51,51,51,51",         # Just l: prefix
@@ -42,13 +42,13 @@ for i, cmd_base in enumerate(tests, 1):
     time.sleep(0.1)
     ser.read(10)
     time.sleep(0.2)
-    
+
     # Enable again
     ser.write(b"lm:ABCD\n")
     time.sleep(0.1)
     ser.read(10)
     time.sleep(0.2)
-    
+
     # Test command
     cmd = cmd_base + "\n"
     print(f"\n{i}. Testing: {cmd_base!r}")
@@ -56,8 +56,8 @@ for i, cmd_base in enumerate(tests, 1):
     time.sleep(0.15)
     resp = ser.read(100)
     print(f"   Response: {resp!r} {'✓' if resp == b'1' else '✗'}")
-    
-    reading = input(f"   Detector reading (or Enter to skip): ")
+
+    reading = input("   Detector reading (or Enter to skip): ")
     if reading.strip():
         print(f"   Counts: {reading}")
         if reading.isdigit() and int(reading) > 5000:

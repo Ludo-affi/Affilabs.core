@@ -508,7 +508,7 @@ class Application(QApplication):
         except Exception as e:
             logger.error(f"[{phase}] ✗ {name}: {e}", exc_info=True)
             if critical:
-                logger.critical(f"Critical initialization failed")
+                logger.critical("Critical initialization failed")
                 raise SystemExit(1)
             logger.warning(f"[{phase}] Non-critical error, continuing")
 
@@ -1416,7 +1416,7 @@ class Application(QApplication):
         if hasattr(sidebar, 'queued_run_started'):
             sidebar.queued_run_started.connect(self._on_start_queued_run)
             logger.info("✓ Start Queued Run button connected")
-        
+
         # Connect Next Cycle button
         if hasattr(sidebar, 'next_cycle_requested'):
             sidebar.next_cycle_requested.connect(self._on_next_cycle)
@@ -1478,7 +1478,7 @@ class Application(QApplication):
         - Button visibility (Start Run, Clear Queue)
         """
         queue_size = self.queue_presenter.get_queue_size()
-        
+
         # Update progress bar with current queue state
         if hasattr(self.main_window.sidebar, 'queue_progress_bar'):
             try:
@@ -1496,7 +1496,7 @@ class Application(QApplication):
                 self.main_window.sidebar.queue_progress_bar.set_current_index(current_index)
             except Exception as e:
                 logger.debug(f"Could not update progress bar: {e}")
-        
+
         # Update queue status label
         if hasattr(self.main_window.sidebar, 'queue_status_label'):
             if queue_size == 0:
@@ -1511,15 +1511,15 @@ class Application(QApplication):
                 self.main_window.sidebar.queue_status_label.setText(
                     f"Queue: {queue_size} cycles ready"
                 )
-        
+
         # Show/hide Start Run button based on queue size
         if hasattr(self.main_window.sidebar, 'start_run_btn'):
             self.main_window.sidebar.start_run_btn.setVisible(queue_size > 0)
-        
+
         # Show/hide Clear Queue button based on queue size
         if hasattr(self.main_window.sidebar, 'clear_queue_btn'):
             self.main_window.sidebar.clear_queue_btn.setVisible(queue_size > 0)
-        
+
         # Update queue size label in table footer
         if hasattr(self.main_window.sidebar, 'queue_size_label'):
             if queue_size <= 10:
@@ -2275,7 +2275,7 @@ class Application(QApplication):
         # Start first cycle (subsequent cycles will auto-start when previous completes)
         logger.info(f"Starting queued run with {queue_size} cycles")
         self._on_start_button_clicked()
-        logger.info(f"✓ Queued run started successfully")
+        logger.info("✓ Queued run started successfully")
 
     def _update_cycle_display(self):
         """Update Active Cycle overlay with cycle progress."""
@@ -2530,15 +2530,15 @@ class Application(QApplication):
         else:
             # No more cycles in queue
             logger.info("✓ Queue completed - all cycles finished")
-            
+
             # Re-enable Start Run button
             if hasattr(self.main_window.sidebar, 'start_queue_btn'):
                 self.main_window.sidebar.start_queue_btn.setEnabled(True)
-            
+
             # Unlock queue when all cycles complete
             self.queue_presenter.unlock_queue()
             logger.debug("🔓 Queue unlocked after completion")
-            
+
             # Create and start an auto-read cycle if enabled
             if not self._auto_read_after_queue:
                 logger.info("Queue complete - auto-read disabled, stopping")
@@ -2750,7 +2750,6 @@ class Application(QApplication):
                 # No more cycles - start auto-read
                 logger.info("All cycles complete - starting auto-read cycle")
                 from affilabs.domain.cycle import Cycle
-                import time
 
                 autoread_cycle = Cycle(
                     type="Auto-read",
@@ -3418,7 +3417,7 @@ class Application(QApplication):
         )
 
         if reply != QMessageBox.StandardButton.Yes:
-            logger.info(f"Deletion cancelled by user")
+            logger.info("Deletion cancelled by user")
             return
 
         # Delete via presenter (handles undo/redo)
@@ -3460,7 +3459,7 @@ class Application(QApplication):
         logger.debug(f"✓ Queue now has {remaining} cycles after deletion")
 
         # Log remaining cycles for verification
-        logger.info(f"📋 Remaining queue after deletion:")
+        logger.info("📋 Remaining queue after deletion:")
         for i, cycle in enumerate(self.segment_queue):
             logger.info(f"  [{i}] {cycle.name} ({cycle.type}, {cycle.length_minutes} min)")
 
@@ -4098,7 +4097,7 @@ class Application(QApplication):
                     }
                     self.recording_mgr.add_flag(flag_export_data)
 
-            logger.info(f"✓ Initial experiment state exported to recording")
+            logger.info("✓ Initial experiment state exported to recording")
 
     def _on_recording_stopped(self):
         """Recording stopped."""
@@ -4785,7 +4784,6 @@ class Application(QApplication):
     class _PumpStartTask:
         """Background task for starting internal pumps without UI blocking."""
         def __init__(self, ctrl, flow_rate, channel, callback):
-            from PySide6.QtCore import QRunnable
             self._runnable = self._create_runnable(ctrl, flow_rate, channel, callback)
 
         @staticmethod
@@ -4826,7 +4824,6 @@ class Application(QApplication):
     class _PumpStopTask:
         """Background task for stopping internal pumps without UI blocking."""
         def __init__(self, ctrl, channel, callback):
-            from PySide6.QtCore import QRunnable
             self._runnable = self._create_runnable(ctrl, channel, callback)
 
         @staticmethod
@@ -4912,7 +4909,7 @@ class Application(QApplication):
                         logger.info(f"✓ Started pump 1 at {rpm_corrected:.1f} RPM")
                         self._pump1_running = True  # Track state
                     else:
-                        logger.error(f"✗ Failed to start internal pump")
+                        logger.error("✗ Failed to start internal pump")
                         self._pump1_running = False
                         # Revert button state on failure (block signals to prevent toggle loop)
                         btn.blockSignals(True)
@@ -4937,7 +4934,7 @@ class Application(QApplication):
             # Stop pump
             ctrl = self.hardware_mgr._ctrl_raw
             if ctrl and hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
-                logger.info(f"■ Stopping internal pump 1")
+                logger.info("■ Stopping internal pump 1")
 
                 # Update UI immediately to prevent lag
                 btn = self.main_window.sidebar.pump1_toggle_btn
@@ -4949,10 +4946,10 @@ class Application(QApplication):
                 # Run hardware command in background thread
                 def on_stop_complete(success):
                     if success:
-                        logger.info(f"✓ Stopped pump 1")
+                        logger.info("✓ Stopped pump 1")
                         self._pump1_running = False  # Track state
                     else:
-                        logger.error(f"✗ Failed to stop pump 1")
+                        logger.error("✗ Failed to stop pump 1")
                         # Keep state as running if stop failed
                         logger.warning("Pump 1 may still be running!")
 
@@ -5088,7 +5085,7 @@ class Application(QApplication):
             # Stop both pumps
             ctrl = self.hardware_mgr._ctrl_raw
             if ctrl and hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
-                logger.info(f"■ Stopping both internal pumps")
+                logger.info("■ Stopping both internal pumps")
 
                 # Update UI immediately to prevent lag
                 btn = self.main_window.sidebar.synced_toggle_btn
@@ -5100,12 +5097,12 @@ class Application(QApplication):
                 # Run hardware command in background thread
                 def on_stop_complete(success):
                     if success:
-                        logger.info(f"✓ Stopped both pumps")
+                        logger.info("✓ Stopped both pumps")
                         self._synced_pumps_running = False  # Track state
                         self._pump1_running = False
                         self._pump2_running = False
                     else:
-                        logger.error(f"✗ Failed to stop both pumps")
+                        logger.error("✗ Failed to stop both pumps")
                         logger.warning("Pumps may still be running!")
 
                 task = self._PumpStopTask(ctrl, 3, on_stop_complete)
@@ -5389,7 +5386,7 @@ class Application(QApplication):
                 from PySide6.QtCore import QTimer
                 QTimer.singleShot(contact_time_s * 1000, lambda: self._close_inject_valve())
             else:
-                logger.error(f"✗ Failed to start inject sequence")
+                logger.error("✗ Failed to start inject sequence")
         else:
             from affilabs.widgets.message import show_message
             show_message("Internal pumps not available. P4PRO+ V2.3+ required.", "Warning")
@@ -5568,9 +5565,9 @@ class Application(QApplication):
                     try:
                         success = ctrl.set_pump_corrections(pump1_corr, pump2_corr)
                         if success:
-                            logger.info(f"✓ Pump corrections written to controller EEPROM")
+                            logger.info("✓ Pump corrections written to controller EEPROM")
                         else:
-                            logger.warning(f"⚠ Controller EEPROM write failed (firmware may not support this feature)")
+                            logger.warning("⚠ Controller EEPROM write failed (firmware may not support this feature)")
                     except Exception as e:
                         logger.warning(f"Could not write pump corrections to EEPROM: {e}")
         except Exception as e:
@@ -5682,7 +5679,7 @@ class Application(QApplication):
             logger.info(f"✓ Synced pumps speed updated to {rpm_corrected:.1f} uL/min")
             self._update_internal_pump_status(f"Both Pumps: {rpm_corrected:.0f} µL/min", running=True)
         else:
-            logger.error(f"✗ Failed to update synced pump speed")
+            logger.error("✗ Failed to update synced pump speed")
 
     def _on_pump1_rpm_changed(self):
         """Handle RPM change for pump 1 - update if currently running.
@@ -5738,7 +5735,7 @@ class Application(QApplication):
             logger.info(f"✓ Pump 1 speed updated to {rpm_corrected:.1f} uL/min")
             self._update_internal_pump_status(f"Pump 1: {rpm_corrected:.0f} µL/min", running=True)
         else:
-            logger.error(f"✗ Failed to update pump 1 speed")
+            logger.error("✗ Failed to update pump 1 speed")
 
     def _on_valve_sync_toggled(self, checked: bool):
         """User toggled valve synchronization.
@@ -5809,7 +5806,7 @@ class Application(QApplication):
 
                     logger.info(f"✓ BOTH Loop valves (SYNC): {position} (state={state})")
                 else:
-                    logger.error(f"BOTH Loop valves command failed (SYNC mode)")
+                    logger.error("BOTH Loop valves command failed (SYNC mode)")
             else:
                 # Independent mode - control only the clicked channel
                 success = ctrl.knx_six(state, channel)
@@ -5884,7 +5881,7 @@ class Application(QApplication):
 
                     logger.info(f"✓ BOTH Channel valves (SYNC): {selected_channel} (state={state})")
                 else:
-                    logger.error(f"BOTH Channel valves command failed (SYNC mode)")
+                    logger.error("BOTH Channel valves command failed (SYNC mode)")
             else:
                 # Independent mode - control only the clicked channel
                 success = ctrl.knx_three(state, channel)
@@ -5994,7 +5991,7 @@ class Application(QApplication):
                 delay_needed = travel_delta
                 delta_messages.append(f"🔧 Delay Ch{ch2.upper()} pump: +{delay_needed:.2f}s")
             else:
-                delta_messages.append(f"✓ Travel times matched!")
+                delta_messages.append("✓ Travel times matched!")
 
         # === OBJECTIVE 2: CONTACT TIME MATCHING (RPM Correction) ===
         if len(contact_times) >= 2:
@@ -6017,7 +6014,7 @@ class Application(QApplication):
 
             contact_delta = abs(ct2 - ct1)
             if contact_delta < 0.5:
-                delta_messages.append(f"✓ Contact times matched!")
+                delta_messages.append("✓ Contact times matched!")
 
         # Display in status bar
         if delta_messages:
@@ -6500,8 +6497,6 @@ class Application(QApplication):
 
     def _init_kalman_filters(self):
         """Initialize Kalman filter instances for each channel."""
-        import os
-        import sys
 
         # Path already added at module initialization - no need to re-add
         from affilabs.utils.spr_data_processor import KalmanFilter
@@ -7447,8 +7442,6 @@ class Application(QApplication):
 
     def _on_colorblind_toggled(self, checked: bool):
         """Colorblind-friendly palette toggled."""
-        import os
-        import sys
 
         # Add settings to path if not already there
         # Path already added at module initialization - no need to re-add
@@ -8983,8 +8976,6 @@ class Application(QApplication):
 
     def _on_copy_graph_to_clipboard(self):
         """Copy active cycle graph to clipboard."""
-        from PySide6.QtCore import QBuffer, QIODevice
-        from PySide6.QtGui import QImage
         from PySide6.QtWidgets import QApplication
 
         try:
@@ -9067,7 +9058,7 @@ class Application(QApplication):
                 led_b = int(self.main_window.channel_b_input.text())
                 led_c = int(self.main_window.channel_c_input.text())
                 led_d = int(self.main_window.channel_d_input.text())
-            except ValueError as e:
+            except ValueError:
                 from affilabs.widgets.message import show_message
                 show_message("Invalid input values. Please enter numbers only.", "Error")
                 return

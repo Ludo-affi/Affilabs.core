@@ -557,7 +557,7 @@ def run_adaptive_integration_calibration(
         logger.info(f"Weakest channel: {weakest_ch.upper()}")
         logger.info(f"   Signal: {weakest_signal:.0f} counts @ LED=255")
         logger.info(f"   Integration: {result.p_integration_time:.1f}ms")
-        logger.info(f"\nBalancing all channels to match weakest signal level...\n")
+        logger.info("\nBalancing all channels to match weakest signal level...\n")
 
         # Balance all other channels to match weakest
         for ch in ch_list:

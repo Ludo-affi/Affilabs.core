@@ -1,5 +1,4 @@
 """Apply Phase 10 (Font Weight) consolidation."""
-import re
 
 file_path = "affilabs/affilabs_core_ui.py"
 

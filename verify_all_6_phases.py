@@ -1,6 +1,4 @@
 """Final comprehensive verification - All 6 cleanup phases"""
-import os
-import json
 import re
 from pathlib import Path
 
@@ -109,7 +107,7 @@ def verify_all_6_phases():
     total_tests += 1
     blur8_count = ui_content.count('shadow.setBlurRadius(8)')
     if blur8_count == 0:
-        print(f"✓ Duplicate shadow pattern removed")
+        print("✓ Duplicate shadow pattern removed")
         passed_tests += 1
     else:
         print(f"✗ Duplicate pattern still present ({blur8_count} instances)")
@@ -152,7 +150,7 @@ def verify_all_6_phases():
     total_tests += 1
     primary_text_hardcoded = len(re.findall(r'color:\s*#1D1D1F;', ui_content))
     if primary_text_hardcoded == 0:
-        print(f"✓ All hardcoded #1D1D1F replaced")
+        print("✓ All hardcoded #1D1D1F replaced")
         passed_tests += 1
     else:
         print(f"✗ Still {primary_text_hardcoded} hardcoded #1D1D1F")
@@ -160,7 +158,7 @@ def verify_all_6_phases():
     total_tests += 1
     secondary_text_hardcoded = len(re.findall(r'color:\s*#86868B;', ui_content))
     if secondary_text_hardcoded == 0:
-        print(f"✓ All hardcoded #86868B replaced")
+        print("✓ All hardcoded #86868B replaced")
         passed_tests += 1
     else:
         print(f"✗ Still {secondary_text_hardcoded} hardcoded #86868B")
@@ -207,7 +205,7 @@ def verify_all_6_phases():
         print("  • Consolidated profiling utilities")
         print()
         print("Phase 4 - Shadow Effect Consolidation:")
-        print(f"  • Created create_card_shadow() helper")
+        print("  • Created create_card_shadow() helper")
         print(f"  • Replaced {helper_calls} duplicate shadow effects")
         print()
         print("Phase 5 - Layout Constants Consolidation:")
@@ -215,13 +213,13 @@ def verify_all_6_phases():
         print(f"  • Centralized {margin_usage} margin/spacing settings")
         print()
         print("Phase 6 - Hardcoded Color Consolidation:")
-        print(f"  • Replaced 87 hardcoded color values")
+        print("  • Replaced 87 hardcoded color values")
         print(f"  • Colors.PRIMARY_TEXT used {primary_usage} times")
         print(f"  • Colors.SECONDARY_TEXT used {secondary_usage} times")
         print()
         print("=" * 80)
-        print(f"Total Lines Saved: 412 lines from affilabs_core_ui.py")
-        print(f"Total Value Replacements: 87 colors + 64 margins + 15 spacing = 166")
+        print("Total Lines Saved: 412 lines from affilabs_core_ui.py")
+        print("Total Value Replacements: 87 colors + 64 margins + 15 spacing = 166")
         print("Result: Centralized configuration, improved maintainability")
         print("=" * 80)
         return 0

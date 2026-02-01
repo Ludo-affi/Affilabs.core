@@ -32,7 +32,7 @@ async def test_injection_method(method: str = "simple"):
     logger.info("\n" + "=" * 80)
     logger.info(f" TESTING INJECTION METHOD: {method.upper()}")
     logger.info("=" * 80 + "\n")
-    
+
     # Import hardware manager
     logger.info("1. Initializing hardware manager...")
     try:
@@ -91,7 +91,7 @@ async def test_injection_method(method: str = "simple"):
         logger.info("   - Both channels dispense → wait 30s → open valves")
         logger.info("   - KC2 pulsing during injection")
         logger.info("   - Most complex, longest execution time")
-    
+
     # Confirm before starting
     logger.info("\n" + "=" * 80)
     logger.info(" READY TO START INJECTION")
@@ -100,7 +100,7 @@ async def test_injection_method(method: str = "simple"):
     logger.info("   - Pumps will aspirate and dispense")
     logger.info("   - Valves will switch")
     logger.info(f"   - Estimated duration: ~{contact_time/60 + 3:.1f} minutes")
-    
+
     response = input("\nProceed? (yes/no): ").lower().strip()
     if response not in ["yes", "y"]:
         logger.info("❌ Injection cancelled by user")
@@ -109,7 +109,7 @@ async def test_injection_method(method: str = "simple"):
     # Run injection
     logger.info("\n5. Starting injection sequence...")
     logger.info("=" * 80 + "\n")
-    
+
     try:
         success = await pump_mgr.inject_with_valve_timing(
             assay_flow_rate=assay_flow_rate,
@@ -142,17 +142,17 @@ async def main():
     method = "simple"  # Default
     if len(sys.argv) > 1:
         method = sys.argv[1].lower()
-    
+
     # Validate method
     valid_methods = ["simple", "partial_loop", "default"]
     if method not in valid_methods:
         logger.error(f"❌ Invalid method: {method}")
         logger.error(f"   Valid methods: {', '.join(valid_methods)}")
         sys.exit(1)
-    
+
     # Run test
     success = await test_injection_method(method)
-    
+
     # Exit with appropriate code
     sys.exit(0 if success else 1)
 
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help", "help"]:
         print(__doc__)
         sys.exit(0)
-    
+
     # Run the async test
     try:
         asyncio.run(main())

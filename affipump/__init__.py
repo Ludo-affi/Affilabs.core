@@ -9,7 +9,7 @@ from .affipump_controller import AffipumpController
 
 class PumpController:
     """Wrapper for Aff ipumpController with factory method for auto-detection."""
-    
+
     @classmethod
     def from_first_available(cls):
         """Find and connect to first available FTDI pump controller.
@@ -21,7 +21,7 @@ class PumpController:
         """
         import logging
         logger = logging.getLogger(__name__)
-        
+
         # Try FTDI auto-detection first
         logger.info("   → Trying FTDI auto-detection...")
         ports = serial.tools.list_ports.comports()
@@ -37,7 +37,7 @@ class PumpController:
                 except Exception as e:
                     logger.debug(f"   → Failed on {port.device}: {e}")
                     continue
-        
+
         # Fallback: Try common pump COM ports directly
         logger.info("   → FTDI auto-detection failed, trying direct COM ports...")
         for port_name in ['COM8', 'COM7', 'COM6', 'COM5']:
@@ -59,14 +59,14 @@ class PumpController:
                 except Exception:
                     pass
                 continue
-        
+
         logger.info("   ❌ No pump found on any port")
         return None
 
 
 class CavroPumpManager:
     """Manager for dual Cavro pump setup with HAL-compatible interface."""
-    
+
     def __init__(self, controller):
         """Initialize with a pump controller instance.
         
@@ -75,7 +75,7 @@ class CavroPumpManager:
         """
         self.pump = controller
         self._initialized = False
-    
+
     def initialize_pumps(self):
         """Initialize both pumps.
         
@@ -91,7 +91,7 @@ class CavroPumpManager:
             return True
         except Exception:
             return False
-    
+
     def is_available(self):
         """Check if pump is available.
         
@@ -99,7 +99,7 @@ class CavroPumpManager:
             True if pump is connected and initialized
         """
         return self.pump is not None and self._initialized
-    
+
     def aspirate(self, pump_address, volume_ul, rate_ul_min):
         """Aspirate fluid.
         
@@ -117,7 +117,7 @@ class CavroPumpManager:
             return True
         except Exception:
             return False
-    
+
     def dispense(self, pump_address, volume_ul, rate_ul_min):
         """Dispense fluid.
         
@@ -135,7 +135,7 @@ class CavroPumpManager:
             return True
         except Exception:
             return False
-    
+
     def set_valve_position(self, pump_address, port):
         """Set valve position.
         
@@ -144,7 +144,7 @@ class CavroPumpManager:
             port: Valve port number
         """
         self.pump.send_command(f"/{pump_address}O{port}R")
-    
+
     def get_syringe_position(self, pump_address):
         """Get current syringe position.
         
@@ -162,7 +162,7 @@ class CavroPumpManager:
             except ValueError:
                 return None
         return None
-    
+
     def wait_until_idle(self, pump_address, timeout_s=60.0):
         """Wait for pump to finish current operation.
         
@@ -181,7 +181,7 @@ class CavroPumpManager:
                 return True
             time.sleep(0.1)
         return False
-    
+
     def close(self):
         """Close connection to pump."""
         if self.pump:

@@ -867,9 +867,9 @@ class AnalysisWindow(QWidget):
         """Handle edit of data anlysis table."""
         if not self.updating_table:
             try:
-                start_times = {ch: 0.0 for ch in CH_LIST}
-                end_times = {ch: 0.0 for ch in CH_LIST}
-                assoc_start_times = {ch: 0.0 for ch in CH_LIST}
+                start_times = dict.fromkeys(CH_LIST, 0.0)
+                end_times = dict.fromkeys(CH_LIST, 0.0)
+                assoc_start_times = dict.fromkeys(CH_LIST, 0.0)
                 seg = self.auto_segments[self.ui.seg_select.currentIndex()]
                 for i, ch in enumerate(CH_LIST):
                     if np.all(seg.data_y[ch] == np.nan):
@@ -1052,8 +1052,8 @@ class AnalysisSegment:
                 self.name = base_segment.name
                 self.note = base_segment.note
                 self.assoc_shift = base_segment.shift
-                self.base_start = {ch: base_segment.start for ch in CH_LIST}
-                self.base_end = {ch: base_segment.end for ch in CH_LIST}
+                self.base_start = dict.fromkeys(CH_LIST, base_segment.start)
+                self.base_end = dict.fromkeys(CH_LIST, base_segment.end)
                 self.start = {ch: deepcopy(base_segment.start) for ch in CH_LIST}
                 self.end = {ch: deepcopy(base_segment.end) for ch in CH_LIST}
                 self.dissoc_start = {
@@ -1064,12 +1064,12 @@ class AnalysisSegment:
                 }
                 self.d_seg_x = {ch: np.ndarray([]) for ch in CH_LIST}
                 self.d_seg_y = {ch: np.ndarray([]) for ch in CH_LIST}
-                self.dissoc_shift = {ch: 0 for ch in CH_LIST}
-                self.start_index = {ch: 0 for ch in CH_LIST}
+                self.dissoc_shift = dict.fromkeys(CH_LIST, 0)
+                self.start_index = dict.fromkeys(CH_LIST, 0)
                 self.end_index = {ch: len(self.seg_x[ch]) - 1 for ch in CH_LIST}
-                self.conc = {ch: 0 for ch in CH_LIST}
-                self.assoc_start = {ch: 0 for ch in CH_LIST}
-                self.assoc_end = {ch: 1 for ch in CH_LIST}
+                self.conc = dict.fromkeys(CH_LIST, 0)
+                self.assoc_start = dict.fromkeys(CH_LIST, 0)
+                self.assoc_end = dict.fromkeys(CH_LIST, 1)
 
         except Exception as e:
             logger.exception(f"Error while loading base segment: {e}")

@@ -9,7 +9,7 @@ print("=" * 80)
 try:
     # Get all FTDI devices
     all_devices = listDevices()
-    
+
     if all_devices:
         print(f"\n✓ Found {len(all_devices)} FTDI device(s):")
         for i, dev in enumerate(all_devices):
@@ -17,41 +17,41 @@ try:
             is_phase = serial.startswith("ST")
             marker = "👉 PHASE PHOTONICS!" if is_phase else ""
             print(f"  [{i}] {serial} {marker}")
-        
+
         # Filter for Phase Photonics (serial starts with "ST")
         phase_devices = [s.decode() for s in all_devices if s.startswith(b"ST")]
-        
+
         if phase_devices:
             print(f"\n✅ SUCCESS! Found {len(phase_devices)} Phase Photonics detector(s):")
             for dev in phase_devices:
                 print(f"   - {dev}")
-            
+
             # Try to connect to the first one
             print(f"\nAttempting connection to {phase_devices[0]}...")
             from pathlib import Path
             from affilabs.utils.phase_photonics_api import PhasePhotonicsAPI
-            
+
             # Use Sensor.dll (64-bit version)
             dll_path = Path(__file__).parent / "affilabs" / "utils" / "Sensor64bit.dll"
             dll_name = "Sensor64bit.dll"
-            
+
             print(f"Using DLL: {dll_name}")
             print(f"DLL path: {dll_path}")
             print(f"DLL exists: {dll_path.exists()}")
-            
+
             if dll_path.exists():
                 api = PhasePhotonicsAPI(str(dll_path))
                 spec = api.usb_initialize(phase_devices[0])
-                
+
                 if spec:
                     print(f"✅ CONNECTED to {phase_devices[0]}!")
                     print(f"   Handle: {spec}")
-                    
+
                     # Try to read wavelength calibration
                     print("\nReading wavelength calibration...")
                     bytes_read, config = api.usb_read_config(spec, 0)
                     print(f"   Config bytes read: {bytes_read}")
-                    
+
                     # Cleanup
                     api.usb_deinit(spec)
                     print("   Disconnected")

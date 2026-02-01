@@ -4,7 +4,6 @@ Predicts if calibration will succeed based on initial conditions.
 """
 
 import pandas as pd
-import numpy as np
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, cross_val_score
@@ -193,7 +192,7 @@ def train_model(features_df: pd.DataFrame, use_device_features: bool = True) -> 
     model.fit(X_train, y_train)
 
     # Evaluate
-    print(f"\n=== Training Results ===")
+    print("\n=== Training Results ===")
     print(f"Training accuracy: {model.score(X_train, y_train):.3f}")
     print(f"Test accuracy: {model.score(X_test, y_test):.3f}")
 
@@ -203,16 +202,16 @@ def train_model(features_df: pd.DataFrame, use_device_features: bool = True) -> 
 
     # Classification report
     y_pred = model.predict(X_test)
-    
-    print(f"\n=== Test Set Classification Report ===")
-    
+
+    print("\n=== Test Set Classification Report ===")
+
     # Check if we have both classes
     unique_classes = sorted(set(y_test) | set(y_pred))
     if len(unique_classes) > 1:
         y_pred_proba = model.predict_proba(X_test)[:, 1]
         print(classification_report(y_test, y_pred, target_names=['FAIL', 'SUCCESS']))
 
-        print(f"\n=== Confusion Matrix ===")
+        print("\n=== Confusion Matrix ===")
         cm = confusion_matrix(y_test, y_pred)
         print(cm)
         print(f"  True Negatives: {cm[0,0]}")
@@ -232,11 +231,11 @@ def train_model(features_df: pd.DataFrame, use_device_features: bool = True) -> 
     if auc is not None:
         print(f"\nROC-AUC Score: {auc:.3f}")
     else:
-        print(f"\nROC-AUC Score: N/A (only one class)")
+        print("\nROC-AUC Score: N/A (only one class)")
 
 
     # Feature importance
-    print(f"\n=== Feature Importance ===")
+    print("\n=== Feature Importance ===")
     for feat, imp in sorted(zip(feature_cols, model.feature_importances_),
                            key=lambda x: x[1], reverse=True):
         print(f"  {feat:35s}: {imp:.4f}")

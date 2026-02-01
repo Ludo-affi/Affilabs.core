@@ -1,7 +1,7 @@
 """Comprehensive verification of all cleanup changes."""
 
 from affilabs.services.data_collector import DataCollector
-from affilabs.domain.flag import InjectionFlag, WashFlag
+from affilabs.domain.flag import InjectionFlag
 from affilabs.domain.cycle import Cycle
 import os
 

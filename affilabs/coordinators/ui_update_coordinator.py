@@ -187,7 +187,7 @@ class AL_UIUpdateCoordinator(QObject):
                         # Update raw data plot
                         if self._raw_spectrum_updates_enabled and raw_spectrum is not None:
                             live_dialog.update_raw_data_plot(channel, wavelengths, raw_spectrum)
-                    except Exception as dialog_e:
+                    except Exception:
                         # Silently ignore dialog update errors (dialog may be closing)
                         pass
 

@@ -54,18 +54,18 @@ peak_wavelengths = {}
 for i, channel in enumerate(channels):
     df = channel_data[channel]
     wavelengths = df['wavelength_nm'].values
-    
+
     peaks = []
     for col in time_columns:
         spectrum = df[col].values
-        
+
         # Find peak (maximum transmission)
         peak_idx = np.argmax(spectrum)
         peak_wl = wavelengths[peak_idx]
         peaks.append(peak_wl)
-    
+
     peak_wavelengths[channel_labels[i]] = np.array(peaks)
-    
+
     print(f"  Channel {channel_labels[i]}: Peak range {np.min(peaks):.2f} - {np.max(peaks):.2f} nm")
 
 # Calculate statistics
@@ -75,7 +75,7 @@ for label in channel_labels:
     mean_wl = np.mean(peaks)
     std_wl = np.std(peaks)
     drift = peaks[-1] - peaks[0]
-    
+
     print(f"\n  Channel {label}:")
     print(f"    Mean wavelength: {mean_wl:.3f} nm")
     print(f"    Std deviation: {std_wl:.4f} nm")
@@ -86,7 +86,7 @@ for label in channel_labels:
 print("\n[6] Creating sensorgram plot...")
 
 fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-fig.suptitle('Baseline Recording Sensorgrams - Phase Photonics\n' + 
+fig.suptitle('Baseline Recording Sensorgrams - Phase Photonics\n' +
              f'Integration: {metadata["integration_time_ms"].iloc[0]:.1f}ms, ' +
              f'Scans: {metadata["num_scans"].iloc[0]}, ' +
              f'Duration: {duration}s',
@@ -96,27 +96,27 @@ colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']
 
 for i, (ax, label) in enumerate(zip(axes.flatten(), channel_labels)):
     peaks = peak_wavelengths[label]
-    
+
     # Plot raw data
-    ax.plot(time_axis, peaks, '-', color=colors[i], alpha=0.7, linewidth=1.5, 
+    ax.plot(time_axis, peaks, '-', color=colors[i], alpha=0.7, linewidth=1.5,
             label=f'Channel {label}')
-    
+
     # Add mean line
     mean_wl = np.mean(peaks)
     ax.axhline(mean_wl, color='red', linestyle='--', alpha=0.5, linewidth=1,
                label=f'Mean: {mean_wl:.3f} nm')
-    
+
     # Statistics
     std_wl = np.std(peaks)
     drift = peaks[-1] - peaks[0]
-    
+
     ax.set_xlabel('Time (seconds)', fontsize=11)
     ax.set_ylabel('Peak Wavelength (nm)', fontsize=11)
-    ax.set_title(f'Channel {label} (σ={std_wl:.4f} nm, drift={drift:.4f} nm)', 
+    ax.set_title(f'Channel {label} (σ={std_wl:.4f} nm, drift={drift:.4f} nm)',
                  fontsize=12, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.legend(loc='best', fontsize=9)
-    
+
     # Set y-axis to show small variations
     y_center = mean_wl
     y_range = max(0.5, std_wl * 5)  # At least 0.5 nm range
@@ -133,14 +133,14 @@ print(f"\n✅ Sensorgram saved to: {output_file}")
 print("\n[7] Creating combined overview...")
 
 fig2, ax = plt.subplots(1, 1, figsize=(14, 6))
-fig2.suptitle('All Channels - Baseline Stability Comparison', 
+fig2.suptitle('All Channels - Baseline Stability Comparison',
               fontsize=14, fontweight='bold')
 
 for i, label in enumerate(channel_labels):
     peaks = peak_wavelengths[label]
     # Normalize to first point for drift comparison
     normalized = peaks - peaks[0]
-    ax.plot(time_axis, normalized, '-', color=colors[i], linewidth=2, 
+    ax.plot(time_axis, normalized, '-', color=colors[i], linewidth=2,
             label=f'Channel {label} (σ={np.std(peaks):.4f} nm)', alpha=0.8)
 
 ax.set_xlabel('Time (seconds)', fontsize=12)
@@ -162,7 +162,7 @@ plt.show()
 print("\n" + "=" * 80)
 print("VISUALIZATION COMPLETE")
 print("=" * 80)
-print(f"\nGenerated files:")
+print("\nGenerated files:")
 print(f"  1. {output_file}")
 print(f"  2. {output_file2}")
 print("\nPlots are now displayed.")

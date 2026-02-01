@@ -17,7 +17,6 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -1566,10 +1565,10 @@ class CalibrationQCDialog(QDialog):
         """
         try:
             data = self.calibration_data
-            
+
             # Debug logging
             logger.debug(f"Plotting {data_type} - calibration_data keys: {list(data.keys())}")
-            
+
             wavelengths = data.get("wavelengths", None)
 
             # Default wavelength array
@@ -1594,7 +1593,7 @@ class CalibrationQCDialog(QDialog):
                                 parsed = ast.literal_eval(wavelengths)
                             except:
                                 # Give up, use default
-                                logger.warning(f"Failed to parse wavelengths string, using default")
+                                logger.warning("Failed to parse wavelengths string, using default")
                                 wavelengths = default_wavelengths
                                 parsed = None
                     else:

@@ -28,7 +28,7 @@ test_questions = [
     "How do I start an acquisition?",
     "How do I export data?",
     "How do I calibrate?",
-    
+
     # Should trigger TinyLM (conversational path)
     "What's the difference between association and dissociation?",
     "Can you explain how to optimize flow rates?",
@@ -48,15 +48,15 @@ print("(Model will lazy load on first conversational question)\n")
 for i, question in enumerate(test_questions, 1):
     print(f"\n--- Test {i}/{len(test_questions)} ---")
     print(f"Question: {question}")
-    
+
     # Generate answer
     answer, success = spark.generate_answer(question)
-    
+
     print(f"\nAnswer ({len(answer)} chars):")
     print(answer)
     print(f"\nSuccess: {success}")
     print(f"Model loaded: {spark.is_initialized()}")
-    
+
     if i < len(test_questions):
         input("\nPress Enter to continue...")
 

@@ -41,7 +41,6 @@ from PySide6.QtGui import (
     QFont,
     QPainter,
     QPen,
-    QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -141,7 +140,7 @@ class RoundedFrame(QWidget):
         # Draw border
         painter.setClipRect(self.rect())
         painter.drawPath(path)
-        
+
         painter.end()
 
 
@@ -2085,11 +2084,6 @@ class DataWindow(QWidget):
             return
         max_width = max(250, int(self.graph_splitter.width() * 0.5))
         self.ui.groupBox.setMaximumWidth(max_width)
-
-    def resizeEvent(self: Self, event: QResizeEvent) -> None:
-        """Ensure auxiliary widgets react to window resizes."""
-        super().resizeEvent(event)
-        self._update_display_group_width()
 
     def unit_to_ru(self: Self) -> None:
         """Change unit to RU."""

@@ -118,7 +118,7 @@ def train_model(features_df: pd.DataFrame) -> RandomForestClassifier:
     model.fit(X_train, y_train)
 
     # Evaluate
-    print(f"\n=== Training Results ===")
+    print("\n=== Training Results ===")
     print(f"Training accuracy: {model.score(X_train, y_train):.3f}")
     print(f"Test accuracy: {model.score(X_test, y_test):.3f}")
 
@@ -128,15 +128,15 @@ def train_model(features_df: pd.DataFrame) -> RandomForestClassifier:
 
     # Classification report
     y_pred = model.predict(X_test)
-    print(f"\n=== Test Set Classification Report ===")
-    
+    print("\n=== Test Set Classification Report ===")
+
     # Handle case where only one class is present
     unique_classes = sorted(set(y_test) | set(y_pred))
     target_names = ['BASELINE' if c == 0 else 'HIGH' for c in unique_classes]
-    
+
     if len(unique_classes) > 1:
         print(classification_report(y_test, y_pred, target_names=target_names, labels=unique_classes))
-        print(f"\n=== Confusion Matrix ===")
+        print("\n=== Confusion Matrix ===")
         print(confusion_matrix(y_test, y_pred))
     else:
         print(f"Only one class present: {target_names[0]}")
@@ -144,7 +144,7 @@ def train_model(features_df: pd.DataFrame) -> RandomForestClassifier:
 
 
     # Feature importance
-    print(f"\n=== Feature Importance ===")
+    print("\n=== Feature Importance ===")
     for feat, imp in sorted(zip(feature_cols, model.feature_importances_),
                            key=lambda x: x[1], reverse=True):
         print(f"  {feat:40s}: {imp:.4f}")

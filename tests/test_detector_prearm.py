@@ -55,7 +55,7 @@ for time_ms in [30.0, 60.0, 70.0]:
         if spectrum is not None and len(spectrum) > 0:
             print(f"   ✅ Spectrum acquired: {len(spectrum)} pixels, max={spectrum.max():.0f}")
         else:
-            print(f"   ❌ Empty spectrum returned")
+            print("   ❌ Empty spectrum returned")
     except Exception as e:
         print(f"   ❌ Exception: {e}")
 
@@ -77,7 +77,7 @@ for time_ms in [30.0, 60.0]:
         if spectrum is not None and len(spectrum) > 0:
             print(f"   ✅ HAL spectrum acquired: {len(spectrum)} pixels, max={spectrum.max():.0f}")
         else:
-            print(f"   ❌ HAL returned empty spectrum")
+            print("   ❌ HAL returned empty spectrum")
     except Exception as e:
         print(f"   ❌ HAL exception: {e}")
 

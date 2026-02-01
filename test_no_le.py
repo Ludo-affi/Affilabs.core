@@ -18,7 +18,7 @@ for val in [0, 5, 20, 50, 100]:
         ctrl._ser.write(f"l{ch}{val}\n".encode())
         time.sleep(0.01)
         ctrl._ser.read(10)
-    
+
     time.sleep(0.5)
     spec = usb.intensities()
     print(f"  Signal: {max(spec):.1f} counts")

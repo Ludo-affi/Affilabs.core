@@ -30,7 +30,7 @@ def test_turn_on_channel_speed():
     if not ctrl.open():
         print("❌ Failed to connect")
         return False
-    print(f"✓ Connected")
+    print("✓ Connected")
 
     # Set batch intensities
     print("\n[2/2] Testing turn_on_channel timing...")
@@ -63,15 +63,15 @@ def test_turn_on_channel_speed():
     print("-" * 80)
     avg_time = sum(times) / len(times)
 
-    print(f"\nRESULTS:")
+    print("\nRESULTS:")
     print(f"  Average: {avg_time:.1f}ms")
-    print(f"  Target:  < 100ms (4 channels × ~20ms each)")
+    print("  Target:  < 100ms (4 channels × ~20ms each)")
 
     if avg_time < 100:
-        print(f"\n✅ PASS - turn_on_channel is fast!")
+        print("\n✅ PASS - turn_on_channel is fast!")
         return True
     else:
-        print(f"\n❌ FAIL - turn_on_channel still slow (serial read timeout?)")
+        print("\n❌ FAIL - turn_on_channel still slow (serial read timeout?)")
         return False
 
 if __name__ == "__main__":

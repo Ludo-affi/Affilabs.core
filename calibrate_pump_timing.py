@@ -224,7 +224,7 @@ class PumpTimingCalibration:
         pump_name = f"Pump {pump_ch}"
         channels = ["a", "b", "c", "d"]  # Monitor ALL channels
         print(f"\n  [{test_num}/{total_tests}] {pump_name}: {rpm} RPM × {correction} correction")
-        print(f"  Monitoring: ALL channels (A+B+C+D)")
+        print("  Monitoring: ALL channels (A+B+C+D)")
         print("  " + "-" * 56)
 
         # Baseline
@@ -234,7 +234,7 @@ class PumpTimingCalibration:
         print("      Preparing loop: BOTH valves → LOAD (closed), starting purge...")
         with contextlib.suppress(Exception):
             self.ctrl.knx_six_both(state=0)
-        
+
         # Step 1: High-speed purge to clean KC1 path (2 min @ 250 RPM)
         purge_rate = 250.0
         try:
@@ -251,7 +251,7 @@ class PumpTimingCalibration:
                 }
             print(f"      ✓ Purging KC1 path at {purge_rate:.0f} RPM for 2 min...")
             time.sleep(120.0)  # 2 minute purge
-            print(f"      ✓ Purge complete")
+            print("      ✓ Purge complete")
         except Exception as e:
             print(f"      ❌ Purge error: {e}")
             return {
@@ -263,7 +263,7 @@ class PumpTimingCalibration:
                 "success": False,
                 "error": f"Purge failed: {e}",
             }
-        
+
         # Step 2: Slow to test rate for loop filling
         flow_rate_ul_min = rpm * correction
         try:
@@ -321,7 +321,7 @@ class PumpTimingCalibration:
             self.ctrl.knx_six_both(state=0)
 
         # Final purge with valves OPEN to clean sensor path
-        print(f"\n      Final purge: opening valves, running pump at 250 RPM for 2 min...")
+        print("\n      Final purge: opening valves, running pump at 250 RPM for 2 min...")
         with contextlib.suppress(Exception):
             self.ctrl.knx_six_both(state=1)  # Open valves
         with contextlib.suppress(Exception):
@@ -400,7 +400,7 @@ class PumpTimingCalibration:
             return
 
         print(f"\n  Successful tests: {len(successful)}/{len(self.results)}")
-        print(f"\n  PUMP SYNCHRONIZATION ANALYSIS:")
+        print("\n  PUMP SYNCHRONIZATION ANALYSIS:")
         print("  " + "-" * 56)
 
         for correction in [0.5, 1.0, 1.5]:
@@ -441,7 +441,7 @@ class PumpTimingCalibration:
                     print("    ⚠️ POOR SYNC (> 15s difference)")
 
         # Overall recommendation
-        print(f"\n  RECOMMENDATIONS:")
+        print("\n  RECOMMENDATIONS:")
         print("  " + "-" * 56)
         best_sync = None
         best_delta = float("inf")
@@ -465,7 +465,7 @@ class PumpTimingCalibration:
             print(f"\n  ✓ Best synchronization with correction factor: {best_sync}")
             print(f"    Pump timing delta: {best_delta:.1f}s")
         else:
-            print(f"\n  ⚠️ No clear recommendation - review individual results")
+            print("\n  ⚠️ No clear recommendation - review individual results")
 
     def save_results(self):
         print("\n[4/4] Saving results...")

@@ -179,7 +179,7 @@ def main():
     firmware_path = Path(__file__).parent / "firmware_archive" / "pico_p4spr" / "affinite_p4spr_v2.4.1.uf2"
 
     if not firmware_path.exists():
-        print(f"\n❌ ERROR: Firmware file not found!")
+        print("\n❌ ERROR: Firmware file not found!")
         print(f"   Expected: {firmware_path}")
         return False
 

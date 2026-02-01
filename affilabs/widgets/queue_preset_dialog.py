@@ -359,7 +359,7 @@ class QueuePresetDialog(QDialog):
                 QMessageBox.information(
                     self,
                     "Import Successful",
-                    f"Preset imported successfully!",
+                    "Preset imported successfully!",
                 )
                 # Reload list
                 self._load_presets(self.search_input.text())

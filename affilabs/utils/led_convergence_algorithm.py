@@ -393,7 +393,7 @@ def LEDconverge(
             if integration_locked or freeze_integration or allow_increase_only:
                 if freeze_integration:
                     _log(logger, "info", f"  🔒 P-MODE FREEZE POLICY ACTIVE - Integration LOCKED at {integration_ms:.1f}ms")
-                    _log(logger, "info", f"     P-mode inherits S-mode integration time and NEVER reduces it")
+                    _log(logger, "info", "     P-mode inherits S-mode integration time and NEVER reduces it")
                 else:
                     _log(logger, "info", f"  🔒 Integration time LOCKED at {locked_integration_time:.1f}ms")
                 _log(logger, "info", f"  ℹ️ Weakest channel {weakest_ch.upper()} locked at max LED ({weakest_led})")
@@ -441,12 +441,12 @@ def LEDconverge(
                 # CRITICAL: This branch should NEVER execute in P-mode!
                 # If you see this in P-mode logs, freeze_integration check FAILED!
                 if freeze_integration:
-                    _log(logger, "error", f"  ❌ BUG: P-mode attempting to reduce integration time!")
+                    _log(logger, "error", "  ❌ BUG: P-mode attempting to reduce integration time!")
                     _log(logger, "error", f"     freeze_integration={freeze_integration} but else branch executed!")
-                    _log(logger, "error", f"     This should NEVER happen - skipping integration reduction")
+                    _log(logger, "error", "     This should NEVER happen - skipping integration reduction")
                     # Don't reduce integration in P-mode even if we got here by mistake
                 else:
-                    _log(logger, "info", f"  ⚠️ Multiple channels saturating - reducing integration time")
+                    _log(logger, "info", "  ⚠️ Multiple channels saturating - reducing integration time")
                     new_integration = calculate_integration_time_reduction(
                         sat_per_ch=sat_per_ch,
                         current_integration=integration_ms,

@@ -5,12 +5,11 @@ Replaces the cramped sidebar form with a spacious popup dialog for better UX.
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QFrame,
-    QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QInputDialog,
-    QMessageBox
+    QPlainTextEdit, QFrame,
+    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox
 )
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QColor, QKeyEvent, QCursor
+from PySide6.QtGui import QKeyEvent, QCursor
 from affilabs.domain.cycle import Cycle
 from affilabs.services.queue_preset_storage import QueuePresetStorage
 import time
@@ -132,7 +131,7 @@ class MethodBuilderDialog(QDialog):
         text = self.notes_input.toPlainText().strip()
         text_lower = text.lower()
 
-        print(f"\n=== DEBUG: _detect_and_respond_to_question ===")
+        print("\n=== DEBUG: _detect_and_respond_to_question ===")
         print(f"Input text: '{text}'")
         print(f"Input text_lower: '{text_lower}'")
         print(f"_waiting_for_response: {self._waiting_for_response}")
@@ -309,7 +308,7 @@ class MethodBuilderDialog(QDialog):
             # No number found - show error
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid Answer",
-                f"Please type a number (e.g., '5') and press Enter or click Spark button.")
+                "Please type a number (e.g., '5') and press Enter or click Spark button.")
             self.notes_input.clear()
             return
 
@@ -690,7 +689,6 @@ class MethodBuilderDialog(QDialog):
     def _show_notes_help(self):
         """Show help dialog for notes syntax."""
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextBrowser, QPushButton
-        from PySide6.QtCore import Qt
 
         help_text = """
 <h3>Notes Field Complete Guide</h3>
@@ -857,7 +855,6 @@ Regeneration 30sec [ALL:50mM]</pre>
 
     def _on_add_to_method(self):
         """Add cycles to local method queue (supports multiple cycles, one per line)."""
-        import re
 
         notes_text = self.notes_input.toPlainText().strip()
         if not notes_text:

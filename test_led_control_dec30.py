@@ -14,7 +14,7 @@ for port in ports:
     print(f"  Found: {port.device} - VID={hex(port.vid) if port.vid else 'None'}, PID={hex(port.pid) if port.pid else 'None'}")
     if port.vid in [0x2E8A, 0x10C4] and port.pid in [0x000A, 0xEA60]:  # Pico or CP210x
         pico_port = port.device
-        print(f"  ✅ Using this port")
+        print("  ✅ Using this port")
         break
 
 if not pico_port:
@@ -24,7 +24,7 @@ if not pico_port:
 print(f"\nConnecting to {pico_port}...")
 ctrl = PicoP4SPR()
 ctrl.open()
-print(f"✅ Connected")
+print("✅ Connected")
 
 # Test channels and intensities
 channels = ['a', 'b', 'c', 'd']

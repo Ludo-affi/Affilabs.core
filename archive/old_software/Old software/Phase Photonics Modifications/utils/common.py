@@ -29,9 +29,9 @@ def update_dict_recursively(dest, updated):
                 r = update_dict_recursively(dest.get(k, {}), v)
                 dest[k] = r
             else:
-                dest[k] = updated[k]
+                dest[k] = v
         else:
-            dest = {k: updated[k]}
+            dest = {k: v}
     return dest
 
 
@@ -45,9 +45,8 @@ lock = threading.Lock()
 
 def update_config_file(data):
     old_data = update_dict_recursively(dest=get_config(), updated=data)
-    with lock:
-        with open(CONFIG_FILE, "w") as jp:
-            json.dump(old_data, jp, indent=2)
+    with lock, open(CONFIG_FILE, "w") as jp:
+        json.dump(old_data, jp, indent=2)
 
 
 def get_config():

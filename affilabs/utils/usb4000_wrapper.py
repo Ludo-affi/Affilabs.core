@@ -105,12 +105,12 @@ def reset_usb_spectrometers():
                 # Perform USB reset (equivalent to unplug/replug)
                 dev.reset()
                 reset_count += 1
-                logger.info(f"  ✅ Reset successful")
+                logger.info("  ✅ Reset successful")
 
             except usb.core.USBError as e:
                 # Permission errors are common on Windows - not critical
                 if e.errno == 13:  # Permission denied
-                    logger.warning(f"  ⚠️  Reset skipped (permission denied - device may be in use)")
+                    logger.warning("  ⚠️  Reset skipped (permission denied - device may be in use)")
                 else:
                     logger.warning(f"  ⚠️  Reset failed: {e}")
             except Exception as e:

@@ -4,8 +4,11 @@ Provides detector-specific wavelength ranges and parameters based on detector se
 Makes the processing pipeline detector-agnostic by automatically detecting the right characteristics.
 """
 
+from typing import TYPE_CHECKING, Optional, Tuple
 from dataclasses import dataclass
-from typing import Optional, Tuple
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 @dataclass

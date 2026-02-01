@@ -6,7 +6,6 @@ that prevent proper enumeration of Raspberry Pi Pico and FTDI devices.
 """
 
 import subprocess
-import sys
 
 print("=" * 80)
 print("USB-A TO USB-C CONNECTION DIAGNOSTIC & FIX")
@@ -23,13 +22,13 @@ try:
         } | Select-Object Status, Class, FriendlyName, InstanceId | Format-List
         """
     ], capture_output=True, text=True, timeout=15)
-    
+
     if result.stdout.strip():
         print("\n⚠️  Found devices with problems:")
         print(result.stdout)
     else:
         print("✅ No devices showing Unknown/Error status")
-        
+
 except Exception as e:
     print(f"⚠️  Could not query Device Manager: {e}")
 
@@ -44,14 +43,14 @@ try:
         } | Select-Object Status, FriendlyName, InstanceId | Format-List
         """
     ], capture_output=True, text=True, timeout=15)
-    
+
     if result.stdout.strip():
         print(result.stdout)
         if "Unknown" in result.stdout:
             print("⚠️  FTDI devices found but in Unknown state - driver issue!")
     else:
         print("❌ No FTDI devices found")
-        
+
 except Exception as e:
     print(f"⚠️  Could not query FTDI devices: {e}")
 
@@ -66,14 +65,14 @@ try:
         } | Select-Object Status, FriendlyName, InstanceId | Format-List
         """
     ], capture_output=True, text=True, timeout=15)
-    
+
     if result.stdout.strip():
         print("✅ Found Raspberry Pi Pico:")
         print(result.stdout)
     else:
         print("❌ Raspberry Pi Pico NOT found")
         print("   This is the main issue - Pico should enumerate with VID 0x2e8a")
-        
+
 except Exception as e:
     print(f"⚠️  Could not query for Pico: {e}")
 
@@ -89,13 +88,13 @@ try:
         } | Select-Object Status, FriendlyName, InstanceId | Format-List
         """
     ], capture_output=True, text=True, timeout=15)
-    
+
     if result.stdout.strip():
         print("⚠️  Found unknown USB devices:")
         print(result.stdout)
     else:
         print("✅ No completely unknown USB devices")
-        
+
 except Exception as e:
     print(f"⚠️  Could not query: {e}")
 

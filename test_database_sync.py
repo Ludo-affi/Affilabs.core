@@ -26,10 +26,10 @@ def main():
     print()
     print("Syncing all databases...")
     print("-" * 70)
-    
+
     # Sync all databases
     success, message = sync_all_databases()
-    
+
     print()
     print("=" * 70)
     print(f" RESULT: {'SUCCESS' if success else 'FAILED'}")
@@ -37,7 +37,7 @@ def main():
     print()
     print(message)
     print()
-    
+
     if success:
         print("✅ All databases have been backed up to SharePoint!")
         print()
@@ -60,7 +60,7 @@ def main():
         print("  - SharePoint permissions (need upload access)")
         print("  - Network connectivity")
         print("  - Database files not found")
-    
+
     print()
 
 if __name__ == '__main__':

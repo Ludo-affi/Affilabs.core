@@ -121,16 +121,12 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QApplication,
-    QButtonGroup,
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QFrame,
     QGraphicsDropShadowEffect,
-    QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -139,12 +135,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QRadioButton,
     QScrollArea,
-    QSlider,
-    QSpinBox,
     QSplitter,
-    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -159,7 +151,6 @@ from typing import Any
 from affilabs.affilabs_sidebar import AffilabsSidebar
 from affilabs.core.system_intelligence import SystemState, get_system_intelligence
 from affilabs.dialogs.advanced_settings_dialog import AdvancedSettingsDialog
-from affilabs.inspector import ElementInspector
 from affilabs.plot_helpers import add_channel_curves, create_time_plot
 from affilabs.tabs.edits_tab import EditsTab  # Extracted tab content
 from affilabs.ui_styles import (
@@ -167,12 +158,6 @@ from affilabs.ui_styles import (
     Fonts,
     Dimensions,
     create_card_shadow,
-    segmented_button_style,
-    spinbox_style,
-    label_style,
-    title_style,
-    divider_style,
-    group_box_style,
 )
 from affilabs.utils.logger import logger
 
@@ -2271,7 +2256,7 @@ class AffilabsMainWindow(QMainWindow):
             self.app._cycle_markers.clear()
 
             logger.info(f"✅ Cleared {markers_cleared} cycle markers from Full Sensorgram timeline")
-            print(f"✅ Cleared all flags and cycle markers")
+            print("✅ Cleared all flags and cycle markers")
 
             # Update flag counter
             self._update_flag_counter()
@@ -2380,7 +2365,6 @@ class AffilabsMainWindow(QMainWindow):
     ) -> QFrame:
         """Create a graph container with title and controls."""
         import pyqtgraph as pg
-        from affilabs.utils.ui_styles import UIStyleManager
 
         container = QFrame()
         container.setMinimumHeight(height)
@@ -2773,7 +2757,7 @@ class AffilabsMainWindow(QMainWindow):
         # Only show messages for Active Cycle graph (when selecting channel for flagging)
         if graph_name == "Active Cycle":
             print(f"Flagging mode ready for Channel {channel_letter}")
-            print(f"Right-click on the LIVE SENSORGRAM graph (top) to add a flag at absolute time")
+            print("Right-click on the LIVE SENSORGRAM graph (top) to add a flag at absolute time")
             print("Ctrl+Right-click to remove a flag near that position")
 
     def _on_plot_clicked(self, event, plot_widget):
@@ -3356,7 +3340,7 @@ class AffilabsMainWindow(QMainWindow):
             ref_layout.setSpacing(2)
 
             # Label
-            ref_name_label = QLabel(f"Drag cycle here")
+            ref_name_label = QLabel("Drag cycle here")
             ref_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             ref_name_label.setStyleSheet(
                 "QLabel {"
@@ -4970,7 +4954,7 @@ class AffilabsMainWindow(QMainWindow):
         # For P4PROPLUS (internal pumps) and other flow controllers, still needs calibration
         flow_available = status.get("flow_calibrated", False)  # Enabled after calibration completes
 
-        logger.info(f"🔄 Operation modes update:")
+        logger.info("🔄 Operation modes update:")
         logger.info(f"   ctrl_type={ctrl_type}")
         logger.info(f"   pump_connected={has_pump}")
         logger.info(f"   flow_calibrated={status.get('flow_calibrated', 'NOT IN STATUS DICT')}")
@@ -5702,7 +5686,6 @@ End of Debug Log
 
     def _on_send_to_edits_clicked(self):
         """Transfer live recording data to Edits tab for review and modification."""
-        from PySide6.QtWidgets import QMessageBox
 
         # Emit signal to application layer to handle data transfer
         # The app has access to both recording manager and edits tab
@@ -6390,7 +6373,7 @@ End of Debug Log
         # self.sidebar.start_cycle_btn.clicked.connect(self.start_cycle)  # DEPRECATED - moved to dialog
         # self.sidebar.add_to_queue_btn.clicked.connect(self.add_cycle_to_queue)  # DEPRECATED - moved to dialog
         # self.sidebar.start_run_btn.clicked.connect(self._on_start_queued_run)  # DELETED - duplicate button removed
-        
+
         # Connect remaining queue buttons (if they exist)
         if hasattr(self.sidebar, 'clear_queue_btn'):
             self.sidebar.clear_queue_btn.clicked.connect(self._on_clear_queue)
@@ -6980,8 +6963,7 @@ End of Debug Log
         channel = 'A'
 
         # Show flag type menu
-        from affilabs.domain import create_flag
-        from PySide6.QtWidgets import QMenu, QAction
+        from PySide6.QtWidgets import QAction
         from PySide6.QtGui import QCursor
 
         menu = QMenu()
@@ -7391,7 +7373,6 @@ End of Debug Log
         """
         from PySide6.QtWidgets import QMessageBox, QInputDialog
         from affilabs.utils.logger import logger
-        from affilabs.domain import Cycle
 
         try:
             # Get selected cycles

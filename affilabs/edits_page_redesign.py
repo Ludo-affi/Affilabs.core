@@ -34,10 +34,9 @@ import pyqtgraph as pg
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QPushButton, QLabel, QTableWidget, QTableWidgetItem,
-    QComboBox, QSlider, QFrame, QFileDialog
+    QSlider, QFrame, QFileDialog
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt
 
 
 class EditsPageRedesign(QMainWindow):

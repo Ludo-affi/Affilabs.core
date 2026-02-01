@@ -15,7 +15,6 @@ Architecture Alignment:
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QTimer
@@ -329,12 +328,12 @@ class HardwareEventCoordinator:
 
         error_msg += "REQUIRED: Controller + Detector\n\n"
         error_msg += "TO FIX:\n"
-        
+
         if not ctrl_type:
             error_msg += "• Plug in Pico controller (USB)\n"
         if not has_detector:
             error_msg += "• Plug in USB4000/PhasePhotonics spectrometer\n"
-        
+
         error_msg += "• Wait 5 seconds for Windows to detect\n"
         error_msg += "• Press Power button to scan again"
 

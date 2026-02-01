@@ -101,16 +101,16 @@ def move_to_position(hm, target_pwm, settle_time=1.0):
         # Convert PWM to degrees (0-255 PWM = 5-175 degrees)
         target_degrees = int(5 + (pwm_val / 255.0) * 170.0)
         target_degrees = max(5, min(175, target_degrees))
-        
+
         # Set both S and P to the same position (will move to whichever is commanded)
         sv_cmd = f"sv{target_degrees:03d}{target_degrees:03d}\n"
         raw_ctrl._ser.write(sv_cmd.encode())
         time.sleep(1.0)
-        
+
         # Move to the position using sp (P position)
         raw_ctrl._ser.write(b"sp\n")
         time.sleep(max(1.0, settle_time))
-        
+
         print(f">> Servo moved to PWM {pwm_val} ({target_degrees}deg)")
         return True
 
@@ -164,7 +164,7 @@ def stage1_bidirectional_sweep(hm):
     all_intensities = [d["intensity"] for d in forward_data] + [d["intensity"] for d in backward_data]
     signal_std = np.std(all_intensities)
     signal_range = max(all_intensities) - min(all_intensities)
-    
+
     servo_moved = True
     if signal_std < 5 and signal_range < 10:
         print("\n" + "WARNING: " * 7)
@@ -305,7 +305,7 @@ def detect_polarizer_type(hm, sweep_data):
             else:
                 # NO - Both positions are on the SAME window!
                 print(f"  WARNING:  Found 2 positions only {separation_pwm} PWM apart - SAME WINDOW!")
-                print(f"  Treating as 1 window found (other window in blind spot)")
+                print("  Treating as 1 window found (other window in blind spot)")
 
                 # Use the STRONGER signal as the found window
                 if window1_signal > window2_signal:
@@ -316,7 +316,7 @@ def detect_polarizer_type(hm, sweep_data):
                     found_signal = window2_signal
 
                 print(f"  Found window at PWM {found_pwm}: {found_signal:.1f} counts")
-                print(f"  Other window is in BLIND SPOT - calculating position...")
+                print("  Other window is in BLIND SPOT - calculating position...")
 
                 # Barrel windows separated by ~90 PWM (average of 80-100)
                 candidate1_pwm = (found_pwm + 90) % 256
@@ -351,7 +351,7 @@ def detect_polarizer_type(hm, sweep_data):
             found_signal = above_dark_signal[0]
 
             print(f"  Found 1 window at PWM {found_pwm}: {found_signal:.1f} counts")
-            print(f"  Other window is in BLIND SPOT - calculating position...")
+            print("  Other window is in BLIND SPOT - calculating position...")
 
             # Barrel windows separated by ~90 PWM (average of 80-100)
             # Try both directions: +90 and -90
@@ -469,7 +469,7 @@ def detect_polarizer_type(hm, sweep_data):
         # HS-65MG servo has 180° range (PWM 0-255 maps to 0-180°)
         p_pwm = (s_pwm + 90) % 256
 
-        print(f"  Calculating P using 90 PWM rule")
+        print("  Calculating P using 90 PWM rule")
         print(f"  P = S + 90 = {s_pwm} + 90 = {p_pwm} PWM")
 
         info = {
@@ -501,12 +501,12 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
     print("=" * 70)
     print(f"S servo fixed at PWM {s_fixed}")
     print("P servo: 2-pass converging scan (0-255)\n")
-    
+
     ctrl = hm.ctrl
     raw_ctrl = ctrl._ctrl if hasattr(ctrl, '_ctrl') else ctrl
     settle_time = 0.5
     dark_threshold = int(getattr(hm.usb, 'dark_current', 900) * 1.1)
-    
+
     def move_servo_sv_sp(p_pwm, s_pwm):
         """Move servo using sv + ss/sp commands (working format from test).
         
@@ -517,16 +517,16 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
             # Convert PWM to degrees (0-255 PWM = 5-175 degrees)
             p_degrees = int(5 + (p_pwm / 255.0) * 170.0)
             s_degrees = int(5 + (s_pwm / 255.0) * 170.0)
-            
+
             # Clamp to valid range
             p_degrees = max(5, min(175, p_degrees))
             s_degrees = max(5, min(175, s_degrees))
-            
+
             # Set positions using sv command
             sv_cmd = f"sv{s_degrees:03d}{p_degrees:03d}\n"
             raw_ctrl._ser.write(sv_cmd.encode())
             time.sleep(0.1)
-            
+
             # Move to P position using sp command
             raw_ctrl._ser.write(b"sp\n")
             time.sleep(settle_time)
@@ -534,7 +534,7 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
         except Exception as e:
             print(f"  Error moving servo: {e}")
             return False
-    
+
     def measure_peak_900_1000():
         """Measure peak in 900-1000nm range."""
         try:
@@ -547,35 +547,35 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
             return float(np.max(spectrum[mask]))
         except Exception:
             return 0.0
-    
+
     # Pass 1: Coarse scan
     print(f"Pass 1: Coarse scan (0-255, step 15, settle={settle_time}s)")
     all_results = []
     positions = list(range(0, 256, 15))
-    
+
     for p_pwm in positions:
         if not move_servo_sv_sp(p_pwm, s_fixed):
             continue
-        
+
         measurements = []
         for _ in range(2):
             intensity = measure_peak_900_1000()
             measurements.append(intensity)
             time.sleep(0.1)
-        
+
         mean_val = np.mean(measurements)
         all_results.append((p_pwm, mean_val))
-        
+
         marker = "BASELINE" if mean_val < dark_threshold else ("P-POL" if mean_val < 2500 else "S-POL")
         if mean_val < dark_threshold or mean_val > 2000:
             print(f"  PWM {p_pwm:3d}: {mean_val:6.1f} counts <<< {marker}")
-    
+
     # Identify non-baseline ranges
     non_baseline_ranges = []
     for pwm, intensity in all_results:
         if intensity >= dark_threshold:
             non_baseline_ranges.append((max(0, pwm - 15), min(255, pwm + 15)))
-    
+
     # Merge overlapping ranges
     if non_baseline_ranges:
         non_baseline_ranges.sort()
@@ -586,42 +586,42 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
             else:
                 merged.append((start, end))
         non_baseline_ranges = merged
-    
+
     print(f"\nNon-baseline regions: {non_baseline_ranges}")
-    
+
     # Pass 2: Fine scan
     print(f"\nPass 2: Fine scan (step 8, settle={settle_time}s)")
     pass2_positions = []
     for start, end in non_baseline_ranges:
         pass2_positions.extend(range(start, end + 1, 8))
-    
+
     for p_pwm in pass2_positions:
         if any(abs(p_pwm - r[0]) < 3 for r in all_results):
             continue
-        
+
         if not move_servo_sv_sp(p_pwm, s_fixed):
             continue
-        
+
         measurements = []
         for _ in range(2):
             intensity = measure_peak_900_1000()
             measurements.append(intensity)
             time.sleep(0.1)
-        
+
         mean_val = np.mean(measurements)
         all_results.append((p_pwm, mean_val))
-        
+
         marker = "BASELINE" if mean_val < dark_threshold else ("P-POL" if mean_val < 2500 else "S-POL")
         if mean_val < dark_threshold or mean_val > 2000:
             print(f"  PWM {p_pwm:3d}: {mean_val:6.1f} counts <<< {marker}")
-    
+
     # SIMPLE WINDOW DETECTION: Find bright regions and pick their midpoints
     # Group consecutive bright positions into windows
     bright_threshold = dark_threshold * 2.0  # 2x dark = bright window
-    
+
     # Find all bright positions
     bright_positions = [(pwm, intensity) for pwm, intensity in all_results if intensity >= bright_threshold]
-    
+
     if not bright_positions:
         print("\n❌ No bright windows found!")
         # Fallback: use highest peak
@@ -631,7 +631,7 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
         # Group into continuous windows (gap > 30 PWM = separate window)
         windows = []
         current_window = [bright_positions[0]]
-        
+
         for pos in bright_positions[1:]:
             if pos[0] - current_window[-1][0] <= 30:
                 current_window.append(pos)
@@ -639,7 +639,7 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
                 windows.append(current_window)
                 current_window = [pos]
         windows.append(current_window)
-        
+
         # Pick middle PWM of each window
         window_centers = []
         for window in windows:
@@ -649,10 +649,10 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
             avg_intensity = np.mean(intensities)
             window_centers.append((center_pwm, avg_intensity))
             print(f"  Window: PWM {min(pwms)}-{max(pwms)}, center={center_pwm}, avg={avg_intensity:.1f}")
-        
+
         # Sort by intensity
         window_centers.sort(key=lambda w: w[1], reverse=True)
-        
+
         if len(window_centers) >= 2:
             # BARREL: Two windows
             s_best = window_centers[0]  # Highest
@@ -669,7 +669,7 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
                 p_best = min(all_results, key=lambda r: r[1])
             ratio = s_best[1] / p_best[1] if p_best[1] > 0 else 999
             print(f"\nDetected: CIRCULAR polarizer (S/P ratio: {ratio:.2f}×)")
-    
+
     print(f"Optimal P: PWM {p_best[0]} ({p_best[1]:.1f} counts)")
     print(f"Optimal S: PWM {s_best[0]} ({s_best[1]:.1f} counts)")
 
@@ -677,32 +677,32 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
     print("\n" + "=" * 70, flush=True)
     print("MOVING SERVO TO CALIBRATED POSITIONS", flush=True)
     print("=" * 70, flush=True)
-    
+
     s_optimal = int(s_best[0])
     p_optimal = int(p_best[0])
-    
+
     # Convert PWM to degrees for sv command
     s_degrees = int(5 + (s_optimal / 255.0) * 170.0)
     p_degrees = int(5 + (p_optimal / 255.0) * 170.0)
-    
+
     # Set both positions using sv command
     sv_cmd = f"sv{s_degrees:03d}{p_degrees:03d}\n"
     print(f"Setting positions: S={s_degrees}deg, P={p_degrees}deg (sv command)", flush=True)
     raw_ctrl._ser.write(sv_cmd.encode())
     time.sleep(0.2)
-    
+
     # Move to S position first
     print(f"\nMoving to S position: PWM {s_optimal} ({s_degrees}deg)", flush=True)
     raw_ctrl._ser.write(b"ss\n")
     time.sleep(0.5)
     print(">> Servo at S position", flush=True)
-    
+
     # Move to P position
     print(f"\nMoving to P position: PWM {p_optimal} ({p_degrees}deg)", flush=True)
     raw_ctrl._ser.write(b"sp\n")
     time.sleep(0.5)
     print(">> Servo at P position", flush=True)
-    
+
     # Return to S position (default state after calibration)
     print(f"\nReturning to S position: PWM {s_optimal}", flush=True)
     raw_ctrl._ser.write(b"ss\n")
@@ -710,7 +710,7 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
     print(">> Calibration complete - servo at S position", flush=True)
     print("=" * 70, flush=True)
 
-    
+
     return {
         "p_pwm": int(p_best[0]),
         "p_intensity": float(p_best[1]),
@@ -754,7 +754,7 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
     # If servo didn't move, use sv+sp converging scan instead
     if use_sv_mode:
         return stage3_sv_converging_scan(hm, wavelengths, s_fixed=128)
-    
+
     print("\n" + "=" * 70)
     print("STAGE 3: REFINING POSITIONS (+/-10 PWM SWEEP)")
     print("=" * 70)
@@ -769,38 +769,38 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
     # === INTERLEAVED Refinement (Meshed Approach) ===
     # Alternate between S and P to ensure large movements that the servo can actually execute
     print("Refining S and P regions (interleaved, 3 PWM steps)...")
-    
+
     p_results = []
     s_results = []
-    
+
     # Generate position lists
     p_positions = list(range(max(1, p_center - 10), min(256, p_center + 11), 3))
     s_positions = list(range(max(1, s_center - 10), min(256, s_center + 11), 3))
-    
+
     # Make lists equal length by padding with the last value
     max_len = max(len(p_positions), len(s_positions))
     while len(p_positions) < max_len:
         p_positions.append(p_positions[-1])
     while len(s_positions) < max_len:
         s_positions.append(s_positions[-1])
-    
+
     # Interleaved scanning: S1, P1, S2, P2, S3, P3, ...
     for idx in range(max_len):
         # Measure S position
         s_pwm = s_positions[idx]
         move_to_position(hm, s_pwm, settle_time=1.0)
-        
+
         # 2 scans for S
         s_measurements = []
         for _ in range(2):
             intensity = measure_with_spectral_analysis(hm, wavelengths, method="max")
             s_measurements.append(intensity)
             time.sleep(0.1)
-        
+
         s_mean = np.mean(s_measurements)
         s_std = np.std(s_measurements)
         s_cv = (s_std / s_mean) * 100
-        
+
         s_results.append({
             "pwm": s_pwm,
             "mean": s_mean,
@@ -808,22 +808,22 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
             "cv_percent": s_cv,
         })
         print(f"  S PWM {s_pwm:3d}: {s_mean:7.1f} +/- {s_std:5.1f} (CV: {s_cv:.2f}%)")
-        
+
         # Measure P position
         p_pwm = p_positions[idx]
         move_to_position(hm, p_pwm, settle_time=1.0)
-        
+
         # 2 scans for P
         p_measurements = []
         for _ in range(2):
             intensity = measure_with_spectral_analysis(hm, wavelengths, method="min_spr")
             p_measurements.append(intensity)
             time.sleep(0.1)
-        
+
         p_mean = np.mean(p_measurements)
         p_std = np.std(p_measurements)
         p_cv = (p_std / p_mean) * 100
-        
+
         p_results.append({
             "pwm": p_pwm,
             "mean": p_mean,
@@ -831,11 +831,11 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
             "cv_percent": p_cv,
         })
         print(f"  P PWM {p_pwm:3d}: {p_mean:7.1f} +/- {p_std:5.1f} (CV: {p_cv:.2f}%)")
-    
+
     # Remove duplicate measurements if positions were padded
     p_results = [dict(t) for t in {tuple(d.items()) for d in p_results}]
     s_results = [dict(t) for t in {tuple(d.items()) for d in s_results}]
-    
+
     # BARREL: If all P positions were dark (below 1000), try alternate window
     DARK_THRESHOLD = 1000
     all_p_dark = all(r["mean"] < DARK_THRESHOLD for r in p_results)
@@ -843,27 +843,27 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
         print(f"\nWARNING:  All P positions dark! Trying alternate P window at PWM {alternate_p}")
         p_results = []
         p_positions = list(range(max(1, alternate_p - 10), min(256, alternate_p + 11), 3))
-        
+
         for p_pwm in p_positions:
             move_to_position(hm, p_pwm, settle_time=1.0)
-            
+
             p_measurements = []
             for _ in range(2):
                 intensity = measure_with_spectral_analysis(hm, wavelengths, method="min_spr")
                 p_measurements.append(intensity)
-            
+
             p_mean = np.mean(p_measurements)
             p_std = np.std(p_measurements)
             p_cv = (p_std / p_mean) * 100
-            
+
             p_results.append({"pwm": p_pwm, "mean": p_mean, "std": p_std, "cv_percent": p_cv})
             print(f"  P PWM {p_pwm:3d}: {p_mean:7.1f} +/- {p_std:5.1f} (CV: {p_cv:.2f}%)")
-        
+
         p_center = alternate_p
 
     # Find optimal P - select brightest stable range from P window
     p_bright = [p for p in p_results if p["mean"] > DARK_THRESHOLD]
-    
+
     if not p_bright:
         print(f"\nWARNING: All P positions below {DARK_THRESHOLD} counts - calibration may fail")
         p_max = max(p_results, key=lambda x: x["mean"])
@@ -872,7 +872,7 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
         # P window = brightest stable range in P region (transmission window)
         p_max = max(p_bright, key=lambda x: x["mean"])
         p_stable = [p for p in p_bright if p["mean"] >= p_max["mean"] * 0.99]
-    
+
     # Use middle of the stable range (not extremities)
     p_min = min(p["pwm"] for p in p_stable)
     p_max = max(p["pwm"] for p in p_stable)
@@ -889,28 +889,28 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
         print(f"\nWARNING:  All S positions dark! Trying alternate S window at PWM {alternate_s}")
         s_results = []
         s_positions = list(range(max(1, alternate_s - 10), min(256, alternate_s + 11), 3))
-        
+
         for s_pwm in s_positions:
             move_to_position(hm, s_pwm, settle_time=1.0)
-            
+
             s_measurements = []
             for _ in range(2):
                 intensity = measure_with_spectral_analysis(hm, wavelengths, method="max")
                 s_measurements.append(intensity)
-            
+
             s_mean = np.mean(s_measurements)
             s_std = np.std(s_measurements)
             s_cv = (s_std / s_mean) * 100
-            
+
             s_results.append({"pwm": s_pwm, "mean": s_mean, "std": s_std, "cv_percent": s_cv})
             print(f"  S PWM {s_pwm:3d}: {s_mean:7.1f} +/- {s_std:5.1f} (CV: {s_cv:.2f}%)")
-        
+
         s_center = alternate_s
 
     # Find optimal S - select brightest stable range
     # Filter out dark signals (< 1000 counts)
     s_bright = [s for s in s_results if s["mean"] > DARK_THRESHOLD]
-    
+
     if not s_bright:
         print(f"\nWARNING: All S positions below {DARK_THRESHOLD} counts - calibration may fail")
         s_max = max(s_results, key=lambda x: x["mean"])
@@ -919,7 +919,7 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
         # S = highest bright range (maximum transmission)
         s_max = max(s_bright, key=lambda x: x["mean"])
         s_stable = [s for s in s_bright if s["mean"] >= s_max["mean"] * 0.99]
-    
+
     # Use middle of the stable range (not extremities)
     s_min = min(s["pwm"] for s in s_stable)
     s_max = max(s["pwm"] for s in s_stable)
@@ -934,7 +934,7 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
     # Use closest scanned position for stats if exact middle wasn't scanned
     p_closest = min(p_results, key=lambda x: abs(x["pwm"] - p_optimal))
     s_closest = min(s_results, key=lambda x: abs(x["pwm"] - s_optimal))
-    
+
     p_final = p_closest
     s_final = s_closest
 
@@ -969,12 +969,12 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
     print("\n" + "=" * 70, flush=True)
     print("MOVING SERVO TO CALIBRATED POSITIONS", flush=True)
     print("=" * 70, flush=True)
-    
+
     # Move to S position first
     print(f"Moving to S position: PWM {s_optimal} ({(s_optimal/255.0)*180:.1f}°)", flush=True)
     move_to_position(hm, s_optimal, settle_time=0.5)
     print("✅ Servo at S position", flush=True)
-    
+
     # Verify S position
     time.sleep(0.2)
     s_verify_measurements = []
@@ -984,12 +984,12 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
         time.sleep(0.05)
     s_verify_mean = np.mean(s_verify_measurements)
     print(f"   S verification: {s_verify_mean:7.1f} counts (expected: {s_final['mean']:7.1f})")
-    
+
     # Move to P position
     print(f"\nMoving to P position: PWM {p_optimal} ({(p_optimal/255.0)*180:.1f}°)", flush=True)
     move_to_position(hm, p_optimal, settle_time=0.5)
     print("✅ Servo at P position", flush=True)
-    
+
     # Verify P position
     time.sleep(0.2)
     p_verify_measurements = []
@@ -999,7 +999,7 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
         time.sleep(0.05)
     p_verify_mean = np.mean(p_verify_measurements)
     print(f"   P verification: {p_verify_mean:7.1f} counts (expected: {p_final['mean']:7.1f})")
-    
+
     # Return to S position (default state after calibration)
     print(f"\nReturning to S position: PWM {s_optimal}", flush=True)
     move_to_position(hm, s_optimal, settle_time=0.5)
@@ -1255,11 +1255,11 @@ def main():
             # Also update device_config.json
             profile_mgr.update_device_config(polarizer_results, serial_number=serial_number)
             print("✅ Updated device_config.json")
-            
+
             # EEPROM write DISABLED - device_config.json is source of truth
             print("\nSkipping EEPROM write (servo positions saved to device_config.json)")
             print("   NOTE: EEPROM may contain old/invalid servo positions - they will be ignored")
-            
+
             # The following EEPROM write is commented out to avoid conflicts:
             # raw_ctrl = hm.ctrl._ctrl if hasattr(hm.ctrl, '_ctrl') else hm.ctrl
             # eeprom_config = {
@@ -1467,7 +1467,7 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
             # Also update device_config.json
             profile_mgr.update_device_config(polarizer_results, serial_number=serial_number)
             print("✅ Updated device_config.json")
-            
+
             # Write servo positions to controller EEPROM
             try:
                 print("\nWriting servo positions to controller EEPROM...")
@@ -1478,11 +1478,11 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
                     "controller_type": "pico_p4spr",
                     "polarizer_type": "barrel" if is_barrel else "round",
                 }
-                
+
                 # Get raw controller (unwrap from adapter if needed)
                 ctrl = hardware_mgr.ctrl
                 raw_ctrl = ctrl._ctrl if hasattr(ctrl, '_ctrl') else ctrl
-                
+
                 if hasattr(raw_ctrl, 'write_config_to_eeprom'):
                     success = raw_ctrl.write_config_to_eeprom(eeprom_config)
                     if success:
@@ -1561,7 +1561,7 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
         ctrl_name = ctrl.get_device_type() if hasattr(ctrl, 'get_device_type') else 'Controller'
         logger.info(f"Connected: {ctrl_name}, {serial_number}")
         logger.info(f"Device Serial: {serial_number}")
-        
+
         # Verify controller has serial connection
         raw_ctrl = ctrl._ctrl if hasattr(ctrl, '_ctrl') else ctrl
         if not hasattr(raw_ctrl, '_ser') or not raw_ctrl._ser or not raw_ctrl._ser.is_open:
@@ -1626,7 +1626,7 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
 
         is_barrel = (polarizer_type == "BARREL")
         servo_moved = sweep_data.get("servo_moved", True)
-        
+
         refinement = stage3_refine_positions(
             hm,
             wavelengths,
@@ -1724,7 +1724,7 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
             # Update device_config.json
             profile_mgr.update_device_config(polarizer_results, serial_number=serial_number)
             logger.info("✅ Updated device_config.json")
-            
+
             # Write servo positions to controller EEPROM
             try:
                 logger.info("\nWriting servo positions to controller EEPROM...")
@@ -1735,11 +1735,11 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
                     "controller_type": "pico_p4spr",
                     "polarizer_type": "barrel" if is_barrel else "round",
                 }
-                
+
                 # Get raw controller (unwrap from adapter if needed)
                 ctrl = hm.ctrl
                 raw_ctrl = ctrl._ctrl if hasattr(ctrl, '_ctrl') else ctrl
-                
+
                 if hasattr(raw_ctrl, 'write_config_to_eeprom'):
                     success = raw_ctrl.write_config_to_eeprom(eeprom_config)
                     if success:
@@ -1770,10 +1770,10 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
         import traceback
         logger.error(traceback.format_exc())
         logger.error("=" * 70)
-        
+
         if progress_callback:
             progress_callback(f"Calibration failed: {str(e)[:50]}", 0)
-        
+
         return False
     finally:
         # Cleanup - turn off LEDs

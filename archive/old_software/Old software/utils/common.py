@@ -29,9 +29,9 @@ def update_dict_recursively(dest, updated):
                 r = update_dict_recursively(dest.get(k, {}), v)
                 dest[k] = r
             else:
-                dest[k] = updated[k]
+                dest[k] = v
         else:
-            dest = {k: updated[k]}
+            dest = {k: v}
     return dest
 
 

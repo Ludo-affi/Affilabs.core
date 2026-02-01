@@ -57,8 +57,8 @@ for i in range(len(lines) - 2):
 repeated_blocks = {block: count for block, count in block_hashes.items() if count > 1}
 if repeated_blocks:
     print(f'   Found {len(repeated_blocks)} repeated patterns')
-    for i, (block, count) in enumerate(sorted(repeated_blocks.items(), 
-                                              key=lambda x: x[1], 
+    for i, (block, count) in enumerate(sorted(repeated_blocks.items(),
+                                              key=lambda x: x[1],
                                               reverse=True)[:10], 1):
         print(f'\n   Pattern #{i} (appears {count} times):')
         preview = block[:120].replace('\n', ' ')

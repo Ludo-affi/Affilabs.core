@@ -67,7 +67,7 @@ def test_servo_movement_speed():
         elapsed = time.perf_counter() - start_time
         expected = len(positions) * 0.25  # 250ms per move
 
-        print(f"\n✅ Movement complete!")
+        print("\n✅ Movement complete!")
         print(f"   Total time: {elapsed:.2f}s")
         print(f"   Expected: ~{expected:.2f}s")
         print(f"   Per position: {elapsed/len(positions)*1000:.0f}ms")
@@ -114,7 +114,7 @@ def test_led_batch_with_enable():
         # Test LED enable + batch
         led_intensity = 51  # 20% of 255
 
-        print(f"\n3. Turning on all 4 LED channels...")
+        print("\n3. Turning on all 4 LED channels...")
         for ch in ['a', 'b', 'c', 'd']:
             hm.ctrl.turn_on_channel(ch=ch)
             print(f"   Channel {ch.upper()} enabled")
@@ -131,14 +131,14 @@ def test_led_batch_with_enable():
         mean_intensity = spectrum.mean()
         top_20_mean = spectrum[np.argsort(spectrum)[-20:]].mean()
 
-        print(f"\n   Spectrum statistics:")
+        print("\n   Spectrum statistics:")
         print(f"   Max intensity: {max_intensity:.1f}")
         print(f"   Mean intensity: {mean_intensity:.1f}")
         print(f"   Top 20 mean: {top_20_mean:.1f}")
 
         # Check if we're getting good signal (all 4 LEDs on)
         if top_20_mean > 5000:
-            print(f"\n✅ ALL 4 LEDS ARE ON! (signal > 5000)")
+            print("\n✅ ALL 4 LEDS ARE ON! (signal > 5000)")
             success = True
         elif top_20_mean > 2000:
             print(f"\n⚠️  Moderate signal ({top_20_mean:.0f}) - maybe 2 LEDs?")
@@ -239,7 +239,7 @@ def test_fast_scan_timing():
 
         # Compare
         speedup = time_5 / time_2
-        print(f"\n4. Comparison:")
+        print("\n4. Comparison:")
         print(f"   2-scan speedup: {speedup:.1f}x faster")
         print(f"   Mean difference: {abs(mean_5 - mean_2):.1f} ({abs(mean_5 - mean_2)/mean_5*100:.1f}%)")
         print(f"   CV difference: {abs(cv_5 - cv_2):.2f}%")
@@ -337,7 +337,7 @@ def test_full_position_cycle():
         total_time = time.perf_counter() - start_total
         avg_per_position = total_time / len(positions)
 
-        print(f"\n3. Results:")
+        print("\n3. Results:")
         print(f"   Total time: {total_time:.2f}s")
         print(f"   Per position: {avg_per_position*1000:.0f}ms")
         print(f"   Expected old method: ~{len(positions) * 5:.0f}s (5s per position)")

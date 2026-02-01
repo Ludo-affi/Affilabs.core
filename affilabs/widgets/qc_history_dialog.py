@@ -258,10 +258,10 @@ class QCHistoryDialog(QDialog):
                 # If raw_calibration_data is missing or incomplete, reconstruct from report structure
                 if not calibration_data or not calibration_data.get("s_pol_spectra"):
                     logger.info("Reconstructing calibration data from report structure")
-                    
+
                     # Deserialize spectra data
                     spectra_data = report.get("spectra_data", {})
-                    
+
                     def deserialize_channel_data(data_dict):
                         """Convert serialized channel data back to dict of numpy arrays."""
                         if not data_dict:
@@ -296,7 +296,7 @@ class QCHistoryDialog(QDialog):
                                 else:
                                     result[channel] = np.array(values, dtype=float)
                         return result
-                    
+
                     # Reconstruct calibration_data structure expected by QC dialog
                     calibration_data = {
                         "wavelengths": spectra_data.get("wavelengths"),
@@ -304,22 +304,22 @@ class QCHistoryDialog(QDialog):
                         "p_pol_spectra": deserialize_channel_data(spectra_data.get("p_pol", {})),
                         "dark_spectra": deserialize_channel_data(spectra_data.get("dark", {})),
                         "transmission_spectra": deserialize_channel_data(spectra_data.get("transmission", {})),
-                        
+
                         # Metadata
                         "detector_serial": report.get("metadata", {}).get("device_serial", self.device_serial),
                         "firmware_version": report.get("metadata", {}).get("firmware_version", "Unknown"),
                         "timestamp": report.get("metadata", {}).get("timestamp", "Unknown"),
-                        
+
                         # Calibration parameters
                         "integration_time_ms": report.get("calibration_parameters", {}).get("integration_time_ms"),
                         "led_intensities": report.get("calibration_parameters", {}).get("led_intensities", {}),
-                        
+
                         # QC results
                         "s_ref_qc_results": report.get("qc_validation", {}).get("s_ref_qc", {}),
                         "p_ref_qc_results": report.get("qc_validation", {}).get("p_ref_qc", {}),
                         "qc_overall_status": report.get("qc_validation", {}).get("overall_status", "UNKNOWN"),
                         "ch_error_list": report.get("qc_validation", {}).get("failed_channels", []),
-                        
+
                         # Model performance
                         "s_model_accuracy": report.get("model_performance", {}).get("s_pol_predictions_accuracy"),
                         "p_model_accuracy": report.get("model_performance", {}).get("p_pol_predictions_accuracy"),

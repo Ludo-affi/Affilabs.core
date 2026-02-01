@@ -243,8 +243,8 @@ class AffiniteApp(QMainWindow):
         self.fourier_weights: np.ndarray | None = None
         self.dark_noise: np.ndarray = np.array([])
         self.ch_error_list: list[str] = []
-        self.ignore_warnings: dict[str, bool] = {ch: False for ch in CH_LIST}
-        self.no_sig_count: dict[str, int] = {ch: 0 for ch in CH_LIST}
+        self.ignore_warnings: dict[str, bool] = dict.fromkeys(CH_LIST, False)
+        self.no_sig_count: dict[str, int] = dict.fromkeys(CH_LIST, 0)
 
         # start with no fixed filtered data
         self.new_filtered_data = np.array([])
@@ -1135,8 +1135,8 @@ class AffiniteApp(QMainWindow):
         while not self._c_kill.is_set():
             time.sleep(0.01)
             if not self._c_stop.is_set() and (self.ctrl is not None) and self.usb_ok():
-                self.ignore_warnings = {ch: False for ch in CH_LIST}
-                self.no_sig_count = {ch: 0 for ch in CH_LIST}
+                self.ignore_warnings = dict.fromkeys(CH_LIST, False)
+                self.no_sig_count = dict.fromkeys(CH_LIST, 0)
                 if self.calibrated:
                     self.calibration_status.emit(True, "")  # noqa: FBT003
                     self._c_stop.set()
@@ -1174,7 +1174,7 @@ class AffiniteApp(QMainWindow):
                                 )
                                 self.hw_state.leds_calibrated = cache.get(
                                     "leds_calibrated",
-                                    {ch: 180 for ch in CH_LIST},
+                                    dict.fromkeys(CH_LIST, 180),
                                 )
 
                                 # Still need wavelength data and fourier weights from hardware
@@ -4180,8 +4180,8 @@ class AffiniteApp(QMainWindow):
         self.channel_mgr.clear_data()
 
         # Clear other state variables
-        self.ignore_warnings = {ch: False for ch in CH_LIST}
-        self.no_sig_count = {ch: 0 for ch in CH_LIST}
+        self.ignore_warnings = dict.fromkeys(CH_LIST, False)
+        self.no_sig_count = dict.fromkeys(CH_LIST, 0)
 
         self.set_start()
         self.clear_kin_log()

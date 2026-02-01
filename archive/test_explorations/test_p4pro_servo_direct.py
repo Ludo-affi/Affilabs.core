@@ -5,25 +5,24 @@ Tests servo:ANGLE,DURATION command directly on COM port to verify if
 P4PRO firmware v2.0 actually supports this command format.
 """
 
-import serial
 import time
 import sys
 
 def find_p4pro_port():
     """Scan COM ports to find P4PRO controller."""
     import serial.tools.list_ports
-    
+
     for port in serial.tools.list_ports.comports():
         if port.vid == 0x2E8A and port.pid == 0x000A:  # Pico VID:PID
             try:
                 ser = serial.Serial(port.device, 115200, timeout=1)
                 time.sleep(0.1)
-                
+
                 # Check if it's P4PRO
                 ser.write(b"id\n")
                 time.sleep(0.1)
                 response = ser.read(100).decode('utf-8', errors='ignore')
-                
+
                 if "P4PRO" in response:
                     print(f"✅ Found P4PRO on {port.device}")
                     print(f"   Firmware ID: {response.strip()}")
@@ -32,20 +31,20 @@ def find_p4pro_port():
                     ser.close()
             except Exception as e:
                 print(f"   Error checking {port.device}: {e}")
-    
+
     return None
 
 def test_servo_commands(ser):
     """Test different servo command formats."""
-    
+
     print("\n" + "="*60)
     print("TESTING P4PRO SERVO COMMANDS")
     print("="*60)
-    
+
     # Test 1: servo:ANGLE,DURATION format (from PicoEZSPR)
     print("\n[TEST 1] servo:ANGLE,DURATION format (from old PicoEZSPR)")
     print("-" * 60)
-    
+
     angles = [7, 87, 45, 87, 7]  # S, P, mid, P, S
     for angle in angles:
         cmd = f"servo:{angle},150\n"
@@ -55,15 +54,15 @@ def test_servo_commands(ser):
         time.sleep(0.2)
         response = ser.read(100)
         print(f"  Response: {response!r}")
-        
+
         # Wait for servo to move
         time.sleep(1.0)
         input(f"  >>> Did servo move to {angle}°? (Press Enter to continue)")
-    
+
     # Test 2: sv + ss command (flash write + move)
     print("\n[TEST 2] sv{s}{p} + ss format (flash write)")
     print("-" * 60)
-    
+
     cmd = "sv007087\n"  # Program S=7, P=87
     print(f"\n  Sending: {cmd.strip()} (programs flash)")
     ser.reset_input_buffer()
@@ -71,7 +70,7 @@ def test_servo_commands(ser):
     time.sleep(0.2)
     response = ser.read(100)
     print(f"  Response: {response!r}")
-    
+
     # Move to S position
     cmd = "ss\n"
     print(f"\n  Sending: {cmd.strip()} (move to S)")
@@ -82,7 +81,7 @@ def test_servo_commands(ser):
     print(f"  Response: {response!r}")
     time.sleep(1.0)
     input("  >>> Did servo move to S position (7°)? (Press Enter to continue)")
-    
+
     # Move to P position
     cmd = "sp\n"
     print(f"\n  Sending: {cmd.strip()} (move to P)")
@@ -93,11 +92,11 @@ def test_servo_commands(ser):
     print(f"  Response: {response!r}")
     time.sleep(1.0)
     input("  >>> Did servo move to P position (87°)? (Press Enter to continue)")
-    
+
     # Test 3: Try m{deg} command (probably doesn't exist)
     print("\n[TEST 3] m{deg} format (might not exist)")
     print("-" * 60)
-    
+
     cmd = "m045\n"
     print(f"\n  Sending: {cmd.strip()}")
     ser.reset_input_buffer()
@@ -107,11 +106,11 @@ def test_servo_commands(ser):
     print(f"  Response: {response!r}")
     time.sleep(1.0)
     input("  >>> Did servo move to 45°? (Press Enter to continue)")
-    
+
     # Test 4: Query firmware version
     print("\n[TEST 4] Firmware version query")
     print("-" * 60)
-    
+
     cmd = "iv\n"
     print(f"\n  Sending: {cmd.strip()}")
     ser.reset_input_buffer()
@@ -119,7 +118,7 @@ def test_servo_commands(ser):
     time.sleep(0.2)
     response = ser.read(100)
     print(f"  Firmware version: {response!r}")
-    
+
     print("\n" + "="*60)
     print("SERVO COMMAND TEST COMPLETE")
     print("="*60)
@@ -131,7 +130,7 @@ def main():
     print("This script tests servo commands directly on the serial port")
     print("to determine which format P4PRO firmware v2.0 supports.")
     print("=" * 60)
-    
+
     # Find P4PRO
     ser = find_p4pro_port()
     if not ser:
@@ -141,7 +140,7 @@ def main():
         print("   - Controller powered on")
         print("   - No other programs using the port")
         sys.exit(1)
-    
+
     try:
         test_servo_commands(ser)
     except KeyboardInterrupt:

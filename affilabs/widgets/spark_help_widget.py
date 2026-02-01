@@ -10,10 +10,9 @@ from PySide6.QtWidgets import (
     QTextEdit, QScrollArea, QFrame, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QTextCursor, QKeyEvent
+from PySide6.QtGui import QKeyEvent
 from tinydb import TinyDB, Query
 from datetime import datetime
-import time
 import urllib.parse
 import webbrowser
 import re
@@ -279,11 +278,11 @@ class SparkHelpWidget(QWidget):
 
         bubble = QABubble(answer, is_question=False)
         self.conversation_layout.addWidget(bubble)
-        
+
         # Add feedback buttons if requested
         if add_feedback and self.last_qa_id is not None:
             self._add_feedback_buttons(self.last_qa_id)
-        
+
         self.conversation_layout.addStretch()
 
         # Scroll to bottom
@@ -503,7 +502,7 @@ class SparkHelpWidget(QWidget):
                 f"Couldn't open email client.\n\n"
                 f"Please email your question manually to:\n{support_email}\n\n"
                 f"Error: {str(e)}"
-            )    
+            )
     def _add_feedback_buttons(self, qa_id: int):
         """Add thumbs up/down feedback buttons for the last answer.
         
@@ -512,13 +511,13 @@ class SparkHelpWidget(QWidget):
         """
         # Remove stretch before adding buttons
         self.conversation_layout.takeAt(self.conversation_layout.count() - 1)
-        
+
         # Create button container
         feedback_container = QWidget()
         feedback_layout = QHBoxLayout(feedback_container)
         feedback_layout.setContentsMargins(0, 4, 0, 8)
         feedback_layout.setSpacing(8)
-        
+
         # Label
         label = QLabel("Was this helpful?")
         label.setStyleSheet(
@@ -527,7 +526,7 @@ class SparkHelpWidget(QWidget):
             "background: transparent;"
         )
         feedback_layout.addWidget(label)
-        
+
         # Thumbs up button
         thumbs_up_btn = QPushButton("👍")
         thumbs_up_btn.setFixedSize(32, 32)
@@ -545,7 +544,7 @@ class SparkHelpWidget(QWidget):
         thumbs_up_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         thumbs_up_btn.clicked.connect(lambda: self._handle_feedback(qa_id, "helpful", feedback_container))
         feedback_layout.addWidget(thumbs_up_btn)
-        
+
         # Thumbs down button
         thumbs_down_btn = QPushButton("👎")
         thumbs_down_btn.setFixedSize(32, 32)
@@ -563,12 +562,12 @@ class SparkHelpWidget(QWidget):
         thumbs_down_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         thumbs_down_btn.clicked.connect(lambda: self._handle_feedback(qa_id, "not_helpful", feedback_container))
         feedback_layout.addWidget(thumbs_down_btn)
-        
+
         feedback_layout.addStretch()
-        
+
         self.conversation_layout.addWidget(feedback_container)
         self.conversation_layout.addStretch()
-    
+
     def _handle_feedback(self, qa_id: int, feedback: str, feedback_widget: QWidget):
         """Handle user feedback on an answer.
         
@@ -579,14 +578,14 @@ class SparkHelpWidget(QWidget):
         """
         # Update database
         self.qa_storage.update_feedback(qa_id, feedback)
-        
+
         # Remove feedback buttons
         self.conversation_layout.removeWidget(feedback_widget)
         feedback_widget.deleteLater()
-        
+
         # Add thank you message
         self.conversation_layout.takeAt(self.conversation_layout.count() - 1)
-        
+
         thank_you = QLabel("✓ Thanks for your feedback!" if feedback == "helpful" else "✓ Thanks! We'll improve this answer.")
         thank_you.setStyleSheet(
             "font-size: 11px; "
@@ -596,7 +595,7 @@ class SparkHelpWidget(QWidget):
         )
         self.conversation_layout.addWidget(thank_you)
         self.conversation_layout.addStretch()
-        
+
         logger.info(f"Feedback recorded: {feedback} for Q&A ID {qa_id}")
     def _clear_conversation(self):
         """Clear the conversation history."""

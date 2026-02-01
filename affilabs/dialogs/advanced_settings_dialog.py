@@ -480,7 +480,7 @@ class AdvancedSettingsDialog(QDialog):
                         if success:
                             logger.info(f"✓ Pump corrections written to controller EEPROM: P1={pump1_corr:.3f}, P2={pump2_corr:.3f}")
                         else:
-                            logger.warning(f"⚠ Controller EEPROM write failed - firmware version may not support pump corrections (need V1.4+)")
+                            logger.warning("⚠ Controller EEPROM write failed - firmware version may not support pump corrections (need V1.4+)")
                     else:
                         if not ctrl:
                             logger.warning("⚠ Controller not connected - pump corrections saved to config only")

@@ -81,14 +81,14 @@ def test_license_loading():
     features = mgr.load_license()
     info = mgr.get_license_info()
 
-    print(f"\nCurrent License Status:")
+    print("\nCurrent License Status:")
     print(f"  Tier: {info['tier_name']}")
     print(f"  Licensee: {info['licensee']}")
     print(f"  Valid: {'✅ Yes' if info['is_valid'] else '❌ No'}")
     print(f"  Expires: {info['expires']}")
 
     if not info['is_valid'] and info.get('errors'):
-        print(f"\n  Validation Errors:")
+        print("\n  Validation Errors:")
         for error in info['errors']:
             print(f"    • {error}")
 
@@ -111,21 +111,21 @@ def test_feature_access():
 
     # Test with Free tier
     features = FeatureFlags(FeatureTier.FREE)
-    print(f"\nFree Tier Access Check:")
+    print("\nFree Tier Access Check:")
     print(f"  Excel Export: {features.excel_export}")
     print(f"  AnIML Export: {features.animl_export}")
     print(f"  SiLA Integration: {features.sila_integration}")
 
     # Test with Pro tier
     features = FeatureFlags(FeatureTier.PRO)
-    print(f"\nPro Tier Access Check:")
+    print("\nPro Tier Access Check:")
     print(f"  Excel Export: {features.excel_export}")
     print(f"  AnIML Export: {features.animl_export}")
     print(f"  SiLA Integration: {features.sila_integration}")
 
     # Test with Enterprise tier
     features = FeatureFlags(FeatureTier.ENTERPRISE)
-    print(f"\nEnterprise Tier Access Check:")
+    print("\nEnterprise Tier Access Check:")
     print(f"  Excel Export: {features.excel_export}")
     print(f"  AnIML Export: {features.animl_export}")
     print(f"  SiLA Integration: {features.sila_integration}")

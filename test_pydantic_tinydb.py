@@ -9,8 +9,6 @@ Tests for Phase 1.2 enhancements:
 Run this to verify the enhancement works correctly.
 """
 
-import time
-from pathlib import Path
 
 # Test Pydantic Cycle validation
 print("=" * 60)
@@ -42,7 +40,7 @@ try:
         length_minutes="3.5",  # String should be coerced to float
         concentration_value="100.0",  # String to float
     )
-    print(f"✓ Type coercion works!")
+    print("✓ Type coercion works!")
     print(f"  - length_minutes: {cycle.length_minutes} (type: {type(cycle.length_minutes).__name__})")
     print(f"  - concentration_value: {cycle.concentration_value} (type: {type(cycle.concentration_value).__name__})")
 except Exception as e:
@@ -90,13 +88,13 @@ try:
 
     # Recreate from dict
     restored = Cycle.from_dict(data)
-    print(f"✓ from_dict() works")
+    print("✓ from_dict() works")
 
     # Verify equality
     if restored.type == original.type and restored.length_minutes == original.length_minutes:
-        print(f"✓ Serialization round-trip successful")
+        print("✓ Serialization round-trip successful")
     else:
-        print(f"✗ Data mismatch after round-trip")
+        print("✗ Data mismatch after round-trip")
 
 except Exception as e:
     print(f"✗ Failed: {e}")
@@ -238,7 +236,7 @@ try:
     )
 
     print(f"✓ Template applied: {len(cycles)} cycles generated")
-    print(f"  Cycle sequence:")
+    print("  Cycle sequence:")
     for i, cycle in enumerate(cycles[:5]):  # Show first 5
         print(f"    {i+1}. {cycle.type} - {cycle.name} ({cycle.length_minutes} min)")
     if len(cycles) > 5:

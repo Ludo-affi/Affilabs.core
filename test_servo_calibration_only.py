@@ -39,7 +39,7 @@ print("=" * 80)
 
 try:
     success = run_calibration_with_hardware(hm)
-    
+
     print("\n" + "=" * 80)
     if success:
         logger.info("✅ SERVO CALIBRATION COMPLETE")

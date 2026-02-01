@@ -17,7 +17,7 @@ def test_led_cycle_speed():
         print("ERROR: Failed to connect to P4PRO")
         return False
 
-    print(f"Connected to P4PRO")
+    print("Connected to P4PRO")
     print(f"Firmware: {ctrl.version}\n")
 
     # Test parameters
@@ -81,8 +81,8 @@ def test_led_cycle_speed():
     max_cycle_time = max(cycle_times)
 
     print(f"\n{'='*60}")
-    print(f"RESULTS:")
-    print(f"  Target cycle time: 1000ms (250ms × 4 LEDs)")
+    print("RESULTS:")
+    print("  Target cycle time: 1000ms (250ms × 4 LEDs)")
     print(f"  Average cycle time: {avg_cycle_time:.1f}ms")
     print(f"  Min cycle time: {min_cycle_time:.1f}ms")
     print(f"  Max cycle time: {max_cycle_time:.1f}ms")
@@ -99,7 +99,7 @@ def test_led_cycle_speed():
         print(f"  ({lower_bound:.0f}ms - {upper_bound:.0f}ms)")
         result = True
     else:
-        print(f"\n✗ FAIL: Cycle time outside acceptable range")
+        print("\n✗ FAIL: Cycle time outside acceptable range")
         print(f"  Expected: {lower_bound:.0f}ms - {upper_bound:.0f}ms")
         print(f"  Got: {avg_cycle_time:.1f}ms")
         result = False

@@ -41,10 +41,10 @@ peak_val = filtered_trans[peak_idx]
 dip_wl = filtered_wl[dip_idx]
 dip_val = filtered_trans[dip_idx]
 
-print(f"\nIf we use argmax (PEAK finding):")
+print("\nIf we use argmax (PEAK finding):")
 print(f"  ✓ Peak at: {peak_wl:.2f} nm with transmission = {peak_val:.2f}%")
 
-print(f"\nIf we use argmin (DIP finding):")
+print("\nIf we use argmin (DIP finding):")
 print(f"  ✗ Dip at: {dip_wl:.2f} nm with transmission = {dip_val:.2f}%")
 
 print("\n" + "=" * 80)

@@ -30,6 +30,9 @@ class PumpControl(QGroupBox):
 from __future__ import annotations
 
 
+class PumpGroupBox(QGroupBox):
+    """Pump control group box."""
+
     main_layout: QVBoxLayout
     channel_1: QRadioButton
     channel_2: QRadioButton

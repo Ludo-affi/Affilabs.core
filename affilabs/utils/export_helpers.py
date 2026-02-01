@@ -322,7 +322,7 @@ class ExportHelpers:
                 - preset: str or None ('quick_csv', 'analysis', 'publication')
 
         """
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from PySide6.QtWidgets import QMessageBox
 
         try:
             print(f"Export requested with config: {config.get('preset', 'custom')}")

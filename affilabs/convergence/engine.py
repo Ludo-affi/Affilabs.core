@@ -292,10 +292,10 @@ class ConvergenceEngine:
         if state.model_slopes_at_10ms:
             slope_str = ", ".join([f"{ch.upper()}={slope:.1f}" for ch, slope in state.model_slopes_at_10ms.items()])
             self._log("info", f"  📊 Calibration slopes available: {slope_str} counts/LED @ 10ms")
-            self._log("info", f"     Strategy: 30% ML + 70% Physics Model (blended)")
+            self._log("info", "     Strategy: 30% ML + 70% Physics Model (blended)")
         else:
-            self._log("info", f"  🤖 No calibration slopes - using 100% ML predictions")
-            self._log("info", f"     (This is normal for P-mode or first-time calibration)")
+            self._log("info", "  🤖 No calibration slopes - using 100% ML predictions")
+            self._log("info", "     (This is normal for P-mode or first-time calibration)")
 
         high_sensitivity_detected = False
 
@@ -513,7 +513,7 @@ class ConvergenceEngine:
                 if label == SensitivityLabel.HIGH or label == "HIGH":
                     high_sensitivity_detected = True
                     self._log("info", f"  🧭 Classifier: HIGH sensitivity (conf={conf:.2f}) [{reason}]")
-                    self._log("info", f"     → Will cap integration time ≤20ms to prevent saturation spiral")
+                    self._log("info", "     → Will cap integration time ≤20ms to prevent saturation spiral")
 
                     # PHASE 1 REFINEMENT: Only reduce integration if significantly over target
                     # Don't panic-reduce if channels are close to target (within 20%)
@@ -722,7 +722,7 @@ class ConvergenceEngine:
 
                 if integration_changed and leds_stable:
                     prefer_led_adjustment = True
-                    self._log("info", f"  💡 Strategy: PREFER LED ADJUSTMENT (integration oscillating, LEDs stable)")
+                    self._log("info", "  💡 Strategy: PREFER LED ADJUSTMENT (integration oscillating, LEDs stable)")
 
             # Early saturation handling with weakest channel protection
             if sum(saturation.values()) > 0:
@@ -739,8 +739,8 @@ class ConvergenceEngine:
                 self._log("info", f"  ⚠️  SATURATION DETECTED: {len(acc.saturating)}/{len(recipe.channels)} channels ({total_sat_pixels} total pixels)")
 
                 if all_saturating and all_close_to_target:
-                    self._log("info", f"  ⚠️  ALL channels close to target (85-105%) but saturating")
-                    self._log("info", f"  💡 Strategy: MODEL-BASED LED reduction using SATURATED PIXEL COUNT")
+                    self._log("info", "  ⚠️  ALL channels close to target (85-105%) but saturating")
+                    self._log("info", "  💡 Strategy: MODEL-BASED LED reduction using SATURATED PIXEL COUNT")
 
                     for ch in recipe.channels:
                         old_led = state.leds[ch]
@@ -809,7 +809,7 @@ class ConvergenceEngine:
                 if should_adjust_leds_not_time:
                     if weakest_led >= 255 and weakest_locked:
                         self._log("info", f"  ℹ️  Weakest channel {weakest_ch.upper()} at max LED (255) and locked")
-                        self._log("info", f"  ℹ️  Normalizing saturating channels relative to weakest using slopes")
+                        self._log("info", "  ℹ️  Normalizing saturating channels relative to weakest using slopes")
                     else:
                         self._log("info", f"  💡 {num_saturating} channel(s) saturating (≤3) - reducing their LEDs instead of cutting integration")
 
@@ -920,7 +920,7 @@ class ConvergenceEngine:
                 # Saturation handling: reduce integration time
                 # This applies whether we have ≤3 channels (LED-adjusted above) or >3 channels
                 if num_saturating > 0:
-                    self._log("info", f"  ⏱️  Saturation detected - reducing integration time to help clear saturation")
+                    self._log("info", "  ⏱️  Saturation detected - reducing integration time to help clear saturation")
                 new_time = saturation_policy.reduce_integration(
                     saturation,
                     state.integration_ms,
@@ -1039,7 +1039,7 @@ class ConvergenceEngine:
                         # If we just had saturation, be very cautious
                         if prev['total_sat_pixels'] > 100:
                             needed_scale = min(needed_scale, 1.3)
-                            self._log("info", f"    [ADAPTIVE] Limiting scale to 1.3x (prev iteration saturated)")
+                            self._log("info", "    [ADAPTIVE] Limiting scale to 1.3x (prev iteration saturated)")
                         # If we're close to target (>80%), use moderate scaling
                         elif signal_fraction > 0.80:
                             needed_scale = min(needed_scale, 1.5)
@@ -1372,7 +1372,7 @@ class ConvergenceEngine:
                         continue  # Skip to next iteration with new integration time
 
                     elif chosen_option == "option3":
-                        self._log("info", f"  🎯 Optimization: Balance both (LED & integration)")
+                        self._log("info", "  🎯 Optimization: Balance both (LED & integration)")
                         self._log("info", f"      Integration: {state.integration_ms:.1f}ms → {option3_integration:.1f}ms")
                         state.integration_ms = option3_integration
                         self._apply_led_updates(option3_leds, locked, state, log_prefix="     ")
@@ -1630,7 +1630,7 @@ class ConvergenceEngine:
                         ml_features_available = True
                     except Exception as e:
                         self._log("warning", f"[ML] LED predictor failed for {ch}: {e}")
-                        self._log("info", f"    🔄 [FALLBACK] Using slope-based LED calculation with ML context")
+                        self._log("info", "    🔄 [FALLBACK] Using slope-based LED calculation with ML context")
                         ml_features_available = True  # We have the features even if prediction failed
 
                 # BLEND ML prediction with model-based calculation (30% ML, 70% model)
@@ -1661,14 +1661,14 @@ class ConvergenceEngine:
                     # For HIGH sensitivity devices (detected by ML or rules),
                     # use gentler adjustments to avoid over-shooting
                     if ml_features_available and state.ml_sensitivity_detected:
-                        self._log("debug", f"    💡 [ENHANCED] Applying HIGH-sensitivity constraints from ML")
+                        self._log("debug", "    💡 [ENHANCED] Applying HIGH-sensitivity constraints from ML")
 
                     recent_saturation = iteration > 2 and state.ml_sensitivity_detected and \
                                        any(saturation.get(c, 0) > 0 for c in recipe.channels if iteration > 1)
 
                     # If ML features were available, apply ML-informed adjustments
                     if ml_features_available and state.ml_sensitivity_detected:
-                        self._log("debug", f"    💡 [ENHANCED] Applying HIGH-sensitivity constraints from ML")
+                        self._log("debug", "    💡 [ENHANCED] Applying HIGH-sensitivity constraints from ML")
 
                     # Pick slope (model scaled to integration) or estimate
                     model = None
@@ -1923,7 +1923,7 @@ class ConvergenceEngine:
                     final_leds = dict(state.leds)
                     final_signals = dict(signals)
                     final_integration = state.integration_ms
-                    self._log("warning", f"\n⚠️  Per-channel best from mixed integration times - using final iteration")
+                    self._log("warning", "\n⚠️  Per-channel best from mixed integration times - using final iteration")
                     self._log("info", f"\n📊 Using final iteration LEDs (complete set at {state.integration_ms:.1f}ms):")
                 for ch in recipe.channels:
                     pct = (final_signals[ch] / target_signal * 100) if target_signal > 0 else 0
@@ -1986,7 +1986,7 @@ class ConvergenceEngine:
                 if qc_warnings:
                     self._log("warning", f"   \u26a0\ufe0f  QC Review Recommended: {len(qc_warnings)} warning(s)")
             else:
-                self._log("warning", f"\n\u26a0\ufe0f  PARTIAL CONVERGENCE - returning BEST iteration (combined per-channel best)")
+                self._log("warning", "\n\u26a0\ufe0f  PARTIAL CONVERGENCE - returning BEST iteration (combined per-channel best)")
                 self._log("info", f"   Max signal achieved: {max_signal_pct:.1f}%, target: {target_pct:.1f}%")
 
             self._log("info", f"   Final integration time: {final_integration:.1f}ms")

@@ -9,7 +9,6 @@ Main entry point: LEDconverge (imported from led_convergence_algorithm)
 """
 
 import time
-from typing import Optional
 
 import numpy as np
 
@@ -35,15 +34,7 @@ __all__ = [
 
 
 # analyze_saturation_severity imported from led_convergence_core.py above
-    severity = max_width * sat_fraction
-
-    return {
-        'sat_pixels': sat_count,
-        'sat_fraction': sat_fraction,
-        'max_contiguous_width': max_width,
-        'num_sat_regions': num_regions,
-        'severity_score': severity,
-    }
+# Removed orphaned code block
 
 
 def calculate_led_reduction_from_saturation(

@@ -118,7 +118,7 @@ class SpectrumHelpers:
                     "elapsed_time": elapsed_time,
                     "channel": channel,
                 }
-            except Exception as e:
+            except Exception:
                 pass  # Silently skip graph update errors
 
         # Record data point if recording is active
@@ -133,7 +133,7 @@ class SpectrumHelpers:
                     'channel': channel,
                     'value': wavelength
                 })
-        except Exception as e:
+        except Exception:
             pass  # Silently skip recording errors
 
         # Update cycle of interest graph (bottom graph) - handled by UI refresh timer

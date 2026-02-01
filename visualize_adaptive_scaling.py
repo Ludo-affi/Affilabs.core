@@ -46,7 +46,7 @@ for time_ms, time_scale in time_scales.items():
     print(f"\n{time_ms}ms (time_scale={time_scale:.2f}):")
     print(f"{'LED':>5} {'Factor':>8} {'Intensities':>50}")
     print("-" * 80)
-    
+
     for led in ["A", "B", "C", "D"]:
         led_scale = brightness_factors[led] * time_scale
         intensities = [max(10, int(i * led_scale)) for i in base_intensities]

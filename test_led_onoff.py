@@ -21,7 +21,7 @@ if not hw._ctrl_raw or not hw.usb:
     exit(1)
 
 print(f"[OK] Controller: {hw._ctrl_raw.name}")
-print(f"[OK] Detector: Connected")
+print("[OK] Detector: Connected")
 
 # Get HAL controller
 ctrl = hw.ctrl

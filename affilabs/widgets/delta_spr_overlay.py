@@ -6,7 +6,6 @@ applications where ΔRU is the primary measurement of interest.
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from affilabs.settings.settings import ACTIVE_GRAPH_COLORS

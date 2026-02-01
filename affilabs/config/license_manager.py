@@ -5,7 +5,6 @@ Handles license file parsing, validation, and expiration checking.
 
 import json
 import hashlib
-import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any

@@ -485,7 +485,7 @@ class PicoP4SPRAdapter:
 
                 # Move to S or P using ss/sp command
                 if m == "s":
-                    logger.info(f"   📤 Sending ss command to move to S position")
+                    logger.info("   📤 Sending ss command to move to S position")
                     try:
                         self._ser.write(b"ss\n")
                         logger.info(f"   ✅ Moved to S-mode (PWM {self._servo_s_pos}, {s_degrees}°) using sv+ss")
@@ -493,7 +493,7 @@ class PicoP4SPRAdapter:
                         logger.error(f"❌ Failed to send ss command: {ss_err}")
                         return False
                 elif m == "p":
-                    logger.info(f"   📤 Sending sp command to move to P position")
+                    logger.info("   📤 Sending sp command to move to P position")
                     try:
                         self._ser.write(b"sp\n")
                         logger.info(f"   ✅ Moved to P-mode (PWM {self._servo_p_pos}, {p_degrees}°) using sv+sp")

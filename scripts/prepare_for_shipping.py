@@ -11,7 +11,6 @@ SAFE: Only moves/organizes files, never deletes.
 
 import os
 import shutil
-import json
 from pathlib import Path
 from typing import List, Dict
 import zipfile

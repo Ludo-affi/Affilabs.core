@@ -370,7 +370,7 @@ class FMEATracker:
 
         """
         # Count failures by severity
-        severity_counts = {s: 0 for s in Severity}
+        severity_counts = dict.fromkeys(Severity, 0)
         for failure in self.active_failures.values():
             severity_counts[failure.severity] += 1
 

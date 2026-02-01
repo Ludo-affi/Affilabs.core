@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from main_simplified import Application  # type: ignore[import-not-found]
 
 import numpy as np
-from affilabs.utils.logger import logger
 
 
 # Wavelength to Response Unit conversion constant
@@ -41,7 +40,6 @@ class UIUpdateHelpers:
             app: Application instance
 
         """
-        from PySide6.QtCore import QTimer  # type: ignore[import-untyped]
 
         # Legacy cursor-based update
         # Safety checks - don't crash if cursors not initialized or no data yet

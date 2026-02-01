@@ -307,7 +307,7 @@ class Kinetic(QWidget):
 
     def update_channel_visibility(self):
         """Update which channels should be visible based on valve position."""
-        if not hasattr(self, "knx") or not self.knx and not self.knx2:
+        if not hasattr(self, "knx") or (not self.knx and not self.knx2):
             return  # No pump detected, don't control channels
 
         # Check which buffer flow is active (Ch A & C or Ch B & D)

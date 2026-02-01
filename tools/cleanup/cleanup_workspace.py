@@ -4,7 +4,6 @@ cleanup_workspace.py
 Comprehensive workspace cleanup - organize utility scripts, docs, and data files.
 """
 
-import os
 from pathlib import Path
 
 # Get workspace root
@@ -88,13 +87,13 @@ ORGANIZATION = {
         'temp_original_processor.py',
         'usb4000_wrapper_GOLDEN.py',
     ],
-    
+
     # Firmware tools
     'tools/firmware': [
         'bin_to_uf2.py',
         'elf_to_uf2.py',
     ],
-    
+
     # PowerShell scripts
     'tools/powershell': [
         'flash_v1.2.ps1',
@@ -103,7 +102,7 @@ ORGANIZATION = {
         'run_no_cache.ps1',
         'set_no_cache_permanent.ps1',
     ],
-    
+
     # Documentation and reference files
     'docs/reference': [
         'calibration_output.txt',
@@ -115,7 +114,7 @@ ORGANIZATION = {
         'original_sidebar_COMPLETE.txt',
         'original_sidebar_full.txt',
     ],
-    
+
     # Test logs
     'docs/test_logs': [
         'test_ch1_log.txt',
@@ -123,7 +122,7 @@ ORGANIZATION = {
         'test_cycle_table_export.txt',
         'test_temp_log.txt',
     ],
-    
+
     # Data files
     'data/optimization': [
         'integration_time_optimization.json',
@@ -136,7 +135,7 @@ def find_files_to_move():
     plan = {}
     found_files = set()
     missing_files = set()
-    
+
     for dest_dir, file_list in ORGANIZATION.items():
         plan[dest_dir] = []
         for filename in file_list:
@@ -146,20 +145,20 @@ def find_files_to_move():
                 found_files.add(filename)
             else:
                 missing_files.add(filename)
-    
+
     return plan, found_files, missing_files
 
 
 def display_plan(plan, found_files, missing_files):
     """Display the organization plan to the user."""
     total_files = sum(len(files) for files in plan.values())
-    
+
     if total_files == 0:
         print("✓ No files to organize - workspace is already clean!")
         return False
-    
+
     print(f"Found {total_files} files to organize:\n")
-    
+
     # Group by main category
     categories = {}
     for dest_dir, files in sorted(plan.items()):
@@ -169,7 +168,7 @@ def display_plan(plan, found_files, missing_files):
         if main_cat not in categories:
             categories[main_cat] = []
         categories[main_cat].append((dest_dir, files))
-    
+
     # Display by category
     for main_cat, items in sorted(categories.items()):
         print(f"{main_cat.upper()}:")
@@ -179,10 +178,10 @@ def display_plan(plan, found_files, missing_files):
                 for f in sorted(files):
                     print(f"    • {f.name}")
         print()
-    
+
     if missing_files:
         print(f"Note: {len(missing_files)} files already moved or not found")
-    
+
     print("=" * 70)
     return True
 
@@ -191,14 +190,14 @@ def move_files(plan):
     """Move files to their organized locations."""
     moved_count = 0
     failed_count = 0
-    
+
     for dest_dir, files in plan.items():
         if not files:
             continue
-        
+
         dest_path = WORKSPACE_ROOT / dest_dir
         dest_path.mkdir(parents=True, exist_ok=True)
-        
+
         for file_path in files:
             try:
                 dest = dest_path / file_path.name
@@ -208,12 +207,12 @@ def move_files(plan):
             except Exception as e:
                 print(f"✗ Failed: {file_path.name} - {e}")
                 failed_count += 1
-    
+
     print()
     print(f"✅ Successfully organized {moved_count} files")
     if failed_count > 0:
         print(f"❌ Failed to move {failed_count} files")
-    
+
     print()
     print("Root directory now contains only:")
     print("  • run_app.py (main entry point)")
@@ -229,17 +228,17 @@ def main():
     print("Workspace Organization Tool")
     print("=" * 70)
     print()
-    
+
     # Find and display plan
     plan, found_files, missing_files = find_files_to_move()
     has_files = display_plan(plan, found_files, missing_files)
-    
+
     if not has_files:
         return
-    
+
     # Ask for confirmation
     response = input("Organize these files? (yes/no): ").strip().lower()
-    
+
     if response == "yes":
         print()
         move_files(plan)

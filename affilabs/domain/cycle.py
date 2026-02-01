@@ -40,7 +40,7 @@ from __future__ import annotations
 import time
 from typing import Literal, Optional, Dict, List
 
-from pydantic import BaseModel, Field, field_validator, computed_field
+from pydantic import BaseModel, Field, field_validator
 
 CycleStatus = Literal["pending", "running", "completed", "cancelled"]
 CycleType = Literal["Baseline", "Association", "Dissociation", "Regeneration", "Custom"]
@@ -124,14 +124,6 @@ class Cycle(BaseModel):
             return f"{info.data['type']} Cycle"
         return v
 
-    @field_validator('name')
-    @classmethod
-    def set_default_name(cls, v: str, info) -> str:
-        """Set default name based on cycle type if not provided."""
-        if not v and 'type' in info.data:
-            return f"{info.data['type']} Cycle"
-        return v
-
     def to_dict(self) -> dict:
         """Convert to dictionary (for legacy compatibility).
 
@@ -164,21 +156,6 @@ class Cycle(BaseModel):
             "delta_spr": self.delta_spr,
             "flags": self.flags if self.flags else [],
         }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> Cycle:
-        """Create Cycle from dictionary with automatic validation.
-
-        Pydantic will validate all fields and coerce types automatically.
-
-        Args:
-            data: Dictionary with cycle fields
-
-        Returns:
-            Cycle instance (validated)
-        """
-        # Pydantic's model_validate handles type coercion and validation
-        return cls.model_validate(data)
 
     @classmethod
     def from_dict(cls, data: dict) -> Cycle:

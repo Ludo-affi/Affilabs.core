@@ -35,64 +35,64 @@ if __name__ == "__main__":
     print("="*70)
     print("P4PRO VALVE DIAGNOSTIC - TESTING ALL VALVE COMMANDS")
     print("="*70)
-    
+
     ser = find_p4pro()
     if not ser:
         print("❌ P4PRO not found!")
         exit(1)
-    
+
     # Get firmware version
     send_cmd(ser, "iv\n", "Getting firmware version")
-    
+
     # Test if there's a valve enable command
     print("\n" + "="*70)
     print("TESTING POSSIBLE VALVE ENABLE COMMANDS")
     print("="*70)
-    
+
     possible_enables = [
         ("ve\n", "Valve Enable (ve)"),
         ("valve:enable\n", "Valve Enable (valve:enable)"),
         ("knx:enable\n", "KNX Enable (knx:enable)"),
         ("valve:on\n", "Valve On (valve:on)"),
     ]
-    
+
     for cmd, desc in possible_enables:
         send_cmd(ser, cmd, desc)
-    
+
     # Test individual valve commands
     print("\n" + "="*70)
     print("TESTING INDIVIDUAL VALVE COMMANDS")
     print("="*70)
-    
+
     input("\nPress ENTER to test 6-port valve CH1 OPEN (v611)...")
     send_cmd(ser, "v611\n", "6-port CH1 OPEN (v611)")
     print("🔊 Did you hear a click?")
-    
+
     time.sleep(1)
-    
+
     input("\nPress ENTER to test 6-port valve CH1 CLOSE (v610)...")
     send_cmd(ser, "v610\n", "6-port CH1 CLOSE (v610)")
     print("🔊 Did you hear a click?")
-    
+
     time.sleep(1)
-    
+
     # Test batch commands
     print("\n" + "="*70)
     print("TESTING BATCH VALVE COMMANDS")
     print("="*70)
-    
+
     input("\nPress ENTER to test BOTH 6-port valves OPEN (v6B1)...")
     send_cmd(ser, "v6B1\n", "BOTH 6-port OPEN (v6B1)")
     print("🔊 Did you hear TWO clicks?")
-    
+
     time.sleep(1)
-    
+
     input("\nPress ENTER to test BOTH 6-port valves CLOSE (v6B0)...")
     send_cmd(ser, "v6B0\n", "BOTH 6-port CLOSE (v6B0)")
     print("🔊 Did you hear TWO clicks?")
-    
+
     ser.close()
-    
+
     print("\n" + "="*70)
     print("DIAGNOSTIC COMPLETE")
     print("="*70)

@@ -172,7 +172,7 @@ ax4.grid(True, alpha=0.3)
 
 plt.tight_layout()
 plt.savefig('debug_fourier_offset.png', dpi=300, bbox_inches='tight')
-print(f"\n✓ Saved: debug_fourier_offset.png")
+print("\n✓ Saved: debug_fourier_offset.png")
 
 # ============================================================================
 # DIAGNOSIS

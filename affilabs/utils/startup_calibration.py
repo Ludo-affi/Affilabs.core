@@ -207,14 +207,11 @@ SERVO_EXTENDED_SETTLING_S = 0.5  # Extended settling for critical positions
 HARDWARE_STABILIZATION_TIME_S = 0.02  # General hardware stabilization delay
 INTER_CHANNEL_DARK_TIME_S = 0.005  # Brief delay between channel reads
 
-import contextlib
 
 from affilabs.core.spectrum_preprocessor import SpectrumPreprocessor
 from affilabs.core.transmission_processor import TransmissionProcessor
 from affilabs.models.led_calibration_result import LEDCalibrationResult
 from affilabs.utils.calibration_helpers import (
-    DetectorParams,
-    determine_channel_list,
     get_detector_params,
 )
 

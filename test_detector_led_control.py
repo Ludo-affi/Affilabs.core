@@ -17,7 +17,6 @@ Controls:
 - q: Quit
 """
 
-import time
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
@@ -76,12 +75,12 @@ running = True
 def set_leds():
     """Apply current LED intensities"""
     ctrl.set_batch_intensities(
-        led_intensities['A'], 
-        led_intensities['B'], 
-        led_intensities['C'], 
+        led_intensities['A'],
+        led_intensities['B'],
+        led_intensities['C'],
         led_intensities['D']
     )
-    
+
 def update_integration_time():
     """Apply current integration time"""
     detector.set_integration(integration_time)
@@ -99,23 +98,23 @@ def get_spectrum():
 def print_status():
     """Print current settings and detector reading"""
     spectrum = get_spectrum()
-    
+
     print("\033[H\033[J")  # Clear screen
     print("=" * 80)
     print("DETECTOR & LED CONTROL - LIVE")
     print("=" * 80)
     print()
-    
+
     print("LED INTENSITIES:")
     print(f"  A: {led_intensities['A']:3d}/255  {'█' * (led_intensities['A'] // 10)}")
     print(f"  B: {led_intensities['B']:3d}/255  {'█' * (led_intensities['B'] // 10)}")
     print(f"  C: {led_intensities['C']:3d}/255  {'█' * (led_intensities['C'] // 10)}")
     print(f"  D: {led_intensities['D']:3d}/255  {'█' * (led_intensities['D'] // 10)}")
     print()
-    
+
     print(f"INTEGRATION TIME: {integration_time} ms")
     print()
-    
+
     if spectrum is not None:
         max_val = np.max(spectrum)
         mean_val = np.mean(spectrum)
@@ -123,7 +122,7 @@ def print_status():
         print(f"  Max:  {max_val:6.0f} counts")
         print(f"  Mean: {mean_val:6.1f} counts")
         print(f"  Pixels: {len(spectrum)}")
-        
+
         # Show saturation warning
         if max_val > 7500:
             print(f"  ⚠️  SATURATED ({max_val:.0f} counts)")
@@ -131,7 +130,7 @@ def print_status():
             print(f"  ⚠️  Near saturation ({max_val:.0f} counts)")
     else:
         print("DETECTOR READING: No data")
-    
+
     print()
     print("-" * 80)
     print("CONTROLS:")
@@ -175,7 +174,7 @@ ax_bars.set_ylim(0, 255)
 ax_bars.grid(True, alpha=0.3, axis='y')
 
 # Stats text
-stats_text = ax_spectrum.text(0.02, 0.98, '', transform=ax_spectrum.transAxes, 
+stats_text = ax_spectrum.text(0.02, 0.98, '', transform=ax_spectrum.transAxes,
                               verticalalignment='top', fontfamily='monospace', fontsize=10,
                               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
@@ -264,19 +263,19 @@ btn_quit.on_clicked(on_btn_quit)
 def update_plot(frame):
     """Update plot with current data"""
     global running
-    
+
     if not running:
         return
-    
+
     # Get spectrum
     spectrum = get_spectrum()
-    
+
     if spectrum is not None:
         # Update spectrum plot
         x_data = np.arange(len(spectrum))
         line1.set_data(x_data, spectrum)
         ax_spectrum.set_xlim(0, len(spectrum))
-        
+
         # Update stats text
         max_val = np.max(spectrum)
         mean_val = np.mean(spectrum)
@@ -286,13 +285,13 @@ def update_plot(frame):
         elif max_val < 100:
             stats += '\n(Dark - LEDs off?)'
         stats_text.set_text(stats)
-    
+
     # Update LED bars
-    led_values = [led_intensities['A'], led_intensities['B'], 
+    led_values = [led_intensities['A'], led_intensities['B'],
                   led_intensities['C'], led_intensities['D']]
     for bar, height in zip(bars, led_values):
         bar.set_height(height)
-    
+
     return line1, bars, stats_text
 
 print()

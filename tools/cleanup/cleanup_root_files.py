@@ -5,9 +5,7 @@ Clean up .csv, .png, and test*.py files from the root directory.
 Organizes them into categorized archive folders.
 """
 
-import os
 from pathlib import Path
-from datetime import datetime
 
 # Get workspace root
 WORKSPACE_ROOT = Path(__file__).parent
@@ -43,14 +41,14 @@ CATEGORIES = {
 def categorize_file(filename, file_type):
     """Determine the category for a file based on keywords."""
     filename_lower = filename.lower()
-    
+
     for category, keywords in CATEGORIES[file_type].items():
         if category == "general":
             continue
         for keyword in keywords:
             if keyword in filename_lower:
                 return category
-    
+
     return "general"
 
 
@@ -59,7 +57,7 @@ def find_root_files():
     csv_files = list(WORKSPACE_ROOT.glob("*.csv"))
     png_files = list(WORKSPACE_ROOT.glob("*.png"))
     test_files = list(WORKSPACE_ROOT.glob("test*.py"))
-    
+
     return {
         "csv": csv_files,
         "png": png_files,
@@ -70,13 +68,13 @@ def find_root_files():
 def organize_files():
     """Organize files by category and display the plan."""
     files = find_root_files()
-    
+
     plan = {
         "csv": {},
         "png": {},
         "test_py": {}
     }
-    
+
     # Organize by category
     for file_type, file_list in files.items():
         for file_path in file_list:
@@ -84,20 +82,20 @@ def organize_files():
             if category not in plan[file_type]:
                 plan[file_type][category] = []
             plan[file_type][category].append(file_path)
-    
+
     return plan
 
 
 def display_plan(plan):
     """Display the archival plan to the user."""
     total_files = sum(len(files) for type_dict in plan.values() for files in type_dict.values())
-    
+
     if total_files == 0:
         print("✓ No files to archive - root directory is clean!")
         return False
-    
+
     print(f"Found {total_files} files to archive:\n")
-    
+
     # Display CSV files
     if plan["csv"]:
         print("CSV FILES:")
@@ -107,7 +105,7 @@ def display_plan(plan):
                 for f in sorted(files):
                     print(f"    • {f.name}")
         print()
-    
+
     # Display PNG files
     if plan["png"]:
         print("PNG FILES:")
@@ -117,7 +115,7 @@ def display_plan(plan):
                 for f in sorted(files):
                     print(f"    • {f.name}")
         print()
-    
+
     # Display test Python files
     if plan["test_py"]:
         print("TEST PYTHON FILES:")
@@ -127,7 +125,7 @@ def display_plan(plan):
                 for f in sorted(files):
                     print(f"    • {f.name}")
         print()
-    
+
     print("=" * 70)
     return True
 
@@ -136,7 +134,7 @@ def archive_files(plan):
     """Move files to their archive locations."""
     moved_count = 0
     failed_count = 0
-    
+
     # Process CSV files
     for category, files in plan["csv"].items():
         if files:
@@ -151,7 +149,7 @@ def archive_files(plan):
                 except Exception as e:
                     print(f"✗ Failed: {file_path.name} - {e}")
                     failed_count += 1
-    
+
     # Process PNG files
     for category, files in plan["png"].items():
         if files:
@@ -166,7 +164,7 @@ def archive_files(plan):
                 except Exception as e:
                     print(f"✗ Failed: {file_path.name} - {e}")
                     failed_count += 1
-    
+
     # Process test Python files
     for category, files in plan["test_py"].items():
         if files:
@@ -181,7 +179,7 @@ def archive_files(plan):
                 except Exception as e:
                     print(f"✗ Failed: {file_path.name} - {e}")
                     failed_count += 1
-    
+
     print()
     print(f"✅ Successfully archived {moved_count} files")
     if failed_count > 0:
@@ -196,17 +194,17 @@ def main():
     print("Root Directory Cleanup Tool")
     print("=" * 70)
     print()
-    
+
     # Organize and display plan
     plan = organize_files()
     has_files = display_plan(plan)
-    
+
     if not has_files:
         return
-    
+
     # Ask for confirmation
     response = input("Archive these files? (yes/no): ").strip().lower()
-    
+
     if response == "yes":
         print()
         archive_files(plan)

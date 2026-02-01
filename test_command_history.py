@@ -158,7 +158,7 @@ def test_bulk_delete_undo():
     restored = queue_mgr.get_queue_snapshot()
     for i in range(5):
         assert restored[i].cycle_id == i+1, f"Position {i} should have ID {i+1}"
-        assert restored[i].name == f"Cycle {i+1}", f"Names should be renumbered"
+        assert restored[i].name == f"Cycle {i+1}", "Names should be renumbered"
     print(f"✓ Undone, all cycles restored: {[(c.name, c.cycle_id) for c in restored]}")
 
     print("✅ Test 3 PASSED\n")
@@ -200,7 +200,7 @@ def test_reorder_cycle_undo_redo():
     restored = queue_mgr.get_queue_snapshot()
     for i in range(4):
         assert restored[i].cycle_id == i+1, f"Position {i} should have ID {i+1}"
-        assert restored[i].name == f"Cycle {i+1}", f"Names should be renumbered"
+        assert restored[i].name == f"Cycle {i+1}", "Names should be renumbered"
     print(f"✓ Undone: {[(c.name, c.cycle_id) for c in restored]}")
 
     # Redo reorder
@@ -252,7 +252,7 @@ def test_clear_queue_undo():
     # Check IDs were preserved
     for i, expected_id in enumerate(initial_ids):
         assert restored[i].cycle_id == expected_id, f"Position {i} should have ID {expected_id}"
-        assert restored[i].name == f"Cycle {i+1}", f"Names should be renumbered"
+        assert restored[i].name == f"Cycle {i+1}", "Names should be renumbered"
     print(f"✓ Undone, restored: {[(c.name, c.cycle_id) for c in restored]}")
 
     print("✅ Test 5 PASSED\n")

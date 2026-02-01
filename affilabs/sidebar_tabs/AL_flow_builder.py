@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 # Import sections from central location
 from affilabs.sections import CollapsibleSection
 from affilabs.ui_styles import section_header_style
+from affilabs.utils.logger import logger
 
 
 class AdvancedFlowRatesDialog(QDialog):
@@ -881,7 +882,6 @@ class FlowTabBuilder:
         self.sidebar.synced_contact_time_spin = synced_contact_time_spin
 
         # Manual mode checkbox to disable auto-calculation
-        from PySide6.QtWidgets import QCheckBox
         synced_manual_time_check = QCheckBox("Manual")
         synced_manual_time_check.setFixedHeight(36)
         synced_manual_time_check.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1185,7 +1185,7 @@ class FlowTabBuilder:
                             pump1_corr = eeprom_pump1
                             pump2_corr = eeprom_pump2
                             source = "EEPROM"
-                            logger.info(f"📥 Loaded pump corrections from controller EEPROM")
+                            logger.info("📥 Loaded pump corrections from controller EEPROM")
                 except Exception as e:
                     logger.debug(f"Could not read pump corrections from EEPROM: {e}")
 
@@ -1201,7 +1201,7 @@ class FlowTabBuilder:
                         pump1_corr = config_pump1
                         pump2_corr = config_pump2
                         source = "device config"
-                        logger.info(f"📥 Loaded pump corrections from device config")
+                        logger.info("📥 Loaded pump corrections from device config")
 
             # Apply to individual pump spinboxes
             if hasattr(self.sidebar, 'pump1_correction_spin'):

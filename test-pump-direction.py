@@ -15,7 +15,6 @@ If fluid moves in opposite direction, valve commands are inverted.
 import asyncio
 import os
 import sys
-import time
 
 # Add affilabs to path
 if __name__ == "__main__":
@@ -72,7 +71,7 @@ async def test_pump_direction():
         logger.info("Initializing Pump 1...")
         pump._pump.pump.initialize_pump(1)
         await asyncio.sleep(0.5)
-        
+
         pos = pump._pump.pump.get_both_positions()
         logger.info(f"Initial position: {pos['pump1']:.1f}µL")
         logger.info("")
@@ -87,14 +86,14 @@ async def test_pump_direction():
         logger.info("Expected: Fluid should move FROM inlet port INTO syringe")
         logger.info("Watch the INLET (bottom) port now...")
         logger.info("")
-        
+
         volume_ul = 500.0
         speed_ul_min = 1000.0
         speed_ul_s = speed_ul_min / 60.0
-        
+
         # Send aspirate command (valve to input, then pull)
         pump._pump.pump.aspirate_both(volume_ul, speed_ul_s)
-        
+
         # Wait for completion
         logger.info("Aspirating... (this will take ~30 seconds)")
         pump1_ready, pump2_ready, elapsed = await asyncio.get_event_loop().run_in_executor(
@@ -102,7 +101,7 @@ async def test_pump_direction():
             pump._pump.pump.wait_until_both_ready,
             60.0
         )
-        
+
         pos = pump._pump.pump.get_both_positions()
         logger.info(f"✅ Aspirate complete in {elapsed:.1f}s")
         logger.info(f"   Position: {pos['pump1']:.1f}µL")
@@ -126,10 +125,10 @@ async def test_pump_direction():
         logger.info("Expected: Fluid should move FROM syringe TO outlet port")
         logger.info("Watch the OUTLET (top) port now...")
         logger.info("")
-        
+
         # Send dispense command (valve to output, then push)
         pump._pump.pump.dispense_both(volume_ul, speed_ul_s)
-        
+
         # Wait for completion
         logger.info("Dispensing... (this will take ~30 seconds)")
         pump1_ready, pump2_ready, elapsed = await asyncio.get_event_loop().run_in_executor(
@@ -137,7 +136,7 @@ async def test_pump_direction():
             pump._pump.pump.wait_until_both_ready,
             120.0
         )
-        
+
         pos = pump._pump.pump.get_both_positions()
         logger.info(f"✅ Dispense complete in {elapsed:.1f}s")
         logger.info(f"   Position: {pos['pump1']:.1f}µL")

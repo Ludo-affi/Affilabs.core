@@ -737,8 +737,8 @@ class AffiniteApp(QMainWindow):
         while not self._c_kill.is_set():
             time.sleep(0.01)
             if not self._c_stop.is_set() and (self.ctrl is not None) and self.usb_ok():
-                self.ignore_warnings = {ch: False for ch in CH_LIST}
-                self.no_sig_count = {ch: 0 for ch in CH_LIST}
+                self.ignore_warnings = dict.fromkeys(CH_LIST, False)
+                self.no_sig_count = dict.fromkeys(CH_LIST, 0)
                 if self.calibrated:
                     self.calibration_status.emit(True, "")  # noqa: FBT003
                     self._c_stop.set()
@@ -2676,8 +2676,8 @@ class AffiniteApp(QMainWindow):
         self.buffered_times = {
             ch: np.array([]) for ch in CH_LIST
         }  # sensorgram data filtered buffered times
-        self.ignore_warnings = {ch: False for ch in CH_LIST}
-        self.no_sig_count = {ch: 0 for ch in CH_LIST}
+        self.ignore_warnings = dict.fromkeys(CH_LIST, False)
+        self.no_sig_count = dict.fromkeys(CH_LIST, 0)
         self.filt_buffer_index = 0
         self.set_start()
         self.clear_kin_log()

@@ -1,12 +1,11 @@
-﻿import time
-
+﻿
 class MockP4PROPLUS:
     def __init__(self):
         self._ser = None
         self.version = "V2.3"
         self.firmware_id = "P4PRO"
         self.name = "pico_p4pro"
-    
+
     def has_internal_pumps(self):
         if not self.version:
             return False
@@ -22,7 +21,7 @@ class MockP4PROPLUS:
         except (ValueError, AttributeError) as e:
             print("[WARN] Version parse error: {}".format(e))
             return False
-    
+
     def get_pump_capabilities(self):
         if not self.has_internal_pumps():
             return {}
@@ -42,33 +41,33 @@ class MockP4PROPLUS:
             "requires_visual_verification": True,
             "suction_reliability_warning": "[CRITICAL] Peristaltic pumps may fail to pick up sample at START"
         }
-    
+
     def _ul_min_to_rpm(self, rate_ul_min):
         caps = self.get_pump_capabilities()
         ul_per_rev = caps["ul_per_revolution"]
         rpm = rate_ul_min / ul_per_rev
         rpm = max(caps["min_rpm"], min(caps["max_rpm"], int(rpm)))
         return rpm
-    
+
     def pump_start(self, rate_ul_min, ch=1):
         if not self.has_internal_pumps():
             print("[ERROR] No internal pumps available")
             return False
-        
+
         caps = self.get_pump_capabilities()
         min_rate = caps["min_flow_rate_ul_min"]
         max_rate = caps["max_flow_rate_ul_min"]
-        
+
         if rate_ul_min < min_rate or rate_ul_min > max_rate:
             print("[ERROR] Flow rate {} uL/min out of range [{}-{}]".format(rate_ul_min, min_rate, max_rate))
             return False
-        
+
         rpm = self._ul_min_to_rpm(rate_ul_min)
         cmd = "pr{}{:04d}".format(ch, rpm)
-        
+
         print("[CMD] Pump {}: {} uL/min -> {} RPM -> {}".format(ch, rate_ul_min, rpm, cmd))
         return True
-    
+
     def pump_stop(self, ch=1):
         if not self.has_internal_pumps():
             print("[ERROR] No internal pumps available")
@@ -81,13 +80,13 @@ def test_detection():
     print("="*70)
     print("TEST 1: P4PROPLUS Detection")
     print("="*70)
-    
+
     ctrl_plus = MockP4PROPLUS()
     ctrl_plus.version = "V2.3"
     has_pumps = ctrl_plus.has_internal_pumps()
     print("\nVersion: {}".format(ctrl_plus.version))
     print("Has internal pumps: {}".format(has_pumps))
-    
+
     if has_pumps:
         caps = ctrl_plus.get_pump_capabilities()
         print("\nCapabilities:")
@@ -101,19 +100,19 @@ def test_pump_commands():
     print("\n" + "="*70)
     print("TEST 2: Pump Commands (uL/min -> RPM conversion)")
     print("="*70)
-    
+
     ctrl = MockP4PROPLUS()
     ctrl.version = "V2.3"
-    
+
     print("\nController: {}".format(ctrl.version))
     print("Has pumps: {}".format(ctrl.has_internal_pumps()))
-    
+
     print("\n--- Flow Rate Conversions (3 uL/rev) ---")
     test_rates = [15, 50, 100, 150, 300]
-    
+
     for rate in test_rates:
         ctrl.pump_start(rate_ul_min=rate, ch=1)
-    
+
     print("\n--- Both Pumps ---")
     ctrl.pump_start(rate_ul_min=100, ch=3)
     ctrl.pump_stop(ch=3)
@@ -122,10 +121,10 @@ if __name__ == "__main__":
     print("="*70)
     print("  P4PROPLUS INTERNAL PUMP IMPLEMENTATION TEST")
     print("="*70)
-    
+
     test_detection()
     test_pump_commands()
-    
+
     print("\n" + "="*70)
     print("SUMMARY")
     print("="*70)

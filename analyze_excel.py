@@ -24,5 +24,5 @@ if 'Flags' in excel.sheet_names:
     print('=== FLAGS ===')
     flags = pd.read_excel(file_path, sheet_name='Flags')
     print(f'Columns: {list(flags.columns)}')
-    print(f'Sample data:')
+    print('Sample data:')
     print(flags.head())

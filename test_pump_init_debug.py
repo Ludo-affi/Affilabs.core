@@ -1,5 +1,4 @@
 """Test pump initialization with detailed diagnostics"""
-import sys
 import time
 import logging
 from affipump.affipump_controller import AffipumpController
@@ -12,7 +11,7 @@ def test_pump_initialization():
 
     # Use COM8 - the correct pump port
     pump_port = 'COM8'
-    
+
     print(f"\nConnecting to pump on {pump_port}...")
     pump = AffipumpController(pump_port, baudrate=38400)
 
@@ -28,7 +27,7 @@ def test_pump_initialization():
         print(f"Pump 2: {status2}")
 
         if status1:
-            print(f"\nPump 1 Details:")
+            print("\nPump 1 Details:")
             print(f"  Busy: {status1.get('busy')}")
             print(f"  Error: {status1.get('error')}")
             print(f"  Error Msg: {status1.get('error_msg')}")
@@ -36,7 +35,7 @@ def test_pump_initialization():
             print(f"  Initialized: {status1.get('initialized')}")
 
         if status2:
-            print(f"\nPump 2 Details:")
+            print("\nPump 2 Details:")
             print(f"  Busy: {status2.get('busy')}")
             print(f"  Error: {status2.get('error')}")
             print(f"  Error Msg: {status2.get('error_msg')}")

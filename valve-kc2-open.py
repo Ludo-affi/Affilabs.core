@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--state", type=str, choices=['open', 'close', '1', '0'], default='open',
                         help="Valve state: open/1 (INJECT) or close/0 (LOAD) [default: open]")
     args = parser.parse_args()
-    
+
     # Convert state to numeric
     if args.state in ['open', '1']:
         state = 1
@@ -28,31 +28,31 @@ def main():
     else:
         state = 0
         state_name = "LOAD"
-    
+
     pump_name = f"KC{args.pump}"
     logger.info(f"Setting {pump_name}'s 6-port valve to {state_name}...")
-    
+
     # Initialize hardware
     hm = HardwareManager()
-    
+
     # Connect to controller
     logger.info("Connecting to controller...")
     hm._connect_controller()
-    
+
     if not hm.ctrl:
         logger.error("❌ Controller not found")
         return False
-    
+
     logger.info(f"✅ Controller connected: {hm.ctrl.get_device_type()}")
-    
+
     # Control 6-port valve
     success = hm._ctrl_raw.knx_six(state, args.pump)
-    
+
     if success:
         logger.info(f"✅ {pump_name}'s 6-port valve set to {state_name}")
     else:
         logger.error(f"❌ Failed to set {pump_name}'s 6-port valve")
-    
+
     return success
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ Test Configuration:
 import time
 import numpy as np
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List
 import sys
 from pathlib import Path
 
@@ -65,13 +65,13 @@ class TimingMeasurement:
         print(f"Test Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print()
         print("Test Configuration:")
-        print(f"  Integration Time: 10ms")
-        print(f"  LED Intensities (from 16:09 PM calibration):")
-        print(f"    CH1 (a): S=224, P=237")
-        print(f"    CH2 (b): S=87, P=96")
-        print(f"    CH3 (c): S=67, P=105")
-        print(f"    CH4 (d): S=244, P=255")
-        print(f"  NUM_SCANS: 8")
+        print("  Integration Time: 10ms")
+        print("  LED Intensities (from 16:09 PM calibration):")
+        print("    CH1 (a): S=224, P=237")
+        print("    CH2 (b): S=87, P=96")
+        print("    CH3 (c): S=67, P=105")
+        print("    CH4 (d): S=244, P=255")
+        print("  NUM_SCANS: 8")
         print(f"  LED_ON_TIME_MS: {settings.LED_ON_TIME_MS}ms")
         print(f"  DETECTOR_WAIT_MS: {settings.DETECTOR_WAIT_MS}ms")
         print()
@@ -92,7 +92,7 @@ class TimingMeasurement:
             if not self.hardware_mgr.ctrl:
                 print("ERROR: Failed to connect controller")
                 return False
-            print(f"✓ Controller connected")
+            print("✓ Controller connected")
 
             if not self.hardware_mgr.usb:
                 print("ERROR: Failed to connect spectrometer")
@@ -146,12 +146,12 @@ class TimingMeasurement:
                 if ctrl._ser.in_waiting > 0:
                     ctrl._ser.read(ctrl._ser.in_waiting)
 
-            print(f"✓ LED intensities configured (S-mode from calibration):")
-            print(f"  CH a: 224")
-            print(f"  CH b: 87")
-            print(f"  CH c: 67")
-            print(f"  CH d: 244")
-            print(f"  (Intensities set ONCE - will use turn_on_channel() during acquisition)")
+            print("✓ LED intensities configured (S-mode from calibration):")
+            print("  CH a: 224")
+            print("  CH b: 87")
+            print("  CH c: 67")
+            print("  CH d: 244")
+            print("  (Intensities set ONCE - will use turn_on_channel() during acquisition)")
             return True
 
         except Exception as e:
@@ -310,7 +310,7 @@ class TimingMeasurement:
         print("TIMING VALIDATION:")
         print(f"  LED_ON_TIME_MS: {settings.LED_ON_TIME_MS}ms")
         print(f"  DETECTOR_WAIT_MS: {settings.DETECTOR_WAIT_MS}ms")
-        print(f"  SAFETY_BUFFER_MS: 10ms (assumed)")
+        print("  SAFETY_BUFFER_MS: 10ms (assumed)")
         detector_window = settings.LED_ON_TIME_MS - settings.DETECTOR_WAIT_MS - 10
         print(f"  Calculated Detector Window: {detector_window}ms")
         print()
@@ -340,11 +340,11 @@ class TimingMeasurement:
         print(f"  Variation across channels: {led_to_det_variation:.2f}ms")
 
         if led_to_det_variation < 1.0:
-            print(f"  ✓ EXCELLENT: Consistent timing across all channels")
+            print("  ✓ EXCELLENT: Consistent timing across all channels")
         elif led_to_det_variation < 5.0:
-            print(f"  ✓ GOOD: Acceptable timing variation")
+            print("  ✓ GOOD: Acceptable timing variation")
         else:
-            print(f"  ⚠ WARNING: High timing variation between channels")
+            print("  ⚠ WARNING: High timing variation between channels")
         print()
 
     def cleanup(self):

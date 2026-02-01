@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from main_simplified import Application  # type: ignore[import-not-found]
 
 import numpy as np
-import pyqtgraph as pg  # type: ignore[import-untyped]
 
 
 class DataProcessingHelpers:

@@ -20,23 +20,23 @@ for dev in serial.tools.list_ports.comports():
                 timeout=0.5,
                 write_timeout=1,
             )
-            
+
             # Flush buffers
             ser.reset_input_buffer()
             ser.reset_output_buffer()
-            
+
             # Send firmware version query
             print("Sending 'iv' command...")
             ser.write(b"iv\n")
             time.sleep(0.1)
-            
+
             # Read response
             response = ser.readline().decode().strip()
             print(f"Firmware Version: {response}")
-            
+
             ser.close()
             break
-            
+
         except Exception as e:
             print(f"Error: {e}")
 else:

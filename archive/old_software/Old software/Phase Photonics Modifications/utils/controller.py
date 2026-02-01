@@ -754,7 +754,7 @@ class PicoEZSPR(ControllerBase):
         self.version = ""
 
     def valid(self):
-        return self._ser is not None and self._ser.is_open or self.open()
+        return (self._ser is not None and self._ser.is_open) or self.open()
 
     def open(self):
         for dev in serial.tools.list_ports.comports():

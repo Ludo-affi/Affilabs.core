@@ -31,7 +31,7 @@ send_cmd("/1ZR")
 time.sleep(5)
 send_cmd("/1?")
 
-# Aspirate 500uL 
+# Aspirate 500uL
 send_cmd("/1IR")
 send_cmd("/1V200,1R")
 send_cmd("/1A500R")

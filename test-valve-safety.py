@@ -23,12 +23,12 @@ def test_no_timeout_default():
     logger.info("\n" + "="*60)
     logger.info("TEST 1: Default NO timeout (programmatic operation)")
     logger.info("="*60)
-    
+
     ctrl = PicoEZSPR()
     if not ctrl.open():
         logger.error("Failed to open controller")
         return
-    
+
     try:
         # Turn ON valve WITHOUT timeout (default for programmatic operations)
         logger.info("Opening KC1 valve (default = NO timeout)...")
@@ -38,14 +38,14 @@ def test_no_timeout_default():
             logger.info("  (This is correct for prime pump, live data, calibration)")
         else:
             logger.error("✗ Failed to open valve")
-        
+
         time.sleep(2)
-        
+
         # Close valve manually (normal programmatic control)
         logger.info("\nClosing valve programmatically...")
         ctrl.knx_six(state=0, ch=1)
         logger.info("✓ Valve closed - no timer was active")
-        
+
     finally:
         ctrl.close()
 
@@ -55,12 +55,12 @@ def test_safety_timeout_manual():
     logger.info("\n" + "="*60)
     logger.info("TEST 2: Safety timeout for manual operation (10s demo)")
     logger.info("="*60)
-    
+
     ctrl = PicoEZSPR()
     if not ctrl.open():
         logger.error("Failed to open controller")
         return
-    
+
     try:
         # Turn ON valve with safety timeout (for manual operations)
         logger.info("Opening KC2 valve with 10-second safety timeout...")
@@ -69,13 +69,13 @@ def test_safety_timeout_manual():
         if success:
             logger.info("✓ Valve opened - will auto-close in 10 seconds")
             logger.info("  Waiting for auto-shutoff...")
-            
+
             # Wait for auto-shutoff to trigger
             time.sleep(12)
             logger.info("✓ Auto-shutoff should have triggered by now")
         else:
             logger.error("✗ Failed to open valve")
-        
+
     finally:
         ctrl.close()
 
@@ -85,12 +85,12 @@ def test_no_timeout():
     logger.info("\n" + "="*60)
     logger.info("TEST 3: Programmatic prime pump simulation (no timeout)")
     logger.info("="*60)
-    
+
     ctrl = PicoEZSPR()
     if not ctrl.open():
         logger.error("Failed to open controller")
         return
-    
+
     try:
         # Turn ON valve with NO timeout (simulating prime pump operation)
         logger.info("Simulating prime pump: Opening both valves (NO timeout)...")
@@ -101,15 +101,15 @@ def test_no_timeout():
             logger.info("  (Simulating 5-second contact time...)")
         else:
             logger.error("✗ Failed to open valves")
-        
+
         # Simulate calculated contact time
         time.sleep(5)
-        
+
         # Close valves programmatically after calculated time
         logger.info("\nClosing both valves after calculated contact time...")
         ctrl.knx_six_both(state=0)
         logger.info("✓ Both valves closed programmatically")
-        
+
     finally:
         ctrl.close()
 
@@ -119,12 +119,12 @@ def test_both_valves_timeout():
     logger.info("\n" + "="*60)
     logger.info("TEST 4: Both valves with 15-second safety timeout")
     logger.info("="*60)
-    
+
     ctrl = PicoEZSPR()
     if not ctrl.open():
         logger.error("Failed to open controller")
         return
-    
+
     try:
         # Turn ON both valves with 15-second timeout (manual operation fallback)
         logger.info("Opening BOTH valves with 15s safety timeout...")
@@ -133,13 +133,13 @@ def test_both_valves_timeout():
         if success:
             logger.info("✓ Both valves opened - will auto-close in 15 seconds")
             logger.info("  Waiting for auto-shutoff...")
-            
+
             # Wait for auto-shutoff to trigger
             time.sleep(17)
             logger.info("✓ Auto-shutoff should have triggered for both valves")
         else:
             logger.error("✗ Failed to open valves")
-        
+
     finally:
         ctrl.close()
 
@@ -150,13 +150,13 @@ if __name__ == "__main__":
     logger.info("This test demonstrates the safety fallback mechanism:")
     logger.info("• DEFAULT: NO timeout (for programmatic operations)")
     logger.info("• MANUAL: Explicit timeout (for manual/unknown duration)\n")
-    
+
     # Run tests
     test_no_timeout_default()
     test_safety_timeout_manual()
     test_no_timeout()
     test_both_valves_timeout()
-    
+
     logger.info("\n" + "="*60)
     logger.info("ALL TESTS COMPLETE")
     logger.info("="*60)

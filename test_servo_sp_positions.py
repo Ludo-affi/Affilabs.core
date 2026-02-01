@@ -39,7 +39,7 @@ try:
         time.sleep(0.6)
         response = raw_ctrl._ser.read(10)
         print(f"  Response: {response!r}")
-        
+
     input("  Press Enter after checking if servo moved to S position...")
 except Exception as e:
     print(f"  ERROR: {e}")
@@ -57,7 +57,7 @@ try:
         time.sleep(0.6)
         response = raw_ctrl._ser.read(10)
         print(f"  Response: {response!r}")
-        
+
     input("  Press Enter after checking if servo moved to P position...")
 except Exception as e:
     print(f"  ERROR: {e}")
@@ -75,7 +75,7 @@ try:
         time.sleep(0.6)
         response = raw_ctrl._ser.read(10)
         print(f"  Response: {response!r}")
-        
+
     input("  Press Enter after checking if servo moved to 90°...")
 except Exception as e:
     print(f"  ERROR: {e}")

@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
     QMenu
 )
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QDrag, QColor, QBrush
+from PySide6.QtGui import QColor, QBrush
 
 from affilabs.domain.cycle import Cycle
 from affilabs.presenters.queue_presenter import QueuePresenter

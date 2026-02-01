@@ -74,15 +74,15 @@ def test_pipelines(wavelengths, transmission_spectra, channel_name):
     fourier_valid = fourier_peaks[~np.isnan(fourier_peaks)]
     hybrid_valid = hybrid_peaks[~np.isnan(hybrid_peaks)]
 
-    print(f"\n  Results summary:")
-    print(f"    Fourier (default):")
+    print("\n  Results summary:")
+    print("    Fourier (default):")
     print(f"      Valid detections: {len(fourier_valid)}/{len(fourier_peaks)} ({100*len(fourier_valid)/len(fourier_peaks):.1f}%)")
     if len(fourier_valid) > 0:
         print(f"      Mean: {np.mean(fourier_valid):.2f} nm")
         print(f"      Std Dev: {np.std(fourier_valid):.3f} nm")
         print(f"      Range: {np.min(fourier_valid):.2f} - {np.max(fourier_valid):.2f} nm")
 
-    print(f"\n    HybridOriginal (second algorithm):")
+    print("\n    HybridOriginal (second algorithm):")
     print(f"      Valid detections: {len(hybrid_valid)}/{len(hybrid_peaks)} ({100*len(hybrid_valid)/len(hybrid_peaks):.1f}%)")
     if len(hybrid_valid) > 0:
         print(f"      Mean: {np.mean(hybrid_valid):.2f} nm")

@@ -25,17 +25,17 @@ try:
     # Check for RPI-RP2 drive (bootloader mode)
     drives = [d for d in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' if os.path.exists(f'{d}:\\')]
     rp2_found = False
-    
+
     for drive in drives:
         drive_path = f"{drive}:\\"
         # Check if this is the RPI-RP2 drive
         if os.path.exists(os.path.join(drive_path, "INFO_UF2.TXT")):
             print(f"\n  ✓ FOUND: Pico in bootloader mode on drive {drive}:")
             rp2_found = True
-            print(f"    The Pico is stuck in bootloader mode!")
-            print(f"    This happens when firmware flash was interrupted.")
+            print("    The Pico is stuck in bootloader mode!")
+            print("    This happens when firmware flash was interrupted.")
             break
-    
+
     if not rp2_found:
         print("  ℹ️  Pico not in bootloader mode")
 except Exception as e:
@@ -58,13 +58,13 @@ try:
         text=True,
         timeout=10
     )
-    
+
     if result.stdout.strip():
         print("  ⚠️  PROBLEM DEVICES FOUND:")
         print(result.stdout)
     else:
         print("  ✓ No problem devices found in Device Manager")
-        
+
 except Exception as e:
     print(f"  ⚠️  Could not check Device Manager: {e}")
 
@@ -87,14 +87,14 @@ try:
         text=True,
         timeout=10
     )
-    
+
     if result.stdout.strip():
         print("  PICO DEVICES FOUND:")
         print(result.stdout)
     else:
         print("  ❌ NO PICO DEVICES FOUND")
         print("  The Pico is not being recognized by Windows at all")
-        
+
 except Exception as e:
     print(f"  ⚠️  Could not check for Pico devices: {e}")
 

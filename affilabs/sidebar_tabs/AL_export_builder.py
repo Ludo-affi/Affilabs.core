@@ -6,7 +6,6 @@ Author: Affilabs
 """
 
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -14,7 +13,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QRadioButton,
     QVBoxLayout,
     QInputDialog,
     QMessageBox,
