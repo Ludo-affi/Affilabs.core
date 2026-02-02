@@ -34,7 +34,7 @@ The UI Architecture provides a clean separation between presentation (UI) and bu
 
 ### Key Features
 
-- **Multi-Page Navigation**: Sensorgram, Edits, Analysis tabs
+- **Multi-Page Navigation**: Live, Edits tabs (Analyze/Report hidden in v1.0)
 - **Modular Sidebar**: 6 tabs (Device Status, Graphic Control, Method, Flow, Export, Spark)
 - **Lazy-Loaded Dialogs**: On-demand creation of complex windows
 - **Theme System**: Consistent colors, fonts, spacing
@@ -73,15 +73,15 @@ The UI Architecture provides a clean separation between presentation (UI) and bu
 └───────┬──────────┘         └────────┬─────────┘
         │                             │
 ┌───────▼─────────────────────────────▼────────────────────┐
-│  PAGES (Lazy-Loaded)    │   TABS (6 sections)            │
+│  PAGES (Navigation Bar) │   TABS (6 sections)            │
 ├──────────────────────────┼────────────────────────────────┤
-│  0. Sensorgram          │   0. Device Status             │
+│  0. Live (Sensorgram)   │   0. Device Status             │
 │     ├─ Full Timeline    │   1. Graphic Control           │
 │     └─ Cycle Detail     │   2. Method (Static)           │
 │  1. Edits               │   3. Flow (Pumps)              │
 │     └─ Post-processing  │   4. Export                    │
-│  2. Analysis            │   5. Spark AI Help             │
-│     └─ Multi-cycle      │                                │
+│  2. Analyze (hidden)    │   5. Spark AI Help             │
+│  3. Report (hidden)     │                                │
 └─────────────────────────┴────────────────────────────────┘
                        │
                        │ On-Demand Creation
@@ -570,13 +570,13 @@ AffilabsMainWindow (QMainWindow)
 ├─ Central Widget (QWidget)
 │  └─ Splitter (QSplitter)
 │     ├─ Content Area (QStackedWidget)
-│     │  ├─ Page 0: Sensorgram (QWidget)
+│     │  ├─ Page 0: Live/Sensorgram (QWidget)
 │     │  │  ├─ Full Timeline Graph (PlotWidget)
 │     │  │  └─ Cycle Detail Graph (PlotWidget)
 │     │  ├─ Page 1: Edits Tab (EditsTab)
 │     │  │  └─ Post-processing controls
-│     │  └─ Page 2: Analysis Tab (AnalysisTab)
-│     │     └─ Multi-cycle overlay
+│     │  ├─ Page 2: Analyze Tab (hidden in v1.0)
+│     │  └─ Page 3: Report Tab (hidden in v1.0)
 │     └─ Sidebar (AffilabsSidebar)
 │        └─ Tab Widget (QTabWidget)
 │           ├─ Tab 0: Device Status (QWidget)
@@ -633,9 +633,11 @@ self.main_window.sidebar.calibration_requested.connect(
 self.content_stack = QStackedWidget()
 
 # Add pages
-self.content_stack.addWidget(sensorgram_page)  # Index 0
-self.content_stack.addWidget(edits_tab)        # Index 1
-self.content_stack.addWidget(analysis_tab)     # Index 2
+self.content_stack.addWidget(live_page)    # Index 0 (Sensorgram view)
+self.content_stack.addWidget(edits_tab)    # Index 1 (Post-processing)
+# Hidden in v1.0:
+# self.content_stack.addWidget(analysis_tab) # Index 2
+# self.content_stack.addWidget(report_tab)   # Index 3
 
 # Switch page
 self.content_stack.setCurrentIndex(1)  # Show Edits tab
@@ -644,9 +646,11 @@ self.content_stack.setCurrentIndex(1)  # Show Edits tab
 **Navigation Bar** (custom implementation):
 ```python
 nav_buttons = [
-    QPushButton("Sensorgram"),
-    QPushButton("Edits"),
-    QPushButton("Analysis")
+    QPushButton("Live"),      # Page 0: Sensorgram view
+    QPushButton("Edits"),     # Page 1: Post-processing
+    # Hidden in v1.0:
+    # QPushButton("Analyze"),  # Page 2: Multi-cycle analysis
+    # QPushButton("Report")    # Page 3: Export reports
 ]
 
 for i, btn in enumerate(nav_buttons):
