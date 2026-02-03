@@ -7,17 +7,31 @@ Author: Affilabs
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
 )
 
 # Import sections from central location
 from affilabs.sections import CollapsibleSection
-from affilabs.ui_styles import section_header_style
+from affilabs.ui_styles import (
+    Colors,
+    Fonts,
+    card_style,
+    checkbox_style,
+    label_style,
+    section_header_style,
+)
+
+# Colorblind-safe palette (Tol bright scheme)
+COLORBLIND_PALETTE = ["#4477AA", "#EE6677", "#228833", "#CCBB44"]
 
 
 class SettingsTabBuilder:
@@ -42,6 +56,9 @@ class SettingsTabBuilder:
         self._build_intelligence_bar(tab_layout)
         self._build_hardware_configuration(tab_layout)
         self._build_calibration_controls(tab_layout)
+        
+        # Display Controls (moved from Graphic Control tab)
+        self._build_display_controls_section(tab_layout)
 
         # Build spectroscopy plots immediately (needed by spectroscopy presenter at startup)
         self._build_spectroscopy_plots(tab_layout)
@@ -584,6 +601,264 @@ class SettingsTabBuilder:
         # Note: polarizer_toggle_btn.clicked and calibration buttons should be connected
         # by the parent window (main_simplified.py) to access the full application context
         # and handle hardware communication properly
+
+    def _build_display_controls_section(self, tab_layout: QVBoxLayout):
+        """Build display controls section (moved from Graphic Control tab)."""
+        display_section = CollapsibleSection(
+            "🎨 Display Controls",
+            is_expanded=False,
+        )
+
+        display_help = QLabel(
+            "Configure data filtering, reference channels, and visual accessibility",
+        )
+        display_help.setStyleSheet(
+            "font-size: 11px;"
+            "color: #86868B;"
+            "background: transparent;"
+            "font-style: italic;"
+            "margin: 4px 0px 8px 0px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+        )
+        display_section.content_layout.addWidget(display_help)
+
+        # Card container
+        display_card = QFrame()
+        display_card.setStyleSheet(
+            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
+        )
+        display_card_layout = QVBoxLayout(display_card)
+        display_card_layout.setContentsMargins(12, 8, 12, 8)
+        display_card_layout.setSpacing(12)
+        
+        self._build_data_filtering(display_card_layout)
+        self._build_reference_section(display_card_layout)
+        self._build_visual_accessibility(display_card_layout)
+
+        display_section.add_content_widget(display_card)
+        tab_layout.addWidget(display_section)
+
+    def _build_data_filtering(self, layout: QVBoxLayout):
+        """Build EMA live display filtering controls section."""
+        filter_section = QLabel("Data Filtering")
+        filter_section.setStyleSheet(
+            "font-size: 13px;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        layout.addWidget(filter_section)
+        layout.addSpacing(6)
+
+        # Filter controls layout
+        gc_layout = QVBoxLayout()
+        gc_layout.setSpacing(8)
+
+        # Description
+        desc_label = QLabel(
+            "EMA filtering for live display (does not affect saved data):",
+        )
+        desc_label.setStyleSheet(label_style(11, Colors.SECONDARY_TEXT))
+        desc_label.setWordWrap(True)
+        gc_layout.addWidget(desc_label)
+
+        # EMA Filter Options
+        self.sidebar.filter_method_group = QButtonGroup()
+
+        radio_style = (
+            f"QRadioButton {{"
+            f"  color: {Colors.PRIMARY_TEXT};"
+            f"  font-size: 12px;"
+            f"  spacing: 6px;"
+            f"}}"
+            f"QRadioButton::indicator {{"
+            f"  width: 16px;"
+            f"  height: 16px;"
+            f"  border: 2px solid {Colors.OVERLAY_LIGHT_20};"
+            f"  border-radius: 8px;"
+            f"  background: white;"
+            f"}}"
+            f"QRadioButton::indicator:checked {{"
+            f"  background: {Colors.PRIMARY_TEXT};"
+            f"  border: 3px solid white;"
+            f"  outline: 2px solid {Colors.PRIMARY_TEXT};"
+            f"}}"
+        )
+
+        # Option 1: None (Raw) - DEFAULT
+        self.sidebar.filter_none_radio = QRadioButton("None (Raw) ⭐")
+        self.sidebar.filter_none_radio.setChecked(True)  # Default
+        self.sidebar.filter_none_radio.setStyleSheet(radio_style)
+        self.sidebar.filter_none_radio.setToolTip(
+            "No filtering - Raw data display\n"
+            "• Baseline noise: ~5.7 RU\n"
+            "• Use for: Maximum fidelity, debugging",
+        )
+        self.sidebar.filter_method_group.addButton(self.sidebar.filter_none_radio, 0)
+        gc_layout.addWidget(self.sidebar.filter_none_radio)
+
+        # Option 2: Light Smoothing
+        self.sidebar.filter_light_radio = QRadioButton("Light Smoothing")
+        self.sidebar.filter_light_radio.setStyleSheet(radio_style)
+        self.sidebar.filter_light_radio.setToolTip(
+            "Light smoothing filter - Reduces noise while maintaining fast response\n"
+            "• Minimal lag during sharp changes\n"
+            "• May round fast changes slightly\n"
+            "• Use for: General data smoothing, reducing baseline noise",
+        )
+        self.sidebar.filter_method_group.addButton(self.sidebar.filter_light_radio, 1)
+        gc_layout.addWidget(self.sidebar.filter_light_radio)
+
+        # Info note
+        info_label = QLabel(
+            "💡 Smoothing is applied point-by-point to the live display only. "
+            "Saved data remains unfiltered. Applied after peak finding.",
+        )
+        info_label.setStyleSheet(
+            f"color: {Colors.SECONDARY_TEXT};"
+            f"font-size: 10px;"
+            f"font-style: italic;"
+            f"padding: 8px;"
+            f"background: {Colors.OVERLAY_LIGHT_4};"
+            f"border-radius: 4px;",
+        )
+        info_label.setWordWrap(True)
+        gc_layout.addWidget(info_label)
+
+        layout.addLayout(gc_layout)
+        layout.addSpacing(12)
+
+    def _build_reference_section(self, layout: QVBoxLayout):
+        """Build reference channel selection section."""
+        ref_section = QLabel("Reference Channel")
+        ref_section.setStyleSheet(
+            "font-size: 13px;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        layout.addWidget(ref_section)
+        layout.addSpacing(6)
+
+        # Reference controls
+        ref_layout = QVBoxLayout()
+        ref_layout.setSpacing(8)
+
+        ref_row = QHBoxLayout()
+        ref_row.setSpacing(10)
+        ref_label = QLabel("Reference:")
+        ref_label.setStyleSheet(
+            label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 500;",
+        )
+        ref_row.addWidget(ref_label)
+        ref_row.addStretch()
+
+        self.sidebar.ref_combo = QComboBox()
+        self.sidebar.ref_combo.addItems(
+            ["None", "Channel A", "Channel B", "Channel C", "Channel D"],
+        )
+        self.sidebar.ref_combo.setFixedWidth(120)
+        self.sidebar.ref_combo.setToolTip(
+            "Subtract selected channel from all others (shown as dashed line)",
+        )
+        self.sidebar.ref_combo.setStyleSheet(
+            f"QComboBox {{"
+            f"  background: white;"
+            f"  border: 1px solid {Colors.OVERLAY_LIGHT_10};"
+            f"  border-radius: 6px;"
+            f"  padding: 4px 8px;"
+            f"  font-size: 12px;"
+            f"  color: {Colors.PRIMARY_TEXT};"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QComboBox:hover {{"
+            f"  border: 1px solid rgba(0, 0, 0, 0.15);"
+            f"}}"
+            f"QComboBox::drop-down {{"
+            f"  border: none;"
+            f"  width: 20px;"
+            f"}}"
+            f"QComboBox QAbstractItemView {{"
+            f"  background-color: white;"
+            f"  color: {Colors.PRIMARY_TEXT};"
+            f"  selection-background-color: {Colors.PRIMARY_TEXT};"
+            f"  selection-color: white;"
+            f"  outline: none;"
+            f"  border: 1px solid {Colors.OVERLAY_LIGHT_10};"
+            f"}}",
+        )
+        ref_row.addWidget(self.sidebar.ref_combo)
+        ref_layout.addLayout(ref_row)
+
+        # NOTE: Connection is made in affilabs_core_ui.py after app is initialized
+        # self.sidebar.ref_combo.currentTextChanged.connect(self.app._on_reference_changed)
+
+        layout.addLayout(ref_layout)
+        layout.addSpacing(12)
+
+    def _build_visual_accessibility(self, layout: QVBoxLayout):
+        """Build visual accessibility section (colorblind palette)."""
+        accessibility_section = QLabel("Visual Accessibility")
+        accessibility_section.setStyleSheet(
+            "font-size: 13px;"
+            "color: #1D1D1F;"
+            "background: transparent;"
+            "font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        layout.addWidget(accessibility_section)
+        layout.addSpacing(6)
+
+        # Accessibility controls
+        accessibility_card_layout = QVBoxLayout()
+        accessibility_card_layout.setSpacing(8)
+
+        # Colorblind-friendly palette toggle
+        self.sidebar.colorblind_check = QCheckBox(
+            "Enable colour-blind friendly palette",
+        )
+        self.sidebar.colorblind_check.setStyleSheet(checkbox_style())
+        self.sidebar.colorblind_check.setToolTip(
+            "Use optimized colors for deuteranopia and protanopia (affects all channels)",
+        )
+        accessibility_card_layout.addWidget(self.sidebar.colorblind_check)
+
+        # Info text about colorblind palette
+        colorblind_info = QLabel(
+            "Uses optimized colors for deuteranopia and protanopia",
+        )
+        colorblind_info.setStyleSheet(
+            label_style(11, Colors.SECONDARY_TEXT) + "font-style: italic;",
+        )
+        accessibility_card_layout.addWidget(colorblind_info)
+
+        # Colorblind palette toggle logic
+        def _toggle_colorblind(checked: bool):
+            from affilabs.utils.logger import logger
+            palette = (
+                COLORBLIND_PALETTE
+                if checked
+                else ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
+            )
+            logger.info(f"Colorblind palette {'enabled' if checked else 'disabled'}")
+            # Store the palette choice in sidebar for access by graph updates
+            self.sidebar.current_color_palette = palette
+            # Trigger a redraw of the cycle of interest graph if it exists
+            if hasattr(self.sidebar, 'app') and hasattr(self.sidebar.app, 'main_window'):
+                # Refresh the graph with new colors
+                if hasattr(self.sidebar.app, '_update_cycle_of_interest_graph'):
+                    try:
+                        self.sidebar.app._update_cycle_of_interest_graph()
+                    except Exception as e:
+                        logger.warning(f"Could not update graph colors: {e}")
+
+        self.sidebar.colorblind_check.toggled.connect(_toggle_colorblind)
+        # Initialize default palette
+        self.sidebar.current_color_palette = ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
+
+        layout.addLayout(accessibility_card_layout)
 
     def _add_calibration_option(
         self,

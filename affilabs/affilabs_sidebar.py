@@ -199,12 +199,13 @@ class AffilabsSidebar(QWidget):
                 "Hardware readiness check",
                 self._build_device_status_tab,
             ),
-            (
-                "Graphic Control",
-                "Display Setup",
-                "Configure cycle of interest graph",
-                self._build_graphic_control_tab,
-            ),
+            # HIDDEN: Graphic Control tab - content moved to Settings > Display Controls
+            # (
+            #     "Graphic Control",
+            #     "Display Setup",
+            #     "Configure cycle of interest graph",
+            #     self._build_graphic_control_tab,
+            # ),
             (
                 "Method",
                 "Method Builder",
@@ -226,7 +227,7 @@ class AffilabsSidebar(QWidget):
             ),
             (
                 "⚡",
-                "⚡ Spark AI Help",
+                "⚡ Spark",
                 "Ask questions about using ezControl",
                 self._build_spark_tab,
             ),

@@ -201,11 +201,8 @@ class MethodTabBuilder:
 
         tab_layout.addWidget(intel_bar)
 
-        # Compact queue progress bar (real-time monitoring)
-        from affilabs.widgets.queue_progress_bar import QueueProgressBar
-        self.sidebar.queue_progress_bar = QueueProgressBar()
-        tab_layout.addWidget(self.sidebar.queue_progress_bar)
-        tab_layout.addSpacing(8)
+        # Queue progress bar removed - was visually unappealing
+        # tab_layout.addSpacing(8)
 
     def _build_cycle_settings(self, tab_layout: QVBoxLayout):
         """Build method builder section (replaced with button to open popup)."""
