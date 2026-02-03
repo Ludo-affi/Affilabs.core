@@ -1400,6 +1400,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Stacked widget to hold different content pages
         from PySide6.QtWidgets import QStackedWidget
+        from affilabs.tabs.analysis_tab import AnalysisTab
 
         self.content_stack = QStackedWidget()
 
@@ -1407,7 +1408,11 @@ class AffilabsMainWindow(QMainWindow):
         self._sensorgram_placeholder = self._create_sensorgram_placeholder()
         self.content_stack.addWidget(self._sensorgram_placeholder)  # Index 0
         self.content_stack.addWidget(self._create_blank_content("Edits"))  # Index 1
-        self.content_stack.addWidget(self._create_blank_content("Analyze"))  # Index 2
+        
+        # Analysis tab with compact cycle table and filtering
+        self._analysis_tab = AnalysisTab(main_window=self)
+        self.content_stack.addWidget(self._analysis_tab.widget)  # Index 2
+        
         self.content_stack.addWidget(self._create_blank_content("Report"))  # Index 3
 
         right_layout.addWidget(self.content_stack, 1)
