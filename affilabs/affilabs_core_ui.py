@@ -1413,7 +1413,7 @@ class AffilabsMainWindow(QMainWindow):
         
         # Analysis tab with compact cycle table and filtering
         self._analysis_tab = AnalysisTab(main_window=self)
-        self.content_stack.addWidget(self._analysis_tab.widget)  # Index 2
+        self.content_stack.addWidget(self._analysis_tab.create_content())  # Index 2
         
         self.content_stack.addWidget(self._create_blank_content("Report"))  # Index 3
 
