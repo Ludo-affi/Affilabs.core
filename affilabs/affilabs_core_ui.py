@@ -1407,7 +1407,9 @@ class AffilabsMainWindow(QMainWindow):
         # Create placeholder for sensorgram (will be replaced with real graphs after window shows)
         self._sensorgram_placeholder = self._create_sensorgram_placeholder()
         self.content_stack.addWidget(self._sensorgram_placeholder)  # Index 0
-        self.content_stack.addWidget(self._create_blank_content("Edits"))  # Index 1
+        
+        # Edits tab with cycle data table and timeline editing
+        self.content_stack.addWidget(self._create_edits_content())  # Index 1
         
         # Analysis tab with compact cycle table and filtering
         self._analysis_tab = AnalysisTab(main_window=self)
