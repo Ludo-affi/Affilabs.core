@@ -62,12 +62,16 @@ class EditsTab:
         self.edits_cycle_markers = []
         self.edits_cycle_labels = []
 
+        # Table view state
+        self.compact_view = False  # Start in expanded view
+        self.cycle_filter = "All"  # Filter: All, Binding, Baseline, Regeneration
+
         # Initialize table widget first (needed by panel methods)
-        # Expanded 11-column table with analysis data
+        # 13-column table with 4-channel Delta SPR data
         # STARTS EMPTY - will be populated ONLY when cycles complete during live acquisition
-        self.cycle_data_table = QTableWidget(0, 11)  # 0 rows to start (empty table)
+        self.cycle_data_table = QTableWidget(0, 13)  # 0 rows to start (empty table)
         self.cycle_data_table.setHorizontalHeaderLabels(
-            ["Type", "Duration\n(min)", "Start\n(s)", "Conc.", "Units", "Notes", "ΔSPR\n(RU)", "Inj.", "Flags", "Channel", "Shift\n(s)"]
+            ["Type", "Duration\n(min)", "Start\n(s)", "Conc.", "Notes", "ΔCh1\n(RU)", "ΔCh2\n(RU)", "ΔCh3\n(RU)", "ΔCh4\n(RU)", "Flags", "Channel", "Shift\n(s)", "Priority"]
         )
         # Set column widths: fixed for some, stretch for others
         header = self.cycle_data_table.horizontalHeader()
@@ -75,22 +79,26 @@ class EditsTab:
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)  # Duration
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # Start
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)  # Conc
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)  # Units
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)  # Notes
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)  # Delta SPR
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)  # Injection
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)  # Flags
-        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)  # Channel
-        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)  # Shift
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # Notes
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # ΔCh1
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)  # ΔCh2
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)  # ΔCh3
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)  # ΔCh4
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)  # Flags
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)  # Channel
+        header.setSectionResizeMode(11, QHeaderView.ResizeMode.Fixed)  # Shift
+        header.setSectionResizeMode(12, QHeaderView.ResizeMode.Fixed)  # Priority
         self.cycle_data_table.setColumnWidth(1, 60)   # Duration
         self.cycle_data_table.setColumnWidth(2, 60)   # Start time
         self.cycle_data_table.setColumnWidth(3, 60)   # Concentration
-        self.cycle_data_table.setColumnWidth(4, 60)   # Units
-        self.cycle_data_table.setColumnWidth(6, 70)   # Delta SPR
-        self.cycle_data_table.setColumnWidth(7, 40)   # Injection flag
-        self.cycle_data_table.setColumnWidth(8, 60)   # Other flags
-        self.cycle_data_table.setColumnWidth(9, 70)   # Channel
-        self.cycle_data_table.setColumnWidth(10, 60)  # Time shift
+        self.cycle_data_table.setColumnWidth(5, 65)   # ΔCh1
+        self.cycle_data_table.setColumnWidth(6, 65)   # ΔCh2
+        self.cycle_data_table.setColumnWidth(7, 65)   # ΔCh3
+        self.cycle_data_table.setColumnWidth(8, 65)   # ΔCh4
+        self.cycle_data_table.setColumnWidth(9, 60)   # Flags
+        self.cycle_data_table.setColumnWidth(10, 70)  # Channel
+        self.cycle_data_table.setColumnWidth(11, 60)  # Time shift
+        self.cycle_data_table.setColumnWidth(12, 60)  # Priority
         self.cycle_data_table.verticalHeader().setVisible(False)  # Hide row numbers
         self.cycle_data_table.setShowGrid(True)  # Show grid lines
         self.cycle_data_table.setGridStyle(Qt.PenStyle.SolidLine)  # Solid grid lines
@@ -207,6 +215,43 @@ class EditsTab:
         load_btn.clicked.connect(self.main_window._load_data_from_excel)
         header.addWidget(load_btn)
         layout.addLayout(header)
+
+        # View and filter controls
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(8)
+
+        # Compact view toggle
+        self.compact_btn = QPushButton("⇄ Compact")
+        self.compact_btn.setCheckable(True)
+        self.compact_btn.setFixedHeight(28)
+        self.compact_btn.setStyleSheet(
+            "QPushButton { background: #F5F5F7; color: #1D1D1F; border: 1px solid #D1D1D6; "
+            "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 4px 10px; }"
+            "QPushButton:hover { background: #E5E5EA; }"
+            "QPushButton:checked { background: #007AFF; color: white; border: 1px solid #007AFF; }"
+        )
+        self.compact_btn.clicked.connect(self._toggle_compact_view)
+        controls_layout.addWidget(self.compact_btn)
+
+        # Filter dropdown
+        filter_label = QLabel("Filter:")
+        filter_label.setStyleSheet("font-size: 11px; color: #86868B;")
+        controls_layout.addWidget(filter_label)
+
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItems(["All", "Binding (High)", "Baseline (Low)", "Regeneration (Med)"])
+        self.filter_combo.setFixedHeight(28)
+        self.filter_combo.setStyleSheet(
+            "QComboBox { background: white; border: 1px solid #D1D1D6; border-radius: 6px; "
+            "font-size: 11px; padding: 4px 8px; min-width: 120px; }"
+            "QComboBox:hover { border: 1px solid #007AFF; }"
+            "QComboBox::drop-down { border: none; width: 20px; }"
+        )
+        self.filter_combo.currentTextChanged.connect(self._apply_cycle_filter)
+        controls_layout.addWidget(self.filter_combo)
+
+        controls_layout.addStretch()
+        layout.addLayout(controls_layout)
 
         # Table
         layout.addWidget(self.cycle_data_table)
@@ -1804,3 +1849,41 @@ class EditsTab:
                 "font-weight: 600;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             )
+    def _toggle_compact_view(self):
+        """Toggle between compact and expanded table view."""
+        self.compact_view = not self.compact_view
+        
+        if self.compact_view:
+            # Hide less important columns in compact view
+            self.cycle_data_table.setColumnHidden(1, True)   # Duration
+            self.cycle_data_table.setColumnHidden(2, True)   # Start
+            self.cycle_data_table.setColumnHidden(9, True)   # Flags
+            self.cycle_data_table.setColumnHidden(11, True)  # Shift
+            self.cycle_data_table.setColumnHidden(12, True)  # Priority
+        else:
+            # Show all columns in expanded view
+            for col in range(13):
+                self.cycle_data_table.setColumnHidden(col, False)
+
+    def _apply_cycle_filter(self, filter_text):
+        """Filter cycles by type based on priority (concentration is key, baseline less important)."""
+        self.cycle_filter = filter_text
+        
+        # Priority mapping
+        priority_map = {
+            "All": ["Binding", "Association", "Dissociation", "Baseline", "Regeneration", "Wash", "Prime"],
+            "Binding (High)": ["Binding", "Association", "Dissociation"],
+            "Baseline (Low)": ["Baseline"],
+            "Regeneration (Med)": ["Regeneration", "Wash"]
+        }
+        
+        allowed_types = priority_map.get(filter_text, priority_map["All"])
+        
+        # Show/hide rows based on filter
+        for row in range(self.cycle_data_table.rowCount()):
+            cycle_type_item = self.cycle_data_table.item(row, 0)
+            if cycle_type_item:
+                cycle_type = cycle_type_item.text()
+                # Check if cycle type matches filter
+                show_row = any(allowed in cycle_type for allowed in allowed_types)
+                self.cycle_data_table.setRowHidden(row, not show_row)
