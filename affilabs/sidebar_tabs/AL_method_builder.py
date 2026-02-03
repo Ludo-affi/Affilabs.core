@@ -481,8 +481,11 @@ class MethodTabBuilder:
         # Switch to Edits tab to show cycle data table
         # This shows completed/recorded cycles, not the queue
         # Edits tab is always at index 1 in content_stack (Sensorgram=0, Edits=1, Analyze=2, Report=3)
-        if hasattr(app.main_window, 'content_stack'):
-            app.main_window.content_stack.setCurrentIndex(1)  # Edits tab
+        if hasattr(app.main_window, 'navigation_presenter'):
+            app.main_window.navigation_presenter.switch_page(1)  # Edits tab - this also highlights the nav button
+            logger.info("📊 Switched to Edits tab (Cycle Data Table)")
+        elif hasattr(app.main_window, 'content_stack'):
+            app.main_window.content_stack.setCurrentIndex(1)  # Fallback if no navigation presenter
             logger.info("📊 Switched to Edits tab (Cycle Data Table)")
         else:
             logger.warning("Cannot open cycle table - main_window missing content_stack")
