@@ -155,8 +155,8 @@ class OceanSpectrometerAdapter(Spectrometer):
 
     def read_roi(self, wave_min_index: int, wave_max_index: int, num_scans: int = 1):  # type: ignore[override]
         try:
-            # ALWAYS use seabreeze path - DLL path is broken
-            if True:  # Force seabreeze path
+            # SOFTWARE AVERAGING (hardware averaging ignores integration time!)
+            if True:  # PhasePhotonics path
             # if getattr(self._usb, "use_seabreeze", False):
                 if num_scans == 1:
                     full = self._usb.read_intensity()
@@ -165,6 +165,7 @@ class OceanSpectrometerAdapter(Spectrometer):
                         if full is not None
                         else None
                     )
+                # SOFTWARE averaging - loop multiple reads and average in Python
                 spectrum_length = wave_max_index - wave_min_index
                 stack = np.empty((num_scans, spectrum_length), dtype="u2")
                 for i in range(num_scans):

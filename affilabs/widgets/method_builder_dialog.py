@@ -195,23 +195,23 @@ class MethodBuilderDialog(QDialog):
         # Check each pattern
         elif re.search(r'titration|dose.?response|concentration series|serial dilution', text_lower):
             response = ("Baseline 5min [ALL]\n"
-                       "Concentration 2min [A:10nM]\n"
-                       "Concentration 2min [A:50nM]\n"
-                       "Concentration 2min [A:100nM]\n"
-                       "Concentration 2min [A:500nM]\n"
+                       "Concentration 2min [A:10nM] contact 120s\n"
+                       "Concentration 2min [A:50nM] contact 120s\n"
+                       "Concentration 2min [A:100nM] contact 120s\n"
+                       "Concentration 2min [A:500nM] contact 120s\n"
                        "Regeneration 30sec [ALL:50mM]")
             matched = True
 
         elif re.search(r'kinetics|kinetic|dissociation|off.?rate', text_lower):
             response = ("Baseline 2min [ALL]\n"
-                       "Concentration 2min [A:100nM]\n"
+                       "Concentration 2min [A:100nM] contact 120s\n"
                        "Baseline 10min [ALL]  # Dissociation phase\n"
                        "Regeneration 30sec [ALL:50mM]")
             matched = True
 
         elif re.search(r'full cycle|complete cycle|entire run|whole method', text_lower):
             response = ("Baseline 5min [ALL]\n"
-                       "Concentration 2min [A:100nM]\n"
+                       "Concentration 2min [A:100nM] contact 120s\n"
                        "Regeneration 30sec [ALL:50mM]")
             matched = True
 
@@ -220,9 +220,9 @@ class MethodBuilderDialog(QDialog):
             matched = True
 
         elif re.search(r'binding|association|inject|sample|analyte', text_lower):
-            response = ("Concentration 2min [A:100nM] [B:50nM]\n"
-                       "Concentration 5min [A:200nM]\n"
-                       "Concentration 10min [A:500nM]")
+            response = ("Concentration 2min [A:100nM] contact 120s [B:50nM] contact 120s\n"
+                       "Concentration 5min [A:200nM] contact 180s\n"
+                       "Concentration 10min [A:500nM] contact 300s")
             matched = True
 
         # IMPORTANT: Amine coupling BEFORE immobilization to catch "coupling" before "couple"
@@ -232,7 +232,7 @@ class MethodBuilderDialog(QDialog):
             return
 
         elif re.search(r'immobilization|immobilize|immob|attach', text_lower):
-            response = "Immobilization 10min [A:50µg/mL]"
+            response = "Immobilization 10min [A:50µg/mL] contact 180s"
             matched = True
 
         elif re.search(r'baseline|start|begin|initial', text_lower):
@@ -718,10 +718,11 @@ class MethodBuilderDialog(QDialog):
 
 <p><b>Cycle Types:</b></p>
 <ul>
-<li><code>Baseline</code> - Baseline measurement</li>
-<li><code>Immobilization</code> - Surface immobilization</li>
-<li><code>Concentration</code> - Sample injection/binding</li>
-<li><code>Regeneration</code> - Surface regeneration/wash</li>
+<li><code>Baseline</code> - Baseline measurement (no injection)</li>
+<li><code>Immobilization</code> - Surface immobilization (auto-inject @ 20s)</li>
+<li><code>Wash</code> - Wash cycle (auto-inject @ 20s)</li>
+<li><code>Concentration</code> - Sample injection/binding (auto-inject @ 20s)</li>
+<li><code>Regeneration</code> - Surface regeneration (auto-inject @ 20s, 30s contact)</li>
 <li><code>Other</code> - Custom cycle type</li>
 </ul>
 
@@ -730,6 +731,14 @@ class MethodBuilderDialog(QDialog):
 <li><code>30sec</code> or <code>30s</code> - 30 seconds</li>
 <li><code>2min</code> or <code>2m</code> - 2 minutes</li>
 <li>Common: <code>5min</code>, <code>10min</code>, <code>15min</code>, <code>30min</code></li>
+</ul>
+
+<p><b>💉 Injection Parameters (Optional):</b></p>
+<ul>
+<li><code>contact 180s</code> - Contact time in seconds (required for Immobilization/Wash/Concentration)</li>
+<li><code>contact 3min</code> - Contact time in minutes (converts to seconds)</li>
+<li><code>partial injection</code> - Override to use partial injection (30µL spike) for Concentration</li>
+<li><b>Note:</b> Regeneration auto-sets 30s contact time (no need to specify)</li>
 </ul>
 
 <p><b>Channel Tags:</b></p>
@@ -745,9 +754,12 @@ class MethodBuilderDialog(QDialog):
 
 <p><b>Examples:</b></p>
 <ul>
-<li><code>Baseline 5min [ALL]</code></li>
-<li><code>Concentration 2min [A:100nM]</code></li>
-<li><code>Regeneration 30sec [ALL:50mM]</code></li>
+<li><code>Baseline 5min [ALL]</code> - No injection</li>
+<li><code>Immobilization 10min [A:50µg/mL] contact 180s</code> - Simple inject @ 20s, 180s contact</li>
+<li><code>Wash 2min contact 60s</code> - Simple inject @ 20s, 60s contact</li>
+<li><code>Concentration 5min [A:100nM] contact 180s</code> - Simple inject @ 20s, 180s contact</li>
+<li><code>Concentration 5min [A:100nM] contact 180s partial injection</code> - Partial inject @ 20s</li>
+<li><code>Regeneration 2min [ALL:50mM]</code> - Auto-inject @ 20s, 30s contact (auto-set)</li>
 </ul>
 
 <p><b>Full Method Example:</b></p>
@@ -801,8 +813,9 @@ Regeneration 30sec [ALL:50mM]</pre>
         type_keywords = [
             ('Baseline', r'baseline'),
             ('Immobilization', r'immobilization|immobilize|immob'),
+            ('Wash', r'\bwash\b'),  # Match 'wash' as standalone word
             ('Concentration', r'concentration|conc|association|binding|inject'),
-            ('Regeneration', r'regeneration|regen|wash|clean'),
+            ('Regeneration', r'regeneration|regen|clean'),
             ('Other', r'other|custom'),
         ]
 
@@ -834,6 +847,40 @@ Regeneration 30sec [ALL:50mM]</pre>
             if unit_str:  # If units specified in tag, use it
                 detected_unit = unit_str
 
+        # Parse contact time (e.g., "contact 180s", "contact 3min")
+        contact_time = None
+        contact_match = re.search(r'contact[:\s]+(\d+(?:\.\d+)?)(s|sec|m|min)?', text, re.IGNORECASE)
+        if contact_match:
+            value = float(contact_match.group(1))
+            unit = contact_match.group(2).lower() if contact_match.group(2) else 's'
+            if unit in ['m', 'min']:
+                contact_time = value * 60.0  # Convert to seconds
+            else:
+                contact_time = value
+
+        # Parse partial injection override (e.g., "partial injection", "partial")
+        is_partial = bool(re.search(r'partial\s*(injection)?', text, re.IGNORECASE))
+
+        # Auto-set injection method and contact time based on cycle type rules
+        injection_method = None
+        pump_type = None  # Will be auto-detected during execution
+
+        # Injection rules by cycle type
+        if cycle_type == "Immobilization":
+            injection_method = "simple"
+            # contact_time from parsing (required by user)
+        elif cycle_type == "Wash":
+            injection_method = "simple"
+            # contact_time from parsing (required by user)
+        elif cycle_type == "Concentration":
+            injection_method = "partial" if is_partial else "simple"  # Allow override
+            # contact_time from parsing (required by user)
+        elif cycle_type == "Regeneration":
+            injection_method = "simple"
+            if contact_time is None:
+                contact_time = 30.0  # Fixed 30s default for Regeneration
+        # Baseline and Other get no injection (None)
+
         # Generate name from type + tags or just text
         if concentrations:
             tag_str = " ".join([f"[{ch}:{val}]" for ch, val in concentrations.items()])
@@ -851,6 +898,11 @@ Regeneration 30sec [ALL:50mM]</pre>
             units=detected_unit,
             concentrations=concentrations,
             timestamp=time.time(),
+            # Pump and injection fields
+            injection_method=injection_method,
+            injection_delay=20.0,  # Always 20s
+            contact_time=contact_time,
+            pump_type=pump_type,  # Auto-detected during execution
         )
 
     def _on_add_to_method(self):
@@ -977,6 +1029,8 @@ Regeneration 30sec [ALL:50mM]</pre>
         self.method_ready.emit("queue", self._local_cycles.copy())
         self._local_cycles.clear()
         self._refresh_method_table()
+        # Close dialog after pushing to queue
+        self.accept()
 
     def _load_preset(self, preset_name: str):
         """Load a saved preset by name."""

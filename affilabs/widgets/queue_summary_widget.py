@@ -168,8 +168,9 @@ class QueueSummaryWidget(QTableWidget):
         """
         self.insertRow(row)
 
-        # Column 0: Cycle number
-        num_item = QTableWidgetItem(cycle.name)
+        # Column 0: Cycle number (use cycle_num if available, otherwise row+1)
+        cycle_num = cycle.cycle_num if cycle.cycle_num > 0 else row + 1
+        num_item = QTableWidgetItem(str(cycle_num))
         num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         num_item.setFlags(num_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.setItem(row, self.COL_NUM, num_item)

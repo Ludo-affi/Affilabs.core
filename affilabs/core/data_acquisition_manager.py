@@ -826,7 +826,7 @@ class DataAcquisitionManager(QObject):
                 if self.calibration_data.num_scans and self.calibration_data.num_scans > 0
                 else 1
             )
-            MAX_LIVE_SCANS = 10  # Match calibration reference quality
+            MAX_LIVE_SCANS = 15  # Hardware averaging cap (PhasePhotonics limit)
             num_scans = min(num_scans, MAX_LIVE_SCANS) if num_scans else MAX_LIVE_SCANS
 
             # TIMING TRACK MODE: Override calibration delays with new timing architecture
@@ -864,8 +864,8 @@ class DataAcquisitionManager(QObject):
                     p_integration_time_effective = max_integration_per_scan_ms
 
                 # DETECTOR-SPECIFIC SCAN CALCULATION
-                # Phase Photonics: Uses measured timing multiplier (1.93×)
-                # USB4000: Uses simple division (detector_window / integration_time)
+                # Phase Photonics: Software averaging (integration_time × 1.93)
+                # USB4000: Software averaging (detector_window / integration_time)
                 from affilabs.utils.phase_photonics_wrapper import PhasePhotonics
                 from affilabs.utils.hal.adapters import OceanSpectrometerAdapter
 
@@ -875,15 +875,15 @@ class DataAcquisitionManager(QObject):
                     detector = detector._usb  # Get the wrapped detector
 
                 if isinstance(detector, PhasePhotonics):
-                    # Phase Photonics has proportional overhead: Total Time = Integration × 1.93
-                    # Use detector's built-in calculation method
+                    # Phase Photonics: Software averaging (hardware averaging is broken!)
+                    # Total Time = num_scans × (integration_time × 1.93)
                     num_scans = detector.calculate_optimal_scans(
                         p_integration_time_effective, detector_window_ms
                     )
+                    total_time = num_scans * (p_integration_time_effective * detector.TIMING_MULTIPLIER)
                     logger.info(
-                        f"[PHASE] Auto-configured: {p_integration_time_effective:.1f}ms × 1.93 = "
-                        f"{p_integration_time_effective * 1.93:.1f}ms/scan → {num_scans} scans "
-                        f"(budget: {detector_window_ms:.1f}ms)"
+                        f"[PHASE] Auto-configured: {num_scans} scans × {p_integration_time_effective:.1f}ms × 1.93 = "
+                        f"{total_time:.1f}ms total (budget: {detector_window_ms:.1f}ms)"
                     )
                 else:
                     # USB4000 or other detectors: Simple division
@@ -901,6 +901,7 @@ class DataAcquisitionManager(QObject):
                 pre_led_delay = detector_wait_ms
 
                 # Calculate actual detection time needed
+                # Software averaging for all detectors
                 actual_detection_ms = num_scans * p_integration_time_effective
                 post_led_delay = led_on_total_ms - detector_wait_ms - actual_detection_ms
 

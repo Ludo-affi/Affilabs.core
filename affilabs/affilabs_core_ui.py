@@ -152,7 +152,7 @@ from affilabs.affilabs_sidebar import AffilabsSidebar
 from affilabs.core.system_intelligence import SystemState, get_system_intelligence
 from affilabs.dialogs.advanced_settings_dialog import AdvancedSettingsDialog
 from affilabs.plot_helpers import add_channel_curves, create_time_plot
-from affilabs.tabs.edits_tab import EditsTab  # Extracted tab content
+# EditsTab lazy loaded when needed to speed up startup
 from affilabs.ui_styles import (
     Colors,
     Fonts,
@@ -1400,22 +1400,18 @@ class AffilabsMainWindow(QMainWindow):
 
         # Stacked widget to hold different content pages
         from PySide6.QtWidgets import QStackedWidget
-        from affilabs.tabs.analysis_tab import AnalysisTab
+        # Note: Analysis and Report tabs disabled in this version
 
         self.content_stack = QStackedWidget()
 
         # Create placeholder for sensorgram (will be replaced with real graphs after window shows)
         self._sensorgram_placeholder = self._create_sensorgram_placeholder()
         self.content_stack.addWidget(self._sensorgram_placeholder)  # Index 0
-        
+
         # Edits tab with cycle data table and timeline editing
         self.content_stack.addWidget(self._create_edits_content())  # Index 1
-        
-        # Analysis tab with compact cycle table and filtering
-        self._analysis_tab = AnalysisTab(main_window=self)
-        self.content_stack.addWidget(self._analysis_tab.create_content())  # Index 2
-        
-        self.content_stack.addWidget(self._create_blank_content("Report"))  # Index 3
+
+        # Analysis and Report tabs disabled - not used in this software version
 
         right_layout.addWidget(self.content_stack, 1)
         self.splitter.addWidget(right_widget)
@@ -3098,6 +3094,9 @@ class AffilabsMainWindow(QMainWindow):
 
     def _create_edits_content(self):
         """Create the Edits tab content (delegated to EditsTab class)."""
+        # Lazy import EditsTab to speed up startup
+        from affilabs.tabs.edits_tab import EditsTab
+
         self.edits_tab = EditsTab(self)
         return self.edits_tab.create_content()
 
@@ -3118,8 +3117,163 @@ class AffilabsMainWindow(QMainWindow):
             self.edits_tab._export_selection()
 
     def _load_data_from_excel(self):
-        """Alias for _load_previous_data for the new Edits tab."""
-        self._load_previous_data()
+        """Load previous acquisition data from Excel file for editing."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        import pandas as pd
+
+        # Open file dialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Excel File",
+            "",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            logger.info(f"Loading Excel file: {file_path}")
+
+            # Read all sheets
+            excel_data = pd.read_excel(file_path, sheet_name=None, engine='openpyxl')
+
+            # Load raw data from channel sheets (Channel_A, Channel_B, etc.)
+            raw_data_rows = []
+            for sheet_name in ['Channel_A', 'Channel_B', 'Channel_C', 'Channel_D']:
+                if sheet_name in excel_data:
+                    df = excel_data[sheet_name]
+                    channel = sheet_name.split('_')[1].lower()  # 'a', 'b', 'c', or 'd'
+
+                    # Convert DataFrame rows to raw data format
+                    for idx, row in df.iterrows():
+                        if 'Elapsed Time (s)' in row and 'Wavelength (nm)' in row:
+                            raw_data_rows.append({
+                                'time': row['Elapsed Time (s)'],
+                                'channel': channel,
+                                'value': row['Wavelength (nm)']
+                            })
+
+            # Load cycles table and parse time ranges
+            cycles_data = []
+            if 'Cycles' in excel_data:
+                df_cycles = excel_data['Cycles']
+                logger.info(f"Cycles sheet columns: {list(df_cycles.columns)}")
+                
+                for idx, row in df_cycles.iterrows():
+                    # Debug: log first row to see what we're getting
+                    if idx == 0:
+                        logger.info(f"First cycle row data: {dict(row)}")
+                    
+                    # Parse time range from ACh1 or start_time_sensorgram/end_time_sensorgram
+                    if 'start_time_sensorgram' in df_cycles.columns and pd.notna(row['start_time_sensorgram']):
+                        # Real software export format
+                        start_time = float(row['start_time_sensorgram'])
+                        end_time = float(row.get('end_time_sensorgram', start_time + 300))
+                    elif 'ACh1' in df_cycles.columns:
+                        # Custom format with time range
+                        time_range = str(row.get('ACh1', '0-0'))
+                        if '-' in time_range:
+                            start_str, end_str = time_range.split('-')
+                            start_time = float(start_str)
+                            end_time = float(end_str)
+                        else:
+                            start_time = 0.0
+                            end_time = 0.0
+                    else:
+                        start_time = 0.0
+                        end_time = 300.0
+                    
+                    duration_min = (end_time - start_time) / 60.0
+                    
+                    # Get type (handle both 'type' and 'Type')
+                    cycle_type = row.get('type') if 'type' in df_cycles.columns else row.get('Type', 'Unknown')
+                    
+                    # Get concentration (handle multiple formats)
+                    if 'concentration_value' in df_cycles.columns:
+                        concentration = row.get('concentration_value')
+                    elif 'Conc.' in df_cycles.columns:
+                        concentration = row.get('Conc.')
+                    elif 'name' in df_cycles.columns:
+                        concentration = row.get('name')
+                    else:
+                        concentration = ''
+                        
+                    if pd.notna(concentration):
+                        conc_units = row.get('concentration_units', '') if 'concentration_units' in df_cycles.columns else ''
+                        if conc_units and pd.notna(conc_units):
+                            concentration = f"{concentration} {conc_units}"
+                        concentration = str(concentration)
+                    else:
+                        concentration = ''
+                    
+                    # Get notes
+                    notes = row.get('note') if 'note' in df_cycles.columns else row.get('Notes', '')
+                    
+                    cycles_data.append({
+                        'type': str(cycle_type) if pd.notna(cycle_type) else 'Unknown',
+                        'duration_minutes': duration_min,
+                        'start_time_sensorgram': start_time,
+                        'end_time_sensorgram': end_time,
+                        'concentration_value': concentration,
+                        'note': str(notes) if pd.notna(notes) else '',
+                        'channel': str(row.get('Channel', 'All')),
+                        'shift': 0.0,
+                        'flags': str(row.get('flags', '')) if 'flags' in df_cycles.columns else '',
+                    })
+                    
+                    # Debug log for first cycle
+                    if idx == 0:
+                        logger.info(f"First cycle parsed: type={cycle_type}, start={start_time}, end={end_time}, conc={concentration}")
+
+            # Store loaded data in recording manager
+            if hasattr(self.app, 'recording_mgr') and self.app.recording_mgr:
+                # Clear existing data
+                self.app.recording_mgr.data_collector.clear_all()
+
+                # Populate with loaded data
+                self.app.recording_mgr.data_collector.raw_data_rows = raw_data_rows
+                self.app.recording_mgr.data_collector.cycles = cycles_data
+
+                logger.info(f"Loaded {len(raw_data_rows)} raw data points and {len(cycles_data)} cycles")
+                logger.info(f"Data collector now has {len(self.app.recording_mgr.data_collector.raw_data_rows)} raw data rows")
+            else:
+                logger.warning("Recording manager not available - storing data in main window only")
+
+            # Store cycles data for selection handling
+            self._loaded_cycles_data = cycles_data
+
+            # Update the edits tab with loaded cycles
+            if hasattr(self, 'edits_tab'):
+                self.edits_tab._populate_cycles_table(cycles_data)
+                
+                # Set timeline cursors to show all data (if they exist)
+                if raw_data_rows and hasattr(self.edits_tab, 'edits_timeline_cursors'):
+                    left_cursor = self.edits_tab.edits_timeline_cursors.get('left')
+                    right_cursor = self.edits_tab.edits_timeline_cursors.get('right')
+                    if left_cursor is not None and right_cursor is not None:
+                        min_time = min(row['time'] for row in raw_data_rows)
+                        max_time = max(row['time'] for row in raw_data_rows)
+                        left_cursor.setValue(min_time)
+                        right_cursor.setValue(max_time)
+                
+                # Update the selection view to show raw data
+                if hasattr(self.edits_tab, '_update_selection_view'):
+                    self.edits_tab._update_selection_view()
+
+            QMessageBox.information(
+                self,
+                "Data Loaded",
+                f"Successfully loaded {len(cycles_data)} cycles from\n{file_path}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to load Excel file: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Load Error",
+                f"Failed to load Excel file:\\n{str(e)}"
+            )
 
     # Dead code removed (lines 2848-3223):
     # - Stub _create_segment_from_selection (real implementation at line ~6451)
@@ -5607,6 +5761,13 @@ End of Debug Log
                 if hasattr(self, 'add_to_queue_btn'):
                     self.add_to_queue_btn.setEnabled(True)
 
+            # Start next cycle if queue is running and has cycles
+            if self.cycle_queue and hasattr(self, '_queue_running') and self._queue_running:
+                logger.info(f"🔄 Auto-starting next cycle in queue ({len(self.cycle_queue)} remaining)")
+                # Use QTimer to start next cycle after a short delay
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(500, self._start_next_queued_cycle)
+
     def cancel_cycle(self):
         """Cancel the currently running cycle (stopped before completion)."""
         if self._current_running_cycle is not None:
@@ -5629,6 +5790,19 @@ End of Debug Log
             if len(self.cycle_queue) < self.max_queue_size:
                 if hasattr(self, 'add_to_queue_btn'):
                     self.add_to_queue_btn.setEnabled(True)
+
+    def _start_next_queued_cycle(self):
+        """Start the next cycle in the queue automatically."""
+        if self.cycle_queue and not self._current_running_cycle:
+            logger.info(f"🚀 Auto-starting next queued cycle")
+            self.start_cycle()
+        else:
+            if not self.cycle_queue:
+                logger.info(f"✓ Queue completed - no more cycles")
+                if hasattr(self, '_queue_running'):
+                    self._queue_running = False
+            elif self._current_running_cycle:
+                logger.warning(f"⚠️ Cannot start next cycle - current cycle still running")
 
     def start_cycle_countdown(self, duration_minutes: int):
         """Start countdown timer for cycle duration.
@@ -6570,38 +6744,32 @@ End of Debug Log
                     conc_value = f"{conc_value:.2f}"
             cycle_table.setItem(row_idx, 3, QTableWidgetItem(str(conc_value)))
 
-            # Column 4: Concentration units (use 'units' field if available, fallback to 'concentration_units')
-            conc_units = cycle_data.get('units', cycle_data.get('concentration_units', ''))
-            cycle_table.setItem(row_idx, 4, QTableWidgetItem(str(conc_units)))
-
-            # Column 5: Notes (include cycle_id for tracking)
+            # Column 4: Notes (include cycle_id for tracking)
             notes = cycle_data.get('note', cycle_data.get('notes', ''))
             cycle_id = cycle_data.get('cycle_id', '')
             if cycle_id:
                 notes_display = f"[ID:{cycle_id}] {notes}" if notes else f"[ID:{cycle_id}]"
             else:
                 notes_display = notes
-            cycle_table.setItem(row_idx, 5, QTableWidgetItem(str(notes_display)))
+            cycle_table.setItem(row_idx, 4, QTableWidgetItem(str(notes_display)))
 
-            # Column 6: Delta SPR
-            delta_spr = cycle_data.get('delta_spr', '')
-            if isinstance(delta_spr, (int, float)):
-                delta_spr_text = f"{delta_spr:.1f}"
-            else:
-                delta_spr_text = str(delta_spr) if delta_spr else ''
-            cycle_table.setItem(row_idx, 6, QTableWidgetItem(delta_spr_text))
+            # Columns 5-8: Delta SPR for channels A, B, C, D (ΔCh1, ΔCh2, ΔCh3, ΔCh4)
+            delta_spr_by_channel = cycle_data.get('delta_spr_by_channel', {})
+            for idx, ch in enumerate(['A', 'B', 'C', 'D']):
+                col_idx = 5 + idx  # Columns 5, 6, 7, 8
+                delta_value = delta_spr_by_channel.get(ch, '')
+                if isinstance(delta_value, (int, float)):
+                    delta_text = f"{delta_value:.1f}"
+                else:
+                    delta_text = ''
+                cycle_table.setItem(row_idx, col_idx, QTableWidgetItem(delta_text))
 
-            # Column 7: Injection flag indicator
+            # Column 9: Flags (combined)
             flags_list = cycle_data.get('flags', [])
-            has_injection = '✓' if 'injection' in flags_list else ''
-            cycle_table.setItem(row_idx, 7, QTableWidgetItem(has_injection))
+            flags_text = ', '.join(flags_list) if flags_list else ''
+            cycle_table.setItem(row_idx, 9, QTableWidgetItem(flags_text))
 
-            # Column 8: Other flags (wash, spike)
-            other_flags = [f for f in flags_list if f != 'injection']
-            flags_text = ', '.join(other_flags) if other_flags else ''
-            cycle_table.setItem(row_idx, 8, QTableWidgetItem(flags_text))
-
-            # Column 9: Channel selector
+            # Column 10: Channel selector
             channel_combo = QComboBox()
             channel_combo.addItems(["All", "A", "B", "C", "D"])
             channel_combo.setCurrentText("All")
@@ -6622,9 +6790,9 @@ End of Debug Log
             """)
             channel_combo.setProperty('cycle_index', row_idx)
             channel_combo.currentTextChanged.connect(self._on_cycle_channel_changed)
-            cycle_table.setCellWidget(row_idx, 9, channel_combo)
+            cycle_table.setCellWidget(row_idx, 10, channel_combo)
 
-            # Column 10: Time shift
+            # Column 11: Time shift
             shift_spinbox = QDoubleSpinBox()
             shift_spinbox.setRange(-1000.0, 1000.0)
             shift_spinbox.setValue(0.0)
@@ -6645,7 +6813,7 @@ End of Debug Log
             """)
             shift_spinbox.setProperty('cycle_index', row_idx)
             shift_spinbox.valueChanged.connect(self._on_cycle_shift_changed)
-            cycle_table.setCellWidget(row_idx, 10, shift_spinbox)
+            cycle_table.setCellWidget(row_idx, 11, shift_spinbox)
 
             # Initialize alignment settings for this cycle
             if not hasattr(self, '_cycle_alignment'):
@@ -7068,28 +7236,81 @@ End of Debug Log
 
                 # Update title with cycle number
                 cycle_num = row_idx + 1  # 1-indexed for display
-                self.edits_tab.alignment_title.setText(f"Cycle {cycle_num} Alignment")
+                self.edits_tab.alignment_title.setText(f"Cycle {cycle_num} Details & Editing")
+
+                # Populate flags display
+                if row_idx < len(self._loaded_cycles_data):
+                    cycle = self._loaded_cycles_data[row_idx]
+                    flags = cycle.get('flags', '')
+
+                    if flags and flags.strip():
+                        # Color code flags
+                        flags_lower = flags.lower()
+                        if any(word in flags_lower for word in ['error', 'fail', 'invalid', 'bad']):
+                            flag_color = '#FF3B30'  # Red
+                            flag_text = f"⚠️ {flags}"
+                        elif any(word in flags_lower for word in ['warning', 'check', 'review']):
+                            flag_color = '#FF9500'  # Orange
+                            flag_text = f"⚡ {flags}"
+                        else:
+                            flag_color = '#007AFF'  # Blue
+                            flag_text = f"ℹ️ {flags}"
+
+                        self.edits_tab.alignment_flags_display.setText(flag_text)
+                        self.edits_tab.alignment_flags_display.setStyleSheet(f"""
+                            font-size: 11px;
+                            color: {flag_color};
+                            font-weight: 600;
+                        """)
+                    else:
+                        self.edits_tab.alignment_flags_display.setText("✓ None")
+                        self.edits_tab.alignment_flags_display.setStyleSheet("""
+                            font-size: 11px;
+                            color: #34C759;
+                            font-weight: 600;
+                        """)
 
                 # Populate alignment controls from stored data
                 alignment_data = self.edits_tab._cycle_alignment.get(row_idx, {'channel': 'All', 'shift': 0.0})
                 self.edits_tab.alignment_channel_combo.blockSignals(True)
-                self.edits_tab.alignment_shift_spinbox.blockSignals(True)
+                if hasattr(self.edits_tab, 'alignment_shift_spinbox'):
+                    self.edits_tab.alignment_shift_spinbox.blockSignals(True)
+                    self.edits_tab.alignment_shift_spinbox.setValue(alignment_data['shift'])
+                    self.edits_tab.alignment_shift_spinbox.blockSignals(False)
                 self.edits_tab.alignment_channel_combo.setCurrentText(alignment_data['channel'])
-                self.edits_tab.alignment_shift_spinbox.setValue(alignment_data['shift'])
                 self.edits_tab.alignment_channel_combo.blockSignals(False)
-                self.edits_tab.alignment_shift_spinbox.blockSignals(False)
 
-                # Populate cycle boundary controls
+                # Populate cycle boundary info
                 if row_idx < len(self._loaded_cycles_data):
                     cycle = self._loaded_cycles_data[row_idx]
-                    start_time = cycle.get('start_time_sensorgram', 0)
-                    end_time = cycle.get('end_time_sensorgram', start_time + 300)
-                    self.edits_tab.cycle_start_spinbox.blockSignals(True)
-                    self.edits_tab.cycle_end_spinbox.blockSignals(True)
-                    self.edits_tab.cycle_start_spinbox.setValue(start_time)
-                    self.edits_tab.cycle_end_spinbox.setValue(end_time)
-                    self.edits_tab.cycle_start_spinbox.blockSignals(False)
-                    self.edits_tab.cycle_end_spinbox.blockSignals(False)
+                    start_time = cycle.get('start_time', cycle.get('start_time_sensorgram', 0))
+                    end_time = cycle.get('end_time', cycle.get('end_time_sensorgram'))
+
+                    # Handle None values
+                    if start_time is None:
+                        start_time = 0.0
+                    if end_time is None:
+                        # Default to start_time + 5 minutes
+                        duration_str = cycle.get('Duration (min)', '')
+                        try:
+                            duration_min = float(duration_str) if duration_str else 5.0
+                        except:
+                            duration_min = 5.0
+                        end_time = start_time + (duration_min * 60)
+
+                    # Update labels or spinboxes depending on which exist
+                    if hasattr(self.edits_tab, 'alignment_start_time'):
+                        self.edits_tab.alignment_start_time.setText(f"{start_time:.2f} s")
+                    if hasattr(self.edits_tab, 'alignment_end_time'):
+                        self.edits_tab.alignment_end_time.setText(f"{end_time:.2f} s")
+                    if hasattr(self.edits_tab, 'cycle_start_spinbox'):
+                        self.edits_tab.cycle_start_spinbox.blockSignals(True)
+                        self.edits_tab.cycle_start_spinbox.setValue(float(start_time))
+                        self.edits_tab.cycle_start_spinbox.blockSignals(False)
+                    if hasattr(self.edits_tab, 'cycle_end_spinbox'):
+                        self.edits_tab.cycle_end_spinbox.blockSignals(True)
+                        self.edits_tab.cycle_end_spinbox.setValue(float(end_time))
+                        self.edits_tab.cycle_end_spinbox.blockSignals(False)
             elif hasattr(self, 'edits_tab'):
                 # Hide for multi-selection (no alignment controls for multiple cycles)
                 self.edits_tab.alignment_panel.hide()
@@ -7121,14 +7342,18 @@ End of Debug Log
                 # Get time range for this cycle
                 start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time'))
                 end_time = cycle.get('end_time_sensorgram')
+                
+                logger.info(f"[GRAPH DEBUG] Cycle {row}: start_time_raw={start_time}, end_time_raw={end_time}, type={type(start_time)}")
 
                 # Handle NaN values from pandas (convert to None)
                 import math
                 try:
                     if start_time is not None and isinstance(start_time, float) and math.isnan(start_time):
                         start_time = None
+                        logger.warning(f"[GRAPH DEBUG] Cycle {row}: start_time was NaN, converted to None")
                     if end_time is not None and isinstance(end_time, float) and math.isnan(end_time):
                         end_time = None
+                        logger.warning(f"[GRAPH DEBUG] Cycle {row}: end_time was NaN, converted to None")
                 except (TypeError, ValueError):
                     pass  # Not a number, keep as is
 
@@ -7154,6 +7379,10 @@ End of Debug Log
 
                 # Get raw data from data collector
                 raw_data = self.app.recording_mgr.data_collector.raw_data_rows
+                
+                logger.info(f"[GRAPH DEBUG] recording_mgr exists: {self.app.recording_mgr is not None}")
+                logger.info(f"[GRAPH DEBUG] data_collector exists: {hasattr(self.app.recording_mgr, 'data_collector')}")
+                logger.info(f"[GRAPH DEBUG] raw_data_rows count: {len(raw_data) if raw_data else 0}")
 
                 if not raw_data:
                     logger.warning("No raw data available to display")
@@ -7186,18 +7415,14 @@ End of Debug Log
                             # Format 1: One row per channel measurement
                             ch = row_data.get('channel')
                             value = row_data.get('value')
-                            # Apply channel filter
-                            if cycle_channel != 'All' and ch != cycle_channel.lower():
-                                continue  # Skip this channel
+                            # Don't filter channels - show all channels, just apply shift to all
                             if ch in ['a', 'b', 'c', 'd'] and value is not None:
                                 all_cycle_data[ch]['time'].append(relative_time)
                                 all_cycle_data[ch]['wavelength'].append(value)
                         else:
                             # Format 2: All channels in one row
                             for ch in ['a', 'b', 'c', 'd']:
-                                # Apply channel filter
-                                if cycle_channel != 'All' and ch != cycle_channel.lower():
-                                    continue  # Skip this channel
+                                # Don't filter channels - show all channels
                                 # Try both naming conventions: channel_X or wavelength_X
                                 wavelength = row_data.get(f'channel_{ch}', row_data.get(f'wavelength_{ch}'))
                                 if wavelength is not None:

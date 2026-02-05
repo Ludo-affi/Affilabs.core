@@ -25,7 +25,7 @@
 
 ### Purpose
 
-The Hardware Communication Layer provides a unified interface for all hardware devices in the ezControl system:
+The Hardware Communication Layer provides a unified interface for all hardware devices in the Affilabs.core system:
 
 - **SPR Controllers** (PicoP4PRO, PicoP4SPR, PicoEZSPR)
 - **Kinetic Controllers** (PicoKNX2, KineticController)

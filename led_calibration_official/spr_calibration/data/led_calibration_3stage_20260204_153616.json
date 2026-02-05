@@ -1,0 +1,80 @@
+{
+  "detector_serial": "ST00014",
+  "timestamp": "20260204_153616",
+  "model_type": "3-stage-linear",
+  "model_equation": "counts = slope_10ms \u00d7 intensity \u00d7 (time_ms / 10)",
+  "integration_times": [
+    5,
+    10,
+    15
+  ],
+  "dark_counts_per_time": {
+    "10": 837.0,
+    "20": 836.0,
+    "30": 836.0,
+    "45": 837.0,
+    "60": 839.0,
+    "5": 835.0,
+    "15": 835.0
+  },
+  "led_models": {
+    "A": [
+      {
+        "time_ms": 5,
+        "slope": 24.03781818181818
+      },
+      {
+        "time_ms": 10,
+        "slope": 46.04654545454545
+      },
+      {
+        "time_ms": 15,
+        "slope": 71.67119047619047
+      }
+    ],
+    "B": [
+      {
+        "time_ms": 5,
+        "slope": 23.155272727272727
+      },
+      {
+        "time_ms": 10,
+        "slope": 44.95878787878788
+      },
+      {
+        "time_ms": 15,
+        "slope": 61.907222222222224
+      }
+    ],
+    "C": [
+      {
+        "time_ms": 5,
+        "slope": 20.386666666666667
+      },
+      {
+        "time_ms": 10,
+        "slope": 41.211636363636366
+      },
+      {
+        "time_ms": 15,
+        "slope": 57.43411111111111
+      }
+    ],
+    "D": [
+      {
+        "time_ms": 5,
+        "slope": 22.29278787878788
+      },
+      {
+        "time_ms": 10,
+        "slope": 43.792545454545454
+      },
+      {
+        "time_ms": 15,
+        "slope": 60.39411111111111
+      }
+    ]
+  },
+  "training_method": "automatic_oem_workflow",
+  "detector_wait_ms": 50
+}

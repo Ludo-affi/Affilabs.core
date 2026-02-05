@@ -1274,6 +1274,12 @@ class Application(QApplication):
         """Handler for calibration completion - updates status AND shows QC dialog."""
         from affilabs.utils.settings_helpers import SettingsHelpers
 
+        # Resume live spectrum updates after calibration
+        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+            logger.info("Resuming live spectrum updates after calibration...")
+            self.ui_updates.set_transmission_updates_enabled(True)
+            self.ui_updates.set_raw_spectrum_updates_enabled(True)
+
         SettingsHelpers.on_calibration_complete(self, calibration_data)
 
         # Set LED intensities once after calibration (fixed for entire run)
@@ -1300,8 +1306,11 @@ class Application(QApplication):
         # Populate LED brightness in Hardware Configuration section
         logger.info("📋 Populating calibration settings in UI...")
         try:
-            self._load_current_settings(show_warnings=False)
-            logger.info("   ✓ LED brightness populated in Hardware Configuration")
+            if hasattr(self.main_window, '_load_current_settings'):
+                self.main_window._load_current_settings(show_warnings=False)
+                logger.info("   ✓ LED brightness populated in Hardware Configuration")
+            else:
+                logger.warning("   _load_current_settings method not found on main_window")
         except Exception as e:
             logger.warning(f"   Could not populate settings: {e}")
 
@@ -1316,12 +1325,12 @@ class Application(QApplication):
         # Resume live acquisition if hardware is ready
         if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
             try:
-                # Use acquisition_mgr to start live data
-                if hasattr(self, 'acquisition_mgr') and self.acquisition_mgr:
-                    self.acquisition_mgr.start_acquisition()
+                # Use data_mgr to start live data
+                if hasattr(self, 'data_mgr') and self.data_mgr:
+                    self.data_mgr.start_acquisition()
                     logger.info("   Live acquisition started")
                 else:
-                    logger.warning("   Acquisition manager not available")
+                    logger.warning("   Data acquisition manager not available")
             except Exception as e:
                 logger.warning(f"   Could not start live acquisition: {e}")
 
@@ -1470,7 +1479,7 @@ class Application(QApplication):
 
     def _on_queue_changed(self):
         """Handle queue changes - update UI elements that don't auto-refresh.
-        
+
         Summary table auto-refreshes via presenter.queue_changed signal.
         This handler updates:
         - Progress bar
@@ -2198,6 +2207,10 @@ class Application(QApplication):
             self._cycle_timer.start(1000)  # Update every 1 second
             logger.info("✓ Cycle timer started (updates every 1 second)")
 
+        # NEW: Schedule injection if cycle requires it
+        if cycle.injection_method is not None:
+            self._schedule_injection(cycle)
+
         # Update progress bar to show current cycle
         if hasattr(self.main_window.sidebar, 'queue_progress_bar'):
             try:
@@ -2276,6 +2289,97 @@ class Application(QApplication):
         logger.info(f"Starting queued run with {queue_size} cycles")
         self._on_start_button_clicked()
         logger.info("✓ Queued run started successfully")
+
+    def _schedule_injection(self, cycle):
+        """Schedule injection to trigger after delay.
+
+        Args:
+            cycle: Cycle object with injection_method and injection_delay
+        """
+        from PySide6.QtCore import QTimer
+
+        delay_ms = int(cycle.injection_delay * 1000)  # Convert to milliseconds
+
+        logger.info(f"⏲ Injection scheduled in {cycle.injection_delay}s ({cycle.injection_method})")
+
+        # Use QTimer.singleShot to trigger injection after delay
+        QTimer.singleShot(delay_ms, lambda: self._execute_injection(cycle))
+
+    def _execute_injection(self, cycle):
+        """Execute injection method for cycle.
+
+        Args:
+            cycle: Cycle object with injection parameters
+        """
+        # Validate pump available
+        has_affipump = self.pump_mgr.is_available
+        has_internal = (self.hardware_mgr.ctrl and
+                       hasattr(self.hardware_mgr.ctrl, 'has_internal_pumps') and
+                       self.hardware_mgr.ctrl.has_internal_pumps())
+
+        if not has_affipump and not has_internal:
+            logger.error("❌ Injection failed - no pump available")
+            return
+
+        # Get assay rate from UI
+        assay_rate = 100.0
+        if hasattr(self.main_window.sidebar, 'pump_assay_spin'):
+            assay_rate = float(self.main_window.sidebar.pump_assay_spin.value())
+
+        # Execute injection method
+        if cycle.injection_method == "simple":
+            logger.info(f"💉 AUTO-INJECT: Simple injection @ {assay_rate} µL/min")
+            if cycle.contact_time:
+                logger.info(f"   Contact time: {cycle.contact_time}s")
+            self._trigger_simple_injection(assay_rate)
+        elif cycle.injection_method == "partial":
+            logger.info(f"💉 AUTO-INJECT: Partial injection @ {assay_rate} µL/min")
+            if cycle.contact_time:
+                logger.info(f"   Contact time: {cycle.contact_time}s")
+            self._trigger_partial_injection(assay_rate)
+
+        # Log event to sensorgram
+        if hasattr(self, 'recording_mgr'):
+            event_name = f"Auto-Injection ({cycle.injection_method})"
+            if cycle.contact_time:
+                event_name += f" - {cycle.contact_time}s contact"
+            self.recording_mgr.log_event(event_name)
+
+    def _trigger_simple_injection(self, assay_rate: float):
+        """Trigger simple injection (reuse existing code).
+
+        Args:
+            assay_rate: Flow rate in µL/min
+        """
+        def run_inject():
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.pump_mgr.inject_simple(assay_rate))
+            finally:
+                loop.close()
+
+        thread = threading.Thread(target=run_inject, daemon=True, name="AutoInjectSimple")
+        thread.start()
+
+    def _trigger_partial_injection(self, assay_rate: float):
+        """Trigger partial injection (reuse existing code).
+
+        Args:
+            assay_rate: Flow rate in µL/min
+        """
+        def run_inject():
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.pump_mgr.inject_partial_loop(assay_rate))
+            finally:
+                loop.close()
+
+        thread = threading.Thread(target=run_inject, daemon=True, name="AutoInjectPartial")
+        thread.start()
 
     def _update_cycle_display(self):
         """Update Active Cycle overlay with cycle progress."""
@@ -2577,30 +2681,35 @@ class Application(QApplication):
             cycle: Cycle object to analyze
         """
         try:
-            # Calculate delta SPR (change in SPR during cycle)
+            # Calculate delta SPR (change in SPR during cycle) for all channels
             if cycle.sensorgram_time is not None and cycle.end_time_sensorgram is not None:
                 # Get data from data collector
                 if hasattr(self, 'data_collector') and self.data_collector:
-                    # Get SPR values at start and end times for all active channels
-                    # Use channel A as reference (can be enhanced to use selected channel)
                     start_time = cycle.sensorgram_time
                     end_time = cycle.end_time_sensorgram
 
-                    # Get data points near start and end times
+                    # Get time data
                     time_data = self.data_collector.time_data
-                    spr_data_ch_a = self.data_collector.get_channel_data('A')
 
-                    if len(time_data) > 0 and len(spr_data_ch_a) > 0:
+                    if len(time_data) > 0:
                         import numpy as np
 
                         # Find closest indices to start and end times
                         start_idx = np.argmin(np.abs(np.array(time_data) - start_time))
                         end_idx = np.argmin(np.abs(np.array(time_data) - end_time))
 
-                        if start_idx < len(spr_data_ch_a) and end_idx < len(spr_data_ch_a):
-                            start_spr = spr_data_ch_a[start_idx]
-                            end_spr = spr_data_ch_a[end_idx]
-                            cycle.delta_spr = end_spr - start_spr
+                        # Calculate delta SPR for all 4 channels
+                        cycle.delta_spr_by_channel = {}
+                        for ch in ['A', 'B', 'C', 'D']:
+                            spr_data = self.data_collector.get_channel_data(ch)
+                            if len(spr_data) > max(start_idx, end_idx):
+                                start_spr = spr_data[start_idx]
+                                end_spr = spr_data[end_idx]
+                                cycle.delta_spr_by_channel[ch] = end_spr - start_spr
+
+                        # Set legacy delta_spr to channel A for backward compatibility
+                        if 'A' in cycle.delta_spr_by_channel:
+                            cycle.delta_spr = cycle.delta_spr_by_channel['A']
 
             # Detect flags within cycle time range
             # CRITICAL: Flags use REBASED time (starting at 0 for Active Cycle)
@@ -7520,9 +7629,38 @@ class Application(QApplication):
                             pg.mkPen(color=color, width=2),
                         )
 
+            # Update Edits tab channel buttons (ABCD)
+            if hasattr(self.main_window.edits_tab, 'edits_channel_buttons'):
+                channel_letters = ["A", "B", "C", "D"]
+                for i, ch in enumerate(channel_letters):
+                    if ch in self.main_window.edits_tab.edits_channel_buttons and i < len(color_list):
+                        btn = self.main_window.edits_tab.edits_channel_buttons[ch]
+                        color = color_list[i]
+                        btn.setStyleSheet(
+                            f"QPushButton {{ background: {color}; color: white; border: none; "
+                            f"border-radius: 4px; font-size: 11px; font-weight: 600; }}"
+                            "QPushButton:!checked { background: rgba(0, 0, 0, 0.06); color: #86868B; }"
+                        )
+
         logger.info("[OK] Graph colors updated successfully")
 
     # === CALIBRATION WORKFLOWS ===
+
+    def _restart_acquisition_after_calibration(self):
+        """Helper method to restart acquisition from main thread after calibration."""
+        # Resume live spectrum updates after calibration
+        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+            logger.info("Resuming live spectrum updates after calibration...")
+            self.ui_updates.set_transmission_updates_enabled(True)
+            self.ui_updates.set_raw_spectrum_updates_enabled(True)
+
+        if hasattr(self, 'data_mgr') and self.data_mgr:
+            logger.info("🔄 Restarting live data acquisition...")
+            try:
+                self.data_mgr.start_acquisition()
+                logger.info("✅ Live data acquisition restarted")
+            except Exception as e:
+                logger.error(f"Failed to restart live data: {e}")
 
     def _on_simple_led_calibration(self):
         """Run simple LED intensity adjustment (quick, for sensor swaps)."""
@@ -7537,6 +7675,20 @@ class Application(QApplication):
                 "Use the power button to connect to the device.",
             )
             return
+
+        # Stop live data if running
+        if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
+            logger.info("🛑 Stopping live data acquisition before calibration...")
+            self.data_mgr.stop_acquisition()
+            import time
+            time.sleep(0.1)
+            logger.info("[OK] Live data stopped")
+
+        # Pause live spectrum updates during calibration
+        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+            logger.info("Pausing live spectrum updates during calibration...")
+            self.ui_updates.set_transmission_updates_enabled(False)
+            self.ui_updates.set_raw_spectrum_updates_enabled(False)
 
         # Import simple calibration function
         try:
@@ -7597,9 +7749,13 @@ class Application(QApplication):
                     logger.info("✅ Simple LED calibration completed successfully")
 
                     # Clear graphs and restart sensorgram at t=0 (must be on main thread)
+                    # Use QTimer.singleShot to call from main thread
                     from PySide6.QtCore import QTimer
                     QTimer.singleShot(0, self._on_clear_graphs_requested)
                     logger.info("✓ Scheduled sensorgram reset on main thread")
+
+                    # Restart live data acquisition (also from main thread)
+                    QTimer.singleShot(100, self._restart_acquisition_after_calibration)
                 else:
                     dialog.update_status("❌ Simple calibration failed")
                     dialog.set_progress(100, 100)
@@ -7648,6 +7804,12 @@ class Application(QApplication):
             import time
             time.sleep(0.2)
             logger.info("[OK] Live data stopped")
+
+        # Pause live spectrum updates during calibration
+        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+            logger.info("Pausing live spectrum updates during calibration...")
+            self.ui_updates.set_transmission_updates_enabled(False)
+            self.ui_updates.set_raw_spectrum_updates_enabled(False)
 
         # Create progress dialog
         from PySide6.QtWidgets import QProgressDialog
@@ -7719,23 +7881,21 @@ class Application(QApplication):
                 except Exception as e:
                     logger.error(f"Failed to load servo positions: {e}")
 
+                # Clear graphs and restart sensorgram at t=0
+                logger.info("📊 Clearing graph and restarting sensorgram...")
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, self._on_clear_graphs_requested)
+
                 # Restart live data acquisition
                 logger.info("🔄 Restarting live data acquisition...")
-                if hasattr(self, 'data_mgr') and self.data_mgr:
-                    try:
-                        self.data_mgr.start_acquisition()
-                        logger.info("✅ Live data acquisition restarted")
-                    except Exception as e:
-                        logger.error(f"Failed to restart live data: {e}")
-                else:
-                    logger.warning("⚠️ Data manager not available - cannot restart live data")
+                QTimer.singleShot(100, self._restart_acquisition_after_calibration)
 
-                    # Give UI time to update before showing completion dialog
-                    from PySide6.QtWidgets import QApplication
-                    import time
-                    QApplication.processEvents()
-                    time.sleep(0.3)
-                    QApplication.processEvents()
+                # Give UI time to update before showing completion dialog
+                from PySide6.QtWidgets import QApplication
+                import time
+                QApplication.processEvents()
+                time.sleep(0.3)
+                QApplication.processEvents()
 
                 ui_info(
                     self.main_window,
@@ -7802,6 +7962,12 @@ class Application(QApplication):
             dialog.hide_start_button()
             dialog.show_progress_bar()
 
+            # Pause live spectrum updates during calibration
+            if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+                logger.info("Pausing live spectrum updates during calibration...")
+                self.ui_updates.set_transmission_updates_enabled(False)
+                self.ui_updates.set_raw_spectrum_updates_enabled(False)
+
             # CRITICAL: Pass the dialog to calibration service to avoid creating a second dialog
             # Set the existing dialog as the calibration dialog before starting
             self.calibration._calibration_dialog = dialog
@@ -7825,6 +7991,7 @@ class Application(QApplication):
 
         dialog.start_clicked.connect(on_start)
         dialog.show()
+        dialog.enable_start_button_pre_calib()  # Enable the Start button after dialog is visible
 
     def _on_led_model_training(self):
         """Run LED model training only (no full calibration).
@@ -7850,6 +8017,20 @@ class Application(QApplication):
                 "Please connect hardware before training the LED model."
             )
             return
+
+        # Stop live data if running
+        if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
+            logger.info("🛑 Stopping live data acquisition before LED model training...")
+            self.data_mgr.stop_acquisition()
+            import time
+            time.sleep(0.1)
+            logger.info("[OK] Live data stopped")
+
+        # Pause live spectrum updates during calibration
+        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+            logger.info("Pausing live spectrum updates during LED model training...")
+            self.ui_updates.set_transmission_updates_enabled(False)
+            self.ui_updates.set_raw_spectrum_updates_enabled(False)
 
         # Show progress dialog
         dialog = StartupCalibProgressDialog(
@@ -7891,18 +8072,32 @@ class Application(QApplication):
                     dialog.update_status("✓ Model created successfully!")
                     dialog.hide_progress_bar()
 
+                    # Clear graphs and restart sensorgram at t=0 (use QTimer for thread safety)
                     from PySide6.QtCore import QTimer
 
-                    def show_success():
-                        dialog.close()
-                        ui_info(
-                            self.main_window,
-                            "Training Complete",
-                            "LED calibration model created successfully!\n\n"
-                            "The new model is now active and will be used for all calibrations."
-                        )
+                    logger.info("📊 Clearing graph and restarting sensorgram...")
+                    QTimer.singleShot(0, self._on_clear_graphs_requested)
 
-                    QTimer.singleShot(500, show_success)
+                    # Restart live data acquisition (also from main thread)
+                    QTimer.singleShot(100, self._restart_acquisition_after_calibration)
+
+                    # Show success dialog (also from main thread for safety)
+                    from PySide6.QtCore import QMetaObject, Qt as QtCore
+                    import time
+                    time.sleep(0.5)  # Brief delay before showing dialog
+
+                    QMetaObject.invokeMethod(
+                        dialog,
+                        "close",
+                        QtCore.ConnectionType.QueuedConnection
+                    )
+
+                    ui_info(
+                        self.main_window,
+                        "Training Complete",
+                        "LED calibration model created successfully!\n\n"
+                        "The new model is now active and will be used for all calibrations."
+                    )
                 else:
                     logger.error("[ERROR] LED model training failed")
                     dialog.update_title("Training Failed")
@@ -7910,17 +8105,22 @@ class Application(QApplication):
                     dialog.hide_progress_bar()
 
                     from affilabs.ui.ui_message import error as ui_error
-                    from PySide6.QtCore import QTimer
+                    from PySide6.QtCore import QMetaObject, Qt as QtCore
+                    import time
 
-                    def show_error():
-                        dialog.close()
-                        ui_error(
-                            self.main_window,
-                            "Training Failed",
-                            "LED model training failed.\n\nPlease check the logs for details."
-                        )
+                    time.sleep(0.5)  # Brief delay before showing error
 
-                    QTimer.singleShot(500, show_error)
+                    QMetaObject.invokeMethod(
+                        dialog,
+                        "close",
+                        QtCore.ConnectionType.QueuedConnection
+                    )
+
+                    ui_error(
+                        self.main_window,
+                        "Training Failed",
+                        "LED model training failed.\n\nPlease check the logs for details."
+                    )
 
             except Exception as e:
                 logger.error(f"LED model training error: {e}", exc_info=True)
@@ -7941,6 +8141,7 @@ class Application(QApplication):
         # Connect start button
         dialog.start_clicked.connect(on_start_clicked)
         dialog.show()
+        dialog.enable_start_button_pre_calib()  # Enable the Start button after dialog is visible
 
     def _on_record_baseline_clicked(self):
         """Handle Record Baseline Data button click."""

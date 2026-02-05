@@ -214,7 +214,7 @@ class LicenseDialog(QDialog):
                     "License Loaded",
                     f"License successfully loaded!\n\n"
                     f"Tier: {features.tier_name}\n\n"
-                    f"Please restart ezControl for changes to take effect."
+                    f"Please restart Affilabs.core for changes to take effect."
                 )
                 self.accept()
             else:
@@ -278,7 +278,7 @@ class LicenseDialog(QDialog):
                 f"Licensee: {licensee}\n"
                 f"Expires: 1 year from now\n\n"
                 f"⚠️ This is for TESTING ONLY.\n"
-                f"Please restart ezControl for changes to take effect."
+                f"Please restart Affilabs.core for changes to take effect."
             )
             self.accept()
         else:

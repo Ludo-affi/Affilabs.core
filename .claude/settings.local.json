@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(wc:*)",
+      "Bash(tree:*)",
+      "Bash(git mv:*)",
+      "Bash(python -c:*)"
     ]
   }
 }

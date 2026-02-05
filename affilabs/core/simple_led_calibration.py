@@ -133,14 +133,16 @@ def run_simple_led_calibration(
 
         try:
             # Move servo to S position (if device has servo)
-            if hasattr(ctrl, "servo_set"):
+            if hasattr(ctrl, "set_mode"):
                 positions = device_config.get_servo_positions()
                 if positions:
                     s_pos, p_pos = positions
-                else:
-                    s_pos, p_pos = 90, 90  # Default positions
-                logger.info(f"Moving servo to S position: {s_pos}")
-                ctrl.servo_set(s=s_pos, p=s_pos)
+                    logger.info(f"Setting servo positions: S={s_pos}, P={p_pos}")
+                    # Set both positions in firmware
+                    ctrl.servo_set(s=s_pos, p=p_pos)
+                    time.sleep(0.1)
+                logger.info("Moving servo to S-mode...")
+                ctrl.set_mode("S")
                 time.sleep(0.3)
 
             # Set integration time and turn on LEDs with current values
@@ -211,14 +213,9 @@ def run_simple_led_calibration(
 
         try:
             # Move servo to P position (if device has servo)
-            if hasattr(ctrl, "servo_set"):
-                positions = device_config.get_servo_positions()
-                if positions:
-                    s_pos, p_pos = positions
-                else:
-                    s_pos, p_pos = 90, 0  # Default positions
-                logger.info(f"Moving servo to P position: {p_pos}")
-                ctrl.servo_set(s=p_pos, p=p_pos)
+            if hasattr(ctrl, "set_mode"):
+                logger.info("Moving servo to P-mode...")
+                ctrl.set_mode("P")
                 time.sleep(0.3)
 
             # Set integration time and turn on LEDs with current P-mode values

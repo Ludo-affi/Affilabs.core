@@ -40,12 +40,10 @@ class NavigationPresenter:
         nav_layout.setContentsMargins(20, 10, 20, 10)
         nav_layout.setSpacing(12)
 
-        # Navigation buttons
+        # Navigation buttons (Analysis and Report tabs disabled)
         nav_button_configs = [
             ("Live", 0, "Real-time data visualization and cycle monitoring"),
             ("Edits", 1, "Edit and annotate experiment data"),
-            ("Analyze", 2, "Analyze results and generate reports"),
-            ("Report", 3, "Export and share experiment reports"),
         ]
 
         for i, (label, page_index, tooltip) in enumerate(nav_button_configs):
@@ -55,10 +53,6 @@ class NavigationPresenter:
             btn.setCheckable(True)
             btn.setChecked(i == 0)  # First button selected by default
             btn.setToolTip(tooltip)
-
-            # TEMPORARY: Hide Analyze and Report tabs (v1.0 focus on Sensorgram/Edits)
-            if label in ["Analyze", "Report"]:
-                btn.setVisible(False)
 
             # Store button reference
             self.nav_buttons.append(btn)
@@ -378,6 +372,13 @@ class NavigationPresenter:
         # Update button checked states (radio button behavior)
         for i, btn in enumerate(self.nav_buttons):
             btn.setChecked(i == page_index)
+
+        # Hide sidebar when switching to Edits tab (index 1), show for all others
+        if hasattr(self.main_window, 'sidebar'):
+            if page_index == 1:  # Edits tab
+                self.main_window.sidebar.hide()
+            else:
+                self.main_window.sidebar.show()
 
     def get_buttons(self) -> list[QPushButton]:
         """Get the list of navigation buttons.

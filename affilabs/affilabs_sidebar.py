@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PySide6.QtGui import QTransform
 
 # Tab builders
 from affilabs.sidebar_tabs.AL_device_status_builder import DeviceStatusTabBuilder
@@ -226,9 +227,9 @@ class AffilabsSidebar(QWidget):
                 self._build_settings_tab,
             ),
             (
-                "⚡",
+                "⚡",  # Rotated 90° clockwise via CSS transform
                 "⚡ Spark",
-                "Ask questions about using ezControl",
+                "Ask questions about using Affilabs.core",
                 self._build_spark_tab,
             ),
         ]
@@ -278,11 +279,62 @@ class AffilabsSidebar(QWidget):
             # Add stretch to push all sections to the top (prevents even spacing when collapsed)
             tab_layout.addStretch()
 
+            # For Spark tab, we want to rotate the lightning icon 90 degrees
+            # We'll add the tab normally but store the index to customize later
             self.tab_widget.addTab(scroll_area, label)
+
             scroll_area.setWidget(tab_content)
 
             # Store tab index for later reference
             self.tab_indices[label] = tab_index
+
+            # Apply rotation to Spark tab icon after it's added
+            if label == "⚡":
+                # Get the tab bar and apply rotation via stylesheet transform
+                # Note: QTabBar doesn't support CSS transforms directly,
+                # so we'll rotate the text using a custom approach
+                from PySide6.QtGui import QPixmap, QPainter, QFont, QFontMetrics
+                from PySide6.QtCore import QSize, QRect
+
+                # Create a rotated pixmap of the lightning symbol (75% of previous size)
+                icon_size = 36  # Reduced from 48 (75% of original)
+                pixmap = QPixmap(icon_size, icon_size)
+                pixmap.fill(Qt.GlobalColor.transparent)
+
+                painter = QPainter(pixmap)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+                # Set font - 75% of previous size
+                font = QFont()
+                font.setPixelSize(24)  # Reduced from 32 (75% of original)
+                font.setBold(True)
+                painter.setFont(font)
+
+                # Get font metrics to properly center the text
+                metrics = QFontMetrics(font)
+                text_rect = metrics.boundingRect("⚡")
+
+                # Center the coordinate system
+                painter.translate(icon_size / 2, icon_size / 2)
+                # Rotate 90 degrees clockwise
+                painter.rotate(90)
+
+                # Draw centered (offset by half of text bounds)
+                painter.drawText(
+                    -text_rect.width() / 2,
+                    text_rect.height() / 2 - metrics.descent(),
+                    "⚡"
+                )
+                painter.end()
+
+                # Set as tab icon with updated size
+                self.tab_widget.setTabIcon(tab_index, pixmap)
+                # Set icon size for the tab bar (75% of previous)
+                self.tab_widget.tabBar().setIconSize(QSize(36, 36))
+                # Clear the text label since we're using icon
+                self.tab_widget.setTabText(tab_index, "")
+
             tab_index += 1
 
         # Apply light green background to Spark tab button

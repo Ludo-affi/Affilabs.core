@@ -1,0 +1,1160 @@
+"""Spark AI Help Widget - Clean Simple Q&A Assistant
+
+A lightweight AI assistant for answering questions about Affilabs.core software.
+Uses TinyLM AI with pattern matching fallback for intelligent responses.
+"""
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTextEdit, QScrollArea, QFrame, QSizePolicy
+)
+from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QKeyEvent, QFont
+from datetime import datetime
+import re
+import threading
+
+# TinyLM integration for AI responses
+from affilabs.widgets.spark_tinylm import SparkTinyLM
+
+# Text-to-Speech integration
+try:
+    import pyttsx3
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+
+
+class QuestionInput(QTextEdit):
+    """Text input that submits on Ctrl+Enter."""
+
+    submit_requested = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setPlaceholderText("Type your question... (Ctrl+Enter to send)")
+        self.setMaximumHeight(80)
+        self.setStyleSheet("""
+            QTextEdit {
+                background: white;
+                border: 2px solid #E5E5EA;
+                border-radius: 10px;
+                padding: 12px;
+                font-size: 14px;
+                font-family: -apple-system, 'Segoe UI', sans-serif;
+            }
+            QTextEdit:focus {
+                border: 2px solid #007AFF;
+            }
+        """)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        """Handle Ctrl+Enter to submit."""
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                self.submit_requested.emit()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+
+class MessageBubble(QFrame):
+    """Chat bubble for questions and answers."""
+
+    feedback_given = Signal(str)  # 'helpful' or 'not_helpful'
+
+    def __init__(self, text: str, is_user: bool = True, is_thinking: bool = False, parent=None):
+        super().__init__(parent)
+        self.is_user = is_user
+        self.is_thinking = is_thinking
+
+        # Styling - both aligned left with different colors
+        if is_user:
+            bg_color = "#E3F2FD"
+            text_color = "#1565C0"
+        elif is_thinking:
+            bg_color = "#FFF9C4"
+            text_color = "#F57F17"
+        else:
+            bg_color = "#F5F5F5"
+            text_color = "#212121"
+
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: {bg_color};
+                border-radius: 16px;
+                margin: 0px;
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(8)
+
+        # Message text
+        self.label = QLabel(text)
+        self.label.setWordWrap(True)
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        label_style = f"""
+            color: {text_color};
+            font-size: 14px;
+            font-family: -apple-system, 'Segoe UI', sans-serif;
+            background: transparent;
+            line-height: 1.5;
+        """
+
+        # Add italic style for thinking
+        if is_thinking:
+            label_style += "font-style: italic;"
+
+        self.label.setStyleSheet(label_style)
+        self.label.setMinimumHeight(20)
+        layout.addWidget(self.label)
+
+        # Bottom row: timestamp and feedback (for AI responses only)
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setSpacing(12)
+
+        # Timestamp (not shown for thinking bubble)
+        if not is_thinking:
+            timestamp = datetime.now().strftime("%H:%M")
+            time_label = QLabel(timestamp)
+            time_label.setStyleSheet(f"""
+                color: {text_color};
+                font-size: 10px;
+                opacity: 0.5;
+                background: transparent;
+            """)
+            bottom_layout.addWidget(time_label)
+
+        # Feedback buttons (only for AI responses)
+        if not is_user and not is_thinking:
+            bottom_layout.addStretch()
+
+            # Thumbs up button
+            self.thumbs_up_btn = QPushButton("👍")
+            self.thumbs_up_btn.setFixedSize(28, 28)
+            self.thumbs_up_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.thumbs_up_btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 14px;
+                    font-size: 14px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background: #E8F5E9;
+                    border: 1px solid #4CAF50;
+                }
+                QPushButton:pressed {
+                    background: #C8E6C9;
+                }
+            """)
+            self.thumbs_up_btn.clicked.connect(lambda: self._on_feedback("helpful"))
+            bottom_layout.addWidget(self.thumbs_up_btn)
+
+            # Thumbs down button
+            self.thumbs_down_btn = QPushButton("👎")
+            self.thumbs_down_btn.setFixedSize(28, 28)
+            self.thumbs_down_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.thumbs_down_btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 14px;
+                    font-size: 14px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background: #FFEBEE;
+                    border: 1px solid #F44336;
+                }
+                QPushButton:pressed {
+                    background: #FFCDD2;
+                }
+            """)
+            self.thumbs_down_btn.clicked.connect(lambda: self._on_feedback("not_helpful"))
+            bottom_layout.addWidget(self.thumbs_down_btn)
+
+        layout.addLayout(bottom_layout)
+
+        # Set size policies to allow proper expansion
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        self.setMaximumWidth(650)
+        self.setMinimumHeight(50)
+
+    def update_text(self, text: str):
+        """Update the bubble text (for replacing thinking bubble with answer)."""
+        self.label.setText(text)
+
+    def _on_feedback(self, feedback: str):
+        """Handle feedback button click."""
+        # Disable both buttons after feedback
+        if hasattr(self, 'thumbs_up_btn'):
+            self.thumbs_up_btn.setEnabled(False)
+            self.thumbs_down_btn.setEnabled(False)
+
+        # Emit signal
+        self.feedback_given.emit(feedback)
+
+
+class SparkHelpWidget(QWidget):
+    """Main Spark AI assistant widget."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        # Initialize TinyLM lazily (will only load when first AI question is asked)
+        self.tinylm = None
+        self.use_ai = True  # Toggle for AI vs pattern matching
+        
+        # TTS setup (Zira voice)
+        self.tts_enabled = True  # Start with TTS on
+        self.tts_engine = None
+        if TTS_AVAILABLE:
+            try:
+                self.tts_engine = pyttsx3.init()
+                # Select Zira voice (female)
+                voices = self.tts_engine.getProperty('voices')
+                for voice in voices:
+                    if 'Zira' in voice.name:
+                        self.tts_engine.setProperty('voice', voice.id)
+                        break
+                self.tts_engine.setProperty('rate', 175)  # Slightly slower for clarity
+            except Exception as e:
+                print(f"TTS initialization failed: {e}")
+                self.tts_engine = None
+        
+        self._setup_ui()
+        self._setup_knowledge_base()
+
+    def _setup_ui(self):
+        """Create the UI layout."""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+        
+        # Header with TTS toggle
+        header_container = QFrame()
+        header_container.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-bottom: 1px solid #E5E5EA;
+            }
+        """)
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(16, 16, 16, 16)
+        header_layout.setSpacing(12)
+        
+        header = QLabel("⚡ Spark AI Assistant")
+        header.setStyleSheet("""
+            QLabel {
+                font-size: 20px;
+                font-weight: 700;
+                color: #1D1D1F;
+                background: transparent;
+                border: none;
+            }
+        """)
+        header_layout.addWidget(header)
+        header_layout.addStretch()
+        
+        # TTS toggle button (speaker icon)
+        if TTS_AVAILABLE and self.tts_engine:
+            self.tts_button = QPushButton("🔊")
+            self.tts_button.setFixedSize(32, 32)
+            self.tts_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.tts_button.setToolTip("Mute Spark voice")
+            self.tts_button.setStyleSheet("""
+                QPushButton {
+                    background: #F5F5F5;
+                    border: none;
+                    border-radius: 16px;
+                    font-size: 16px;
+                }
+                QPushButton:hover {
+                    background: #E5E5EA;
+                }
+            """)
+            self.tts_button.clicked.connect(self._toggle_tts)
+            header_layout.addWidget(self.tts_button)
+        
+        layout.addWidget(header_container)
+
+        # Chat history scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background: white;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 8px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #D1D1D6;
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #A1A1A6;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
+
+        self.chat_container = QWidget()
+        self.chat_layout = QVBoxLayout(self.chat_container)
+        self.chat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.chat_layout.setSpacing(12)
+        self.chat_layout.setContentsMargins(8, 8, 8, 8)
+
+        # Ensure content stays at top, not centered
+        from PySide6.QtWidgets import QSizePolicy
+        self.chat_container.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+
+        scroll.setWidget(self.chat_container)
+        layout.addWidget(scroll, 1)
+
+        # Store scroll area reference for scrolling
+        self.scroll_area = scroll
+
+        # Input area
+        input_container = QFrame()
+        input_container.setStyleSheet("""
+            QFrame {
+                background: #FAFAFA;
+                border-radius: 12px;
+                border: 1px solid #E5E5EA;
+            }
+        """)
+        input_layout = QVBoxLayout(input_container)
+        input_layout.setContentsMargins(12, 12, 12, 12)
+        input_layout.setSpacing(10)
+
+        self.question_input = QuestionInput()
+        self.question_input.submit_requested.connect(self._handle_question)
+        input_layout.addWidget(self.question_input)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(8)
+
+        # Clear chat button
+        clear_btn = QPushButton("Clear Chat")
+        clear_btn.setFixedSize(100, 36)
+        clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background: #F2F2F7;
+                color: #8E8E93;
+                border: none;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #E5E5EA;
+                color: #636366;
+            }
+            QPushButton:pressed {
+                background: #D1D1D6;
+            }
+        """)
+        clear_btn.clicked.connect(self._clear_chat)
+        button_layout.addWidget(clear_btn)
+
+        button_layout.addStretch()
+
+        self.send_btn = QPushButton("Send")
+        self.send_btn.setFixedSize(100, 36)
+        self.send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.send_btn.setStyleSheet("""
+            QPushButton {
+                background: #007AFF;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #0051D5;
+            }
+            QPushButton:pressed {
+                background: #004DB8;
+            }
+        """)
+        self.send_btn.clicked.connect(self._handle_question)
+        button_layout.addWidget(self.send_btn)
+
+        input_layout.addLayout(button_layout)
+        layout.addWidget(input_container)
+
+        # Welcome message
+        self._add_welcome_message()
+
+    def _setup_knowledge_base(self):
+        """Initialize knowledge base with common Q&A pairs."""
+        self.knowledge_base = {
+            # Power On and Startup
+            r"power.*on|start.*system|startup.*procedure|turn.*on": {
+                "answer": "**Power On Procedure:**\n1. Press the 'Power On' button (top right corner)\n2. System will check for hardware connection\n3. If hardware not found, check USB connections\n4. Click 'Start' in the Startup Calibration popup\n5. Wait 1-2 minutes for calibration to complete\n6. Review the QC Report\n7. Close and press 'Start' to begin live acquisition\n\n💡 The system starts in Auto-Read mode. To record data, build a method and press 'Record'.",
+                "category": "startup"
+            },
+            r"calibration.*fail|startup.*calibration|qc.*report": {
+                "answer": "**Startup Calibration:**\n• Takes 1-2 minutes to complete\n• Review QC Report for any warnings\n• If calibration fails:\n  - Ensure no flow path obstructions\n  - Check reagents are loaded properly\n  - Verify detector connection\n  - Try power cycling the device\n\nAfter successful calibration, you can start live acquisition.",
+                "category": "startup"
+            },
+            r"auto.*read.*mode|how.*to.*record|save.*data.*live": {
+                "answer": "**Recording Data:**\nThe system starts in Auto-Read Mode (displays data but doesn't save).\n\nTo record data:\n1. Go to 'Method' tab in sidebar\n2. Build your experimental method\n3. Press 'Record' when ready\n4. Data will be saved according to your method\n\nYou can view live data without recording at any time.",
+                "category": "startup"
+            },
+            r"hardware.*not.*found|cannot.*find.*hardware|device.*not.*connected": {
+                "answer": "**Hardware Connection Issues:**\n1. Check USB cable connections (both ends)\n2. Verify device power supply is on\n3. Try a different USB port (USB 3.0 preferred)\n4. Check Windows Device Manager for driver issues\n5. Restart the software\n6. Power cycle the device\n\nIf the problem persists, contact technical support.",
+                "category": "startup"
+            },
+
+            # Basic operations
+            r"how.*start.*acquisition|begin.*recording": {
+                "answer": "To start acquisition:\n1. Click 'Live' tab in the main area\n2. Ensure detector is connected (check Device Status tab)\n3. Click the green 'Start' button\n4. Data will begin streaming in real-time",
+                "category": "basic"
+            },
+            r"how.*stop.*acquisition|end.*recording": {
+                "answer": "To stop acquisition, click the red 'Stop' button in the Live tab. You can also use the keyboard shortcut Ctrl+S.",
+                "category": "basic"
+            },
+            r"export.*data|save.*data|download.*data": {
+                "answer": "To export data:\n1. Go to the 'Export' tab in the sidebar\n2. Select your desired format (Excel, CSV, or AnIML)\n3. Choose cycles to export\n4. Click 'Export' button\n5. Choose save location",
+                "category": "export"
+            },
+
+            # Hardware
+            r"detector.*not.*found|can't.*find.*detector|no.*detector": {
+                "answer": "Detector connection troubleshooting:\n1. Check USB cable is firmly connected\n2. Open 'Device Status' tab to see connection status\n3. Try clicking 'Scan for Devices'\n4. Check Windows Device Manager for driver issues\n5. Try a different USB port (USB 3.0 preferred)",
+                "category": "hardware"
+            },
+            # === CALIBRATION (Comprehensive) ===
+            r"what.*calibrations|calibration.*types|how.*many.*calibrations": {
+                "answer": "**ezControl has 5 calibration types:**\n\n"
+                "1. **Simple LED** (10-20 sec) - Quick sensor swap\n"
+                "2. **Full System** (3-5 min) - Complete calibration with QC\n"
+                "3. **Polarizer** (2-5 min) - Servo position optimization\n"
+                "4. **OEM LED** (10-15 min) - Factory-level calibration\n"
+                "5. **LED Model Training** (2-5 min) - Rebuild optical model\n\n"
+                "📍 All found in: Settings Tab → Calibration Controls\n\n"
+                "💡 For details, see CALIBRATION_GUIDE.md",
+                "category": "calibration"
+            },
+            r"simple.*calibration|simple.*led|quick.*calibration": {
+                "answer": "**Simple LED Calibration** (10-20 seconds)\n\n"
+                "**When to use:** Sensor swap (same type), quick LED adjustment\n\n"
+                "**Requirements:** LED model must already exist\n\n"
+                "**How to run:**\n"
+                "1. Settings tab → Calibration Controls\n"
+                "2. Click 'Run Simple Calibration'\n"
+                "3. Wait 10-20 seconds\n"
+                "4. Graphs clear, live data resumes\n\n"
+                "⚠️ If 'LED model not found' error → Run OEM Calibration first",
+                "category": "calibration"
+            },
+            r"full.*calibration|complete.*calibration|6.*step": {
+                "answer": "**Full System Calibration** (3-5 minutes)\n\n"
+                "**6 Steps:**\n"
+                "1. Dark reference\n"
+                "2. S-mode convergence\n"
+                "3. S-mode reference\n"
+                "4. P-mode convergence\n"
+                "5. P-mode reference\n"
+                "6. QC validation\n\n"
+                "**How to run:**\n"
+                "1. Settings tab → Calibration Controls\n"
+                "2. Click 'Run Full Calibration'\n"
+                "3. Click 'Start' in dialog\n"
+                "4. Wait 3-5 minutes\n"
+                "5. Review QC Report\n"
+                "6. Click 'Start' to begin live data\n\n"
+                "✅ Use for: sensor swaps, monthly QC, after maintenance",
+                "category": "calibration"
+            },
+            r"polarizer.*calibration|servo.*calibration|calibrate.*polarizer": {
+                "answer": "**Polarizer Calibration** (2-5 minutes)\n\n"
+                "**Purpose:** Find optimal servo positions for S and P modes\n\n"
+                "**Process:**\n"
+                "• Sweeps servo across 180° range\n"
+                "• Finds positions ~90° apart with best signal\n"
+                "• Saves to device_config.json\n\n"
+                "**How to run:**\n"
+                "1. Settings tab → Calibration Controls\n"
+                "2. Click 'Calibrate Polarizer'\n"
+                "3. Wait 2-5 minutes\n"
+                "4. Positions saved, live data resumes\n\n"
+                "✅ Use when: signal drops, servo replaced, positions incorrect",
+                "category": "calibration"
+            },
+            r"oem.*calibration|factory.*calibration|complete.*calibration": {
+                "answer": "**OEM LED Calibration** (10-15 minutes)\n\n"
+                "**Most complete calibration - 3 phases:**\n"
+                "1. Servo Polarizer Calibration (2-5 min)\n"
+                "2. LED Model Training (2-5 min)\n"
+                "3. Full 6-Step Calibration (3-5 min)\n\n"
+                "**How to run:**\n"
+                "1. Settings tab → Calibration Controls\n"
+                "2. Click 'Run OEM Calibration'\n"
+                "3. Click 'Start' in dialog\n"
+                "4. Wait 10-15 minutes (grab coffee ☕)\n"
+                "5. Review QC Report\n"
+                "6. Click 'Start' to begin live data\n\n"
+                "✅ Use for: first-time setup, LED model missing, complete reset\n"
+                "❌ Don't use for: quick sensor swaps (use Simple LED instead)",
+                "category": "calibration"
+            },
+            r"led.*model.*training|train.*led|optical.*model": {
+                "answer": "**LED Model Training** (2-5 minutes)\n\n"
+                "**Purpose:** Rebuild optical model only (no full calibration)\n\n"
+                "**Process:**\n"
+                "• Tests LED response at 10-60ms integration times\n"
+                "• Creates 3-stage linear model\n"
+                "• Saves optical_calibration.json\n\n"
+                "**How to run:**\n"
+                "1. Settings tab → Calibration Controls\n"
+                "2. Click 'Train LED Model'\n"
+                "3. Click 'Start'\n"
+                "4. Wait 2-5 minutes\n"
+                "5. Model saved, live data resumes\n\n"
+                "✅ Use when: LED model missing, model seems incorrect\n"
+                "💡 Faster than OEM if you only need model (not servo positions)",
+                "category": "calibration"
+            },
+            r"startup.*calibration|daily.*calibration|power.*on.*calibration": {
+                "answer": "**Startup Calibration** (1-2 minutes)\n\n"
+                "**Runs automatically when you click 'Power On'**\n\n"
+                "**Process:**\n"
+                "1. Hardware connection check\n"
+                "2. Quick LED adjustment\n"
+                "3. Signal quality validation\n"
+                "4. QC Report shown\n\n"
+                "**If it fails:**\n"
+                "• Click 'Retry' (up to 3 attempts)\n"
+                "• OR click 'Continue Anyway' to troubleshoot manually\n\n"
+                "**Common fail causes:**\n"
+                "• Air bubbles in flow cell\n"
+                "• Hardware not warmed up\n"
+                "• Connection issues\n\n"
+                "💡 Allow 30-60 min warmup before first calibration of the day",
+                "category": "calibration"
+            },
+            r"calibration.*failed|retry.*calibration|calibration.*fail": {
+                "answer": "**Calibration Failed - Recovery Options:**\n\n"
+                "**During Startup Calibration:**\n"
+                "• Click **'Retry'** - Try again (up to 3 attempts)\n"
+                "• Click **'Continue Anyway'** - Skip and troubleshoot\n\n"
+                "**Common Causes:**\n"
+                "✅ Air bubbles → Purge system, retry\n"
+                "✅ Not warmed up → Wait 30-60 min, retry\n"
+                "✅ Hardware issue → Check Device Status tab\n"
+                "✅ LED model missing → Run OEM Calibration\n\n"
+                "**Manual Fix:**\n"
+                "1. Click 'Continue Anyway'\n"
+                "2. Go to Settings tab\n"
+                "3. Run Full System Calibration manually\n\n"
+                "If fails 3+ times → Check logs, contact support",
+                "category": "calibration"
+            },
+            r"when.*calibrate|which.*calibration|calibration.*use": {
+                "answer": "**Which Calibration to Use:**\n\n"
+                "**Sensor swap (same type):**\n→ Simple LED Calibration (10-20 sec)\n\n"
+                "**Sensor swap (different type):**\n→ Full System Calibration (3-5 min)\n\n"
+                "**First-time setup:**\n→ OEM LED Calibration (10-15 min)\n\n"
+                "**LED model missing:**\n→ LED Model Training (2-5 min)\n\n"
+                "**Polarizer positions wrong:**\n→ Polarizer Calibration (2-5 min)\n\n"
+                "**Daily startup:**\n→ Automatic (runs on Power On)\n\n"
+                "**Monthly QC:**\n→ OEM LED Calibration (10-15 min)\n\n"
+                "All calibrations: Settings tab → Calibration Controls",
+                "category": "calibration"
+            },
+            r"led.*model.*not.*found|optical.*calibration.*missing": {
+                "answer": "**Error: 'LED model not found'**\n\n"
+                "**Cause:** optical_calibration.json is missing\n\n"
+                "**Solution - Two options:**\n\n"
+                "**Option 1: Quick (2-5 min)**\n"
+                "• Settings → Calibration Controls\n"
+                "• Click 'Train LED Model'\n"
+                "• Creates model only\n\n"
+                "**Option 2: Complete (10-15 min)**\n"
+                "• Settings → Calibration Controls\n"
+                "• Click 'Run OEM Calibration'\n"
+                "• Creates model + calibrates servo + full calibration\n\n"
+                "💡 First-time setup? → Use Option 2 (OEM)\n"
+                "💡 Just need model? → Use Option 1 (Training)",
+                "category": "calibration"
+            },
+            r"calibration.*freeze|calibration.*hang|calibration.*stuck": {
+                "answer": "**Calibration Freezing/Hanging:**\n\n"
+                "**Immediate action:**\n"
+                "• Wait 5 minutes first (some steps take time)\n"
+                "• If still frozen → Close software\n"
+                "• Restart ezControl\n"
+                "• Try calibration again\n\n"
+                "**Prevention:**\n"
+                "✅ Ensure stable hardware connection\n"
+                "✅ Allow 30-60 min warmup\n"
+                "✅ Check for air bubbles before starting\n"
+                "✅ Don't change settings during calibration\n\n"
+                "**If persists:**\n"
+                "• Check logs/ folder for errors\n"
+                "• Try different calibration type\n"
+                "• Contact support with log file",
+                "category": "calibration"
+            },
+            r"qc.*report|quality.*control|calibration.*qc": {
+                "answer": "**QC Report (Quality Control)**\n\n"
+                "**Shown after Full/OEM calibrations**\n\n"
+                "**Validates:**\n"
+                "✅ Signal strength above minimum\n"
+                "✅ LED convergence successful\n"
+                "✅ Baseline stability good\n"
+                "✅ Reference spectra quality\n"
+                "✅ No detector saturation\n\n"
+                "**If warnings appear:**\n"
+                "⚠️ Signal low → Check prism, LEDs, detector\n"
+                "⚠️ Baseline drift → Allow more warmup\n"
+                "⚠️ Slow convergence → May need LED retraining\n\n"
+                "**Best practice:**\n"
+                "• Save QC reports to file\n"
+                "• Track trends over time\n"
+                "• Document any warnings",
+                "category": "calibration"
+            },
+            r"sensor.*swap|replace.*sensor|change.*sensor": {
+                "answer": "**Sensor Swap Calibration Workflow:**\n\n"
+                "**Same sensor type (e.g., gold to gold):**\n"
+                "1. Install new sensor with buffer\n"
+                "2. Settings → 'Run Simple Calibration' (10-20 sec)\n"
+                "3. Start acquisition ✅\n\n"
+                "**Different sensor type (e.g., gold to graphene):**\n"
+                "1. Install new sensor with buffer\n"
+                "2. Settings → 'Run Full Calibration' (3-5 min)\n"
+                "3. Review QC Report\n"
+                "4. Start acquisition ✅\n\n"
+                "**Major sensor change:**\n"
+                "1. Install new sensor\n"
+                "2. Settings → 'Run OEM Calibration' (10-15 min)\n"
+                "3. Thoroughly review QC\n"
+                "4. Validate with test samples ✅\n\n"
+                "⚠️ Critical: No air bubbles!",
+                "category": "calibration"
+            },
+            r"calibration.*best.*practice|calibration.*tips": {
+                "answer": "**Calibration Best Practices:**\n\n"
+                "**Before calibration:**\n"
+                "✅ Clean prism/sensor\n"
+                "✅ Fresh buffer (no bubbles!)\n"
+                "✅ Allow warmup (30-60 min ideal)\n"
+                "✅ Check Device Status tab\n"
+                "✅ Stable baseline\n\n"
+                "**During calibration:**\n"
+                "❌ Don't disturb system\n"
+                "❌ Don't change settings\n"
+                "❌ Don't run other operations\n"
+                "✅ Monitor progress dialog\n\n"
+                "**After calibration:**\n"
+                "✅ Review QC Report\n"
+                "✅ Verify sensorgram looks good\n"
+                "✅ Document any issues\n\n"
+                "**Schedule:**\n"
+                "• Daily: Startup calibration (auto)\n"
+                "• Weekly: Full System Calibration\n"
+                "• Monthly: OEM LED Calibration",
+                "category": "calibration"
+            },
+
+            # === PUMP & FLOW CONTROL (Comprehensive) ===
+            r"pump.*types|which.*pump|pump.*configuration": {
+                "answer": "**ezControl supports 2 pump configurations:**\n\n"
+                "**1. AffiPump (External Syringe Pumps)**\n"
+                "• Hardware: 2× Tecan Cavro Centris syringe pumps\n"
+                "• Volume: 1000 µL per syringe (precision)\n"
+                "• Type: Volume-based (aspirate/dispense)\n"
+                "• Flow: 0.001 - 24,000 µL/min\n"
+                "• Use: Precise volume injections, titrations\n\n"
+                "**2. P4PROPLUS (Internal Peristaltic)**\n"
+                "• Hardware: 3 peristaltic pumps (integrated)\n"
+                "• Type: Continuous flow (RPM-based)\n"
+                "• RPM: 5 - 220 RPM\n"
+                "• Use: Continuous buffer flow, kinetics\n\n"
+                "📍 Location: Flow tab in sidebar",
+                "category": "pump"
+            },
+            r"how.*pump|use.*pump|pump.*control|start.*pump": {
+                "answer": "**Pump Control - Flow Tab:**\n\n"
+                "**AffiPump (Syringe Pumps):**\n"
+                "1. Flow tab → Set flow rate (µL/min)\n"
+                "2. Choose pump: KC1, KC2, or Both\n"
+                "3. Click 'Run Buffer' for continuous flow\n"
+                "4. Click 'Stop' when done\n\n"
+                "**P4PROPLUS (Peristaltic):**\n"
+                "1. Flow tab → Set RPM (5-220)\n"
+                "2. Choose channel: Pump 1, Pump 2, or Both\n"
+                "3. Click 'Start' to begin flow\n"
+                "4. Adjust RPM while running (live updates)\n"
+                "5. Click 'Stop' when done\n\n"
+                "⚠️ Emergency Stop: Red button stops all pumps immediately",
+                "category": "pump"
+            },
+            r"prime.*pump|pump.*priming|how.*prime": {
+                "answer": "**Pump Priming (AffiPump):**\n\n"
+                "**Purpose:** Fill pumps and tubing with buffer\n\n"
+                "**Steps:**\n"
+                "1. Flow tab → Click 'Prime Pump'\n"
+                "2. Default: 6 cycles × 1000 µL\n"
+                "3. Takes ~2-3 minutes\n"
+                "4. Valves open progressively:\n"
+                "   - Cycles 1-2: Pump priming\n"
+                "   - Cycles 3-4: Sample loop priming\n"
+                "   - Cycles 5-6: Full path priming\n\n"
+                "✅ Removes air bubbles\n"
+                "✅ Establishes buffer flow\n"
+                "✅ Auto-detects blockages\n\n"
+                "⚠️ Always prime before first experiment of the day!",
+                "category": "pump"
+            },
+            r"cleanup.*pump|pump.*cleanup|remove.*bubbles": {
+                "answer": "**Pump Cleanup (AffiPump):**\n\n"
+                "**Purpose:** Remove air bubbles and contaminants\n\n"
+                "**Two-Phase Process:**\n"
+                "1. **Pulse Phase:** 10 rapid cycles (200 µL)\n"
+                "   - Dislodges stubborn bubbles\n"
+                "   - Fast aspirate/dispense\n\n"
+                "2. **Prime Phase:** 6 standard cycles (1000 µL)\n"
+                "   - Flushes entire system\n"
+                "   - Opens all valves progressively\n\n"
+                "**How to run:**\n"
+                "1. Flow tab → Click 'Cleanup'\n"
+                "2. Takes ~3-4 minutes\n"
+                "3. Check for bubbles in tubing\n\n"
+                "Use when: Air bubbles visible, after maintenance, baseline noisy",
+                "category": "pump"
+            },
+            r"pump.*flush|flush.*pump|flush.*system": {
+                "answer": "**Pump Flush:**\n\n"
+                "**Purpose:** Rapid system flush (faster than prime)\n\n"
+                "**Steps:**\n"
+                "1. Flow tab → Click 'Flush'\n"
+                "2. Homes pumps first (safety)\n"
+                "3. Runs 2-3 rapid cycles\n"
+                "4. Takes ~1 minute\n\n"
+                "**When to use:**\n"
+                "✅ Quick flush between samples\n"
+                "✅ Change buffer type\n"
+                "✅ Remove residual sample\n\n"
+                "**Not for:**\n"
+                "❌ Removing air bubbles (use Cleanup)\n"
+                "❌ First startup (use Prime)",
+                "category": "pump"
+            },
+            r"pump.*home|home.*pump|initialize.*pump": {
+                "answer": "**Home Pumps (AffiPump):**\n\n"
+                "**Purpose:** Return syringe plungers to zero position\n\n"
+                "**Steps:**\n"
+                "1. Flow tab → Click 'Home Pumps'\n"
+                "2. Both KC1 and KC2 plungers retract\n"
+                "3. Takes ~10-20 seconds\n\n"
+                "**When to home:**\n"
+                "✅ Before pump operations (auto-done)\n"
+                "✅ After errors or blockages\n"
+                "✅ System initialization\n"
+                "✅ Before switching samples\n\n"
+                "**Safety:** Pumps auto-home if blockage detected",
+                "category": "pump"
+            },
+            r"pump.*blocked|blockage|pump.*error": {
+                "answer": "**Pump Blockage Detection:**\n\n"
+                "**How it works:**\n"
+                "• Monitors completion time for KC1 and KC2\n"
+                "• If time difference > 1.5 sec → blockage detected\n"
+                "• Reports which pump is blocked\n"
+                "• Auto-homes plungers and aborts\n\n"
+                "**If pump blocked:**\n"
+                "1. ⚠️ **Don't force it!**\n"
+                "2. Check tubing for kinks/clogs\n"
+                "3. Verify valve positions\n"
+                "4. Remove blockage source\n"
+                "5. Click 'Home Pumps'\n"
+                "6. Run 'Prime Pump' to test\n\n"
+                "**Common causes:**\n"
+                "• Kinked tubing\n"
+                "• Clogged filter\n"
+                "• Closed valve\n"
+                "• Empty reservoir",
+                "category": "pump"
+            },
+            r"30.*second.*injection|contact.*time|timed.*injection": {
+                "answer": "**30-Second Contact Time Injection:**\n\n"
+                "**Purpose:** Precise timed sample delivery\n\n"
+                "**Workflow:**\n"
+                "1. Start pump at desired flow rate\n"
+                "2. Click '30s Inject' button\n"
+                "3. Valve opens (sample flows to sensor)\n"
+                "4. Wait 30 seconds (contact time)\n"
+                "5. Valve auto-closes (buffer continues)\n\n"
+                "**Valve Sync:**\n"
+                "• Sync OFF: Only KC1 valve opens\n"
+                "• Sync ON: Both KC1 & KC2 open\n\n"
+                "**Use for:**\n"
+                "✅ Kinetic binding measurements\n"
+                "✅ Association phase timing\n"
+                "✅ Reproducible sample delivery\n\n"
+                "📍 Location: Flow tab → Inject section",
+                "category": "pump"
+            },
+            r"valve.*control|6.*port.*valve|3.*way.*valve": {
+                "answer": "**Valve System:**\n\n"
+                "**1. 6-Port Valves (KC1 & KC2)**\n"
+                "• Function: Sample injection control\n"
+                "• Positions:\n"
+                "  - LOAD (0): Sample loop isolated\n"
+                "  - INJECT (1): Sample flows to sensor\n"
+                "• Use: Volume-based injections\n\n"
+                "**2. 3-Way Valves (KC1 & KC2)**\n"
+                "• Function: Channel routing\n"
+                "• Positions:\n"
+                "  - CLOSED (0): KC1→A, KC2→C\n"
+                "  - OPEN (1): KC1→B, KC2→D\n"
+                "• Use: Multi-channel experiments\n\n"
+                "**Auto-Control:**\n"
+                "• Valves open/close automatically during operations\n"
+                "• Manual control in Advanced mode\n"
+                "• Safety timeout prevents stuck-open valves",
+                "category": "pump"
+            },
+            r"channel.*routing|channel.*a.*b.*c.*d|sensor.*channels": {
+                "answer": "**Channel Routing with 3-Way Valves:**\n\n"
+                "**4 Sensor Channels Available:**\n\n"
+                "**KC1 (Pump 1):**\n"
+                "• 3-way CLOSED → Channel A (reference)\n"
+                "• 3-way OPEN → Channel B (sample)\n\n"
+                "**KC2 (Pump 2):**\n"
+                "• 3-way CLOSED → Channel C (reference)\n"
+                "• 3-way OPEN → Channel D (sample)\n\n"
+                "**Typical Setup:**\n"
+                "• Channel A: Buffer reference (KC1)\n"
+                "• Channel B: Sample 1 (KC1)\n"
+                "• Channel C: Buffer reference (KC2)\n"
+                "• Channel D: Sample 2 (KC2)\n\n"
+                "✅ Enables parallel experiments\n"
+                "✅ Reference-corrected measurements",
+                "category": "pump"
+            },
+            r"flow.*rate|set.*flow|pump.*speed": {
+                "answer": "**Setting Flow Rate:**\n\n"
+                "**AffiPump (Syringe):**\n"
+                "• Range: 0.001 - 24,000 µL/min\n"
+                "• Typical: 50-200 µL/min for experiments\n"
+                "• Set in Flow tab → Flow rate spinbox\n"
+                "• Precision: ±1% accuracy\n\n"
+                "**P4PROPLUS (Peristaltic):**\n"
+                "• Range: 5 - 220 RPM\n"
+                "• Set in Flow tab → RPM spinbox\n"
+                "• Live updates: Change RPM while running\n"
+                "• Correction factor: Compensates for tubing wear\n\n"
+                "**Recommendations:**\n"
+                "• Binding studies: 50-100 µL/min\n"
+                "• Washing: 200-500 µL/min\n"
+                "• Priming: 1000-5000 µL/min",
+                "category": "pump"
+            },
+            r"rpm.*correction|pump.*correction|correction.*factor": {
+                "answer": "**RPM Correction Factor (P4PROPLUS):**\n\n"
+                "**Purpose:** Compensate for tubing wear/calibration drift\n\n"
+                "**How it works:**\n"
+                "```\n"
+                "Actual RPM = Base RPM × Correction Factor\n"
+                "```\n\n"
+                "**Example:**\n"
+                "• Base RPM: 100\n"
+                "• Correction: 1.05\n"
+                "• Actual RPM sent: 105\n\n"
+                "**When to adjust:**\n"
+                "• Flow rate seems too slow → Increase factor (1.05)\n"
+                "• Flow rate seems too fast → Decrease factor (0.95)\n"
+                "• After tubing replacement → Reset to 1.00\n\n"
+                "**Default:** 1.00 (no correction)\n"
+                "**Range:** 0.50 - 2.00\n\n"
+                "📍 Location: Flow tab → Correction spinbox",
+                "category": "pump"
+            },
+            r"pump.*emergency.*stop|emergency.*stop|stop.*pump": {
+                "answer": "**Emergency Pump Stop:**\n\n"
+                "**How to stop:**\n"
+                "1. Click red 'Emergency Stop' button\n"
+                "2. OR click regular 'Stop' button\n"
+                "3. All pumps halt immediately\n\n"
+                "**What happens:**\n"
+                "✅ All pumps stop\n"
+                "✅ Valves remain in current position\n"
+                "✅ Flow rate settings preserved\n"
+                "✅ Safe to restart after checking system\n\n"
+                "**When to use:**\n"
+                "• Leak detected\n"
+                "• Air bubble entering sensor\n"
+                "• Abnormal noise/vibration\n"
+                "• System malfunction\n\n"
+                "**After emergency stop:**\n"
+                "1. Check for issues (leaks, blockages)\n"
+                "2. Fix problem\n"
+                "3. Run 'Prime Pump' to resume",
+                "category": "pump"
+            },
+            r"pump.*troubleshoot|pump.*not.*working|pump.*issue": {
+                "answer": "**Pump Troubleshooting:**\n\n"
+                "**Pump won't start:**\n"
+                "• Check hardware connection (Device Status)\n"
+                "• Verify COM port (AffiPump: COM8)\n"
+                "• Try 'Home Pumps' first\n"
+                "• Restart software if needed\n\n"
+                "**No flow detected:**\n"
+                "• Check tubing connections\n"
+                "• Verify valves opening (check LED/status)\n"
+                "• Run 'Prime Pump' to establish flow\n"
+                "• Check for air bubbles (run 'Cleanup')\n\n"
+                "**Erratic flow:**\n"
+                "• Air bubbles → Run 'Cleanup'\n"
+                "• Kinked tubing → Straighten\n"
+                "• Empty reservoir → Refill\n"
+                "• Adjust correction factor (peristaltic)\n\n"
+                "**Blockage error:**\n"
+                "• Check tubing for kinks/clogs\n"
+                "• Verify valve positions\n"
+                "• Run 'Home Pumps'\n"
+                "• Clear blockage, then 'Prime Pump'",
+                "category": "pump"
+            },
+            r"pump.*best.*practice|pump.*maintenance": {
+                "answer": "**Pump Best Practices:**\n\n"
+                "**Daily Routine:**\n"
+                "✅ Prime pumps at start of day\n"
+                "✅ Check for air bubbles in tubing\n"
+                "✅ Verify flow is smooth and consistent\n"
+                "✅ Run cleanup if bubbles present\n\n"
+                "**After Each Experiment:**\n"
+                "✅ Flush with buffer (remove sample)\n"
+                "✅ Return valves to LOAD position\n"
+                "✅ Stop pumps when not in use\n\n"
+                "**Weekly Maintenance:**\n"
+                "✅ Check tubing for wear/cracks\n"
+                "✅ Clean pump heads (peristaltic)\n"
+                "✅ Verify valve operation\n"
+                "✅ Test with water (no samples)\n\n"
+                "**Storage:**\n"
+                "✅ Store in buffer or 20% ethanol\n"
+                "✅ Never leave empty (cavitation risk)\n"
+                "✅ Home pumps before shutdown",
+                "category": "pump"
+            },
+
+            # Cycles and methods
+            r"create.*cycle|new.*cycle|build.*cycle": {
+                "answer": "To create a cycle:\n1. Go to 'Method' tab in sidebar\n2. Enter cycle name and duration\n3. Add notes (optional)\n4. Click 'Add to Queue'\n5. Multiple cycles can be queued\n6. Click 'Start Queue' to execute",
+                "category": "method"
+            },
+            r"edit.*cycle|modify.*cycle": {
+                "answer": "To edit cycle data:\n1. Complete your run and stop acquisition\n2. Go to 'Edits' tab\n3. Load your saved Excel file\n4. Click on any cycle in the table\n5. Use the 'Cycle Details & Editing' panel to adjust boundaries and settings",
+                "category": "method"
+            },
+
+            # Analysis
+            r"baseline.*drift|baseline.*unstable": {
+                "answer": "For baseline drift issues:\n1. Allow 30-60 min warmup time\n2. Ensure temperature is stable\n3. Check for bubbles in flow cell\n4. Verify flow rate is consistent\n5. Consider capturing a new baseline in Settings tab\n6. Use baseline correction in Analysis tab",
+                "category": "analysis"
+            },
+
+            # General
+            r"keyboard.*shortcuts|hotkeys": {
+                "answer": "Useful keyboard shortcuts:\n• Ctrl+S: Stop acquisition\n• Ctrl+E: Export data\n• Ctrl+Z: Undo (in Method builder)\n• Ctrl+Shift+Z: Redo\n• F5: Refresh detector connection",
+                "category": "general"
+            },
+        }
+
+    def _add_welcome_message(self):
+        """Add welcome message to chat."""
+        welcome = MessageBubble(
+            "👋 Hi! I'm Spark, your Affilabs.core assistant. Ask me anything about:\n\n"
+            "• Power on and startup procedures\n"
+            "• Starting and stopping acquisitions\n"
+            "• Recording and exporting data\n"
+            "• Detector troubleshooting\n"
+            "• Pump and flow control\n"
+            "• Creating cycles and methods\n"
+            "• Baseline corrections\n\n"
+            "What would you like to know?",
+            is_user=False
+        )
+        self.chat_layout.addWidget(welcome, alignment=Qt.AlignmentFlag.AlignLeft)
+
+    def _clear_chat(self):
+        """Clear all messages and reset to welcome."""
+        # Remove all widgets except welcome
+        while self.chat_layout.count() > 0:
+            item = self.chat_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # Add fresh welcome message
+        self._add_welcome_message()
+
+    def _handle_question(self):
+        """Process user question and generate response."""
+        question = self.question_input.toPlainText().strip()
+
+        if not question:
+            return
+
+        # Clear input
+        self.question_input.clear()
+
+        # Add user question bubble
+        user_bubble = MessageBubble(question, is_user=True)
+        self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Add "thinking" indicator
+        thinking_bubble = MessageBubble("💭 Thinking...", is_user=False, is_thinking=True)
+        self.chat_layout.addWidget(thinking_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+        self._thinking_bubble = thinking_bubble  # Store reference
+
+        # Scroll to show thinking bubble
+        QTimer.singleShot(50, self._scroll_to_bottom)
+
+        # Generate answer after short delay (to show thinking bubble)
+        QTimer.singleShot(150, lambda: self._add_answer(question))
+
+    def _add_answer(self, question: str):
+        """Find and display answer to question."""
+        answer_text = self._find_answer(question)
+
+        # Remove thinking bubble
+        if hasattr(self, '_thinking_bubble') and self._thinking_bubble:
+            self.chat_layout.removeWidget(self._thinking_bubble)
+            self._thinking_bubble.deleteLater()
+            self._thinking_bubble = None
+
+        # Add actual answer
+        answer_bubble = MessageBubble(answer_text, is_user=False)
+        self.chat_layout.addWidget(answer_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Speak the answer with Zira
+        self._speak_text(answer_text)
+
+        self._scroll_to_bottom()
+
+    def _find_answer(self, question: str) -> str:
+        """Match question to knowledge base or use AI."""
+        question_lower = question.lower()
+
+        # Try pattern matching first (fast, deterministic)
+        for pattern, response in self.knowledge_base.items():
+            if re.search(pattern, question_lower):
+                return response["answer"]
+
+        # If pattern matching fails, use TinyLM AI (lazy init)
+        if self.use_ai:
+            # Initialize TinyLM only when first needed
+            if self.tinylm is None:
+                self.tinylm = SparkTinyLM()
+
+            answer, success = self.tinylm.generate_answer(question)
+            if success:
+                return answer
+
+        # Default response (fallback)
+        return (
+            "I'm not sure about that specific question. Here are some things I can help with:\n\n"
+            "• Starting/stopping acquisitions\n"
+            "• Exporting and saving data\n"
+            "• Detector connection issues\n"
+            "• Pump controls and flow\n"
+            "• Creating and editing cycles\n"
+            "• Baseline corrections\n\n"
+            "Try rephrasing your question, or check the Help menu for documentation."
+        )
+    
+    def _toggle_tts(self):
+        """Toggle TTS on/off."""
+        self.tts_enabled = not self.tts_enabled
+        if hasattr(self, 'tts_button'):
+            if self.tts_enabled:
+                self.tts_button.setText("🔊")
+                self.tts_button.setToolTip("Mute Spark voice")
+            else:
+                self.tts_button.setText("🔇")
+                self.tts_button.setToolTip("Unmute Spark voice")
+    
+    def _speak_text(self, text: str):
+        """Speak text using TTS in background thread."""
+        if not self.tts_enabled or not self.tts_engine:
+            return
+        
+        # Remove markdown formatting for cleaner speech
+        clean_text = text.replace('**', '').replace('\n\n', '. ').replace('\n', '. ')
+        clean_text = clean_text.replace('•', '').replace('→', '')
+        clean_text = clean_text.replace('✅', '').replace('❌', '')
+        clean_text = clean_text.replace('⚠️', 'Warning:')
+        clean_text = clean_text.replace('💡', 'Tip:')
+        
+        def speak():
+            try:
+                self.tts_engine.say(clean_text)
+                self.tts_engine.runAndWait()
+            except Exception as e:
+                print(f"TTS error: {e}")
+        
+        # Run in background thread to avoid blocking UI
+        thread = threading.Thread(target=speak, daemon=True)
+        thread.start()
+
+    def _scroll_to_bottom(self):
+        """Scroll chat to bottom."""
+        scrollbar = self.scroll_area.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
+    
+    def _toggle_tts(self):
+        """Toggle TTS on/off."""
+        self.tts_enabled = not self.tts_enabled
+        if hasattr(self, 'tts_button'):
+            if self.tts_enabled:
+                self.tts_button.setText("🔊")
+                self.tts_button.setToolTip("Mute Spark voice")
+            else:
+                self.tts_button.setText("🔇")
+                self.tts_button.setToolTip("Unmute Spark voice")
+    
+    def _speak_text(self, text: str):
+        """Speak text using TTS in background thread."""
+        if not self.tts_enabled or not self.tts_engine:
+            return
+        
+        # Remove markdown formatting for cleaner speech
+        clean_text = text.replace('**', '').replace('\n\n', '. ').replace('\n', '. ')
+        clean_text = clean_text.replace('•', '').replace('→', '')
+        clean_text = clean_text.replace('✅', '').replace('❌', '')
+        clean_text = clean_text.replace('⚠️', 'Warning:')
+        clean_text = clean_text.replace('💡', 'Tip:')
+        
+        def speak():
+            try:
+                self.tts_engine.say(clean_text)
+                self.tts_engine.runAndWait()
+            except Exception as e:
+                print(f"TTS error: {e}")
+        
+        # Run in background thread to avoid blocking UI
+        thread = threading.Thread(target=speak, daemon=True)
+        thread.start()

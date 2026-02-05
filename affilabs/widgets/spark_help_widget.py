@@ -1,611 +1,591 @@
-"""Spark AI Help Widget - Operational Q&A Assistant
+"""Spark AI Help Widget - Clean Simple Q&A Assistant
 
-This widget provides a chat-like interface for users to ask questions about
-how to use the ezControl software. Questions and answers are tracked in a
-database for continuous improvement of responses.
+A lightweight AI assistant for answering questions about Affilabs.core software.
+Uses TinyLM AI with pattern matching fallback for intelligent responses.
 """
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QScrollArea, QFrame, QMessageBox
+    QTextEdit, QScrollArea, QFrame, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeyEvent
-from tinydb import TinyDB, Query
+from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QKeyEvent, QFont
 from datetime import datetime
-import urllib.parse
-import webbrowser
-import re
-import logging
+import threading
+import subprocess
+import wave
+import io
 
-# TinyLM integration (bundled with software)
-from .spark_tinylm import SparkTinyLM
+# Spark answer engine for hybrid AI + pattern matching
+from affilabs.services.spark import SparkAnswerEngine
 
-logger = logging.getLogger(__name__)
+# Text-to-Speech integration - Piper TTS (lightweight ~10MB model)
+try:
+    import sounddevice as sd
+    import numpy as np
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
 
 
-class SparkQuestionInput(QTextEdit):
-    """Custom QTextEdit that submits on Enter key."""
+class QuestionInput(QTextEdit):
+    """Text input that submits on Ctrl+Enter."""
 
     submit_requested = Signal()
 
-    def keyPressEvent(self, event: QKeyEvent):
-        """Handle Enter key to submit question."""
-        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            # Submit on Enter
-            self.submit_requested.emit()
-            event.accept()
-            return
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setPlaceholderText("Type your question... (Ctrl+Enter to send)")
+        self.setMaximumHeight(80)
+        self.setStyleSheet("""
+            QTextEdit {
+                background: white;
+                border: 2px solid #E5E5EA;
+                border-radius: 10px;
+                padding: 12px;
+                font-size: 14px;
+                font-family: -apple-system, 'Segoe UI', sans-serif;
+            }
+            QTextEdit:focus {
+                border: 2px solid #007AFF;
+            }
+        """)
 
-        # Otherwise, allow default behavior
+    def keyPressEvent(self, event: QKeyEvent):
+        """Handle Ctrl+Enter to submit."""
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                self.submit_requested.emit()
+                event.accept()
+                return
         super().keyPressEvent(event)
 
 
-class SparkQuestionStorage:
-    """Storage for tracking Spark AI questions and answers."""
+class MessageBubble(QFrame):
+    """Chat bubble for questions and answers."""
 
-    def __init__(self, db_path="spark_qa_history.json"):
-        """Initialize Spark Q&A storage.
+    feedback_given = Signal(str)  # 'helpful' or 'not_helpful'
 
-        Args:
-            db_path: Path to TinyDB database file
-        """
-        self.db = TinyDB(db_path)
-        self.qa_table = self.db.table('questions_answers')
-
-    def log_question(self, question: str, answer: str, matched: bool = True, feedback: str = None):
-        """Log a question and answer pair.
-
-        Args:
-            question: User's question text
-            answer: Spark's answer/response
-            matched: Whether a matching response was found
-            feedback: Optional user feedback (helpful/not helpful)
-            
-        Returns:
-            int: Database ID of the inserted entry
-        """
-        entry = {
-            'timestamp': datetime.now().isoformat(),
-            'question': question,
-            'answer': answer,
-            'matched': matched,
-            'feedback': feedback,
-        }
-        doc_id = self.qa_table.insert(entry)
-        return doc_id
-
-    def get_all_questions(self):
-        """Get all logged questions."""
-        return self.qa_table.all()
-
-    def get_unmatched_questions(self):
-        """Get questions that didn't have a matching response."""
-        Q = Query()
-        return self.qa_table.search(Q.matched == False)
-
-    def update_feedback(self, doc_id: int, feedback: str):
-        """Update feedback for a Q&A entry.
-
-        Args:
-            doc_id: Document ID from TinyDB
-            feedback: 'helpful' or 'not_helpful'
-        """
-        self.qa_table.update({'feedback': feedback}, doc_ids=[doc_id])
-
-
-class QABubble(QFrame):
-    """Chat bubble for displaying question or answer."""
-
-    def __init__(self, text: str, is_question: bool = True, parent=None):
+    def __init__(self, text: str, is_user: bool = True, is_thinking: bool = False, parent=None):
         super().__init__(parent)
-        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.is_user = is_user
+        self.is_thinking = is_thinking
+
+        # Styling - both aligned left with different colors
+        if is_user:
+            bg_color = "#E3F2FD"
+            text_color = "#1565C0"
+        elif is_thinking:
+            bg_color = "#FFF9C4"
+            text_color = "#F57F17"
+        else:
+            bg_color = "#F5F5F5"
+            text_color = "#212121"
+
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: {bg_color};
+                border-radius: 16px;
+                margin: 0px;
+            }}
+        """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(8)
 
-        # Role label - minimal
-        role_label = QLabel("You" if is_question else "Spark")
-        role_label.setStyleSheet(
-            "font-size: 12px; "
-            "font-weight: 700; "
-            "color: #6B6B6B; "
-            "background: transparent;"
-        )
-        layout.addWidget(role_label)
+        # Message text with more height for longer answers
+        self.label = QLabel(text)
+        self.label.setWordWrap(True)
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        # Message text - clean, readable
-        message = QLabel(text)
-        message.setWordWrap(True)
-        message.setTextFormat(Qt.TextFormat.PlainText)
-        message.setStyleSheet(
-            "font-size: 14px; "
-            "line-height: 1.5; "
-            "color: #000000; "
-            "background: transparent;"
-        )
-        layout.addWidget(message)
+        label_style = f"""
+            color: {text_color};
+            font-size: 14px;
+            font-family: -apple-system, 'Segoe UI', sans-serif;
+            background: transparent;
+            line-height: 1.5;
+        """
 
-        # No background styling - clean ChatGPT style
-        self.setStyleSheet(
-            "QFrame {"
-            "  background: transparent; "
-            "}"
-        )
+        # Add italic style for thinking
+        if is_thinking:
+            label_style += "font-style: italic;"
+
+        self.label.setStyleSheet(label_style)
+        self.label.setMinimumHeight(40)  # Increased from 20 to allow longer answers
+        layout.addWidget(self.label)
+
+        # Bottom row: timestamp and feedback (for AI responses only)
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setSpacing(12)
+
+        # Timestamp (not shown for thinking bubble)
+        if not is_thinking:
+            timestamp = datetime.now().strftime("%H:%M")
+            time_label = QLabel(timestamp)
+            time_label.setStyleSheet(f"""
+                color: {text_color};
+                font-size: 10px;
+                opacity: 0.5;
+                background: transparent;
+            """)
+            bottom_layout.addWidget(time_label)
+
+        # Feedback buttons (only for AI responses)
+        if not is_user and not is_thinking:
+            bottom_layout.addStretch()
+
+            # Thumbs up button
+            self.thumbs_up_btn = QPushButton("👍")
+            self.thumbs_up_btn.setFixedSize(28, 28)
+            self.thumbs_up_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.thumbs_up_btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 14px;
+                    font-size: 14px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background: #E8F5E9;
+                    border: 1px solid #4CAF50;
+                }
+                QPushButton:pressed {
+                    background: #C8E6C9;
+                }
+            """)
+            self.thumbs_up_btn.clicked.connect(lambda: self._on_feedback("helpful"))
+            bottom_layout.addWidget(self.thumbs_up_btn)
+
+            # Thumbs down button
+            self.thumbs_down_btn = QPushButton("👎")
+            self.thumbs_down_btn.setFixedSize(28, 28)
+            self.thumbs_down_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.thumbs_down_btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 14px;
+                    font-size: 14px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background: #FFEBEE;
+                    border: 1px solid #F44336;
+                }
+                QPushButton:pressed {
+                    background: #FFCDD2;
+                }
+            """)
+            self.thumbs_down_btn.clicked.connect(lambda: self._on_feedback("not_helpful"))
+            bottom_layout.addWidget(self.thumbs_down_btn)
+
+        layout.addLayout(bottom_layout)
+
+        # Set size policies to allow proper expansion
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        # No fixed width - allow bubbles to expand based on content and container
+        self.setMinimumHeight(50)
+
+    def update_text(self, text: str):
+        """Update the bubble text (for replacing thinking bubble with answer)."""
+        self.label.setText(text)
+
+    def _on_feedback(self, feedback: str):
+        """Handle feedback button click."""
+        # Disable both buttons after feedback
+        if hasattr(self, 'thumbs_up_btn'):
+            self.thumbs_up_btn.setEnabled(False)
+            self.thumbs_down_btn.setEnabled(False)
+
+        # Emit signal
+        self.feedback_given.emit(feedback)
 
 
 class SparkHelpWidget(QWidget):
-    """Spark AI Help Widget - Operational assistance tab."""
+    """Main Spark AI assistant widget."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.qa_storage = SparkQuestionStorage()
-        self.last_qa_id = None  # Track most recent Q&A for feedback
 
-        # TinyLM integration (lazy loading - transparent to user)
-        self._tinylm = SparkTinyLM()
+        # Thinking indicator state
+        self._thinking_timer = None
+        self._thinking_start_time = None
+        self._thinking_dots = 0
 
-        # Set size policy to expand vertically
-        from PySide6.QtWidgets import QSizePolicy
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # TTS setup (Piper TTS - lightweight model)
+        self.tts_enabled = True  # Start with TTS on
+        self.piper_path = None
+        self.voice_model = None
+        if TTS_AVAILABLE:
+            try:
+                # Piper will be installed as a standalone executable
+                import os
+                from pathlib import Path
+                # Check if piper is in the same directory
+                piper_exe = os.path.join(os.path.dirname(__file__), '..', '..', 'piper', 'piper.exe')
+                piper_dir = Path(piper_exe).parent
+                voice_file = piper_dir / "selected_voice.txt"
+
+                if os.path.exists(piper_exe):
+                    self.piper_path = piper_exe
+                    # Load selected voice (or use default)
+                    if voice_file.exists():
+                        self.voice_model = voice_file.read_text().strip()
+                    else:
+                        self.voice_model = "en_US-lessac-medium"
+                    print(f"Piper TTS found! Voice: {self.voice_model}")
+                else:
+                    print("Piper TTS not found - voice disabled")
+                    self.piper_path = None
+            except Exception as e:
+                print(f"TTS initialization failed: {e}")
+                self.piper_path = None
 
         self._setup_ui()
+        self._setup_knowledge_base()
 
     def _setup_ui(self):
-        """Setup the Spark help interface."""
+        """Create the UI layout."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(16)
 
-        # Use standard background color
-        self.setStyleSheet(
-            "SparkHelpWidget { "
-            "  background: #F8F9FA; "
-            "}"
-        )
+        # Header with TTS toggle
+        header_container = QFrame()
+        header_container.setStyleSheet("""
+            QFrame {
+                background: white;
+                border-bottom: 1px solid #E5E5EA;
+            }
+        """)
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(16, 16, 16, 16)
+        header_layout.setSpacing(12)
 
-        # Conversation area (scrollable) - full width, no borders, takes all space
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll_area.setStyleSheet(
-            "QScrollArea { "
-            "  background: #F8F9FA; "
-            "  border: none; "
-            "}"
-        )
+        header = QLabel("⚡ Spark AI Assistant")
+        header.setStyleSheet("""
+            QLabel {
+                font-size: 20px;
+                font-weight: 700;
+                color: #1D1D1F;
+                background: transparent;
+                border: none;
+            }
+        """)
+        header_layout.addWidget(header)
+        header_layout.addStretch()
 
-        self.conversation_widget = QWidget()
-        self.conversation_layout = QVBoxLayout(self.conversation_widget)
-        self.conversation_layout.setContentsMargins(16, 16, 16, 16)
-        self.conversation_layout.setSpacing(24)
-        self.conversation_layout.addStretch()
+        # TTS toggle button (speaker icon)
+        if TTS_AVAILABLE and self.piper_path:
+            self.tts_button = QPushButton("🔊")
+            self.tts_button.setFixedSize(32, 32)
+            self.tts_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.tts_button.setToolTip("Mute Spark voice")
+            self.tts_button.setStyleSheet("""
+                QPushButton {
+                    background: #F5F5F5;
+                    border: none;
+                    border-radius: 16px;
+                    font-size: 16px;
+                }
+                QPushButton:hover {
+                    background: #E5E5EA;
+                }
+            """)
+            self.tts_button.clicked.connect(self._toggle_tts)
+            header_layout.addWidget(self.tts_button)
 
-        self.scroll_area.setWidget(self.conversation_widget)
-        # CRITICAL: Give scroll area maximum stretch to fill all available space
-        layout.addWidget(self.scroll_area, stretch=100)
+        layout.addWidget(header_container)
 
-        # Welcome message (no feedback buttons for welcome)
-        self._add_spark_message(
-            "Hi! I'm Spark ⚡\n\n"
-            "I can answer short, simple questions about using ezControl.\n\n"
-            "Ask me questions like:\n"
-            "• How do I start an acquisition?\n"
-            "• How do I export my data?\n"
-            "• What's the best way to calibrate the detector?\n"
-            "• How do I save a method?",
-            add_feedback=False  # Don't add feedback buttons to welcome message
-        )
+        # Chat history scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background: white;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 8px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #D1D1D6;
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #A1A1A6;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
 
-        # Input area - sticky bottom, fixed height, minimal design
+        self.chat_container = QWidget()
+        self.chat_layout = QVBoxLayout(self.chat_container)
+        self.chat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.chat_layout.setSpacing(12)
+        self.chat_layout.setContentsMargins(8, 8, 8, 8)
+
+        # Ensure content stays at top, not centered
+        from PySide6.QtWidgets import QSizePolicy
+        self.chat_container.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+
+        scroll.setWidget(self.chat_container)
+        layout.addWidget(scroll, 1)
+
+        # Store scroll area reference for scrolling
+        self.scroll_area = scroll
+
+        # Input area
         input_container = QFrame()
-        input_container.setFrameShape(QFrame.Shape.NoFrame)
-        input_container.setFixedHeight(100)  # Fixed height to prevent expansion
-        input_container.setStyleSheet(
-            "QFrame { "
-            "  background: #FFFFFF; "
-            "  border-top: 1px solid #E5E5EA; "
-            "}"
-        )
-        input_layout = QHBoxLayout(input_container)
-        input_layout.setContentsMargins(16, 12, 16, 12)
-        input_layout.setSpacing(12)
+        input_container.setStyleSheet("""
+            QFrame {
+                background: #FAFAFA;
+                border-radius: 12px;
+                border: 1px solid #E5E5EA;
+            }
+        """)
+        input_layout = QVBoxLayout(input_container)
+        input_layout.setContentsMargins(12, 12, 12, 12)
+        input_layout.setSpacing(10)
 
-        # Question input - with Enter key handling
-        self.question_input = SparkQuestionInput()
-        self.question_input.setPlaceholderText("Message Spark...")
-        self.question_input.setFixedHeight(76)  # Fixed height instead of maximum
-        self.question_input.setStyleSheet(
-            "QTextEdit {"
-            "  background: #F7F7F8; "
-            "  border: 1px solid #E0E0E0; "
-            "  border-radius: 20px; "
-            "  padding: 12px 16px; "
-            "  font-size: 14px; "
-            "  color: #000000;"
-            "}"
-        )
-        # Connect Enter key to submit
+        self.question_input = QuestionInput()
         self.question_input.submit_requested.connect(self._handle_question)
         input_layout.addWidget(self.question_input)
 
-        # Send button (minimal, icon-style)
-        ask_btn = QPushButton("↑")
-        ask_btn.setFixedSize(40, 40)
-        ask_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759; "
-            "  color: white; "
-            "  border: none; "
-            "  border-radius: 20px; "
-            "  font-size: 20px; "
-            "  font-weight: bold;"
-            "}"
-            "QPushButton:hover { background: #28A745; }"
-            "QPushButton:pressed { background: #1E7B34; }"
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(8)
+
+        # Clear chat button
+        clear_btn = QPushButton("Clear Chat")
+        clear_btn.setFixedSize(100, 36)
+        clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background: #F2F2F7;
+                color: #8E8E93;
+                border: none;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #E5E5EA;
+                color: #636366;
+            }
+            QPushButton:pressed {
+                background: #D1D1D6;
+            }
+        """)
+        clear_btn.clicked.connect(self._clear_chat)
+        button_layout.addWidget(clear_btn)
+
+        button_layout.addStretch()
+
+        self.send_btn = QPushButton("Send")
+        self.send_btn.setFixedSize(100, 36)
+        self.send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.send_btn.setStyleSheet("""
+            QPushButton {
+                background: #007AFF;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #0051D5;
+            }
+            QPushButton:pressed {
+                background: #004DB8;
+            }
+        """)
+        self.send_btn.clicked.connect(self._handle_question)
+        button_layout.addWidget(self.send_btn)
+
+        input_layout.addLayout(button_layout)
+        layout.addWidget(input_container)
+
+        # Welcome message
+        self._add_welcome_message()
+
+    def _setup_knowledge_base(self):
+        """Initialize answer engine (replaces embedded patterns)."""
+        # SparkAnswerEngine coordinates pattern matching + AI
+        self.answer_engine = SparkAnswerEngine()
+
+    def _add_welcome_message(self):
+        """Add welcome message to chat."""
+        welcome = MessageBubble(
+            "👋 Hi! I'm Spark, your Affilabs.core assistant. Ask me anything about:\n\n"
+            "• Power on and startup procedures\n"
+            "• Starting and stopping acquisitions\n"
+            "• Recording and exporting data\n"
+            "• Detector troubleshooting\n"
+            "• Pump and flow control\n"
+            "• Creating cycles and methods\n"
+            "• Baseline corrections\n\n"
+            "What would you like to know?",
+            is_user=False
         )
-        ask_btn.clicked.connect(self._handle_question)
-        input_layout.addWidget(ask_btn)
+        self.chat_layout.addWidget(welcome, alignment=Qt.AlignmentFlag.AlignLeft)
 
-        # Add input container with NO stretch (stretch=0 is default)
-        layout.addWidget(input_container, stretch=0)
-
-    def _add_question_bubble(self, question: str):
-        """Add a question bubble to conversation."""
-        # Remove stretch before adding new item
-        self.conversation_layout.takeAt(self.conversation_layout.count() - 1)
-
-        bubble = QABubble(question, is_question=True)
-        self.conversation_layout.addWidget(bubble)
-        self.conversation_layout.addStretch()
-
-        # Scroll to bottom
-        self.scroll_area.verticalScrollBar().setValue(
-            self.scroll_area.verticalScrollBar().maximum()
-        )
-
-    def _add_spark_message(self, answer: str, add_feedback: bool = True):
-        """Add a Spark answer bubble to conversation.
-        
-        Args:
-            answer: Answer text to display
-            add_feedback: Whether to add feedback buttons (default True)
-        """
-        # Remove stretch before adding new item
-        if self.conversation_layout.count() > 0:
-            self.conversation_layout.takeAt(self.conversation_layout.count() - 1)
-
-        bubble = QABubble(answer, is_question=False)
-        self.conversation_layout.addWidget(bubble)
-
-        # Add feedback buttons if requested
-        if add_feedback and self.last_qa_id is not None:
-            self._add_feedback_buttons(self.last_qa_id)
-
-        self.conversation_layout.addStretch()
-
-        # Scroll to bottom
-        self.scroll_area.verticalScrollBar().setValue(
-            self.scroll_area.verticalScrollBar().maximum()
-        )
-
-    def _handle_question(self):
-        """Handle user question and generate response."""
-        question = self.question_input.toPlainText().strip()
-        if not question:
-            return
-
-        # Add question to conversation
-        self._add_question_bubble(question)
-        self.question_input.clear()
-
-        # Generate answer
-        answer, matched = self._generate_answer(question)
-
-        # Log to database first (to get the ID)
-        qa_id = self.qa_storage.log_question(question, answer, matched)
-        self.last_qa_id = qa_id  # Store for feedback buttons
-
-        # Add answer to conversation (with feedback buttons)
-        self._add_spark_message(answer)
-
-        # If no match, add "Send to Support" button
-        if not matched:
-            self._add_support_button(question)
-
-    def _generate_answer(self, question: str) -> tuple[str, bool]:
-        """Generate answer using hybrid approach: regex first, TinyLM fallback.
-
-        Returns:
-            tuple: (answer_text, matched_pattern)
-        """
-        question_lower = question.lower()
-
-        # === FAST PATH: Pattern matching for common questions ===
-        # Start/Run acquisition
-        if re.search(r'start|begin|run|acquire', question_lower):
-            return (
-                "To start an acquisition:\n\n"
-                "1. Make sure the device is connected (green Power indicator)\n"
-                "2. Run a calibration if needed (Settings → Calibrate)\n"
-                "3. Click the Start Recording button in the sidebar\n"
-                "4. Data will appear on the Full Sensorgram graph\n\n"
-                "You can pause or stop the acquisition using the sidebar controls.",
-                True
-            )
-
-        # Export/Save data
-        elif re.search(r'export|save|download', question_lower):
-            return (
-                "To export your data:\n\n"
-                "1. Click the Export tab in the sidebar\n"
-                "2. Choose your export format (CSV, Excel, JSON)\n"
-                "3. Select which channels to export (A, B, C, D)\n"
-                "4. Click 'Export to File'\n\n"
-                "Your data will be saved to the export destination folder.",
-                True
-            )
-
-        # Calibration
-        elif re.search(r'calibrat|baseline|zero', question_lower):
-            return (
-                "To calibrate the detector:\n\n"
-                "1. Go to the Settings tab\n"
-                "2. Click 'OEM LED Calibration' for automatic calibration\n"
-                "3. Wait for calibration to complete (~30-60 seconds)\n"
-                "4. Review the calibration report\n\n"
-                "For manual baseline: Use the 'Baseline Capture' button during acquisition.",
-                True
-            )
-
-        # Method building
-        elif re.search(r'method|cycle|inject', question_lower):
-            return (
-                "To build a method:\n\n"
-                "1. Go to the Method tab\n"
-                "2. Add cycles to your queue (Baseline, Association, Dissociation, etc.)\n"
-                "3. Set duration and concentration for each cycle\n"
-                "4. Click 'Add to Queue'\n"
-                "5. Click 'Start Run' to execute the method\n\n"
-                "💡 Note: For advanced cycle building, you can use @spark commands "
-                "in the note field to trigger automated actions (focused on execution, "
-                "not general Q&A).\n\n"
-                "The progress bar shows the current cycle status.",
-                True
-            )
-
-        # Flow control
-        elif re.search(r'channel|flow|pump', question_lower):
-            return (
-                "To control channels and flow:\n\n"
-                "1. Go to the Flow tab\n"
-                "2. Select pump operations (Prime, Cleanup, Buffer)\n"
-                "3. Set flow rates for each mode (Setup/Functionalization/Assay)\n"
-                "4. Use valve controls to switch between channels A/B/C/D\n\n"
-                "The Flow tab shows real-time pump status and valve positions.",
-                True
-            )
-
-        # Graph configuration
-        elif re.search(r'graph|plot|display', question_lower):
-            return (
-                "To configure the graphs:\n\n"
-                "1. Go to the Graphic Display tab\n"
-                "2. Toggle grid, autoscale, or colorblind mode\n"
-                "3. Use channel selector to choose which channels to display\n"
-                "4. Apply filters (None/Light Smoothing) for noise reduction\n\n"
-                "The Full Sensorgram shows live data, Active Cycle shows the selected time region.",
-                True
-            )
-
-        # Troubleshooting
-        elif re.search(r'error|problem|issue|troubleshoot', question_lower):
-            return (
-                "Common troubleshooting steps:\n\n"
-                "1. Connection issues: Check USB cable, try Power Off → Power On\n"
-                "2. Noisy data: Run calibration, check baseline stability\n"
-                "3. No data appearing: Verify detector wait time in Advanced Settings\n"
-                "4. Pump not responding: Use Emergency Stop, then Home Pumps\n\n"
-                "If issues persist, check the Hardware tab for device status.",
-                True
-            )
-
-        # General help
-        elif re.search(r'help|how|what|guide|tutorial', question_lower):
-            return (
-                "I can help with:\n\n"
-                "• Starting/stopping acquisitions\n"
-                "• Building and running methods\n"
-                "• Exporting data\n"
-                "• Calibration procedures\n"
-                "• Channel and flow control\n"
-                "• Graph configuration\n"
-                "• Saving/loading presets\n"
-                "• Troubleshooting\n\n"
-                "Just ask me about any of these topics!",
-                True
-            )
-
-        # === CONVERSATIONAL PATH: TinyLM fallback ===
-        # No pattern matched - use conversational AI (transparent to user)
-        logger.debug("No pattern match - using conversational AI")
-        answer, success = self._tinylm.generate_answer(question)
-        return (answer, success)
-
-    def _add_support_button(self, question: str):
-        """Add a button to send question to support team."""
-        # Remove stretch before adding button
-        self.conversation_layout.takeAt(self.conversation_layout.count() - 1)
-
-        # Create button container
-        btn_container = QWidget()
-        btn_layout = QHBoxLayout(btn_container)
-        btn_layout.setContentsMargins(0, 4, 0, 4)
-
-        support_btn = QPushButton("📧 Send Question to Support")
-        support_btn.setFixedHeight(32)
-        support_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF; "
-            "  color: white; "
-            "  border: none; "
-            "  border-radius: 6px; "
-            "  padding: 6px 16px; "
-            "  font-size: 12px; "
-            "  font-weight: 600;"
-            "}"
-            "QPushButton:hover { background: #0051D5; }"
-            "QPushButton:pressed { background: #003D99; }"
-        )
-        support_btn.clicked.connect(lambda: self._send_to_support(question))
-        btn_layout.addWidget(support_btn)
-        btn_layout.addStretch()
-
-        self.conversation_layout.addWidget(btn_container)
-        self.conversation_layout.addStretch()
-
-    def _send_to_support(self, question: str):
-        """Send question to support via email."""
-        # Email configuration
-        support_email = "info@affiniteinstruments.com"
-        subject = "Spark AI - Unanswered Question"
-        body = (
-            f"Hello AffiLabs Support Team,\n\n"
-            f"I asked Spark AI the following question, but it couldn't provide an answer:\n\n"
-            f"Question: {question}\n\n"
-            f"Could you please help me with this?\n\n"
-            f"Thank you,\n"
-            f"ezControl User\n\n"
-            f"---\n"
-            f"Timestamp: {datetime.now().isoformat()}\n"
-            f"Sent from ezControl Spark AI Assistant"
-        )
-
-        # Create mailto URL
-        mailto_url = f"mailto:{support_email}?subject={urllib.parse.quote(subject)}&body={urllib.parse.quote(body)}"
-
-        try:
-            # Open default email client
-            webbrowser.open(mailto_url)
-
-            # Show confirmation (no feedback buttons for system messages)
-            self._add_spark_message(
-                "✅ Email draft created! Your default email client should open with a pre-filled message. "
-                "Just click send when you're ready.",
-                add_feedback=False
-            )
-        except Exception as e:
-            QMessageBox.warning(
-                self,
-                "Email Error",
-                f"Couldn't open email client.\n\n"
-                f"Please email your question manually to:\n{support_email}\n\n"
-                f"Error: {str(e)}"
-            )
-    def _add_feedback_buttons(self, qa_id: int):
-        """Add thumbs up/down feedback buttons for the last answer.
-        
-        Args:
-            qa_id: Database ID of the Q&A entry to attach feedback to
-        """
-        # Remove stretch before adding buttons
-        self.conversation_layout.takeAt(self.conversation_layout.count() - 1)
-
-        # Create button container
-        feedback_container = QWidget()
-        feedback_layout = QHBoxLayout(feedback_container)
-        feedback_layout.setContentsMargins(0, 4, 0, 8)
-        feedback_layout.setSpacing(8)
-
-        # Label
-        label = QLabel("Was this helpful?")
-        label.setStyleSheet(
-            "font-size: 11px; "
-            "color: #8E8E93; "
-            "background: transparent;"
-        )
-        feedback_layout.addWidget(label)
-
-        # Thumbs up button
-        thumbs_up_btn = QPushButton("👍")
-        thumbs_up_btn.setFixedSize(32, 32)
-        thumbs_up_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #F0F0F0; "
-            "  border: 1px solid #D0D0D0; "
-            "  border-radius: 16px; "
-            "  font-size: 16px; "
-            "  padding: 0px;"
-            "}"
-            "QPushButton:hover { background: #E0E0E0; }"
-            "QPushButton:pressed { background: #D0D0D0; }"
-        )
-        thumbs_up_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        thumbs_up_btn.clicked.connect(lambda: self._handle_feedback(qa_id, "helpful", feedback_container))
-        feedback_layout.addWidget(thumbs_up_btn)
-
-        # Thumbs down button
-        thumbs_down_btn = QPushButton("👎")
-        thumbs_down_btn.setFixedSize(32, 32)
-        thumbs_down_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #F0F0F0; "
-            "  border: 1px solid #D0D0D0; "
-            "  border-radius: 16px; "
-            "  font-size: 16px; "
-            "  padding: 0px;"
-            "}"
-            "QPushButton:hover { background: #E0E0E0; }"
-            "QPushButton:pressed { background: #D0D0D0; }"
-        )
-        thumbs_down_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        thumbs_down_btn.clicked.connect(lambda: self._handle_feedback(qa_id, "not_helpful", feedback_container))
-        feedback_layout.addWidget(thumbs_down_btn)
-
-        feedback_layout.addStretch()
-
-        self.conversation_layout.addWidget(feedback_container)
-        self.conversation_layout.addStretch()
-
-    def _handle_feedback(self, qa_id: int, feedback: str, feedback_widget: QWidget):
-        """Handle user feedback on an answer.
-        
-        Args:
-            qa_id: Database ID of the Q&A entry
-            feedback: 'helpful' or 'not_helpful'
-            feedback_widget: Widget to replace with thank you message
-        """
-        # Update database
-        self.qa_storage.update_feedback(qa_id, feedback)
-
-        # Remove feedback buttons
-        self.conversation_layout.removeWidget(feedback_widget)
-        feedback_widget.deleteLater()
-
-        # Add thank you message
-        self.conversation_layout.takeAt(self.conversation_layout.count() - 1)
-
-        thank_you = QLabel("✓ Thanks for your feedback!" if feedback == "helpful" else "✓ Thanks! We'll improve this answer.")
-        thank_you.setStyleSheet(
-            "font-size: 11px; "
-            "color: #34C759; "
-            "background: transparent; "
-            "padding: 4px 0px;"
-        )
-        self.conversation_layout.addWidget(thank_you)
-        self.conversation_layout.addStretch()
-
-        logger.info(f"Feedback recorded: {feedback} for Q&A ID {qa_id}")
-    def _clear_conversation(self):
-        """Clear the conversation history."""
-        # Remove all bubbles except stretch
-        while self.conversation_layout.count() > 1:
-            item = self.conversation_layout.takeAt(0)
+    def _clear_chat(self):
+        """Clear all messages and reset to welcome."""
+        # Remove all widgets except welcome
+        while self.chat_layout.count() > 0:
+            item = self.chat_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        # Add welcome message back
-        self._add_spark_message(
-            "Chat cleared! Ask me anything about ezControl."
-        )
+        # Add fresh welcome message
+        self._add_welcome_message()
+
+    def _handle_question(self):
+        """Process user question and generate response."""
+        question = self.question_input.toPlainText().strip()
+
+        if not question:
+            return
+
+        # Clear input
+        self.question_input.clear()
+
+        # Add user question bubble
+        user_bubble = MessageBubble(question, is_user=True)
+        self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Add "thinking" indicator with animated dots
+        thinking_bubble = MessageBubble("💭 Thinking...", is_user=False, is_thinking=True)
+        self.chat_layout.addWidget(thinking_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+        self._thinking_bubble = thinking_bubble  # Store reference
+
+        # Start thinking animation timer
+        import time
+        self._thinking_start_time = time.time()
+        self._thinking_dots = 0
+        self._thinking_timer = QTimer()
+        self._thinking_timer.timeout.connect(self._update_thinking_indicator)
+        self._thinking_timer.start(500)  # Update every 500ms
+
+        # Scroll to show thinking bubble
+        QTimer.singleShot(50, self._scroll_to_bottom)
+
+        # Generate answer after short delay (to show thinking bubble)
+        QTimer.singleShot(150, lambda: self._add_answer(question))
+
+    def _add_answer(self, question: str):
+        """Find and display answer to question."""
+        answer_text = self._find_answer(question)
+
+        # Stop thinking timer
+        if self._thinking_timer:
+            self._thinking_timer.stop()
+            self._thinking_timer = None
+
+        # Remove thinking bubble
+        if hasattr(self, '_thinking_bubble') and self._thinking_bubble:
+            self.chat_layout.removeWidget(self._thinking_bubble)
+            self._thinking_bubble.deleteLater()
+            self._thinking_bubble = None
+
+        # Add actual answer
+        answer_bubble = MessageBubble(answer_text, is_user=False)
+        self.chat_layout.addWidget(answer_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Speak the answer with Zira
+        self._speak_text(answer_text)
+
+        self._scroll_to_bottom()
+
+    def _find_answer(self, question: str) -> str:
+        """Generate answer using SparkAnswerEngine."""
+        # SparkAnswerEngine handles pattern matching + AI fallback
+        answer, matched = self.answer_engine.generate_answer(question)
+        return answer
+
+    def _toggle_tts(self):
+        """Toggle TTS on/off."""
+        self.tts_enabled = not self.tts_enabled
+        if hasattr(self, 'tts_button'):
+            if self.tts_enabled:
+                self.tts_button.setText("🔊")
+                self.tts_button.setToolTip("Mute Spark voice")
+            else:
+                self.tts_button.setText("🔇")
+                self.tts_button.setToolTip("Unmute Spark voice")
+
+    def _speak_text(self, text: str):
+        """Speak text using Piper TTS in background thread."""
+        if not self.tts_enabled or not self.piper_path:
+            return
+
+        # Remove markdown formatting for cleaner speech
+        clean_text = text.replace('**', '').replace('\n\n', '. ').replace('\n', '. ')
+        clean_text = clean_text.replace('•', '').replace('→', '')
+        clean_text = clean_text.replace('✅', '').replace('❌', '')
+        clean_text = clean_text.replace('⚠️', 'Warning:')
+        clean_text = clean_text.replace('💡', 'Tip:')
+        # Pronounce Affilabs as two words
+        clean_text = clean_text.replace('Affilabs', 'uh fee labs')
+        clean_text = clean_text.replace('affilabs', 'uh fee labs')
+
+        def speak():
+            try:
+                # Get model path (should be next to piper.exe)
+                import os
+                piper_dir = os.path.dirname(self.piper_path)
+                model_path = os.path.join(piper_dir, f'{self.voice_model}.onnx')
+
+                # Run piper to generate audio
+                result = subprocess.run(
+                    [self.piper_path, '--model', model_path, '--output-raw'],
+                    input=clean_text.encode('utf-8'),
+                    capture_output=True,
+                    check=True
+                )
+
+                # Parse WAV data and play
+                audio_data = np.frombuffer(result.stdout, dtype=np.int16)
+                sd.play(audio_data, 22050)  # Piper default sample rate
+                sd.wait()
+
+            except Exception as e:
+                print(f"TTS error: {e}")
+
+        # Run in background thread to avoid blocking UI
+        thread = threading.Thread(target=speak, daemon=True)
+        thread.start()
+
+    def _update_thinking_indicator(self):
+        """Update thinking bubble with animated dots and elapsed time."""
+        if not hasattr(self, '_thinking_bubble') or not self._thinking_bubble:
+            if self._thinking_timer:
+                self._thinking_timer.stop()
+            return
+
+        # Calculate elapsed time
+        import time
+        elapsed = int(time.time() - self._thinking_start_time)
+
+        # Cycle through dot animations: . .. ...
+        self._thinking_dots = (self._thinking_dots + 1) % 4
+        dots = '.' * (self._thinking_dots if self._thinking_dots > 0 else 3)
+
+        # Update bubble text with animation and timer
+        thinking_text = f"💭 Thinking{dots} ({elapsed}s)"
+        self._thinking_bubble.update_text(thinking_text)
+
+    def _scroll_to_bottom(self):
+        """Scroll chat to bottom."""
+        scrollbar = self.scroll_area.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())

@@ -1,0 +1,149 @@
+{
+  "definition": {
+    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "$connections": {
+        "defaultValue": {},
+        "type": "Object"
+      }
+    },
+    "triggers": {
+      "manual": {
+        "type": "Request",
+        "kind": "Http",
+        "inputs": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "fileName": {
+                "type": "string"
+              },
+              "fileContent": {
+                "type": "string",
+                "description": "Base64 encoded file content"
+              },
+              "fullName": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "fileName",
+              "fileContent",
+              "email"
+            ]
+          }
+        }
+      }
+    },
+    "actions": {
+      "Initialize_Ticketnumber": {
+        "runAfter": {},
+        "type": "InitializeVariable",
+        "inputs": {
+          "variables": [
+            {
+              "name": "Ticketnumber",
+              "type": "string",
+              "value": "@{formatDateTime(utcNow(), 'yyyyMMdd-HHmmss')}-@{substring(triggerBody()?['email'], 0, indexOf(triggerBody()?['email'], '@'))}"
+            }
+          ]
+        }
+      },
+      "Create_new_folder": {
+        "runAfter": {
+          "Initialize_Ticketnumber": [
+            "Succeeded"
+          ]
+        },
+        "type": "OpenApiConnection",
+        "inputs": {
+          "host": {
+            "connectionName": "shared_sharepointonline",
+            "operationId": "CreateNewFolder",
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline"
+          },
+          "parameters": {
+            "dataset": "https://affiniteinstrumentscom.sharepoint.com/sites/AffinitInstruments",
+            "table": "Documents",
+            "parameters/path": "/External General Share/Diagnostic Files Intake/@{variables('Ticketnumber')}"
+          },
+          "authentication": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+        }
+      },
+      "Create_file": {
+        "runAfter": {
+          "Create_new_folder": [
+            "Succeeded"
+          ]
+        },
+        "type": "OpenApiConnection",
+        "inputs": {
+          "host": {
+            "connectionName": "shared_sharepointonline",
+            "operationId": "CreateFile",
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline"
+          },
+          "parameters": {
+            "dataset": "https://affiniteinstrumentscom.sharepoint.com/sites/AffinitInstruments",
+            "folderPath": "@{outputs('Create_new_folder')?['body/{FullPath}']}",
+            "name": "@{triggerBody()?['fileName']}",
+            "body": "@base64ToBinary(triggerBody()?['fileContent'])"
+          },
+          "authentication": "@parameters('$connections')['shared_sharepointonline']['connectionId']"
+        }
+      },
+      "Response": {
+        "runAfter": {
+          "Create_file": [
+            "Succeeded"
+          ]
+        },
+        "type": "Response",
+        "kind": "Http",
+        "inputs": {
+          "statusCode": 200,
+          "body": {
+            "success": true,
+            "message": "File uploaded successfully",
+            "ticketNumber": "@{variables('Ticketnumber')}",
+            "folderPath": "@{outputs('Create_new_folder')?['body/{FullPath}']}"
+          }
+        }
+      },
+      "Response_Error": {
+        "runAfter": {
+          "Create_file": [
+            "Failed",
+            "Skipped",
+            "TimedOut"
+          ]
+        },
+        "type": "Response",
+        "kind": "Http",
+        "inputs": {
+          "statusCode": 500,
+          "body": {
+            "success": false,
+            "message": "Upload failed",
+            "error": "@{body('Create_file')}"
+          }
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "connectionReferences": {
+    "shared_sharepointonline": {
+      "connection": {
+        "id": ""
+      },
+      "api": {
+        "id": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline"
+      }
+    }
+  }
+}

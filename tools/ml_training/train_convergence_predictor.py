@@ -3,6 +3,7 @@
 Predicts if calibration will succeed based on initial conditions.
 """
 
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
@@ -174,9 +175,20 @@ def train_model(features_df: pd.DataFrame, use_device_features: bool = True) -> 
     print(f"Training data: {X.shape[0]} samples")
     print(f"Success rate: {y.mean():.1%} ({y.sum()}/{len(y)})")
 
+    # Check if we have enough samples for stratified split (need at least 2 per class)
+    unique, counts = np.unique(y, return_counts=True)
+    min_class_count = counts.min()
+    
+    if min_class_count < 2:
+        print(f"WARNING: Smallest class has only {min_class_count} sample(s)")
+        print(f"  Disabling stratification (need ≥2 samples per class)")
+        stratify_param = None
+    else:
+        stratify_param = y
+
     # Train-test split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X, y, test_size=0.2, random_state=42, stratify=stratify_param
     )
 
     # Train Random Forest

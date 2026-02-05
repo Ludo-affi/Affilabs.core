@@ -56,7 +56,7 @@ class SettingsTabBuilder:
         self._build_intelligence_bar(tab_layout)
         self._build_hardware_configuration(tab_layout)
         self._build_calibration_controls(tab_layout)
-        
+
         # Display Controls (moved from Graphic Control tab)
         self._build_display_controls_section(tab_layout)
 
@@ -630,7 +630,7 @@ class SettingsTabBuilder:
         display_card_layout = QVBoxLayout(display_card)
         display_card_layout.setContentsMargins(12, 8, 12, 8)
         display_card_layout.setSpacing(12)
-        
+
         self._build_data_filtering(display_card_layout)
         self._build_reference_section(display_card_layout)
         self._build_visual_accessibility(display_card_layout)

@@ -225,7 +225,7 @@ class LicenseManager:
             'expiration_date': expiration_date,
             'license_key': license_key,
             'version': '1.0',
-            'product': 'ezControl SPR',
+            'product': 'Affilabs.core SPR',
             'features_enabled': self._get_tier_features(tier)
         }
 

@@ -228,29 +228,6 @@ class CalibrationQCDialog(QDialog):
         export_pdf_btn.clicked.connect(self._export_to_pdf)
         button_layout.addWidget(export_pdf_btn)
 
-        # View History button
-        history_btn = QPushButton("📊 View History")
-        history_btn.setFixedSize(150, 36)
-        history_btn.setStyleSheet("""
-            QPushButton {
-                background: #5856D6;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background: #4745B0;
-            }
-            QPushButton:pressed {
-                background: #3634A3;
-            }
-        """)
-        history_btn.clicked.connect(self._view_history)
-        button_layout.addWidget(history_btn)
-
         button_layout.addStretch()
 
         # Close button
@@ -2559,30 +2536,6 @@ FAILURE DIAGNOSIS:
             from affilabs.widgets.message import show_message
 
             show_message(f"Failed to export HTML:\n{e!s}", "Export Error", "Error")
-
-    def _view_history(self):
-        """Open QC history viewer dialog."""
-        try:
-            # Try multiple possible keys for device serial
-            device_serial = (
-                self.calibration_data.get("detector_serial")
-                or self.calibration_data.get("device_serial")
-                or self.calibration_data.get("serial_number")
-                or "Unknown"
-            )
-
-            logger.info(f"Opening QC history for device: {device_serial}")
-
-            from affilabs.widgets.qc_history_dialog import QCHistoryDialog
-
-            history_dialog = QCHistoryDialog(device_serial, parent=self)
-            history_dialog.exec()
-
-        except Exception as e:
-            logger.error(f"Failed to open history viewer: {e}", exc_info=True)
-            from affilabs.widgets.message import show_message
-
-            show_message(f"Failed to open history viewer:\n{e!s}", "Error", "Error")
 
     @staticmethod
     def show_qc_report(parent=None, calibration_data: dict = None):

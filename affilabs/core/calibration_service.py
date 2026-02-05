@@ -54,6 +54,8 @@ class CalibrationService(QObject):
         self._calibration_completed: bool = False
         self._current_calibration_data: CalibrationData | None = None
         self._force_oem_retrain: bool = False  # Track if OEM button requested retrain
+        self._retry_count: int = 0  # Track retry attempts (max 3)
+        self._max_retries: int = 3  # Maximum retry attempts
 
         # ML QC Intelligence (initialized lazily when device connects)
         self._ml_intelligence: MLQCIntelligence | None = None
@@ -119,9 +121,47 @@ class CalibrationService(QObject):
         )
         logger.info("=" * 80)
 
+        # Check if LED model exists - if not, prompt for OEM calibration instead
+        if not force_oem_retrain:
+            try:
+                from affilabs.services.led_model_loader import LEDCalibrationModelLoader
+                model_loader = LEDCalibrationModelLoader()
+                detector_serial = getattr(self.app.hardware_mgr.usb, 'serial_number', None) if hasattr(self.app, 'hardware_mgr') and self.app.hardware_mgr.usb else None
+
+                if detector_serial:
+                    led_model = model_loader.load_model(detector_serial)
+                    if led_model is None:
+                        logger.warning("❌ No LED calibration model found for this detector")
+                        logger.warning("   OEM calibration is required before running regular calibration")
+
+                        # Show prompt to run OEM calibration
+                        from PySide6.QtWidgets import QMessageBox
+                        reply = QMessageBox.question(
+                            self.app.main_window,
+                            "LED Model Missing",
+                            "This detector has no LED calibration model.\n\n"
+                            "OEM Calibration is required to create the LED model.\n\n"
+                            "Would you like to run OEM Calibration now?\n\n"
+                            "(This will take approximately 10-15 minutes)",
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                            QMessageBox.StandardButton.Yes
+                        )
+
+                        if reply == QMessageBox.StandardButton.Yes:
+                            # Trigger OEM calibration instead
+                            if hasattr(self.app, '_on_oem_led_calibration'):
+                                self.app._on_oem_led_calibration()
+                                return True
+                        else:
+                            logger.info("User declined OEM calibration - cancelling regular calibration")
+                            return False
+            except Exception as e:
+                logger.warning(f"Could not check LED model status: {e}")
+
         # Reset state
         self._calibration_completed = False
         self._current_calibration_data = None
+        self._retry_count = 0  # Reset retry counter for new calibration attempt
 
         # Show progress dialog with Start button; do NOT auto-start
         self._show_progress_dialog()
@@ -196,6 +236,13 @@ class CalibrationService(QObject):
             self._calibration_dialog.start_clicked.connect(
                 self._on_start_button_clicked,
             )
+            # Connect retry/continue signals for failure recovery
+            self._calibration_dialog.retry_clicked.connect(
+                self._on_retry_calibration,
+            )
+            self._calibration_dialog.continue_anyway_clicked.connect(
+                self._on_continue_anyway,
+            )
 
         # Connect calibration service signals to update dialog
         self.calibration_progress.connect(self._update_dialog_progress)
@@ -240,16 +287,70 @@ class CalibrationService(QObject):
             )  # Now thread-safe via signal
 
     def _on_calibration_failed_dialog(self, error_message: str) -> None:
-        """Handle calibration failure in dialog.
+        """Handle calibration failure in dialog - show retry/continue options.
 
         Args:
             error_message: Error message to display
 
         """
         if self._calibration_dialog:
-            self._calibration_dialog.update_title("[ERROR] Calibration Failed")
-            self._calibration_dialog.update_status(f"Error: {error_message}")
-            self._calibration_dialog.hide_progress_bar()
+            # Show retry options if under max attempts
+            if self._retry_count < self._max_retries:
+                logger.info(f"Calibration failed (attempt {self._retry_count + 1}/{self._max_retries + 1}). Showing retry options...")
+                self._calibration_dialog.show_error_state(
+                    error_message=error_message,
+                    retry_count=self._retry_count,
+                    max_retries=self._max_retries,
+                )
+            else:
+                logger.warning(f"Max retries ({self._max_retries}) reached. Showing final error state.")
+                self._calibration_dialog.show_max_retries_error(error_message)
+
+    def _on_retry_calibration(self) -> None:
+        """Handle retry button click - user wants to retry calibration."""
+        logger.info("=" * 80)
+        logger.info("🔄 User clicked Retry - restarting calibration...")
+        logger.info("=" * 80)
+
+        if self._calibration_dialog:
+            # Increment retry counter
+            self._retry_count += 1
+            logger.info(f"Retry attempt {self._retry_count}/{self._max_retries}")
+
+            # Reset dialog to progress state
+            self._calibration_dialog.reset_to_progress_state()
+            self._calibration_dialog.update_status("Retrying calibration...")
+            self._calibration_dialog.show_progress_bar()
+
+            # Restart calibration thread
+            self._running = True
+            self._calibration_completed = False
+            self._current_calibration_data = None
+
+            self._thread = threading.Thread(
+                target=self._run_calibration,
+                daemon=True,
+                name="CalibrationService-Retry",
+            )
+            self._thread.start()
+            self.calibration_started.emit()
+            logger.info("[OK] Retry calibration thread started")
+
+    def _on_continue_anyway(self) -> None:
+        """Handle continue anyway button - user wants to proceed despite failure."""
+        logger.warning("=" * 80)
+        logger.warning("⚠️  User chose to continue with failed calibration")
+        logger.warning("=" * 80)
+
+        if self._calibration_dialog:
+            # Close dialog and allow user to proceed
+            logger.info("Closing calibration dialog...")
+            self._calibration_dialog.accept()
+            self._calibration_dialog = None
+
+        # Reset retry counter for next calibration attempt
+        self._retry_count = 0
+        logger.info("[OK] Dialog closed - user can troubleshoot manually")
 
     def _on_start_button_clicked(self) -> None:
         """Handle Start button click - begin calibration or transfer to live view."""

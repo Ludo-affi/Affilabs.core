@@ -126,7 +126,7 @@ class AffilabsMainWindow(QMainWindow):
 
     def __init__(self):
         # === WINDOW SETUP ===
-        self.setWindowTitle("ezControl 2.0")
+        self.setWindowTitle("Affilabs.core 2.0")
         self.setMinimumSize(1400, 800)
 
         # === CENTRAL WIDGET (Splitter) ===

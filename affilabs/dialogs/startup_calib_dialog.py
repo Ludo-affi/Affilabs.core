@@ -392,6 +392,14 @@ class StartupCalibProgressDialog(QDialog):
             except RuntimeError:
                 pass  # Widget deleted
 
+    def hide_start_button(self) -> None:
+        """Hide the Start button (called when calibration starts)."""
+        if self.start_button:
+            try:
+                self.start_button.setVisible(False)
+            except RuntimeError:
+                pass  # Widget deleted
+
     def show_error_state(
         self,
         error_message: str,

@@ -41,10 +41,20 @@ class PhasePhotonics:
     CALIBRATION_OFFSET = 3072
     CALIBRATION_DEGREE = 4
 
-    # PhasePhotonics timing characteristic (measured)
+    # PhasePhotonics timing characteristics
+    # SOFTWARE AVERAGING (hardware averaging ignores integration time!)
     # Total acquisition time = Integration time × TIMING_MULTIPLIER
-    # This includes integration + USB readout overhead
+    # This includes integration + USB readout overhead per scan
     TIMING_MULTIPLIER = 1.93
+
+    # NOTE: Hardware averaging (usb_set_averaging) is BROKEN - it ignores integration time!
+    # The detector does multiple scans but at wrong integration time (~1ms instead of configured)
+    # Therefore we MUST use software averaging (Python loop) instead
+
+    # LEGACY: Software averaging timing (DEPRECATED - kept for reference)
+    # Total acquisition time = Integration time × TIMING_MULTIPLIER
+    # This was used when doing software averaging (looping in Python)
+    TIMING_MULTIPLIER_LEGACY = 1.93
 
     # External wavelength calibration overrides
     # Use these when EEPROM calibration is incorrect or missing
@@ -257,7 +267,7 @@ class PhasePhotonics:
         Hardware averaging (8 scans): 8 × 22ms + 22ms = 198ms
 
         Args:
-            num_scans: Number of scans to average internally (1-255, default: 1)
+            num_scans: Number of scans to average internally (1-15, default: 1)
                       Typical values: 8 for good SNR, 1 for maximum speed
 
         Returns:
@@ -270,16 +280,15 @@ class PhasePhotonics:
         Note:
             - Set to 1 for single-scan acquisition (no averaging)
             - Set to 8 for typical SPR measurements (good SNR)
-            - Set to 16+ for low-light applications
-            - Maximum value: 255 (from MAX_AVERAGING constant)
+            - Maximum value: 15 (hardware limit)
 
         """
         if self.spec is None:
             logger.error("Cannot set averaging: spectrometer not connected")
             return False
 
-        if not (1 <= num_scans <= 255):
-            logger.error(f"Invalid num_scans: {num_scans} (must be 1-255)")
+        if not (1 <= num_scans <= self.MAX_HARDWARE_AVERAGING):
+            logger.error(f"Invalid num_scans: {num_scans} (must be 1-{self.MAX_HARDWARE_AVERAGING})")
             return False
 
         try:
@@ -498,22 +507,24 @@ class PhasePhotonics:
     def calculate_optimal_scans(self, integration_ms: float, time_budget_ms: float) -> int:
         """Calculate optimal number of scans for given integration time and budget.
 
-        Uses measured timing characteristic: Total Time = Integration Time × 1.93
+        Uses SOFTWARE AVERAGING timing: Total Time = Integration Time × 1.93 × num_scans
+        (Hardware averaging is broken - ignores integration time!)
 
         Args:
-            integration_ms: Integration time in milliseconds
+            integration_ms: Integration time per scan in milliseconds
             time_budget_ms: Available time budget in milliseconds
 
         Returns:
             int: Optimal number of scans (minimum 1)
 
         Example:
-            >>> # For 250ms budget with 60ms detector off time
+            >>> # For 190ms budget with 22ms integration
             >>> detector.calculate_optimal_scans(22, 190)  # Returns 4
-            >>> # For 12ms integration, same budget
-            >>> detector.calculate_optimal_scans(12, 190)  # Returns 8
+            >>> # For 7.91ms integration, 170ms budget
+            >>> detector.calculate_optimal_scans(7.91, 170)  # Returns 11
 
         """
+        # Software averaging: Total Time = num_scans × (integration_time × TIMING_MULTIPLIER)
         time_per_scan = integration_ms * self.TIMING_MULTIPLIER
         num_scans = int(time_budget_ms / time_per_scan)
 
@@ -526,7 +537,7 @@ class PhasePhotonics:
 
         logger.info(
             f"Optimal scans: {num_scans} × {time_per_scan:.1f}ms = {total_time:.1f}ms "
-            f"(SNR: √{num_scans} = {snr_gain:.2f}x, budget: {time_budget_ms}ms)"
+            f"(SNR: {snr_gain:.2f}x, budget: {time_budget_ms:.0f}ms)"
         )
 
         return num_scans

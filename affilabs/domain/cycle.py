@@ -43,7 +43,7 @@ from typing import Literal, Optional, Dict, List
 from pydantic import BaseModel, Field, field_validator
 
 CycleStatus = Literal["pending", "running", "completed", "cancelled"]
-CycleType = Literal["Baseline", "Association", "Dissociation", "Regeneration", "Custom"]
+CycleType = Literal["Baseline", "Immobilization", "Wash", "Concentration", "Regeneration", "Custom"]
 
 
 class Cycle(BaseModel):
@@ -95,10 +95,42 @@ class Cycle(BaseModel):
     end_time_sensorgram: Optional[float] = Field(default=None, description="End time in sensorgram timeline")
 
     # Analysis data (calculated after cycle completion)
-    delta_spr: Optional[float] = Field(default=None, description="SPR change during cycle")
+    delta_spr: Optional[float] = Field(default=None, description="SPR change during cycle (legacy single channel)")
+    delta_spr_by_channel: Dict[str, float] = Field(
+        default_factory=dict,
+        description="SPR change for each channel {'A': 45.2, 'B': 87.3, 'C': 12.1, 'D': 56.8}"
+    )
     flags: List[str] = Field(
         default_factory=list,
         description="Flags that occurred during this cycle (injection, wash, spike)"
+    )
+
+    # Pump control fields (for automated flow during cycles)
+    flow_rate: Optional[float] = Field(
+        default=None,
+        description="Flow rate in µL/min (None = no pump control)"
+    )
+    pump_type: Optional[Literal["affipump", "p4proplus"]] = Field(
+        default=None,
+        description="Pump type (auto-detected from hardware)"
+    )
+    valve_config: Optional[str] = Field(
+        default=None,
+        description="Valve configuration (e.g., 'load', 'inject', 'channel_a')"
+    )
+
+    # Injection control fields (for automated injection during cycles)
+    injection_method: Optional[Literal["simple", "partial"]] = Field(
+        default=None,
+        description="Injection method: 'simple' (full loop) or 'partial' (30µL spike)"
+    )
+    injection_delay: float = Field(
+        default=20.0,
+        description="Seconds after cycle start before injection triggers"
+    )
+    contact_time: Optional[float] = Field(
+        default=None,
+        description="Contact time in seconds (for association phase)"
     )
 
     # Pydantic configuration
@@ -154,7 +186,14 @@ class Cycle(BaseModel):
             "concentrations": self.concentrations,
             "note": self.note,
             "delta_spr": self.delta_spr,
+            "delta_spr_by_channel": self.delta_spr_by_channel,
             "flags": self.flags if self.flags else [],
+            "flow_rate": self.flow_rate,
+            "pump_type": self.pump_type,
+            "valve_config": self.valve_config,
+            "injection_method": self.injection_method,
+            "injection_delay": self.injection_delay,
+            "contact_time": self.contact_time,
         }
 
     @classmethod
