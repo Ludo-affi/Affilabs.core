@@ -7272,13 +7272,24 @@ End of Debug Log
 
                 # Populate alignment controls from stored data
                 alignment_data = self.edits_tab._cycle_alignment.get(row_idx, {'channel': 'All', 'shift': 0.0})
+                
+                # Update channel combo
                 self.edits_tab.alignment_channel_combo.blockSignals(True)
-                if hasattr(self.edits_tab, 'alignment_shift_spinbox'):
-                    self.edits_tab.alignment_shift_spinbox.blockSignals(True)
-                    self.edits_tab.alignment_shift_spinbox.setValue(alignment_data['shift'])
-                    self.edits_tab.alignment_shift_spinbox.blockSignals(False)
                 self.edits_tab.alignment_channel_combo.setCurrentText(alignment_data['channel'])
                 self.edits_tab.alignment_channel_combo.blockSignals(False)
+                
+                # Update shift input and slider
+                shift_value = alignment_data['shift']
+                if hasattr(self.edits_tab, 'alignment_shift_input'):
+                    self.edits_tab.alignment_shift_input.blockSignals(True)
+                    self.edits_tab.alignment_shift_input.setText(f"{shift_value:.1f}")
+                    self.edits_tab.alignment_shift_input.blockSignals(False)
+                
+                if hasattr(self.edits_tab, 'alignment_shift_slider'):
+                    self.edits_tab.alignment_shift_slider.blockSignals(True)
+                    slider_val = int(shift_value * 10)  # Convert to 0.1s increments
+                    self.edits_tab.alignment_shift_slider.setValue(slider_val)
+                    self.edits_tab.alignment_shift_slider.blockSignals(False)
 
                 # Populate cycle boundary info
                 if row_idx < len(self._loaded_cycles_data):
