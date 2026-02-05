@@ -142,6 +142,33 @@ class EditsTab:
         self.cycle_data_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.cycle_data_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.cycle_data_table.itemSelectionChanged.connect(self.main_window._on_cycle_selected_in_table)
+        
+        # Enhanced styling: zebra striping, hover, and selection highlight
+        self.cycle_data_table.setAlternatingRowColors(True)
+        self.cycle_data_table.setStyleSheet("""
+            QTableWidget {
+                background-color: white;
+                alternate-background-color: #FAFAFA;
+                selection-background-color: #E3F2FD;
+                selection-color: #1D1D1F;
+                gridline-color: #E5E5EA;
+            }
+            QTableWidget::item:hover {
+                background-color: #F0F7FF;
+            }
+            QTableWidget::item:selected {
+                background-color: #D1E9FF;
+                color: #1D1D1F;
+                font-weight: 600;
+            }
+            QHeaderView::section {
+                background-color: #F8F9FA;
+                color: #1D1D1F;
+                font-weight: 600;
+                border: 1px solid #E5E5EA;
+                padding: 6px;
+            }
+        """)
 
         # Enable context menu on header for column visibility
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -169,8 +196,8 @@ class EditsTab:
         content_widget.setStyleSheet("QFrame { background: #F8F9FA; border: none; }")
 
         content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(8, 8, 8, 8)
-        content_layout.setSpacing(8)
+        content_layout.setContentsMargins(12, 12, 12, 12)  # Increased from 8 for more breathing room
+        content_layout.setSpacing(12)  # Increased from 8 for better visual separation
 
         # Info banner about sidebar
         info_banner = QFrame()
@@ -273,6 +300,13 @@ class EditsTab:
 
         return content_widget
 
+    def _update_empty_state(self):
+        """Show/hide empty state message based on table row count."""
+        if hasattr(self, 'empty_state_widget') and hasattr(self, 'cycle_data_table'):
+            has_data = self.cycle_data_table.rowCount() > 0
+            self.empty_state_widget.setVisible(not has_data)
+            self.cycle_data_table.setVisible(has_data)
+    
     def _create_table_panel(self):
         """Left panel: Cycle table with Load Data button and alignment controls."""
         container = QFrame()
@@ -418,6 +452,25 @@ class EditsTab:
         layout.addLayout(controls_layout)
 
         # Table
+        # Empty state message (shown when table has no data)
+        self.empty_state_widget = QWidget()
+        empty_layout = QVBoxLayout(self.empty_state_widget)
+        empty_layout.setAlignment(Qt.AlignCenter)
+        empty_icon = QLabel("📊")
+        empty_icon.setStyleSheet("font-size: 48px;")
+        empty_icon.setAlignment(Qt.AlignCenter)
+        empty_layout.addWidget(empty_icon)
+        empty_text = QLabel("No cycles to display")
+        empty_text.setStyleSheet("font-size: 16px; font-weight: 600; color: #86868B; margin-top: 12px;")
+        empty_text.setAlignment(Qt.AlignCenter)
+        empty_layout.addWidget(empty_text)
+        empty_subtext = QLabel("Start a recording or load data to begin")
+        empty_subtext.setStyleSheet("font-size: 13px; color: #AEAEB2; margin-top: 4px;")
+        empty_subtext.setAlignment(Qt.AlignCenter)
+        empty_layout.addWidget(empty_subtext)
+        self.empty_state_widget.hide()  # Hidden by default
+        
+        layout.addWidget(self.empty_state_widget)
         layout.addWidget(self.cycle_data_table)
 
         return container
@@ -674,12 +727,16 @@ class EditsTab:
         ch_layout.addStretch()
         layout.addLayout(ch_layout)
 
-        # Shift controls
-        shift_layout = QHBoxLayout()
-        shift_layout.setSpacing(10)
+        # Shift controls - Add slider alongside input
+        shift_layout = QVBoxLayout()
+        shift_layout.setSpacing(6)
+        
+        # Shift label and input row
+        shift_input_row = QHBoxLayout()
+        shift_input_row.setSpacing(10)
         shift_label = QLabel("Shift:")
         shift_label.setStyleSheet("font-size: 12px; color: #1D1D1F; font-weight: 500; background: transparent; border: none;")
-        shift_layout.addWidget(shift_label)
+        shift_input_row.addWidget(shift_label)
 
         self.alignment_shift_input = QLineEdit("0.0")
         self.alignment_shift_input.setFixedWidth(80)
@@ -696,12 +753,47 @@ class EditsTab:
                 background: white;
             }
         """)
-        shift_layout.addWidget(self.alignment_shift_input)
+        self.alignment_shift_input.textChanged.connect(self._on_shift_input_changed)
+        shift_input_row.addWidget(self.alignment_shift_input)
 
         unit_lbl = QLabel("s")
         unit_lbl.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
-        shift_layout.addWidget(unit_lbl)
-        shift_layout.addStretch()
+        shift_input_row.addWidget(unit_lbl)
+        shift_input_row.addStretch()
+        shift_layout.addLayout(shift_input_row)
+        
+        # Slider for fine adjustment (-20s to +20s)
+        self.alignment_shift_slider = QSlider(Qt.Horizontal)
+        self.alignment_shift_slider.setRange(-200, 200)  # -20.0s to +20.0s (in 0.1s increments)
+        self.alignment_shift_slider.setValue(0)
+        self.alignment_shift_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                border: 1px solid #D1D1D6;
+                height: 6px;
+                background: #F8F9FA;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #007AFF;
+                border: 2px solid #007AFF;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #0051D5;
+                border: 2px solid #0051D5;
+            }
+        """)
+        self.alignment_shift_slider.valueChanged.connect(self._on_shift_slider_changed)
+        shift_layout.addWidget(self.alignment_shift_slider)
+        
+        # Hint label
+        hint_lbl = QLabel("💡 Use slider for fine adjustment (±20s)")
+        hint_lbl.setStyleSheet("font-size: 10px; color: #86868B; font-style: italic; background: transparent; border: none;")
+        shift_layout.addWidget(hint_lbl)
+        
         layout.addLayout(shift_layout)
 
         # Apply button
@@ -831,9 +923,31 @@ class EditsTab:
             self.edits_channel_buttons[ch] = ch_btn
             header.addWidget(ch_btn)
 
+        # Reset view button
+        reset_btn = QPushButton("⟲ Reset")
+        reset_btn.setFixedSize(60, 24)
+        reset_btn.setToolTip("Reset graph to full view")
+        reset_btn.setStyleSheet("""
+            QPushButton {
+                background: #F8F9FA;
+                color: #1D1D1F;
+                border: 1px solid #D1D1D6;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background: #E5E5EA;
+                border: 1px solid #007AFF;
+            }
+        """)
+        reset_btn.clicked.connect(lambda: self.edits_primary_graph.autoRange())
+        header.addWidget(reset_btn)
+        
         # Export graph button
-        export_graph_btn = QPushButton("Export")
-        export_graph_btn.setFixedSize(60, 24)
+        export_graph_btn = QPushButton("💾 Export")
+        export_graph_btn.setFixedSize(70, 24)
+        export_graph_btn.setToolTip("Export graph as PNG/JPG/SVG")
         export_graph_btn.setStyleSheet("""
             QPushButton {
                 background: #F8F9FA;
@@ -902,8 +1016,31 @@ class EditsTab:
         header.addWidget(title)
         header.addStretch()
         
+        # Reset bar chart button
+        reset_bar_btn = QPushButton("⟲")
+        reset_bar_btn.setFixedSize(28, 24)
+        reset_bar_btn.setToolTip("Reset bar chart view")
+        reset_bar_btn.setStyleSheet("""
+            QPushButton {
+                background: #F8F9FA;
+                color: #1D1D1F;
+                border: 1px solid #D1D1D6;
+                border-radius: 5px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background: #E5E5EA;
+                border: 1px solid #007AFF;
+            }
+        """)
+        reset_bar_btn.clicked.connect(lambda: self.delta_spr_barchart.autoRange())
+        header.addWidget(reset_bar_btn)
+        
         # Export button
-        export_btn = QPushButton("Export Image")
+        export_btn = QPushButton("💾 Export")
+        export_btn.setFixedSize(70, 24)
+        export_btn.setToolTip("Export bar chart as PNG/JPG/SVG")
         export_btn.setStyleSheet("""
             QPushButton {
                 background: #F8F9FA;
@@ -928,10 +1065,14 @@ class EditsTab:
         self.delta_spr_barchart = pg.PlotWidget()
         self.delta_spr_barchart.setBackground('w')
         self.delta_spr_barchart.setYRange(0, 100)
-        self.delta_spr_barchart.getAxis('bottom').setTicks([[(0, 'Ch1'), (1, 'Ch2'), (2, 'Ch3'), (3, 'Ch4')]])
+        self.delta_spr_barchart.getAxis('bottom').setTicks([[(0, 'Ch A'), (1, 'Ch B'), (2, 'Ch C'), (3, 'Ch D')]])
         self.delta_spr_barchart.setLabel('left', 'ΔSPR (RU)')
-        self.delta_spr_barchart.setFixedHeight(200)
+        self.delta_spr_barchart.setFixedHeight(220)
         self.delta_spr_barchart.showGrid(y=True, alpha=0.2)
+        
+        # Add baseline indicator at y=0
+        baseline = pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen(color='#86868B', width=1, style=Qt.DashLine))
+        self.delta_spr_barchart.addItem(baseline)
 
         # Create bar graph items
         self.delta_spr_bars = []
@@ -940,6 +1081,14 @@ class EditsTab:
             bar = pg.BarGraphItem(x=[i], height=[0], width=0.6, brush=color)
             self.delta_spr_barchart.addItem(bar)
             self.delta_spr_bars.append(bar)
+        
+        # Create text items for value labels
+        self.delta_spr_labels = []
+        for i in range(4):
+            text = pg.TextItem(text='0.0', anchor=(0.5, 1.2), color='#1D1D1F')
+            text.setFont(QFont('-apple-system', 10, QFont.Bold))
+            self.delta_spr_barchart.addItem(text)
+            self.delta_spr_labels.append(text)
 
         layout.addWidget(self.delta_spr_barchart)
 
@@ -1152,6 +1301,9 @@ class EditsTab:
             self.cycle_data_table.setItem(row_idx, 10, QTableWidgetItem(str(cycle.get('channel', 'All'))))
             self.cycle_data_table.setItem(row_idx, 11, QTableWidgetItem(str(cycle.get('shift', '0.0'))))
 
+        # Update empty state visibility
+        self._update_empty_state()
+        
         # Update metadata stats
         if hasattr(self, '_update_metadata_stats'):
             self._update_metadata_stats()
@@ -2393,16 +2545,24 @@ class EditsTab:
             delta_spr = stop_value - start_value
             self.current_delta_values.append(delta_spr)
 
-        # Update bar heights
+        # Update bar heights and value labels
         for i, (bar, delta_val) in enumerate(zip(self.delta_spr_bars, self.current_delta_values)):
             bar.setOpts(height=[delta_val])
+            
+            # Update value label position and text
+            if hasattr(self, 'delta_spr_labels') and i < len(self.delta_spr_labels):
+                label = self.delta_spr_labels[i]
+                label.setText(f"{delta_val:.1f}")
+                # Position label above bar (or below if negative)
+                label_y = delta_val + (abs(delta_val) * 0.05 + 2) if delta_val >= 0 else delta_val - (abs(delta_val) * 0.05 + 2)
+                label.setPos(i, label_y)
 
         # Auto-scale Y axis (handle negative values too)
         if self.current_delta_values:
             min_delta = min(self.current_delta_values)
             max_delta = max(self.current_delta_values)
             y_range = max_delta - min_delta
-            padding = y_range * 0.1 if y_range > 0 else 10
+            padding = y_range * 0.15 if y_range > 0 else 10  # More padding for labels
             self.delta_spr_barchart.setYRange(min_delta - padding, max_delta + padding)
         else:
             self.delta_spr_barchart.setYRange(0, 100)
@@ -2545,6 +2705,26 @@ class EditsTab:
                 "Error",
                 "Could not access cycle data. Please reload the data."
             )
+    
+    def _on_shift_input_changed(self, text):
+        """Sync slider when input box changes."""
+        try:
+            shift_value = float(text)
+            # Clamp to slider range
+            shift_value = max(-20.0, min(20.0, shift_value))
+            slider_value = int(shift_value * 10)  # Convert to 0.1s increments
+            self.alignment_shift_slider.blockSignals(True)
+            self.alignment_shift_slider.setValue(slider_value)
+            self.alignment_shift_slider.blockSignals(False)
+        except ValueError:
+            pass  # Ignore invalid input
+    
+    def _on_shift_slider_changed(self, value):
+        """Sync input box when slider changes."""
+        shift_value = value / 10.0  # Convert from 0.1s increments to seconds
+        self.alignment_shift_input.blockSignals(True)
+        self.alignment_shift_input.setText(f"{shift_value:.1f}")
+        self.alignment_shift_input.blockSignals(False)
 
     def _export_barchart_image(self):
         """Export the delta SPR bar chart as an image."""
