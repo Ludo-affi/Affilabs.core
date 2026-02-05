@@ -7404,8 +7404,6 @@ End of Debug Log
                     time = row_data.get('elapsed', row_data.get('time', 0))
                     if start_time <= time <= end_time:
                         points_found += 1
-                        # Convert to relative time (time since cycle start) + apply shift
-                        relative_time = time - start_time + cycle_shift
 
                         # Handle two data formats:
                         # Format 1 (new): {'time': X, 'channel': 'a', 'value': Y}
@@ -7415,17 +7413,38 @@ End of Debug Log
                             # Format 1: One row per channel measurement
                             ch = row_data.get('channel')
                             value = row_data.get('value')
-                            # Don't filter channels - show all channels, just apply shift to all
                             if ch in ['a', 'b', 'c', 'd'] and value is not None:
+                                # Apply shift only to the selected channel, or all if 'All' is selected
+                                channel_map = {'A': 'a', 'B': 'b', 'C': 'c', 'D': 'd', 'All': None}
+                                target_channel = channel_map.get(cycle_channel)
+                                
+                                if target_channel is None or ch == target_channel:
+                                    # Apply shift to this channel
+                                    relative_time = time - start_time + cycle_shift
+                                else:
+                                    # No shift for this channel
+                                    relative_time = time - start_time
+                                
                                 all_cycle_data[ch]['time'].append(relative_time)
                                 all_cycle_data[ch]['wavelength'].append(value)
                         else:
                             # Format 2: All channels in one row
+                            # Map channel names to indices
+                            channel_map = {'A': 'a', 'B': 'b', 'C': 'c', 'D': 'd', 'All': None}
+                            target_channel = channel_map.get(cycle_channel)
+                            
                             for ch in ['a', 'b', 'c', 'd']:
-                                # Don't filter channels - show all channels
                                 # Try both naming conventions: channel_X or wavelength_X
                                 wavelength = row_data.get(f'channel_{ch}', row_data.get(f'wavelength_{ch}'))
                                 if wavelength is not None:
+                                    # Calculate relative_time separately for each channel
+                                    if target_channel is None or ch == target_channel:
+                                        # Apply shift to this channel
+                                        relative_time = time - start_time + cycle_shift
+                                    else:
+                                        # No shift for this channel
+                                        relative_time = time - start_time
+                                    
                                     all_cycle_data[ch]['time'].append(relative_time)
                                     all_cycle_data[ch]['wavelength'].append(wavelength)
 
