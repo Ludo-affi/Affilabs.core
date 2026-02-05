@@ -2553,8 +2553,14 @@ class EditsTab:
             if hasattr(self, 'delta_spr_labels') and i < len(self.delta_spr_labels):
                 label = self.delta_spr_labels[i]
                 label.setText(f"{delta_val:.1f}")
-                # Position label above bar (or below if negative)
-                label_y = delta_val + (abs(delta_val) * 0.05 + 2) if delta_val >= 0 else delta_val - (abs(delta_val) * 0.05 + 2)
+                # Position label above bar (with more space) or below if negative
+                # Add fixed offset to prevent cutoff
+                if delta_val >= 0:
+                    label_offset = max(abs(delta_val) * 0.08, 15)  # At least 15 RU above bar
+                    label_y = delta_val + label_offset
+                else:
+                    label_offset = max(abs(delta_val) * 0.08, 15)  # At least 15 RU below bar
+                    label_y = delta_val - label_offset
                 label.setPos(i, label_y)
 
         # Auto-scale Y axis (handle negative values too)
@@ -2562,7 +2568,8 @@ class EditsTab:
             min_delta = min(self.current_delta_values)
             max_delta = max(self.current_delta_values)
             y_range = max_delta - min_delta
-            padding = y_range * 0.15 if y_range > 0 else 10  # More padding for labels
+            # Increase padding significantly to accommodate labels (25% on each side)
+            padding = max(y_range * 0.25, 50)  # At least 50 RU padding for label space
             self.delta_spr_barchart.setYRange(min_delta - padding, max_delta + padding)
         else:
             self.delta_spr_barchart.setYRange(0, 100)
