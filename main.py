@@ -9513,8 +9513,8 @@ def main():
             app.update_splash_message("Ready!")
             QTimer.singleShot(300, lambda: app.splash_screen.finish(app.main_window))
 
-    # Close splash after deferred widgets load (total ~350ms)
-    QTimer.singleShot(350, close_splash)
+    # Close splash after at least 3 seconds for branding visibility
+    QTimer.singleShot(3000, close_splash)
 
     logger.info("Ready | Starting application")
     exit_code = app.exec()
