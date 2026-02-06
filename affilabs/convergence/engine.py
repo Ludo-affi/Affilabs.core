@@ -236,6 +236,7 @@ class ConvergenceEngine:
         use_ml_led_predictor: bool = True,
         progress_callback: Optional[callable] = None,
         detector_serial: Optional[int] = None,
+        _ml_fallback_retry: bool = False,
     ) -> ConvergenceResult:
         # Log device serial for ML training correlation
         if detector_serial:
@@ -878,8 +879,11 @@ class ConvergenceEngine:
                             # Try ML prediction first
                             if self.led_predictor:
                                 try:
-                                    sensitivity = sensitivity_encoded
-                                    predicted_led = self._predict_led_intensity(ch, target_signal, state.integration_ms, sensitivity)
+                                    channel_enc = {'a': 0, 'b': 1, 'c': 2, 'd': 3}.get(ch, 0)
+                                    sensitivity = 1 if high_sensitivity_detected else 0
+                                    X_boost = [channel_enc, target_signal, state.integration_ms, sensitivity]
+                                    predicted_led = int(self.led_predictor.predict([X_boost])[0])
+                                    predicted_led = max(10, min(255, predicted_led))
 
                                     if predicted_led is not None:
                                         # Apply damping to avoid overcorrection
@@ -1383,6 +1387,7 @@ class ConvergenceEngine:
                     else:
                         self._log("warning", "  ⚠️  Optimization infeasible - falling back to incremental")
 
+            incremental_adjusted = set()
             # ============================================================================
             # INCREMENTAL LED ADJUSTMENTS (if optimization didn't apply)
             # ============================================================================
@@ -1457,6 +1462,7 @@ class ConvergenceEngine:
                             # ML TRAINING: LED decision reasoning
                             self._log("info", f"    LED_DECISION: {ch.upper()} {current_led}-{new_led} (reason=model_adjustment, error_pct={error_pct*100:.2f}%, confidence=high)")
                             state.leds[ch] = new_led
+                            incremental_adjusted.add(ch)
                             adjustments_made = True
 
                     if not adjustments_made:
@@ -1488,6 +1494,7 @@ class ConvergenceEngine:
                                          f"  📐 [{phase}] {ch.upper()}: LED {current_led}→{new_led} "
                                          f"(ratio {scale:.2f}x, err {error_pct*100:.1f}%)")
                                 state.leds[ch] = new_led
+                                incremental_adjusted.add(ch)
 
             # ============================================================================
             # LEGACY ADJUSTMENT CODE DELETED
@@ -1508,6 +1515,10 @@ class ConvergenceEngine:
                 # PRIORITY 2: Skip channels already in acceptable range
                 if ch in acc.acceptable:
                     self._log("info", f"  ✓ {ch.upper()} already acceptable - skipping adjustment")
+                    continue
+
+                # PRIORITY 3: Skip channels already adjusted in INCREMENTAL block
+                if ch in incremental_adjusted:
                     continue
 
                 current_led = state.leds[ch]
@@ -2018,7 +2029,7 @@ class ConvergenceEngine:
             )
 
     def _analyze_convergence_failure(self, state: EngineState, recipe: ConvergenceRecipe,
-                                     target_signal: float, params: ConvergenceParams) -> dict:
+                                     target_signal: float, params: DetectorParams) -> dict:
         """Analyze why convergence failed and identify patterns."""
         history = state.iteration_history
 
