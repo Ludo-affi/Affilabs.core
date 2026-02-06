@@ -533,7 +533,7 @@ class SparkHelpWidget(QWidget):
                 self.tts_button.setToolTip("Unmute Spark voice")
 
     # Maximum characters to send to Piper in one call (prevents buffer overruns)
-    _TTS_MAX_CHARS = 800
+    _TTS_MAX_CHARS = 400
     _tts_consecutive_failures = 0
     _TTS_MAX_FAILURES = 3  # Disable TTS after this many consecutive crashes
 
@@ -553,8 +553,13 @@ class SparkHelpWidget(QWidget):
         # Pronounce Affilabs as two words
         clean_text = clean_text.replace('Affilabs', 'uh fee labs')
         clean_text = clean_text.replace('affilabs', 'uh fee labs')
-        # Strip null bytes and non-ASCII control chars that can crash Piper
-        clean_text = ''.join(c for c in clean_text if c == '\n' or (ord(c) >= 32))
+        # Strip ALL non-ASCII and control chars — Piper only handles plain ASCII safely
+        clean_text = ''.join(c for c in clean_text if 32 <= ord(c) < 127 or c == '\n')
+        # Collapse multiple spaces/periods from stripping
+        import re as _re
+        clean_text = _re.sub(r'\.{2,}', '.', clean_text)
+        clean_text = _re.sub(r' {2,}', ' ', clean_text)
+        clean_text = clean_text.strip()
         # Truncate to safe length to prevent Piper buffer overrun
         if len(clean_text) > self._TTS_MAX_CHARS:
             # Cut at last sentence boundary within limit
@@ -564,6 +569,9 @@ class SparkHelpWidget(QWidget):
                 clean_text = truncated[:last_period + 1]
             else:
                 clean_text = truncated
+        # Final safety — skip if too short or empty
+        if len(clean_text.strip()) < 3:
+            return
 
         def speak():
             try:
