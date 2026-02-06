@@ -444,12 +444,9 @@ class PicoP4SPRAdapter:
             if self._servo_s_pos is not None and self._servo_p_pos is not None:
                 m = (mode or "").lower()
 
-                # CRITICAL FIX: sv command expects PWM values (0-255), NOT degrees
-                # The firmware internally handles PWM→angle conversion
-                # Previous code was doing double conversion: PWM→degrees here, then degrees→PWM in firmware
-                # This caused servo to move to wrong physical position
-                s_pwm = int(self._servo_s_pos)
-                p_pwm = int(self._servo_p_pos)
+                # Convert PWM to degrees
+                s_degrees = int(5 + (self._servo_s_pos / 255.0) * 170.0)
+                p_degrees = int(5 + (self._servo_p_pos / 255.0) * 170.0)
 
                 if self._ser is None or not self._ser.is_open:
                     logger.error("❌ Serial port not available!")
@@ -475,9 +472,9 @@ class PicoP4SPRAdapter:
                     logger.warning(f"⚠️  Controller check failed: {check_err}")
                     # Continue anyway - might still work
 
-                # Set both positions using sv command (PWM values, not degrees)
-                sv_cmd = f"sv{s_pwm:03d}{p_pwm:03d}\n"
-                logger.info(f"   📤 Sending sv command: {sv_cmd.strip()} (S={s_pwm} PWM, P={p_pwm} PWM)")
+                # Set both positions using sv command
+                sv_cmd = f"sv{s_degrees:03d}{p_degrees:03d}\n"
+                logger.info(f"   📤 Sending sv command: {sv_cmd.strip()}")
                 try:
                     self._ser.write(sv_cmd.encode())
                     time.sleep(0.2)
@@ -491,7 +488,7 @@ class PicoP4SPRAdapter:
                     logger.info("   📤 Sending ss command to move to S position")
                     try:
                         self._ser.write(b"ss\n")
-                        logger.info(f"   ✅ Moved to S-mode (PWM {self._servo_s_pos}) using sv+ss")
+                        logger.info(f"   ✅ Moved to S-mode (PWM {self._servo_s_pos}, {s_degrees}°) using sv+ss")
                     except Exception as ss_err:
                         logger.error(f"❌ Failed to send ss command: {ss_err}")
                         return False
@@ -499,7 +496,7 @@ class PicoP4SPRAdapter:
                     logger.info("   📤 Sending sp command to move to P position")
                     try:
                         self._ser.write(b"sp\n")
-                        logger.info(f"   ✅ Moved to P-mode (PWM {self._servo_p_pos}) using sv+sp")
+                        logger.info(f"   ✅ Moved to P-mode (PWM {self._servo_p_pos}, {p_degrees}°) using sv+sp")
                     except Exception as sp_err:
                         logger.error(f"❌ Failed to send sp command: {sp_err}")
                         return False
