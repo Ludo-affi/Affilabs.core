@@ -9496,92 +9496,15 @@ def main():
     app = Application(sys.argv)
 
     # Show splash screen for better user experience during startup
-    from PySide6.QtCore import QRect, Qt
-    from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPixmap
-    from PySide6.QtWidgets import QSplashScreen
+    from affilabs.utils.splash_screen import create_splash_screen
 
-    splash = QSplashScreen()
-    splash.setFixedSize(480, 300)
-
-    # Create custom splash with clean minimal design matching app theme
-    splash_pixmap = QPixmap(480, 300)
-    splash_pixmap.fill(Qt.transparent)
-
-    painter = QPainter(splash_pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-    # Draw rounded rectangle with subtle gradient (white to light gray)
-    from PySide6.QtGui import QPainterPath
-
-    gradient = QLinearGradient(0, 0, 0, 300)
-    gradient.setColorAt(0, QColor(255, 255, 255))  # White
-    gradient.setColorAt(1, QColor(245, 245, 247))  # Light background
-
-    path = QPainterPath()
-    path.addRoundedRect(QRect(0, 0, 480, 300), 16, 16)
-    painter.fillPath(path, QBrush(gradient))
-
-    # Draw subtle border
-    painter.setPen(QColor(0, 0, 0, 8))
-    painter.drawRoundedRect(QRect(1, 1, 478, 298), 16, 16)
-
-    # Draw app name (large, clean)
-    painter.setPen(QColor(29, 29, 31))  # PRIMARY_TEXT
-    from PySide6.QtGui import QFont
-
-    font = QFont("-apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif")
-    font.setPointSize(32)
-    font.setWeight(QFont.Weight.Bold)
-    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, -0.5)
-    painter.setFont(font)
-    painter.drawText(QRect(0, 100, 480, 50), Qt.AlignCenter, "AffiLabs.core")
-
-    # Draw version/status (lighter, smaller)
-    font.setPointSize(13)
-    font.setWeight(QFont.Weight.Normal)
-    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0)
-    painter.setFont(font)
-    painter.setPen(QColor(134, 134, 139))  # SECONDARY_TEXT
-    painter.drawText(QRect(0, 160, 480, 30), Qt.AlignCenter, "Loading components...")
-
-    painter.end()
-
-    splash.setPixmap(splash_pixmap)
+    splash, splash_pixmap, update_splash_fn = create_splash_screen()
     splash.show()
     app.processEvents()
 
-    # Update splash message when main window is ready
-    def update_splash_message(message: str):
-        """Update splash screen message."""
-        if splash.isVisible():
-            painter = QPainter(splash_pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-            # Clear message area (redraw background)
-            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            gradient = QLinearGradient(0, 150, 0, 200)
-            gradient.setColorAt(0, QColor(255, 255, 255))
-            gradient.setColorAt(1, QColor(245, 245, 247))
-            painter.fillRect(QRect(0, 150, 480, 50), QBrush(gradient))
-
-            # Draw new message
-            painter.setCompositionMode(
-                QPainter.CompositionMode.CompositionMode_SourceOver,
-            )
-            painter.setPen(QColor(134, 134, 139))  # SECONDARY_TEXT
-            font = QFont("-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif")
-            font.setPointSize(13)
-            font.setWeight(QFont.Weight.Normal)
-            painter.setFont(font)
-            painter.drawText(QRect(0, 160, 480, 30), Qt.AlignCenter, message)
-            painter.end()
-
-            splash.setPixmap(splash_pixmap)
-            app.processEvents()
-
     # Store splash reference in app for updates
     app.splash_screen = splash
-    app.update_splash_message = update_splash_message
+    app.update_splash_message = lambda msg: update_splash_fn(msg, app)
 
     # Schedule splash close after window is fully loaded
     def close_splash():
