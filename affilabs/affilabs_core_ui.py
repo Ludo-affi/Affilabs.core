@@ -7344,6 +7344,33 @@ End of Debug Log
 
             valid_cycles_loaded = 0
 
+            # --- Resolve data source ONCE outside the loop ---
+            # Primary: raw_data_rows (populated from Excel or when recording)
+            # Fallback: buffer_mgr.timeline_data (always populated during live acquisition)
+            raw_data = None
+            if hasattr(self.app, 'recording_mgr') and self.app.recording_mgr is not None:
+                raw_data = self.app.recording_mgr.data_collector.raw_data_rows or None
+
+            use_live_buffer = (
+                not raw_data
+                and hasattr(self.app, 'buffer_mgr')
+                and self.app.buffer_mgr is not None
+            )
+
+            if not raw_data and not use_live_buffer:
+                logger.warning("No data source available (no recording_mgr or buffer_mgr)")
+                QMessageBox.warning(
+                    self,
+                    "No Data",
+                    "No raw data available.\n\n"
+                    "Start an acquisition or load an Excel file first."
+                )
+                return
+
+            import math
+            import numpy as np
+            _CHANNEL_MAP = {'A': 'a', 'B': 'b', 'C': 'c', 'D': 'd', 'All': None}
+
             for row in selected_rows:
                 if row >= len(self._loaded_cycles_data):
                     continue
@@ -7353,26 +7380,19 @@ End of Debug Log
                 # Get time range for this cycle
                 start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time'))
                 end_time = cycle.get('end_time_sensorgram')
-                
-                logger.info(f"[GRAPH DEBUG] Cycle {row}: start_time_raw={start_time}, end_time_raw={end_time}, type={type(start_time)}")
 
                 # Handle NaN values from pandas (convert to None)
-                import math
                 try:
                     if start_time is not None and isinstance(start_time, float) and math.isnan(start_time):
                         start_time = None
-                        logger.warning(f"[GRAPH DEBUG] Cycle {row}: start_time was NaN, converted to None")
                     if end_time is not None and isinstance(end_time, float) and math.isnan(end_time):
                         end_time = None
-                        logger.warning(f"[GRAPH DEBUG] Cycle {row}: end_time was NaN, converted to None")
                 except (TypeError, ValueError):
-                    pass  # Not a number, keep as is
+                    pass
 
                 if start_time is None:
                     logger.warning(f"Cycle {row} has no start time - skipping")
                     continue
-
-                logger.info(f"[GRAPH] Loading cycle {row}: start={start_time}s, end={end_time}s")
 
                 # If no end time, use start time + duration
                 if end_time is None:
@@ -7380,8 +7400,9 @@ End of Debug Log
                     if duration_min is not None:
                         end_time = start_time + (duration_min * 60)
                     else:
-                        logger.warning(f"Cycle {row} has no duration - using 5 min default")
-                        end_time = start_time + 300  # 5 minutes
+                        end_time = start_time + 300  # 5 minutes default
+
+                logger.info(f"[GRAPH] Loading cycle {row}: {start_time:.1f}s - {end_time:.1f}s")
 
                 # Get alignment settings for this cycle
                 cycle_channel = 'All'
@@ -7389,66 +7410,22 @@ End of Debug Log
                 if hasattr(self, '_cycle_alignment') and row in self._cycle_alignment:
                     cycle_channel = self._cycle_alignment[row]['channel']
                     cycle_shift = self._cycle_alignment[row]['shift']
-                    logger.info(f"[GRAPH] Cycle {row} alignment: channel={cycle_channel}, shift={cycle_shift:.2f}s")
 
-                channel_map = {'A': 'a', 'B': 'b', 'C': 'c', 'D': 'd', 'All': None}
-                target_channel = channel_map.get(cycle_channel)
+                target_channel = _CHANNEL_MAP.get(cycle_channel)
+                points_found = 0
 
-                # --- Data source selection ---
-                # Primary: raw_data_rows (populated from Excel or when recording)
-                # Fallback: buffer_mgr.timeline_data (always populated during live acquisition)
-                raw_data = None
-                use_buffer_mgr = False
-                if hasattr(self.app, 'recording_mgr') and self.app.recording_mgr is not None:
-                    raw_data = self.app.recording_mgr.data_collector.raw_data_rows
-
-                if raw_data:
-                    # --- Path A: raw_data_rows (loaded Excel / recording) ---
-                    logger.info(f"[GRAPH] Filtering {len(raw_data)} raw_data_rows for time range {start_time:.1f}-{end_time:.1f}")
-                    points_found = 0
-                    for row_data in raw_data:
-                        time_val = row_data.get('elapsed', row_data.get('time', 0))
-                        if start_time <= time_val <= end_time:
-                            points_found += 1
-                            if 'channel' in row_data and 'value' in row_data:
-                                ch = row_data.get('channel')
-                                value = row_data.get('value')
-                                if ch in ['a', 'b', 'c', 'd'] and value is not None:
-                                    if target_channel is None or ch == target_channel:
-                                        relative_time = time_val - start_time + cycle_shift
-                                    else:
-                                        relative_time = time_val - start_time
-                                    all_cycle_data[ch]['time'].append(relative_time)
-                                    all_cycle_data[ch]['wavelength'].append(value)
-                            else:
-                                for ch in ['a', 'b', 'c', 'd']:
-                                    wavelength = row_data.get(f'channel_{ch}', row_data.get(f'wavelength_{ch}'))
-                                    if wavelength is not None:
-                                        if target_channel is None or ch == target_channel:
-                                            relative_time = time_val - start_time + cycle_shift
-                                        else:
-                                            relative_time = time_val - start_time
-                                        all_cycle_data[ch]['time'].append(relative_time)
-                                        all_cycle_data[ch]['wavelength'].append(wavelength)
-                    logger.info(f"[GRAPH] Found {points_found} data points from raw_data_rows for cycle {row}")
-
-                elif hasattr(self.app, 'buffer_mgr') and self.app.buffer_mgr is not None:
-                    # --- Path B: Live buffer (timeline_data numpy arrays) ---
-                    use_buffer_mgr = True
-                    import numpy as np
-                    points_found = 0
+                if use_live_buffer:
+                    # --- Path B: Live buffer (numpy arrays, efficient slicing) ---
                     for ch in ['a', 'b', 'c', 'd']:
                         buf = self.app.buffer_mgr.timeline_data.get(ch)
                         if buf is None or len(buf.time) == 0:
                             continue
-                        # Use searchsorted for efficient time-range slicing
                         i_start = np.searchsorted(buf.time, start_time, side='left')
                         i_end = np.searchsorted(buf.time, end_time, side='right')
                         if i_start >= i_end:
                             continue
                         t_slice = buf.time[i_start:i_end]
                         w_slice = buf.wavelength[i_start:i_end]
-                        # Apply shift
                         if target_channel is None or ch == target_channel:
                             rel_times = (t_slice - start_time + cycle_shift).tolist()
                         else:
@@ -7456,10 +7433,38 @@ End of Debug Log
                         all_cycle_data[ch]['time'].extend(rel_times)
                         all_cycle_data[ch]['wavelength'].extend(w_slice.tolist())
                         points_found += len(t_slice)
-                    logger.info(f"[GRAPH] Found {points_found} data points from live buffer for cycle {row}")
+                    logger.info(f"[GRAPH] Cycle {row}: {points_found} pts from live buffer")
+
                 else:
-                    logger.warning("No data source available (no recording_mgr or buffer_mgr)")
-                    continue
+                    # --- Path A: raw_data_rows (loaded Excel / recording) ---
+                    for row_data in raw_data:
+                        time_val = row_data.get('elapsed', row_data.get('time', 0))
+                        if time_val > end_time:
+                            break  # Data is time-ordered; past the window
+                        if time_val < start_time:
+                            continue
+                        points_found += 1
+                        if 'channel' in row_data and 'value' in row_data:
+                            ch = row_data.get('channel')
+                            value = row_data.get('value')
+                            if ch in ['a', 'b', 'c', 'd'] and value is not None:
+                                if target_channel is None or ch == target_channel:
+                                    relative_time = time_val - start_time + cycle_shift
+                                else:
+                                    relative_time = time_val - start_time
+                                all_cycle_data[ch]['time'].append(relative_time)
+                                all_cycle_data[ch]['wavelength'].append(value)
+                        else:
+                            for ch in ['a', 'b', 'c', 'd']:
+                                wavelength = row_data.get(f'channel_{ch}', row_data.get(f'wavelength_{ch}'))
+                                if wavelength is not None:
+                                    if target_channel is None or ch == target_channel:
+                                        relative_time = time_val - start_time + cycle_shift
+                                    else:
+                                        relative_time = time_val - start_time
+                                    all_cycle_data[ch]['time'].append(relative_time)
+                                    all_cycle_data[ch]['wavelength'].append(wavelength)
+                    logger.info(f"[GRAPH] Cycle {row}: {points_found} pts from raw_data_rows")
 
                 if points_found > 0:
                     valid_cycles_loaded += 1
@@ -7476,8 +7481,6 @@ End of Debug Log
                 return
 
             # Plot the collected data on the graph
-            import numpy as np
-
             # Conversion factor: 1 nm wavelength shift = 355 RU
             WAVELENGTH_TO_RU = 355.0
 
