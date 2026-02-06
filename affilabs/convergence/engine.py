@@ -97,6 +97,8 @@ class ConvergenceEngine:
     EARLY_STOP_ERROR_THRESHOLD = 10.0  # Maximum average error % for early stopping
     FINE_TUNE_ERROR_THRESHOLD = 0.05  # Lock channels within 5% of target
     UNLOCK_DRIFT_THRESHOLD = 0.10  # Unlock if drifted >10% from target
+    BLOCKED_SIGNAL_THRESHOLD = 0.05  # Below 5% of max counts = polarizer blocking
+    BLOCKED_CONSECUTIVE_ITERS = 3  # Bail out after this many blocked iterations
 
     def __init__(
         self,
@@ -440,6 +442,47 @@ class ConvergenceEngine:
                         state.best_per_channel_integration[ch] = state.integration_ms
                         sat_note = f" ({ch_sat}px sat)" if ch_sat > 0 else ""
                         self._log("debug", f"  💡 {ch.upper()}: New best brightness - LED={ch_led}, signal={ch_signal:.0f} ({ch_signal/target_signal*100:.1f}%) @ {state.integration_ms:.1f}ms [was {prev_signal:.0f}]{sat_note}")
+
+            # EARLY BAIL-OUT: Detect polarizer completely blocking light
+            # If ALL channels are below 5% of detector max for 3 consecutive
+            # iterations, the servo position is wrong — abort immediately
+            # instead of wasting 12 iterations.
+            blocked_threshold = params.max_counts * self.BLOCKED_SIGNAL_THRESHOLD
+            all_blocked = all(
+                signals[ch] < blocked_threshold for ch in recipe.channels
+            )
+            if all_blocked:
+                # Count consecutive blocked iterations
+                blocked_count = 0
+                for hist in reversed(state.iteration_history):
+                    if all(hist['signals'][ch] < blocked_threshold for ch in recipe.channels):
+                        blocked_count += 1
+                    else:
+                        break
+                if blocked_count >= self.BLOCKED_CONSECUTIVE_ITERS:
+                    max_signal = max(signals.values()) if signals else 0.0
+                    self._log("error",
+                             f"\n🚫 POLARIZER BLOCKING DETECTED — aborting convergence")
+                    self._log("error",
+                             f"   All channels below {self.BLOCKED_SIGNAL_THRESHOLD*100:.0f}% "
+                             f"of detector max for {blocked_count} consecutive iterations")
+                    self._log("error",
+                             f"   Max signal: {max_signal:.0f} counts "
+                             f"(threshold: {blocked_threshold:.0f})")
+                    self._log("error",
+                             "   Servo S/P positions are likely INCORRECT. "
+                             "Run servo calibration.")
+                    raise RuntimeError(
+                        f"Polarizer blocking light: signal={max_signal:.0f} counts "
+                        f"(expected >{blocked_threshold:.0f}). "
+                        f"All channels below {self.BLOCKED_SIGNAL_THRESHOLD*100:.0f}% "
+                        f"for {blocked_count} iterations. Run servo calibration."
+                    )
+                elif iteration <= self.BLOCKED_CONSECUTIVE_ITERS:
+                    self._log("warning",
+                             f"  ⚠️  All channels below {self.BLOCKED_SIGNAL_THRESHOLD*100:.0f}% "
+                             f"of detector max ({blocked_count}/{self.BLOCKED_CONSECUTIVE_ITERS} "
+                             f"blocked iterations before abort)")
 
             # Acceptance
             acc = accept.evaluate(signals, saturation, target_signal, tol_signal, recipe)

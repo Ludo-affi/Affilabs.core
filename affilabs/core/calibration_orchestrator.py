@@ -505,6 +505,10 @@ def run_startup_calibration(
                     f"   ✅ Signal check PASSED: {test_signal:.0f} counts ({signal_percent:.1f}%)"
                 )
                 logger.info("   Polarizer is transmitting light correctly")
+        except RuntimeError:
+            # Polarizer blocking detection — let it propagate to
+            # calibration_service which triggers automatic servo calibration
+            raise
         except Exception as e:
             logger.warning(f"⚠️  Pre-convergence signal test failed: {e}")
             logger.warning("   Proceeding with calibration anyway...")
