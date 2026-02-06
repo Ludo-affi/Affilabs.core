@@ -50,10 +50,22 @@ class SettingsHelpers:
             # Load servo positions from device config file (not EEPROM)
             if app.main_window.device_config:
                 servo_positions = app.main_window.device_config.get_servo_positions()
+
+                # Handle None (positions not calibrated yet)
+                if servo_positions is None:
+                    print("=" * 80)
+                    print("   SERVO POSITIONS NOT CALIBRATED")
+                    print("=" * 80)
+                    print("   S and P positions are None in device_config")
+                    print("   Auto-triggering servo calibration...")
+                    print("=" * 80)
+                    app._run_servo_auto_calibration()
+                    return  # Exit - calibration will update positions when complete
+
                 s_pos = servo_positions["s"]
                 p_pos = servo_positions["p"]
 
-                # Check if positions are absent or still at default values
+                # Check if positions are still at default values
                 # Default values (10/100) indicate servo calibration hasn't been run
                 if s_pos == 10 and p_pos == 100:
                     print("=" * 80)

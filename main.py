@@ -7850,17 +7850,18 @@ class Application(QApplication):
             progress.close()
 
             if success:
-                # Load the newly calibrated S and P positions from device-specific config
+                # Sync calibrated positions into the live system:
+                # 1. Read from disk JSON (where calibrate_polarizer wrote them)
+                # 2. Update in-memory DeviceConfiguration (prevents save() from clobbering)
+                # 3. Load into controller RAM (so set_mode works immediately)
                 try:
                     import json
 
-                    # Get detector serial number
                     serial_number = None
                     if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
                         if hasattr(self.hardware_mgr, 'detector') and self.hardware_mgr.detector:
                             serial_number = getattr(self.hardware_mgr.detector, 'serial_number', None)
 
-                    # Use device-specific config if serial available, else generic
                     if serial_number:
                         config_path = Path(__file__).parent / "affilabs" / "config" / "devices" / serial_number / "device_config.json"
                     else:
@@ -7869,17 +7870,31 @@ class Application(QApplication):
                     with open(config_path) as f:
                         config = json.load(f)
 
-                    # Read from hardware section (where calibration writes)
                     s_position = config.get("hardware", {}).get("servo_s_position")
                     p_position = config.get("hardware", {}).get("servo_p_position")
 
                     if s_position is not None and p_position is not None:
-                        # Positions are in PWM (0-255), not degrees
-                        logger.info(f"Servo positions available: S={s_position}, P={p_position}")
+                        logger.info(f"Syncing calibrated servo positions: S={s_position}, P={p_position}")
+
+                        # Update in-memory DeviceConfiguration so save() won't clobber
+                        if self.main_window.device_config:
+                            self.main_window.device_config.set_servo_positions(s_position, p_position)
+                            logger.info("  -> In-memory DeviceConfiguration updated")
+
+                        # Load into controller RAM so set_mode() works now
+                        if self.hardware_mgr and self.hardware_mgr.ctrl:
+                            self.hardware_mgr.ctrl.set_servo_positions(s=s_position, p=p_position)
+                            logger.info("  -> Controller RAM updated")
+
+                        # Update UI inputs
+                        if hasattr(self.main_window, 's_position_input'):
+                            self.main_window.s_position_input.setText(str(s_position))
+                        if hasattr(self.main_window, 'p_position_input'):
+                            self.main_window.p_position_input.setText(str(p_position))
                     else:
-                        logger.warning("WARNING: Servo positions not found in device_config.json")
+                        logger.warning("Servo positions not found in device_config.json after calibration")
                 except Exception as e:
-                    logger.error(f"Failed to load servo positions: {e}")
+                    logger.error(f"Failed to sync servo positions after calibration: {e}")
 
                 # Clear graphs and restart sensorgram at t=0
                 logger.info("📊 Clearing graph and restarting sensorgram...")

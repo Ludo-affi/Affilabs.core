@@ -924,9 +924,25 @@ class CalibrationService(QObject):
                                     logger.info("✅ SERVO CALIBRATION COMPLETED SUCCESSFULLY")
                                     logger.info("=" * 80)
                                     logger.info(f"   New servo positions: S={s_pos}, P={p_pos}")
-                                    logger.info(
-                                        "   Positions have been saved to device_config.json"
-                                    )
+
+                                    # Sync to the app's live DeviceConfiguration
+                                    # so any later save() won't clobber the values
+                                    if (
+                                        hasattr(self, '_app')
+                                        and self._app
+                                        and hasattr(self._app, 'main_window')
+                                        and self._app.main_window
+                                        and hasattr(self._app.main_window, 'device_config')
+                                        and self._app.main_window.device_config
+                                    ):
+                                        self._app.main_window.device_config.set_servo_positions(s_pos, p_pos)
+                                        logger.info("   -> App in-memory DeviceConfiguration synced")
+
+                                    # Load into controller RAM
+                                    if ctrl and hasattr(ctrl, 'set_servo_positions'):
+                                        ctrl.set_servo_positions(s=s_pos, p=p_pos)
+                                        logger.info("   -> Controller RAM updated")
+
                                     logger.info(
                                         "   Retrying LED calibration with correct positions..."
                                     )
