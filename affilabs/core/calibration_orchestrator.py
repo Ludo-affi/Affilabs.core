@@ -392,8 +392,14 @@ def run_startup_calibration(
         ctrl.set_servo_positions(s_pos, p_pos)
         time.sleep(0.2)
 
+        # Park servo first to ensure user hears movement and to eliminate backlash
+        if ctrl.supports_polarizer:
+            logger.info("   🏠 Parking servo first (PWM 1) to confirm movement...")
+            ctrl.servo_move_raw_pwm(1)
+            time.sleep(0.8)  # Longer delay so servo fully reaches park position
+
         # Use set_mode() which sends 'ss' and relies on positions loaded above
-        logger.info(f"   Sending 'ss' command to move to S-mode (target PWM: {s_pos})...")
+        logger.info(f"   🎯 Sending 'ss' command to move to S-mode (target PWM: {s_pos})...")
         logger.info(
             f"   Expected S position from device_config: PWM {s_pos} ({(s_pos / 255.0) * 180:.1f}°)"
         )
@@ -960,19 +966,27 @@ def run_startup_calibration(
         logger.info("=" * 80)
         logger.info(f"   Target P position: PWM {p_pos} ({(p_pos/255.0)*180:.1f}°)")
 
+        # Get raw controller access for parking
+        raw_ctrl = ctrl._ctrl if hasattr(ctrl, "_ctrl") else ctrl
+
+        # Park servo first to ensure user hears movement and to eliminate backlash
+        if ctrl.supports_polarizer:
+            logger.info("   🏠 Parking servo first (PWM 1) to confirm movement...")
+            raw_ctrl.servo_move_raw_pwm(1)
+            time.sleep(0.8)  # Longer delay so servo fully reaches park position
+
         # Convert PWM to degrees and use sv + sp commands
         s_degrees = int(5 + (s_pos / 255.0) * 170.0)
         p_degrees = int(5 + (p_pos / 255.0) * 170.0)
 
-        # Get raw controller access
-        raw_ctrl = ctrl._ctrl if hasattr(ctrl, "_ctrl") else ctrl
-
         # Set positions using sv command
         sv_cmd = f"sv{s_degrees:03d}{p_degrees:03d}\n"
+        logger.info(f"   📤 Sending sv command: {sv_cmd.strip()} (S={s_degrees}°, P={p_degrees}°)")
         raw_ctrl._ser.write(sv_cmd.encode())
         time.sleep(0.2)
 
         # Move to P position using sp command
+        logger.info("   🎯 Sending sp command to move to P position...")
         raw_ctrl._ser.write(b"sp\n")
         time.sleep(0.5)  # Wait for servo to settle at P position
 
