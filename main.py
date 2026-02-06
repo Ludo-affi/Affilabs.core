@@ -2394,6 +2394,12 @@ class Application(QApplication):
         elapsed_sec = total_sec - max(0, self._cycle_end_time - now)
         remaining_sec = max(0, self._cycle_end_time - now)
 
+        # --- Auto-advance: cycle timer expired ---
+        if remaining_sec <= 0:
+            logger.info(f"⏱ Cycle timer expired — triggering auto-advance")
+            self._on_cycle_completed()
+            return
+
         cycle_type = self._current_cycle.type
         cycle_num = self._current_cycle.cycle_num
         total_cycles = self._current_cycle.total_cycles
