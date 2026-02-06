@@ -532,10 +532,17 @@ class SparkHelpWidget(QWidget):
                 self.tts_button.setText("🔇")
                 self.tts_button.setToolTip("Unmute Spark voice")
 
+    # Maximum characters to send to Piper in one call (prevents buffer overruns)
+    _TTS_MAX_CHARS = 800
+    _tts_consecutive_failures = 0
+    _TTS_MAX_FAILURES = 3  # Disable TTS after this many consecutive crashes
+
     def _speak_text(self, text: str):
         """Speak text using Piper TTS in background thread."""
         if not self.tts_enabled or not self.piper_path:
             return
+        if self._tts_consecutive_failures >= self._TTS_MAX_FAILURES:
+            return  # TTS crashed too many times, stay silent
 
         # Remove markdown formatting for cleaner speech
         clean_text = text.replace('**', '').replace('\n\n', '. ').replace('\n', '. ')
@@ -546,6 +553,17 @@ class SparkHelpWidget(QWidget):
         # Pronounce Affilabs as two words
         clean_text = clean_text.replace('Affilabs', 'uh fee labs')
         clean_text = clean_text.replace('affilabs', 'uh fee labs')
+        # Strip null bytes and non-ASCII control chars that can crash Piper
+        clean_text = ''.join(c for c in clean_text if c == '\n' or (ord(c) >= 32))
+        # Truncate to safe length to prevent Piper buffer overrun
+        if len(clean_text) > self._TTS_MAX_CHARS:
+            # Cut at last sentence boundary within limit
+            truncated = clean_text[:self._TTS_MAX_CHARS]
+            last_period = truncated.rfind('.')
+            if last_period > self._TTS_MAX_CHARS // 2:
+                clean_text = truncated[:last_period + 1]
+            else:
+                clean_text = truncated
 
         def speak():
             try:
@@ -554,19 +572,35 @@ class SparkHelpWidget(QWidget):
                 piper_dir = os.path.dirname(self.piper_path)
                 model_path = os.path.join(piper_dir, f'{self.voice_model}.onnx')
 
-                # Run piper to generate audio
+                # Run piper to generate audio with timeout
                 result = subprocess.run(
                     [self.piper_path, '--model', model_path, '--output-raw'],
                     input=clean_text.encode('utf-8'),
                     capture_output=True,
-                    check=True
+                    check=True,
+                    timeout=30,
                 )
 
                 # Parse WAV data and play
                 audio_data = np.frombuffer(result.stdout, dtype=np.int16)
-                sd.play(audio_data, 22050)  # Piper default sample rate
-                sd.wait()
+                if len(audio_data) > 0:
+                    sd.play(audio_data, 22050)  # Piper default sample rate
+                    sd.wait()
 
+                # Reset failure counter on success
+                self._tts_consecutive_failures = 0
+
+            except subprocess.TimeoutExpired:
+                print("TTS warning: Piper timed out, skipping")
+                self._tts_consecutive_failures += 1
+            except subprocess.CalledProcessError as e:
+                self._tts_consecutive_failures += 1
+                if self._tts_consecutive_failures >= self._TTS_MAX_FAILURES:
+                    print(f"TTS disabled: Piper crashed {self._TTS_MAX_FAILURES} times "
+                          f"(last exit code: {e.returncode:#x})")
+                else:
+                    print(f"TTS warning: Piper exit code {e.returncode:#x} "
+                          f"(failure {self._tts_consecutive_failures}/{self._TTS_MAX_FAILURES})")
             except Exception as e:
                 print(f"TTS error: {e}")
 
