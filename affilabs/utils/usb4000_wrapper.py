@@ -438,6 +438,10 @@ class USB4000:
             logger.error(f"set_integration FAILED: device={self._device is not None}, opened={self.opened}")
             return False
         try:
+            # FLOOR: Enforce 3ms minimum to prevent convergence from going too low
+            # Ocean Optics hardware becomes unstable below 3ms
+            time_ms = max(3.0, time_ms)
+            
             time_us = int(time_ms * 1000)  # SeaBreeze API requires microseconds
             with _usb_device_lock:
                 self._device.integration_time_micros(time_us)
@@ -521,13 +525,16 @@ class USB4000:
 
     @property
     def min_integration(self):
+        # FLOOR: Return 3ms minimum for Ocean Optics stability
+        # The hardware minimum is typically ~1ms, but convergence should not go below 3ms
         if self._device:
             try:
                 with _usb_device_lock:
-                    return self._device.minimum_integration_time_micros / 1_000_000
+                    hw_min = self._device.minimum_integration_time_micros / 1_000_000
+                    return max(0.003, hw_min)  # Enforce 3ms floor
             except Exception as e:
                 logger.debug(f"Could not read min integration time: {e}")
-        return 0.001
+        return 0.003  # 3ms default floor
 
     @property
     def integration_time(self):
