@@ -5,14 +5,323 @@ Replaces the cramped sidebar form with a spacious popup dialog for better UX.
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QPlainTextEdit, QFrame,
+    QPlainTextEdit, QFrame, QTextEdit, QScrollArea, QSizePolicy,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QKeyEvent, QCursor
 from affilabs.domain.cycle import Cycle
 from affilabs.services.queue_preset_storage import QueuePresetStorage
 import time
+import re
+import threading
+
+
+# ---------------------------------------------------------------------------
+#  Spark Method Popup — lightweight chat for method-building assistance
+# ---------------------------------------------------------------------------
+
+class _SparkBubble(QFrame):
+    """Minimal chat bubble for the method-builder Spark popup."""
+
+    def __init__(self, text: str, is_user: bool = True, parent=None):
+        super().__init__(parent)
+        bg = "#E3F2FD" if is_user else "#F5F5F5"
+        fg = "#1565C0" if is_user else "#212121"
+        self.setStyleSheet(f"QFrame {{ background: {bg}; border-radius: 12px; }}")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        self.label = QLabel(text)
+        self.label.setWordWrap(True)
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.label.setStyleSheet(
+            f"color: {fg}; font-size: 13px; background: transparent;"
+            f" font-family: -apple-system, 'Segoe UI', sans-serif;"
+        )
+        layout.addWidget(self.label)
+        if is_user:
+            self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+        else:
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+
+
+class SparkMethodPopup(QDialog):
+    """Spark AI chat popup specialised for method-building queries.
+
+    Opens from the green ⚡ Spark button in the method builder.
+    Provides a conversational interface that can generate method text
+    which the user can insert directly into the notes field.
+    """
+
+    # Emitted with the text the user wants inserted into the notes field
+    insert_requested = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("⚡ Spark — Method Assistant")
+        self.resize(460, 520)
+        self.setModal(False)  # Non-blocking
+        self._last_ai_text = ""  # Most recent AI answer (for Insert button)
+        self._answer_engine = None  # Lazy-loaded
+        self._setup_ui()
+
+    # -- UI ----------------------------------------------------------------
+
+    def _setup_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(8)
+
+        # Header
+        hdr = QLabel("⚡ Spark — Method Assistant")
+        hdr.setStyleSheet(
+            "font-size: 15px; font-weight: 700; color: #1D1D1F;"
+            " font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;"
+        )
+        root.addWidget(hdr)
+
+        # Scrollable chat area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(
+            "QScrollArea { border: 1px solid #E5E5EA; border-radius: 8px; background: white; }"
+        )
+        chat_container = QFrame()
+        chat_container.setStyleSheet("background: white;")
+        self._chat_layout = QVBoxLayout(chat_container)
+        self._chat_layout.setContentsMargins(8, 8, 8, 8)
+        self._chat_layout.setSpacing(8)
+        self._chat_layout.addStretch()  # Pushes bubbles up
+        scroll.setWidget(chat_container)
+        self._scroll = scroll
+        root.addWidget(scroll, 1)
+
+        # Welcome bubble
+        self._add_bubble(
+            "Hi! I can help you build methods. Try asking:\n\n"
+            "• How do I run a titration?\n"
+            "• Show me kinetics\n"
+            "• Amine coupling with 5 concentrations\n"
+            "• Build 3 concentration cycles\n\n"
+            "Or ask any general question!",
+            is_user=False,
+        )
+
+        # Input row
+        input_row = QHBoxLayout()
+        self._input = QTextEdit()
+        self._input.setPlaceholderText("Ask Spark about methods…")
+        self._input.setMaximumHeight(60)
+        self._input.setStyleSheet(
+            "QTextEdit { background: white; border: 2px solid #E5E5EA;"
+            " border-radius: 8px; padding: 8px; font-size: 13px; }"
+            " QTextEdit:focus { border: 2px solid #34C759; }"
+        )
+        self._input.installEventFilter(self)
+        input_row.addWidget(self._input, 1)
+
+        send_btn = QPushButton("Send")
+        send_btn.setFixedSize(60, 36)
+        send_btn.setStyleSheet(
+            "QPushButton { background: #34C759; color: white; border: none;"
+            " border-radius: 8px; font-weight: 600; font-size: 13px; }"
+            " QPushButton:hover { background: #28A745; }"
+        )
+        send_btn.clicked.connect(self._on_send)
+        input_row.addWidget(send_btn)
+        root.addLayout(input_row)
+
+        # Bottom action row
+        action_row = QHBoxLayout()
+
+        self._insert_btn = QPushButton("📋 Insert into Method")
+        self._insert_btn.setFixedHeight(32)
+        self._insert_btn.setEnabled(False)
+        self._insert_btn.setToolTip("Paste Spark's last suggestion into the Note field")
+        self._insert_btn.setStyleSheet(
+            "QPushButton { background: #007AFF; color: white; border: none;"
+            " border-radius: 6px; padding: 4px 16px; font-size: 12px; font-weight: 600; }"
+            " QPushButton:hover { background: #0051D5; }"
+            " QPushButton:disabled { background: #C7C7CC; }"
+        )
+        self._insert_btn.clicked.connect(self._on_insert)
+        action_row.addWidget(self._insert_btn)
+
+        action_row.addStretch()
+
+        close_btn = QPushButton("Close")
+        close_btn.setFixedHeight(32)
+        close_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #86868B; border: 1px solid #E5E5EA;"
+            " border-radius: 6px; padding: 4px 16px; font-size: 12px; }"
+            " QPushButton:hover { background: #F5F5F7; }"
+        )
+        close_btn.clicked.connect(self.close)
+        action_row.addWidget(close_btn)
+
+        root.addLayout(action_row)
+
+    # -- Event filter for Enter-to-send ------------------------------------
+
+    def eventFilter(self, obj, event):
+        if obj is self._input and isinstance(event, QKeyEvent):
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+                    self._on_send()
+                    return True
+        return super().eventFilter(obj, event)
+
+    # -- Chat helpers ------------------------------------------------------
+
+    def _add_bubble(self, text: str, is_user: bool = True):
+        bubble = _SparkBubble(text, is_user=is_user, parent=self)
+        # Insert before the stretch at the end
+        idx = self._chat_layout.count() - 1
+        self._chat_layout.insertWidget(idx, bubble,
+            alignment=Qt.AlignmentFlag.AlignRight if is_user else Qt.AlignmentFlag.AlignLeft)
+        QTimer.singleShot(50, self._scroll_bottom)
+        return bubble
+
+    def _scroll_bottom(self):
+        sb = self._scroll.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    # -- Send / answer -----------------------------------------------------
+
+    def _on_send(self):
+        question = self._input.toPlainText().strip()
+        if not question:
+            return
+        self._input.clear()
+
+        # User bubble
+        self._add_bubble(question, is_user=True)
+
+        # Thinking bubble
+        thinking = self._add_bubble("💭 Thinking...", is_user=False)
+
+        # Generate answer (slightly delayed so the UI paints the thinking bubble)
+        QTimer.singleShot(100, lambda: self._generate_answer(question, thinking))
+
+    def _generate_answer(self, question: str, thinking_bubble):
+        """Try method-specific patterns first, then fall back to SparkAnswerEngine."""
+        answer = self._try_method_patterns(question)
+
+        if answer is None:
+            # Fall back to full Spark engine
+            if self._answer_engine is None:
+                try:
+                    from affilabs.services.spark import SparkAnswerEngine
+                    self._answer_engine = SparkAnswerEngine()
+                except Exception as e:
+                    answer = f"Could not load Spark engine: {e}"
+            if answer is None:
+                try:
+                    answer, _ = self._answer_engine.generate_answer(question)
+                except Exception as e:
+                    answer = f"Error: {e}"
+
+        # Replace thinking bubble
+        thinking_bubble.label.setText(answer)
+        thinking_bubble.setStyleSheet("QFrame { background: #F5F5F5; border-radius: 12px; }")
+        thinking_bubble.label.setStyleSheet(
+            "color: #212121; font-size: 13px; background: transparent;"
+            " font-family: -apple-system, 'Segoe UI', sans-serif;"
+        )
+
+        # Track last answer for Insert button
+        self._last_ai_text = answer
+        self._insert_btn.setEnabled(True)
+        QTimer.singleShot(50, self._scroll_bottom)
+
+    # -- Method-specific pattern matching ----------------------------------
+
+    def _try_method_patterns(self, text: str):
+        """Return a method suggestion string, or None to fall back to the engine."""
+        t = text.lower().strip()
+
+        # "build N" pattern
+        m = re.search(r'build.*?(\d+)', t)
+        if m:
+            n = int(m.group(1))
+            lines = []
+            for i in range(n):
+                lines.append(f"Concentration 15min [A]  # Concentration {i+1}")
+                lines.append("Regeneration 2min [ALL]")
+                lines.append("Baseline 2min [ALL]")
+            return "\n".join(lines)
+
+        if re.search(r'titration|dose.?response|concentration series|serial dilution', t):
+            return ("Baseline 5min [ALL]\n"
+                    "Concentration 2min [A:10nM] contact 120s\n"
+                    "Concentration 2min [A:50nM] contact 120s\n"
+                    "Concentration 2min [A:100nM] contact 120s\n"
+                    "Concentration 2min [A:500nM] contact 120s\n"
+                    "Regeneration 30sec [ALL:50mM]")
+
+        if re.search(r'kinetics|kinetic|dissociation|off.?rate', t):
+            return ("Baseline 2min [ALL]\n"
+                    "Concentration 2min [A:100nM] contact 120s\n"
+                    "Baseline 10min [ALL]  # Dissociation phase\n"
+                    "Regeneration 30sec [ALL:50mM]")
+
+        if re.search(r'full cycle|complete cycle|entire run|whole method', t):
+            return ("Baseline 5min [ALL]\n"
+                    "Concentration 2min [A:100nM] contact 120s\n"
+                    "Regeneration 30sec [ALL:50mM]")
+
+        if re.search(r'regeneration|regen|clean|wash|remove', t):
+            return "Regeneration 30sec [ALL:50mM]"
+
+        if re.search(r'binding|association|inject|sample|analyte', t):
+            return ("Concentration 2min [A:100nM] contact 120s [B:50nM] contact 120s\n"
+                    "Concentration 5min [A:200nM] contact 180s\n"
+                    "Concentration 10min [A:500nM] contact 300s")
+
+        if re.search(r'amine coupling|amine|coupling', t):
+            # Default to 5 concentrations; user can adjust
+            n_match = re.search(r'(\d+)', t)
+            n = int(n_match.group(1)) if n_match else 5
+            lines = [
+                "Baseline 30sec [ALL]",
+                "Other 4min  # Activation",
+                "Other 30sec  # Wash",
+                "Immobilization 4min [A]",
+                "Other 30sec  # Wash",
+                "Other 4min  # Blocking",
+                "Other 30sec  # Wash",
+                "Baseline 15min [ALL]",
+                "",
+                "# Concentration series",
+            ]
+            for i in range(n):
+                lines.append(f"Concentration 15min [A]  # Concentration {i+1}")
+                lines.append("Regeneration 2min [ALL]")
+                lines.append("Baseline 2min [ALL]")
+            return "\n".join(lines)
+
+        if re.search(r'immobilization|immobilize|immob|attach', t):
+            return "Immobilization 10min [A:50µg/mL] contact 180s"
+
+        if re.search(r'baseline|start|begin|initial', t):
+            return "Baseline 5min [ALL]"
+
+        return None  # No match — fall back to engine
+
+    # -- Insert into notes -------------------------------------------------
+
+    def _on_insert(self):
+        """Insert last AI answer into the method builder notes field."""
+        if not self._last_ai_text:
+            return
+        # Strip lines that start with # (comments) or are purely informational
+        lines = self._last_ai_text.strip().split("\n")
+        # Keep cycle-like lines and comments, strip pure prose
+        self.insert_requested.emit(self._last_ai_text.strip())
+        self._insert_btn.setEnabled(False)
+
+
+# ---------------------------------------------------------------------------
 
 
 class NotesTextEdit(QPlainTextEdit):
@@ -120,7 +429,33 @@ class MethodBuilderDialog(QDialog):
         self._preset_storage = QueuePresetStorage()  # For @preset and !save commands
         self._waiting_for_response = False  # Track if we're waiting for user answer
         self._pending_command = None  # Store the command waiting for answer (e.g., "amine_coupling", "build")
+        self._spark_popup = None  # Lazy-created Spark popup
         self._setup_ui()
+
+    # -- Spark popup -------------------------------------------------------
+
+    def _open_spark_popup(self):
+        """Open (or focus) the Spark AI chat popup for method building."""
+        if self._spark_popup is None or not self._spark_popup.isVisible():
+            self._spark_popup = SparkMethodPopup(self)
+            self._spark_popup.insert_requested.connect(self._on_spark_insert)
+            self._spark_popup.show()
+        else:
+            # Already open — bring to front
+            self._spark_popup.raise_()
+            self._spark_popup.activateWindow()
+
+    def _on_spark_insert(self, text: str):
+        """Receive text from Spark popup and paste into the notes field."""
+        current = self.notes_input.toPlainText().strip()
+        if current:
+            self.notes_input.setPlainText(current + "\n" + text)
+        else:
+            self.notes_input.setPlainText(text)
+        # Move cursor to end
+        cursor = self.notes_input.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.notes_input.setTextCursor(cursor)
 
     def _detect_and_respond_to_question(self):
         """Detect if user is asking a question and provide helpful suggestions.
@@ -413,8 +748,8 @@ class MethodBuilderDialog(QDialog):
             "}"
             "QPushButton:hover { background: #28A745; }"
         )
-        ask_btn.setToolTip("Spark AI: Type @spark question or click to activate")
-        ask_btn.clicked.connect(self._detect_and_respond_to_question)
+        ask_btn.setToolTip("Open Spark AI assistant for method building help")
+        ask_btn.clicked.connect(self._open_spark_popup)
         notes_header.addWidget(ask_btn)
 
         # Help button
