@@ -462,17 +462,19 @@ def run_startup_calibration(
             test_spectrum = usb.read_intensity()
             test_signal = np.mean(test_spectrum[wave_min_index:wave_max_index])
 
-            # Calculate expected minimum signal (5% of detector range)
-            critical_threshold = detector_params.max_counts * 0.05
+            # Calculate expected minimum signal (3% of detector range)
+            # Lowered from 5% to 3% to reduce false-positive recalibrations
+            # With 4 LEDs @ 5% and 5ms integration, 3% threshold (~1966 counts) is sufficient
+            critical_threshold = detector_params.max_counts * 0.03
             signal_percent = (test_signal / detector_params.max_counts) * 100
 
             logger.info(
                 f"   Test signal (ALL 4 LEDs @ 5%, 5ms): {test_signal:.0f} counts ({signal_percent:.1f}% of detector range)"
             )
             logger.info(
-                f"   Expected range: {critical_threshold:.0f} - {detector_params.max_counts*0.30:.0f} counts (5-30%)"
+                f"   Expected minimum: {critical_threshold:.0f} counts (3% threshold)"
             )
-            logger.info("   This should match servo calibration S-region intensity: ~18800 counts")
+            logger.info("   Typical S-mode signal: 15000-20000 counts with good positioning")
 
             if test_signal < critical_threshold:
                 logger.error("=" * 80)
@@ -480,7 +482,7 @@ def run_startup_calibration(
                 logger.error("=" * 80)
                 logger.error(f"   Signal is CRITICALLY LOW: {test_signal:.0f} counts")
                 logger.error(f"   Expected minimum: {critical_threshold:.0f} counts")
-                logger.error(f"   Actual: {signal_percent:.1f}% of detector range (should be >5%)")
+                logger.error(f"   Actual: {signal_percent:.1f}% of detector range (should be >3%)")
                 logger.error("")
                 logger.error("   🚨 THE POLARIZER IS BLOCKING THE OPTICAL PATH!")
                 logger.error("")
