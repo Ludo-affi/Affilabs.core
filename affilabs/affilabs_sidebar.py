@@ -723,12 +723,17 @@ class AffilabsSidebar(QWidget):
         self.export_filesize_label.setText(f"Estimated file size: ~{size_str}")
 
     def _build_spark_tab(self, tab_layout: QVBoxLayout):
-        """Build Spark AI Help tab with Q&A interface."""
-        from affilabs.widgets.spark_help_widget import SparkHelpWidget
-
-        # Create Spark widget and add with stretch to fill all vertical space
-        self.spark_widget = SparkHelpWidget()
-        tab_layout.addWidget(self.spark_widget, stretch=1)
+        """Build Spark AI Help tab placeholder — actual widget loads on first visit."""
+        # Defer SparkHelpWidget creation until user clicks the Spark tab
+        # (importing affilabs.services.spark pulls in torch/transformers/tinydb)
+        self._spark_tab_layout = tab_layout
+        self._spark_loaded = False
+        placeholder = QLabel("Loading Spark AI…")
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        placeholder.setStyleSheet(
+            "color: #86868B; font-size: 13px; font-style: italic; background: transparent;"
+        )
+        tab_layout.addWidget(placeholder, stretch=1)
 
     def _build_settings_tab(self, tab_layout: QVBoxLayout):
         """Build Settings tab with diagnostics, hardware, and calibration using builder."""
@@ -736,8 +741,20 @@ class AffilabsSidebar(QWidget):
         builder.build(tab_layout)
 
     def _on_tab_changed(self, index: int):
-        """Handle tab change events."""
-        # Settings tab plots now loaded immediately during initialization
+        """Handle tab change events — lazy-load Spark tab on first visit."""
+        spark_index = self.tab_indices.get("⚡")
+        if index == spark_index and not getattr(self, "_spark_loaded", True):
+            self._spark_loaded = True
+            layout = self._spark_tab_layout
+            # Remove placeholder
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            # Build the real Spark widget
+            from affilabs.widgets.spark_help_widget import SparkHelpWidget
+            self.spark_widget = SparkHelpWidget()
+            layout.addWidget(self.spark_widget, stretch=1)
 
     def _build_deferred_spectroscopy_plots(self):
         """Build spectroscopy plots on-demand when Settings tab is first opened."""

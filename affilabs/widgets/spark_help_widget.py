@@ -16,8 +16,8 @@ import subprocess
 import wave
 import io
 
-# Spark answer engine for hybrid AI + pattern matching
-from affilabs.services.spark import SparkAnswerEngine
+# Spark answer engine for hybrid AI + pattern matching (deferred to _setup_knowledge_base)
+# from affilabs.services.spark import SparkAnswerEngine
 
 # Text-to-Speech integration - Piper TTS (lightweight ~10MB model)
 try:
@@ -421,6 +421,7 @@ class SparkHelpWidget(QWidget):
     def _setup_knowledge_base(self):
         """Initialize answer engine (replaces embedded patterns)."""
         # SparkAnswerEngine coordinates pattern matching + AI
+        from affilabs.services.spark import SparkAnswerEngine
         self.answer_engine = SparkAnswerEngine()
 
     def _add_welcome_message(self):

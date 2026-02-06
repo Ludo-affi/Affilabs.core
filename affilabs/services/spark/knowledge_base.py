@@ -6,7 +6,7 @@ or scraped from the Affinity Instruments website.
 
 USAGE:
     kb = SparkKnowledgeBase()
-    
+
     # Add content manually
     kb.add_article(
         title="How to Calibrate SPR Detector",
@@ -14,16 +14,15 @@ USAGE:
         category="calibration",
         url="https://www.affiniteinstruments.com/docs/calibration"
     )
-    
+
     # Search for relevant content
     results = kb.search("calibration steps")
 """
 
-from tinydb import TinyDB, Query
 from datetime import datetime
 from pathlib import Path
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -39,13 +38,15 @@ class SparkKnowledgeBase:
             db_path: Path to TinyDB database file. If None, uses default location
                     in affilabs/data/spark/knowledge_base.json
         """
+        from tinydb import TinyDB
+
         if db_path is None:
             # Default to organized data location
             db_path = Path(__file__).parent.parent.parent / "data" / "spark" / "knowledge_base.json"
         self.db = TinyDB(str(db_path))
-        self.articles = self.db.table('articles')
-        self.faqs = self.db.table('faqs')
-        
+        self.articles = self.db.table("articles")
+        self.faqs = self.db.table("faqs")
+
         # Initialize with default content if empty
         if len(self.articles) == 0:
             self._populate_default_content()
@@ -53,7 +54,7 @@ class SparkKnowledgeBase:
     def _populate_default_content(self):
         """Populate with initial default content."""
         logger.info("Initializing Spark knowledge base with default content")
-        
+
         # Default articles structure - can be expanded later
         default_articles = [
             {
@@ -70,7 +71,7 @@ class SparkKnowledgeBase:
                 "category": "getting-started",
                 "keywords": ["start", "begin", "setup", "connect", "installation", "first time"],
                 "url": "https://www.affiniteinstruments.com/",
-                "last_updated": datetime.now().isoformat()
+                "last_updated": datetime.now().isoformat(),
             },
             {
                 "title": "SPR Technology Overview",
@@ -89,7 +90,7 @@ class SparkKnowledgeBase:
                 "category": "technology",
                 "keywords": ["spr", "surface plasmon", "technology", "how it works", "principle"],
                 "url": "https://www.affiniteinstruments.com/",
-                "last_updated": datetime.now().isoformat()
+                "last_updated": datetime.now().isoformat(),
             },
             {
                 "title": "Contact Support",
@@ -103,17 +104,18 @@ class SparkKnowledgeBase:
                 "category": "support",
                 "keywords": ["contact", "support", "help", "email", "phone", "assistance"],
                 "url": "https://www.affiniteinstruments.com/",
-                "last_updated": datetime.now().isoformat()
-            }
+                "last_updated": datetime.now().isoformat(),
+            },
         ]
-        
+
         for article in default_articles:
             self.articles.insert(article)
-        
+
         logger.info(f"Added {len(default_articles)} default articles to knowledge base")
 
-    def add_article(self, title: str, content: str, category: str, 
-                    keywords: List[str] = None, url: str = None) -> int:
+    def add_article(
+        self, title: str, content: str, category: str, keywords: List[str] = None, url: str = None
+    ) -> int:
         """Add an article to the knowledge base.
 
         Args:
@@ -132,15 +134,16 @@ class SparkKnowledgeBase:
             "category": category,
             "keywords": keywords or [],
             "url": url or "https://www.affiniteinstruments.com/",
-            "last_updated": datetime.now().isoformat()
+            "last_updated": datetime.now().isoformat(),
         }
-        
+
         doc_id = self.articles.insert(article)
         logger.debug(f"Added article: {title} (ID: {doc_id})")
         return doc_id
 
-    def add_faq(self, question: str, answer: str, category: str = "general",
-                url: str = None) -> int:
+    def add_faq(
+        self, question: str, answer: str, category: str = "general", url: str = None
+    ) -> int:
         """Add a FAQ entry.
 
         Args:
@@ -157,9 +160,9 @@ class SparkKnowledgeBase:
             "answer": answer,
             "category": category,
             "url": url or "https://www.affiniteinstruments.com/",
-            "last_updated": datetime.now().isoformat()
+            "last_updated": datetime.now().isoformat(),
         }
-        
+
         doc_id = self.faqs.insert(faq)
         logger.debug(f"Added FAQ: {question[:50]}... (ID: {doc_id})")
         return doc_id
@@ -177,45 +180,47 @@ class SparkKnowledgeBase:
             List of matching articles/FAQs with relevance scores
         """
         query_lower = query.lower()
-        query_words = set(re.findall(r'\w+', query_lower))
-        
+        query_words = set(re.findall(r"\w+", query_lower))
+
         results = []
-        
+
         # Search articles
         for article in self.articles.all():
             score = self._calculate_relevance(query_lower, query_words, article)
             if score > 0:
-                results.append({
-                    "type": "article",
-                    "title": article["title"],
-                    "content": article["content"],
-                    "category": article["category"],
-                    "url": article.get("url", "https://www.affiniteinstruments.com/"),
-                    "score": score
-                })
-        
+                results.append(
+                    {
+                        "type": "article",
+                        "title": article["title"],
+                        "content": article["content"],
+                        "category": article["category"],
+                        "url": article.get("url", "https://www.affiniteinstruments.com/"),
+                        "score": score,
+                    }
+                )
+
         # Search FAQs
         for faq in self.faqs.all():
             # Check if question matches
             q_score = self._calculate_relevance(
-                query_lower, 
-                query_words, 
-                {"content": faq["question"], "keywords": []}
+                query_lower, query_words, {"content": faq["question"], "keywords": []}
             )
-            
+
             if q_score > 0:
-                results.append({
-                    "type": "faq",
-                    "title": faq["question"],
-                    "content": faq["answer"],
-                    "category": faq["category"],
-                    "url": faq.get("url", "https://www.affiniteinstruments.com/"),
-                    "score": q_score + 0.5  # Boost FAQ scores slightly
-                })
-        
+                results.append(
+                    {
+                        "type": "faq",
+                        "title": faq["question"],
+                        "content": faq["answer"],
+                        "category": faq["category"],
+                        "url": faq.get("url", "https://www.affiniteinstruments.com/"),
+                        "score": q_score + 0.5,  # Boost FAQ scores slightly
+                    }
+                )
+
         # Sort by relevance score
         results.sort(key=lambda x: x["score"], reverse=True)
-        
+
         return results[:max_results]
 
     def _calculate_relevance(self, query_lower: str, query_words: set, item: dict) -> float:
@@ -230,26 +235,26 @@ class SparkKnowledgeBase:
             float: Relevance score (0.0 - 10.0)
         """
         score = 0.0
-        
+
         # Check keywords (highest weight)
         keywords = item.get("keywords", [])
         for keyword in keywords:
             if keyword.lower() in query_lower:
                 score += 3.0
-        
+
         # Check content (medium weight)
         content = item.get("content", "").lower()
         for word in query_words:
             if len(word) > 3:  # Ignore short words
                 if word in content:
                     score += 1.0
-        
+
         # Check title if present (high weight)
         title = item.get("title", "").lower()
         for word in query_words:
             if len(word) > 3 and word in title:
                 score += 2.0
-        
+
         return score
 
     def get_by_category(self, category: str) -> List[Dict]:
@@ -261,6 +266,8 @@ class SparkKnowledgeBase:
         Returns:
             List of articles in that category
         """
+        from tinydb import Query
+
         Article = Query()
         return self.articles.search(Article.category == category)
 
@@ -271,7 +278,7 @@ class SparkKnowledgeBase:
             doc_id: Database ID
             **fields: Fields to update
         """
-        fields['last_updated'] = datetime.now().isoformat()
+        fields["last_updated"] = datetime.now().isoformat()
         self.articles.update(fields, doc_ids=[doc_id])
 
     def delete_article(self, doc_id: int):
@@ -297,5 +304,5 @@ class SparkKnowledgeBase:
         return {
             "total_articles": len(self.articles),
             "total_faqs": len(self.faqs),
-            "categories": list(set(a["category"] for a in self.articles.all()))
+            "categories": list(set(a["category"] for a in self.articles.all())),
         }

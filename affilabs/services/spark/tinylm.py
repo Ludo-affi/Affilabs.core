@@ -6,8 +6,6 @@ Model details are kept internal - users just see "Spark" working.
 """
 
 import logging
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-import torch
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +49,10 @@ class SparkTinyLM:
             self._loading = True
             logger.debug("Loading Spark AI model...")
 
+            # Deferred imports - torch and transformers are very heavy (~20s)
+            import torch
+            from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+
             # Detect device (prefer GPU if available, silent fallback to CPU)
             device = "cuda" if torch.cuda.is_available() else "cpu"
             logger.debug(f"Using device: {device}")
@@ -62,7 +64,7 @@ class SparkTinyLM:
             self._model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 dtype=torch.float16 if device == "cuda" else torch.float32,
-                low_cpu_mem_usage=True
+                low_cpu_mem_usage=True,
             )
             self._model.to(device)
 
@@ -110,7 +112,9 @@ class SparkTinyLM:
         )
 
         # Add specific context based on question keywords
-        if any(word in question_lower for word in ['start', 'run', 'acquire', 'record', 'acquisition']):
+        if any(
+            word in question_lower for word in ["start", "run", "acquire", "record", "acquisition"]
+        ):
             context += (
                 "Acquisition: Start acquisition after completing OEM LED Calibration. "
                 "Data appears on Full Sensorgram graph in real-time. Use Start Recording button in sidebar. "
@@ -118,7 +122,7 @@ class SparkTinyLM:
                 "Live data shows RU (Response Units) vs time for all active channels (A/B/C/D). "
             )
 
-        if any(word in question_lower for word in ['calibrat', 'baseline', 'zero', 'optical']):
+        if any(word in question_lower for word in ["calibrat", "baseline", "zero", "optical"]):
             context += (
                 "Calibration: OEM LED Calibration (Settings tab → Calibration section) calibrates optical detector temperature and intensity. "
                 "Takes 30-60 seconds. Must be done before each experiment. Creates wavelength-specific baseline. "
@@ -127,7 +131,21 @@ class SparkTinyLM:
                 "If signal drifts, recalibrate detector or check LED temperature stability. "
             )
 
-        if any(word in question_lower for word in ['method', 'cycle', 'queue', 'protocol', 'sequence', 'baseline', 'immobilization', 'wash', 'concentration', 'regeneration']):
+        if any(
+            word in question_lower
+            for word in [
+                "method",
+                "cycle",
+                "queue",
+                "protocol",
+                "sequence",
+                "baseline",
+                "immobilization",
+                "wash",
+                "concentration",
+                "regeneration",
+            ]
+        ):
             context += (
                 "Methods: Build automated cycle queues in Method tab using Method Builder dialog. "
                 "Cycle Types: Baseline (establishes reference before immobilization), "
@@ -140,7 +158,9 @@ class SparkTinyLM:
                 "Start Run executes queue. Progress bar shows current cycle and time remaining. "
             )
 
-        if any(word in question_lower for word in ['export', 'save', 'file', 'csv', 'excel', 'data']):
+        if any(
+            word in question_lower for word in ["export", "save", "file", "csv", "excel", "data"]
+        ):
             context += (
                 "Export: Export tab saves data in CSV, Excel (.xlsx), or JSON format. "
                 "Select channels (A/B/C/D) to export. Choose destination folder. "
@@ -149,7 +169,10 @@ class SparkTinyLM:
                 "CSV format compatible with Python pandas, R, MATLAB. "
             )
 
-        if any(word in question_lower for word in ['pump', 'flow', 'valve', 'channel', 'inject', 'affipump', 'peristaltic']):
+        if any(
+            word in question_lower
+            for word in ["pump", "flow", "valve", "channel", "inject", "affipump", "peristaltic"]
+        ):
             context += (
                 "Flow Control: Flow tab controls pumps (AffiPump external syringe or internal peristaltic) and valves. "
                 "Operations: Prime (fill tubing with buffer, remove air bubbles), "
@@ -161,7 +184,10 @@ class SparkTinyLM:
                 "AffiPump uses dual syringe pumps for pulseless flow. Internal pumps built into P4PRO+ controller. "
             )
 
-        if any(word in question_lower for word in ['graph', 'plot', 'display', 'chart', 'sensorgram', 'signal']):
+        if any(
+            word in question_lower
+            for word in ["graph", "plot", "display", "chart", "sensorgram", "signal"]
+        ):
             context += (
                 "Graphs: Full Sensorgram shows complete data timeline (all cycles). Active Cycle zooms to selected region. "
                 "Graphic Display tab controls: grid on/off, autoscale, colorblind-safe colors, filters (None/Light Smoothing/Medium/Heavy). "
@@ -170,7 +196,10 @@ class SparkTinyLM:
                 "Noisy signal indicates need for calibration, smoothing filter, or detector temperature stabilization. "
             )
 
-        if any(word in question_lower for word in ['error', 'problem', 'issue', 'troubleshoot', 'fix', 'noise', 'drift']):
+        if any(
+            word in question_lower
+            for word in ["error", "problem", "issue", "troubleshoot", "fix", "noise", "drift"]
+        ):
             context += (
                 "Troubleshooting: Noisy data → run OEM LED Calibration, apply Light Smoothing filter, check USB connection. "
                 "Signal drift → allow detector temperature to stabilize (5-10 min after calibration), check buffer temperature. "
@@ -179,7 +208,10 @@ class SparkTinyLM:
                 "No signal → verify detector connected via USB, check Settings tab for detector status indicator. "
             )
 
-        if any(word in question_lower for word in ['kinetic', 'binding', 'affinity', 'ka', 'kd', 'kon', 'koff', 'analysis']):
+        if any(
+            word in question_lower
+            for word in ["kinetic", "binding", "affinity", "ka", "kd", "kon", "koff", "analysis"]
+        ):
             context += (
                 "Kinetic Analysis: SPR measures association (kon) and dissociation (koff) rate constants. "
                 "Affinity KD = koff/kon. Run concentration series (e.g. 5 concentrations from 10nM to 1µM). "
@@ -189,14 +221,16 @@ class SparkTinyLM:
                 "Regeneration between cycles ensures consistent baseline. "
             )
 
-        if any(word in question_lower for word in ['spark', 'ai', 'assistant', 'help', 'question']):
+        if any(word in question_lower for word in ["spark", "ai", "assistant", "help", "question"]):
             context += (
                 "Spark AI: Built-in assistant for SPR workflow questions. Uses pattern matching + TinyLM language model. "
                 "Ask natural language questions (e.g. 'how do I start acquisition?', 'what is baseline cycle?'). "
                 "Located in sidebar. Click Spark icon or type question directly. "
             )
 
-        if any(word in question_lower for word in ['settings', 'config', 'advanced', 'preferences']):
+        if any(
+            word in question_lower for word in ["settings", "config", "advanced", "preferences"]
+        ):
             context += (
                 "Settings: Settings tab contains detector config, calibration, advanced timing parameters. "
                 "Detector section: wait time, averaging, USB connection status. "
@@ -222,7 +256,7 @@ class SparkTinyLM:
                 return (
                     "I'm still learning to answer that question. "
                     "Try asking about starting acquisitions, calibration, methods, export, or flow control.",
-                    False
+                    False,
                 )
 
         try:
@@ -252,19 +286,19 @@ User question: {question}
             )
 
             # Extract answer
-            full_text = response[0]['generated_text']
+            full_text = response[0]["generated_text"]
 
             # Split by assistant tag
-            if '<|assistant|>' in full_text:
-                answer = full_text.split('<|assistant|>')[-1].strip()
+            if "<|assistant|>" in full_text:
+                answer = full_text.split("<|assistant|>")[-1].strip()
             else:
-                answer = full_text[len(prompt):].strip()
+                answer = full_text[len(prompt) :].strip()
 
             # Clean up
-            answer = answer.replace('<|user|>', '').replace('<|system|>', '').strip()
+            answer = answer.replace("<|user|>", "").replace("<|system|>", "").strip()
 
             # Remove any trailing special tokens
-            for token in ['<|', '|>', '</s>']:
+            for token in ["<|", "|>", "</s>"]:
                 if token in answer:
                     answer = answer.split(token)[0].strip()
 
@@ -283,5 +317,5 @@ User question: {question}
                 "I'm having trouble understanding that question. "
                 "Try asking about: starting acquisitions, calibration, building methods, "
                 "exporting data, or controlling pumps and valves.",
-                False
+                False,
             )
