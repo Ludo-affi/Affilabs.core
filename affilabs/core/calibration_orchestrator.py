@@ -827,7 +827,7 @@ def run_startup_calibration(
 
                 # POLARIZER POSITION DIAGNOSIS
                 # Check if max signal is critically low OR if any maxed LED (255) is getting <10% signal
-                critical_threshold = detector_params.max_counts * 0.05  # 5% threshold
+                critical_threshold = detector_params.max_counts * 0.03  # 3% threshold
                 maxed_led_low_signal = False
                 if s_converged_leds:
                     for ch, led in s_converged_leds.items():
@@ -850,14 +850,14 @@ def run_startup_calibration(
                     logger.error(
                         f"   Max signal: {max_signal:.0f} counts ({percent:.1f}% of detector range)"
                     )
-                    logger.error(f"   Expected minimum: {critical_threshold:.0f} counts (5%)")
+                    logger.error(f"   Expected minimum: {critical_threshold:.0f} counts (3%)")
                     logger.error("")
                     logger.error("   🚨 THE POLARIZER IS BLOCKING THE OPTICAL PATH!")
                     logger.error("")
                     logger.error("   DIAGNOSIS:")
                     logger.error(f"   - Device config servo positions: S={s_pos}, P={p_pos}")
                     logger.error("   - Servo physically moved (hardware responded)")
-                    logger.error("   - But signal is <5% → positions are INCORRECT")
+                    logger.error("   - But signal is <3% → positions are INCORRECT")
                     logger.error("")
                     logger.error("   SOLUTION: Run servo calibration to find correct positions")
                     logger.error(

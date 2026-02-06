@@ -97,7 +97,7 @@ class ConvergenceEngine:
     EARLY_STOP_ERROR_THRESHOLD = 10.0  # Maximum average error % for early stopping
     FINE_TUNE_ERROR_THRESHOLD = 0.05  # Lock channels within 5% of target
     UNLOCK_DRIFT_THRESHOLD = 0.10  # Unlock if drifted >10% from target
-    BLOCKED_SIGNAL_THRESHOLD = 0.05  # Below 5% of max counts = polarizer blocking
+    BLOCKED_SIGNAL_THRESHOLD = 0.03  # Below 3% of max counts = polarizer blocking
     BLOCKED_CONSECUTIVE_ITERS = 3  # Bail out after this many blocked iterations
 
     def __init__(
