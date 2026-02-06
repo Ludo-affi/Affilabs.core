@@ -71,7 +71,7 @@ class MessageBubble(QFrame):
         self.is_user = is_user
         self.is_thinking = is_thinking
 
-        # Styling - both aligned left with different colors
+        # Styling - user bubbles right-aligned, AI bubbles left-aligned
         if is_user:
             bg_color = "#E3F2FD"
             text_color = "#1565C0"
@@ -91,14 +91,19 @@ class MessageBubble(QFrame):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(8)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(6)
 
         # Message text with more height for longer answers
         self.label = QLabel(text)
         self.label.setWordWrap(True)
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        if is_user:
+            # User bubbles: shrink to content width, still wrap if too long
+            self.label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        else:
+            # AI bubbles: expand to fill available width
+            self.label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         label_style = f"""
             color: {text_color};
@@ -184,10 +189,12 @@ class MessageBubble(QFrame):
 
         layout.addLayout(bottom_layout)
 
-        # Set size policies to allow proper expansion
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        # No fixed width - allow bubbles to expand based on content and container
-        self.setMinimumHeight(50)
+        # Size policies: user bubbles shrink-to-fit, AI bubbles expand
+        if is_user:
+            self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+        else:
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        self.setMinimumHeight(40)
 
     def update_text(self, text: str):
         """Update the bubble text (for replacing thinking bubble with answer)."""
@@ -461,9 +468,9 @@ class SparkHelpWidget(QWidget):
         # Clear input
         self.question_input.clear()
 
-        # Add user question bubble
+        # Add user question bubble (right-aligned like modern chat apps)
         user_bubble = MessageBubble(question, is_user=True)
-        self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignRight)
 
         # Add "thinking" indicator with animated dots
         thinking_bubble = MessageBubble("💭 Thinking...", is_user=False, is_thinking=True)
