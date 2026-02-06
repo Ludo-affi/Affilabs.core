@@ -663,15 +663,176 @@ PATTERNS = {
 
     "method": {
         r"create.*cycle|new.*cycle|build.*cycle": {
-            "answer": "To create a cycle:\n1. Go to 'Method' tab in sidebar\n2. Enter cycle name and duration\n3. Add notes (optional)\n4. Click 'Add to Queue'\n5. Multiple cycles can be queued\n6. Click 'Start Queue' to execute",
+            "answer": "**How to Build a Method:**\n\n"
+            "1. Click **+ Build Method** in the sidebar\n"
+            "2. Type cycle lines in the Note field (one per line)\n"
+            "3. Click **➕ Add to Method** — cycles appear in the table\n"
+            "4. Reorder with ↑/↓, delete with 🗑, undo/redo as needed\n"
+            "5. Click **📋 Push to Queue** — cycles move to the Cycle Queue\n"
+            "6. Press **▶ Start Run** — cycles execute automatically in order\n\n"
+            "**Cycle syntax:** `Type Duration [Channel:Concentration]`\n"
+            "Example: `Concentration 5min [A:100nM] contact 180s`\n\n"
+            "**Cycle types:** Baseline, Concentration, Regeneration, Immobilization, Wash, Other\n\n"
+            "💡 Type `build 5` for quick 5-concentration series, or `@spark amine coupling` for a full method template.",
             "category": "method",
-            "keywords": ["create", "cycle", "new", "build"],
+            "keywords": ["create", "cycle", "new", "build", "method", "how"],
             "priority": "high"
+        },
+        r"how.*build.*method|how.*make.*method|how.*create.*method|method.*builder|build.*method": {
+            "answer": "**Building a Method — Step by Step:**\n\n"
+            "1. Click **+ Build Method** in the sidebar to open the Method Builder\n"
+            "2. In the **Note** field, type your cycles (one per line):\n"
+            "   `Baseline 5min`\n"
+            "   `Concentration 5min [A:100nM] contact 180s`\n"
+            "   `Regeneration 30sec [ALL:50mM]`\n"
+            "3. Click **➕ Add to Method** to add them to the method table\n"
+            "4. Use ↑/↓ buttons to reorder, 🗑 to delete\n"
+            "5. Click **📋 Push to Queue** to send to the main Cycle Queue\n"
+            "6. Press **▶ Start Run** to execute\n\n"
+            "**Quick shortcuts:**\n"
+            "• `build 5` → generates 5 concentration cycles automatically\n"
+            "• `@spark amine coupling` → full coupling + titration method\n"
+            "• `!save my_method` → save method as preset for reuse\n"
+            "• `@my_method` → load a saved preset\n\n"
+            "After the last cycle, the system enters **Auto-Read** mode (2 hours of continuous monitoring).",
+            "category": "method",
+            "keywords": ["build", "method", "how", "create", "make"],
+            "priority": "high"
+        },
+        r"cycle.*type|what.*types|available.*types|type.*cycle": {
+            "answer": "**6 Cycle Types:**\n\n"
+            "| Type | Injection | Contact Time | Purpose |\n"
+            "|------|-----------|-------------|--------|\n"
+            "| **Baseline** | None | — | Running buffer, establish stable signal |\n"
+            "| **Concentration** | Simple (or partial) | User-specified | Inject analyte, measure binding |\n"
+            "| **Regeneration** | Simple | 30s (auto) | Strip bound analyte, restore baseline |\n"
+            "| **Immobilization** | Simple | User-specified | Attach ligand to sensor surface |\n"
+            "| **Wash** | Simple | User-specified | Rinse flow path between steps |\n"
+            "| **Other** | None | — | Custom (activation, blocking, etc.) |\n\n"
+            "All injections start at **20 seconds** into the cycle.\n"
+            "Regeneration auto-sets 30s contact time. All others require `contact Ns` if injection is needed.",
+            "category": "method",
+            "keywords": ["cycle", "types", "available", "what"],
+            "priority": "high"
+        },
+        r"cycle.*syntax|how.*write.*cycle|note.*syntax|note.*format|how.*type.*cycle": {
+            "answer": "**Cycle Syntax:**\n"
+            "`Type Duration [Channel:ValueUnits] contact Ns partial injection`\n\n"
+            "**Parts:**\n"
+            "• **Type** (required): Baseline, Concentration, Regeneration, Immobilization, Wash, Other\n"
+            "• **Duration** (required): `5min`, `30sec`, `2m`, `30s`\n"
+            "• **[Tags]** (optional): `[A]`, `[ALL:100nM]`, `[B:50µM]`\n"
+            "• **contact Ns** (optional): injection contact time, e.g. `contact 180s` or `contact 3min`\n"
+            "• **partial injection** (optional): use 30µL partial loop injection for Concentration\n\n"
+            "**Units:** nM, µM, pM, mM, M, mg/mL, µg/mL, ng/mL\n"
+            "**Channels:** A, B, C, D, ALL\n\n"
+            "**Examples:**\n"
+            "• `Baseline 5min`\n"
+            "• `Concentration 5min [A:100nM] contact 180s`\n"
+            "• `Regeneration 30sec [ALL:50mM]`\n"
+            "• `Immobilization 4min [A:50µg/mL] contact 180s`\n"
+            "• `Concentration 5min [A:100nM] contact 120s partial injection`",
+            "category": "method",
+            "keywords": ["syntax", "write", "cycle", "note", "format", "type"],
+            "priority": "high"
+        },
+        r"what.*contact.*time|contact.*time|injection.*time": {
+            "answer": "**Contact Time** is how long the sample stays in the flow cell after injection.\n\n"
+            "• Specified with `contact Ns` (e.g. `contact 180s` or `contact 3min`)\n"
+            "• **Baseline** and **Other**: No injection, no contact time\n"
+            "• **Concentration**: User must specify (e.g. `contact 120s` or `contact 180s`)\n"
+            "• **Immobilization**: User must specify (e.g. `contact 180s`)\n"
+            "• **Wash**: User must specify (e.g. `contact 30s`)\n"
+            "• **Regeneration**: Auto-set to **30 seconds** (no need to specify)\n\n"
+            "All injections begin at **20 seconds** into the cycle (fixed delay).\n\n"
+            "Example: `Concentration 5min [A:100nM] contact 180s`",
+            "category": "method",
+            "keywords": ["contact", "time", "injection"],
+            "priority": "medium"
+        },
+        r"what.*injection|injection.*method|simple.*inject|partial.*inject|how.*inject": {
+            "answer": "**Injection Methods:**\n\n"
+            "• **Simple injection** (default): Full sample loop injection via valve switching\n"
+            "• **Partial injection**: 30µL spike — add `partial injection` to the cycle line\n\n"
+            "**Which types auto-inject?**\n"
+            "• Concentration → simple (or partial if specified)\n"
+            "• Immobilization → simple\n"
+            "• Wash → simple\n"
+            "• Regeneration → simple (30s contact auto-set)\n"
+            "• Baseline → no injection\n"
+            "• Other → no injection\n\n"
+            "All injections start at **20 seconds** into the cycle.\n\n"
+            "Example: `Concentration 5min [A:100nM] contact 120s partial injection`",
+            "category": "method",
+            "keywords": ["injection", "simple", "partial", "inject", "method"],
+            "priority": "medium"
+        },
+        r"save.*method|save.*preset|preset|load.*preset|reuse.*method": {
+            "answer": "**Save & Load Method Presets:**\n\n"
+            "**Save:** Build your method in the table, then type:\n"
+            "`!save my_method_name`\n"
+            "and click Add to Method.\n\n"
+            "**Load:** Type `@my_method_name` and click ⚡ Spark.\n"
+            "The saved cycles will load directly into the method table.\n\n"
+            "This lets you reuse common protocols without retyping them.",
+            "category": "method",
+            "keywords": ["save", "preset", "load", "reuse", "method"],
+            "priority": "medium"
+        },
+        r"what.*auto.*read|auto.*read|after.*queue|after.*last.*cycle": {
+            "answer": "**Auto-Read Mode:**\n\n"
+            "After the last cycle in your queue finishes, the system automatically starts a **2-hour Auto-Read** cycle.\n\n"
+            "This provides continuous monitoring so you don't lose data if you step away. "
+            "The sensorgram keeps recording and you can observe dissociation or baseline recovery.\n\n"
+            "Auto-Read can be disabled in Settings if not needed.",
+            "category": "method",
+            "keywords": ["auto", "read", "after", "queue", "last", "cycle"],
+            "priority": "medium"
+        },
+        r"next.*cycle|skip.*cycle|advance.*cycle": {
+            "answer": "**Next Cycle / Skip:**\n\n"
+            "Press the **⏭ Next Cycle** button to end the current cycle early and immediately start the next one.\n\n"
+            "• Data from the current cycle is **preserved** (even if the cycle was shortened)\n"
+            "• The next cycle in the queue starts after a brief 0.5s delay\n"
+            "• If no cycles remain, Auto-Read starts automatically\n\n"
+            "💡 The intelligence bar shows a countdown and previews the next cycle type in the last 10 seconds.",
+            "category": "method",
+            "keywords": ["next", "cycle", "skip", "advance"],
+            "priority": "medium"
         },
         r"edit.*cycle|modify.*cycle": {
             "answer": "To edit cycle data:\n1. Complete your run and stop acquisition\n2. Go to 'Edits' tab\n3. Load your saved Excel file\n4. Click on any cycle in the table\n5. Use the 'Cycle Details & Editing' panel to adjust boundaries and settings",
             "category": "method",
             "keywords": ["edit", "cycle", "modify"],
+            "priority": "medium"
+        },
+        r"method.*example|example.*method|show.*example|sample.*method": {
+            "answer": "**Example Methods:**\n\n"
+            "**Simple Binding:**\n"
+            "```\n"
+            "Baseline 5min\n"
+            "Concentration 5min [A:100nM] contact 180s\n"
+            "Regeneration 30sec [ALL:50mM]\n"
+            "```\n\n"
+            "**Kinetics (Association + Dissociation):**\n"
+            "```\n"
+            "Baseline 2min\n"
+            "Concentration 5min [A:100nM] contact 120s\n"
+            "Baseline 10min\n"
+            "Regeneration 30sec [ALL:50mM]\n"
+            "```\n\n"
+            "**Dose-Response Titration:**\n"
+            "```\n"
+            "Baseline 5min\n"
+            "Concentration 5min [A:10nM] contact 120s\n"
+            "Concentration 5min [A:50nM] contact 120s\n"
+            "Concentration 5min [A:100nM] contact 120s\n"
+            "Concentration 5min [A:500nM] contact 120s\n"
+            "Regeneration 30sec [ALL:50mM]\n"
+            "```\n\n"
+            "💡 Or type `build 5` for quick auto-generated series, or `@spark amine coupling` for full protocols.",
+            "category": "method",
+            "keywords": ["example", "method", "sample", "show"],
             "priority": "medium"
         },
     },

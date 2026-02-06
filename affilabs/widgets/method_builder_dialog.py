@@ -691,91 +691,140 @@ class MethodBuilderDialog(QDialog):
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextBrowser, QPushButton
 
         help_text = """
-<h3>Notes Field Complete Guide</h3>
+<h3>How to Build a Method</h3>
 
-<p><b>⚡ Ask Spark AI!</b></p>
+<p>A <b>method</b> is a sequence of timed cycles that automates your SPR experiment.
+You build it here, push it to the queue, then press <b>Start Run</b> to execute.
+Each cycle runs for its set duration and auto-advances to the next.</p>
+
+<hr/>
+
+<h4>Step-by-Step Workflow</h4>
+<ol>
+<li>Click <b>+ Build Method</b> in the sidebar</li>
+<li>Type one or more cycle lines in the Note field (one per line)</li>
+<li>Click <b>➕ Add to Method</b> — cycles appear in the table below</li>
+<li>Reorder with <b>↑ / ↓</b>, delete with <b>🗑 Delete</b>, undo/redo as needed</li>
+<li>Click <b>📋 Push to Queue</b> — cycles move to the main Cycle Queue</li>
+<li>Press <b>▶ Start Run</b> in the sidebar — cycles run automatically in order</li>
+<li>After the last cycle, the system enters <b>Auto-Read</b> (continuous 2-hour monitoring)</li>
+</ol>
+
+<hr/>
+
+<h4>Cycle Syntax</h4>
+<p><code>Type Duration [ChannelTags] contact Ns partial injection</code></p>
+
+<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
+<tr style="background:#f0f0f0;"><th>Part</th><th>Required?</th><th>Description</th></tr>
+<tr><td><b>Type</b></td><td>Yes</td><td>One of: Baseline, Concentration, Regeneration, Immobilization, Wash, Other</td></tr>
+<tr><td><b>Duration</b></td><td>Yes</td><td>e.g. <code>5min</code>, <code>30sec</code>, <code>2m</code>, <code>30s</code>. Default is 5 min if omitted.</td></tr>
+<tr><td><b>[Tags]</b></td><td>No</td><td>Channel + optional concentration: <code>[A]</code> <code>[ALL:100nM]</code> <code>[B:50µM]</code></td></tr>
+<tr><td><b>contact Ns</b></td><td>No</td><td>Injection contact time: <code>contact 180s</code> or <code>contact 3min</code></td></tr>
+<tr><td><b>partial injection</b></td><td>No</td><td>Use partial (30µL spike) instead of simple injection</td></tr>
+</table>
+
+<hr/>
+
+<h4>Cycle Types Explained</h4>
+<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
+<tr style="background:#f0f0f0;"><th>Type</th><th>Injection</th><th>Contact Time</th><th>Purpose</th></tr>
+<tr><td><b>Baseline</b></td><td>None</td><td>—</td><td>Running buffer flow, establish stable baseline signal</td></tr>
+<tr><td><b>Concentration</b></td><td>Simple (or partial)</td><td>User-specified</td><td>Inject analyte sample, measure binding (association)</td></tr>
+<tr><td><b>Regeneration</b></td><td>Simple</td><td>30s (auto-set)</td><td>Strip bound analyte from surface, restore baseline</td></tr>
+<tr><td><b>Immobilization</b></td><td>Simple</td><td>User-specified</td><td>Attach ligand to sensor surface (e.g. protein, antibody)</td></tr>
+<tr><td><b>Wash</b></td><td>Simple</td><td>User-specified</td><td>Rinse flow path between steps (activation, blocking, etc.)</td></tr>
+<tr><td><b>Other</b></td><td>None</td><td>—</td><td>Custom step (activation, blocking, equilibration, etc.)</td></tr>
+</table>
+<p><b>All injections start at 20 seconds</b> into the cycle (fixed delay for baseline stabilization).</p>
+
+<hr/>
+
+<h4>Concentration &amp; Unit Tags</h4>
+<p>Tag format: <code>[Channel:ValueUnits]</code></p>
 <ul>
-<li><code>@spark how do I run a titration?</code></li>
-<li><code>@spark show me kinetics</code></li>
-<li><code>@spark build 5</code> - Generate 5 concentration cycles</li>
-<li><code>@spark amine coupling</code> - Full amine coupling method</li>
-<li>Or click ⚡ Spark button with any question</li>
+<li>Channels: <code>A</code>, <code>B</code>, <code>C</code>, <code>D</code>, <code>ALL</code></li>
+<li>Units: <code>nM</code>, <code>µM</code>, <code>pM</code>, <code>mM</code>, <code>M</code>, <code>mg/mL</code>, <code>µg/mL</code>, <code>ng/mL</code></li>
+<li>Examples: <code>[A:100nM]</code>  <code>[B:50µM]</code>  <code>[ALL:25pM]</code></li>
+<li>Multiple tags per line: <code>[A:100nM] [B:50nM]</code></li>
 </ul>
 
-<p><b>🚀 Quick Build Commands:</b></p>
+<hr/>
+
+<h4>Examples — One Line per Cycle</h4>
+<pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
+Baseline 5min
+Concentration 5min [A:100nM] contact 180s
+Concentration 5min [A:500nM] contact 180s
+Regeneration 30sec [ALL:50mM]
+Baseline 2min
+</pre>
+
+<h4>Kinetics Example (Association + Dissociation)</h4>
+<pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
+Baseline 2min
+Concentration 5min [A:100nM] contact 120s
+Baseline 10min
+Regeneration 30sec [ALL:50mM]
+</pre>
+
+<h4>Amine Coupling + Titration</h4>
+<pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
+Baseline 30sec
+Other 4min
+Wash 30sec contact 30s
+Immobilization 4min [A:50µg/mL] contact 180s
+Wash 30sec contact 30s
+Other 4min
+Wash 30sec contact 30s
+Baseline 15min
+Concentration 15min [A:10nM] contact 180s
+Regeneration 2min [ALL:50mM]
+Baseline 2min
+Concentration 15min [A:50nM] contact 180s
+Regeneration 2min [ALL:50mM]
+Baseline 2min
+</pre>
+
+<hr/>
+
+<h4>⚡ Spark AI Shortcuts</h4>
+<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
+<tr style="background:#f0f0f0;"><th>Command</th><th>What it does</th></tr>
+<tr><td><code>@spark titration</code></td><td>Generate a dose-response titration template</td></tr>
+<tr><td><code>@spark kinetics</code></td><td>Generate an association/dissociation template</td></tr>
+<tr><td><code>@spark amine coupling</code></td><td>Full amine coupling method (asks how many concentrations)</td></tr>
+<tr><td><code>build 5</code></td><td>Generate 5 concentration cycles (15min + regen + baseline each)</td></tr>
+<tr><td><code>build 10</code></td><td>Generate 10 concentration cycles</td></tr>
+<tr><td><code>@spark regeneration</code></td><td>Regeneration cycle template</td></tr>
+<tr><td><code>@spark baseline</code></td><td>Baseline cycle template</td></tr>
+</table>
+
+<hr/>
+
+<h4>📦 Presets — Save &amp; Reuse Methods</h4>
 <ul>
-<li><code>build 5</code> - Creates 5 concentration cycles (15min + 2min regen + 2min baseline)</li>
-<li><code>build 10</code> - Creates 10 concentration cycles</li>
-<li><code>amine coupling</code> - Full amine coupling method</li>
-<li><code>main coupling</code> - Full amine coupling method</li>
+<li><b>Save:</b> Build your method, then type <code>!save my_method_name</code> and click Add to Method</li>
+<li><b>Load:</b> Type <code>@my_method_name</code> and click Spark to load a saved preset</li>
 </ul>
 
-<p><b>📦 Load Preset:</b> <code>@preset_name</code></p>
-<p><b>💾 Save Method:</b> <code>!save preset_name</code> (saves current queue)</p>
+<hr/>
 
-<p><b>Or Write Directly:</b> <code>Type Duration [Tags]</code></p>
-<p><b>Multiple Cycles:</b> One cycle per line - add many at once!</p>
-
-<p><b>Cycle Types:</b></p>
+<h4>Queue Controls</h4>
 <ul>
-<li><code>Baseline</code> - Baseline measurement (no injection)</li>
-<li><code>Immobilization</code> - Surface immobilization (auto-inject @ 20s)</li>
-<li><code>Wash</code> - Wash cycle (auto-inject @ 20s)</li>
-<li><code>Concentration</code> - Sample injection/binding (auto-inject @ 20s)</li>
-<li><code>Regeneration</code> - Surface regeneration (auto-inject @ 20s, 30s contact)</li>
-<li><code>Other</code> - Custom cycle type</li>
+<li><b>↑ / ↓</b> — Reorder cycles in the method table</li>
+<li><b>🗑 Delete</b> — Remove selected cycle</li>
+<li><b>Clear All</b> — Remove all cycles from the method</li>
+<li><b>↶ Undo / ↷ Redo</b> — Undo or redo changes (Ctrl+Z / Ctrl+Shift+Z)</li>
+<li><b>↑/↓ arrows</b> in the Note field — Recall previously typed notes</li>
 </ul>
 
-<p><b>Duration:</b></p>
+<h4>Execution Behavior</h4>
 <ul>
-<li><code>30sec</code> or <code>30s</code> - 30 seconds</li>
-<li><code>2min</code> or <code>2m</code> - 2 minutes</li>
-<li>Common: <code>5min</code>, <code>10min</code>, <code>15min</code>, <code>30min</code></li>
-</ul>
-
-<p><b>💉 Injection Parameters (Optional):</b></p>
-<ul>
-<li><code>contact 180s</code> - Contact time in seconds (required for Immobilization/Wash/Concentration)</li>
-<li><code>contact 3min</code> - Contact time in minutes (converts to seconds)</li>
-<li><code>partial injection</code> - Override to use partial injection (30µL spike) for Concentration</li>
-<li><b>Note:</b> Regeneration auto-sets 30s contact time (no need to specify)</li>
-</ul>
-
-<p><b>Channel Tags:</b></p>
-<ul>
-<li><code>[A]</code> <code>[B]</code> <code>[C]</code> <code>[D]</code> <code>[ALL]</code></li>
-</ul>
-
-<p><b>Concentration Tags:</b></p>
-<ul>
-<li><code>[A:100nM]</code> <code>[B:50µM]</code> <code>[ALL:25pM]</code></li>
-<li>Units: nM, µM, pM, mM, M, mg/mL, µg/mL, ng/mL</li>
-</ul>
-
-<p><b>Examples:</b></p>
-<ul>
-<li><code>Baseline 5min [ALL]</code> - No injection</li>
-<li><code>Immobilization 10min [A:50µg/mL] contact 180s</code> - Simple inject @ 20s, 180s contact</li>
-<li><code>Wash 2min contact 60s</code> - Simple inject @ 20s, 60s contact</li>
-<li><code>Concentration 5min [A:100nM] contact 180s</code> - Simple inject @ 20s, 180s contact</li>
-<li><code>Concentration 5min [A:100nM] contact 180s partial injection</code> - Partial inject @ 20s</li>
-<li><code>Regeneration 2min [ALL:50mM]</code> - Auto-inject @ 20s, 30s contact (auto-set)</li>
-</ul>
-
-<p><b>Full Method Example:</b></p>
-<pre>Baseline 5min [ALL]
-Concentration 2min [A:100nM]
-Baseline 10min [ALL]
-Regeneration 30sec [ALL:50mM]</pre>
-
-<p><b>Tips:</b></p>
-<ul>
-<li>🤖 Ask questions for instant templates</li>
-<li>🏗️ Use "build X" for concentration series</li>
-<li>⚡ Press ENTER to submit @spark commands</li>
-<li>↑/↓ arrows recall previous notes</li>
-<li>Each line = one cycle</li>
-<li>Type/duration auto-detected</li>
+<li>Cycles run in order and <b>auto-advance</b> when the timer expires</li>
+<li>Press <b>⏭ Next Cycle</b> to skip to the next cycle early (data is preserved)</li>
+<li>After the last cycle, the system enters <b>Auto-Read</b> mode (2 hours of continuous monitoring)</li>
+<li>The intelligence bar shows a countdown and previews the next cycle in the last 10 seconds</li>
 </ul>
         """
 
