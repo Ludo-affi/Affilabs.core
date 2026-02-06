@@ -919,54 +919,52 @@ class ConvergenceEngine:
                         should_boost = (sig < target_signal * 1.10) and (current_led < recipe.led_optimization_target)
 
                         if should_boost:
-                            # Try ML prediction first
-                            if self.led_predictor:
-                                try:
-                                    channel_enc = {'a': 0, 'b': 1, 'c': 2, 'd': 3}.get(ch, 0)
-                                    sensitivity = 1 if high_sensitivity_detected else 0
-                                    X_boost = [channel_enc, target_signal, state.integration_ms, sensitivity]
-                                    predicted_led = int(self.led_predictor.predict([X_boost])[0])
-                                    predicted_led = max(10, min(255, predicted_led))
+                            # Use slope-based boost (reliable physics model)
+                            # ML predictor is unreliable here — it can predict LOWER LEDs
+                            # for weak channels, turning a "boost" into a decrease
+                            old_led = state.leds[ch]
+                            boosted = False
 
-                                    if predicted_led is not None:
-                                        # Apply damping to avoid overcorrection
-                                        old_led = state.leds[ch]
-                                        delta = predicted_led - old_led
-                                        damping = 0.5  # Conservative 50% step
-                                        new_led = int(old_led + delta * damping)
-                                        new_led = max(10, min(255, new_led))
-
-                                        self._log("info", f"  🤖 {ch.upper()} LED {old_led}→{new_led} (+{new_led-old_led}, ML boost, {error_pct*100:.1f}% below target)")
-                                        self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=ml_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
-                                        state.leds[ch] = new_led
-                                        continue
-                                except Exception:
-                                    pass
-
-                            # Fallback to slope-based boost
                             if model_slopes_at_10ms and ch in model_slopes_at_10ms:
                                 slope = model_slopes_at_10ms[ch] * (state.integration_ms / 10.0)
                                 if slope > 0:
                                     needed_counts = target_signal - sig
                                     led_increase = needed_counts / slope
 
-                                    # Apply damping
-                                    old_led = state.leds[ch]
-                                    new_led = int(old_led + led_increase * 0.5)  # 50% step
+                                    # Use higher damping for channels far below target
+                                    damping = 0.7 if error_pct > 0.5 else 0.5
+                                    new_led = int(old_led + led_increase * damping)
                                     new_led = max(10, min(255, new_led))
+
+                                    # Safety: boost must INCREASE LED when below target
+                                    if sig < target_signal and new_led < old_led:
+                                        new_led = min(255, old_led + max(5, int(old_led * 0.10)))
 
                                     self._log("info", f"  📈 {ch.upper()} LED {old_led}→{new_led} (+{new_led-old_led}, slope boost, {error_pct*100:.1f}% below target)")
                                     self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=slope_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
                                     state.leds[ch] = new_led
+                                    boosted = True
 
-                    # CRITICAL FIX: Also reduce integration time to help clear saturation
-                    # Even with ≤3 channels saturating, we should still reduce integration time
-                    # The LED adjustments above are just the first step
-                    # Fall through to integration time reduction logic below
+                            # Fallback: proportional scaling if no slope data
+                            if not boosted and sig > 0:
+                                ratio = target_signal / sig
+                                new_led = int(old_led * min(ratio, 2.5) * 0.7)  # 70% step toward target
+                                new_led = max(old_led + 5, min(255, new_led))  # Must increase by at least 5
+                                self._log("info", f"  📈 {ch.upper()} LED {old_led}→{new_led} (+{new_led-old_led}, proportional boost, {error_pct*100:.1f}% below target)")
+                                self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=proportional_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
+                                state.leds[ch] = new_led
 
-                # Saturation handling: reduce integration time
-                # This applies whether we have ≤3 channels (LED-adjusted above) or >3 channels
-                if num_saturating > 0:
+                    # CRITICAL: If we handled saturation by reducing LEDs (≤3 channels),
+                    # DON'T also reduce integration time - the LED reduction already fixed it
+                    # Only reduce integration if >3 channels saturating (can't fix with LED alone)
+                    if num_saturating <= 3:
+                        self._log("info", f"  ✓ Saturation handled by LED reduction ({num_saturating}/4 channels)")
+                        # Skip integration time reduction and continue to next iteration
+                        continue
+
+                # Saturation handling: reduce integration time ONLY if >3 channels saturating
+                # (If ≤3 channels, we already handled it above by LED reduction)
+                if num_saturating > 3:
                     self._log("info", "  ⏱️  Saturation detected - reducing integration time to help clear saturation")
                 new_time = saturation_policy.reduce_integration(
                     saturation,
@@ -1083,10 +1081,18 @@ class ConvergenceEngine:
                     if len(state.iteration_history) >= 2:
                         prev = state.iteration_history[-2]
 
-                        # If we just had saturation, be very cautious
-                        if prev['total_sat_pixels'] > 100:
+                        # Check if the MAXED channels themselves saturated, not just any channel
+                        # If strong channels saturated but we're boosting a weak maxed channel,
+                        # we already reduced the strong channels' LEDs, so we can boost aggressively
+                        maxed_were_saturated = any(
+                            prev['saturation'].get(ch, 0) > 0
+                            for ch in maxed_below
+                        ) if maxed_below and 'saturation' in prev else False
+
+                        # If the maxed channels themselves had saturation, be cautious
+                        if maxed_were_saturated:
                             needed_scale = min(needed_scale, 1.3)
-                            self._log("info", "    [ADAPTIVE] Limiting scale to 1.3x (prev iteration saturated)")
+                            self._log("info", "    [ADAPTIVE] Limiting scale to 1.3x (maxed channels were saturated)")
                         # If we're close to target (>80%), use moderate scaling
                         elif signal_fraction > 0.80:
                             needed_scale = min(needed_scale, 1.5)

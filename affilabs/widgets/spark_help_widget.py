@@ -428,8 +428,13 @@ class SparkHelpWidget(QWidget):
     def _setup_knowledge_base(self):
         """Initialize answer engine (replaces embedded patterns)."""
         # SparkAnswerEngine coordinates pattern matching + AI
-        from affilabs.services.spark import SparkAnswerEngine
-        self.answer_engine = SparkAnswerEngine()
+        try:
+            from affilabs.services.spark import SparkAnswerEngine
+            self.answer_engine = SparkAnswerEngine()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark engine init failed: {e}")
+            self.answer_engine = None
 
     def _add_welcome_message(self):
         """Add welcome message to chat."""
@@ -460,66 +465,95 @@ class SparkHelpWidget(QWidget):
 
     def _handle_question(self):
         """Process user question and generate response."""
-        question = self.question_input.toPlainText().strip()
+        try:
+            question = self.question_input.toPlainText().strip()
 
-        if not question:
-            return
+            if not question:
+                return
 
-        # Clear input
-        self.question_input.clear()
+            # Clear input
+            self.question_input.clear()
 
-        # Add user question bubble (right-aligned like modern chat apps)
-        user_bubble = MessageBubble(question, is_user=True)
-        self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignRight)
+            # Add user question bubble (right-aligned like modern chat apps)
+            user_bubble = MessageBubble(question, is_user=True)
+            self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignRight)
 
-        # Add "thinking" indicator with animated dots
-        thinking_bubble = MessageBubble("💭 Thinking...", is_user=False, is_thinking=True)
-        self.chat_layout.addWidget(thinking_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
-        self._thinking_bubble = thinking_bubble  # Store reference
+            # Add "thinking" indicator with animated dots
+            thinking_bubble = MessageBubble("💭 Thinking...", is_user=False, is_thinking=True)
+            self.chat_layout.addWidget(thinking_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+            self._thinking_bubble = thinking_bubble  # Store reference
 
-        # Start thinking animation timer
-        import time
-        self._thinking_start_time = time.time()
-        self._thinking_dots = 0
-        self._thinking_timer = QTimer()
-        self._thinking_timer.timeout.connect(self._update_thinking_indicator)
-        self._thinking_timer.start(500)  # Update every 500ms
+            # Start thinking animation timer
+            import time
+            self._thinking_start_time = time.time()
+            self._thinking_dots = 0
+            self._thinking_timer = QTimer()
+            self._thinking_timer.timeout.connect(self._update_thinking_indicator)
+            self._thinking_timer.start(500)  # Update every 500ms
 
-        # Scroll to show thinking bubble
-        QTimer.singleShot(50, self._scroll_to_bottom)
+            # Scroll to show thinking bubble
+            QTimer.singleShot(50, self._scroll_to_bottom)
 
-        # Generate answer after short delay (to show thinking bubble)
-        QTimer.singleShot(150, lambda: self._add_answer(question))
+            # Generate answer after short delay (to show thinking bubble)
+            QTimer.singleShot(150, lambda: self._add_answer(question))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark _handle_question crashed: {e}")
 
     def _add_answer(self, question: str):
         """Find and display answer to question."""
-        answer_text = self._find_answer(question)
+        try:
+            answer_text = self._find_answer(question)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark _find_answer crashed: {e}")
+            answer_text = "Sorry, something went wrong. Please try again."
 
         # Stop thinking timer
-        if self._thinking_timer:
-            self._thinking_timer.stop()
+        try:
+            if self._thinking_timer:
+                self._thinking_timer.stop()
+                self._thinking_timer = None
+        except Exception:
             self._thinking_timer = None
 
         # Remove thinking bubble
-        if hasattr(self, '_thinking_bubble') and self._thinking_bubble:
-            self.chat_layout.removeWidget(self._thinking_bubble)
-            self._thinking_bubble.deleteLater()
+        try:
+            if hasattr(self, '_thinking_bubble') and self._thinking_bubble:
+                self.chat_layout.removeWidget(self._thinking_bubble)
+                self._thinking_bubble.deleteLater()
+                self._thinking_bubble = None
+        except Exception:
             self._thinking_bubble = None
 
         # Add actual answer
-        answer_bubble = MessageBubble(answer_text, is_user=False)
-        self.chat_layout.addWidget(answer_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+        try:
+            answer_bubble = MessageBubble(answer_text, is_user=False)
+            self.chat_layout.addWidget(answer_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark bubble creation failed: {e}")
+            return
 
-        # Speak the answer with Zira
-        self._speak_text(answer_text)
+        # Speak the answer with Piper TTS
+        try:
+            self._speak_text(answer_text)
+        except Exception:
+            pass  # TTS failure should never crash the app
 
         self._scroll_to_bottom()
 
     def _find_answer(self, question: str) -> str:
         """Generate answer using SparkAnswerEngine."""
-        # SparkAnswerEngine handles pattern matching + AI fallback
-        answer, matched = self.answer_engine.generate_answer(question)
-        return answer
+        try:
+            if self.answer_engine is None:
+                return "Spark engine is not available. Please restart the application."
+            answer, matched = self.answer_engine.generate_answer(question)
+            return answer
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark answer error: {e}")
+            return "Sorry, I had trouble generating an answer. Please try again."
 
     def _toggle_tts(self):
         """Toggle TTS on/off."""

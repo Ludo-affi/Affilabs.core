@@ -40,7 +40,10 @@ class _SparkBubble(QFrame):
         )
         layout.addWidget(self.label)
         if is_user:
-            self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+            # Use Preferred + max width so bubble shrinks for short text
+            # but expands enough to show all text with word wrap
+            self.setMaximumWidth(320)
+            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         else:
             self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
 
@@ -189,23 +192,32 @@ class SparkMethodPopup(QDialog):
     # -- Send / answer -----------------------------------------------------
 
     def _on_send(self):
-        question = self._input.toPlainText().strip()
-        if not question:
-            return
-        self._input.clear()
+        try:
+            question = self._input.toPlainText().strip()
+            if not question:
+                return
+            self._input.clear()
 
-        # User bubble
-        self._add_bubble(question, is_user=True)
+            # User bubble
+            self._add_bubble(question, is_user=True)
 
-        # Thinking bubble
-        thinking = self._add_bubble("💭 Thinking...", is_user=False)
+            # Thinking bubble
+            thinking = self._add_bubble("💭 Thinking...", is_user=False)
 
-        # Generate answer (slightly delayed so the UI paints the thinking bubble)
-        QTimer.singleShot(100, lambda: self._generate_answer(question, thinking))
+            # Generate answer (slightly delayed so the UI paints the thinking bubble)
+            QTimer.singleShot(100, lambda: self._generate_answer(question, thinking))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark method popup _on_send crashed: {e}")
 
     def _generate_answer(self, question: str, thinking_bubble):
         """Try method-specific patterns first, then fall back to SparkAnswerEngine."""
-        answer = self._try_method_patterns(question)
+        try:
+            answer = self._try_method_patterns(question)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark pattern matching crashed: {e}")
+            answer = None
 
         if answer is None:
             # Fall back to full Spark engine
@@ -219,19 +231,27 @@ class SparkMethodPopup(QDialog):
                 try:
                     answer, _ = self._answer_engine.generate_answer(question)
                 except Exception as e:
-                    answer = f"Error: {e}"
+                    answer = f"Sorry, I had trouble generating an answer. Please try again."
 
         # Replace thinking bubble
-        thinking_bubble.label.setText(answer)
-        thinking_bubble.setStyleSheet("QFrame { background: #F5F5F5; border-radius: 12px; }")
-        thinking_bubble.label.setStyleSheet(
-            "color: #212121; font-size: 13px; background: transparent;"
-            " font-family: -apple-system, 'Segoe UI', sans-serif;"
-        )
+        try:
+            thinking_bubble.label.setText(answer)
+            thinking_bubble.setStyleSheet("QFrame { background: #F5F5F5; border-radius: 12px; }")
+            thinking_bubble.label.setStyleSheet(
+                "color: #212121; font-size: 13px; background: transparent;"
+                " font-family: -apple-system, 'Segoe UI', sans-serif;"
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark bubble update crashed: {e}")
+            return
 
         # Track last answer for Insert button
         self._last_ai_text = answer
-        self._insert_btn.setEnabled(True)
+        try:
+            self._insert_btn.setEnabled(True)
+        except Exception:
+            pass
         QTimer.singleShot(50, self._scroll_bottom)
 
     # -- Method-specific pattern matching ----------------------------------
@@ -988,6 +1008,46 @@ class MethodBuilderDialog(QDialog):
         )
         self.close_btn.clicked.connect(self.reject)
         button_row.addWidget(self.close_btn)
+
+        # Save/Load buttons (compact, left side)
+        self.save_btn = QPushButton("💾 Save")
+        self.save_btn.setFixedHeight(40)
+        self.save_btn.setToolTip("Save current method to file")
+        self.save_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  color: #34C759;"
+            "  border: 1px solid rgba(52,199,89,0.3);"
+            "  border-radius: 8px;"
+            "  padding: 8px 16px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+            "QPushButton:hover { background: rgba(52,199,89,0.1); border-color: #34C759; }"
+            "QPushButton:pressed { background: rgba(52,199,89,0.2); }"
+        )
+        self.save_btn.clicked.connect(self._on_save_method)
+        button_row.addWidget(self.save_btn)
+
+        self.load_btn = QPushButton("📂 Load")
+        self.load_btn.setFixedHeight(40)
+        self.load_btn.setToolTip("Load method from file")
+        self.load_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  color: #007AFF;"
+            "  border: 1px solid rgba(0,122,255,0.3);"
+            "  border-radius: 8px;"
+            "  padding: 8px 16px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+            "QPushButton:hover { background: rgba(0,122,255,0.1); border-color: #007AFF; }"
+            "QPushButton:pressed { background: rgba(0,122,255,0.2); }"
+        )
+        self.load_btn.clicked.connect(self._on_load_method)
+        button_row.addWidget(self.load_btn)
+
         button_row.addStretch()
 
         # Push to Queue button
@@ -1430,6 +1490,122 @@ Baseline 2min
                 self.rect(),
                 2000
             )
+
+    def _on_save_method(self):
+        """Save current method to a JSON file."""
+        if not self._local_cycles:
+            QMessageBox.information(self, "No Method", "Add some cycles to the method queue before saving.")
+            return
+
+        from PySide6.QtWidgets import QFileDialog
+        import json
+        from pathlib import Path
+
+        # Default save directory
+        default_dir = Path.home() / "Documents" / "Affilabs Methods"
+        default_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Method",
+            str(default_dir / "method.json"),
+            "JSON Files (*.json);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # Convert cycles to JSON-serializable format
+            method_data = {
+                "version": "1.0",
+                "cycles": []
+            }
+
+            for cycle in self._local_cycles:
+                cycle_dict = {
+                    "type": cycle.type,
+                    "length_minutes": cycle.length_minutes,
+                    "note": cycle.note or "",
+                    "pumps": cycle.pumps,
+                    "contact_times": cycle.contact_times,
+                }
+                method_data["cycles"].append(cycle_dict)
+
+            # Write to file
+            with open(file_path, 'w') as f:
+                json.dump(method_data, f, indent=2)
+
+            QMessageBox.information(self, "Method Saved", f"Method saved successfully to:\n{file_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save method:\n{e}")
+
+    def _on_load_method(self):
+        """Load method from a JSON file."""
+        from PySide6.QtWidgets import QFileDialog
+        import json
+        from pathlib import Path
+        from affilabs.domain.cycle import Cycle
+
+        # Default load directory
+        default_dir = Path.home() / "Documents" / "Affilabs Methods"
+        default_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Method",
+            str(default_dir),
+            "JSON Files (*.json);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # Read from file
+            with open(file_path, 'r') as f:
+                method_data = json.load(f)
+
+            # Validate format
+            if "cycles" not in method_data:
+                raise ValueError("Invalid method file format")
+
+            # Clear current method if not empty
+            if self._local_cycles:
+                reply = QMessageBox.question(
+                    self,
+                    "Replace Method?",
+                    "Current method will be replaced. Continue?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return
+
+            # Convert JSON back to Cycle objects
+            loaded_cycles = []
+            for cycle_dict in method_data["cycles"]:
+                cycle = Cycle(
+                    type=cycle_dict["type"],
+                    length_minutes=cycle_dict["length_minutes"],
+                    note=cycle_dict.get("note", ""),
+                    pumps=cycle_dict.get("pumps", {}),
+                    contact_times=cycle_dict.get("contact_times", {}),
+                )
+                loaded_cycles.append(cycle)
+
+            # Update method
+            self._local_cycles = loaded_cycles
+            self._refresh_method_table()
+
+            QMessageBox.information(
+                self,
+                "Method Loaded",
+                f"Loaded {len(loaded_cycles)} cycle{'s' if len(loaded_cycles) != 1 else ''} from:\n{file_path}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Load Error", f"Failed to load method:\n{e}")
         else:
             QMessageBox.warning(
                 self,

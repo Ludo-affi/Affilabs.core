@@ -618,7 +618,7 @@ ls -l calibrations/active/FLMT09788/
     "detector_serial": "FLMT09788",
     "calibration_date": "2025-12-10T14:23:45",
     "operator": "AI_System",
-    "software_version": "1.06"
+    "software_version": "2.0"
   },
   "model_type": "3_stage_linear",
   "channels": {

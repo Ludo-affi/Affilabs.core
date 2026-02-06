@@ -158,7 +158,7 @@ Each device has a calibration file: `calibrations/active/{SERIAL}/led_model.json
     "detector_serial": "FLMT09116",
     "calibration_date": "2025-12-10T14:23:45",
     "operator": "AI_System",
-    "software_version": "1.06"
+    "software_version": "2.0"
   },
   "model_type": "3_stage_linear",
   "channels": {
@@ -932,7 +932,7 @@ python -c "import joblib; joblib.load('affilabs/convergence/models/sensitivity_c
 
 ### Version History
 
-- **v1.06 (Feb 2026)** - Current version, ML-enhanced convergence
+- **v2.0 (Feb 2026)** - Current version, ML-enhanced convergence, improved LED/integration control
 - **v1.05 (Dec 2025)** - Weakest channel protection added
 - **v1.04 (Nov 2025)** - 3-stage linear LED model introduced
 - **v1.03 (Oct 2025)** - Afterglow compensation implemented

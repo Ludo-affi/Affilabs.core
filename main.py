@@ -182,6 +182,7 @@ from PySide6.QtWidgets import QApplication
 
 from affilabs.ui.ui_message import error as ui_error
 from affilabs.ui.ui_message import info as ui_info
+from affilabs.ui_styles import Colors
 from affilabs.utils.time_utils import monotonic
 
 
@@ -1081,6 +1082,9 @@ class Application(QApplication):
         self._cycle_markers = {}  # Track cycle markers on Full Sensorgram timeline
         self._cycle_timer = QTimer()
         self._cycle_timer.timeout.connect(self._update_cycle_display)
+        self._cycle_end_timer = QTimer()  # Fires once when cycle duration expires
+        self._cycle_end_timer.setSingleShot(True)
+        self._cycle_end_timer.timeout.connect(self._on_cycle_completed)
         self._cycle_counter = 0  # Global counter for permanent cycle IDs (never decreases)
         logger.debug("✓ Cycle management initialized")
 
@@ -1489,56 +1493,42 @@ class Application(QApplication):
         queue_size = self.queue_presenter.get_queue_size()
 
         # Update progress bar with current queue state
-        if hasattr(self.main_window.sidebar, 'queue_progress_bar'):
+        if bar := self.main_window.sidebar_widget('queue_progress_bar'):
             try:
                 cycles = self.queue_presenter.get_queue_snapshot()
                 completed_cycles = self.queue_presenter.get_completed_cycles()
-                # Update with both pending and completed cycles
-                self.main_window.sidebar.queue_progress_bar.set_cycles(cycles, completed_cycles)
-                # Update current index if a cycle is running
+                bar.set_cycles(cycles, completed_cycles)
                 if hasattr(self, '_current_cycle') and self._current_cycle:
-                    # Currently running a cycle - show it as current
-                    current_index = 0  # First cycle in queue is current
+                    current_index = 0
                 else:
-                    # No cycle running - show -1 to indicate waiting
                     current_index = -1
-                self.main_window.sidebar.queue_progress_bar.set_current_index(current_index)
+                bar.set_current_index(current_index)
             except Exception as e:
                 logger.debug(f"Could not update progress bar: {e}")
 
         # Update queue status label
-        if hasattr(self.main_window.sidebar, 'queue_status_label'):
+        if lbl := self.main_window.sidebar_widget('queue_status_label'):
             if queue_size == 0:
-                self.main_window.sidebar.queue_status_label.setText(
-                    "Queue: 0 cycles | Click 'Add to Queue' to plan batch runs"
-                )
+                lbl.setText("Queue: 0 cycles | Click 'Add to Queue' to plan batch runs")
             elif queue_size == 1:
-                self.main_window.sidebar.queue_status_label.setText(
-                    "Queue: 1 cycle ready"
-                )
+                lbl.setText("Queue: 1 cycle ready")
             else:
-                self.main_window.sidebar.queue_status_label.setText(
-                    f"Queue: {queue_size} cycles ready"
-                )
+                lbl.setText(f"Queue: {queue_size} cycles ready")
 
         # Show/hide Start Run button based on queue size
-        if hasattr(self.main_window.sidebar, 'start_run_btn'):
-            self.main_window.sidebar.start_run_btn.setVisible(queue_size > 0)
+        if btn := self.main_window.sidebar_widget('start_run_btn'):
+            btn.setVisible(queue_size > 0)
 
         # Show/hide Clear Queue button based on queue size
-        if hasattr(self.main_window.sidebar, 'clear_queue_btn'):
-            self.main_window.sidebar.clear_queue_btn.setVisible(queue_size > 0)
+        if btn := self.main_window.sidebar_widget('clear_queue_btn'):
+            btn.setVisible(queue_size > 0)
 
         # Update queue size label in table footer
-        if hasattr(self.main_window.sidebar, 'queue_size_label'):
+        if lbl := self.main_window.sidebar_widget('queue_size_label'):
             if queue_size <= 10:
-                self.main_window.sidebar.queue_size_label.setText(
-                    f"Showing all {queue_size} cycle{'s' if queue_size != 1 else ''}"
-                )
+                lbl.setText(f"Showing all {queue_size} cycle{'s' if queue_size != 1 else ''}")
             else:
-                self.main_window.sidebar.queue_size_label.setText(
-                    f"Showing last 10 of {queue_size} cycles"
-                )
+                lbl.setText(f"Showing last 10 of {queue_size} cycles")
 
     def _connect_ui_signals(self):
         """Connect UI signals after handler method is defined."""
@@ -2202,33 +2192,49 @@ class Application(QApplication):
         )
         self._cycle_end_time = time.time() + (duration_min * 60)
 
+        # Schedule auto-completion when cycle duration expires
+        duration_ms = int(duration_min * 60 * 1000)
+        self._cycle_end_timer.start(duration_ms)
+        logger.info(f"✓ Cycle end timer scheduled: {duration_min} min ({duration_ms} ms)")
+
+        # Pause the 5s intelligence refresh timer to avoid overwriting cycle countdown
+        if hasattr(self.main_window, 'intelligence_refresh_timer'):
+            self.main_window.intelligence_refresh_timer.stop()
+
         # Start the 1-second update timer for intelligence bar and overlay
         if hasattr(self, '_cycle_timer'):
             self._cycle_timer.start(1000)  # Update every 1 second
-            logger.info("✓ Cycle timer started (updates every 1 second)")
+            logger.info("✓ Cycle display timer started (updates every 1 second)")
 
-        # NEW: Schedule injection if cycle requires it
+        # Schedule injection if cycle requires it AND pump is available
         if cycle.injection_method is not None:
-            self._schedule_injection(cycle)
+            has_pump = self.pump_mgr.is_available if hasattr(self, 'pump_mgr') else False
+            has_internal = (self.hardware_mgr.ctrl and
+                           hasattr(self.hardware_mgr.ctrl, 'has_internal_pumps') and
+                           self.hardware_mgr.ctrl.has_internal_pumps())
+            if has_pump or has_internal:
+                self._schedule_injection(cycle)
+            else:
+                logger.warning(f"⚠️ Cycle requires {cycle.injection_method} injection but no pump connected — skipping injection")
 
         # Update progress bar to show current cycle
-        if hasattr(self.main_window.sidebar, 'queue_progress_bar'):
+        if bar := self.main_window.sidebar_widget('queue_progress_bar'):
             try:
                 cycles = self.queue_presenter.get_queue_snapshot()
                 completed_cycles = self.queue_presenter.get_completed_cycles()
-                self.main_window.sidebar.queue_progress_bar.set_cycles(cycles, completed_cycles)
-                self.main_window.sidebar.queue_progress_bar.set_current_index(0)  # First in queue is current
+                bar.set_cycles(cycles, completed_cycles)
+                bar.set_current_index(0)  # First in queue is current
                 logger.debug(f"✓ Progress bar updated: {len(completed_cycles)} completed, 1 current, {len(cycles)-1} upcoming")
             except Exception as e:
                 logger.warning(f"Could not update progress bar: {e}")
 
         # Disable Start Run button during cycle execution
-        if hasattr(self.main_window.sidebar, 'start_queue_btn'):
-            self.main_window.sidebar.start_queue_btn.setEnabled(False)
+        if btn := self.main_window.sidebar_widget('start_queue_btn'):
+            btn.setEnabled(False)
 
         # Enable Next Cycle button during cycle execution
-        if hasattr(self.main_window.sidebar, 'next_cycle_btn'):
-            self.main_window.sidebar.next_cycle_btn.setEnabled(True)
+        if btn := self.main_window.sidebar_widget('next_cycle_btn'):
+            btn.setEnabled(True)
 
         # Reset channel time shifts to default (live sensorgram timing)
         # Each cycle should start with fresh timing, not inherit adjustments from previous cycle
@@ -2394,12 +2400,6 @@ class Application(QApplication):
         elapsed_sec = total_sec - max(0, self._cycle_end_time - now)
         remaining_sec = max(0, self._cycle_end_time - now)
 
-        # --- Auto-advance: cycle timer expired ---
-        if remaining_sec <= 0:
-            logger.info(f"⏱ Cycle timer expired — triggering auto-advance")
-            self._on_cycle_completed()
-            return
-
         cycle_type = self._current_cycle.type
         cycle_num = self._current_cycle.cycle_num
         total_cycles = self._current_cycle.total_cycles
@@ -2439,27 +2439,9 @@ class Application(QApplication):
             next_cycle_warning = f" → Next: {next_type} in {int(remaining_sec)}s"
 
         # Update intelligence bar with countdown and next cycle warning
-        if hasattr(self.main_window.sidebar, "intel_message_label"):
-            message_text = f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) - {time_format}{next_cycle_warning}"
-            self.main_window.sidebar.intel_message_label.setText(message_text)
-
-            # Change color to orange when <10s to next cycle
-            if next_cycle_warning:
-                self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px;"
-                    "color: #FF9500;"  # Orange warning
-                    "background: transparent;"
-                    "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-                )
-            else:
-                self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px;"
-                    "color: #007AFF;"  # Blue normal
-                    "background: transparent;"
-                    "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-                )
+        message_text = f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) - {time_format}{next_cycle_warning}"
+        color = Colors.WARNING if next_cycle_warning else Colors.INFO
+        self.main_window.set_intel_message(message_text, color)
 
         # Show/hide warning line on active cycle graph when <10s to next cycle
         self._update_next_cycle_warning_visual(remaining_sec, total_sec)
@@ -2564,8 +2546,13 @@ class Application(QApplication):
 
         logger.info(f"✓ Cycle {cycle_num} completed: {cycle_type}")
 
-        # Stop cycle timer
+        # Stop cycle timers
         self._cycle_timer.stop()
+        self._cycle_end_timer.stop()
+
+        # Resume the 5s intelligence refresh timer
+        if hasattr(self.main_window, 'intelligence_refresh_timer'):
+            self.main_window.intelligence_refresh_timer.start(5000)
 
         # Clear all flags for clean start of next cycle
         self.flag_mgr.clear_flags_for_new_cycle()
@@ -2762,26 +2749,22 @@ class Application(QApplication):
             logger.warning("No cycles in queue - Next Cycle disabled")
             if hasattr(self.main_window.sidebar, 'next_cycle_btn'):
                 self.main_window.sidebar.next_cycle_btn.setEnabled(False)
-            if hasattr(self.main_window.sidebar, 'intel_message_label'):
-                self.main_window.sidebar.intel_message_label.setText(
-                    "⚠ No more cycles in queue"
-                )
-                self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px;"
-                    "color: #FF3B30;"  # Red for warning
-                    "background: transparent;"
-                    "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                )
+            self.main_window.set_intel_message("⚠ No more cycles in queue", Colors.ERROR)
             return
 
         try:
             logger.info(f"⏭ Skipping to next cycle - completing {self._current_cycle.name} early")
 
-            # Stop the cycle timer
+            # Stop cycle timers
             if hasattr(self, '_cycle_timer') and self._cycle_timer.isActive():
                 self._cycle_timer.stop()
-                logger.debug("✓ Cycle timer stopped")
+            if hasattr(self, '_cycle_end_timer') and self._cycle_end_timer.isActive():
+                self._cycle_end_timer.stop()
+                logger.debug("✓ Cycle timers stopped")
+
+            # Resume the 5s intelligence refresh timer
+            if hasattr(self.main_window, 'intelligence_refresh_timer'):
+                self.main_window.intelligence_refresh_timer.start(5000)
 
             # Get current end time for this cycle
             end_sensorgram_time = None
@@ -2831,23 +2814,11 @@ class Application(QApplication):
                 self._next_cycle_warning_line = None
 
             # Update intelligence bar
-            if hasattr(self.main_window.sidebar, 'intel_message_label'):
-                remaining = len(self.segment_queue)
-                if remaining > 0:
-                    self.main_window.sidebar.intel_message_label.setText(
-                        f"⏭ Moved to next cycle ({remaining} remaining in queue)"
-                    )
-                else:
-                    self.main_window.sidebar.intel_message_label.setText(
-                        "⏭ Cycle completed early - queue finished"
-                    )
-                self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px;"
-                    "color: #FF9500;"  # Orange for early completion
-                    "background: transparent;"
-                    "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                )
+            remaining = len(self.segment_queue)
+            if remaining > 0:
+                self.main_window.set_intel_message(f"⏭ Moved to next cycle ({remaining} remaining in queue)", Colors.WARNING)
+            else:
+                self.main_window.set_intel_message("⏭ Cycle completed early - queue finished", Colors.WARNING)
 
             # Disable Next Cycle button
             if hasattr(self.main_window.sidebar, 'next_cycle_btn'):
@@ -2887,6 +2858,11 @@ class Application(QApplication):
             self._cycle_end_time = None
             if hasattr(self, '_cycle_timer'):
                 self._cycle_timer.stop()
+            if hasattr(self, '_cycle_end_timer'):
+                self._cycle_end_timer.stop()
+            # Resume the 5s intelligence refresh timer
+            if hasattr(self.main_window, 'intelligence_refresh_timer'):
+                self.main_window.intelligence_refresh_timer.start(5000)
 
     # ==================== FLAG METHODS - MOVED TO FlagManager ====================
     # _clear_flags_for_new_cycle() → flag_mgr.clear_flags_for_new_cycle()
@@ -3043,10 +3019,7 @@ class Application(QApplication):
         # Check queue lock (use presenter's lock state)
         if self.queue_presenter.is_queue_locked():
             logger.warning("⚠️ Queue is locked during cycle operation - cannot add")
-            if hasattr(self.main_window.sidebar, "intel_message_label"):
-                self.main_window.sidebar.intel_message_label.setText(
-                    "⚠️ Cannot modify queue while cycle is running"
-                )
+            self.main_window.set_intel_message("⚠️ Cannot modify queue while cycle is running", Colors.WARNING)
             return
 
         logger.info("🔵 TEST MODE: Adding cycle to segment queue")
@@ -3123,17 +3096,7 @@ class Application(QApplication):
 
         except Exception as e:
             logger.exception(f"[ERROR] Failed to add cycle to queue: {e}")
-            if hasattr(self.main_window.sidebar, "intel_message_label"):
-                self.main_window.sidebar.intel_message_label.setText(
-                    f"✗ Failed to add: {e}",
-                )
-                self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px;"
-                    "color: #FF3B30;"  # Red for error
-                    "background: transparent;"
-                    "font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-                )
+            self.main_window.set_intel_message(f"✗ Failed to add: {e}", Colors.ERROR)
 
     # Template methods removed - Presets now handle both single cycles and full sequences
     # def _on_save_template(self): ...
@@ -3549,17 +3512,10 @@ class Application(QApplication):
         logger.info(f"🗑️ Deleted cycle from queue: {cycle_name} ({cycle_type}), {remaining} cycles remaining")
 
         # Update UI intelligence bar
-        if hasattr(self.main_window.sidebar, "intel_message_label"):
-            self.main_window.sidebar.intel_message_label.setText(
-                f"🗑️ Deleted {cycle_name} ({remaining} {'cycle' if remaining == 1 else 'cycles'} remaining) - Press Ctrl+Z to undo",
-            )
-            self.main_window.sidebar.intel_message_label.setStyleSheet(
-                "font-size: 12px;"
-                "color: #FF9500;"  # Orange for deletion
-                "background: transparent;"
-                "font-weight: 600;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-            )
+        self.main_window.set_intel_message(
+            f"🗑️ Deleted {cycle_name} ({remaining} {'cycle' if remaining == 1 else 'cycles'} remaining) - Press Ctrl+Z to undo",
+            Colors.WARNING,
+        )
 
         # Update queue status label with fresh count
         if hasattr(self.main_window.sidebar, "queue_status_label"):
@@ -3605,8 +3561,9 @@ class Application(QApplication):
                         # Update spectrum processor with detector info
                         if hasattr(self, 'spectrum_viewmodels') and self.spectrum_viewmodels:
                             for vm in self.spectrum_viewmodels.values():
-                                if hasattr(vm, '_spectrum_processor') and vm._spectrum_processor:
-                                    vm._spectrum_processor.set_detector_info(detector_serial=detector_serial)
+                                # _peak_processor is the utils.SpectrumProcessor with set_detector_info
+                                if hasattr(vm, '_peak_processor') and vm._peak_processor:
+                                    vm._peak_processor.set_detector_info(detector_serial=detector_serial)
                                     logger.info(f"Spectrum processor updated with detector: {detector_serial}")
 
                         # Update spectroscopy presenter with detector info for plot filtering
@@ -4364,25 +4321,12 @@ class Application(QApplication):
             logger.info("Stopping recording due to acquisition stop...")
             self.recording_mgr.stop_recording()
 
-        # Handle queued cycle cancellation
-        if hasattr(self.main_window, '_current_running_cycle') and self.main_window._current_running_cycle is not None:
-            # Check if cycle completed its full duration or was cancelled early
-            if hasattr(self.main_window, 'cycle_start_time') and self.main_window.cycle_start_time is not None:
-                import time
-                elapsed = time.time() - self.main_window.cycle_start_time
-                expected_duration = self.main_window.cycle_duration_seconds if hasattr(self.main_window, 'cycle_duration_seconds') else 0
-
-                # If cycle ran for at least 90% of expected duration, consider it completed
-                if elapsed >= expected_duration * 0.9:
-                    logger.info(f"✅ Cycle completed normally (ran {elapsed:.1f}s of {expected_duration}s)")
-                    self.main_window.complete_cycle()
-                else:
-                    logger.info(f"❌ Cycle cancelled early (ran {elapsed:.1f}s of {expected_duration}s)")
-                    self.main_window.cancel_cycle()
-            else:
-                # No timing info - assume cancelled
-                logger.info("❌ Cycle cancelled (no timing info)")
-                self.main_window.cancel_cycle()
+        # Cancel active cycle if acquisition stopped mid-cycle
+        if hasattr(self, '_cycle_end_timer') and self._cycle_end_timer.isActive():
+            self._cycle_end_timer.stop()
+            logger.info("❌ Active cycle cancelled due to acquisition stop")
+            if hasattr(self, '_current_cycle') and self._current_cycle is not None:
+                self._on_cycle_completed()  # Let the normal completion path handle cleanup
 
     # === Kinetic Operations Callbacks ===
 
@@ -4447,7 +4391,7 @@ class Application(QApplication):
         if hasattr(ui, 'flow_pump_status_label'):
             ui.flow_pump_status_label.setText(status)
         if hasattr(ui, 'flow_pump_status_icon'):
-            color = "#34C759" if status != "Idle" else "#86868B"
+            color = Colors.SUCCESS if status != "Idle" else Colors.SECONDARY_TEXT
             ui.flow_pump_status_icon.setStyleSheet(
                 f"font-size: 12px; color: {color}; background: transparent;"
             )
@@ -5698,7 +5642,7 @@ class Application(QApplication):
         if hasattr(self.main_window.sidebar, 'internal_pump_status_label'):
             self.main_window.sidebar.internal_pump_status_label.setText(text)
         if hasattr(self.main_window.sidebar, 'internal_pump_status_icon'):
-            color = "#34C759" if running else "#86868B"
+            color = Colors.SUCCESS if running else Colors.SECONDARY_TEXT
             self.main_window.sidebar.internal_pump_status_icon.setStyleSheet(
                 f"color: {color}; font-size: 14px; background: transparent;"
             )
