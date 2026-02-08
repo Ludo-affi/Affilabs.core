@@ -1551,10 +1551,21 @@ class FlowTabBuilder:
         label = QLabel(label_text)
         label.setFixedWidth(120)
         label.setStyleSheet(
-            "font-size: 12px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+            "QLabel {"
+            "  font-size: 12px;"
+            "  color: #1D1D1F;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QToolTip {"
+            "  background: white;"
+            "  color: #1D1D1F;"
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "  border-radius: 4px;"
+            "  padding: 4px 8px;"
+            "  font-size: 12px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}",
         )
         if tooltip:
             label.setToolTip(tooltip)
