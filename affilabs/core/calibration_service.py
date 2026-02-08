@@ -11,7 +11,9 @@ import os
 import threading
 import time
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QThread, Signal
+
+import numpy as np
 
 from affilabs.core.ml_qc_intelligence import MLQCIntelligence
 
@@ -19,6 +21,154 @@ from affilabs.core.ml_qc_intelligence import MLQCIntelligence
 from affilabs.domain import CalibrationData, led_calibration_result_to_domain
 from affilabs.ui.ui_message import error as ui_error
 from affilabs.utils.logger import logger
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRIME PUMP WORKER (P4PRO + AffiPump compression assistant flow)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class _PrimePumpWorker(QThread):
+    """Runs pump priming in a background thread during the compression
+    assistant flow (P4PRO + AffiPump).
+
+    Uses the same prime sequence as ``PumpManager.prime_pump()`` —
+    6 aspirate/dispense cycles with valve transitions at cycles 3 and 5 —
+    but runs in a QThread with Qt signals for progress updates.
+
+    Signals:
+        progress: (message, percent) — prime pump progress
+        finished_ok: Emitted when priming completes successfully
+        finished_error: (error_msg) — Emitted on failure
+    """
+
+    progress = Signal(str, int)
+    finished_ok = Signal()
+    finished_error = Signal(str)
+
+    def __init__(self, pump, ctrl) -> None:
+        super().__init__()
+        self._pump = pump
+        self._ctrl = ctrl
+
+    def run(self) -> None:
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._prime())
+            self.finished_ok.emit()
+        except Exception as e:
+            self.finished_error.emit(str(e))
+        finally:
+            loop.close()
+
+    async def _prime(self) -> None:
+        """Run 6-cycle prime pump sequence with valve transitions."""
+        import asyncio
+
+        pump = self._pump
+        if pump is None:
+            raise RuntimeError("No pump available")
+
+        # Get raw controller for valve operations
+        raw_ctrl = None
+        if hasattr(self._ctrl, "_ctrl"):
+            raw_ctrl = self._ctrl._ctrl
+        elif hasattr(self._ctrl, "_ctrl_raw"):
+            raw_ctrl = self._ctrl
+        else:
+            raw_ctrl = self._ctrl
+
+        # Initialize pumps
+        self.progress.emit("Initializing pumps...", 2)
+        pump._pump.pump.initialize_pumps()
+        logger.info("✅ Pumps initialized")
+
+        aspirate_speed_ul_s = 24000.0 / 60.0
+        dispense_speed_ul_s = 5000.0 / 60.0
+        volume_ul = 1000.0
+
+        for cycle in range(1, 7):
+            pct = 5 + int((cycle / 6) * 90)
+            self.progress.emit(f"Priming pump (cycle {cycle}/6)...", pct)
+            logger.info(f"🔄 Prime pump cycle {cycle}/6")
+
+            # Valve transitions at specific cycles
+            if cycle == 3 and raw_ctrl:
+                logger.info("  Opening 6-port valves to INJECT position")
+                try:
+                    if hasattr(raw_ctrl, "knx_six_both"):
+                        raw_ctrl.knx_six_both(state=1)
+                    else:
+                        raw_ctrl.knx_six(state=1, ch=1)
+                        await asyncio.sleep(0.2)
+                        raw_ctrl.knx_six(state=1, ch=2)
+                    await asyncio.sleep(0.3)
+                except Exception as e:
+                    logger.warning(f"  Valve control failed: {e}")
+
+            elif cycle == 5 and raw_ctrl:
+                logger.info("  Opening 3-way valves to LOAD position")
+                try:
+                    if hasattr(raw_ctrl, "knx_three_both"):
+                        raw_ctrl.knx_three_both(state=1)
+                    else:
+                        raw_ctrl.knx_three(state=1, ch=1)
+                        await asyncio.sleep(0.2)
+                        raw_ctrl.knx_three(state=1, ch=2)
+                    await asyncio.sleep(0.3)
+                except Exception as e:
+                    logger.warning(f"  Valve control failed: {e}")
+
+            # Aspirate
+            pump._pump.pump.aspirate_both(volume_ul, aspirate_speed_ul_s)
+            p1, p2, _, _, _ = await asyncio.get_event_loop().run_in_executor(
+                None,
+                pump._pump.pump.wait_until_both_ready,
+                60.0,
+            )
+            if not (p1 and p2):
+                raise RuntimeError(f"Pump aspirate failed on cycle {cycle}")
+
+            await asyncio.sleep(0.5)
+
+            # Dispense
+            pump._pump.pump.dispense_both(volume_ul, dispense_speed_ul_s)
+            p1, p2, _, _, _ = await asyncio.get_event_loop().run_in_executor(
+                None,
+                pump._pump.pump.wait_until_both_ready,
+                60.0,
+            )
+            if not (p1 and p2):
+                raise RuntimeError(f"Pump dispense failed on cycle {cycle}")
+
+            logger.info(f"  ✅ Cycle {cycle} completed")
+
+        # Close all valves after priming
+        if raw_ctrl:
+            self.progress.emit("Closing valves...", 97)
+            logger.info("🔒 Closing all valves after priming...")
+            try:
+                if hasattr(raw_ctrl, "knx_three_both"):
+                    raw_ctrl.knx_three_both(state=0)
+                    await asyncio.sleep(0.1)
+                    raw_ctrl.knx_six_both(state=0)
+                else:
+                    raw_ctrl.knx_three(state=0, ch=1)
+                    await asyncio.sleep(0.1)
+                    raw_ctrl.knx_three(state=0, ch=2)
+                    await asyncio.sleep(0.1)
+                    raw_ctrl.knx_six(state=0, ch=1)
+                    await asyncio.sleep(0.1)
+                    raw_ctrl.knx_six(state=0, ch=2)
+                logger.info("✅ All valves closed")
+            except Exception as e:
+                logger.error(f"❌ Valve close failed: {e}")
+
+        self.progress.emit("Prime pump complete", 100)
+        logger.info("✅ Prime pump sequence completed")
 
 
 class CalibrationService(QObject):
@@ -59,6 +209,12 @@ class CalibrationService(QObject):
 
         # ML QC Intelligence (initialized lazily when device connects)
         self._ml_intelligence: MLQCIntelligence | None = None
+
+        # Compression Assistant state (P4PRO + AffiPump flow)
+        self._prime_pump_completed: bool = False
+        self._compression_baseline: dict | None = None
+        self._compression_assistant_btn = None
+        self._prime_worker: QThread | None = None
 
     def start_calibration(self, force_oem_retrain: bool = False) -> bool:
         """Start calibration dialog (does NOT start calibration thread).
@@ -172,6 +328,7 @@ class CalibrationService(QObject):
         self._calibration_completed = False
         self._current_calibration_data = None
         self._retry_count = 0  # Reset retry counter for new calibration attempt
+        self._prime_pump_completed = False  # Reset — new calibration session
 
         # Show progress dialog with Start button; do NOT auto-start
         self._show_progress_dialog()
@@ -194,7 +351,9 @@ class CalibrationService(QObject):
         from affilabs_core_ui import StartupCalibProgressDialog
 
         # Check if pump is detected
-        has_pump = self.app.hardware_mgr.pump is not None
+        hw = self.app.hardware_mgr
+        has_pump = hw.pump is not None
+        logger.info(f"Calibration dialog: pump detected = {has_pump}")
 
         pump_instruction = ""
         if has_pump:
@@ -268,30 +427,42 @@ class CalibrationService(QObject):
     def _add_compression_assistant_button(self) -> None:
         """Add a 'Compression Assistant' button to the calibration dialog.
 
-        Only shown for P4SPR 2.0 devices (PicoP4SPR + barrel polarizer).
-        P4SPR original (round polarizer) does not support it, and
-        P4PRO / P4PRO Plus will have a different implementation.
+        Supported configurations:
+        - **P4SPR 2.0** (PicoP4SPR + barrel polarizer): original flow,
+          launches assistant at Step 1 (dry sensor in P-pol).
+        - **P4PRO + AffiPump** (PicoP4PRO + pump): new flow — captures
+          Step 1 in S-pol, primes pump, then launches assistant at Step 2.
         """
-        # Gate: only available for P4SPR 2.0 = PicoP4SPR + barrel polarizer
+        # Gate: check hardware availability
         hw = self.app.hardware_mgr
         if not hw or not hw.ctrl:
             return
         device_type = hw.ctrl.get_device_type() if hasattr(hw.ctrl, "get_device_type") else None
-        if device_type != "PicoP4SPR":
-            logger.debug(f"Compression Assistant not available for device type: {device_type}")
-            return
 
-        # Check polarizer type from device_config (barrel = P4SPR 2.0)
-        device_config = getattr(hw, "device_config", None) or getattr(
-            self.app.main_window, "device_config", None
-        )
-        polarizer_type = None
-        if device_config and hasattr(device_config, "get_polarizer_type"):
-            polarizer_type = device_config.get_polarizer_type()
-        if polarizer_type != "barrel":
-            logger.debug(
-                f"Compression Assistant requires barrel polarizer (found: {polarizer_type})"
+        # Determine which flow to use
+        flow_type = None
+
+        if device_type == "PicoP4SPR":
+            # P4SPR 2.0 requires barrel polarizer
+            device_config = getattr(hw, "device_config", None) or getattr(
+                self.app.main_window, "device_config", None
             )
+            polarizer_type = None
+            if device_config and hasattr(device_config, "get_polarizer_type"):
+                polarizer_type = device_config.get_polarizer_type()
+            if polarizer_type != "barrel":
+                logger.debug(
+                    f"Compression Assistant requires barrel polarizer (found: {polarizer_type})"
+                )
+                return
+            flow_type = "p4spr"
+
+        elif device_type == "PicoP4PRO" and hw.pump is not None:
+            # P4PRO + pump (AffiPump or P4PROPLUS internal)
+            flow_type = "p4pro_pump"
+
+        else:
+            logger.debug(f"Compression Assistant not available for device type: {device_type}")
             return
 
         from PySide6.QtWidgets import QPushButton
@@ -322,6 +493,9 @@ class CalibrationService(QObject):
         )
         btn.clicked.connect(self._on_compression_assistant_clicked)
 
+        # Store the flow type for the click handler
+        self._compression_flow_type = flow_type
+
         # Insert before the Start button (at position 1, after the leading stretch)
         dialog.button_layout.insertWidget(1, btn)
         self._compression_assistant_btn = btn
@@ -329,8 +503,22 @@ class CalibrationService(QObject):
     def _on_compression_assistant_clicked(self) -> None:
         """Handle Compression Assistant button click.
 
+        Routes to the appropriate flow based on device type:
+        - P4SPR 2.0: Move to P-pol, launch at Step 1
+        - P4PRO + pump: S-pol baseline, prime pump, launch at Step 2
+        """
+        flow_type = getattr(self, "_compression_flow_type", "p4spr")
+
+        if flow_type == "p4pro_pump":
+            self._on_compression_assistant_p4pro()
+        else:
+            self._on_compression_assistant_p4spr()
+
+    def _on_compression_assistant_p4spr(self) -> None:
+        """P4SPR 2.0 compression assistant flow (original).
+
         1. Move servo to P-pol position (using device_config as source of truth)
-        2. Launch Compression Assistant as modal window
+        2. Launch Compression Assistant as modal window at Step 1
         3. Return control to calibration dialog when done
         """
         logger.info("=" * 60)
@@ -409,6 +597,207 @@ class CalibrationService(QObject):
         if self._calibration_dialog:
             self._calibration_dialog.show()
             self._calibration_dialog.raise_()
+
+    # ── P4PRO + AffiPump: Compression Assistant flow ───────────────────
+
+    def _on_compression_assistant_p4pro(self) -> None:
+        """P4PRO + AffiPump compression assistant flow.
+
+        Sequence:
+        1. Move servo to S-pol, capture dry baseline (Step 1 — automated)
+        2. Move servo to P-pol
+        3. Prime pump (6 cycles) with progress in calibration dialog
+        4. Launch Compression Assistant at Step 2 (chip + water)
+        5. Leak check uses pump flush
+        6. On close: set _prime_pump_completed so calibration skips re-priming
+
+        S-pol for Step 1 is ideal: the baseline is agnostic to wet/dry
+        state since there is no SPR coupling in S-pol.
+        """
+        logger.info("=" * 60)
+        logger.info("\U0001f527 Compression Assistant requested (P4PRO + pump flow)")
+        logger.info("=" * 60)
+
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
+        hw = self.app.hardware_mgr
+        if not hw or not hw.ctrl or not hw.usb:
+            QMessageBox.warning(
+                self._calibration_dialog,
+                "Hardware Not Ready",
+                "Please connect hardware before using the Compression Assistant.",
+            )
+            return
+
+        # ── Step 1: Capture S-pol baseline (automated) ─────────────────
+        logger.info("Moving servo to S-pol for dry sensor baseline...")
+        try:
+            # Load servo positions from device_config (source of truth)
+            device_config = getattr(self.app.main_window, "device_config", None)
+            if device_config:
+                positions = device_config.get_servo_positions()
+                if positions:
+                    hw.ctrl.set_servo_positions(s=positions.get("s"), p=positions.get("p"))
+
+            hw.ctrl.set_mode(mode="s")
+            hw._current_polarizer = "s"
+            logger.info("[OK] Servo moved to S-pol")
+        except Exception as e:
+            logger.error(f"Failed to move servo to S-pol: {e}")
+            QMessageBox.critical(
+                self._calibration_dialog,
+                "Servo Error",
+                f"Failed to move polarizer to S-pol position:\n{e}",
+            )
+            return
+
+        # Update dialog status
+        if self._calibration_dialog:
+            self._calibration_dialog.update_status("Capturing S-pol baseline...")
+        QApplication.processEvents()
+        time.sleep(0.5)  # Let servo settle
+
+        # Capture averaged spectrum in S-pol
+        frames = []
+        for _i in range(10):
+            try:
+                spectrum = hw.usb.read_intensity()
+                if spectrum is not None:
+                    frames.append(spectrum)
+            except Exception:
+                pass
+            time.sleep(0.05)
+
+        if not frames:
+            QMessageBox.warning(
+                self._calibration_dialog,
+                "No Data",
+                "Could not read spectrum. Check spectrometer connection.",
+            )
+            return
+
+        avg_spectrum = np.mean(frames, axis=0)
+        wavelengths = hw.usb.read_wavelength()
+
+        # Compute mid/low ratio for the baseline
+        from standalone_tools.compression_trainer_ui import TrainerConfig
+
+        tcfg = TrainerConfig()
+        band_mid = tcfg.band_mid
+        band_low = tcfg.band_low
+        mask_mid = (wavelengths >= band_mid[0]) & (wavelengths <= band_mid[1])
+        mask_low = (wavelengths >= band_low[0]) & (wavelengths <= band_low[1])
+        i_mid = float(np.mean(avg_spectrum[mask_mid])) if np.any(mask_mid) else 1.0
+        i_low = float(np.mean(avg_spectrum[mask_low])) if np.any(mask_low) else 1.0
+        no_chip_ratio = i_mid / i_low if i_low > 0 else 1.0
+
+        logger.info(f"S-pol baseline captured: mid/low = {no_chip_ratio:.3f}")
+
+        # Store baseline for the compression assistant
+        self._compression_baseline = {
+            "no_chip_ratio": no_chip_ratio,
+            "no_chip_spectrum": None,  # S-pol ref not useful for P-pol transmission display
+        }
+
+        # ── Step 2: Switch to P-pol ────────────────────────────────────
+        logger.info("Switching servo to P-pol...")
+        try:
+            hw.ctrl.set_mode(mode="p")
+            hw._current_polarizer = "p"
+            logger.info("[OK] Servo moved to P-pol")
+        except Exception as e:
+            logger.error(f"Failed to move servo to P-pol: {e}")
+
+        # ── Step 3: Prime pump (6 cycles) ──────────────────────────────
+        logger.info("Starting prime pump sequence...")
+
+        # Disable buttons during prime pump
+        if self._compression_assistant_btn:
+            self._compression_assistant_btn.hide()
+        if self._calibration_dialog and self._calibration_dialog.start_button:
+            self._calibration_dialog.start_button.setEnabled(False)
+        if self._calibration_dialog:
+            self._calibration_dialog.show_progress_bar()
+            self._calibration_dialog.update_status("Priming pump (cycle 1/6)...")
+
+        # Launch prime pump in background thread
+        self._prime_worker = _PrimePumpWorker(hw.pump, hw.ctrl)
+        self._prime_worker.progress.connect(self._on_prime_progress)
+        self._prime_worker.finished_ok.connect(self._on_prime_complete)
+        self._prime_worker.finished_error.connect(self._on_prime_error)
+        self._prime_worker.start()
+
+    def _on_prime_progress(self, message: str, percent: int) -> None:
+        """Update calibration dialog with prime pump progress."""
+        if self._calibration_dialog:
+            self._calibration_dialog.update_status(message)
+            self._calibration_dialog.set_progress(percent, 100)
+
+    def _on_prime_complete(self) -> None:
+        """Called when prime pump completes — launch compression assistant at Step 2."""
+        logger.info("[OK] Prime pump complete — launching Compression Assistant at Step 2")
+        self._prime_pump_completed = True
+
+        hw = self.app.hardware_mgr
+
+        # Hide calibration dialog
+        if self._calibration_dialog:
+            self._calibration_dialog.hide_progress_bar()
+            self._calibration_dialog.hide()
+
+        # Launch Compression Assistant at Step 2 (chip + water)
+        try:
+            from standalone_tools.compression_trainer_ui import (
+                STAGE_CHIP_WATER,
+                CompressionTrainerWindow,
+            )
+
+            CompressionTrainerWindow.launch_modal(
+                parent=self.app.main_window,
+                hardware_mgr=hw,
+                start_stage=STAGE_CHIP_WATER,
+                pre_baseline=self._compression_baseline,
+                pump=hw.pump,
+            )
+        except Exception as e:
+            logger.error(f"Compression Assistant error: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+        # Re-show calibration dialog
+        logger.info("Compression Assistant closed — returning to calibration dialog")
+        if self._calibration_dialog:
+            self._calibration_dialog.show()
+            self._calibration_dialog.raise_()
+            # Re-enable Start button (prime pump already done)
+            if self._calibration_dialog.start_button:
+                self._calibration_dialog.start_button.setEnabled(True)
+            self._calibration_dialog.update_status(
+                "✅ Compression set — click Start for optical calibration (pump already primed)"
+            )
+
+    def _on_prime_error(self, error_msg: str) -> None:
+        """Handle prime pump failure during compression assistant flow."""
+        logger.error(f"Prime pump failed: {error_msg}")
+
+        from PySide6.QtWidgets import QMessageBox
+
+        if self._calibration_dialog:
+            self._calibration_dialog.hide_progress_bar()
+            self._calibration_dialog.update_status(f"❌ Prime pump failed: {error_msg}")
+            # Re-enable buttons so user can retry
+            if self._calibration_dialog.start_button:
+                self._calibration_dialog.start_button.setEnabled(True)
+            if self._compression_assistant_btn:
+                self._compression_assistant_btn.show()
+
+        QMessageBox.critical(
+            self._calibration_dialog,
+            "Prime Pump Failed",
+            f"Pump priming failed:\n{error_msg}\n\n"
+            "Check tubing and pump connections, then try again.",
+        )
 
     def _progress_callback(self, message: str, progress: int = 0) -> None:
         """Progress callback for calibration routines.
@@ -689,6 +1078,9 @@ class CalibrationService(QObject):
             ctrl = hardware_mgr.ctrl
             usb = hardware_mgr.usb
             pump = hardware_mgr.pump  # Get pump if available
+            logger.info(
+                f"Calibration: pump={pump is not None}, prime_completed={self._prime_pump_completed}"
+            )
 
             if not ctrl:
                 msg = "Controller not connected"
@@ -698,10 +1090,11 @@ class CalibrationService(QObject):
                 raise RuntimeError(msg)
 
             # === PUMP PRIMING (if available) + PARALLEL OPTICAL CALIBRATION ===
+            # Skip if prime pump was already done during Compression Assistant
             # Auto-prime enabled - pump will be primed during startup calibration
             cal_result = None
 
-            if pump:  # ENABLED
+            if pump and not self._prime_pump_completed:  # ENABLED (skip if already primed)
                 logger.info(
                     "Pump detected - starting prime sequence with parallel optical calibration...",
                 )
@@ -972,8 +1365,13 @@ class CalibrationService(QObject):
                 cal_result = optical_cal_result
 
             else:
-                # === NO PUMP - Run optical calibration directly ===
-                logger.info("No pump detected - running optical calibration only...")
+                # === NO PUMP (or pump already primed) - Run optical calibration directly ===
+                if self._prime_pump_completed:
+                    logger.info(
+                        "Pump already primed during Compression Assistant — running optical calibration only..."
+                    )
+                else:
+                    logger.info("No pump detected - running optical calibration only...")
 
                 # CRITICAL FIX: Clear USB device buffer with dummy reads
                 logger.info("🔄 Clearing USB buffer with dummy reads...")

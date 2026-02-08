@@ -50,8 +50,9 @@ class StartupCalibProgressDialog(QDialog):
         self.setWindowTitle(title)
         self.setModal(False)  # Non-blocking - allows background processing
         self.setMinimumWidth(500)
-        self.setMinimumHeight(200)
+        self.setMinimumHeight(400)
         self.setMaximumWidth(600)
+        self.setMaximumHeight(700)
 
         # Track dialog state to prevent race conditions
         self._is_closing = False
@@ -128,7 +129,7 @@ class StartupCalibProgressDialog(QDialog):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
         self.status_label.setMinimumHeight(50)
-        self.status_label.setMaximumHeight(150)
+        self.status_label.setMaximumHeight(280)
         main_layout.addWidget(self.status_label)
 
         # Add spacer for better vertical distribution

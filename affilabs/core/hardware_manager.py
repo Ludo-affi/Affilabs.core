@@ -804,6 +804,7 @@ class HardwareManager(QObject):
                 status = {
                     "ctrl_type": ctrl_type,  # Only set if controller + detector both present
                     "knx_type": knx_type if self.knx else None,
+                    "pump_connected": self.pump is not None,  # Pump connected flag for sidebar
                     "spectrometer": self.usb is not None,  # Boolean flag for coordinator validation
                     "spectrometer_serial": spec_serial,
                     "valid_hardware": valid_hardware,  # List of detected device types
@@ -1266,7 +1267,7 @@ class HardwareManager(QObject):
         """Attempt to connect to AffiPump (Tecan Cavro Centris dual syringe pumps)."""
         try:
             logger.info("🔍 Scanning for AffiPump via FTDI...")
-            from affipump import CavroPumpManager, PumpController
+            from AffiPump import CavroPumpManager, PumpController
 
             from affilabs.utils.hal.pump_hal import create_pump_hal
 

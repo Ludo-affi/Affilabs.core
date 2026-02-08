@@ -194,7 +194,7 @@ class PrimingWindow(QDialog):
 if __name__ == "__main__":
     from PySide6.QtWidgets import QApplication
 
-    from affipump import CavroPumpManager, PumpController
+    from AffiPump import CavroPumpManager, PumpController
 
     from affilabs.utils.hal.pump_hal import create_pump_hal
 

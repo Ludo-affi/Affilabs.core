@@ -639,6 +639,101 @@ def _card(child_layout: QVBoxLayout | QHBoxLayout) -> QFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PUMP FLUSH WORKER (for active leak check with P4PRO + AffiPump)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class _PumpFlushWorker(QThread):
+    """Runs a gentle pump flush in the background during leak check.
+
+    Opens 6-port valves to INJECT, runs a slow dispense cycle to push
+    liquid through the channels while the main thread monitors spectral
+    intensity for leaks.
+    """
+
+    flush_error = Signal(str)
+
+    def __init__(self, pump) -> None:
+        super().__init__()
+        self._pump = pump
+        self._running = True
+
+    def stop(self) -> None:
+        self._running = False
+
+    def run(self) -> None:
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._flush())
+        except Exception as e:
+            self.flush_error.emit(str(e))
+        finally:
+            loop.close()
+
+    async def _flush(self) -> None:
+        """Run a single gentle aspirate-dispense cycle for leak testing."""
+        import asyncio
+
+        pump = self._pump
+        if pump is None:
+            return
+
+        try:
+            # Get raw controller for valve operations
+            hw_mgr = getattr(pump, '_hardware_manager', None) or getattr(pump, 'hardware_manager', None)
+            raw_ctrl = None
+            if hw_mgr:
+                raw_ctrl = getattr(hw_mgr, '_ctrl_raw', None)
+
+            # Open 6-port valves to INJECT for flow-through
+            if raw_ctrl:
+                try:
+                    raw_ctrl.knx_six_both(state=1)
+                    await asyncio.sleep(0.3)
+                    raw_ctrl.knx_three_both(state=1)
+                    await asyncio.sleep(0.3)
+                except Exception:
+                    pass  # Valve control is best-effort
+
+            # Gentle dispense — slow rate pushes liquid through channels
+            # while spectrum is monitored for intensity drops (leaks)
+            volume_ul = 1000.0
+            aspirate_speed_ul_s = 24000.0 / 60.0  # 400 µL/s — fast aspirate (matches run buffer)
+            dispense_speed_ul_s = 12000.0 / 60.0   # 200 µL/s — moderate dispense
+
+            # Aspirate first
+            pump._pump.pump.aspirate_both(volume_ul, aspirate_speed_ul_s)
+            p1, p2, _, _, _ = await asyncio.get_event_loop().run_in_executor(
+                None, pump._pump.pump.wait_until_both_ready, 60.0,
+            )
+            if not self._running:
+                return
+
+            await asyncio.sleep(0.5)
+
+            # Dispense through channels
+            pump._pump.pump.dispense_both(volume_ul, dispense_speed_ul_s)
+            p1, p2, _, _, _ = await asyncio.get_event_loop().run_in_executor(
+                None, pump._pump.pump.wait_until_both_ready, 60.0,
+            )
+
+            # Close valves after flush
+            if raw_ctrl:
+                try:
+                    raw_ctrl.knx_three_both(state=0)
+                    await asyncio.sleep(0.1)
+                    raw_ctrl.knx_six_both(state=0)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            self.flush_error.emit(f"Flush failed: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MAIN TRAINER WINDOW
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -648,6 +743,9 @@ class CompressionTrainerWindow(QMainWindow):
         self,
         cfg: TrainerConfig | None = None,
         hardware_mgr=None,
+        start_stage: int | None = None,
+        pre_baseline: dict | None = None,
+        pump=None,
     ) -> None:
         super().__init__()
         self.cfg = cfg or TrainerConfig()
@@ -685,10 +783,19 @@ class CompressionTrainerWindow(QMainWindow):
         self._qc_intensity_samples: deque[float] = deque(maxlen=600)  # Last 600 samples
         self._qc_threshold_line: pg.InfiniteLine | None = None
 
+        # Pump reference for active leak checking (P4PRO + AffiPump)
+        self._pump = pump
+        self._pump_flush_worker: QThread | None = None
+
+        # Load pre-captured baseline data (e.g. S-pol capture from P4PRO flow)
+        if pre_baseline:
+            self._no_chip_ratio = pre_baseline.get("no_chip_ratio")
+            self._no_chip_spectrum = pre_baseline.get("no_chip_spectrum")
+
         # When launched from main app, hardware is already connected —
-        # skip STAGE_CONNECT and go straight to step 1
+        # skip STAGE_CONNECT and go to the requested stage
         if hardware_mgr is not None:
-            self._stage = STAGE_NO_CHIP
+            self._stage = start_stage if start_stage is not None else STAGE_NO_CHIP
         else:
             self._stage = STAGE_CONNECT
 
@@ -990,12 +1097,20 @@ class CompressionTrainerWindow(QMainWindow):
             self.step_bar.set_step(2)
             self.step_badge.setText("STEP 3 / 3")
             self._set_badge_color(COL_ORANGE)
+            has_pump = self._pump is not None
             if self._qc_monitoring:
-                self.instruction.setText(
-                    "Injecting liquid into all 4 channels...\n\n"
-                    "Monitoring for leaks.\n"
-                    "(Checking signal stability over next 30 seconds)"
-                )
+                if has_pump:
+                    self.instruction.setText(
+                        "Flushing liquid through channels via pump...\n\n"
+                        "Monitoring for leaks under flow.\n"
+                        "(Checking signal stability over next 30 seconds)"
+                    )
+                else:
+                    self.instruction.setText(
+                        "Injecting liquid into all 4 channels...\n\n"
+                        "Monitoring for leaks.\n"
+                        "(Checking signal stability over next 30 seconds)"
+                    )
                 self.action_btn.setText("Cancel")
                 self.action_btn.setStyleSheet(self._btn_style(COL_ORANGE))
                 self.action_btn.setEnabled(True)
@@ -1006,11 +1121,18 @@ class CompressionTrainerWindow(QMainWindow):
                     f"font-family: {FONT}; background: transparent;"
                 )
             else:
-                self.instruction.setText(
-                    "Inject liquid into all 4 channels.\n\n"
-                    "This will check for leaks by monitoring\n"
-                    "signal intensity for 30 seconds."
-                )
+                if has_pump:
+                    self.instruction.setText(
+                        "Ready to check for leaks.\n\n"
+                        "The pump will flush liquid through the channels\n"
+                        "while monitoring signal intensity for 30 seconds."
+                    )
+                else:
+                    self.instruction.setText(
+                        "Inject liquid into all 4 channels.\n\n"
+                        "This will check for leaks by monitoring\n"
+                        "signal intensity for 30 seconds."
+                    )
                 self.action_btn.setText("Start Leak Check")
                 self.action_btn.setStyleSheet(self._btn_style(COL_ORANGE, "#D4860D"))
                 self.action_btn.setEnabled(True)
@@ -1095,7 +1217,11 @@ class CompressionTrainerWindow(QMainWindow):
             self.hw.leds_on()
             self._start_acquisition()
 
-            if self._cal_loaded:
+            # If a specific start_stage was set (e.g. from P4PRO flow), honour it
+            if self._stage not in (STAGE_CONNECT,):
+                # Stage was already set by __init__ — just refresh UI
+                self._update_stage_ui()
+            elif self._cal_loaded:
                 self._set_stage(STAGE_COMPRESS)
             else:
                 self._set_stage(STAGE_NO_CHIP)
@@ -1256,7 +1382,12 @@ class CompressionTrainerWindow(QMainWindow):
         self.status.setText("Calibration reset \u2014 recapture baselines")
 
     def _start_qc_monitoring(self) -> None:
-        """Start QC leak check: monitor intensity for 10 seconds."""
+        """Start QC leak check: monitor intensity for 30 seconds.
+
+        If a pump is available (P4PRO + AffiPump), runs a gentle flush
+        through the channels while monitoring — tests under real flow
+        conditions.
+        """
         self._qc_monitoring = True
         self._qc_ref_intensity = None
         self._qc_sample_count = 0
@@ -1278,8 +1409,37 @@ class CompressionTrainerWindow(QMainWindow):
         )
         self.evo_plot.addItem(self._qc_threshold_line)
 
+        # If pump available, start a gentle flush in the background
+        if self._pump is not None:
+            self._start_pump_flush()
+
         self._update_stage_ui()
-        self.status.setText("QC monitoring started. Inject liquid into all 4 channels.")
+        if self._pump is not None:
+            self.status.setText("QC monitoring started. Pump flushing channels...")
+        else:
+            self.status.setText("QC monitoring started. Inject liquid into all 4 channels.")
+
+    # ── Pump flush for active leak check (P4PRO + AffiPump) ──────────────
+
+    def _start_pump_flush(self) -> None:
+        """Run a gentle pump flush while monitoring for leaks.
+
+        Opens 6-port valves to INJECT, runs a slow dispense (one cycle)
+        to push liquid through the channels.  The spectral intensity is
+        monitored by ``_on_spectrum`` while this runs.
+        """
+        self._pump_flush_worker = _PumpFlushWorker(self._pump)
+        self._pump_flush_worker.flush_error.connect(
+            lambda msg: self.status.setText(f"\u26a0 Flush error: {msg}")
+        )
+        self._pump_flush_worker.start()
+
+    def _stop_pump_flush(self) -> None:
+        """Stop the pump flush worker if running."""
+        if self._pump_flush_worker and self._pump_flush_worker.isRunning():
+            self._pump_flush_worker.stop()
+            self._pump_flush_worker.wait(5000)
+            self._pump_flush_worker = None
 
     def _check_qc_result(self) -> None:
         """After 10 sec monitoring, check if leak detected (>10% drop)."""
@@ -1315,6 +1475,7 @@ class CompressionTrainerWindow(QMainWindow):
                     f"Check for loose connections or seal issues."
                 )
                 self._qc_monitoring = False
+                self._stop_pump_flush()
                 self._cleanup_qc_plot()
                 self.status.setText(f"Leak detected: {pct_drop:.1f}% signal drop")
             else:
@@ -1333,6 +1494,7 @@ class CompressionTrainerWindow(QMainWindow):
                     "Click below to proceed to your experiment."
                 )
                 self._qc_monitoring = False
+                self._stop_pump_flush()
                 self._cleanup_qc_plot()
                 self.status.setText("QC passed: no significant leak")
 
@@ -1442,6 +1604,7 @@ class CompressionTrainerWindow(QMainWindow):
     # ══════════════════════════════════════════════════════════════════════
 
     def closeEvent(self, event) -> None:
+        self._stop_pump_flush()
         if self.worker:
             self.worker.stop()
         if self._hw_owned:
@@ -1453,7 +1616,13 @@ class CompressionTrainerWindow(QMainWindow):
     # ══════════════════════════════════════════════════════════════════════
 
     @staticmethod
-    def launch_modal(parent, hardware_mgr) -> None:
+    def launch_modal(
+        parent,
+        hardware_mgr,
+        start_stage: int | None = None,
+        pre_baseline: dict | None = None,
+        pump=None,
+    ) -> None:
         """Launch the Compression Assistant as a modal window.
 
         Called from the startup calibration dialog.  The servo must already
@@ -1462,10 +1631,20 @@ class CompressionTrainerWindow(QMainWindow):
         Args:
             parent: Parent widget (for centering)
             hardware_mgr: The app's HardwareManager (already connected)
+            start_stage: Stage to start at (e.g. STAGE_CHIP_WATER to skip Step 1)
+            pre_baseline: Pre-captured baseline data dict with keys:
+                - 'no_chip_ratio': float — mid/low ratio from Step 1 capture
+                - 'no_chip_spectrum': np.ndarray | None — reference spectrum
+            pump: Pump reference for active leak checking (AffiPump / P4PRO+)
         """
         from PySide6.QtCore import QEventLoop
 
-        trainer = CompressionTrainerWindow(hardware_mgr=hardware_mgr)
+        trainer = CompressionTrainerWindow(
+            hardware_mgr=hardware_mgr,
+            start_stage=start_stage,
+            pre_baseline=pre_baseline,
+            pump=pump,
+        )
         trainer.setWindowModality(Qt.WindowModality.ApplicationModal)
         trainer.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
 

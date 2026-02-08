@@ -187,8 +187,9 @@ class StartupCalibProgressDialog(QDialog):
         self.setWindowTitle(title)
         self.setModal(False)  # Non-blocking - allows background processing
         self.setMinimumWidth(500)
-        self.setMinimumHeight(200)
+        self.setMinimumHeight(400)
         self.setMaximumWidth(600)
+        self.setMaximumHeight(700)
 
         # Track dialog state to prevent race conditions
         self._is_closing = False
@@ -265,7 +266,7 @@ class StartupCalibProgressDialog(QDialog):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
         self.status_label.setMinimumHeight(50)
-        self.status_label.setMaximumHeight(150)
+        self.status_label.setMaximumHeight(280)
         main_layout.addWidget(self.status_label)
 
         # Add spacer for better vertical distribution
@@ -3159,12 +3160,12 @@ class AffilabsMainWindow(QMainWindow):
             if 'Cycles' in excel_data:
                 df_cycles = excel_data['Cycles']
                 logger.info(f"Cycles sheet columns: {list(df_cycles.columns)}")
-                
+
                 for idx, row in df_cycles.iterrows():
                     # Debug: log first row to see what we're getting
                     if idx == 0:
                         logger.info(f"First cycle row data: {dict(row)}")
-                    
+
                     # Parse time range from ACh1 or start_time_sensorgram/end_time_sensorgram
                     if 'start_time_sensorgram' in df_cycles.columns and pd.notna(row['start_time_sensorgram']):
                         # Real software export format
@@ -3183,12 +3184,12 @@ class AffilabsMainWindow(QMainWindow):
                     else:
                         start_time = 0.0
                         end_time = 300.0
-                    
+
                     duration_min = (end_time - start_time) / 60.0
-                    
+
                     # Get type (handle both 'type' and 'Type')
                     cycle_type = row.get('type') if 'type' in df_cycles.columns else row.get('Type', 'Unknown')
-                    
+
                     # Get concentration (handle multiple formats)
                     if 'concentration_value' in df_cycles.columns:
                         concentration = row.get('concentration_value')
@@ -3198,7 +3199,7 @@ class AffilabsMainWindow(QMainWindow):
                         concentration = row.get('name')
                     else:
                         concentration = ''
-                        
+
                     if pd.notna(concentration):
                         conc_units = row.get('concentration_units', '') if 'concentration_units' in df_cycles.columns else ''
                         if conc_units and pd.notna(conc_units):
@@ -3206,10 +3207,10 @@ class AffilabsMainWindow(QMainWindow):
                         concentration = str(concentration)
                     else:
                         concentration = ''
-                    
+
                     # Get notes
                     notes = row.get('note') if 'note' in df_cycles.columns else row.get('Notes', '')
-                    
+
                     cycles_data.append({
                         'type': str(cycle_type) if pd.notna(cycle_type) else 'Unknown',
                         'duration_minutes': duration_min,
@@ -3221,7 +3222,7 @@ class AffilabsMainWindow(QMainWindow):
                         'shift': 0.0,
                         'flags': str(row.get('flags', '')) if 'flags' in df_cycles.columns else '',
                     })
-                    
+
                     # Debug log for first cycle
                     if idx == 0:
                         logger.info(f"First cycle parsed: type={cycle_type}, start={start_time}, end={end_time}, conc={concentration}")
@@ -3246,7 +3247,7 @@ class AffilabsMainWindow(QMainWindow):
             # Update the edits tab with loaded cycles
             if hasattr(self, 'edits_tab'):
                 self.edits_tab._populate_cycles_table(cycles_data)
-                
+
                 # Set timeline cursors to show all data (if they exist)
                 if raw_data_rows and hasattr(self.edits_tab, 'edits_timeline_cursors'):
                     left_cursor = self.edits_tab.edits_timeline_cursors.get('left')
@@ -3256,7 +3257,7 @@ class AffilabsMainWindow(QMainWindow):
                         max_time = max(row['time'] for row in raw_data_rows)
                         left_cursor.setValue(min_time)
                         right_cursor.setValue(max_time)
-                
+
                 # Update the selection view to show raw data
                 if hasattr(self.edits_tab, '_update_selection_view'):
                     self.edits_tab._update_selection_view()
@@ -7272,19 +7273,19 @@ End of Debug Log
 
                 # Populate alignment controls from stored data
                 alignment_data = self.edits_tab._cycle_alignment.get(row_idx, {'channel': 'All', 'shift': 0.0})
-                
+
                 # Update channel combo
                 self.edits_tab.alignment_channel_combo.blockSignals(True)
                 self.edits_tab.alignment_channel_combo.setCurrentText(alignment_data['channel'])
                 self.edits_tab.alignment_channel_combo.blockSignals(False)
-                
+
                 # Update shift input and slider
                 shift_value = alignment_data['shift']
                 if hasattr(self.edits_tab, 'alignment_shift_input'):
                     self.edits_tab.alignment_shift_input.blockSignals(True)
                     self.edits_tab.alignment_shift_input.setText(f"{shift_value:.1f}")
                     self.edits_tab.alignment_shift_input.blockSignals(False)
-                
+
                 if hasattr(self.edits_tab, 'alignment_shift_slider'):
                     self.edits_tab.alignment_shift_slider.blockSignals(True)
                     slider_val = int(shift_value * 10)  # Convert to 0.1s increments

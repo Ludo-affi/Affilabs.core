@@ -14,7 +14,7 @@
     "controller_model": "pico_p4spr",
     "controller_serial": null,
     "optical_fiber_diameter_um": 200,
-    "polarizer_type": "round",
+    "polarizer_type": "barrel",
     "servo_model": "HS-55MG",
     "servo_s_position": 128,
     "servo_p_position": 48,

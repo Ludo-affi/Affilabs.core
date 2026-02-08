@@ -232,8 +232,11 @@ class DeviceConfiguration:
         PicoP4PROPLUS. Older configuration files may have "pico_p4pro" even
         when the actual firmware is P4PROPLUS with internal pumps. We treat
         the live controller as authoritative and update controller_type,
-        controller_model and polarizer_type when we can unambiguously detect
+        controller_model when we can unambiguously detect
         them from the hardware.
+
+        Note: polarizer_type is NEVER auto-set here. Only the user can
+        define the polarizer type for a device.
         """
 
         if self.controller is None:
@@ -243,7 +246,6 @@ class DeviceConfiguration:
         hw = self.config.get("hardware", {})
         old_model = hw.get("controller_model")
         old_type = hw.get("controller_type")
-        old_polarizer = hw.get("polarizer_type")
 
         # Read hardware attributes - use 'name' not 'device_name'
         ctrl_name = getattr(self.controller, "name", "").lower()
@@ -255,17 +257,15 @@ class DeviceConfiguration:
 
         new_model = old_model
         new_type = old_type
-        new_polarizer = old_polarizer
 
-        # Mirror the auto-detection rules used when creating a fresh config
+        # Detect controller type/model from hardware — but NEVER touch polarizer_type.
+        # Polarizer type is user-defined and must only be changed by the user.
         if "arduino" in ctrl_name or ctrl_name == "p4spr":
             new_type = "Arduino"
             new_model = "Arduino P4SPR"
-            new_polarizer = "round"  # Hardware rule: Arduino always uses round
         elif "pico_p4spr" in ctrl_name or "picop4spr" in ctrl_name:
             new_type = "PicoP4SPR"
             new_model = "Raspberry Pi Pico P4SPR"
-            new_polarizer = "round"  # Hardware rule: PicoP4SPR always uses round
         elif "pico_p4pro" in ctrl_name or "picop4pro" in ctrl_name or "p4pro" in firmware_id:
             # P4PRO family – check if this is the PLUS variant with internal pumps
             is_plus = "p4proplus" in firmware_id
@@ -282,13 +282,9 @@ class DeviceConfiguration:
             else:
                 new_type = "PicoP4PRO"
                 new_model = "pico_p4pro"
-
-            # Hardware rule: all P4PRO variants use barrel polarizer
-            new_polarizer = "barrel"
         elif "pico_ezspr" in ctrl_name or "picoezspr" in ctrl_name:
             new_type = "PicoEZSPR"
             new_model = "Raspberry Pi Pico EZSPR"
-            new_polarizer = "barrel"  # Typical for PicoEZSPR
 
         changed = False
         if new_model and new_model != old_model:
@@ -296,9 +292,6 @@ class DeviceConfiguration:
             changed = True
         if new_type and new_type != old_type:
             hw["controller_type"] = new_type
-            changed = True
-        if new_polarizer and new_polarizer != old_polarizer:
-            hw["polarizer_type"] = new_polarizer
             changed = True
 
         if changed:
@@ -420,7 +413,7 @@ class DeviceConfiguration:
         )
         config["hardware"]["polarizer_type"] = eeprom_config.get(
             "polarizer_type",
-            "round",
+            "",  # No default — user must explicitly set polarizer type
         )
         config["hardware"]["servo_s_position"] = eeprom_config.get(
             "servo_s_position",
@@ -537,6 +530,7 @@ class DeviceConfiguration:
             logger.info(f"  ✓ Device Serial: {self.device_serial}")
 
         # Try to detect controller type from hardware
+        # Note: polarizer_type is NEVER auto-set. Only the user can define it.
         if self.controller is not None:
             try:
                 ctrl_name = getattr(self.controller, "device_name", "").lower()
@@ -545,20 +539,14 @@ class DeviceConfiguration:
                 if "arduino" in ctrl_name or ctrl_name == "p4spr":
                     config["hardware"]["controller_type"] = "Arduino"
                     config["hardware"]["controller_model"] = "Arduino P4SPR"
-                    config["hardware"]["polarizer_type"] = (
-                        "round"  # Hardware rule: Arduino always uses round
-                    )
                     logger.info(
-                        "  ✓ Controller: Arduino (auto-set polarizer to 'round')",
+                        "  ✓ Controller: Arduino",
                     )
                 elif "pico_p4spr" in ctrl_name or "picop4spr" in ctrl_name:
                     config["hardware"]["controller_type"] = "PicoP4SPR"
                     config["hardware"]["controller_model"] = "Raspberry Pi Pico P4SPR"
-                    config["hardware"]["polarizer_type"] = (
-                        "round"  # Hardware rule: PicoP4SPR always uses round
-                    )
                     logger.info(
-                        "  ✓ Controller: PicoP4SPR (auto-set polarizer to 'round')",
+                        "  ✓ Controller: PicoP4SPR",
                     )
                 elif "pico_p4pro" in ctrl_name or "picop4pro" in ctrl_name or "p4pro" in firmware_id:
                     # Check if it's the PLUS version with internal pumps
@@ -566,25 +554,19 @@ class DeviceConfiguration:
                         config["hardware"]["controller_type"] = "PicoP4PROPLUS"
                         config["hardware"]["controller_model"] = "pico_p4proplus"
                         logger.info(
-                            "  ✓ Controller: PicoP4PROPLUS (with internal pumps, auto-set polarizer to 'barrel')",
+                            "  ✓ Controller: PicoP4PROPLUS (with internal pumps)",
                         )
                     else:
                         config["hardware"]["controller_type"] = "PicoP4PRO"
                         config["hardware"]["controller_model"] = "pico_p4pro"
                         logger.info(
-                            "  ✓ Controller: PicoP4PRO (auto-set polarizer to 'barrel')",
+                            "  ✓ Controller: PicoP4PRO",
                         )
-                    config["hardware"]["polarizer_type"] = (
-                        "barrel"  # Hardware rule: P4PRO uses barrel polarizer
-                    )
                 elif "pico_ezspr" in ctrl_name or "picoezspr" in ctrl_name:
                     config["hardware"]["controller_type"] = "PicoEZSPR"
                     config["hardware"]["controller_model"] = "Raspberry Pi Pico EZSPR"
-                    config["hardware"]["polarizer_type"] = (
-                        "barrel"  # Hardware rule: PicoEZSPR typically uses barrel
-                    )
                     logger.info(
-                        "  ✓ Controller: PicoEZSPR (auto-set polarizer to 'barrel')",
+                        "  ✓ Controller: PicoEZSPR",
                     )
             except Exception as e:
                 logger.debug(f"Could not auto-detect controller type: {e}")

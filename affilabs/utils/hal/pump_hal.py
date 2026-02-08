@@ -235,7 +235,7 @@ def create_pump_hal(pump_manager) -> PumpHAL:
         PumpHAL adapter wrapping the pump manager
 
     Example:
-        from affipump import CavroPumpManager, PumpController
+        from AffiPump import CavroPumpManager, PumpController
         from affilabs.utils.hal.pump_hal import create_pump_hal
 
         # Connect to hardware

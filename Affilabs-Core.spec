@@ -1,10 +1,40 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+# Read version from VERSION file
+with open('VERSION', 'r') as f:
+    VERSION = f.read().strip()
+
+# Find libusb DLL - check common locations
+import os
+import sys
+
+# Common Python installation paths to check
+libusb_dll = None
+possible_paths = [
+    # Python 3.9 Roaming
+    os.path.expanduser(r'~\AppData\Roaming\Python\Python39\site-packages\libusb_package\libusb-1.0.dll'),
+    # Python 3.9 Program Files
+    r'C:\Program Files\Python39\Lib\site-packages\libusb_package\libusb-1.0.dll',
+    # Python 3.12
+    r'C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\site-packages\libusb_package\libusb-1.0.dll',
+]
+
+for path in possible_paths:
+    if os.path.exists(path):
+        libusb_dll = path
+        print(f"Found libusb DLL at: {path}")
+        break
+
+if not libusb_dll:
+    print("WARNING: libusb-1.0.dll not found in expected locations")
+    binaries = []
+else:
+    binaries = [(libusb_dll, '.')]
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[('.venv312/Lib/site-packages/libusb_package/libusb-1.0.dll', '.')],
+    binaries=binaries,
     datas=[
         ('VERSION', '.'),
         ('affilabs/ui', 'affilabs/ui'),
@@ -13,7 +43,8 @@ a = Analysis(
         ('detector_profiles', 'detector_profiles'),
         ('led_calibration_official', 'led_calibration_official'),
         ('servo_polarizer_calibration', 'servo_polarizer_calibration'),
-        ('settings', 'settings')
+        ('settings', 'settings'),
+        ('standalone_tools', 'standalone_tools'),
     ],
     hiddenimports=[
         'PySide6', 
@@ -25,7 +56,10 @@ a = Analysis(
         'seabreeze.cseabreeze', 
         'libusb_package', 
         'sklearn', 
-        'joblib'
+        'joblib',
+        'standalone_tools',
+        'standalone_tools.compression_trainer_ui',
+        'standalone_tools.compression_labeller',
     ],
     hookspath=[],
     hooksconfig={},
@@ -50,7 +84,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Affilabs-Core',
+    name=f'Affilabs-Core-v{VERSION}',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
