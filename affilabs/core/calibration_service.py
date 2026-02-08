@@ -248,9 +248,161 @@ class CalibrationService(QObject):
         self.calibration_progress.connect(self._update_dialog_progress)
         self.calibration_failed.connect(self._on_calibration_failed_dialog)
 
+        # Add Compression Assistant button alongside Start (visible only before calibration)
+        self._add_compression_assistant_button()
+
         self._calibration_dialog.hide_progress_bar()
         self._calibration_dialog.show()
         logger.info("[OK] Calibration dialog displayed (Start button visible)")
+
+    def _add_compression_assistant_button(self) -> None:
+        """Add a 'Compression Assistant' button to the calibration dialog.
+
+        Only shown for P4SPR 2.0 devices (PicoP4SPR + barrel polarizer).
+        P4SPR original (round polarizer) does not support it, and
+        P4PRO / P4PRO Plus will have a different implementation.
+        """
+        # Gate: only available for P4SPR 2.0 = PicoP4SPR + barrel polarizer
+        hw = self.app.hardware_mgr
+        if not hw or not hw.ctrl:
+            return
+        device_type = hw.ctrl.get_device_type() if hasattr(hw.ctrl, "get_device_type") else None
+        if device_type != "PicoP4SPR":
+            logger.debug(
+                f"Compression Assistant not available for device type: {device_type}"
+            )
+            return
+
+        # Check polarizer type from device_config (barrel = P4SPR 2.0)
+        device_config = getattr(hw, "device_config", None) or getattr(
+            self.app.main_window, "device_config", None
+        )
+        polarizer_type = None
+        if device_config and hasattr(device_config, "get_polarizer_type"):
+            polarizer_type = device_config.get_polarizer_type()
+        if polarizer_type != "barrel":
+            logger.debug(
+                f"Compression Assistant requires barrel polarizer (found: {polarizer_type})"
+            )
+            return
+
+        from PySide6.QtWidgets import QPushButton
+
+        dialog = self._calibration_dialog
+        if dialog is None:
+            return
+
+        btn = QPushButton("\U0001f527 Compression Assistant")
+        btn.setFixedSize(210, 36)
+        btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #5856D6;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+            "QPushButton:hover {"
+            "  background: #4B49B0;"
+            "}"
+        )
+        btn.setToolTip(
+            "Launch the guided Compression Assistant to help\n"
+            "position your sensor chip before calibration.\n"
+            "Requires polarizer to be already calibrated."
+        )
+        btn.clicked.connect(self._on_compression_assistant_clicked)
+
+        # Insert before the Start button (at position 1, after the leading stretch)
+        dialog.button_layout.insertWidget(1, btn)
+        self._compression_assistant_btn = btn
+
+    def _on_compression_assistant_clicked(self) -> None:
+        """Handle Compression Assistant button click.
+
+        1. Move servo to P-pol position (using device_config as source of truth)
+        2. Launch Compression Assistant as modal window
+        3. Return control to calibration dialog when done
+        """
+        logger.info("=" * 60)
+        logger.info("\U0001f527 Compression Assistant requested")
+        logger.info("=" * 60)
+
+        # Validate hardware
+        hw = self.app.hardware_mgr
+        if not hw or not hw.ctrl or not hw.usb:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self._calibration_dialog,
+                "Hardware Not Ready",
+                "Please connect hardware before using the Compression Assistant.",
+            )
+            return
+
+        # Move servo to P-pol using device_config positions (source of truth),
+        # following the same pattern as _load_device_settings / _on_polarizer_toggle
+        logger.info("Moving servo to P-pol position...")
+        try:
+            # 1. Read positions from device_config (single source of truth)
+            device_config = getattr(self.app.main_window, "device_config", None)
+            if device_config:
+                positions = device_config.get_servo_positions()
+                if positions:
+                    s_pos = positions.get("s")
+                    p_pos = positions.get("p")
+                    logger.info(
+                        f"   Device config positions: S={s_pos}, P={p_pos}"
+                    )
+                    # 2. Cache positions in controller so set_mode uses them
+                    hw.ctrl.set_servo_positions(s=s_pos, p=p_pos)
+                else:
+                    logger.warning("   Servo positions not found in device_config")
+            else:
+                logger.warning("   device_config not available")
+
+            # 3. Move to P-pol (same call used throughout the app)
+            hw.ctrl.set_mode(mode="p")
+            hw._current_polarizer = "p"
+            logger.info("[OK] Servo moved to P-pol")
+        except Exception as e:
+            logger.error(f"Failed to move servo to P-pol: {e}")
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.critical(
+                self._calibration_dialog,
+                "Servo Error",
+                f"Failed to move polarizer to P-pol position:\n{e}",
+            )
+            return
+
+        # Temporarily hide calibration dialog
+        if self._calibration_dialog:
+            self._calibration_dialog.hide()
+
+        # Launch Compression Assistant modally
+        logger.info("Launching Compression Assistant (modal)...")
+        try:
+            from standalone_tools.compression_trainer_ui import (
+                CompressionTrainerWindow,
+            )
+
+            CompressionTrainerWindow.launch_modal(
+                parent=self.app.main_window,
+                hardware_mgr=hw,
+            )
+        except Exception as e:
+            logger.error(f"Compression Assistant error: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+        # Re-show calibration dialog
+        logger.info("Compression Assistant closed — returning to calibration dialog")
+        if self._calibration_dialog:
+            self._calibration_dialog.show()
+            self._calibration_dialog.raise_()
 
     def _progress_callback(self, message: str, progress: int = 0) -> None:
         """Progress callback for calibration routines.
@@ -470,6 +622,9 @@ class CalibrationService(QObject):
         if self._calibration_dialog:
             if self._calibration_dialog.start_button:
                 self._calibration_dialog.start_button.setEnabled(False)
+            # Hide Compression Assistant button during calibration
+            if hasattr(self, "_compression_assistant_btn") and self._compression_assistant_btn:
+                self._compression_assistant_btn.hide()
             self._calibration_dialog.show_progress_bar()
             self._calibration_dialog.update_status(
                 "Running LED intensity calibration...",
@@ -924,24 +1079,61 @@ class CalibrationService(QObject):
                                     logger.info("✅ SERVO CALIBRATION COMPLETED SUCCESSFULLY")
                                     logger.info("=" * 80)
                                     logger.info(f"   New servo positions: S={s_pos}, P={p_pos}")
+                                    logger.info(f"   Positions loaded from: {device_config.config_path}")
 
-                                    # Sync to the app's live DeviceConfiguration
+                                    # CRITICAL: Sync to the app's live DeviceConfiguration
                                     # so any later save() won't clobber the values
+                                    synced_to_app = False
                                     if (
-                                        hasattr(self, '_app')
-                                        and self._app
-                                        and hasattr(self._app, 'main_window')
-                                        and self._app.main_window
-                                        and hasattr(self._app.main_window, 'device_config')
-                                        and self._app.main_window.device_config
+                                        hasattr(self, 'app')
+                                        and self.app
+                                        and hasattr(self.app, 'main_window')
+                                        and self.app.main_window
+                                        and hasattr(self.app.main_window, 'device_config')
+                                        and self.app.main_window.device_config
                                     ):
-                                        self._app.main_window.device_config.set_servo_positions(s_pos, p_pos)
-                                        logger.info("   -> App in-memory DeviceConfiguration synced")
+                                        logger.info("   🔄 Syncing to app's in-memory DeviceConfiguration...")
+                                        old_s = self.app.main_window.device_config.config.get("hardware", {}).get("servo_s_position")
+                                        old_p = self.app.main_window.device_config.config.get("hardware", {}).get("servo_p_position")
+                                        logger.info(f"      Before sync: S={old_s}, P={old_p}")
+
+                                        self.app.main_window.device_config.set_servo_positions(s_pos, p_pos)
+                                        synced_to_app = True
+
+                                        new_s = self.app.main_window.device_config.config.get("hardware", {}).get("servo_s_position")
+                                        new_p = self.app.main_window.device_config.config.get("hardware", {}).get("servo_p_position")
+                                        logger.info(f"      After sync: S={new_s}, P={new_p}")
+
+                                        # Force save to persist the change immediately
+                                        self.app.main_window.device_config.save()
+                                        logger.info(f"      ✅ In-memory config synced and saved to disk")
+                                        logger.info(f"         Path: {self.app.main_window.device_config.config_path}")
+                                    else:
+                                        logger.warning("   ⚠️  Could not access app's in-memory DeviceConfiguration!")
+                                        logger.warning("      This may cause positions to be overwritten later")
+                                        logger.warning("      Checking access path:")
+                                        logger.warning(f"         hasattr(self, 'app'): {hasattr(self, 'app')}")
+                                        if hasattr(self, 'app'):
+                                            logger.warning(f"         self.app: {self.app}")
+                                            logger.warning(f"         hasattr(app, 'main_window'): {hasattr(self.app, 'main_window')}")
+                                            if hasattr(self.app, 'main_window'):
+                                                logger.warning(f"                 main_window: {self.app.main_window}")
+                                                logger.warning(f"                 hasattr(main_window, 'device_config'): {hasattr(self.app.main_window, 'device_config')}")
 
                                     # Load into controller RAM
                                     if ctrl and hasattr(ctrl, 'set_servo_positions'):
                                         ctrl.set_servo_positions(s=s_pos, p=p_pos)
                                         logger.info("   -> Controller RAM updated")
+
+                                    # Also update hardware manager's device_config if accessible
+                                    if not synced_to_app and hasattr(self.app, 'hardware_mgr') and hasattr(self.app.hardware_mgr, 'device_config'):
+                                        logger.info("   🔄 Syncing to hardware manager's DeviceConfiguration...")
+                                        if self.app.hardware_mgr.device_config:
+                                            self.app.hardware_mgr.device_config.set_servo_positions(s_pos, p_pos)
+                                            self.app.hardware_mgr.device_config.save()
+                                            logger.info("      ✅ Hardware manager config synced and saved")
+                                        else:
+                                            logger.warning("      ⚠️  Hardware manager device_config is None")
 
                                     logger.info(
                                         "   Retrying LED calibration with correct positions..."
