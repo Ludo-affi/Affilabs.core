@@ -125,17 +125,25 @@ class CalibrationService(QObject):
         if not force_oem_retrain:
             try:
                 from affilabs.services.led_model_loader import LEDCalibrationModelLoader
+
                 model_loader = LEDCalibrationModelLoader()
-                detector_serial = getattr(self.app.hardware_mgr.usb, 'serial_number', None) if hasattr(self.app, 'hardware_mgr') and self.app.hardware_mgr.usb else None
+                detector_serial = (
+                    getattr(self.app.hardware_mgr.usb, "serial_number", None)
+                    if hasattr(self.app, "hardware_mgr") and self.app.hardware_mgr.usb
+                    else None
+                )
 
                 if detector_serial:
                     led_model = model_loader.load_model(detector_serial)
                     if led_model is None:
                         logger.warning("❌ No LED calibration model found for this detector")
-                        logger.warning("   OEM calibration is required before running regular calibration")
+                        logger.warning(
+                            "   OEM calibration is required before running regular calibration"
+                        )
 
                         # Show prompt to run OEM calibration
                         from PySide6.QtWidgets import QMessageBox
+
                         reply = QMessageBox.question(
                             self.app.main_window,
                             "LED Model Missing",
@@ -144,16 +152,18 @@ class CalibrationService(QObject):
                             "Would you like to run OEM Calibration now?\n\n"
                             "(This will take approximately 10-15 minutes)",
                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                            QMessageBox.StandardButton.Yes
+                            QMessageBox.StandardButton.Yes,
                         )
 
                         if reply == QMessageBox.StandardButton.Yes:
                             # Trigger OEM calibration instead
-                            if hasattr(self.app, '_on_oem_led_calibration'):
+                            if hasattr(self.app, "_on_oem_led_calibration"):
                                 self.app._on_oem_led_calibration()
                                 return True
                         else:
-                            logger.info("User declined OEM calibration - cancelling regular calibration")
+                            logger.info(
+                                "User declined OEM calibration - cancelling regular calibration"
+                            )
                             return False
             except Exception as e:
                 logger.warning(f"Could not check LED model status: {e}")
@@ -268,9 +278,7 @@ class CalibrationService(QObject):
             return
         device_type = hw.ctrl.get_device_type() if hasattr(hw.ctrl, "get_device_type") else None
         if device_type != "PicoP4SPR":
-            logger.debug(
-                f"Compression Assistant not available for device type: {device_type}"
-            )
+            logger.debug(f"Compression Assistant not available for device type: {device_type}")
             return
 
         # Check polarizer type from device_config (barrel = P4SPR 2.0)
@@ -352,9 +360,7 @@ class CalibrationService(QObject):
                 if positions:
                     s_pos = positions.get("s")
                     p_pos = positions.get("p")
-                    logger.info(
-                        f"   Device config positions: S={s_pos}, P={p_pos}"
-                    )
+                    logger.info(f"   Device config positions: S={s_pos}, P={p_pos}")
                     # 2. Cache positions in controller so set_mode uses them
                     hw.ctrl.set_servo_positions(s=s_pos, p=p_pos)
                 else:
@@ -448,14 +454,18 @@ class CalibrationService(QObject):
         if self._calibration_dialog:
             # Show retry options if under max attempts
             if self._retry_count < self._max_retries:
-                logger.info(f"Calibration failed (attempt {self._retry_count + 1}/{self._max_retries + 1}). Showing retry options...")
+                logger.info(
+                    f"Calibration failed (attempt {self._retry_count + 1}/{self._max_retries + 1}). Showing retry options..."
+                )
                 self._calibration_dialog.show_error_state(
                     error_message=error_message,
                     retry_count=self._retry_count,
                     max_retries=self._max_retries,
                 )
             else:
-                logger.warning(f"Max retries ({self._max_retries}) reached. Showing final error state.")
+                logger.warning(
+                    f"Max retries ({self._max_retries}) reached. Showing final error state."
+                )
                 self._calibration_dialog.show_max_retries_error(error_message)
 
     def _on_retry_calibration(self) -> None:
@@ -1079,61 +1089,103 @@ class CalibrationService(QObject):
                                     logger.info("✅ SERVO CALIBRATION COMPLETED SUCCESSFULLY")
                                     logger.info("=" * 80)
                                     logger.info(f"   New servo positions: S={s_pos}, P={p_pos}")
-                                    logger.info(f"   Positions loaded from: {device_config.config_path}")
+                                    logger.info(
+                                        f"   Positions loaded from: {device_config.config_path}"
+                                    )
 
                                     # CRITICAL: Sync to the app's live DeviceConfiguration
                                     # so any later save() won't clobber the values
                                     synced_to_app = False
                                     if (
-                                        hasattr(self, 'app')
+                                        hasattr(self, "app")
                                         and self.app
-                                        and hasattr(self.app, 'main_window')
+                                        and hasattr(self.app, "main_window")
                                         and self.app.main_window
-                                        and hasattr(self.app.main_window, 'device_config')
+                                        and hasattr(self.app.main_window, "device_config")
                                         and self.app.main_window.device_config
                                     ):
-                                        logger.info("   🔄 Syncing to app's in-memory DeviceConfiguration...")
-                                        old_s = self.app.main_window.device_config.config.get("hardware", {}).get("servo_s_position")
-                                        old_p = self.app.main_window.device_config.config.get("hardware", {}).get("servo_p_position")
+                                        logger.info(
+                                            "   🔄 Syncing to app's in-memory DeviceConfiguration..."
+                                        )
+                                        old_s = self.app.main_window.device_config.config.get(
+                                            "hardware", {}
+                                        ).get("servo_s_position")
+                                        old_p = self.app.main_window.device_config.config.get(
+                                            "hardware", {}
+                                        ).get("servo_p_position")
                                         logger.info(f"      Before sync: S={old_s}, P={old_p}")
 
-                                        self.app.main_window.device_config.set_servo_positions(s_pos, p_pos)
+                                        self.app.main_window.device_config.set_servo_positions(
+                                            s_pos, p_pos
+                                        )
                                         synced_to_app = True
 
-                                        new_s = self.app.main_window.device_config.config.get("hardware", {}).get("servo_s_position")
-                                        new_p = self.app.main_window.device_config.config.get("hardware", {}).get("servo_p_position")
+                                        new_s = self.app.main_window.device_config.config.get(
+                                            "hardware", {}
+                                        ).get("servo_s_position")
+                                        new_p = self.app.main_window.device_config.config.get(
+                                            "hardware", {}
+                                        ).get("servo_p_position")
                                         logger.info(f"      After sync: S={new_s}, P={new_p}")
 
                                         # Force save to persist the change immediately
                                         self.app.main_window.device_config.save()
-                                        logger.info(f"      ✅ In-memory config synced and saved to disk")
-                                        logger.info(f"         Path: {self.app.main_window.device_config.config_path}")
+                                        logger.info(
+                                            "      ✅ In-memory config synced and saved to disk"
+                                        )
+                                        logger.info(
+                                            f"         Path: {self.app.main_window.device_config.config_path}"
+                                        )
                                     else:
-                                        logger.warning("   ⚠️  Could not access app's in-memory DeviceConfiguration!")
-                                        logger.warning("      This may cause positions to be overwritten later")
+                                        logger.warning(
+                                            "   ⚠️  Could not access app's in-memory DeviceConfiguration!"
+                                        )
+                                        logger.warning(
+                                            "      This may cause positions to be overwritten later"
+                                        )
                                         logger.warning("      Checking access path:")
-                                        logger.warning(f"         hasattr(self, 'app'): {hasattr(self, 'app')}")
-                                        if hasattr(self, 'app'):
+                                        logger.warning(
+                                            f"         hasattr(self, 'app'): {hasattr(self, 'app')}"
+                                        )
+                                        if hasattr(self, "app"):
                                             logger.warning(f"         self.app: {self.app}")
-                                            logger.warning(f"         hasattr(app, 'main_window'): {hasattr(self.app, 'main_window')}")
-                                            if hasattr(self.app, 'main_window'):
-                                                logger.warning(f"                 main_window: {self.app.main_window}")
-                                                logger.warning(f"                 hasattr(main_window, 'device_config'): {hasattr(self.app.main_window, 'device_config')}")
+                                            logger.warning(
+                                                f"         hasattr(app, 'main_window'): {hasattr(self.app, 'main_window')}"
+                                            )
+                                            if hasattr(self.app, "main_window"):
+                                                logger.warning(
+                                                    f"                 main_window: {self.app.main_window}"
+                                                )
+                                                logger.warning(
+                                                    f"                 hasattr(main_window, 'device_config'): {hasattr(self.app.main_window, 'device_config')}"
+                                                )
 
                                     # Load into controller RAM
-                                    if ctrl and hasattr(ctrl, 'set_servo_positions'):
+                                    if ctrl and hasattr(ctrl, "set_servo_positions"):
                                         ctrl.set_servo_positions(s=s_pos, p=p_pos)
                                         logger.info("   -> Controller RAM updated")
 
                                     # Also update hardware manager's device_config if accessible
-                                    if not synced_to_app and hasattr(self.app, 'hardware_mgr') and hasattr(self.app.hardware_mgr, 'device_config'):
-                                        logger.info("   🔄 Syncing to hardware manager's DeviceConfiguration...")
+                                    if (
+                                        not synced_to_app
+                                        and hasattr(self.app, "hardware_mgr")
+                                        and hasattr(self.app.hardware_mgr, "device_config")
+                                    ):
+                                        logger.info(
+                                            "   🔄 Syncing to hardware manager's DeviceConfiguration..."
+                                        )
                                         if self.app.hardware_mgr.device_config:
-                                            self.app.hardware_mgr.device_config.set_servo_positions(s_pos, p_pos)
+                                            self.app.hardware_mgr.device_config.set_servo_positions(
+                                                s_pos, p_pos
+                                            )
                                             self.app.hardware_mgr.device_config.save()
-                                            logger.info("      ✅ Hardware manager config synced and saved")
+                                            logger.info(
+                                                "      ✅ Hardware manager config synced and saved"
+                                            )
                                         else:
-                                            logger.warning("      ⚠️  Hardware manager device_config is None")
+                                            logger.warning(
+                                                "      ⚠️  Hardware manager device_config is None"
+                                            )
 
                                     logger.info(
                                         "   Retrying LED calibration with correct positions..."
