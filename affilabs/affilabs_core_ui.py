@@ -6096,6 +6096,26 @@ End of Debug Log
         except Exception as e:
             logger.error(f"Error refreshing intelligence bar: {e}")
 
+    def set_intel_message(self, message: str, color: str = "#007AFF") -> None:
+        """Set a custom message in the intelligence bar.
+
+        Args:
+            message: Message text to display
+            color: Hex color code for the message (default: blue #007AFF)
+        """
+        try:
+            if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'intel_message_label'):
+                self.sidebar.intel_message_label.setText(message)
+                self.sidebar.intel_message_label.setStyleSheet(
+                    f"font-size: 12px;"
+                    f"color: {color};"
+                    f"background: {Colors.TRANSPARENT};"
+                    f"font-weight: 600;"
+                    f"font-family: {Fonts.SYSTEM};",
+                )
+        except Exception as e:
+            logger.error(f"Error setting intel message: {e}")
+
     def _update_queue_display(self):
         """Update the summary table to reflect current queue state."""
         if not hasattr(self.sidebar, 'summary_table'):
