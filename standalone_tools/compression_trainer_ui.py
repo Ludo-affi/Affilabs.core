@@ -99,6 +99,7 @@ class TrainerConfig:
     band_high: tuple[float, float] = (650.0, 695.0)
 
     # Sweet-spot — normalised range (chip+water baseline = 1.0)
+    # These are defaults; users can adjust in Step 2 UI
     sweet_spot_low: float = 0.94        # bottom of green zone (94% of baseline)
     sweet_spot_high: float = 0.96       # top of green zone (96% of baseline)
 
@@ -869,6 +870,90 @@ class CompressionTrainerWindow(QMainWindow):
         self.instruction.setMinimumHeight(70)
         instr_inner.addWidget(self.instruction)
 
+        # Sweet spot adjustment (visible only in Step 2)
+        self.sweet_spot_container = QWidget()
+        sweet_layout = QVBoxLayout(self.sweet_spot_container)
+        sweet_layout.setContentsMargins(0, 8, 0, 0)
+        sweet_layout.setSpacing(6)
+
+        sweet_label = QLabel("Target Compression Range (adjustable):")
+        sweet_label.setStyleSheet(
+            f"font-size: 12px; font-weight: 600; color: {COL_SUBTLE}; "
+            f"font-family: {FONT}; background: transparent;"
+        )
+        sweet_layout.addWidget(sweet_label)
+
+        sweet_controls = QHBoxLayout()
+        sweet_controls.setSpacing(12)
+
+        # Low value
+        from PySide6.QtWidgets import QDoubleSpinBox
+        low_layout = QVBoxLayout()
+        low_layout.setSpacing(2)
+        low_label = QLabel("Min (%)")
+        low_label.setStyleSheet(f"font-size: 11px; color: {COL_SUBTLE}; font-family: {FONT};")
+        low_layout.addWidget(low_label)
+        self.sweet_low_spin = QDoubleSpinBox()
+        self.sweet_low_spin.setRange(85.0, 99.0)
+        self.sweet_low_spin.setSingleStep(0.5)
+        self.sweet_low_spin.setValue(self.cfg.sweet_spot_low * 100)
+        self.sweet_low_spin.setSuffix("%")
+        self.sweet_low_spin.setDecimals(1)
+        self.sweet_low_spin.setFixedWidth(90)
+        self.sweet_low_spin.setStyleSheet(
+            f"QDoubleSpinBox {{ background: white; border: 1.5px solid {COL_BORDER}; "
+            f"border-radius: 6px; padding: 4px 8px; font-size: 13px; font-family: {FONT}; }}"
+        )
+        low_layout.addWidget(self.sweet_low_spin)
+        sweet_controls.addLayout(low_layout)
+
+        # High value
+        high_layout = QVBoxLayout()
+        high_layout.setSpacing(2)
+        high_label = QLabel("Max (%)")
+        high_label.setStyleSheet(f"font-size: 11px; color: {COL_SUBTLE}; font-family: {FONT};")
+        high_layout.addWidget(high_label)
+        self.sweet_high_spin = QDoubleSpinBox()
+        self.sweet_high_spin.setRange(85.0, 99.0)
+        self.sweet_high_spin.setSingleStep(0.5)
+        self.sweet_high_spin.setValue(self.cfg.sweet_spot_high * 100)
+        self.sweet_high_spin.setSuffix("%")
+        self.sweet_high_spin.setDecimals(1)
+        self.sweet_high_spin.setFixedWidth(90)
+        self.sweet_high_spin.setStyleSheet(
+            f"QDoubleSpinBox {{ background: white; border: 1.5px solid {COL_BORDER}; "
+            f"border-radius: 6px; padding: 4px 8px; font-size: 13px; font-family: {FONT}; }}"
+        )
+        high_layout.addWidget(self.sweet_high_spin)
+        sweet_controls.addLayout(high_layout)
+
+        # Reset button
+        reset_btn = QPushButton("Reset")
+        reset_btn.setFixedHeight(28)
+        reset_btn.setFixedWidth(70)
+        reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        reset_btn.setStyleSheet(
+            f"QPushButton {{ background: #F2F2F7; color: {COL_SUBTLE}; "
+            f"border: 1px solid {COL_BORDER}; border-radius: 6px; "
+            f"font-size: 12px; font-weight: 600; font-family: {FONT}; }}"
+            f"QPushButton:hover {{ background: #E8E8ED; }}"
+        )
+        reset_btn.clicked.connect(self._reset_sweet_spot_to_defaults)
+        sweet_controls.addWidget(reset_btn, 0, Qt.AlignmentFlag.AlignBottom)
+        sweet_controls.addStretch()
+
+        sweet_layout.addLayout(sweet_controls)
+
+        sweet_help = QLabel("Adjust if sensor shows different optimal compression")
+        sweet_help.setStyleSheet(
+            f"font-size: 10px; font-style: italic; color: {COL_SUBTLE}; "
+            f"font-family: {FONT}; background: transparent;"
+        )
+        sweet_layout.addWidget(sweet_help)
+
+        instr_inner.addWidget(self.sweet_spot_container)
+        self.sweet_spot_container.hide()  # Hidden by default, shown in Step 2
+
         self.instr_card = _card(instr_inner)
         left.addWidget(self.instr_card)
 
@@ -1009,6 +1094,11 @@ class CompressionTrainerWindow(QMainWindow):
         self._stage = stage
         self._update_stage_ui()
 
+    def _reset_sweet_spot_to_defaults(self) -> None:
+        """Reset sweet spot range to default values."""
+        self.sweet_low_spin.setValue(0.94 * 100)
+        self.sweet_high_spin.setValue(0.96 * 100)
+
     def _update_stage_ui(self) -> None:
         s = self._stage
 
@@ -1071,6 +1161,7 @@ class CompressionTrainerWindow(QMainWindow):
             self.action_btn.setStyleSheet(self._btn_style(COL_PURPLE, "#4B49B0"))
             self.action_btn.setEnabled(True)
             self.skip_btn.hide()
+            self.sweet_spot_container.show()  # Show sweet spot adjustment in Step 2
             self.feedback.setText("")
 
         elif s == STAGE_COMPRESS:
@@ -1279,23 +1370,28 @@ class CompressionTrainerWindow(QMainWindow):
             return
 
         self._chip_water_ratio = self._averaged_ratio()
+        
+        # Get user-adjusted sweet spot values from spinboxes
+        sweet_lo = self.sweet_low_spin.value() / 100.0
+        sweet_hi = self.sweet_high_spin.value() / 100.0
+        
         # Sweet spot in normalised space (baseline = 1.0)
-        self._target_ratio = (self.cfg.sweet_spot_low + self.cfg.sweet_spot_high) / 2
+        self._target_ratio = (sweet_lo + sweet_hi) / 2
         self._avg_buf.clear()
 
         self._save_calibration()
 
         self.gauge.set_calibration(
             ratio_chip=1.0,          # baseline IS 1.0 in normalised space
-            sweet_lo=self.cfg.sweet_spot_low,
-            sweet_hi=self.cfg.sweet_spot_high,
+            sweet_lo=sweet_lo,
+            sweet_hi=sweet_hi,
         )
 
-        # Target region on evolution plot
+        # Target region on evolution plot (use actual user values)
         if self.evo_target_region:
             self.evo_plot.removeItem(self.evo_target_region)
         self.evo_target_region = pg.LinearRegionItem(
-            values=[self.cfg.sweet_spot_low, self.cfg.sweet_spot_high],
+            values=[sweet_lo, sweet_hi],
             orientation="horizontal", movable=False,
             brush=pg.mkBrush(52, 199, 89, 40),
         )
@@ -1303,9 +1399,10 @@ class CompressionTrainerWindow(QMainWindow):
         self.evo_plot.addItem(self.evo_target_region)
 
         self._evo_buf.clear()
+        self.sweet_spot_container.hide()  # Hide adjustment controls in Step 3
         self.status.setText(
             f"\u25cf  Chip+water captured  (baseline = 1.000, "
-            f"sweet spot = {self.cfg.sweet_spot_low:.0%}\u2013{self.cfg.sweet_spot_high:.0%})"
+            f"sweet spot = {sweet_lo:.0%}\u2013{sweet_hi:.0%})"
         )
         self._set_stage(STAGE_COMPRESS)
 
