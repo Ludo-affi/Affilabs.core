@@ -34,6 +34,7 @@ class PumpOperation(Enum):
     PRIMING = "priming"
     CLEANING = "cleaning"
     RUNNING_BUFFER = "running_buffer"
+    INJECTING = "injecting"
     EMERGENCY_STOP = "emergency_stop"
 
 
@@ -663,6 +664,7 @@ class PumpManager(QObject):
             # Send terminate to both pumps individually (address 0 is NOT broadcast for Cavro)
             pump._pump.pump.send_command("/1TR")  # Terminate pump 1
             import time
+
             time.sleep(0.05)
             pump._pump.pump.send_command("/2TR")  # Terminate pump 2
 
@@ -767,6 +769,55 @@ class PumpManager(QObject):
             self._shutdown_requested = True
             # Emit status update to show cancellation in progress
             self.status_updated.emit("Stopping...", 0.0, 0.0, 0.0, 0.0)
+
+    async def stop_and_wait_for_idle(self, timeout: float = 30.0) -> bool:
+        """Stop any running pump operation and wait until pump is idle.
+
+        Used by the cycle orchestrator to ensure the pump is free
+        before starting a new cycle's pump operation (buffer or injection).
+
+        Args:
+            timeout: Maximum seconds to wait for idle (default: 30)
+
+        Returns:
+            True if pump is idle (or was already idle), False if timeout
+        """
+        if self.is_idle:
+            return True
+
+        op = self._current_operation.value
+        logger.info(f"Stopping pump operation '{op}' for cycle transition...")
+
+        # Request graceful cancellation
+        self._shutdown_requested = True
+
+        # Also send terminate commands to stop plunger motion immediately
+        try:
+            pump = self.hardware_manager.pump
+            if pump and pump._pump and pump._pump.pump:
+                pump._pump.pump.send_command("/1TR")
+                await asyncio.sleep(0.05)
+                pump._pump.pump.send_command("/2TR")
+        except Exception as e:
+            logger.warning(f"Terminate command failed (non-fatal): {e}")
+
+        # Wait for the operation thread to see _shutdown_requested and exit
+        start = asyncio.get_event_loop().time()
+        while not self.is_idle:
+            elapsed = asyncio.get_event_loop().time() - start
+            if elapsed >= timeout:
+                logger.error(f"Timeout waiting for pump idle after {timeout}s")
+                # Force idle state as last resort
+                self._current_operation = PumpOperation.IDLE
+                self._shutdown_requested = False
+                return False
+            await asyncio.sleep(0.2)
+
+        self._shutdown_requested = False
+        logger.info(
+            f"Pump idle after stopping '{op}' ({asyncio.get_event_loop().time() - start:.1f}s)"
+        )
+        return True
 
     # ========================================================================
     # Helper Methods
@@ -995,7 +1046,7 @@ class PumpManager(QObject):
             )
             return False
 
-        self._current_operation = PumpOperation.RUNNING_BUFFER  # Reuse this state
+        self._current_operation = PumpOperation.INJECTING
         self._shutdown_requested = False
         self.operation_started.emit("inject_simple")
 
@@ -1253,7 +1304,7 @@ class PumpManager(QObject):
                 self.error_occurred.emit("inject_partial", f"Pump reconnection failed: {e}")
                 return False
 
-        self._current_operation = PumpOperation.RUNNING_BUFFER
+        self._current_operation = PumpOperation.INJECTING
         self._shutdown_requested = False
         self.operation_started.emit("inject_partial")
 

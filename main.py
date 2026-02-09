@@ -2317,12 +2317,25 @@ class Application(QApplication):
         else:
             logger.error("❌ _cycle_timer does not exist - cycle display will not update!")
 
+        # === PUMP ORCHESTRATION FOR THIS CYCLE ===
+        has_pump = self.pump_mgr.is_available if hasattr(self, 'pump_mgr') else False
+        has_internal = (self.hardware_mgr.ctrl and
+                       hasattr(self.hardware_mgr.ctrl, 'has_internal_pumps') and
+                       self.hardware_mgr.ctrl.has_internal_pumps())
+
+        if has_pump:
+            # Stop any running pump operation before starting new cycle
+            if not self.pump_mgr.is_idle:
+                logger.info(f"⏹ Stopping pump for new cycle: {cycle_type}")
+                self._stop_pump_for_cycle_transition()
+
+            # If cycle has a flow_rate, start buffer at that rate
+            if cycle.flow_rate is not None and cycle.flow_rate > 0:
+                logger.info(f"▶ Starting buffer flow for {cycle_type} @ {cycle.flow_rate} µL/min")
+                self._start_buffer_for_cycle(cycle.flow_rate)
+
         # Schedule injection if cycle requires it AND pump is available
         if cycle.injection_method is not None:
-            has_pump = self.pump_mgr.is_available if hasattr(self, 'pump_mgr') else False
-            has_internal = (self.hardware_mgr.ctrl and
-                           hasattr(self.hardware_mgr.ctrl, 'has_internal_pumps') and
-                           self.hardware_mgr.ctrl.has_internal_pumps())
             if has_pump or has_internal:
                 self._schedule_injection(cycle)
             else:
@@ -2381,6 +2394,52 @@ class Application(QApplication):
         # Add blue vertical marker to Full Sensorgram timeline
         self._add_cycle_marker()
 
+    def _stop_pump_for_cycle_transition(self):
+        """Stop any running pump operation for cycle transition (runs in background)."""
+        def run_stop():
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self.pump_mgr.stop_and_wait_for_idle(timeout=15.0))
+            finally:
+                loop.close()
+
+        thread = threading.Thread(target=run_stop, daemon=True, name="StopPumpForCycle")
+        thread.start()
+        # Give it a moment to send terminate commands
+        import time
+        time.sleep(0.5)
+
+    def _start_buffer_for_cycle(self, flow_rate: float):
+        """Start buffer flow for a cycle at the specified rate.
+
+        Args:
+            flow_rate: Flow rate in µL/min from the cycle definition
+        """
+        def run_buffer():
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                # Wait for pump to be fully idle before starting buffer
+                loop.run_until_complete(self.pump_mgr.stop_and_wait_for_idle(timeout=15.0))
+                loop.run_until_complete(self.pump_mgr.run_buffer(
+                    cycles=0,  # Continuous until stopped
+                    duration_min=0,
+                    volume_ul=1000.0,
+                    flow_rate=flow_rate
+                ))
+            finally:
+                loop.close()
+
+        thread = threading.Thread(target=run_buffer, daemon=True, name="CycleBuffer")
+        thread.start()
+
+        # Update button text to show buffer is running
+        if btn := self._sidebar_widget('start_buffer_btn'):
+            btn.setText("⏸ Stop Buffer")
+
     def _on_start_queued_run(self):
         """Start executing all cycles in queue sequentially."""
         logger.info("▶ Start Queued Run button clicked")
@@ -2425,6 +2484,9 @@ class Application(QApplication):
     def _execute_injection(self, cycle):
         """Execute injection method for cycle.
 
+        Stops any running pump operation (e.g. buffer) first, waits for idle,
+        then triggers the injection. The method queue drives what happens next.
+
         Args:
             cycle: Cycle object with injection parameters
         """
@@ -2436,6 +2498,7 @@ class Application(QApplication):
 
         if not has_affipump and not has_internal:
             logger.error("❌ Injection failed - no pump available")
+            self.main_window.set_intel_message("❌ Injection failed - no pump", "#FF3B30")
             return
 
         # Get assay rate from UI
@@ -2443,17 +2506,35 @@ class Application(QApplication):
         if spin := self._sidebar_widget('pump_assay_spin'):
             assay_rate = float(spin.value())
 
-        # Execute injection method
-        if cycle.injection_method == "simple":
-            logger.info(f"💉 AUTO-INJECT: Simple injection @ {assay_rate} µL/min")
-            if cycle.contact_time:
-                logger.info(f"   Contact time: {cycle.contact_time}s")
-            self._trigger_simple_injection(assay_rate)
-        elif cycle.injection_method == "partial":
-            logger.info(f"💉 AUTO-INJECT: Partial injection @ {assay_rate} µL/min")
-            if cycle.contact_time:
-                logger.info(f"   Contact time: {cycle.contact_time}s")
-            self._trigger_partial_injection(assay_rate)
+        # Stop pump and inject in background thread (stop_and_wait_for_idle is async)
+        def run_stop_then_inject():
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                # Step 1: Stop any running pump operation and wait for idle
+                if not self.pump_mgr.is_idle:
+                    logger.info("⏹ Stopping pump before injection...")
+                    idle_ok = loop.run_until_complete(self.pump_mgr.stop_and_wait_for_idle(timeout=30.0))
+                    if not idle_ok:
+                        logger.error("❌ Could not stop pump for injection")
+                        self.pump_mgr.error_occurred.emit("inject", "Could not stop pump for injection")
+                        return
+
+                # Step 2: Execute the injection
+                if cycle.injection_method == "simple":
+                    logger.info(f"💉 AUTO-INJECT: Simple injection @ {assay_rate} µL/min")
+                    loop.run_until_complete(self.pump_mgr.inject_simple(assay_rate))
+                elif cycle.injection_method == "partial":
+                    logger.info(f"💉 AUTO-INJECT: Partial injection @ {assay_rate} µL/min")
+                    loop.run_until_complete(self.pump_mgr.inject_partial_loop(assay_rate))
+            except Exception as e:
+                logger.exception(f"Injection thread error: {e}")
+            finally:
+                loop.close()
+
+        thread = threading.Thread(target=run_stop_then_inject, daemon=True, name="CycleInjection")
+        thread.start()
 
         # Log event to sensorgram
         if hasattr(self, 'recording_mgr'):
@@ -4572,6 +4653,11 @@ class Application(QApplication):
             )
         if hasattr(ui, 'flow_current_rate'):
             ui.flow_current_rate.setText("0")
+
+        # Always reset buffer button text when any pump operation completes
+        # (buffer may have been stopped by cycle transition or injection)
+        if btn := self._sidebar_widget('start_buffer_btn'):
+            btn.setText("▶ Start Buffer")
 
     def _on_pump_status_updated(self, status: str, flow_rate: float, plunger_pos: float, contact_time_current: float, contact_time_expected: float):
         """Handle real-time pump status update - update all status board values."""
