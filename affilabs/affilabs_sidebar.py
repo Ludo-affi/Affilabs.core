@@ -145,7 +145,9 @@ class AffilabsSidebar(QWidget):
         self.setUpdatesEnabled(False)
 
         container = QWidget()
-        container.setStyleSheet(f"background: {Colors.BACKGROUND_WHITE};")
+        container.setStyleSheet(
+            f"background: {Colors.BACKGROUND_WHITE};"
+        )
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
@@ -158,10 +160,12 @@ class AffilabsSidebar(QWidget):
         self.tab_widget.setStyleSheet(f"""
             QTabWidget::pane {{
                 border: none;
+                border-left: 1px solid rgba(0, 0, 0, 0.08);
                 background: {Colors.BACKGROUND_WHITE};
             }}
             QTabBar {{
                 alignment: left;
+                background: #FAFAFA;
             }}
             QTabBar::tab {{
                 background: transparent;
@@ -209,7 +213,7 @@ class AffilabsSidebar(QWidget):
             # ),
             (
                 "Method",
-                "Method Builder",
+                "Build and run method",
                 "Build and manage assay methods",
                 self._build_method_tab,
             ),
@@ -242,6 +246,12 @@ class AffilabsSidebar(QWidget):
             scroll_area = QScrollArea()
             scroll_area.setWidgetResizable(True)
             scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+            scroll_area.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            scroll_area.setVerticalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
             scroll_area.setStyleSheet(scrollbar_style())
 
             tab_content = QWidget()
@@ -250,8 +260,8 @@ class AffilabsSidebar(QWidget):
             tab_layout.setContentsMargins(20, 20, 20, 20)
             tab_layout.setSpacing(12)
 
-            # Title with subtitle
-            title = QLabel(title_text)
+            # Title with subtitle (capitalize first letter of each word)
+            title = QLabel(title_text.title())
             title.setFixedHeight(27)
             title.setStyleSheet(title_style())
             tab_layout.addWidget(title)
@@ -296,8 +306,9 @@ class AffilabsSidebar(QWidget):
                 from PySide6.QtGui import QPixmap, QPainter, QFont, QFontMetrics
                 from PySide6.QtCore import QSize, QRect
 
-                # Create a rotated pixmap of the lightning symbol (75% of previous size)
-                icon_size = 36  # Reduced from 48 (75% of original)
+                # Create a rotated pixmap of the lightning symbol
+                # Use smaller size to match text height better
+                icon_size = 28
                 pixmap = QPixmap(icon_size, icon_size)
                 pixmap.fill(Qt.GlobalColor.transparent)
 
@@ -305,9 +316,9 @@ class AffilabsSidebar(QWidget):
                 painter.setRenderHint(QPainter.RenderHint.Antialiasing)
                 painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-                # Set font - 75% of previous size
+                # Set font to match tab text size
                 font = QFont()
-                font.setPixelSize(24)  # Reduced from 32 (75% of original)
+                font.setPixelSize(20)
                 font.setBold(True)
                 painter.setFont(font)
 
@@ -330,8 +341,8 @@ class AffilabsSidebar(QWidget):
 
                 # Set as tab icon with updated size
                 self.tab_widget.setTabIcon(tab_index, pixmap)
-                # Set icon size for the tab bar (75% of previous)
-                self.tab_widget.tabBar().setIconSize(QSize(36, 36))
+                # Set icon size for the tab bar to match text line height
+                self.tab_widget.tabBar().setIconSize(QSize(28, 28))
                 # Clear the text label since we're using icon
                 self.tab_widget.setTabText(tab_index, "")
 
@@ -813,7 +824,7 @@ class AffilabsSidebar(QWidget):
         spectro_card_layout.addWidget(trans_label)
 
         self.transmission_plot = create_spectroscopy_plot(
-            left_label="Transmission (%)",
+            left_label="Transmission (norm.)",
             bottom_label="Wavelength (nm)",
             detector_type=self.detector_type,
         )

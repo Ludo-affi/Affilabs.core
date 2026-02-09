@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QSplitter, QLabel, QPushButton,
     QTableWidget, QHeaderView, QAbstractItemView, QSlider, QGraphicsDropShadowEffect,
     QComboBox, QDoubleSpinBox, QCheckBox, QLineEdit, QTableWidgetItem, QWidget,
-    QGridLayout
+    QGridLayout, QScrollArea, QApplication
 )
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QColor, QFont, QCursor
@@ -53,6 +53,69 @@ class EditsTab:
         self.edits_smooth_slider = None
         self.edits_smooth_label = None
 
+    def _ensure_experiment_folder(self):
+        """Ensure an experiment folder exists, creating one if needed.
+
+        Returns:
+            Path to experiment folder, or None if user cancels
+        """
+        from pathlib import Path
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+        from affilabs.services.user_profile_manager import UserProfileManager
+
+        # Check if we already have an active experiment folder
+        if (hasattr(self.main_window, 'app') and
+            hasattr(self.main_window.app, 'current_experiment_folder') and
+            self.main_window.app.current_experiment_folder):
+            return self.main_window.app.current_experiment_folder
+
+        # Prompt user for experiment name
+        experiment_name, ok = QInputDialog.getText(
+            self.main_window,
+            "Create Experiment Folder",
+            "Enter experiment name:",
+            text="Experiment"
+        )
+
+        if not ok or not experiment_name.strip():
+            # User cancelled or entered empty name
+            logger.info("User cancelled experiment folder creation")
+            return None
+
+        # Get user profile
+        user_manager = UserProfileManager()
+        user_name = user_manager.get_current_user()
+
+        # Get device ID
+        device_id = "Unknown"
+        if hasattr(self.main_window, 'app') and hasattr(self.main_window.app, 'device_config'):
+            device_id = self.main_window.app.device_config.device_serial
+
+        # Create experiment folder
+        try:
+            exp_folder = self.main_window.app.experiment_folder_mgr.create_experiment_folder(
+                experiment_name=experiment_name.strip(),
+                user_name=user_name,
+                device_id=device_id,
+                sensor_type="",  # Could be populated from device config if available
+                description=""
+            )
+
+            # Store as current experiment folder
+            self.main_window.app.current_experiment_folder = exp_folder
+
+            logger.info(f"✓ Created experiment folder: {exp_folder.name}")
+            return exp_folder
+
+        except Exception as e:
+            logger.error(f"Failed to create experiment folder: {e}")
+            QMessageBox.warning(
+                self.main_window,
+                "Folder Creation Failed",
+                f"Could not create experiment folder:\n{str(e)}"
+            )
+            return None
+
     def create_content(self):
         """Create the Edits tab content with redesigned master-detail timeline layout.
 
@@ -65,44 +128,25 @@ class EditsTab:
         self.edits_cycle_labels = []
 
         # Table view state
-        self.compact_view = True  # Start in compact view (default)
+        self.compact_view = False  # Start in expanded view (default)
         self.cycle_filter = "Binding (High)"  # Default: show only concentration/binding cycles
 
-        # Initialize table widget first (needed by panel methods)
-        # 12-column table with 4-channel Delta SPR data
+        # Initialize table widget — compact 6-column layout
         # STARTS EMPTY - will be populated ONLY when cycles complete during live acquisition
-        self.cycle_data_table = QTableWidget(0, 12)  # 0 rows to start (empty table)
+        self.cycle_data_table = QTableWidget(0, 6)
         self.cycle_data_table.setHorizontalHeaderLabels(
-            ["Type", "Duration\n(min)", "Start\n(s)", "Conc.", "Notes", "ΔCh1", "ΔCh2", "ΔCh3", "ΔCh4", "Flags", "Channel", "Shift\n(s)"]
+            ["Type", "Time", "Conc.", "ΔSPR", "Flags", "Notes"]
         )
-        # Set column widths: fixed for some, stretch for others
+        # Set column widths: stretch to fill available space
         header = self.cycle_data_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)  # Type
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)  # Duration
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)  # Start
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)  # Conc
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # Notes
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # ΔCh1
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)  # ΔCh2
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)  # ΔCh3
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)  # ΔCh4
-        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Fixed)  # Flags
-        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)  # Channel
-        header.setSectionResizeMode(11, QHeaderView.ResizeMode.Fixed)  # Shift
-        self.cycle_data_table.setColumnWidth(0, 80)   # Type
-        self.cycle_data_table.setColumnWidth(1, 60)   # Duration
-        self.cycle_data_table.setColumnWidth(2, 50)   # Start time
-        self.cycle_data_table.setColumnWidth(3, 50)   # Concentration
-        self.cycle_data_table.setColumnWidth(5, 55)   # ΔCh1
-        self.cycle_data_table.setColumnWidth(6, 55)   # ΔCh2
-        self.cycle_data_table.setColumnWidth(7, 55)   # ΔCh3
-        self.cycle_data_table.setColumnWidth(8, 55)   # ΔCh4
-        self.cycle_data_table.setColumnWidth(9, 50)   # Flags
-        self.cycle_data_table.setColumnWidth(10, 60)  # Channel
-        self.cycle_data_table.setColumnWidth(11, 50)  # Time shift
-        
-        # Hide the Channel column (column 10) - not needed for normal use
-        self.cycle_data_table.setColumnHidden(10, True)
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)       # Type icon
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)     # Time
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)     # Conc
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)     # ΔSPR
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)     # Flags
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)     # Notes
+        self.cycle_data_table.setColumnWidth(0, 55)    # Type icon (fixed minimum)
 
         # Set compact font for better space utilization
         table_font = QFont("-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif")
@@ -121,18 +165,12 @@ class EditsTab:
 
         # Set column tooltips for better understanding
         tooltips = [
-            "Cycle type (Binding, Baseline, Regeneration, etc.)",
-            "Duration of the cycle in minutes",
-            "Start time of the cycle in seconds",
+            "Cycle type: BL=Baseline, IM=Immobilization, WS=Wash, CN=Concentration, RG=Regeneration, CU=Custom",
+            "Duration (minutes) @ Start time (seconds)",
             "Analyte concentration (if applicable)",
+            "Delta SPR response for all channels (in RU): A:val B:val C:val D:val",
+            "Event flags (injection ▲, wash ■, spike ◆) with times",
             "Custom notes or comments for this cycle",
-            "Delta SPR response for Channel 1 (in RU)",
-            "Delta SPR response for Channel 2 (in RU)",
-            "Delta SPR response for Channel 3 (in RU)",
-            "Delta SPR response for Channel 4 (in RU)",
-            "Event flags detected during cycle (injection, wash, spike) - auto-detected from user markers",
-            "Active channel for this cycle",
-            "Time shift applied for alignment (in seconds)"
         ]
         for col, tooltip in enumerate(tooltips):
             self.cycle_data_table.horizontalHeaderItem(col).setToolTip(tooltip)
@@ -142,7 +180,8 @@ class EditsTab:
         self.cycle_data_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.cycle_data_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.cycle_data_table.itemSelectionChanged.connect(self.main_window._on_cycle_selected_in_table)
-        
+        self.cycle_data_table.itemSelectionChanged.connect(self._update_export_sidebar_stats)
+
         # Enhanced styling: zebra striping, hover, and selection highlight
         self.cycle_data_table.setAlternatingRowColors(True)
         self.cycle_data_table.setStyleSheet("""
@@ -199,63 +238,42 @@ class EditsTab:
         content_layout.setContentsMargins(12, 12, 12, 12)  # Increased from 8 for more breathing room
         content_layout.setSpacing(12)  # Increased from 8 for better visual separation
 
-        # Info banner about sidebar
-        info_banner = QFrame()
-        info_banner.setStyleSheet(
-            "QFrame { background: #E3F2FD; border: 1px solid #90CAF9; border-radius: 6px; }"
-        )
-        info_layout = QHBoxLayout(info_banner)
-        info_layout.setContentsMargins(12, 8, 12, 8)
-
-        info_icon = QLabel("ℹ️")
-        info_icon.setStyleSheet("font-size: 14px; background: transparent; border: none;")
-        info_layout.addWidget(info_icon)
-
-        info_text = QLabel("Sidebar hidden for more workspace. Switch to <b>Live</b>, <b>Analysis</b>, or <b>Export</b> tabs to access controls.")
-        info_text.setStyleSheet(
-            "font-size: 11px; color: #1565C0; background: transparent; border: none;"
-        )
-        info_text.setWordWrap(True)
-        info_layout.addWidget(info_text, 1)
-
-        content_layout.addWidget(info_banner)
-
-        # Main content container
-        main_content_layout = QHBoxLayout()
-        main_content_layout.setContentsMargins(0, 0, 0, 0)
-        main_content_layout.setSpacing(8)
+        # Main content container with optional export sidebar
+        outer_layout = QHBoxLayout()
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
 
         # Main horizontal split: Table LEFT | Graphs RIGHT
         main_splitter = QSplitter(Qt.Horizontal)
 
         # LEFT SIDE: Vertical split (Table TOP | Bottom Panels BOTTOM)
         left_splitter = QSplitter(Qt.Vertical)
-        
+
         # LEFT TOP: Cycle table
         table_widget = self._create_table_panel()
         left_splitter.addWidget(table_widget)
-        
+
         # LEFT BOTTOM: Metadata and Alignment panels side by side
         bottom_left_widget = QFrame()
         bottom_left_layout = QHBoxLayout(bottom_left_widget)
         bottom_left_layout.setContentsMargins(0, 0, 0, 0)
         bottom_left_layout.setSpacing(8)
-        
+
         # Metadata panel
         metadata_panel = self._create_metadata_panel()
         bottom_left_layout.addWidget(metadata_panel, 1)
-        
+
         # Alignment panel
         self.alignment_panel = self._create_alignment_panel()
         bottom_left_layout.addWidget(self.alignment_panel, 1)
         self.alignment_panel.hide()  # Hidden until cycle selected
-        
+
         left_splitter.addWidget(bottom_left_widget)
-        
+
         # Set vertical proportions for left side: 70% table, 30% bottom panels
         left_splitter.setStretchFactor(0, 70)
         left_splitter.setStretchFactor(1, 30)
-        
+
         main_splitter.addWidget(left_splitter)
 
         # RIGHT: Graphs (70% width)
@@ -283,7 +301,14 @@ class EditsTab:
         main_splitter.setMinimumWidth(800)
         table_widget.setMinimumWidth(300)
 
-        content_layout.addWidget(main_splitter)
+        # Export sidebar (collapsible left panel — consistent with main sidebar position)
+        self.export_sidebar = self._create_export_sidebar()
+        self.export_sidebar.setVisible(True)  # Visible by default
+        outer_layout.addWidget(self.export_sidebar)
+
+        outer_layout.addWidget(main_splitter, 1)
+
+        content_layout.addLayout(outer_layout)
 
         # Apply default view settings (compact mode + binding filter)
         self._apply_compact_view_initial()
@@ -306,7 +331,7 @@ class EditsTab:
             has_data = self.cycle_data_table.rowCount() > 0
             self.empty_state_widget.setVisible(not has_data)
             self.cycle_data_table.setVisible(has_data)
-    
+
     def _create_table_panel(self):
         """Left panel: Cycle table with Load Data button and alignment controls."""
         container = QFrame()
@@ -325,7 +350,7 @@ class EditsTab:
 
         # Header
         header = QHBoxLayout()
-        title = QLabel("Cycles")
+        title = QLabel("Cycles Recorded")
         title.setStyleSheet("font-size: 15px; font-weight: 600; color: #1D1D1F;")
         header.addWidget(title)
         header.addStretch()
@@ -352,31 +377,32 @@ class EditsTab:
         load_btn.clicked.connect(self.main_window._load_data_from_excel)
         controls_layout.addWidget(load_btn)
 
-        # Export button
-        export_btn = QPushButton("💾 Export")
-        export_btn.setFixedHeight(28)
-        export_btn.setStyleSheet(
+        # Export sidebar toggle button
+        self.export_toggle_btn = QPushButton("📤 Export")
+        self.export_toggle_btn.setFixedHeight(28)
+        self.export_toggle_btn.setCheckable(True)
+        self.export_toggle_btn.setChecked(True)  # Sidebar visible by default
+        self.export_toggle_btn.setStyleSheet(
             "QPushButton { background: #34C759; color: white; border: 1px solid #34C759; "
             "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 4px 10px; }"
             "QPushButton:hover { background: #2FB350; }"
+            "QPushButton:checked { background: #007AFF; border-color: #007AFF; }"
         )
-        export_btn.setToolTip("Export table data to CSV/Excel")
-        export_btn.clicked.connect(self._export_table_data)
-        controls_layout.addWidget(export_btn)
+        self.export_toggle_btn.setToolTip("Toggle export sidebar")
+        self.export_toggle_btn.clicked.connect(self._toggle_export_sidebar)
+        controls_layout.addWidget(self.export_toggle_btn)
 
-        # Compact view toggle
-        self.compact_btn = QPushButton("⇄ Compact")
-        self.compact_btn.setCheckable(True)
-        self.compact_btn.setChecked(True)  # Default: compact view enabled
-        self.compact_btn.setFixedHeight(28)
-        self.compact_btn.setStyleSheet(
-            "QPushButton { background: #F5F5F7; color: #1D1D1F; border: 1px solid #D1D1D6; "
+        # Spark AI button
+        spark_btn = QPushButton("✨ Spark AI")
+        spark_btn.setFixedHeight(28)
+        spark_btn.setStyleSheet(
+            "QPushButton { background: #7C3AED; color: white; border: 1px solid #7C3AED; "
             "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 4px 10px; }"
-            "QPushButton:hover { background: #E5E5EA; }"
-            "QPushButton:checked { background: #007AFF; color: white; border: 1px solid #007AFF; }"
+            "QPushButton:hover { background: #6D28D9; }"
         )
-        self.compact_btn.clicked.connect(self._toggle_compact_view)
-        controls_layout.addWidget(self.compact_btn)
+        spark_btn.setToolTip("Open Spark AI assistant for data analysis")
+        spark_btn.clicked.connect(self._open_spark_ai)
+        controls_layout.addWidget(spark_btn)
 
         # Filter dropdown
         filter_label = QLabel("Show:")
@@ -417,25 +443,6 @@ class EditsTab:
 
         controls_layout.addStretch()
 
-        # Reference channel dropdown
-        ref_label = QLabel("Ref:")
-        ref_label.setStyleSheet("font-size: 11px; color: #86868B;")
-        ref_label.setToolTip("Reference channel for subtraction")
-        controls_layout.addWidget(ref_label)
-
-        self.edits_ref_combo = QComboBox()
-        self.edits_ref_combo.addItems(["None", "Ch A", "Ch B", "Ch C", "Ch D"])
-        self.edits_ref_combo.setFixedHeight(28)
-        self.edits_ref_combo.setStyleSheet(
-            "QComboBox { background: white; border: 1px solid #D1D1D6; border-radius: 6px; "
-            "font-size: 11px; padding: 4px 8px; min-width: 80px; }"
-            "QComboBox:hover { border: 1px solid #007AFF; }"
-            "QComboBox::drop-down { border: none; }"
-        )
-        self.edits_ref_combo.setToolTip("Subtract selected channel from all others")
-        self.edits_ref_combo.currentTextChanged.connect(self._on_reference_changed)
-        controls_layout.addWidget(self.edits_ref_combo)
-
         # Columns visibility button (store reference for menu positioning)
         self.columns_btn = QPushButton("☰")
         self.columns_btn.setFixedSize(28, 28)
@@ -469,7 +476,7 @@ class EditsTab:
         empty_subtext.setAlignment(Qt.AlignCenter)
         empty_layout.addWidget(empty_subtext)
         self.empty_state_widget.hide()  # Hidden by default
-        
+
         layout.addWidget(self.empty_state_widget)
         layout.addWidget(self.cycle_data_table)
 
@@ -534,6 +541,30 @@ class EditsTab:
         grid.addWidget(conc_lbl, 2, 0, Qt.AlignLeft)
         grid.addWidget(self.meta_conc_range, 2, 1, Qt.AlignLeft)
 
+        # Date
+        date_lbl = QLabel("Date:")
+        date_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        self.meta_date = QLabel("-")
+        self.meta_date.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+        grid.addWidget(date_lbl, 3, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_date, 3, 1, Qt.AlignLeft)
+
+        # User
+        user_lbl = QLabel("User:")
+        user_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        self.meta_user = QLabel("-")
+        self.meta_user.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+        grid.addWidget(user_lbl, 4, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_user, 4, 1, Qt.AlignLeft)
+
+        # Device
+        device_lbl = QLabel("Device:")
+        device_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        self.meta_device = QLabel("-")
+        self.meta_device.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+        grid.addWidget(device_lbl, 5, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_device, 5, 1, Qt.AlignLeft)
+
         layout.addWidget(stats_widget)
 
         # Divider
@@ -587,13 +618,17 @@ class EditsTab:
             if not self.cycle_data_table.isRowHidden(row):
                 total_visible += 1
 
-                # Get cycle type
+                # Get cycle type (col 0 text is like '● BL 1')
                 type_item = self.cycle_data_table.item(row, 0)
                 if type_item:
-                    cycle_types.add(type_item.text().split()[0])  # Get first word (Binding, Baseline, etc.)
+                    tip = type_item.toolTip()  # Full type name e.g. 'Baseline 1'
+                    if tip:
+                        cycle_types.add(tip.split()[0])
+                    else:
+                        cycle_types.add(type_item.text())
 
-                # Get concentration
-                conc_item = self.cycle_data_table.item(row, 3)
+                # Get concentration (col 2)
+                conc_item = self.cycle_data_table.item(row, 2)
                 if conc_item and conc_item.text().strip():
                     try:
                         # Try to extract number from text like "10 nM" or "[High] 10 nM"
@@ -624,6 +659,34 @@ class EditsTab:
             self.meta_conc_range.setText(f"{min_conc:.2e} - {max_conc:.2e}")
         else:
             self.meta_conc_range.setText("-")
+
+        # Date — from recording start or today
+        from datetime import datetime
+        if hasattr(self.main_window, 'app') and hasattr(self.main_window.app, 'recording_mgr'):
+            rec = self.main_window.app.recording_mgr
+            if hasattr(rec, 'recording_start_time') and rec.recording_start_time:
+                self.meta_date.setText(rec.recording_start_time.strftime("%Y-%m-%d %H:%M"))
+            else:
+                self.meta_date.setText(datetime.now().strftime("%Y-%m-%d"))
+        else:
+            self.meta_date.setText(datetime.now().strftime("%Y-%m-%d"))
+
+        # User — from UserProfileManager
+        try:
+            from affilabs.services.user_profile_manager import UserProfileManager
+            user_mgr = UserProfileManager()
+            user = user_mgr.get_current_user()
+            self.meta_user.setText(user if user else "-")
+        except Exception:
+            self.meta_user.setText("-")
+
+        # Device — from device_config
+        if hasattr(self.main_window, 'device_config') and self.main_window.device_config:
+            dc = self.main_window.device_config
+            device_id = getattr(dc, 'device_serial', '') or ''
+            self.meta_device.setText(device_id if device_id else "-")
+        else:
+            self.meta_device.setText("-")
 
     def _create_alignment_panel(self):
         """Create alignment controls panel (shown when cycle selected)."""
@@ -692,6 +755,52 @@ class EditsTab:
         divider.setStyleSheet("border: none; background: #E5E5EA; max-height: 1px;")
         layout.addWidget(divider)
 
+        # Reference subtraction section
+        ref_title = QLabel("Reference Subtraction")
+        ref_title.setStyleSheet("font-size: 12px; font-weight: 600; color: #1D1D1F; background: transparent; border: none;")
+        layout.addWidget(ref_title)
+
+        ref_layout = QHBoxLayout()
+        ref_layout.setSpacing(10)
+        ref_lbl = QLabel("Ref:")
+        ref_lbl.setStyleSheet("font-size: 12px; color: #1D1D1F; font-weight: 500; background: transparent; border: none;")
+        ref_layout.addWidget(ref_lbl)
+
+        self.alignment_ref_combo = QComboBox()
+        self.alignment_ref_combo.addItems(["Global", "None", "Ch A", "Ch B", "Ch C", "Ch D"])
+        self.alignment_ref_combo.setToolTip(
+            "Reference channel for this cycle.\n"
+            "'Global' uses the toolbar Ref setting.\n"
+            "'None' disables subtraction for this cycle."
+        )
+        self.alignment_ref_combo.setStyleSheet("""
+            QComboBox {
+                background: #F8F9FA;
+                border: 1px solid #D1D1D6;
+                border-radius: 5px;
+                font-size: 12px;
+                padding: 4px 8px;
+                min-width: 80px;
+            }
+            QComboBox:focus {
+                border: 1px solid #007AFF;
+                background: white;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+        """)
+        ref_layout.addWidget(self.alignment_ref_combo)
+        self.alignment_ref_combo.currentTextChanged.connect(self._on_cycle_ref_changed)
+        ref_layout.addStretch()
+        layout.addLayout(ref_layout)
+
+        # Divider before alignment
+        divider2 = QFrame()
+        divider2.setFrameShape(QFrame.HLine)
+        divider2.setStyleSheet("border: none; background: #E5E5EA; max-height: 1px;")
+        layout.addWidget(divider2)
+
         # Alignment section
         align_title = QLabel("Alignment")
         align_title.setStyleSheet("font-size: 12px; font-weight: 600; color: #1D1D1F; background: transparent; border: none;")
@@ -730,7 +839,7 @@ class EditsTab:
         # Shift controls - Add slider alongside input
         shift_layout = QVBoxLayout()
         shift_layout.setSpacing(6)
-        
+
         # Shift label and input row
         shift_input_row = QHBoxLayout()
         shift_input_row.setSpacing(10)
@@ -761,7 +870,7 @@ class EditsTab:
         shift_input_row.addWidget(unit_lbl)
         shift_input_row.addStretch()
         shift_layout.addLayout(shift_input_row)
-        
+
         # Slider for fine adjustment (-20s to +20s)
         self.alignment_shift_slider = QSlider(Qt.Horizontal)
         self.alignment_shift_slider.setRange(-200, 200)  # -20.0s to +20.0s (in 0.1s increments)
@@ -788,19 +897,23 @@ class EditsTab:
         """)
         self.alignment_shift_slider.valueChanged.connect(self._on_shift_slider_changed)
         shift_layout.addWidget(self.alignment_shift_slider)
-        
+
         # Hint label
-        hint_lbl = QLabel("💡 Use slider for fine adjustment (±20s)")
+        hint_lbl = QLabel("💡 Drag slider for real-time alignment (±20s)")
         hint_lbl.setStyleSheet("font-size: 10px; color: #86868B; font-style: italic; background: transparent; border: none;")
         shift_layout.addWidget(hint_lbl)
-        
+
         layout.addLayout(shift_layout)
 
-        # Apply button
-        apply_btn = QPushButton("Apply Shift")
-        apply_btn.setStyleSheet("""
+        # Auto-Align to Injection button
+        self.auto_align_btn = QPushButton("⚡ Auto-Align to Injection")
+        self.auto_align_btn.setToolTip(
+            "Automatically align all selected cycles so their injection flags line up.\n"
+            "Uses the first cycle's injection time as the reference point."
+        )
+        self.auto_align_btn.setStyleSheet("""
             QPushButton {
-                background: #007AFF;
+                background: #FF9500;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -809,15 +922,19 @@ class EditsTab:
                 padding: 8px 16px;
             }
             QPushButton:hover {
-                background: #0051D5;
+                background: #E08600;
             }
             QPushButton:pressed {
-                background: #003D99;
+                background: #CC7700;
+            }
+            QPushButton:disabled {
+                background: #C7C7CC;
+                color: #8E8E93;
             }
         """)
-        apply_btn.clicked.connect(self._apply_time_shift)
-        layout.addWidget(apply_btn)
-        
+        self.auto_align_btn.clicked.connect(self._auto_align_to_injection)
+        layout.addWidget(self.auto_align_btn)
+
         layout.addStretch()
 
         return panel
@@ -943,7 +1060,7 @@ class EditsTab:
         """)
         reset_btn.clicked.connect(lambda: self.edits_primary_graph.autoRange())
         header.addWidget(reset_btn)
-        
+
         # Export graph button
         export_graph_btn = QPushButton("💾 Export")
         export_graph_btn.setFixedSize(70, 24)
@@ -1015,7 +1132,7 @@ class EditsTab:
         title.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F;")
         header.addWidget(title)
         header.addStretch()
-        
+
         # Reset bar chart button
         reset_bar_btn = QPushButton("⟲")
         reset_bar_btn.setFixedSize(28, 24)
@@ -1036,7 +1153,7 @@ class EditsTab:
         """)
         reset_bar_btn.clicked.connect(lambda: self.delta_spr_barchart.autoRange())
         header.addWidget(reset_bar_btn)
-        
+
         # Export button
         export_btn = QPushButton("💾 Export")
         export_btn.setFixedSize(70, 24)
@@ -1058,7 +1175,7 @@ class EditsTab:
         """)
         export_btn.clicked.connect(self._export_barchart_image)
         header.addWidget(export_btn)
-        
+
         layout.addLayout(header)
 
         # Bar chart
@@ -1069,7 +1186,7 @@ class EditsTab:
         self.delta_spr_barchart.setLabel('left', 'ΔSPR (RU)')
         self.delta_spr_barchart.setFixedHeight(220)
         self.delta_spr_barchart.showGrid(y=True, alpha=0.2)
-        
+
         # Add baseline indicator at y=0
         baseline = pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen(color='#86868B', width=1, style=Qt.DashLine))
         self.delta_spr_barchart.addItem(baseline)
@@ -1081,7 +1198,7 @@ class EditsTab:
             bar = pg.BarGraphItem(x=[i], height=[0], width=0.6, brush=color)
             self.delta_spr_barchart.addItem(bar)
             self.delta_spr_bars.append(bar)
-        
+
         # Create text items for value labels
         self.delta_spr_labels = []
         for i in range(4):
@@ -1091,28 +1208,6 @@ class EditsTab:
             self.delta_spr_labels.append(text)
 
         layout.addWidget(self.delta_spr_barchart)
-
-        # Save Delta SPR button
-        save_delta_btn = QPushButton("Save Delta SPR to Selected Cycle")
-        save_delta_btn.setStyleSheet("""
-            QPushButton {
-                background: #34C759;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 12px;
-                font-weight: 600;
-                padding: 8px 16px;
-            }
-            QPushButton:hover {
-                background: #28A745;
-            }
-            QPushButton:pressed {
-                background: #1E7E34;
-            }
-        """)
-        save_delta_btn.clicked.connect(self._save_delta_spr_to_cycle)
-        layout.addWidget(save_delta_btn)
 
         return container
 
@@ -1267,43 +1362,80 @@ class EditsTab:
 
     def _populate_cycles_table(self, cycles_data):
         """Populate the cycles table with loaded cycle data."""
+        from PySide6.QtGui import QColor
         self.cycle_data_table.setRowCount(0)  # Clear existing rows
+
+        type_counts = {}  # Track numbering per type
 
         for cycle in cycles_data:
             row_idx = self.cycle_data_table.rowCount()
             self.cycle_data_table.insertRow(row_idx)
 
-            # Format duration
-            duration_min = cycle.get('duration_minutes', 0)
-            if isinstance(duration_min, (int, float)):
-                duration_str = f'{duration_min:.2f}'
-            else:
-                duration_str = str(duration_min)
-            
-            # Format start time
-            start_time = cycle.get('start_time_sensorgram', 0)
-            if isinstance(start_time, (int, float)):
-                start_str = f'{start_time:.1f}'
-            else:
-                start_str = str(start_time)
+            # --- Col 0: Type icon (color-coded abbreviation) ---
+            cycle_type = str(cycle.get('type', 'Custom'))
+            type_counts[cycle_type] = type_counts.get(cycle_type, 0) + 1
+            abbr, color = CycleTypeStyle.get(cycle_type)
+            type_item = QTableWidgetItem(f"{abbr} {type_counts[cycle_type]}")
+            type_item.setForeground(QColor(color))
+            type_item.setToolTip(f"{cycle_type} {type_counts[cycle_type]}")
+            self.cycle_data_table.setItem(row_idx, 0, type_item)
 
-            # Populate columns (matching real data structure)
-            self.cycle_data_table.setItem(row_idx, 0, QTableWidgetItem(str(cycle.get('type', 'Unknown'))))
-            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(duration_str))
-            self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(start_str))
-            self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(str(cycle.get('concentration_value', ''))))
-            self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(str(cycle.get('note', ''))))
-            self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(str(cycle.get('delta_ch1', ''))))
-            self.cycle_data_table.setItem(row_idx, 6, QTableWidgetItem(str(cycle.get('delta_ch2', ''))))
-            self.cycle_data_table.setItem(row_idx, 7, QTableWidgetItem(str(cycle.get('delta_ch3', ''))))
-            self.cycle_data_table.setItem(row_idx, 8, QTableWidgetItem(str(cycle.get('delta_ch4', ''))))
-            self.cycle_data_table.setItem(row_idx, 9, QTableWidgetItem(str(cycle.get('flags', ''))))
-            self.cycle_data_table.setItem(row_idx, 10, QTableWidgetItem(str(cycle.get('channel', 'All'))))
-            self.cycle_data_table.setItem(row_idx, 11, QTableWidgetItem(str(cycle.get('shift', '0.0'))))
+            # --- Col 1: Time (duration @ start) ---
+            duration_min = cycle.get('duration_minutes', 0)
+            start_time = cycle.get('start_time_sensorgram', 0)
+            if isinstance(duration_min, (int, float)) and isinstance(start_time, (int, float)):
+                time_str = f"{duration_min:.1f}m @ {start_time:.0f}s"
+            else:
+                time_str = f"{duration_min}m @ {start_time}s"
+            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(time_str))
+
+            # --- Col 2: Concentration ---
+            self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(cycle.get('concentration_value', ''))))
+
+            # --- Col 3: ΔSPR (combined 4 channels) ---
+            delta_parts = []
+            for ch_key, ch_label in [('delta_ch1', 'A'), ('delta_ch2', 'B'), ('delta_ch3', 'C'), ('delta_ch4', 'D')]:
+                val = cycle.get(ch_key, '')
+                if isinstance(val, (int, float)):
+                    delta_parts.append(f"{ch_label}:{val:.0f}")
+                elif val:
+                    delta_parts.append(f"{ch_label}:{val}")
+            # Also check delta_spr_by_channel dict
+            if not delta_parts:
+                delta_by_ch = cycle.get('delta_spr_by_channel', {})
+                for ch in ['A', 'B', 'C', 'D']:
+                    val = delta_by_ch.get(ch, '')
+                    if isinstance(val, (int, float)):
+                        delta_parts.append(f"{ch}:{val:.0f}")
+            delta_str = " ".join(delta_parts) if delta_parts else ''
+            self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(delta_str))
+
+            # --- Col 4: Flags ---
+            flag_data = cycle.get('flag_data', [])
+            if flag_data:
+                _ICONS = {'injection': '▲', 'wash': '■', 'spike': '◆'}
+                parts = []
+                for f in flag_data:
+                    icon = _ICONS.get(f.get('type', ''), '●')
+                    parts.append(f"{icon}{f.get('time', 0):.0f}s")
+                flags_display = " ".join(parts)
+            else:
+                raw_flags = cycle.get('flags', '')
+                flags_display = str(raw_flags) if raw_flags else ''
+            self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(flags_display))
+
+            # --- Col 5: Notes ---
+            notes = cycle.get('note', cycle.get('notes', ''))
+            cycle_id = cycle.get('cycle_id', '')
+            if cycle_id:
+                notes_display = f"[{cycle_id}] {notes}" if notes else f"[{cycle_id}]"
+            else:
+                notes_display = str(notes) if notes else ''
+            self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(notes_display))
 
         # Update empty state visibility
         self._update_empty_state()
-        
+
         # Update metadata stats
         if hasattr(self, '_update_metadata_stats'):
             self._update_metadata_stats()
@@ -1587,13 +1719,29 @@ class EditsTab:
         from datetime import datetime
         from PySide6.QtWidgets import QFileDialog, QMessageBox
         from affilabs.utils.logger import logger
+        from affilabs.utils.time_utils import filename_timestamp
+        from pathlib import Path
 
-        # Ask user for save location
-        default_filename = f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        # Ensure experiment folder exists
+        exp_folder = self._ensure_experiment_folder()
+
+        # Get default save location in Raw_Data subfolder
+        if exp_folder:
+            raw_data_folder = self.main_window.app.experiment_folder_mgr.get_subfolder_path(
+                exp_folder, "Raw_Data"
+            )
+            default_filename = f"Raw_{filename_timestamp()}.xlsx"
+            default_path = str(raw_data_folder / default_filename)
+        else:
+            # Fallback if no experiment folder
+            default_filename = f"Raw_{filename_timestamp()}.xlsx"
+            default_path = default_filename
+
+        # Ask user for save location (defaults to experiment folder)
         file_path, _ = QFileDialog.getSaveFileName(
             self.main_window,
-            "Export Raw Data",
-            default_filename,
+            "Save Raw Data",
+            default_path,
             "Excel Files (*.xlsx)"
         )
 
@@ -1620,17 +1768,41 @@ class EditsTab:
             aggfunc='first'
         ).reset_index()
 
-        # Get cycle table data if available
+        # Get cycle table data if available (match Edits table columns)
         cycles_table = []
         if hasattr(self.main_window, '_loaded_cycles_data') and self.main_window._loaded_cycles_data:
             for idx, cycle in enumerate(self.main_window._loaded_cycles_data):
+                # Build ΔSPR string (A:val B:val C:val D:val)
+                delta_parts = []
+                for ch_idx, ch_label in enumerate(['A', 'B', 'C', 'D']):
+                    val = cycle.get(f'delta_ch{ch_idx + 1}', '')
+                    if isinstance(val, (int, float)):
+                        delta_parts.append(f"{ch_label}:{val:.0f}")
+                delta_spr_str = " ".join(delta_parts) if delta_parts else ''
+
+                # Build Flags string (icon + time)
+                flag_data = cycle.get('flag_data', [])
+                if flag_data:
+                    _ICONS = {'injection': '▲', 'wash': '■', 'spike': '◆'}
+                    flag_parts = []
+                    for f in flag_data:
+                        icon = _ICONS.get(f.get('type', ''), '●')
+                        flag_parts.append(f"{icon}{f.get('time', 0):.0f}s")
+                    flags_str = " ".join(flag_parts)
+                else:
+                    flags_str = cycle.get('flags', '')
+
                 cycles_table.append({
                     'Cycle #': cycle.get('cycle_number', idx + 1),
                     'Type': cycle.get('type', 'Unknown'),
                     'Duration (min)': cycle.get('duration_minutes', ''),
+                    'Start Time (s)': cycle.get('start_time', ''),
                     'Concentration': cycle.get('concentration_value', ''),
                     'Units': cycle.get('concentration_units', ''),
-                    'Notes': cycle.get('notes', '')
+                    'ΔSPR': delta_spr_str,
+                    'Flags': flags_str,
+                    'Notes': cycle.get('note', cycle.get('notes', '')),
+                    'Cycle ID': cycle.get('cycle_id', ''),
                 })
 
         # Export to Excel with multiple sheets
@@ -1680,6 +1852,16 @@ class EditsTab:
             df_info.to_excel(writer, sheet_name='Export Info', index=False)
 
         logger.info(f"[EXPORT] Exported {len(df_long)} rows to: {file_path}")
+
+        # Register file in experiment metadata (if using experiment folder)
+        if exp_folder and Path(file_path).is_relative_to(exp_folder):
+            self.main_window.app.experiment_folder_mgr.register_file(
+                exp_folder,
+                Path(file_path),
+                "raw_data",
+                f"Raw sensor data export with {len(df_long)} data points"
+            )
+            logger.debug(f"Registered raw data file in experiment metadata")
 
         metadata_text = f"Exported to:\n{file_path}\n\n"
         metadata_text += f"Raw Data: {len(df_long)} rows (long format)\n"
@@ -2035,14 +2217,39 @@ class EditsTab:
     def _update_cycle_table_row(self, row_idx, cycle):
         """Update a single row in the cycle table."""
         from PySide6.QtWidgets import QTableWidgetItem
+        from PySide6.QtGui import QColor
 
-        # Update table cells
-        self.cycle_data_table.setItem(row_idx, 0, QTableWidgetItem(str(cycle.get('cycle_number', row_idx + 1))))
-        self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(cycle.get('type', 'Unknown')))
-        self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(cycle.get('duration_minutes', ''))))
-        self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(str(cycle.get('concentration_value', ''))))
-        self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(cycle.get('concentration_units', '')))
-        self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(cycle.get('notes', '')))
+        # Col 0: Type icon
+        cycle_type = cycle.get('type', 'Custom')
+        cycle_num = cycle.get('cycle_number', row_idx + 1)
+        abbr, color = CycleTypeStyle.get(cycle_type)
+        type_item = QTableWidgetItem(f"{abbr} {cycle_num}")
+        type_item.setForeground(QColor(color))
+        type_item.setToolTip(f"{cycle_type} {cycle_num}")
+        self.cycle_data_table.setItem(row_idx, 0, type_item)
+
+        # Col 1: Time
+        duration = cycle.get('duration_minutes', '')
+        start = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time', 0))
+        if isinstance(duration, (int, float)) and isinstance(start, (int, float)):
+            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(f"{duration:.1f}m @ {start:.0f}s"))
+        else:
+            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(f"{duration}m @ {start}s"))
+
+        # Col 2: Concentration
+        self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(cycle.get('concentration_value', ''))))
+
+        # Col 3: ΔSPR (combined)
+        delta_by_ch = cycle.get('delta_spr_by_channel', {})
+        parts = []
+        for ch in ['A', 'B', 'C', 'D']:
+            val = delta_by_ch.get(ch, '')
+            if isinstance(val, (int, float)):
+                parts.append(f"{ch}:{val:.0f}")
+        self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(" ".join(parts)))
+
+        # Col 5: Notes
+        self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(cycle.get('notes', cycle.get('note', ''))))
 
     def _select_cycle_by_index(self, cycle_idx):
         """Select a cycle by index and move cursors to its bounds.
@@ -2522,7 +2729,7 @@ class EditsTab:
                 continue
 
             times, values = data
-            
+
             # Find closest point to start cursor
             start_mask = times >= start_time
             if start_mask.sum() > 0:
@@ -2531,7 +2738,7 @@ class EditsTab:
             else:
                 self.current_delta_values.append(0)
                 continue
-            
+
             # Find closest point to stop cursor
             stop_mask = times <= stop_time
             if stop_mask.sum() > 0:
@@ -2540,7 +2747,7 @@ class EditsTab:
             else:
                 self.current_delta_values.append(0)
                 continue
-            
+
             # Delta SPR = end value - start value (actual response)
             delta_spr = stop_value - start_value
             self.current_delta_values.append(delta_spr)
@@ -2548,7 +2755,7 @@ class EditsTab:
         # Update bar heights and value labels
         for i, (bar, delta_val) in enumerate(zip(self.delta_spr_bars, self.current_delta_values)):
             bar.setOpts(height=[delta_val])
-            
+
             # Update value label position and text
             if hasattr(self, 'delta_spr_labels') and i < len(self.delta_spr_labels):
                 label = self.delta_spr_labels[i]
@@ -2574,71 +2781,26 @@ class EditsTab:
         else:
             self.delta_spr_barchart.setYRange(0, 100)
 
-    def _save_delta_spr_to_cycle(self):
-        """Save current delta SPR values from bar chart to the selected cycle."""
-        from PySide6.QtWidgets import QMessageBox
-        from affilabs.utils.logger import logger
-        
-        # Check if a cycle is selected
-        selected_rows = self.cycle_data_table.selectedItems()
-        if not selected_rows:
-            QMessageBox.warning(
-                self.main_window,
-                "No Cycle Selected",
-                "Please select a cycle in the table to save delta SPR values."
-            )
-            return
-        
-        # Get the selected row index
+        # Auto-save delta SPR to the currently selected cycle
         row_idx = self.cycle_data_table.currentRow()
-        if row_idx < 0:
-            return
-        
-        # Check if we have calculated delta values
-        if not hasattr(self, 'current_delta_values') or not self.current_delta_values:
-            QMessageBox.warning(
-                self.main_window,
-                "No Delta SPR Data",
-                "Move the cursors to calculate delta SPR values before saving."
-            )
-            return
-        
-        # Update the cycle data structure
-        if hasattr(self.main_window, '_loaded_cycles_data') and row_idx < len(self.main_window._loaded_cycles_data):
+        if (row_idx >= 0
+                and hasattr(self.main_window, '_loaded_cycles_data')
+                and row_idx < len(self.main_window._loaded_cycles_data)):
             cycle = self.main_window._loaded_cycles_data[row_idx]
-            
-            # Save delta values for each channel
+            ch_labels = ['A', 'B', 'C', 'D']
+            delta_parts = []
             for ch_idx, delta_val in enumerate(self.current_delta_values):
                 cycle[f'delta_ch{ch_idx + 1}'] = round(delta_val, 2)
-            
-            # Update the table display
-            for ch_idx, delta_val in enumerate(self.current_delta_values):
-                col_idx = 5 + ch_idx  # Columns 5-8 are delta_ch1-4
-                self.cycle_data_table.setItem(row_idx, col_idx, QTableWidgetItem(f"{delta_val:.2f}"))
-            
-            logger.info(f"Saved delta SPR to cycle {row_idx + 1}: {[f'{v:.2f}' for v in self.current_delta_values]}")
-            
-            QMessageBox.information(
-                self.main_window,
-                "Saved",
-                f"Delta SPR values saved to cycle:\n"
-                f"Ch1: {self.current_delta_values[0]:.2f} RU\n"
-                f"Ch2: {self.current_delta_values[1]:.2f} RU\n"
-                f"Ch3: {self.current_delta_values[2]:.2f} RU\n"
-                f"Ch4: {self.current_delta_values[3]:.2f} RU"
-            )
-        else:
-            QMessageBox.warning(
-                self.main_window,
-                "Error",
-                "Could not access cycle data. Please reload the data."
-            )
+                delta_parts.append(f"{ch_labels[ch_idx]}:{delta_val:.0f}")
+            # Update ΔSPR column in the table
+            delta_str = " ".join(delta_parts)
+            self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(delta_str))
 
     def _apply_time_shift(self):
         """Apply time shift to the selected cycle's sensorgram."""
         from PySide6.QtWidgets import QMessageBox
         from affilabs.utils.logger import logger
-        
+
         # Check if a cycle is selected
         selected_rows = self.cycle_data_table.selectedItems()
         if not selected_rows:
@@ -2648,12 +2810,12 @@ class EditsTab:
                 "Please select a cycle in the table to apply time shift."
             )
             return
-        
+
         # Get the selected row index
         row_idx = self.cycle_data_table.currentRow()
         if row_idx < 0:
             return
-        
+
         # Get shift value
         try:
             shift_value = float(self.alignment_shift_input.text())
@@ -2664,20 +2826,20 @@ class EditsTab:
                 "Please enter a valid number for time shift (in seconds)."
             )
             return
-        
+
         # Get selected channel
         channel_text = self.alignment_channel_combo.currentText()
         channel_map = {"All": None, "A": 0, "B": 1, "C": 2, "D": 3}
         channel_idx = channel_map.get(channel_text)
-        
+
         # Update the cycle data with shift
         if hasattr(self.main_window, '_loaded_cycles_data') and row_idx < len(self.main_window._loaded_cycles_data):
             cycle = self.main_window._loaded_cycles_data[row_idx]
-            
+
             # Store the shift in the cycle data
             if 'shifts' not in cycle:
                 cycle['shifts'] = {}
-            
+
             if channel_idx is None:
                 # Apply to all channels
                 for ch in range(4):
@@ -2686,25 +2848,26 @@ class EditsTab:
             else:
                 # Apply to specific channel
                 cycle['shifts'][channel_idx] = shift_value
-            
-            # Update table display
-            self.cycle_data_table.setItem(row_idx, 11, QTableWidgetItem(f"{shift_value:.2f}"))
-            
+
+            # Table display — shift is no longer a visible column
+
             # Initialize _cycle_alignment if it doesn't exist
             if not hasattr(self.main_window, '_cycle_alignment'):
                 self.main_window._cycle_alignment = {}
-            
+
             # Update the _cycle_alignment dictionary that the graph uses
+            ref_text = self.alignment_ref_combo.currentText() if hasattr(self, 'alignment_ref_combo') else 'Global'
             self.main_window._cycle_alignment[row_idx] = {
                 'channel': channel_text,
-                'shift': shift_value
+                'shift': shift_value,
+                'ref': ref_text,
             }
-            
+
             # Refresh the graph with shifted data
             if hasattr(self, 'edits_graph_curves'):
                 # Re-select the cycle to refresh the display with shift
                 self.main_window._on_cycle_selected_in_table()
-            
+
             logger.info(f"Applied {shift_value}s time shift to cycle {row_idx + 1}, channel {channel_text}")
         else:
             QMessageBox.warning(
@@ -2712,7 +2875,102 @@ class EditsTab:
                 "Error",
                 "Could not access cycle data. Please reload the data."
             )
-    
+
+    def _auto_align_to_injection(self):
+        """Auto-align all loaded cycles so their injection flags line up.
+
+        Uses the first cycle's first injection time as the reference point.
+        Calculates the time shift needed for each subsequent cycle to align
+        their injection times to the reference.
+        """
+        from PySide6.QtWidgets import QMessageBox
+        from affilabs.utils.logger import logger
+
+        if not hasattr(self.main_window, '_loaded_cycles_data') or not self.main_window._loaded_cycles_data:
+            QMessageBox.warning(
+                self.main_window,
+                "No Data",
+                "No cycle data loaded. Please load cycles first."
+            )
+            return
+
+        cycles_data = self.main_window._loaded_cycles_data
+
+        # Find injection times for all cycles
+        injection_times = {}  # {row_idx: first_injection_time}
+        for idx, cycle in enumerate(cycles_data):
+            flag_data = cycle.get('flag_data', [])
+            if not flag_data:
+                continue
+            # Find the first injection flag in this cycle
+            for f in flag_data:
+                if f.get('type') == 'injection':
+                    injection_times[idx] = f.get('time', 0.0)
+                    break  # Use first injection only
+
+        if len(injection_times) == 0:
+            QMessageBox.information(
+                self.main_window,
+                "No Injection Flags",
+                "None of the loaded cycles have injection flags.\n\n"
+                "Place injection flags during acquisition to use auto-alignment."
+            )
+            return
+
+        if len(injection_times) == 1:
+            QMessageBox.information(
+                self.main_window,
+                "Single Injection",
+                "Only one cycle has an injection flag — no alignment needed.\n\n"
+                "Auto-alignment requires at least 2 cycles with injection flags."
+            )
+            return
+
+        # Use the first cycle (lowest row index) as reference
+        reference_idx = min(injection_times.keys())
+        reference_time = injection_times[reference_idx]
+
+        # Initialize alignment dict
+        if not hasattr(self.main_window, '_cycle_alignment'):
+            self.main_window._cycle_alignment = {}
+
+        aligned_count = 0
+        for idx, inj_time in injection_times.items():
+            shift = reference_time - inj_time
+            self.main_window._cycle_alignment[idx] = {
+                'channel': 'All',
+                'shift': shift
+            }
+            aligned_count += 1
+            logger.info(f"Auto-align: Cycle {idx + 1} injection at {inj_time:.2f}s → shift {shift:+.2f}s (ref={reference_time:.2f}s)")
+
+        # Refresh the graph
+        if hasattr(self.main_window, '_on_cycle_selected_in_table'):
+            self.main_window._on_cycle_selected_in_table()
+
+        # Update the shift input if a single cycle is selected
+        row_idx = self.cycle_data_table.currentRow()
+        if row_idx >= 0 and row_idx in self.main_window._cycle_alignment:
+            shift_val = self.main_window._cycle_alignment[row_idx]['shift']
+            if hasattr(self, 'alignment_shift_input'):
+                self.alignment_shift_input.blockSignals(True)
+                self.alignment_shift_input.setText(f"{shift_val:.1f}")
+                self.alignment_shift_input.blockSignals(False)
+            if hasattr(self, 'alignment_shift_slider'):
+                self.alignment_shift_slider.blockSignals(True)
+                slider_val = int(max(-20.0, min(20.0, shift_val)) * 10)
+                self.alignment_shift_slider.setValue(slider_val)
+                self.alignment_shift_slider.blockSignals(False)
+
+        QMessageBox.information(
+            self.main_window,
+            "Auto-Aligned",
+            f"✓ Aligned {aligned_count} cycles to injection reference.\n\n"
+            f"Reference: Cycle {reference_idx + 1} (injection at {reference_time:.1f}s)\n"
+            f"All cycles shifted so injection times match."
+        )
+        logger.info(f"✓ Auto-aligned {aligned_count} cycles to injection at {reference_time:.2f}s")
+
     def _on_shift_input_changed(self, text):
         """Sync slider when input box changes."""
         try:
@@ -2725,19 +2983,22 @@ class EditsTab:
             self.alignment_shift_slider.blockSignals(False)
         except ValueError:
             pass  # Ignore invalid input
-    
+
     def _on_shift_slider_changed(self, value):
-        """Sync input box when slider changes."""
+        """Sync input box when slider changes and apply shift in real-time."""
         shift_value = value / 10.0  # Convert from 0.1s increments to seconds
         self.alignment_shift_input.blockSignals(True)
         self.alignment_shift_input.setText(f"{shift_value:.1f}")
         self.alignment_shift_input.blockSignals(False)
 
+        # Apply shift in real-time (no need to press button)
+        self._apply_time_shift()
+
     def _export_barchart_image(self):
         """Export the delta SPR bar chart as an image."""
         from PySide6.QtWidgets import QFileDialog, QMessageBox
         from datetime import datetime
-        
+
         # Open file dialog
         default_name = f"delta_spr_barchart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         file_path, _ = QFileDialog.getSaveFileName(
@@ -2746,19 +3007,19 @@ class EditsTab:
             default_name,
             "PNG Image (*.png);;JPEG Image (*.jpg);;SVG Image (*.svg);;All Files (*.*)"
         )
-        
+
         if not file_path:
             return  # User cancelled
-        
+
         try:
             # Use pyqtgraph's export functionality
             exporter = pg.exporters.ImageExporter(self.delta_spr_barchart.plotItem)
-            
+
             # Set resolution for better quality
             exporter.parameters()['width'] = 1200
-            
+
             exporter.export(file_path)
-            
+
             QMessageBox.information(
                 self.main_window,
                 "Export Successful",
@@ -2775,7 +3036,7 @@ class EditsTab:
         """Export the active cycle graph as an image."""
         from PySide6.QtWidgets import QFileDialog, QMessageBox
         from datetime import datetime
-        
+
         # Open file dialog
         default_name = f"sensorgram_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         file_path, _ = QFileDialog.getSaveFileName(
@@ -2784,19 +3045,19 @@ class EditsTab:
             default_name,
             "PNG Image (*.png);;JPEG Image (*.jpg);;SVG Image (*.svg);;All Files (*.*)"
         )
-        
+
         if not file_path:
             return  # User cancelled
-        
+
         try:
             # Use pyqtgraph's export functionality
             exporter = pg.exporters.ImageExporter(self.edits_primary_graph.plotItem)
-            
+
             # Set resolution for better quality
             exporter.parameters()['width'] = 2400
-            
+
             exporter.export(file_path)
-            
+
             QMessageBox.information(
                 self.main_window,
                 "Export Successful",
@@ -2810,44 +3071,691 @@ class EditsTab:
             )
 
     def _on_reference_changed(self, text):
-        """Handle reference channel selection in Edits tab."""
-        # Map dropdown text to channel letter
-        channel_map = {
-            "None": None,
-            "Ch A": 0,
-            "Ch B": 1,
-            "Ch C": 2,
-            "Ch D": 3
-        }
+        """Handle global reference channel change — refresh graph with subtraction."""
+        # Refresh graph to apply/remove reference subtraction
+        if hasattr(self.main_window, '_on_cycle_selected_in_table'):
+            self.main_window._on_cycle_selected_in_table()
 
-        ref_idx = channel_map.get(text)
+    def _get_effective_ref_channel(self, row_idx):
+        """Get the effective reference channel for a cycle.
 
-        # Reset all curves to default colors
-        default_colors = self.current_colors if hasattr(self, 'current_colors') else [
-            (0, 0, 0), (255, 0, 0), (0, 0, 255), (0, 170, 0)
-        ]
+        Returns channel index (0-3) or None.
+        Per-cycle override takes priority over global toolbar setting.
+        """
+        _REF_MAP = {"None": None, "Ch A": 0, "Ch B": 1, "Ch C": 2, "Ch D": 3}
 
-        for i, curve in enumerate(self.edits_graph_curves):
-            if ref_idx is not None and i == ref_idx:
-                # Reference channel: purple dashed line
-                curve.setPen(pg.mkPen(color=(153, 102, 255, 150), width=2, style=Qt.PenStyle.DashLine))
-            else:
-                # Normal channel
-                curve.setPen(pg.mkPen(default_colors[i], width=2))
+        # Check per-cycle override
+        if hasattr(self, '_cycle_alignment'):
+            per_cycle_ref = self._cycle_alignment.get(row_idx, {}).get('ref', 'Global')
+        else:
+            per_cycle_ref = 'Global'
+
+        if per_cycle_ref != 'Global':
+            return _REF_MAP.get(per_cycle_ref)
+
+        # Fall back to global toolbar Ref
+        if hasattr(self, 'edits_ref_combo'):
+            return _REF_MAP.get(self.edits_ref_combo.currentText())
+        return None
+
+    def _on_cycle_ref_changed(self, text):
+        """Handle per-cycle reference channel change — save and refresh graph."""
+        row_idx = self.cycle_data_table.currentRow()
+        if row_idx < 0:
+            return
+
+        if not hasattr(self.main_window, '_cycle_alignment'):
+            self.main_window._cycle_alignment = {}
+
+        if row_idx not in self.main_window._cycle_alignment:
+            self.main_window._cycle_alignment[row_idx] = {'channel': 'All', 'shift': 0.0, 'ref': 'Global'}
+
+        self.main_window._cycle_alignment[row_idx]['ref'] = text
+
+        # Refresh graph
+        if hasattr(self.main_window, '_on_cycle_selected_in_table'):
+            self.main_window._on_cycle_selected_in_table()
+
+    # ── Export Sidebar ───────────────────────────────────────────────────────
+
+    def _create_export_sidebar(self):
+        """Create the collapsible export sidebar panel for the Edit tab."""
+        sidebar = QFrame()
+        sidebar.setFixedWidth(260)
+        sidebar.setStyleSheet("""
+            QFrame#ExportSidebar {
+                background: #FFFFFF;
+                border-right: 1px solid #E5E5EA;
+                border-radius: 0;
+            }
+        """)
+        sidebar.setObjectName("ExportSidebar")
+
+        # Scroll area for content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: transparent; width: 6px; margin: 0;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(0,0,0,0.15); border-radius: 3px; min-height: 30px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        """)
+
+        content = QWidget()
+        content.setStyleSheet("background: #FFFFFF;")
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        # ── Header ──
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
+        header_icon = QLabel("📤")
+        header_icon.setStyleSheet("font-size: 18px; background: transparent;")
+        header_row.addWidget(header_icon)
+        header_title = QLabel("EXPORT")
+        header_title.setStyleSheet(
+            "font-size: 14px; font-weight: 700; color: #1D1D1F; letter-spacing: 1px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "background: transparent;"
+        )
+        header_row.addWidget(header_title)
+        header_row.addStretch()
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(24, 24)
+        close_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #86868B; border: none; "
+            "font-size: 14px; font-weight: bold; border-radius: 12px; }"
+            "QPushButton:hover { background: #F5F5F7; color: #1D1D1F; }"
+        )
+        close_btn.clicked.connect(self._toggle_export_sidebar)
+        header_row.addWidget(close_btn)
+        layout.addLayout(header_row)
+
+        # Divider
+        div1 = QFrame()
+        div1.setFrameShape(QFrame.Shape.HLine)
+        div1.setStyleSheet("border: none; background: #E5E5EA; max-height: 1px;")
+        layout.addWidget(div1)
+
+        # ── Export Analysis ──
+        export_analysis_btn = self._export_sidebar_button(
+            "💾", "Export Analysis",
+            "Save cycle table to Excel (.xlsx) or CSV"
+        )
+        export_analysis_btn.clicked.connect(self._export_table_data)
+        layout.addWidget(export_analysis_btn)
+
+        # ── Save Cycles as Method ──
+        save_method_btn = self._export_sidebar_button(
+            "📋", "Save as Method",
+            "Convert cycles to reusable method file (.json)"
+        )
+        save_method_btn.clicked.connect(self._save_cycles_as_method)
+        layout.addWidget(save_method_btn)
+
+        # Divider
+        div2 = QFrame()
+        div2.setFrameShape(QFrame.Shape.HLine)
+        div2.setStyleSheet("border: none; background: #E5E5EA; max-height: 1px;")
+        layout.addWidget(div2)
+
+        # ── Export Sensorgram ──
+        export_sensorgram_btn = self._export_sidebar_button(
+            "📊", "Export Sensorgram",
+            "Save active cycle graph as PNG image"
+        )
+        export_sensorgram_btn.clicked.connect(self._export_graph_image)
+        layout.addWidget(export_sensorgram_btn)
+
+        # ── Export ΔSPR Chart ──
+        export_dspr_btn = self._export_sidebar_button(
+            "📈", "Export ΔSPR Chart",
+            "Save bar chart as PNG image"
+        )
+        export_dspr_btn.clicked.connect(self._export_barchart_image)
+        layout.addWidget(export_dspr_btn)
+
+        # Divider
+        div3 = QFrame()
+        div3.setFrameShape(QFrame.Shape.HLine)
+        div3.setStyleSheet("border: none; background: #E5E5EA; max-height: 1px;")
+        layout.addWidget(div3)
+
+        # ── Copy to Clipboard ──
+        copy_btn = self._export_sidebar_button(
+            "📋", "Copy to Clipboard",
+            "Copy selected cycles as tab-separated text"
+        )
+        copy_btn.clicked.connect(self._copy_table_to_clipboard)
+        layout.addWidget(copy_btn)
+
+        # ── External Software ──
+        external_btn = self._export_sidebar_button(
+            "🔗", "External Software",
+            "Export formatted for Prism / Origin / other"
+        )
+        external_btn.clicked.connect(self._export_for_external_software)
+        layout.addWidget(external_btn)
+
+        # Spacer
+        layout.addSpacing(8)
+
+        # ── Info / Stats Panel ──
+        stats_frame = QFrame()
+        stats_frame.setStyleSheet("""
+            QFrame {
+                background: #F8F9FA;
+                border: 1px solid #E5E5EA;
+                border-radius: 8px;
+            }
+        """)
+        stats_layout = QVBoxLayout(stats_frame)
+        stats_layout.setContentsMargins(12, 10, 12, 10)
+        stats_layout.setSpacing(6)
+
+        stats_title = QLabel("Summary")
+        stats_title.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #1D1D1F; "
+            "background: transparent; border: none;"
+        )
+        stats_layout.addWidget(stats_title)
+
+        self.export_stats_cycles = QLabel("Cycles: 0")
+        self.export_stats_cycles.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent; border: none;"
+        )
+        stats_layout.addWidget(self.export_stats_cycles)
+
+        self.export_stats_selected = QLabel("Selected: 0")
+        self.export_stats_selected.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent; border: none;"
+        )
+        stats_layout.addWidget(self.export_stats_selected)
+
+        self.export_stats_channels = QLabel("Channels: A, B, C, D")
+        self.export_stats_channels.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent; border: none;"
+        )
+        stats_layout.addWidget(self.export_stats_channels)
+
+        self.export_stats_duration = QLabel("Duration: —")
+        self.export_stats_duration.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent; border: none;"
+        )
+        stats_layout.addWidget(self.export_stats_duration)
+
+        layout.addWidget(stats_frame)
+
+        layout.addStretch()
+
+        scroll.setWidget(content)
+
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.addWidget(scroll)
+
+        return sidebar
+
+    def _export_sidebar_button(self, icon_text, label_text, tooltip_text):
+        """Create a styled export sidebar action button.
+
+        Args:
+            icon_text: Emoji icon string
+            label_text: Button label
+            tooltip_text: Tooltip description
+
+        Returns:
+            QPushButton with consistent styling
+        """
+        btn = QPushButton(f"  {icon_text}  {label_text}")
+        btn.setFixedHeight(40)
+        btn.setToolTip(tooltip_text)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet("""
+            QPushButton {
+                background: #F8F9FA;
+                color: #1D1D1F;
+                border: 1px solid #E5E5EA;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: 500;
+                padding: 8px 12px;
+                text-align: left;
+                font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+            }
+            QPushButton:hover {
+                background: #E8F0FE;
+                border-color: #007AFF;
+                color: #007AFF;
+            }
+            QPushButton:pressed {
+                background: #D1E4FF;
+            }
+        """)
+        return btn
+
+    def _toggle_export_sidebar(self):
+        """Toggle the export sidebar visibility."""
+        is_visible = self.export_sidebar.isVisible()
+        self.export_sidebar.setVisible(not is_visible)
+
+        # Sync toggle button checked state
+        if hasattr(self, 'export_toggle_btn'):
+            self.export_toggle_btn.setChecked(not is_visible)
+
+        # Update stats when showing
+        if not is_visible:
+            self._update_export_sidebar_stats()
+
+    def _update_export_sidebar_stats(self):
+        """Update the export sidebar summary statistics."""
+        if not hasattr(self, 'export_stats_cycles'):
+            return
+
+        # Total visible cycles
+        total = 0
+        for row in range(self.cycle_data_table.rowCount()):
+            if not self.cycle_data_table.isRowHidden(row):
+                total += 1
+
+        selected_rows = self.cycle_data_table.selectionModel().selectedRows()
+        selected = len(selected_rows)
+
+        self.export_stats_cycles.setText(f"Cycles: {total}")
+        self.export_stats_selected.setText(f"Selected: {selected}")
+
+        # Channels (always 4 for now)
+        self.export_stats_channels.setText("Channels: A, B, C, D")
+
+        # Duration estimate from first/last visible cycle
+        first_time = None
+        last_time = None
+        for row in range(self.cycle_data_table.rowCount()):
+            if self.cycle_data_table.isRowHidden(row):
+                continue
+            time_item = self.cycle_data_table.item(row, 1)
+            if time_item and time_item.text().strip():
+                time_text = time_item.text().strip()
+                if first_time is None:
+                    first_time = time_text
+                last_time = time_text
+
+        if first_time and last_time:
+            self.export_stats_duration.setText(f"Time: {first_time} → {last_time}")
+        else:
+            self.export_stats_duration.setText("Duration: —")
+
+    def _save_cycles_as_method(self):
+        """Convert visible cycle table rows into a reusable method JSON file."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox, QInputDialog
+        from pathlib import Path
+        from datetime import datetime
+        import json
+
+        # Collect visible rows from the cycle table
+        cycle_dicts = []
+        for row in range(self.cycle_data_table.rowCount()):
+            if self.cycle_data_table.isRowHidden(row):
+                continue
+
+            # Extract data from table columns
+            type_item = self.cycle_data_table.item(row, 0)
+            time_item = self.cycle_data_table.item(row, 1)
+            conc_item = self.cycle_data_table.item(row, 2)
+            flags_item = self.cycle_data_table.item(row, 4)
+            notes_item = self.cycle_data_table.item(row, 5)
+
+            # Parse cycle type from display text (e.g., '● BL 1' → 'Baseline')
+            raw_type = type_item.text().strip() if type_item else "Custom"
+            full_type = type_item.toolTip() if type_item and type_item.toolTip() else raw_type
+
+            # Map abbreviations back to full type names
+            type_map = {
+                'BL': 'Baseline', 'IM': 'Immobilization', 'WS': 'Wash',
+                'CN': 'Concentration', 'RG': 'Regeneration', 'CU': 'Custom',
+                'AS': 'Association', 'DS': 'Dissociation', 'BD': 'Binding',
+            }
+            cycle_type = full_type.split()[0] if full_type else "Custom"
+            # Check if it's an abbreviation
+            for abbr, full_name in type_map.items():
+                if abbr in raw_type:
+                    cycle_type = full_name
+                    break
+            # Also check tooltip for full name
+            for full_name in type_map.values():
+                if full_name.lower() in full_type.lower():
+                    cycle_type = full_name
+                    break
+
+            # Parse duration from time column (format: 'Xm @ Ys')
+            duration_minutes = 1.0  # default
+            if time_item and time_item.text().strip():
+                import re
+                time_text = time_item.text().strip()
+                min_match = re.search(r'(\d+\.?\d*)\s*m', time_text)
+                if min_match:
+                    duration_minutes = float(min_match.group(1))
+
+            # Parse concentration
+            conc_value = None
+            conc_units = "nM"
+            if conc_item and conc_item.text().strip():
+                import re
+                conc_text = conc_item.text().strip()
+                numbers = re.findall(r'(\d+\.?\d*)', conc_text)
+                if numbers:
+                    conc_value = float(numbers[0])
+                if 'ug/mL' in conc_text or 'µg/mL' in conc_text:
+                    conc_units = "ug/mL"
+
+            cycle_dict = {
+                "type": cycle_type,
+                "length_minutes": duration_minutes,
+                "note": notes_item.text().strip() if notes_item else "",
+                "pumps": {},
+                "contact_times": {},
+            }
+
+            # Add concentration if present
+            if conc_value is not None:
+                cycle_dict["concentration_value"] = conc_value
+                cycle_dict["concentration_units"] = conc_units
+
+            # Add flags if present
+            if flags_item and flags_item.text().strip():
+                cycle_dict["flags"] = flags_item.text().strip()
+
+            cycle_dicts.append(cycle_dict)
+
+        if not cycle_dicts:
+            QMessageBox.information(
+                self.main_window,
+                "No Cycles",
+                "No visible cycles to save. Load or record data first."
+            )
+            return
+
+        # Prompt for method name
+        method_name, ok = QInputDialog.getText(
+            self.main_window,
+            "Save Cycles as Method",
+            f"Method name ({len(cycle_dicts)} cycles):",
+            text="My Method"
+        )
+
+        if not ok or not method_name.strip():
+            return
+
+        # Get user profile
+        try:
+            from affilabs.services.user_profile_manager import UserProfileManager
+            user_mgr = UserProfileManager()
+            username = user_mgr.get_current_user() or "Default"
+        except Exception:
+            username = "Default"
+
+        # Default save directory
+        default_dir = Path.home() / "Documents" / "Affilabs Methods" / username
+        default_dir.mkdir(parents=True, exist_ok=True)
+
+        # Sanitize filename
+        safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in method_name.strip())
+        default_path = str(default_dir / f"{safe_name}.json")
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self.main_window,
+            "Save Method File",
+            default_path,
+            "JSON Files (*.json);;All Files (*.*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            method_data = {
+                "version": "1.0",
+                "name": method_name.strip(),
+                "description": f"Created from Edit tab cycle table ({len(cycle_dicts)} cycles)",
+                "author": username,
+                "created": datetime.now().isoformat(),
+                "source_experiment": "",
+                "cycles": cycle_dicts,
+                "cycle_count": len(cycle_dicts),
+            }
+
+            # Add experiment source metadata if available
+            if (hasattr(self.main_window, 'app') and
+                hasattr(self.main_window.app, 'current_experiment_folder') and
+                self.main_window.app.current_experiment_folder):
+                method_data["source_experiment"] = str(
+                    self.main_window.app.current_experiment_folder.name
+                )
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(method_data, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"✅ Saved {len(cycle_dicts)} cycles as method: {file_path}")
+
+            QMessageBox.information(
+                self.main_window,
+                "Method Saved",
+                f"Saved {len(cycle_dicts)} cycles as method:\n{file_path}\n\n"
+                f"You can load this method in the Method Builder sidebar."
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to save method: {e}")
+            QMessageBox.critical(
+                self.main_window,
+                "Save Failed",
+                f"Failed to save method file:\n{str(e)}"
+            )
+
+    def _copy_table_to_clipboard(self):
+        """Copy cycle table data to clipboard as tab-separated text."""
+        from PySide6.QtWidgets import QMessageBox
+
+        lines = []
+
+        # Header row
+        headers = []
+        for col in range(self.cycle_data_table.columnCount()):
+            if self.cycle_data_table.isColumnHidden(col):
+                continue
+            header_item = self.cycle_data_table.horizontalHeaderItem(col)
+            headers.append(header_item.text().replace('\n', ' ') if header_item else f"Col{col}")
+        lines.append('\t'.join(headers))
+
+        # Data rows (selected rows if any, else all visible)
+        selected_rows = set()
+        for idx in self.cycle_data_table.selectionModel().selectedRows():
+            selected_rows.add(idx.row())
+
+        copied_count = 0
+        for row in range(self.cycle_data_table.rowCount()):
+            if self.cycle_data_table.isRowHidden(row):
+                continue
+            # If rows are selected, only copy those
+            if selected_rows and row not in selected_rows:
+                continue
+
+            row_data = []
+            for col in range(self.cycle_data_table.columnCount()):
+                if self.cycle_data_table.isColumnHidden(col):
+                    continue
+                item = self.cycle_data_table.item(row, col)
+                row_data.append(item.text() if item else "")
+            lines.append('\t'.join(row_data))
+            copied_count += 1
+
+        if copied_count == 0:
+            QMessageBox.information(
+                self.main_window,
+                "Nothing to Copy",
+                "No visible data to copy."
+            )
+            return
+
+        text = '\n'.join(lines)
+        clipboard = QApplication.clipboard()
+        clipboard.setText(text)
+
+        logger.info(f"📋 Copied {copied_count} cycles to clipboard")
+
+        # Brief feedback via tooltip on the export sidebar
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'intel_message_label'):
+            self.main_window.sidebar.intel_message_label.setText(
+                f"📋 Copied {copied_count} cycles to clipboard"
+            )
+        else:
+            # Show a brief status on the button itself
+            QMessageBox.information(
+                self.main_window,
+                "Copied",
+                f"Copied {copied_count} cycle{'s' if copied_count != 1 else ''} to clipboard.\n"
+                "Paste into Excel, Google Sheets, or any spreadsheet."
+            )
+
+    def _export_for_external_software(self):
+        """Export data formatted for external analysis software (GraphPad Prism, Origin, etc.)."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from datetime import datetime
+        import csv
+
+        # Collect visible rows with ΔSPR data
+        rows = []
+        for row in range(self.cycle_data_table.rowCount()):
+            if self.cycle_data_table.isRowHidden(row):
+                continue
+
+            type_item = self.cycle_data_table.item(row, 0)
+            conc_item = self.cycle_data_table.item(row, 2)
+            dspr_item = self.cycle_data_table.item(row, 3)
+
+            cycle_type = type_item.toolTip() if type_item and type_item.toolTip() else (type_item.text() if type_item else "")
+
+            # Parse concentration
+            conc_val = ""
+            if conc_item and conc_item.text().strip():
+                import re
+                numbers = re.findall(r'(\d+\.?\d*)', conc_item.text())
+                if numbers:
+                    conc_val = numbers[0]
+
+            # Parse ΔSPR per channel (format: 'A:val B:val C:val D:val')
+            dspr_a = dspr_b = dspr_c = dspr_d = ""
+            if dspr_item and dspr_item.text().strip():
+                import re
+                dspr_text = dspr_item.text()
+                for ch_match in re.finditer(r'([ABCD]):([+-]?\d+\.?\d*)', dspr_text):
+                    ch, val = ch_match.group(1), ch_match.group(2)
+                    if ch == 'A': dspr_a = val
+                    elif ch == 'B': dspr_b = val
+                    elif ch == 'C': dspr_c = val
+                    elif ch == 'D': dspr_d = val
+
+            rows.append({
+                "type": cycle_type,
+                "concentration": conc_val,
+                "dspr_a": dspr_a,
+                "dspr_b": dspr_b,
+                "dspr_c": dspr_c,
+                "dspr_d": dspr_d,
+            })
+
+        if not rows:
+            QMessageBox.information(
+                self.main_window,
+                "No Data",
+                "No visible cycle data to export."
+            )
+            return
+
+        # File dialog
+        default_name = f"SPR_external_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self.main_window,
+            "Export for External Software",
+            default_name,
+            "CSV Files (*.csv);;All Files (*.*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # Write in column-oriented format suitable for Prism/Origin
+            with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+
+                # Header
+                writer.writerow([
+                    "Cycle Type", "Concentration",
+                    "ΔSPR Ch A (RU)", "ΔSPR Ch B (RU)", "ΔSPR Ch C (RU)", "ΔSPR Ch D (RU)"
+                ])
+
+                for row in rows:
+                    writer.writerow([
+                        row["type"], row["concentration"],
+                        row["dspr_a"], row["dspr_b"], row["dspr_c"], row["dspr_d"]
+                    ])
+
+            logger.info(f"✅ Exported {len(rows)} rows for external software: {file_path}")
+
+            QMessageBox.information(
+                self.main_window,
+                "Export Successful",
+                f"Exported {len(rows)} cycles to:\n{file_path}\n\n"
+                "Format: CSV with columns for Concentration, ΔSPR per channel.\n"
+                "Compatible with GraphPad Prism, Origin, and Excel."
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to export for external software: {e}")
+            QMessageBox.critical(
+                self.main_window,
+                "Export Failed",
+                f"Failed to export:\n{str(e)}"
+            )
 
     def _export_table_data(self):
-        """Export the cycle data table to CSV or Excel file."""
+        """Export the cycle data table (analysis results) to CSV or Excel file."""
         from PySide6.QtWidgets import QFileDialog
         import csv
         from datetime import datetime
+        from pathlib import Path
+        from affilabs.utils.time_utils import filename_timestamp
+
+        # Ensure experiment folder exists
+        exp_folder = self._ensure_experiment_folder()
+
+        # Get default save location in Analysis subfolder
+        if exp_folder:
+            analysis_folder = self.main_window.app.experiment_folder_mgr.get_subfolder_path(
+                exp_folder, "Analysis"
+            )
+            default_name = f"Analysis_{filename_timestamp()}.xlsx"
+            default_path = str(analysis_folder / default_name)
+        else:
+            # Fallback if no experiment folder
+            default_name = f"Analysis_{filename_timestamp()}.xlsx"
+            default_path = default_name
 
         # Open file dialog
-        file_filter = "CSV Files (*.csv);;Excel Files (*.xlsx);;All Files (*.*)"
-        default_name = f"cycle_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        file_filter = "Excel Files (*.xlsx);;CSV Files (*.csv);;All Files (*.*)"
         file_path, selected_filter = QFileDialog.getSaveFileName(
             self.main_window,
-            "Export Cycle Data",
-            default_name,
+            "Export Analysis",
+            default_path,
             file_filter
         )
 
@@ -2899,6 +3807,16 @@ class EditsTab:
                 # CSV export
                 self._write_csv(file_path, rows_data)
 
+            # Register file in experiment metadata (if using experiment folder)
+            if exp_folder and Path(file_path).is_relative_to(exp_folder):
+                self.main_window.app.experiment_folder_mgr.register_file(
+                    exp_folder,
+                    Path(file_path),
+                    "analysis",
+                    f"Cycle analysis table with {len(rows_data)-1} cycles"
+                )
+                logger.debug(f"Registered analysis file in experiment metadata")
+
             # Show success message
             if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'intel_message_label'):
                 self.main_window.sidebar.intel_message_label.setText(
@@ -2922,10 +3840,10 @@ class EditsTab:
         logger.info(f"✅ Exported {len(rows_data)-1} cycles to CSV: {file_path}")
 
     def _apply_compact_view_initial(self):
-        """Apply compact view column hiding on initialization."""
-        # Hide columns: Duration(1), Start(2), Flags(9), Shift(11), Priority(12)
-        for col in [1, 2, 9, 11, 12]:
-            self.cycle_data_table.setColumnHidden(col, True)
+        """Apply initial column visibility based on compact_view flag."""
+        if self.compact_view:
+            self.cycle_data_table.setColumnHidden(1, True)  # Time
+            self.cycle_data_table.setColumnHidden(5, True)  # Notes
 
     def _toggle_compact_view(self):
         """Toggle between compact and expanded table view."""
@@ -2933,15 +3851,41 @@ class EditsTab:
 
         if self.compact_view:
             # Hide less important columns in compact view
-            self.cycle_data_table.setColumnHidden(1, True)   # Duration
-            self.cycle_data_table.setColumnHidden(2, True)   # Start
-            self.cycle_data_table.setColumnHidden(9, True)   # Flags
-            self.cycle_data_table.setColumnHidden(11, True)  # Shift
-            self.cycle_data_table.setColumnHidden(12, True)  # Priority
+            self.cycle_data_table.setColumnHidden(1, True)   # Time
+            self.cycle_data_table.setColumnHidden(5, True)   # Notes
         else:
             # Show all columns in expanded view
-            for col in range(13):
+            for col in range(6):
                 self.cycle_data_table.setColumnHidden(col, False)
+
+    def _open_spark_ai(self):
+        """Open Spark AI assistant for data analysis."""
+        import webbrowser
+        from affilabs.utils.logger import logger
+
+        # Spark AI URL (placeholder - update with actual URL when available)
+        spark_url = "https://claude.ai/"
+
+        try:
+            webbrowser.open(spark_url)
+            logger.info("✨ Opened Spark AI assistant in browser")
+
+            # Optional: Show message to user
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self.main_window,
+                "Spark AI",
+                "Opening Spark AI assistant in your browser.\n\n"
+                "You can upload your exported data for advanced analysis."
+            )
+        except Exception as e:
+            logger.error(f"Failed to open Spark AI: {e}")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self.main_window,
+                "Error",
+                f"Failed to open Spark AI:\n{e}"
+            )
 
     def _apply_cycle_filter(self, filter_text):
         """Filter cycles by type based on priority (concentration is key, baseline less important)."""
@@ -2961,7 +3905,8 @@ class EditsTab:
         for row in range(self.cycle_data_table.rowCount()):
             cycle_type_item = self.cycle_data_table.item(row, 0)
             if cycle_type_item:
-                cycle_type = cycle_type_item.text()
+                # Use tooltip which stores full type name (e.g. 'Baseline 1')
+                cycle_type = cycle_type_item.toolTip() or cycle_type_item.text()
                 # Check if cycle type matches filter
                 show_row = any(allowed in cycle_type for allowed in allowed_types)
                 self.cycle_data_table.setRowHidden(row, not show_row)
@@ -2980,28 +3925,43 @@ class EditsTab:
         """Filter table rows based on search text across all columns."""
         search_text = search_text.lower().strip()
 
+        # First, restore all rows that were hidden by previous search
+        # (but respect cycle filter)
         for row in range(self.cycle_data_table.rowCount()):
-            # Skip if already hidden by cycle filter
-            if self.cycle_data_table.isRowHidden(row):
-                continue
+            # Check if row should be visible based on cycle filter
+            cycle_type_item = self.cycle_data_table.item(row, 0)
+            if cycle_type_item:
+                cycle_type = cycle_type_item.toolTip() or cycle_type_item.text()
+                priority_map = {
+                    "All": ["Binding", "Association", "Dissociation", "Baseline", "Regeneration", "Wash", "Prime"],
+                    "Binding (High)": ["Binding", "Association", "Dissociation"],
+                    "Baseline (Low)": ["Baseline"],
+                    "Regeneration (Med)": ["Regeneration", "Wash"]
+                }
+                allowed_types = priority_map.get(self.cycle_filter, priority_map["All"])
+                show_by_filter = any(allowed in cycle_type for allowed in allowed_types)
+            else:
+                show_by_filter = True
 
             if not search_text:
-                # No search text - show all (respecting cycle filter)
-                continue
+                # No search text - show row if cycle filter allows it
+                self.cycle_data_table.setRowHidden(row, not show_by_filter)
+            elif show_by_filter:
+                # Search active - check if row matches
+                row_matches = False
+                for col in range(self.cycle_data_table.columnCount()):
+                    if self.cycle_data_table.isColumnHidden(col):
+                        continue
 
-            # Search across all visible columns
-            row_matches = False
-            for col in range(self.cycle_data_table.columnCount()):
-                if self.cycle_data_table.isColumnHidden(col):
-                    continue
+                    item = self.cycle_data_table.item(row, col)
+                    if item and search_text in item.text().lower():
+                        row_matches = True
+                        break
 
-                item = self.cycle_data_table.item(row, col)
-                if item and search_text in item.text().lower():
-                    row_matches = True
-                    break
-
-            # Hide rows that don't match search
-            if not row_matches:
+                # Show row only if it matches search AND passes cycle filter
+                self.cycle_data_table.setRowHidden(row, not row_matches)
+            else:
+                # Hidden by cycle filter
                 self.cycle_data_table.setRowHidden(row, True)
 
         # Apply color coding after filtering
@@ -3016,9 +3976,9 @@ class EditsTab:
             if self.cycle_data_table.isRowHidden(row):
                 continue
 
-            # Check for missing concentration (column 3) or notes (column 4)
-            conc_item = self.cycle_data_table.item(row, 3)
-            notes_item = self.cycle_data_table.item(row, 4)
+            # Check for missing concentration (col 2) or notes (col 5)
+            conc_item = self.cycle_data_table.item(row, 2)
+            notes_item = self.cycle_data_table.item(row, 5)
 
             conc_missing = not conc_item or not conc_item.text().strip()
             notes_missing = not notes_item or not notes_item.text().strip()
@@ -3059,11 +4019,9 @@ class EditsTab:
             }
         """)
 
-        # Get column names
+        # Get column names (6-column layout)
         column_names = [
-            "Type", "Duration", "Start", "Conc.", "Notes",
-            "ΔCh1", "ΔCh2", "ΔCh3", "ΔCh4",
-            "Flags", "Channel", "Shift"
+            "Type", "Time", "Conc.", "ΔSPR", "Flags", "Notes"
         ]
 
         # Create checkable actions for each column

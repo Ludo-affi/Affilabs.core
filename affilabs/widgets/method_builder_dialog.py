@@ -6,12 +6,14 @@ Replaces the cramped sidebar form with a spacious popup dialog for better UX.
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QPlainTextEdit, QFrame, QTextEdit, QScrollArea, QSizePolicy,
-    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox
+    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QLineEdit, QComboBox
 )
 from PySide6.QtCore import Signal, Qt, QTimer
-from PySide6.QtGui import QKeyEvent, QCursor
+from PySide6.QtGui import QKeyEvent, QCursor, QColor
 from affilabs.domain.cycle import Cycle
 from affilabs.services.queue_preset_storage import QueuePresetStorage
+from affilabs.services.user_profile_manager import UserProfileManager
+from affilabs.widgets.ui_constants import CycleTypeStyle
 import time
 import re
 import threading
@@ -450,6 +452,7 @@ class MethodBuilderDialog(QDialog):
         self._waiting_for_response = False  # Track if we're waiting for user answer
         self._pending_command = None  # Store the command waiting for answer (e.g., "amine_coupling", "build")
         self._spark_popup = None  # Lazy-created Spark popup
+        self._user_manager = UserProfileManager()  # For operator dropdown
         self._setup_ui()
 
     # -- Spark popup -------------------------------------------------------
@@ -746,7 +749,78 @@ class MethodBuilderDialog(QDialog):
         header_row.addWidget(title)
         header_row.addStretch()
         layout.addLayout(header_row)
-        layout.addSpacing(12)
+        layout.addSpacing(8)
+
+        # Method name and operator row
+        meta_row = QHBoxLayout()
+        meta_row.setSpacing(12)
+
+        method_name_label = QLabel("📋 Method:")
+        method_name_label.setStyleSheet(
+            "font-size: 12px; color: #86868B; font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
+        )
+        meta_row.addWidget(method_name_label)
+
+        self.method_name_input = QLineEdit("Untitled Method")
+        self.method_name_input.setFixedHeight(28)
+        self.method_name_input.setStyleSheet(
+            "QLineEdit {"
+            "  background: white;"
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "  border-radius: 4px;"
+            "  padding: 4px 8px;"
+            "  font-size: 12px;"
+            "  color: #1D1D1F;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
+            "}"
+            "QLineEdit:focus { border-color: #007AFF; }"
+        )
+        meta_row.addWidget(self.method_name_input)
+
+        operator_label = QLabel("👤 Operator:")
+        operator_label.setStyleSheet(
+            "font-size: 12px; color: #86868B; font-weight: 500;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
+        )
+        meta_row.addWidget(operator_label)
+
+        self.operator_combo = QComboBox()
+        self.operator_combo.setFixedHeight(28)
+        self.operator_combo.addItems(self._user_manager.get_profiles())
+        # Set to current user
+        current_user = self._user_manager.get_current_user()
+        if current_user:
+            index = self.operator_combo.findText(current_user)
+            if index >= 0:
+                self.operator_combo.setCurrentIndex(index)
+        self.operator_combo.setStyleSheet(
+            "QComboBox {"
+            "  background: white;"
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "  border-radius: 4px;"
+            "  padding: 4px 8px;"
+            "  font-size: 12px;"
+            "  color: #1D1D1F;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
+            "}"
+            "QComboBox:focus { border-color: #007AFF; }"
+            "QComboBox::drop-down {"
+            "  border: none;"
+            "  width: 20px;"
+            "}"
+            "QComboBox::down-arrow {"
+            "  image: none;"
+            "  border-left: 4px solid transparent;"
+            "  border-right: 4px solid transparent;"
+            "  border-top: 5px solid #86868B;"
+            "  margin-right: 8px;"
+            "}"
+        )
+        meta_row.addWidget(self.operator_combo)
+
+        layout.addLayout(meta_row)
+        layout.addSpacing(8)
 
         # Notes field with header and help button
         notes_header = QHBoxLayout()
@@ -1291,12 +1365,6 @@ Baseline 2min
             if unit_str:  # If units specified in tag, use it
                 detected_unit = unit_str
 
-        # Parse flow rate (e.g., "flow 50", "flow 100", "flowrate 25")
-        flow_rate = None
-        flow_match = re.search(r'flow(?:rate)?[:\s]+(\d+(?:\.\d+)?)', text, re.IGNORECASE)
-        if flow_match:
-            flow_rate = float(flow_match.group(1))
-
         # Parse contact time (e.g., "contact 180s", "contact 3min")
         contact_time = None
         contact_match = re.search(r'contact[:\s]+(\d+(?:\.\d+)?)(s|sec|m|min)?', text, re.IGNORECASE)
@@ -1307,25 +1375,6 @@ Baseline 2min
                 contact_time = value * 60.0  # Convert to seconds
             else:
                 contact_time = value
-
-        # Derive flow_rate ↔ contact_time relationship
-        # Loop = 100µL, usable = 80µL (80% to cut diffusion tail)
-        # contact_time_s = (80 / flow_rate) * 60
-        # flow_rate = (80 / contact_time_s) * 60
-        usable_volume = 80.0  # µL (80% of 100µL loop)
-        if contact_time is not None and flow_rate is None:
-            # User specified contact time → derive flow rate
-            flow_rate = (usable_volume / contact_time) * 60.0
-        elif flow_rate is not None and contact_time is None:
-            # User specified flow rate → derive contact time
-            contact_time = (usable_volume / flow_rate) * 60.0
-        # If both specified, flow_rate wins (contact_time will be recalculated by pump)
-
-        # Parse channel selection (e.g., "channels AC", "channels BD")
-        channels = None
-        channels_match = re.search(r'channels?[:\s]+(AC|BD)', text, re.IGNORECASE)
-        if channels_match:
-            channels = channels_match.group(1).upper()  # Normalize to "AC" or "BD"
 
         # Parse partial injection override (e.g., "partial injection", "partial")
         is_partial = bool(re.search(r'partial\s*(injection)?', text, re.IGNORECASE))
@@ -1368,8 +1417,6 @@ Baseline 2min
             concentrations=concentrations,
             timestamp=time.time(),
             # Pump and injection fields
-            flow_rate=flow_rate,
-            channels=channels,  # AC or BD (None = use global default)
             injection_method=injection_method,
             injection_delay=20.0,  # Always 20s
             contact_time=contact_time,
@@ -1434,8 +1481,11 @@ Baseline 2min
             row = self.method_table.rowCount()
             self.method_table.insertRow(row)
 
-            # Column 0: Type
-            type_item = QTableWidgetItem(cycle.type)
+            # Column 0: Type (color-coded abbreviation)
+            abbr, color = CycleTypeStyle.get(cycle.type)
+            type_item = QTableWidgetItem(abbr)
+            type_item.setForeground(QColor(color))
+            type_item.setToolTip(cycle.type)
             self.method_table.setItem(row, 0, type_item)
 
             # Column 1: Duration
@@ -1527,9 +1577,12 @@ Baseline 2min
         from PySide6.QtWidgets import QFileDialog
         import json
         from pathlib import Path
+        from affilabs.services.user_profile_manager import UserProfileManager
 
-        # Default save directory
-        default_dir = Path.home() / "Documents" / "Affilabs Methods"
+        # Default save directory - user profile subfolder
+        user_manager = UserProfileManager()
+        username = user_manager.get_current_user()
+        default_dir = Path.home() / "Documents" / "Affilabs Methods" / username
         default_dir.mkdir(parents=True, exist_ok=True)
 
         file_path, _ = QFileDialog.getSaveFileName(
@@ -1574,9 +1627,12 @@ Baseline 2min
         import json
         from pathlib import Path
         from affilabs.domain.cycle import Cycle
+        from affilabs.services.user_profile_manager import UserProfileManager
 
-        # Default load directory
-        default_dir = Path.home() / "Documents" / "Affilabs Methods"
+        # Default load directory - user profile subfolder
+        user_manager = UserProfileManager()
+        username = user_manager.get_current_user()
+        default_dir = Path.home() / "Documents" / "Affilabs Methods" / username
         default_dir.mkdir(parents=True, exist_ok=True)
 
         file_path, _ = QFileDialog.getOpenFileName(

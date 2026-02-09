@@ -17,6 +17,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QVBoxLayout,
+    QInputDialog,
+    QMessageBox,
+    QListWidget,
 )
 
 # Import sections from central location
@@ -29,6 +32,7 @@ from affilabs.ui_styles import (
     label_style,
     section_header_style,
 )
+from affilabs.services.user_profile_manager import UserProfileManager
 
 # Colorblind-safe palette (Tol bright scheme)
 COLORBLIND_PALETTE = ["#4477AA", "#EE6677", "#228833", "#CCBB44"]
@@ -45,6 +49,7 @@ class SettingsTabBuilder:
 
         """
         self.sidebar = sidebar
+        self.user_manager = UserProfileManager()
 
     def build(self, tab_layout: QVBoxLayout):
         """Build the complete Settings tab UI.
@@ -62,7 +67,346 @@ class SettingsTabBuilder:
 
         # Build spectroscopy plots immediately (needed by spectroscopy presenter at startup)
         self._build_spectroscopy_plots(tab_layout)
+
+        # User Management section (below spectroscopy)
+        self._build_user_management(tab_layout)
         tab_layout.addSpacing(20)
+
+    def _build_user_management(self, tab_layout: QVBoxLayout):
+        """Build user management section with progression display."""
+        user_mgmt_section = CollapsibleSection(
+            "👥 User Management",
+            is_expanded=False,
+        )
+
+        user_mgmt_help = QLabel("Manage lab users who can run experiments")
+        user_mgmt_help.setStyleSheet(
+            "font-size: 11px;"
+            "color: #86868B;"
+            "background: transparent;"
+            "font-style: italic;"
+            "margin: 4px 0px 8px 0px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+        )
+        user_mgmt_section.content_layout.addWidget(user_mgmt_help)
+
+        user_mgmt_card = QFrame()
+        user_mgmt_card.setStyleSheet(
+            f"QFrame {{"
+            f"  background: rgba(0, 0, 0, 0.03);"
+            f"  border-radius: 8px;"
+            f"}}"
+        )
+        user_mgmt_layout = QVBoxLayout(user_mgmt_card)
+        user_mgmt_layout.setContentsMargins(12, 8, 12, 8)
+        user_mgmt_layout.setSpacing(8)
+
+        # ── Current user progression banner ──
+        self.sidebar.user_progression_frame = QFrame()
+        self.sidebar.user_progression_frame.setStyleSheet(
+            "QFrame {"
+            "  background: rgba(0, 122, 255, 0.06);"
+            "  border-radius: 8px;"
+            "  border: 1px solid rgba(0, 122, 255, 0.15);"
+            "}"
+        )
+        prog_layout = QVBoxLayout(self.sidebar.user_progression_frame)
+        prog_layout.setContentsMargins(10, 8, 10, 8)
+        prog_layout.setSpacing(4)
+
+        self.sidebar.user_title_label = QLabel("")
+        self.sidebar.user_title_label.setStyleSheet(
+            f"font-size: 14px;"
+            f"color: #007AFF;"
+            f"font-weight: 700;"
+            f"background: transparent;"
+            f"font-family: {Fonts.SYSTEM};"
+        )
+        prog_layout.addWidget(self.sidebar.user_title_label)
+
+        self.sidebar.user_xp_label = QLabel("")
+        self.sidebar.user_xp_label.setStyleSheet(
+            f"font-size: 11px;"
+            f"color: {Colors.SECONDARY_TEXT};"
+            f"font-weight: 400;"
+            f"background: transparent;"
+            f"font-family: {Fonts.SYSTEM};"
+        )
+        prog_layout.addWidget(self.sidebar.user_xp_label)
+
+        self.sidebar.user_training_label = QLabel("")
+        self.sidebar.user_training_label.setStyleSheet(
+            f"font-size: 11px;"
+            f"color: {Colors.SECONDARY_TEXT};"
+            f"font-weight: 400;"
+            f"background: transparent;"
+            f"font-family: {Fonts.SYSTEM};"
+        )
+        prog_layout.addWidget(self.sidebar.user_training_label)
+
+        user_mgmt_layout.addWidget(self.sidebar.user_progression_frame)
+
+        # Update progression display for current user
+        self._update_progression_display()
+
+        # ── User list ──
+        users_label = QLabel("Current Users:")
+        users_label.setStyleSheet(
+            f"font-size: 12px;"
+            f"color: {Colors.SECONDARY_TEXT};"
+            f"font-weight: 500;"
+            f"background: transparent;"
+            f"font-family: {Fonts.SYSTEM};"
+        )
+        user_mgmt_layout.addWidget(users_label)
+
+        self.sidebar.user_list_widget = QListWidget()
+        self._populate_user_list()
+        self.sidebar.user_list_widget.setMaximumHeight(120)
+        self.sidebar.user_list_widget.setStyleSheet(
+            f"QListWidget {{"
+            f"  background: {Colors.BACKGROUND_LIGHT};"
+            f"  border: 1px solid rgba(0, 0, 0, 0.08);"
+            f"  border-radius: 6px;"
+            f"  padding: 4px;"
+            f"  font-size: 13px;"
+            f"  color: {Colors.PRIMARY_TEXT};"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QListWidget::item {{"
+            f"  padding: 6px 8px;"
+            f"  border-radius: 4px;"
+            f"}}"
+            f"QListWidget::item:selected {{"
+            f"  background: {Colors.OVERLAY_LIGHT_10};"
+            f"}}"
+            f"QListWidget::item:hover {{"
+            f"  background: {Colors.OVERLAY_LIGHT_6};"
+            f"}}"
+        )
+        user_mgmt_layout.addWidget(self.sidebar.user_list_widget)
+
+        # Button row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        add_user_btn = QPushButton("+ Add User")
+        add_user_btn.setFixedHeight(32)
+        add_user_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: #34C759;"
+            f"  color: white;"
+            f"  border: none;"
+            f"  border-radius: 6px;"
+            f"  padding: 4px 12px;"
+            f"  font-size: 12px;"
+            f"  font-weight: 600;"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{ background: #30B350; }}"
+            f"QPushButton:pressed {{ background: #2A9E47; }}"
+        )
+        add_user_btn.clicked.connect(self._on_add_user_settings)
+        btn_row.addWidget(add_user_btn)
+
+        delete_user_btn = QPushButton("Delete Selected")
+        delete_user_btn.setFixedHeight(32)
+        delete_user_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: transparent;"
+            f"  color: #FF3B30;"
+            f"  border: 1px solid rgba(255, 59, 48, 0.3);"
+            f"  border-radius: 6px;"
+            f"  padding: 4px 12px;"
+            f"  font-size: 12px;"
+            f"  font-weight: 600;"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: rgba(255, 59, 48, 0.1);"
+            f"  border-color: #FF3B30;"
+            f"}}"
+        )
+        delete_user_btn.clicked.connect(self._on_delete_user_settings)
+        btn_row.addWidget(delete_user_btn)
+
+        user_mgmt_layout.addLayout(btn_row)
+
+        user_mgmt_section.add_content_widget(user_mgmt_card)
+        tab_layout.addWidget(user_mgmt_section)
+
+    def _populate_user_list(self):
+        """Populate user list widget with names and progression titles."""
+        self.sidebar.user_list_widget.clear()
+        for username in self.user_manager.get_profiles():
+            title, _ = self.user_manager.get_title(username)
+            needs_training = self.user_manager.needs_compression_training(username)
+            exp_count = self.user_manager.get_experiment_count(username)
+
+            if needs_training:
+                display = (
+                    f"\u26a0\ufe0f {username}  \u2014  {title.value} "
+                    f"(training required)"
+                )
+            else:
+                display = (
+                    f"{username}  \u2014  {title.value} "
+                    f"({exp_count} experiments)"
+                )
+
+            self.sidebar.user_list_widget.addItem(display)
+
+    def _update_progression_display(self):
+        """Update the progression banner for the current user."""
+        current = self.user_manager.get_current_user()
+        if not current:
+            return
+
+        summary = self.user_manager.get_progression_summary(current)
+
+        # Title line
+        title = summary['title']
+        self.sidebar.user_title_label.setText(
+            f"\ud83d\udc64 {current}  \u2022  {title}"
+        )
+
+        # XP & next title
+        xp = summary['xp']
+        next_title = summary['next_title']
+        remaining = summary['experiments_to_next_title']
+        if next_title:
+            self.sidebar.user_xp_label.setText(
+                f"XP: {xp}  \u2022  {remaining} experiments to {next_title}"
+            )
+        else:
+            self.sidebar.user_xp_label.setText(
+                f"XP: {xp}  \u2022  Maximum rank achieved!"
+            )
+
+        # Training status
+        if summary['compression_training_completed']:
+            score = summary['compression_training_score']
+            date = summary['compression_training_date']
+            date_short = date[:10] if date else "\u2014"
+            score_str = f"{score:.0f}%" if score is not None else "N/A"
+            self.sidebar.user_training_label.setText(
+                f"\u2705 Compression training passed "
+                f"(score: {score_str}, {date_short})"
+            )
+            self.sidebar.user_training_label.setStyleSheet(
+                f"font-size: 11px; color: #34C759; font-weight: 500;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
+            )
+        else:
+            self.sidebar.user_training_label.setText(
+                "\u26a0\ufe0f Compression training required before "
+                "first experiment"
+            )
+            self.sidebar.user_training_label.setStyleSheet(
+                f"font-size: 11px; color: #FF9500; font-weight: 600;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
+            )
+
+    def _on_add_user_settings(self):
+        """Handle adding a new user from settings."""
+        username, ok = QInputDialog.getText(
+            self.sidebar,
+            "Add User",
+            "Enter user name:",
+        )
+        if ok and username:
+            username = username.strip()
+            if not username:
+                QMessageBox.warning(
+                    self.sidebar,
+                    "Invalid Name",
+                    "User name cannot be empty.",
+                )
+                return
+
+            if self.user_manager.add_user(username):
+                # Update list widget with titles
+                self._populate_user_list()
+                # Update progression display
+                self._update_progression_display()
+                # Update dropdown in Method Builder if it exists
+                if hasattr(self.sidebar, 'user_combo'):
+                    current = self.sidebar.user_combo.currentText()
+                    self.sidebar.user_combo.clear()
+                    self.sidebar.user_combo.addItems(
+                        self.user_manager.get_profiles()
+                    )
+                    idx = self.sidebar.user_combo.findText(current)
+                    if idx >= 0:
+                        self.sidebar.user_combo.setCurrentIndex(idx)
+
+                # Inform user about training requirement
+                QMessageBox.information(
+                    self.sidebar,
+                    "User Created \u2014 Training Required",
+                    f"User '{username}' created as Apprentice.\n\n"
+                    f"Compression training is required before running "
+                    f"the first experiment.\n\n"
+                    f"Go to Live Tab \u2192 Start compression training "
+                    f"when ready.",
+                )
+            else:
+                QMessageBox.warning(
+                    self.sidebar,
+                    "User Exists",
+                    f"User '{username}' already exists.",
+                )
+
+    def _on_delete_user_settings(self):
+        """Handle deleting selected user from settings."""
+        selected_items = self.sidebar.user_list_widget.selectedItems()
+        if not selected_items:
+            QMessageBox.information(
+                self.sidebar,
+                "No Selection",
+                "Please select a user to delete.",
+            )
+            return
+
+        # Extract username from display text (format: "username  —  Title (...)")
+        display_text = selected_items[0].text()
+        # Remove leading warning emoji if present
+        clean = display_text.lstrip("\u26a0\ufe0f ").strip()
+        username = clean.split("  \u2014  ")[0].strip()
+
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self.sidebar,
+            "Confirm Delete",
+            f"Delete user '{username}' and all progression data?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            if self.user_manager.remove_user(username):
+                # Update list widget with titles
+                self._populate_user_list()
+                # Update progression display
+                self._update_progression_display()
+                # Update dropdown in Method Builder if it exists
+                if hasattr(self.sidebar, 'user_combo'):
+                    self.sidebar.user_combo.clear()
+                    self.sidebar.user_combo.addItems(
+                        self.user_manager.get_profiles()
+                    )
+                    # Set to current user
+                    current = self.user_manager.get_current_user()
+                    if current:
+                        idx = self.sidebar.user_combo.findText(current)
+                        if idx >= 0:
+                            self.sidebar.user_combo.setCurrentIndex(idx)
+            else:
+                QMessageBox.warning(
+                    self.sidebar,
+                    "Cannot Delete",
+                    "You must keep at least one user profile.",
+                )
 
     def _create_spectroscopy_placeholder(self, tab_layout: QVBoxLayout):
         """Create placeholder for spectroscopy plots - will be lazy loaded on tab open."""
@@ -135,7 +479,7 @@ class SettingsTabBuilder:
 
         # Create lean transmission plot (for troubleshooting)
         self.sidebar.transmission_plot = create_spectroscopy_plot(
-            left_label="Transmission (%)",
+            left_label="Transmission (norm.)",
             bottom_label="Wavelength (nm)",
         )
         self.sidebar.transmission_plot.setFixedHeight(180)  # Lean fixed height
@@ -282,7 +626,7 @@ class SettingsTabBuilder:
         """Build hardware configuration section with polarizer and LED settings (collapsible, starts expanded)."""
         hardware_section = CollapsibleSection(
             "⚙ Hardware Configuration",
-            is_expanded=True,
+            is_expanded=False,
         )
 
         hardware_help = QLabel(

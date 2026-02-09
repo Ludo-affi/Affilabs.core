@@ -1,11 +1,7 @@
 """Device Status Tab Builder for AffiLabs.core Sidebar
 
-Builds the Device Status tab showing:
-- Hardware connection status
-- Subunit readiness indicators
-- Operation modes availability
-- Maintenance information
-- Debug log download
+Builds the Device Status tab as an instrument-style dashboard with LED bar
+indicators that light up to show system readiness at a glance.
 
 Extracted from sidebar.py to improve modularity.
 """
@@ -23,15 +19,44 @@ from PySide6.QtWidgets import (
 from affilabs.ui_styles import (
     Colors,
     Fonts,
-    card_style,
-    label_style,
-    primary_button_style,
 )
 from affilabs.services.diagnostic_uploader import DiagnosticUploader
 
+# ── LED colour constants ──────────────────────────────────────────────
+_LED_GREEN = "#34C759"
+_LED_GREEN_GLOW = "rgba(52, 199, 89, 0.25)"
+_LED_AMBER = "#FF9500"
+_LED_AMBER_GLOW = "rgba(255, 149, 0, 0.25)"
+_LED_RED = "#FF3B30"
+_LED_RED_GLOW = "rgba(255, 59, 48, 0.25)"
+_LED_OFF = "#D1D1D6"          # soft gray bar when inactive
+_LED_OFF_GLOW = "transparent"
+
+
+def _led_bar_style(color: str, glow: str, height: int = 3) -> str:
+    """Return stylesheet for a thin LED bar that glows."""
+    return (
+        f"background: {color};"
+        f"border: 1px solid {glow};"
+        f"border-radius: 1px;"
+        f"min-height: {height}px;"
+        f"max-height: {height}px;"
+    )
+
+
+def _led_dot_style(color: str, glow: str, size: int = 8) -> str:
+    """Return stylesheet for a circular LED dot that glows."""
+    return (
+        f"background: {color};"
+        f"border: 2px solid {glow};"
+        f"border-radius: {(size + 4) // 2}px;"
+        f"min-width: {size}px; max-width: {size}px;"
+        f"min-height: {size}px; max-height: {size}px;"
+    )
+
 
 class DeviceStatusTabBuilder:
-    """Builds the Device Status tab content."""
+    """Builds the Device Status tab as an instrument-panel dashboard."""
 
     def __init__(self, sidebar):
         """Initialize builder.
@@ -43,406 +68,420 @@ class DeviceStatusTabBuilder:
         self.sidebar = sidebar
 
     def build(self, tab_layout: QVBoxLayout):
-        """Build Device Status tab with hardware and subunit indicators.
+        """Build Device Status tab as a unified dark instrument panel.
+
+        All indicators live on one surface — no cards-in-cards.
+        LED bars light up green/amber/red to show readiness.
 
         Args:
             tab_layout: QVBoxLayout to add widgets to
 
         """
-        # Section 1: Hardware Connected
-        hw_section = QLabel("HARDWARE CONNECTED")
-        hw_section.setStyleSheet(
-            f"font-size: 11px;"
-            f"font-weight: 700;"
-            f"color: {Colors.SECONDARY_TEXT};"
-            f"background: transparent;"
-            f"letter-spacing: 0.5px;"
-            f"margin-left: 4px;"
-            f"font-family: {Fonts.SYSTEM};",
-        )
-        hw_section.setToolTip("Physical hardware devices detected on system")
-        tab_layout.addWidget(hw_section)
-        tab_layout.addSpacing(8)
+        # ── Content flows directly into the sidebar tab ───────────────
+        # No wrapper panel — everything blends with the sidebar background.
 
-        hw_card = QFrame()
-        hw_card.setStyleSheet(card_style())
-        hw_card_layout = QVBoxLayout(hw_card)
-        hw_card_layout.setContentsMargins(12, 12, 12, 12)
-        hw_card_layout.setSpacing(6)
+        # ── 1. Hardware connection row ────────────────────────────────
+        self._build_hardware_section(tab_layout)
 
-        # Hardware device labels
-        self.sidebar.hw_device_labels = []
-        for i in range(3):
-            device_label = QLabel(f"• Device {i+1}: Not connected")
-            device_label.setStyleSheet(
-                label_style(13, Colors.SUCCESS) + "padding: 4px 0px;",
-            )
-            device_label.setVisible(False)
-            hw_card_layout.addWidget(device_label)
-            self.sidebar.hw_device_labels.append(device_label)
+        tab_layout.addSpacing(20)
 
-        self.sidebar.hw_no_devices = QLabel("No hardware detected")
-        self.sidebar.hw_no_devices.setStyleSheet(
-            label_style(13, Colors.SECONDARY_TEXT)
-            + "padding: 8px 0px;font-style: italic;",
-        )
-        hw_card_layout.addWidget(self.sidebar.hw_no_devices)
+        # ── 2. System components — LED bars ───────────────────────────
+        self._build_components_section(tab_layout)
 
-        hw_card_layout.addSpacing(4)
+        tab_layout.addSpacing(20)
 
-        self.sidebar.scan_btn = QPushButton("[SEARCH] Scan for Hardware")
-        self.sidebar.scan_btn.setProperty("scanning", False)
-        self.sidebar.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sidebar.scan_btn.setFixedHeight(36)
-        self.sidebar.scan_btn.setVisible(False)  # Hidden until hardware connected
-        self.sidebar.scan_btn.setStyleSheet(primary_button_style())
-        self.sidebar.scan_btn.setToolTip(
-            "Search for connected hardware devices (optics, sensors, pumps)",
-        )
-        hw_card_layout.addWidget(self.sidebar.scan_btn)
+        # ── 3. Operation modes — inline indicators ────────────────────
+        self._build_modes_section(tab_layout)
 
-        # Add Hardware button (for peripherals only)
-        self.sidebar.add_hardware_btn = QPushButton("🔌 Add Hardware")
-        self.sidebar.add_hardware_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sidebar.add_hardware_btn.setFixedHeight(36)
-        self.sidebar.add_hardware_btn.setVisible(False)  # Hidden until core module connected
-        self.sidebar.add_hardware_btn.setStyleSheet("""
-            QPushButton {
-                background: #5856D6;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 600;
-                font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
-            }
-            QPushButton:hover {
-                background: #4745B0;
-            }
-            QPushButton:pressed {
-                background: #3634A3;
-            }
-            QPushButton:disabled {
-                background: #E5E5EA;
-                color: #86868B;
-            }
-        """)
-        self.sidebar.add_hardware_btn.setToolTip(
-            "Scan for peripheral devices (Affipump, etc.) when core module is connected",
-        )
-        hw_card_layout.addWidget(self.sidebar.add_hardware_btn)
+        tab_layout.addSpacing(20)
 
-        tab_layout.addWidget(hw_card)
-        tab_layout.addSpacing(16)
-
-        # Section 2: Subunit Readiness
-        self._build_subunit_readiness(tab_layout)
-
-        # Section 3: Operation Modes
-        self._build_operation_modes(tab_layout)
-
-        # Section 4: Maintenance
+        # ── 4. Maintenance stats — compact row ────────────────────────
         self._build_maintenance_section(tab_layout)
+
+        tab_layout.addSpacing(20)
+
+        # ── 5. Actions + version ──────────────────────────────────────
+        self._build_actions_section(tab_layout)
 
         tab_layout.addStretch()
 
-    def _build_subunit_readiness(self, tab_layout: QVBoxLayout):
-        """Build subunit readiness indicators."""
-        subunit_section = QLabel("SUBUNIT READINESS")
-        subunit_section.setStyleSheet(
-            f"font-size: 11px;"
-            f"font-weight: 700;"
-            f"color: {Colors.SECONDARY_TEXT};"
-            f"background: transparent;"
-            f"letter-spacing: 0.5px;"
-            f"margin-left: 4px;"
-            f"font-family: {Fonts.SYSTEM};",
-        )
-        subunit_section.setToolTip(
-            "Initialization status of critical system components",
-        )
-        tab_layout.addWidget(subunit_section)
-        tab_layout.addSpacing(8)
+    # ── Hardware ──────────────────────────────────────────────────────
+    def _build_hardware_section(self, layout: QVBoxLayout):
+        # Connection LED bar (full width, glows green when connected)
+        self.sidebar.hw_led_bar = QFrame()
+        self.sidebar.hw_led_bar.setStyleSheet(_led_bar_style(_LED_OFF, _LED_OFF_GLOW))
+        layout.addWidget(self.sidebar.hw_led_bar)
+        layout.addSpacing(10)
 
-        subunit_card = QFrame()
-        subunit_card.setStyleSheet(card_style())
-        subunit_card_layout = QVBoxLayout(subunit_card)
-        subunit_card_layout.setContentsMargins(12, 10, 12, 10)
-        subunit_card_layout.setSpacing(8)
+        # Status line: icon + text
+        hw_row = QHBoxLayout()
+        hw_row.setContentsMargins(0, 0, 0, 0)
+        hw_row.setSpacing(8)
+
+        hw_dot = QLabel()
+        hw_dot.setFixedSize(8, 8)
+        hw_dot.setStyleSheet(_led_dot_style(_LED_OFF, _LED_OFF_GLOW))
+        hw_row.addWidget(hw_dot)
+        self.sidebar._hw_dot = hw_dot
+
+        hw_label = QLabel("HARDWARE")
+        hw_label.setStyleSheet(
+            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
+            f"letter-spacing: 0.5px; background: transparent;"
+            f"font-family: {Fonts.SYSTEM};"
+        )
+        hw_row.addWidget(hw_label)
+        hw_row.addStretch()
+
+        hw_status_text = QLabel("No connection")
+        hw_status_text.setStyleSheet(
+            f"color: {Colors.SECONDARY_TEXT}; font-size: 12px; font-weight: 500;"
+            f"background: transparent; font-family: {Fonts.SYSTEM};"
+        )
+        hw_row.addWidget(hw_status_text)
+        self.sidebar._hw_status_text = hw_status_text
+
+        layout.addLayout(hw_row)
+
+        # Device labels (hidden until devices found)
+        self.sidebar.hw_device_labels = []
+        for i in range(3):
+            device_label = QLabel(f"  ╰ Device {i+1}")
+            device_label.setStyleSheet(
+                f"font-size: 11px; color: {_LED_GREEN};"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
+                f"padding: 2px 0px 0px 16px;"
+            )
+            device_label.setVisible(False)
+            layout.addWidget(device_label)
+            self.sidebar.hw_device_labels.append(device_label)
+
+        self.sidebar.hw_no_devices = QLabel("  ⚠  No hardware detected")
+        self.sidebar.hw_no_devices.setStyleSheet(
+            f"font-size: 11px; color: {_LED_AMBER};"
+            f"background: transparent; font-family: {Fonts.SYSTEM};"
+            f"padding: 4px 0px 0px 8px;"
+        )
+        layout.addWidget(self.sidebar.hw_no_devices)
+
+        # Buttons (hidden until needed)
+        btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 6, 0, 0)
+        btn_row.setSpacing(6)
+
+        self.sidebar.scan_btn = QPushButton("Scan")
+        self.sidebar.scan_btn.setProperty("scanning", False)
+        self.sidebar.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar.scan_btn.setFixedHeight(26)
+        self.sidebar.scan_btn.setVisible(False)
+        self.sidebar.scan_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: {Colors.BUTTON_PRIMARY}; color: white;"
+            f"  border: none;"
+            f"  border-radius: 6px; padding: 4px 14px;"
+            f"  font-size: 11px; font-weight: 600;"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{ background: {Colors.BUTTON_PRIMARY_HOVER}; }}"
+        )
+        btn_row.addWidget(self.sidebar.scan_btn)
+
+        self.sidebar.add_hardware_btn = QPushButton("+ Add Hardware")
+        self.sidebar.add_hardware_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar.add_hardware_btn.setFixedHeight(26)
+        self.sidebar.add_hardware_btn.setVisible(False)
+        self.sidebar.add_hardware_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: #5856D6; color: white;"
+            f"  border: none; border-radius: 6px;"
+            f"  padding: 4px 14px; font-size: 11px; font-weight: 600;"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{ background: #4745B0; }}"
+        )
+        btn_row.addWidget(self.sidebar.add_hardware_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+    # ── System Components (LED bars) ──────────────────────────────────
+    def _build_components_section(self, layout: QVBoxLayout):
+        section_label = QLabel("SYSTEM")
+        section_label.setStyleSheet(
+            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
+            f"letter-spacing: 0.5px; background: transparent;"
+            f"font-family: {Fonts.SYSTEM};"
+        )
+        layout.addWidget(section_label)
+        layout.addSpacing(10)
 
         self.sidebar.subunit_status = {}
-        subunit_names = ["Sensor", "Optics", "Fluidics"]
+        subunit_info = [("Sensor", "🔬"), ("Optics", "💡"), ("Fluidics", "💧")]
 
-        for i, subunit_name in enumerate(subunit_names):
-            subunit_row = QHBoxLayout()
-            subunit_row.setSpacing(10)
-            subunit_row.setContentsMargins(0, 0, 0, 0)
+        for subunit_name, icon in subunit_info:
+            # Row: LED bar + icon + name + status text
+            row_layout = QVBoxLayout()
+            row_layout.setSpacing(4)
+            row_layout.setContentsMargins(0, 0, 0, 0)
 
-            # Status indicator
-            status_indicator = QLabel("●")
-            status_indicator.setFixedWidth(12)
-            status_indicator.setStyleSheet(
-                f"font-size: 14px; color: {Colors.SECONDARY_TEXT}; background: transparent;",
-            )
-            subunit_row.addWidget(status_indicator)
+            # LED bar — lights up when ready
+            led_bar = QFrame()
+            led_bar.setStyleSheet(_led_bar_style(_LED_OFF, _LED_OFF_GLOW))
+            row_layout.addWidget(led_bar)
 
-            # Subunit name
-            name_label = QLabel(subunit_name)
+            # Info row below the LED bar
+            info_row = QHBoxLayout()
+            info_row.setSpacing(6)
+            info_row.setContentsMargins(0, 0, 0, 0)
+
+            # Status dot (compatibility: indicator)
+            status_indicator = QLabel()
+            status_indicator.setFixedSize(8, 8)
+            status_indicator.setStyleSheet(_led_dot_style(_LED_OFF, _LED_OFF_GLOW))
+            info_row.addWidget(status_indicator)
+
+            name_label = QLabel(f"{icon} {subunit_name}")
             name_label.setStyleSheet(
-                label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 500;",
+                f"font-size: 13px; color: {Colors.PRIMARY_TEXT}; font-weight: 500;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
             )
-            subunit_row.addWidget(name_label)
+            info_row.addWidget(name_label)
+            info_row.addStretch()
 
-            subunit_row.addStretch()
+            status_label = QLabel("Idle")
+            status_label.setStyleSheet(
+                f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; font-weight: 600;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
+            )
+            info_row.addWidget(status_label)
 
-            # Status text
-            status_label = QLabel("Not Ready")
-            status_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
-            subunit_row.addWidget(status_label)
+            row_layout.addLayout(info_row)
 
-            # Create container widget for the row
-            subunit_container = QWidget()
-            subunit_container.setLayout(subunit_row)
-            subunit_card_layout.addWidget(subunit_container)
+            container = QWidget()
+            container.setStyleSheet("background: transparent;")
+            container.setLayout(row_layout)
+            layout.addWidget(container)
+            layout.addSpacing(6)
 
-            # Store references including the container for visibility control
             self.sidebar.subunit_status[subunit_name] = {
                 "indicator": status_indicator,
                 "status_label": status_label,
-                "container": subunit_container,
+                "led_bar": led_bar,
+                "container": container,
             }
 
-            # Add separator between items (not after last)
-            if i < len(subunit_names) - 1:
-                separator = QFrame()
-                separator.setFrameShape(QFrame.Shape.HLine)
-                separator.setStyleSheet(
-                    "background: rgba(0, 0, 0, 0.06); max-height: 1px; margin: 4px 0px;",
-                )
-                subunit_card_layout.addWidget(separator)
-
-        tab_layout.addWidget(subunit_card)
-        tab_layout.addSpacing(16)
-
-    def _build_operation_modes(self, tab_layout: QVBoxLayout):
-        """Build operation modes section."""
-        modes_section = QLabel("OPERATION MODES")
-        modes_section.setStyleSheet(
-            f"font-size: 11px;"
-            f"font-weight: 700;"
-            f"color: {Colors.SECONDARY_TEXT};"
-            f"background: transparent;"
-            f"letter-spacing: 0.5px;"
-            f"margin-left: 4px;"
-            f"font-family: {Fonts.SYSTEM};",
+    # ── Operation Modes ───────────────────────────────────────────────
+    def _build_modes_section(self, layout: QVBoxLayout):
+        section_label = QLabel("MODES")
+        section_label.setStyleSheet(
+            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
+            f"letter-spacing: 0.5px; background: transparent;"
+            f"font-family: {Fonts.SYSTEM};"
         )
-        modes_section.setToolTip(
-            "Available operation modes based on installed hardware",
-        )
-        tab_layout.addWidget(modes_section)
-        tab_layout.addSpacing(8)
+        layout.addWidget(section_label)
+        layout.addSpacing(10)
 
-        modes_card = QFrame()
-        modes_card.setStyleSheet(card_style())
-        modes_card_layout = QVBoxLayout(modes_card)
-        modes_card_layout.setContentsMargins(12, 12, 12, 12)
-        modes_card_layout.setSpacing(8)
+        # Both modes in one horizontal row
+        modes_row = QHBoxLayout()
+        modes_row.setSpacing(16)
+        modes_row.setContentsMargins(0, 0, 0, 0)
 
         self.sidebar.operation_modes = {}
-        for mode_name, mode_label in [("static", "Static"), ("flow", "Flow")]:
-            mode_row = QHBoxLayout()
-            mode_row.setSpacing(8)
-            indicator = QLabel("●")
-            indicator.setStyleSheet(f"color: {Colors.SECONDARY_TEXT}; font-size: 16px;")
-            indicator.setFixedWidth(20)
-            label = QLabel(mode_label)
+        mode_info = [("static", "Static", "🧪"), ("flow", "Flow", "🌊")]
+
+        for mode_name, mode_label, icon in mode_info:
+            # Each mode: vertical mini-card (LED bar on top, dot+label below)
+            mode_widget = QVBoxLayout()
+            mode_widget.setSpacing(4)
+            mode_widget.setContentsMargins(0, 0, 0, 0)
+
+            led_bar = QFrame()
+            led_bar.setStyleSheet(_led_bar_style(_LED_OFF, _LED_OFF_GLOW))
+            mode_widget.addWidget(led_bar)
+
+            info_row = QHBoxLayout()
+            info_row.setSpacing(6)
+
+            indicator = QLabel()
+            indicator.setFixedSize(8, 8)
+            indicator.setStyleSheet(_led_dot_style(_LED_OFF, _LED_OFF_GLOW))
+            info_row.addWidget(indicator)
+
+            label = QLabel(f"{icon} {mode_label}")
             label.setStyleSheet(
-                label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 500;",
+                f"font-size: 13px; color: {Colors.PRIMARY_TEXT}; font-weight: 500;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
             )
-            status_label = QLabel("Disabled")
-            status_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
-            mode_row.addWidget(indicator)
-            mode_row.addWidget(label)
-            mode_row.addStretch()
-            mode_row.addWidget(status_label)
-            modes_card_layout.addLayout(mode_row)
+            info_row.addWidget(label)
+            info_row.addStretch()
+
+            status_label = QLabel("Off")
+            status_label.setStyleSheet(
+                f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; font-weight: 600;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
+            )
+            info_row.addWidget(status_label)
+
+            mode_widget.addLayout(info_row)
+            modes_row.addLayout(mode_widget)
+
             self.sidebar.operation_modes[mode_name] = {
                 "indicator": indicator,
                 "label": label,
                 "status_label": status_label,
+                "led_bar": led_bar,
             }
 
-        tab_layout.addWidget(modes_card)
-        tab_layout.addSpacing(16)
+        layout.addLayout(modes_row)
 
-    def _build_maintenance_section(self, tab_layout: QVBoxLayout):
-        """Build maintenance information section."""
-        # Section 4: Maintenance
-        maint_section = QLabel("Maintenance")
-        maint_section.setStyleSheet(
-            label_style(15, Colors.PRIMARY_TEXT) + "font-weight: 600; margin-top: 8px;",
+    # ── Maintenance (compact stats) ───────────────────────────────────
+    def _build_maintenance_section(self, layout: QVBoxLayout):
+        section_label = QLabel("MAINTENANCE")
+        section_label.setStyleSheet(
+            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
+            f"letter-spacing: 0.5px; background: transparent;"
+            f"font-family: {Fonts.SYSTEM};"
         )
-        tab_layout.addWidget(maint_section)
-        tab_layout.addSpacing(8)
+        layout.addWidget(section_label)
+        layout.addSpacing(8)
 
-        maint_divider = QFrame()
-        maint_divider.setFixedHeight(1)
-        maint_divider.setStyleSheet("background: rgba(0, 0, 0, 0.1); border: none;")
-        tab_layout.addWidget(maint_divider)
-        tab_layout.addSpacing(8)
+        # Three stat columns in one row
+        stats_row = QHBoxLayout()
+        stats_row.setSpacing(0)
+        stats_row.setContentsMargins(0, 0, 0, 0)
 
-        # Operational Statistics Card
-        stats_card = QFrame()
-        stats_card.setStyleSheet(card_style())
-        stats_layout = QVBoxLayout(stats_card)
-        stats_layout.setContentsMargins(12, 10, 12, 10)
-        stats_layout.setSpacing(10)
+        stats = [
+            ("⏱", "Hours", "hours_value", "1,247", Colors.PRIMARY_TEXT),
+            ("📅", "Last Run", "last_op_value", "Nov 19", Colors.PRIMARY_TEXT),
+            ("⚠", "Service", "next_maintenance_value", "Nov 25", _LED_AMBER),
+        ]
 
-        # Operation Hours
-        hours_row = QHBoxLayout()
-        hours_row.setSpacing(8)
-        hours_label = QLabel("Operation Hours:")
-        hours_label.setStyleSheet(label_style(13, Colors.SECONDARY_TEXT))
-        hours_label.setToolTip("Total operational time accumulated by the system")
-        self.sidebar.hours_value = QLabel("1,247 hrs")
-        self.sidebar.hours_value.setStyleSheet(
-            label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600;",
+        for i, (icon, title, attr_name, value_text, value_color) in enumerate(stats):
+            stat_col = QVBoxLayout()
+            stat_col.setSpacing(2)
+            stat_col.setContentsMargins(0, 0, 0, 0)
+
+            # Value (large)
+            val = QLabel(f"{icon} {value_text}")
+            val.setStyleSheet(
+                f"font-size: 13px; color: {value_color}; font-weight: 600;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
+            )
+            val.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            stat_col.addWidget(val)
+
+            # Label (small, dim)
+            lbl = QLabel(title)
+            lbl.setStyleSheet(
+                f"font-size: 10px; color: {Colors.SECONDARY_TEXT}; font-weight: 500;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
+                f"letter-spacing: 0.3px;"
+            )
+            lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            stat_col.addWidget(lbl)
+
+            setattr(self.sidebar, attr_name, val)
+            stats_row.addLayout(stat_col)
+
+            # Vertical separator between stats
+            if i < len(stats) - 1:
+                sep = QFrame()
+                sep.setFixedWidth(1)
+                sep.setStyleSheet(f"background: rgba(0, 0, 0, 0.08); min-height: 24px;")
+                stats_row.addWidget(sep)
+
+        layout.addLayout(stats_row)
+
+    # ── Actions + Version ─────────────────────────────────────────────
+    def _build_actions_section(self, layout: QVBoxLayout):
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.setContentsMargins(0, 0, 0, 0)
+
+        self.sidebar.debug_log_btn = QPushButton("Debug Log")
+        self.sidebar.debug_log_btn.setFixedHeight(28)
+        self.sidebar.debug_log_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar.debug_log_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: {Colors.BUTTON_PRIMARY}; color: white;"
+            f"  border: none;"
+            f"  border-radius: 6px; font-size: 11px; font-weight: 600;"
+            f"  padding: 4px 10px; font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{ background: {Colors.BUTTON_PRIMARY_HOVER}; }}"
         )
-        hours_row.addWidget(hours_label)
-        hours_row.addWidget(self.sidebar.hours_value)
-        hours_row.addStretch()
-        stats_layout.addLayout(hours_row)
+        btn_row.addWidget(self.sidebar.debug_log_btn)
 
-        # Last Operation
-        last_op_row = QHBoxLayout()
-        last_op_row.setSpacing(8)
-        last_op_label = QLabel("Last Operation:")
-        last_op_label.setStyleSheet(label_style(13, Colors.SECONDARY_TEXT))
-        last_op_label.setToolTip("Date of most recent experiment or measurement")
-        self.sidebar.last_op_value = QLabel("Nov 19, 2025")
-        self.sidebar.last_op_value.setStyleSheet(
-            label_style(13, Colors.PRIMARY_TEXT) + "font-weight: 600;",
-        )
-        last_op_row.addWidget(last_op_label)
-        last_op_row.addWidget(self.sidebar.last_op_value)
-        last_op_row.addStretch()
-        stats_layout.addLayout(last_op_row)
-
-        # Annual Maintenance
-        upcoming_row = QHBoxLayout()
-        upcoming_row.setSpacing(8)
-        upcoming_label = QLabel("Annual Maintenance:")
-        upcoming_label.setStyleSheet(
-            label_style(13, Colors.SECONDARY_TEXT) + "margin-top: 6px;",
-        )
-        upcoming_label.setToolTip(
-            "Scheduled date for next annual service and calibration",
-        )
-        self.sidebar.next_maintenance_value = QLabel("November 2025")
-        self.sidebar.next_maintenance_value.setStyleSheet(
-            label_style(13, "#FF9500") + "font-weight: 600; margin-top: 6px;",
-        )
-        upcoming_row.addWidget(upcoming_label)
-        upcoming_row.addWidget(self.sidebar.next_maintenance_value)
-        upcoming_row.addStretch()
-        stats_layout.addLayout(upcoming_row)
-
-        tab_layout.addWidget(stats_card)
-        tab_layout.addSpacing(12)
-
-        # Debug Log Download Button
-        debug_btn_container = QFrame()
-        debug_btn_container.setStyleSheet(card_style())
-        debug_btn_layout = QVBoxLayout(debug_btn_container)
-        debug_btn_layout.setContentsMargins(12, 10, 12, 10)
-
-        self.sidebar.debug_log_btn = QPushButton("📥 Download Debug Log")
-        self.sidebar.debug_log_btn.setFixedHeight(36)
-        self.sidebar.debug_log_btn.setStyleSheet(primary_button_style())
-        self.sidebar.debug_log_btn.setToolTip(
-            "Export system logs for troubleshooting and technical support",
-        )
-        debug_btn_layout.addWidget(self.sidebar.debug_log_btn)
-        tab_layout.addWidget(debug_btn_container)
-
-        tab_layout.addSpacing(8)
-
-        # Send Diagnostic Files Button
-        diagnostic_btn_container = QFrame()
-        diagnostic_btn_container.setStyleSheet(card_style())
-        diagnostic_btn_layout = QVBoxLayout(diagnostic_btn_container)
-        diagnostic_btn_layout.setContentsMargins(12, 10, 12, 10)
-
-        self.sidebar.send_diagnostics_btn = QPushButton("📤 Send Diagnostic Files to AffiLabs")
-        self.sidebar.send_diagnostics_btn.setFixedHeight(36)
+        self.sidebar.send_diagnostics_btn = QPushButton("Diagnostics")
+        self.sidebar.send_diagnostics_btn.setFixedHeight(28)
+        self.sidebar.send_diagnostics_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sidebar.send_diagnostics_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF; "
-            "  color: white; "
-            "  border: none; "
-            "  border-radius: 6px; "
-            "  font-size: 13px; "
-            "  font-weight: 600; "
-            "  padding: 0px 16px;"
-            "}"
-            "QPushButton:hover { background: #0051D5; }"
-            "QPushButton:pressed { background: #003D99; }"
-        )
-        self.sidebar.send_diagnostics_btn.setToolTip(
-            "Upload diagnostic bundle (Spark transcripts, calibration files, debug logs) to AffiLabs OEM database",
+            f"QPushButton {{"
+            f"  background: #007AFF; color: white;"
+            f"  border: none; border-radius: 6px;"
+            f"  font-size: 11px; font-weight: 600;"
+            f"  padding: 4px 10px; font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{ background: #0051D5; }}"
         )
         self.sidebar.send_diagnostics_btn.clicked.connect(self._handle_send_diagnostics)
-        diagnostic_btn_layout.addWidget(self.sidebar.send_diagnostics_btn)
-        tab_layout.addWidget(diagnostic_btn_container)
+        btn_row.addWidget(self.sidebar.send_diagnostics_btn)
 
-        tab_layout.addSpacing(16)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
 
-        # Software Version
+        # Version label — explicit and clear
+        layout.addSpacing(12)
         from version import __version__
-        version_label = QLabel(__version__)
-        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version_label.setStyleSheet(
-            label_style(11, Colors.SECONDARY_TEXT) + "font-weight: 500;",
+        ver = QLabel(f"Affilabs.core v{__version__}")
+        ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ver.setStyleSheet(
+            f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; background: transparent;"
+            f"font-weight: 500; font-family: {Fonts.SYSTEM};"
         )
-        tab_layout.addWidget(version_label)
+        layout.addWidget(ver)
+
+    # ── Helpers ───────────────────────────────────────────────────────
+    def _add_separator(self, layout: QVBoxLayout):
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background: rgba(0, 0, 0, 0.06);")
+        layout.addWidget(sep)
 
     def _handle_send_diagnostics(self):
-        """Handle Send Diagnostic Files button click."""
-        from PySide6.QtWidgets import QMessageBox, QInputDialog
+        """Handle Send Diagnostic Files button click - creates local bundle for email."""
+        import logging
+        import os
+        from PySide6.QtWidgets import QMessageBox
 
-        # Confirm upload
+        logger = logging.getLogger(__name__)
+        logger.info("[DIAGNOSTIC BUTTON] Button clicked, starting handler...")
+
+        # Confirm bundle creation
+        logger.info("[DIAGNOSTIC BUTTON] Showing confirmation dialog...")
         reply = QMessageBox.question(
             self.sidebar,
-            "Report Issue & Send Diagnostics",
-            "This will:\n\n"
-            "1. Sync Spark AI data to cloud (backup)\n"
-            "2. Upload diagnostic files to SharePoint\n"
-            "3. Open ticket form in your browser\n\n"
-            "Files included:\n"
+            "Create Diagnostic Bundle",
+            "This will create a diagnostic bundle containing:\n\n"
             "• Spark AI conversation transcripts\n"
             "• Calibration files and logs\n"
             "• Debug logs\n"
             "• System information\n\n"
+            "The bundle will be saved locally and you can email it to:\n"
+            "info@affiniteinstruments.com\n\n"
             "Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.Yes
         )
 
         if reply != QMessageBox.StandardButton.Yes:
+            logger.info("[DIAGNOSTIC BUTTON] User cancelled")
             return
 
-        # Optional: ask for email
-        email, ok = QInputDialog.getText(
-            self.sidebar,
-            "Your Email (Optional)",
-            "Email address (for ticket updates and follow-up):",
-        )
-
         # Show progress
+        logger.info("[DIAGNOSTIC BUTTON] Showing progress dialog...")
         progress = QMessageBox(self.sidebar)
-        progress.setWindowTitle("Uploading Diagnostics")
-        progress.setText("Syncing database to cloud...\nCollecting diagnostic files...\nThis may take a moment...")
+        progress.setWindowTitle("Creating Diagnostic Bundle")
+        progress.setText("Collecting diagnostic files...\nThis may take a moment...")
         progress.setStandardButtons(QMessageBox.StandardButton.NoButton)
         progress.show()
 
@@ -450,29 +489,56 @@ class DeviceStatusTabBuilder:
         from PySide6.QtWidgets import QApplication
         QApplication.processEvents()
 
-        # Upload and open form
+        # Create bundle locally
+        logger.info("[DIAGNOSTIC BUTTON] Creating DiagnosticUploader...")
         uploader = DiagnosticUploader()
-        success, message = uploader.send_diagnostics_and_open_form(
-            user_email=email if email else None
-        )
+        logger.info("[DIAGNOSTIC BUTTON] Calling save_diagnostics_locally...")
+
+        try:
+            success, message = uploader.save_diagnostics_locally()
+            logger.info(f"[DIAGNOSTIC BUTTON] Result: success={success}, message={message}")
+        except Exception as e:
+            logger.error(f"[DIAGNOSTIC BUTTON] EXCEPTION during bundle creation: {e}", exc_info=True)
+            success = False
+            message = f"Unexpected error: {str(e)}"
 
         progress.close()
+        logger.info("[DIAGNOSTIC BUTTON] Progress dialog closed")
 
         # Show result
         if success:
+            logger.info("[DIAGNOSTIC BUTTON] Showing success message...")
+
+            # Extract bundle path from message
+            bundle_path = message.split('\n')[1] if '\n' in message else "ezcontrol_diagnostics.zip"
+
             QMessageBox.information(
                 self.sidebar,
-                "Diagnostics Uploaded",
-                message + "\n\n"
-                "Please complete the ticket form that opened in your browser.\n\n"
-                "Your Spark AI data has been backed up to the cloud.\n\n"
-                "We'll respond to your ticket within 24 hours!"
+                "Diagnostic Bundle Created",
+                f"{message}\n\n"
+                "📧 Next Steps:\n"
+                "1. Open your email client\n"
+                "2. Attach this file to an email\n"
+                "3. Send to: info@affiniteinstruments.com\n"
+                "4. Include a description of your issue\n\n"
+                "📂 The bundle is in the ezControl-AI folder.\n"
+                "Click OK to open the folder."
             )
+
+            # Open folder containing the bundle
+            try:
+                folder_path = os.path.dirname(os.path.abspath(bundle_path))
+                os.startfile(folder_path)
+                logger.info(f"[DIAGNOSTIC BUTTON] Opened folder: {folder_path}")
+            except Exception as e:
+                logger.error(f"[DIAGNOSTIC BUTTON] Could not open folder: {e}")
         else:
+            logger.warning(f"[DIAGNOSTIC BUTTON] Showing failure message: {message}")
             QMessageBox.warning(
                 self.sidebar,
-                "Upload Issue",
+                "Bundle Creation Failed",
                 message + "\n\n"
-                "You can manually send the diagnostic bundle to:\n"
-                "support@affinitylabs.com"
+                "Please contact info@affiniteinstruments.com for assistance."
             )
+
+        logger.info("[DIAGNOSTIC BUTTON] Handler completed")

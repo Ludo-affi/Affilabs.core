@@ -14,6 +14,7 @@ Extracted from sidebar.py to improve modularity.
 from PySide6.QtCore import Qt, QRegularExpression
 from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QCursor
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -23,8 +24,10 @@ from PySide6.QtWidgets import (
 )
 
 from affilabs.sections import CollapsibleSection
-from affilabs.ui_styles import card_style, section_header_style
+from affilabs.ui_styles import card_style, section_header_style, Colors, Fonts
 from affilabs.widgets.queue_summary_widget import QueueSummaryWidget
+from affilabs.widgets.ui_constants import CycleTypeStyle
+from affilabs.services.user_profile_manager import UserProfileManager
 
 
 class ResizableTableWidget(QTableWidget):
@@ -83,7 +86,7 @@ class ResizableTableWidget(QTableWidget):
 
 
 class ChannelTagHighlighter(QSyntaxHighlighter):
-    """Syntax highlighter for channel concentration tags."""
+    """Syntax highlighter for channel concentration tags and cycle type keywords."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -95,7 +98,25 @@ class ChannelTagHighlighter(QSyntaxHighlighter):
         self.conc_format.setForeground(QColor("#34C759"))
         self.conc_format.setFontWeight(700)
 
+        # Build cycle type formats from the shared constant
+        self._type_formats: dict[str, QTextCharFormat] = {}
+        for type_name, (_, color) in CycleTypeStyle.MAP.items():
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor(color))
+            fmt.setFontWeight(700)
+            self._type_formats[type_name.lower()] = fmt
+
     def highlightBlock(self, text):
+        # Highlight cycle type keywords at the start of lines (e.g. "Baseline 5min")
+        for type_name, fmt in self._type_formats.items():
+            pattern = QRegularExpression(
+                rf"(?i)\b{type_name}\b"
+            )
+            iterator = pattern.globalMatch(text)
+            while iterator.hasNext():
+                match = iterator.next()
+                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
+
         # Highlight [A:10], [B:50], [ALL:20] concentration tags (green)
         conc_pattern = QRegularExpression(r"\[(A|B|C|D|ALL):(\d+\.?\d*)\]")
         iterator = conc_pattern.globalMatch(text)
@@ -129,6 +150,7 @@ class MethodTabBuilder:
 
         """
         self.sidebar = sidebar
+        self.user_manager = UserProfileManager()
         self._app_reference = None
 
     def set_app_reference(self, app):
@@ -245,14 +267,57 @@ class MethodTabBuilder:
 
     def _build_cycle_history_queue(self, tab_layout: QVBoxLayout):
         """Build cycle queue management section."""
-        summary_section = CollapsibleSection("Cycle Queue", is_expanded=True)
+
+        # Hidden widgets for compatibility (method name & operator now in popup)
+        self.sidebar.method_name_label = QLabel("Untitled Method")
+        self.sidebar.method_name_label.setVisible(False)
+        self.sidebar.user_combo = QComboBox()
+        self.sidebar.user_combo.addItems(self.user_manager.get_profiles())
+        current_user = self.user_manager.get_current_user()
+        if current_user:
+            index = self.sidebar.user_combo.findText(current_user)
+            if index >= 0:
+                self.sidebar.user_combo.setCurrentIndex(index)
+        self.sidebar.user_combo.currentTextChanged.connect(self._on_user_changed)
+        self.sidebar.user_combo.setVisible(False)
+
+        # Info banner about completed cycles
+        self.sidebar.completed_cycles_info = QFrame()
+        self.sidebar.completed_cycles_info.setStyleSheet(
+            "QFrame {"
+            "  background: rgba(142, 142, 147, 0.08);"
+            "  border: 1px solid rgba(142, 142, 147, 0.18);"
+            "  border-radius: 8px;"
+            "}"
+        )
+        info_layout = QHBoxLayout(self.sidebar.completed_cycles_info)
+        info_layout.setContentsMargins(10, 6, 10, 6)
+        info_layout.setSpacing(8)
+
+        info_icon = QLabel("ℹ️")
+        info_icon.setStyleSheet("background: transparent; font-size: 12px;")
+        info_layout.addWidget(info_icon)
+
+        info_label = QLabel("Completed cycles appear in the Edit tab")
+        info_label.setStyleSheet(
+            "font-size: 11px;"
+            "font-weight: 500;"
+            "color: #86868B;"
+            "background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        info_layout.addWidget(info_label)
+        info_layout.addStretch()
+
+        tab_layout.addWidget(self.sidebar.completed_cycles_info)
+        tab_layout.addSpacing(4)
 
         # Queue status row
         queue_status_row = QHBoxLayout()
         queue_status_row.setSpacing(12)
 
         self.sidebar.queue_status_label = QLabel(
-            "Queue: 0 cycles | Click 'Add to Queue' to plan batch runs",
+            "Queue: 0 cycles | Click 'Build Method' to plan batch runs",
         )
         self.sidebar.queue_status_label.setStyleSheet(
             "font-size: 11px;"
@@ -319,12 +384,20 @@ class MethodTabBuilder:
         tab_layout.addLayout(queue_status_row)
         tab_layout.addSpacing(8)
 
-        # Summary table card
-        self._build_summary_table(summary_section)
+        # Experiment Method section header
+        experiment_label = QLabel("EXPERIMENT METHOD")
+        experiment_label.setStyleSheet(
+            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
+            f"letter-spacing: 0.5px; background: transparent;"
+            f"font-family: {Fonts.SYSTEM};"
+        )
+        tab_layout.addWidget(experiment_label)
+        tab_layout.addSpacing(8)
 
-        tab_layout.addWidget(summary_section)
+        # Summary table card (directly on sidebar)
+        self._build_summary_table(tab_layout)
 
-    def _build_summary_table(self, parent_section: CollapsibleSection):
+    def _build_summary_table(self, parent_layout: QVBoxLayout):
         """Build summary table with cycle history using new QueueSummaryWidget."""
         summary_card = QFrame()
         summary_card.setStyleSheet(card_style())
@@ -334,8 +407,8 @@ class MethodTabBuilder:
 
         # NEW: Queue Summary Widget with drag-drop support - styled to match original
         self.sidebar.summary_table = QueueSummaryWidget()
-        self.sidebar.summary_table.setMaximumHeight(300)
-        self.sidebar.summary_table.setMinimumHeight(200)
+        self.sidebar.summary_table.setMaximumHeight(400)  # Expanded for 10 visible rows
+        self.sidebar.summary_table.setMinimumHeight(400)
         self.sidebar.summary_table.setStyleSheet(
             "QTableWidget {"
             "  background: white;"
@@ -346,21 +419,47 @@ class MethodTabBuilder:
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QTableWidget::item {"
-            "  padding: 6px;"
+            "  padding: 8px 6px;"
             "  color: #1D1D1F;"
+            "  border: none;"
             "}"
             "QTableWidget::item:selected {"
-            "  background: rgba(0, 122, 255, 0.1);"
+            "  background: rgba(0, 122, 255, 0.12);"
             "  color: #1D1D1F;"
             "}"
-            "QHeaderView::section {"
+            "QTableWidget::item:hover {"
             "  background: rgba(0, 0, 0, 0.03);"
+            "}"
+            "QHeaderView::section {"
+            "  background: #F5F5F7;"
             "  color: #86868B;"
-            "  padding: 6px;"
+            "  padding: 8px 6px;"
             "  border: none;"
-            "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
-            "  font-weight: 600;"
+            "  border-bottom: 1px solid rgba(0, 0, 0, 0.1);"
+            "  font-weight: 700;"
             "  font-size: 11px;"
+            "  text-transform: uppercase;"
+            "  letter-spacing: 0.5px;"
+            "}"
+            "QScrollBar:vertical {"
+            "  background: transparent;"
+            "  width: 6px;"
+            "  border-radius: 3px;"
+            "  margin: 2px 0px;"
+            "}"
+            "QScrollBar::handle:vertical {"
+            "  background: rgba(0, 0, 0, 0.15);"
+            "  border-radius: 3px;"
+            "  min-height: 20px;"
+            "}"
+            "QScrollBar::handle:vertical:hover {"
+            "  background: rgba(0, 0, 0, 0.25);"
+            "}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+            "  height: 0px;"
+            "}"
+            "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
+            "  background: transparent;"
             "}"
         )
 
@@ -418,7 +517,7 @@ class MethodTabBuilder:
         table_footer_row = QHBoxLayout()
         table_footer_row.setSpacing(10)
 
-        self.sidebar.queue_size_label = QLabel("Showing last 10 cycles")
+        self.sidebar.queue_size_label = QLabel("0 cycles queued")
         self.sidebar.queue_size_label.setStyleSheet(
             "font-size: 11px;"
             "color: #86868B;"
@@ -455,7 +554,7 @@ class MethodTabBuilder:
 
         summary_card_layout.addLayout(table_footer_row)
 
-        parent_section.add_content_widget(summary_card)
+        parent_layout.addWidget(summary_card)
 
         # Connect button signal
         self.sidebar.open_table_btn.clicked.connect(self._open_cycle_table_dialog)
@@ -518,3 +617,16 @@ class MethodTabBuilder:
             "  border: 1px solid rgba(0, 0, 0, 0.1);"
             "}"
         )
+
+    def _on_user_changed(self, user_name: str):
+        """Handle user selection change.
+
+        Args:
+            user_name: Selected user name
+
+        """
+        if user_name and user_name != "Select User...":
+            # Get UserProfileManager instance
+            from affilabs.services.user_profile_manager import UserProfileManager
+            profile_manager = UserProfileManager()
+            profile_manager.set_current_user(user_name)
