@@ -1178,11 +1178,11 @@ class PumpManager(QObject):
             pump._pump.pump.dispense_both(load_volume_ul, assay_flow_rate_ul_s, switch_valve=True)
             logger.info(f"  ✓ Both pumps dispensing at {flow_rate:.1f} uL/min (valve → OUTPUT)")
 
-            # STEP 3: Wait for loop to fill (dispense continues in parallel)
-            valve_open_delay_s = 15.0  # seconds (BY DESIGN - loop fills while dispense runs)
-            logger.info(f"\n[STEP 3] Waiting {valve_open_delay_s:.1f}s for loop to fill...")
+            # STEP 3: Pre-injection delay (dispense continues, loop fills in background)
+            valve_open_delay_s = 15.0  # seconds before switching 6-port to INJECT
+            logger.info(f"\n[STEP 3] Pre-injection delay {valve_open_delay_s:.1f}s...")
             self.operation_progress.emit(
-                "inject_simple", 40, f"Filling loop ({valve_open_delay_s}s)..."
+                "inject_simple", 40, f"Pre-inject delay ({valve_open_delay_s}s)..."
             )
             await asyncio.sleep(valve_open_delay_s)
 
@@ -1237,49 +1237,21 @@ class PumpManager(QObject):
             else:
                 logger.info("\n[STEP 6] Closing 6-port valves (SIMULATED - no controller)")
 
-            # STEP 7: Wait for dispense to complete
-            # Calculate dynamic timeout: 110% of time to dispense 1000 uL at given flow rate
-            dispense_time = (1000.0 / flow_rate) * 60.0  # seconds
-            timeout = dispense_time * 1.1  # 110% buffer
-            logger.info("\n[STEP 7] Waiting for dispense to complete...")
-            logger.info(f"  Expected time: {dispense_time:.1f}s, Timeout: {timeout:.1f}s")
-            self.operation_progress.emit("inject_simple", 80, "Completing...")
+            # STEP 7: Injection complete — pump continues dispensing as buffer flow.
+            # The dispense keeps running until:
+            #   (a) the syringe empties (1000µL exhausted), or
+            #   (b) the next cycle starts and calls stop_and_wait_for_idle()
+            # We do NOT block here — just mark injection done and return.
+            logger.info("\n[STEP 7] Injection complete — pump continues as buffer flow")
+            logger.info(f"  Pump still dispensing at {flow_rate:.1f} µL/min")
+            logger.info(f"  Next cycle will stop & restart pump as needed")
+            self.operation_progress.emit("inject_simple", 90, "Flowing...")
 
-            (
-                p1_ready,
-                p2_ready,
-                elapsed,
-                p1_time,
-                p2_time,
-            ) = await asyncio.get_event_loop().run_in_executor(
-                None,
-                pump._pump.pump.wait_until_both_ready,
-                timeout,
-            )
+            # Transition to RUNNING_BUFFER — pump is still dispensing
+            self._current_operation = PumpOperation.RUNNING_BUFFER
+            self.status_updated.emit("Buffer", flow_rate, 0.0, 0.0, 0.0)
 
-            if not (p1_ready and p2_ready):
-                logger.error("❌ Dispense failed - pump(s) not responding")
-                self.error_occurred.emit("inject_simple", "Dispense failed")
-                await self._home_plungers(pump)
-                self.operation_completed.emit("inject_simple", False)
-                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
-                return False
-
-            # Check for blockage during dispense (SAME AS PRIME PUMP)
-            time_diff = abs(p1_time - p2_time)
-            if time_diff > 2.0:
-                blocked_pump = "KC2" if p1_time > p2_time else "KC1"
-                error_msg = f"Blockage detected in {blocked_pump} during dispense"
-                logger.error(f"❌ {error_msg}")
-                self.error_occurred.emit("inject_simple", error_msg)
-                await self._home_plungers(pump)
-                self.operation_completed.emit("inject_simple", False)
-                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
-                return False
-
-            logger.info(f"  ✓ Dispense complete ({elapsed:.1f}s)")
-
-            logger.info("\n✅ Simple inject completed")
+            logger.info("\n✅ Simple inject completed (pump continues as buffer)")
             self.operation_progress.emit("inject_simple", 100, "Complete")
             self.operation_completed.emit("inject_simple", True)
             logger.info("=== Simple Injection Complete ===")
@@ -1293,10 +1265,12 @@ class PumpManager(QObject):
             self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
             return False
         finally:
-            self._current_operation = PumpOperation.IDLE
-            # Set to idle after a short delay to show completion
-            await asyncio.sleep(2.0)
-            self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
+            # Only reset to IDLE if we're still in INJECTING state
+            # (STEP 7 transitions to RUNNING_BUFFER — don't override that)
+            if self._current_operation == PumpOperation.INJECTING:
+                self._current_operation = PumpOperation.IDLE
+                await asyncio.sleep(2.0)
+                self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
 
     async def inject_partial_loop(self, flow_rate: float = 100.0, channels: str | None = None) -> bool:
         """Run partial loop injection (14-step protocol) - EXACT match to test file.
