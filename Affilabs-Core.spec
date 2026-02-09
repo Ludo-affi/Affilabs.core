@@ -76,6 +76,24 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
+# Filter out dev/test artifacts from bundled data to reduce .exe size
+# These patterns match against the destination path inside the bundle
+_exclude_patterns = [
+    'servo_polarizer_calibration/test_data',       # ~916KB dev analysis PNGs/CSVs
+    'servo_polarizer_calibration/README',           # dev docs
+    'servo_polarizer_calibration/requirements',     # dev deps
+    'standalone_tools/compression_training_data',   # ~3.1MB training data (generated at runtime)
+    'standalone_tools/README',                      # dev docs
+    'led_calibration_official/1_create_model',      # OEM-only scripts
+    'led_calibration_official/2_test_model',        # OEM-only scripts
+    'led_calibration_official/apply_corrections',   # OEM-only scripts
+    'led_calibration_official/test_corrections',    # OEM-only scripts
+    'led_calibration_official/CALIBRATION_UPDATES', # dev docs
+]
+a.datas = [d for d in a.datas
+           if not any(pat in d[0] for pat in _exclude_patterns)]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(

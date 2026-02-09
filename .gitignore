@@ -22,6 +22,12 @@ firmware/
 affinite-server.exe
 affinite_ezspr.uf2
 
+# Runtime-generated data and external tools
+piper/
+compression_training_data.json
+ezcontrol_diagnostics_*.zip
+simulated_data/
+
 # Documentation
 docs/**/*.html
 docs/**/*.js
@@ -120,5 +126,13 @@ build/
 public/
 
 affilabs/local_settings.py  # Local performance overrides
+
+# Debug/analysis images (dev artifacts)
+baseline_peak_to_peak_*.png
+debug_fourier_offset.png
+gold_standard_pipeline_detailed.png
+noise_source_analysis.png
+phase_photonics_*.png
+peak_tracking_comparison_*.png
 
 ~$*.xlsx
