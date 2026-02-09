@@ -5107,19 +5107,6 @@ class Application(QApplication):
         else:
             logger.debug(f"{rate_name} flow rate set to {value} uL/min (pump idle - will use on next operation)")
 
-    def _on_valve_sync_toggled(self, checked: bool):
-        """User toggled valve synchronization.
-
-        When enabled, KC1 and KC2 valve switches mirror each other.
-
-        Args:
-            checked: True = sync enabled, False = independent control
-        """
-        mode = "SYNCHRONIZED" if checked else "INDEPENDENT"
-        logger.info(f"🔄 Valve control mode → {mode}")
-
-        # If sync is enabled, mirror current KC1 state to KC2
-
     # =========================================================================
     # Internal Pump Background Task Classes (Reusable)
     # =========================================================================

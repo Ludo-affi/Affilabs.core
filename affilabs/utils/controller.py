@@ -3759,26 +3759,26 @@ class PicoP4PRO(FlowController):
                 if not success:
                     logger.warning(f"KC{ch} 6-port valve command sent but firmware verification FAILED (response={response!r}) - expected b'1', b'\\x01', b'b', or b''")
 
-                    # Safety timer management
-                    if state == 1:  # INJECT
-                        if timeout_seconds is not None and timeout_seconds > 0:
-                            with self._valve_six_lock:
-                                if self._valve_six_timers[ch] is not None:
-                                    self._valve_six_timers[ch].cancel()
-                                self._valve_six_timers[ch] = threading.Timer(
-                                    timeout_seconds,
-                                    self._auto_shutoff_valve,
-                                    args=[ch]
-                                )
-                                self._valve_six_timers[ch].daemon = True
-                                self._valve_six_timers[ch].start()
-                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]}) [Timeout: {timeout_seconds}s]")
-                        else:
-                            self._cancel_valve_timer(ch)
-                            logger.info(f"✓ KC{ch} 6-port valve → INJECT (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]})")
-                    else:  # LOAD
+                # Safety timer management (runs regardless of response verification)
+                if state == 1:  # INJECT
+                    if timeout_seconds is not None and timeout_seconds > 0:
+                        with self._valve_six_lock:
+                            if self._valve_six_timers[ch] is not None:
+                                self._valve_six_timers[ch].cancel()
+                            self._valve_six_timers[ch] = threading.Timer(
+                                timeout_seconds,
+                                self._auto_shutoff_valve,
+                                args=[ch]
+                            )
+                            self._valve_six_timers[ch].daemon = True
+                            self._valve_six_timers[ch].start()
+                        logger.info(f"✓ KC{ch} 6-port valve → INJECT (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]}) [Timeout: {timeout_seconds}s]")
+                    else:
                         self._cancel_valve_timer(ch)
-                        logger.info(f"✓ KC{ch} 6-port valve → LOAD (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]})")
+                        logger.info(f"✓ KC{ch} 6-port valve → INJECT (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]})")
+                else:  # LOAD
+                    self._cancel_valve_timer(ch)
+                    logger.info(f"✓ KC{ch} 6-port valve → LOAD (session: {self._valve_six_cycles_session[ch]}, lifetime: {self._valve_six_cycles_lifetime[ch]})")
 
                 return success
             return False
