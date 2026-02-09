@@ -2526,13 +2526,15 @@ class Application(QApplication):
                         self.pump_mgr.error_occurred.emit("inject", "Could not stop pump for injection")
                         return
 
-                # Step 2: Execute the injection
+                # Step 2: Execute the injection with channel selection
+                # cycle.channels overrides pump_mgr.default_channels
+                ch = cycle.channels  # None = inject_simple/partial will use default_channels
                 if cycle.injection_method == "simple":
-                    logger.info(f"💉 AUTO-INJECT: Simple injection @ {assay_rate} µL/min")
-                    loop.run_until_complete(self.pump_mgr.inject_simple(assay_rate))
+                    logger.info(f"💉 AUTO-INJECT: Simple injection @ {assay_rate} µL/min (channels={ch or 'default'})")
+                    loop.run_until_complete(self.pump_mgr.inject_simple(assay_rate, channels=ch))
                 elif cycle.injection_method == "partial":
-                    logger.info(f"💉 AUTO-INJECT: Partial injection @ {assay_rate} µL/min")
-                    loop.run_until_complete(self.pump_mgr.inject_partial_loop(assay_rate))
+                    logger.info(f"💉 AUTO-INJECT: Partial injection @ {assay_rate} µL/min (channels={ch or 'default'})")
+                    loop.run_until_complete(self.pump_mgr.inject_partial_loop(assay_rate, channels=ch))
             except Exception as e:
                 logger.exception(f"Injection thread error: {e}")
             finally:

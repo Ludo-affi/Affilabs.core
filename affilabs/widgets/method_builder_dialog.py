@@ -1321,6 +1321,12 @@ Baseline 2min
             contact_time = (usable_volume / flow_rate) * 60.0
         # If both specified, flow_rate wins (contact_time will be recalculated by pump)
 
+        # Parse channel selection (e.g., "channels AC", "channels BD")
+        channels = None
+        channels_match = re.search(r'channels?[:\s]+(AC|BD)', text, re.IGNORECASE)
+        if channels_match:
+            channels = channels_match.group(1).upper()  # Normalize to "AC" or "BD"
+
         # Parse partial injection override (e.g., "partial injection", "partial")
         is_partial = bool(re.search(r'partial\s*(injection)?', text, re.IGNORECASE))
 
@@ -1363,6 +1369,7 @@ Baseline 2min
             timestamp=time.time(),
             # Pump and injection fields
             flow_rate=flow_rate,
+            channels=channels,  # AC or BD (None = use global default)
             injection_method=injection_method,
             injection_delay=20.0,  # Always 20s
             contact_time=contact_time,

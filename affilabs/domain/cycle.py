@@ -114,9 +114,9 @@ class Cycle(BaseModel):
         default=None,
         description="Pump type (auto-detected from hardware)"
     )
-    valve_config: Optional[str] = Field(
+    channels: Optional[Literal["AC", "BD"]] = Field(
         default=None,
-        description="Valve configuration (e.g., 'load', 'inject', 'channel_a')"
+        description="Active SPR channels: 'AC' (default, 3-way state=0) or 'BD' (alternate, 3-way state=1)"
     )
 
     # Injection control fields (for automated injection during cycles)
@@ -190,7 +190,7 @@ class Cycle(BaseModel):
             "flags": self.flags if self.flags else [],
             "flow_rate": self.flow_rate,
             "pump_type": self.pump_type,
-            "valve_config": self.valve_config,
+            "channels": self.channels,
             "injection_method": self.injection_method,
             "injection_delay": self.injection_delay,
             "contact_time": self.contact_time,

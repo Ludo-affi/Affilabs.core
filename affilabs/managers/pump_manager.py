@@ -63,6 +63,7 @@ class PumpManager(QObject):
         self.hardware_manager = hardware_manager
         self._current_operation = PumpOperation.IDLE
         self._shutdown_requested = False
+        self._default_channels: str = "AC"  # Global default: AC (state=0) or BD (state=1)
 
         logger.info("PumpManager initialized")
 
@@ -80,6 +81,23 @@ class PumpManager(QObject):
     def current_operation(self) -> PumpOperation:
         """Get current pump operation."""
         return self._current_operation
+
+    @property
+    def default_channels(self) -> str:
+        """Global default channel pair: 'AC' or 'BD'.
+
+        AC = 3-way state=0 (de-energized): KC1→A, KC2→C
+        BD = 3-way state=1 (energized):    KC1→B, KC2→D
+        """
+        return self._default_channels
+
+    @default_channels.setter
+    def default_channels(self, value: str) -> None:
+        """Set global default channel pair."""
+        if value not in ("AC", "BD"):
+            raise ValueError(f"channels must be 'AC' or 'BD', got '{value}'")
+        self._default_channels = value
+        logger.info(f"Default channels set to {value}")
 
     async def prime_pump(
         self,
@@ -1020,17 +1038,19 @@ class PumpManager(QObject):
             logger.error(f"❌ Error homing plungers: {e}")
             return False
 
-    async def inject_simple(self, flow_rate: float = 100.0) -> bool:
+    async def inject_simple(self, flow_rate: float = 100.0, channels: str | None = None) -> bool:
         """Run simple injection - full syringe dispense with contact time.
 
         This performs a basic injection:
-        1. Aspirate full syringe volume from INPUT
-        2. Switch valve to OUTPUT
-        3. Dispense at specified flow rate to flow cell
-        4. Calculate and display contact time
+        1. Set 3-way valves to route flow to selected channels
+        2. Aspirate full syringe volume from INPUT
+        3. Switch valve to OUTPUT
+        4. Dispense at specified flow rate to flow cell
+        5. Calculate and display contact time
 
         Args:
             flow_rate: Dispense flow rate in µL/min (default: 100)
+            channels: 'AC' or 'BD' (None = use default_channels)
 
         Returns:
             True if injection completed successfully
@@ -1070,13 +1090,26 @@ class PumpManager(QObject):
             usable_fraction = 0.80  # Use 80% of loop to cut diffusion tail
             usable_volume_ul = loop_volume_ul * usable_fraction
 
+            # Resolve channel selection
+            active_channels = channels or self._default_channels
+            three_way_state = 1 if active_channels == "BD" else 0
+
             logger.info("=== Simple Inject Started ===")
+            logger.info(f"  Channels: {active_channels} (3-way state={three_way_state})")
             logger.info(f"  Assay flow rate: {flow_rate:.1f} uL/min")
             logger.info(f"  Loop volume: {loop_volume_ul:.1f} uL (usable: {usable_volume_ul:.1f} uL @ {usable_fraction*100:.0f}%)")
 
             # Contact time derived from usable volume and flow rate
             contact_time_s = (usable_volume_ul / flow_rate) * 60.0
             logger.info(f"  Calculated contact time: {contact_time_s:.2f}s")
+
+            # STEP 0: Set 3-way valves to selected channels
+            if ctrl:
+                logger.info(f"\n[STEP 0] Setting 3-way valves → {active_channels}")
+                self.operation_progress.emit("inject_simple", 5, f"Channels → {active_channels}")
+                ctrl.knx_three_both(state=three_way_state)
+                await asyncio.sleep(0.3)
+                logger.info(f"  ✓ 3-way valves set (state={three_way_state})")
 
             # STEP 1: Aspirate full volume (SAME AS PRIME PUMP)
             logger.info(f"\n[STEP 1] Aspirating {load_volume_ul:.1f} uL (both pumps)")
@@ -1265,7 +1298,7 @@ class PumpManager(QObject):
             await asyncio.sleep(2.0)
             self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
 
-    async def inject_partial_loop(self, flow_rate: float = 100.0) -> bool:
+    async def inject_partial_loop(self, flow_rate: float = 100.0, channels: str | None = None) -> bool:
         """Run partial loop injection (14-step protocol) - EXACT match to test file.
 
         Args:
@@ -1362,14 +1395,18 @@ class PumpManager(QObject):
 
             logger.info("  ✓ At P950")
 
-            # STEP 2: Set 3-way valves to OPEN (KC1→B, KC2→D)
-            logger.info("\n[STEP 2] Setting 3-way valves to OPEN...")
-            self.operation_progress.emit("inject_partial", 14, "Opening 3-way...")
+            # Resolve channel selection
+            active_channels = channels or self._default_channels
+            three_way_state = 1 if active_channels == "BD" else 0
+
+            # STEP 2: Set 3-way valves to selected channels
+            logger.info(f"\n[STEP 2] Setting 3-way valves → {active_channels}...")
+            self.operation_progress.emit("inject_partial", 14, f"Channels → {active_channels}")
             if ctrl:
-                ctrl.knx_three_both(state=1)  # state=1 OPEN: Both to LOAD (v331 broadcast)
-                logger.info("  ✓ 3-way valves OPEN (KC1→B, KC2→D) - broadcast")
+                ctrl.knx_three_both(state=three_way_state)
+                logger.info(f"  ✓ 3-way valves → {active_channels} (state={three_way_state}) - broadcast")
             else:
-                logger.info("  ⚠ 3-way valves OPEN (SIMULATED)")
+                logger.info(f"  ⚠ 3-way valves → {active_channels} (SIMULATED)")
 
             # STEP 3: Open 6-port valves to inject position
             logger.info("\n[STEP 3] Opening 6-port valves (inject position)...")
@@ -1494,14 +1531,16 @@ class PumpManager(QObject):
             )
             await asyncio.sleep(2.0)  # Wait for command to take effect
 
-            # STEP 10: Set 3-way valves to CLOSED immediately after flow rate change (KC1→A, KC2→C)
-            logger.info("\n[STEP 10] Setting 3-way valves to CLOSED...")
-            self.operation_progress.emit("inject_partial", 70, "Closing 3-way...")
+            # STEP 10: Reset 3-way valves to default channels after injection
+            reset_channels = self._default_channels
+            reset_state = 1 if reset_channels == "BD" else 0
+            logger.info(f"\n[STEP 10] Resetting 3-way valves → {reset_channels} (default)...")
+            self.operation_progress.emit("inject_partial", 70, f"Channels → {reset_channels}")
             if ctrl:
-                ctrl.knx_three_both(state=0)  # state=0 CLOSED: Both to WASTE (v330 broadcast)
-                logger.info("  ✓ 3-way valves CLOSED (KC1→A, KC2→C) - broadcast")
+                ctrl.knx_three_both(state=reset_state)
+                logger.info(f"  ✓ 3-way valves → {reset_channels} (state={reset_state}) - broadcast")
             else:
-                logger.info("  ⚠ 3-way valves CLOSED (SIMULATED)")
+                logger.info(f"  ⚠ 3-way valves → {reset_channels} (SIMULATED)")
             await asyncio.sleep(1.0)  # Valve switching delay
 
             # STEP 12: Contact time monitoring with motion detection and stall watchdog
