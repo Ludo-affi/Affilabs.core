@@ -240,19 +240,12 @@ class SettingsTabBuilder:
         self.sidebar.user_list_widget.clear()
         for username in self.user_manager.get_profiles():
             title, _ = self.user_manager.get_title(username)
-            needs_training = self.user_manager.needs_compression_training(username)
             exp_count = self.user_manager.get_experiment_count(username)
 
-            if needs_training:
-                display = (
-                    f"\u26a0\ufe0f {username}  \u2014  {title.value} "
-                    f"(training required)"
-                )
-            else:
-                display = (
-                    f"{username}  \u2014  {title.value} "
-                    f"({exp_count} experiments)"
-                )
+            display = (
+                f"{username}  \u2014  {title.value} "
+                f"({exp_count} experiments)"
+            )
 
             self.sidebar.user_list_widget.addItem(display)
 
@@ -283,29 +276,9 @@ class SettingsTabBuilder:
                 f"XP: {xp}  \u2022  Maximum rank achieved!"
             )
 
-        # Training status
-        if summary['compression_training_completed']:
-            score = summary['compression_training_score']
-            date = summary['compression_training_date']
-            date_short = date[:10] if date else "\u2014"
-            score_str = f"{score:.0f}%" if score is not None else "N/A"
-            self.sidebar.user_training_label.setText(
-                f"\u2705 Compression training passed "
-                f"(score: {score_str}, {date_short})"
-            )
-            self.sidebar.user_training_label.setStyleSheet(
-                f"font-size: 11px; color: #34C759; font-weight: 500;"
-                f"background: transparent; font-family: {Fonts.SYSTEM};"
-            )
-        else:
-            self.sidebar.user_training_label.setText(
-                "\u26a0\ufe0f Compression training required before "
-                "first experiment"
-            )
-            self.sidebar.user_training_label.setStyleSheet(
-                f"font-size: 11px; color: #FF9500; font-weight: 600;"
-                f"background: transparent; font-family: {Fonts.SYSTEM};"
-            )
+        # Training status — no longer required per user
+        if hasattr(self.sidebar, 'user_training_label'):
+            self.sidebar.user_training_label.hide()
 
     def _on_add_user_settings(self):
         """Handle adding a new user from settings."""
@@ -340,15 +313,11 @@ class SettingsTabBuilder:
                     if idx >= 0:
                         self.sidebar.user_combo.setCurrentIndex(idx)
 
-                # Inform user about training requirement
+                # Inform user
                 QMessageBox.information(
                     self.sidebar,
-                    "User Created \u2014 Training Required",
-                    f"User '{username}' created as Apprentice.\n\n"
-                    f"Compression training is required before running "
-                    f"the first experiment.\n\n"
-                    f"Go to Live Tab \u2192 Start compression training "
-                    f"when ready.",
+                    "User Created",
+                    f"User '{username}' has been created.",
                 )
             else:
                 QMessageBox.warning(

@@ -10,6 +10,49 @@ from __future__ import annotations
 from typing import Final
 
 # ============================================================================
+# CYCLE TYPE STYLING
+# ============================================================================
+
+
+class CycleTypeStyle:
+    """Color and abbreviation mapping for cycle types in queue/table views."""
+
+    # Map of cycle type → (abbreviation, hex color)
+    MAP: Final[dict[str, tuple[str, str]]] = {
+        "Baseline": ("BL", "#007AFF"),
+        "Concentration": ("CN", "#FF9500"),
+        "Regeneration": ("RG", "#FF3B30"),
+        "Association": ("AS", "#34C759"),
+        "Dissociation": ("DS", "#5856D6"),
+        "Wash": ("WS", "#00C7BE"),
+        "Equilibration": ("EQ", "#86868B"),
+        "Custom": ("CU", "#8E8E93"),
+        "Flow": ("FL", "#007AFF"),
+        "Static": ("ST", "#AF52DE"),
+        "Auto-read": ("AR", "#FF2D55"),
+        "Injection": ("IN", "#FF9500"),
+        "Buffer": ("BF", "#34C759"),
+        "Sample": ("SM", "#FF9500"),
+        "Kinetic": ("KN", "#5856D6"),
+    }
+
+    _DEFAULT: Final[tuple[str, str]] = ("●", "#86868B")
+
+    @classmethod
+    def get(cls, cycle_type: str) -> tuple[str, str]:
+        """Get (abbreviation, color) for a cycle type.
+
+        Args:
+            cycle_type: The cycle type string.
+
+        Returns:
+            Tuple of (abbreviation, hex_color). Falls back to default for unknown types.
+
+        """
+        return cls.MAP.get(cycle_type, cls._DEFAULT)
+
+
+# ============================================================================
 # CYCLE CONFIGURATION
 # ============================================================================
 

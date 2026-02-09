@@ -129,5 +129,16 @@
     "git.ignoreLimitWarning": true,
     "git.autofetch": false,
     "git.autorefresh": false,
+
+    // === PROTECT AGAINST LOST WORK ===
+    // Auto-save files after 1 second of inactivity
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+
+    // Keep local history for 30 days with unlimited entries
+    "workbench.localHistory.enabled": true,
+    "workbench.localHistory.maxFileEntries": 100,
+    "workbench.localHistory.mergeWindow": 10,
+
     "python-envs.pythonProjects": []
 }

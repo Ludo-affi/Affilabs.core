@@ -149,3 +149,135 @@ class UserProfileManager:
             'User': self.current_user,
             'User_Profile_Count': len(self.profiles)
         }
+
+    def get_progression_summary(self, username: str) -> dict:
+        """Get progression summary for a user.
+
+        Returns XP, title, and training status for the user progression banner.
+
+        Args:
+            username: The username to get summary for.
+
+        Returns:
+            Dictionary with progression data.
+        """
+        from enum import Enum
+
+        class UserTitle(Enum):
+            NOVICE = "Novice"
+            OPERATOR = "Operator"
+            SPECIALIST = "Specialist"
+            EXPERT = "Expert"
+            MASTER = "Master"
+
+        exp_count = self.get_experiment_count(username)
+
+        # Determine title based on experiment count
+        titles = [
+            (0, UserTitle.NOVICE, 5),
+            (5, UserTitle.OPERATOR, 20),
+            (20, UserTitle.SPECIALIST, 50),
+            (50, UserTitle.EXPERT, 100),
+            (100, UserTitle.MASTER, None),
+        ]
+
+        title = UserTitle.NOVICE
+        next_title = UserTitle.OPERATOR
+        remaining = 5 - exp_count
+        for threshold, t, next_thresh in titles:
+            if exp_count >= threshold:
+                title = t
+                if next_thresh is not None:
+                    idx = titles.index((threshold, t, next_thresh))
+                    if idx + 1 < len(titles):
+                        next_title = titles[idx + 1][1]
+                        remaining = next_thresh - exp_count
+                    else:
+                        next_title = None
+                        remaining = 0
+                else:
+                    next_title = None
+                    remaining = 0
+
+        # Check compression training status
+        compression_completed = False
+        compression_score = None
+        compression_date = None
+        try:
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    data = json.load(f)
+                user_data = data.get("user_data", {}).get(username, {})
+                training = user_data.get("compression_training", {})
+                compression_completed = training.get("completed", False)
+                compression_score = training.get("score")
+                compression_date = training.get("date")
+        except Exception:
+            pass
+
+        return {
+            "title": title.value,
+            "xp": exp_count,
+            "next_title": next_title.value if next_title else None,
+            "experiments_to_next_title": max(0, remaining),
+            "compression_training_completed": compression_completed,
+            "compression_training_score": compression_score,
+            "compression_training_date": compression_date,
+        }
+
+    def get_title(self, username: str) -> tuple:
+        """Get the current title for a user based on experiment count.
+
+        Args:
+            username: The username to look up.
+
+        Returns:
+            Tuple of (UserTitle enum value, experiment_count).
+        """
+        from enum import Enum
+
+        class UserTitle(Enum):
+            NOVICE = "Novice"
+            OPERATOR = "Operator"
+            SPECIALIST = "Specialist"
+            EXPERT = "Expert"
+            MASTER = "Master"
+
+        exp_count = self.get_experiment_count(username)
+        thresholds = [
+            (100, UserTitle.MASTER),
+            (50, UserTitle.EXPERT),
+            (20, UserTitle.SPECIALIST),
+            (5, UserTitle.OPERATOR),
+            (0, UserTitle.NOVICE),
+        ]
+        for threshold, title in thresholds:
+            if exp_count >= threshold:
+                return title, exp_count
+        return UserTitle.NOVICE, exp_count
+
+    def get_experiment_count(self, username: str) -> int:
+        """Get experiment count for a user.
+
+        Args:
+            username: The username to look up.
+
+        Returns:
+            Number of experiments run by this user.
+        """
+        try:
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    data = json.load(f)
+                user_data = data.get("user_data", {}).get(username, {})
+                return user_data.get("experiment_count", 0)
+        except Exception:
+            pass
+        return 0
+
+    def needs_compression_training(self, username: str) -> bool:
+        """Check if a user still needs compression training.
+
+        Training requirement has been removed — always returns False.
+        """
+        return False
