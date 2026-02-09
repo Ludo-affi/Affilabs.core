@@ -9,8 +9,9 @@ except ImportError:
     from typing_extensions import Self
 
 try:
-    from pump_controller import PumpException
-except ModuleNotFoundError:
+    from AffiPump.affipump_controller import AffipumpController as _PumpRef
+    PumpException = Exception  # AffipumpController raises generic Exception
+except ImportError:
     PumpException = Exception
 from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QIcon
@@ -205,7 +206,11 @@ if __name__ == "__main__":
     pump_manager = CavroPumpManager(controller)
     pump = create_pump_hal(pump_manager)
 
-    widget = PrimingWindow(pump)
+    # PrimingWindow requires both pump and knx (valve controller)
+    # For standalone testing, create a mock knx or pass None
+    from affilabs.utils.controller import KineticController
+    knx = None  # Replace with actual KineticController for full test
+    widget = PrimingWindow(pump, knx)
     widget.open()
 
     app.exec()

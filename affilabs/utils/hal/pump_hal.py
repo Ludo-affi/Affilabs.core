@@ -153,11 +153,21 @@ class AffipumpAdapter:
 
     # Low-Level Commands
     def send_command(self, address: int, command: bytes) -> bytes:
-        """Send raw command via underlying PumpController."""
+        """Send raw command via underlying PumpController.
+
+        Converts HAL-style (address, command_bytes) to the AffipumpController
+        string format: "/{address_char}{command_str}" (e.g., 0x41, b"TR" → "/ATR").
+        """
         if self._controller is None:
             logger.warning("Pump controller not available for send_command")
             return b""
-        return self._controller.send_command(address, command)
+        # Convert integer address + bytes command to Cavro command string
+        # Address 0x41='A' (broadcast), 0x42='1' (pump 1), 0x43='2' (pump 2)
+        addr_char = chr(address) if address >= 0x41 else str(address)
+        cmd_str = command.decode('ascii') if isinstance(command, bytes) else str(command)
+        full_cmd = f"/{addr_char}{cmd_str}"
+        result = self._controller.send_command(full_cmd)
+        return result if isinstance(result, bytes) else (result.encode() if result else b"")
 
     def is_available(self) -> bool:
         """Check if pump hardware is available."""

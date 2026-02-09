@@ -660,7 +660,11 @@ class PumpManager(QObject):
             self._shutdown_requested = True
 
             pump = self.hardware_manager.pump
-            pump._pump.pump.send_command("/0TR")  # Broadcast terminate
+            # Send terminate to both pumps individually (address 0 is NOT broadcast for Cavro)
+            pump._pump.pump.send_command("/1TR")  # Terminate pump 1
+            import time
+            time.sleep(0.05)
+            pump._pump.pump.send_command("/2TR")  # Terminate pump 2
 
             self._current_operation = PumpOperation.IDLE
             self.operation_completed.emit("emergency_stop", True)
@@ -738,12 +742,13 @@ class PumpManager(QObject):
             rate_ul_s = flow_rate / 60.0
 
             pump = self.hardware_manager.pump
-            # Send V command to both pumps with mode parameter ,1 (on-the-fly change)
-            pump._pump.pump.send_command(f"/1V{rate_ul_s:.3f},1R")
+            # Send V command to both pumps with mode parameter ,1
+            # Use F suffix (modify on-the-fly) instead of R (execute) for smooth mid-motion speed change
+            pump._pump.pump.send_command(f"/1V{rate_ul_s:.3f},1F")
             import time
 
             time.sleep(0.05)
-            pump._pump.pump.send_command(f"/2V{rate_ul_s:.3f},1R")
+            pump._pump.pump.send_command(f"/2V{rate_ul_s:.3f},1F")
 
             # Update internal flow rate tracker
             self._current_flow_rate = flow_rate

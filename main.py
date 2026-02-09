@@ -4504,8 +4504,12 @@ class Application(QApplication):
         # TODO: Enable pump controls in UI
 
     def _on_pump_error(self, error: str):
-        """Pump error occurred."""
+        """Pump error occurred - show message and update intelligence bar."""
         logger.error(f"Pump error: {error}")
+
+        # Update intelligence bar with error
+        self.main_window.set_intel_message(f"❌ Pump: {error}", "#FF3B30")
+
         from affilabs.widgets.message import show_message
 
         show_message(error, "Pump Error")
@@ -4521,12 +4525,15 @@ class Application(QApplication):
     # === PUMP MANAGER STATUS HANDLERS ===
 
     def _on_pump_operation_started(self, operation: str):
-        """Handle pump operation started - update status board."""
+        """Handle pump operation started - update status board + intelligence bar."""
         logger.info(f"🔧 Pump operation started: {operation}")
+        display_name = operation.replace('_', ' ').title()
+
+        # Update intelligence bar
+        self.main_window.set_intel_message(f"⚡ Pump: {display_name}", "#007AFF")
+
         ui = self.main_window.sidebar
         if hasattr(ui, 'flow_pump_status_label'):
-            # Capitalize and format operation name
-            display_name = operation.replace('_', ' ').title()
             ui.flow_pump_status_label.setText(display_name)
         if hasattr(ui, 'flow_pump_status_icon'):
             ui.flow_pump_status_icon.setStyleSheet(
@@ -4534,15 +4541,28 @@ class Application(QApplication):
             )
 
     def _on_pump_operation_progress(self, operation: str, progress: int, message: str):
-        """Handle pump operation progress - update status board with details."""
+        """Handle pump operation progress - update status board + intelligence bar."""
+        display_name = operation.replace('_', ' ').title()
+
+        # Update intelligence bar with progress
+        self.main_window.set_intel_message(f"⚡ Pump: {display_name} ({progress}%)", "#007AFF")
+
         ui = self.main_window.sidebar
         if hasattr(ui, 'flow_pump_status_label'):
-            ui.flow_pump_status_label.setText(f"{operation.replace('_', ' ').title()} ({progress}%)")
+            ui.flow_pump_status_label.setText(f"{display_name} ({progress}%)")
 
     def _on_pump_operation_completed(self, operation: str, success: bool):
-        """Handle pump operation completed - reset status board."""
-        status = "✓" if success else "✗"
-        logger.info(f"🔧 Pump operation completed: {operation} {status}")
+        """Handle pump operation completed - reset status board + intelligence bar."""
+        status_icon = "✓" if success else "✗"
+        display_name = operation.replace('_', ' ').title()
+        logger.info(f"🔧 Pump operation completed: {operation} {status_icon}")
+
+        # Update intelligence bar with result
+        if success:
+            self.main_window.set_intel_message(f"✓ Pump: {display_name} complete", "#34C759")
+        else:
+            self.main_window.set_intel_message(f"✗ Pump: {display_name} failed", "#FF3B30")
+
         ui = self.main_window.sidebar
         if hasattr(ui, 'flow_pump_status_label'):
             ui.flow_pump_status_label.setText("Idle")
@@ -4697,13 +4717,23 @@ class Application(QApplication):
             show_message(f"Pump is currently {self.pump_mgr.current_operation.name}. Wait for completion.", "Warning")
             return
 
+        # Read prime speed from UI spinbox if available
+        prime_speed = 24000.0  # default µL/min
+        ui = self.main_window.sidebar
+        if hasattr(ui, 'prime_spin'):
+            prime_speed = ui.prime_spin.value()
+            logger.info(f"Using prime speed from UI: {prime_speed} µL/min")
+
         # Run prime pump in background
         def run_prime():
             import asyncio
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                loop.run_until_complete(self.pump_mgr.prime_pump())
+                loop.run_until_complete(self.pump_mgr.prime_pump(
+                    aspirate_speed=prime_speed,
+                    dispense_speed=min(prime_speed, 5000.0),
+                ))
             finally:
                 loop.close()
 
