@@ -1291,6 +1291,12 @@ Baseline 2min
             if unit_str:  # If units specified in tag, use it
                 detected_unit = unit_str
 
+        # Parse flow rate (e.g., "flow 50", "flow 100", "flowrate 25")
+        flow_rate = None
+        flow_match = re.search(r'flow(?:rate)?[:\s]+(\d+(?:\.\d+)?)', text, re.IGNORECASE)
+        if flow_match:
+            flow_rate = float(flow_match.group(1))
+
         # Parse contact time (e.g., "contact 180s", "contact 3min")
         contact_time = None
         contact_match = re.search(r'contact[:\s]+(\d+(?:\.\d+)?)(s|sec|m|min)?', text, re.IGNORECASE)
@@ -1301,6 +1307,19 @@ Baseline 2min
                 contact_time = value * 60.0  # Convert to seconds
             else:
                 contact_time = value
+
+        # Derive flow_rate ↔ contact_time relationship
+        # Loop = 100µL, usable = 80µL (80% to cut diffusion tail)
+        # contact_time_s = (80 / flow_rate) * 60
+        # flow_rate = (80 / contact_time_s) * 60
+        usable_volume = 80.0  # µL (80% of 100µL loop)
+        if contact_time is not None and flow_rate is None:
+            # User specified contact time → derive flow rate
+            flow_rate = (usable_volume / contact_time) * 60.0
+        elif flow_rate is not None and contact_time is None:
+            # User specified flow rate → derive contact time
+            contact_time = (usable_volume / flow_rate) * 60.0
+        # If both specified, flow_rate wins (contact_time will be recalculated by pump)
 
         # Parse partial injection override (e.g., "partial injection", "partial")
         is_partial = bool(re.search(r'partial\s*(injection)?', text, re.IGNORECASE))
@@ -1343,6 +1362,7 @@ Baseline 2min
             concentrations=concentrations,
             timestamp=time.time(),
             # Pump and injection fields
+            flow_rate=flow_rate,
             injection_method=injection_method,
             injection_delay=20.0,  # Always 20s
             contact_time=contact_time,

@@ -2501,10 +2501,15 @@ class Application(QApplication):
             self.main_window.set_intel_message("❌ Injection failed - no pump", "#FF3B30")
             return
 
-        # Get assay rate from UI
-        assay_rate = 100.0
-        if spin := self._sidebar_widget('pump_assay_spin'):
-            assay_rate = float(spin.value())
+        # Get assay rate: cycle.flow_rate (from method) takes priority over UI spin
+        if cycle.flow_rate is not None and cycle.flow_rate > 0:
+            assay_rate = cycle.flow_rate
+            logger.info(f"Using cycle flow_rate: {assay_rate} µL/min (from method definition)")
+        else:
+            assay_rate = 100.0
+            if spin := self._sidebar_widget('pump_assay_spin'):
+                assay_rate = float(spin.value())
+            logger.info(f"Using UI assay rate: {assay_rate} µL/min (no cycle flow_rate set)")
 
         # Stop pump and inject in background thread (stop_and_wait_for_idle is async)
         def run_stop_then_inject():

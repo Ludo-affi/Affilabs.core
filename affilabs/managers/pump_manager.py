@@ -1067,12 +1067,15 @@ class PumpManager(QObject):
             load_volume_ul = 1000
             loop_volume_ul = 100
 
+            usable_fraction = 0.80  # Use 80% of loop to cut diffusion tail
+            usable_volume_ul = loop_volume_ul * usable_fraction
+
             logger.info("=== Simple Inject Started ===")
             logger.info(f"  Assay flow rate: {flow_rate:.1f} uL/min")
-            logger.info(f"  Loop volume: {loop_volume_ul:.1f} uL")
+            logger.info(f"  Loop volume: {loop_volume_ul:.1f} uL (usable: {usable_volume_ul:.1f} uL @ {usable_fraction*100:.0f}%)")
 
-            # Calculate contact time
-            contact_time_s = (loop_volume_ul / flow_rate) * 60.0
+            # Contact time derived from usable volume and flow rate
+            contact_time_s = (usable_volume_ul / flow_rate) * 60.0
             logger.info(f"  Calculated contact time: {contact_time_s:.2f}s")
 
             # STEP 1: Aspirate full volume (SAME AS PRIME PUMP)
