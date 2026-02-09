@@ -35,6 +35,7 @@ class PumpOperation(Enum):
     CLEANING = "cleaning"
     RUNNING_BUFFER = "running_buffer"
     INJECTING = "injecting"
+    HOMING = "homing"
     EMERGENCY_STOP = "emergency_stop"
 
 
@@ -713,7 +714,7 @@ class PumpManager(QObject):
             )
             return False
 
-        self._current_operation = PumpOperation.IDLE  # Keep as idle since this is maintenance
+        self._current_operation = PumpOperation.HOMING
         self.operation_started.emit("home_pumps")
         self.status_updated.emit("Homing...", 0.0, 0.0, 0.0, 0.0)
 
@@ -737,6 +738,8 @@ class PumpManager(QObject):
             self.error_occurred.emit("home_pumps", str(e))
             self.operation_completed.emit("home_pumps", False)
             return False
+        finally:
+            self._current_operation = PumpOperation.IDLE
 
     def change_flow_rate_on_the_fly(self, flow_rate: float) -> bool:
         """Change flow rate during active pump operation using V command.
@@ -781,10 +784,24 @@ class PumpManager(QObject):
             return False
 
     def cancel_operation(self) -> None:
-        """Request cancellation of current operation (graceful)."""
+        """Request cancellation of current operation and terminate plunger motion."""
         if not self.is_idle:
             logger.info(f"Requesting cancellation of {self._current_operation.value}")
             self._shutdown_requested = True
+
+            # Send terminate commands to stop plunger motion immediately
+            # (without this, cancel only takes effect at the next cycle boundary)
+            try:
+                pump = self.hardware_manager.pump
+                if pump and pump._pump and pump._pump.pump:
+                    pump._pump.pump.send_command("/1TR")  # Terminate pump 1
+                    import time
+                    time.sleep(0.05)
+                    pump._pump.pump.send_command("/2TR")  # Terminate pump 2
+                    logger.info("✓ Terminate commands sent to both pumps")
+            except Exception as e:
+                logger.warning(f"Terminate command failed (non-fatal): {e}")
+
             # Emit status update to show cancellation in progress
             self.status_updated.emit("Stopping...", 0.0, 0.0, 0.0, 0.0)
 
@@ -1184,7 +1201,17 @@ class PumpManager(QObject):
             self.operation_progress.emit(
                 "inject_simple", 40, f"Pre-inject delay ({valve_open_delay_s}s)..."
             )
-            await asyncio.sleep(valve_open_delay_s)
+            # Check shutdown every 0.5s during delay
+            delay_start = asyncio.get_event_loop().time()
+            while asyncio.get_event_loop().time() - delay_start < valve_open_delay_s:
+                if self._shutdown_requested:
+                    logger.info("⚠️ Injection cancelled during pre-inject delay")
+                    if ctrl:
+                        ctrl.knx_six_both(state=0)  # Close 6-port to LOAD
+                    self.operation_completed.emit("inject_simple", False)
+                    self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
+                    return False
+                await asyncio.sleep(0.5)
 
             # STEP 4: OPEN valves to INJECT position - loop content flows to sensor
             if ctrl:
@@ -1211,6 +1238,15 @@ class PumpManager(QObject):
                 elapsed = asyncio.get_event_loop().time() - start_time
                 if elapsed >= contact_time_s:
                     break
+                if self._shutdown_requested:
+                    logger.info("⚠️ Injection cancelled during contact time")
+                    # Close 6-port valves immediately on cancel
+                    if ctrl:
+                        ctrl.knx_six_both(state=0)
+                        logger.info("  ✓ 6-port valves closed (cancelled)")
+                    self.operation_completed.emit("inject_simple", False)
+                    self.status_updated.emit("Idle", 0.0, 0.0, 0.0, 0.0)
+                    return False
                 self.status_updated.emit(
                     "Contact", flow_rate, load_volume_ul, elapsed, contact_time_s
                 )
