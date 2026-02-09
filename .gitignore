@@ -1,6 +1,8 @@
 # IDE and editors
 .idea/
 .vscode/
+tmpclaude-*
+nul
 
 # Virtual environments
 venv_new/
@@ -76,6 +78,9 @@ stderr.txt
 logs/*.jsonl
 logs/debug_session_*.log
 logs/calibration_*.log
+logs/
+generated-files/logfile.txt*
+generated-files/generated-files/
 
 # Configuration (keep templates)
 config.json
@@ -92,8 +97,8 @@ htmlcov/
 generated-files/calibration_history/*.json
 generated-files/calibration_profiles/*.json
 calibration_data/*.json
-calibration_results/*.json
 calibration_checkpoints/*.json
+baseline_data/
 
 # Data output files
 data_results/

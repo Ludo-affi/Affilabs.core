@@ -4,14 +4,14 @@ import logging
 import os
 import sys
 import threading
-from logging import Formatter
+from logging import Formatter, RotatingFileHandler
 
 from settings import ROOT_DIR
 
 # Save logfile in generated-files directory
-generated_files_dir = os.path.join(ROOT_DIR, "generated-files")
-os.makedirs(generated_files_dir, exist_ok=True)
-log_fname = os.path.join(generated_files_dir, "logfile.txt")
+# ROOT_DIR already points to "generated-files", no need to append it again
+os.makedirs(ROOT_DIR, exist_ok=True)
+log_fname = os.path.join(ROOT_DIR, "logfile.txt")
 
 # Runtime flags (can be overridden via environment variables)
 # FORCE thread filtering ON by default to prevent Qt threading crashes from worker threads
@@ -108,12 +108,16 @@ safe_console_formatter = SafeConsoleFormatter(
     fmt="%(asctime)s :: %(levelname)s :: %(message)s",
 )
 
-# Use simple FileHandler instead of RotatingFileHandler to avoid Windows file locking issues
-file_handler = logging.FileHandler(
+# Use RotatingFileHandler to prevent log file from growing unbounded
+# maxBytes=10MB: Rotate when log hits 10MB
+# backupCount=5: Keep last 5 rotated files (logfile.txt.1 through logfile.txt.5)
+# This caps total log disk usage at ~60MB across all files
+file_handler = RotatingFileHandler(
     filename=log_fname,
     mode="a",
     encoding="utf8",
-    delay=False,
+    maxBytes=10 * 1024 * 1024,  # 10 MB
+    backupCount=5,
 )
 file_handler.setLevel(logging.INFO)  # Reduce disk I/O overhead (was DEBUG)
 file_handler.setFormatter(fmt=log_formatter)
