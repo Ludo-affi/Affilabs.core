@@ -79,18 +79,18 @@ UNIT_LIST = {"nm": 1, "RU": 355}
 # Standard color palette
 GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 230, 65)}
 
-# Colorblind-friendly palette (Okabe-Ito)
+# Colorblind-friendly palette (ColorBrewer PuOr divergent)
 # Designed to be distinguishable for all types of colorblindness
 GRAPH_COLORS_COLORBLIND = {
-    "a": (1, 115, 178),  # Blue
-    "b": (222, 143, 5),  # Orange
-    "c": (2, 158, 115),  # Green
-    "d": (204, 120, 188),  # Magenta
+    "a": (230, 97, 1),   # Dark Orange #e66101
+    "b": (253, 184, 99), # Light Orange #fdb863
+    "c": (178, 171, 210),# Light Purple #b2abd2
+    "d": (94, 60, 153),  # Dark Purple #5e3c99
 }
 
 # Current active palette (can be toggled by user)
-# Using colorblind-friendly Okabe-Ito palette by default for accessibility
-ACTIVE_GRAPH_COLORS = GRAPH_COLORS_COLORBLIND.copy()
+# Default: Standard colors (Black, Red, Blue, Green)
+ACTIVE_GRAPH_COLORS = GRAPH_COLORS.copy()
 
 # Cycle marker style: "cursors" or "lines"
 CYCLE_MARKER_STYLE = "cursors"  # Can be changed to "lines" for vertical line markers

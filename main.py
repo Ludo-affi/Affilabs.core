@@ -424,7 +424,8 @@ class Application(QApplication):
 
         # Set application icon for taskbar
         from PySide6.QtGui import QIcon
-        icon_path = Path(__file__).parent / "affilabs" / "ui" / "img" / "affinite2.ico"
+        from affilabs.utils.resource_path import get_affilabs_resource
+        icon_path = get_affilabs_resource("ui/img/affinite2.ico")
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
@@ -8079,10 +8080,11 @@ class Application(QApplication):
                         if hasattr(self.hardware_mgr, 'detector') and self.hardware_mgr.detector:
                             serial_number = getattr(self.hardware_mgr.detector, 'serial_number', None)
 
+                    from affilabs.utils.resource_path import get_affilabs_resource
                     if serial_number:
-                        config_path = Path(__file__).parent / "affilabs" / "config" / "devices" / serial_number / "device_config.json"
+                        config_path = get_affilabs_resource(f"config/devices/{serial_number}/device_config.json")
                     else:
-                        config_path = Path(__file__).parent / "affilabs" / "config" / "device_config.json"
+                        config_path = get_affilabs_resource("config/device_config.json")
 
                     with open(config_path) as f:
                         config = json.load(f)
@@ -8168,18 +8170,10 @@ class Application(QApplication):
             parent=self.main_window,
             title="OEM Calibration",
             message=(
-                "OEM Calibration Process:\n\n"
-                "  STEP 1: Servo Polarizer Calibration\n"
-                "    • Finds optimal S and P positions\n"
-                "    • Takes ~2-5 minutes\n\n"
-                "  STEP 2: LED Model Training\n"
-                "    • Measures LED response at 10-60ms\n"
-                "    • Creates 3-stage linear model\n"
-                "    • Takes ~2 minutes\n\n"
-                "  STEP 3: Full 6-Step Calibration\n"
-                "    • LED convergence for S and P modes\n"
-                "    • Reference spectrum capture\n"
-                "    • Takes ~3-5 minutes\n\n"
+                "Automated device characterization:\n\n"
+                "1. Polarizer calibration (~2-5 min)\n"
+                "2. LED model training (~2 min)\n"
+                "3. Full system calibration (~3-5 min)\n\n"
                 "Total time: ~10-15 minutes\n\n"
                 "Click Start to begin."
             ),
@@ -8385,7 +8379,7 @@ class Application(QApplication):
     def _on_recording_started(self):
         """Handle baseline recording started signal."""
         if hasattr(self.main_window, "baseline_capture_btn"):
-            self.main_window.baseline_capture_btn.setText("ΓÅ╣ Stop Recording")
+            self.main_window.baseline_capture_btn.setText("[STOP] Stop Recording")
             self.main_window.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF9500, stop:1 #E08000);"

@@ -94,13 +94,26 @@ def reset_usb_spectrometers():
         reset_count = 0
         for dev in device_list:
             try:
-                # Get device info
+                # Get device info with timeout to prevent hanging
+                device_info = f"Device VID=0x{dev.idVendor:04x} PID=0x{dev.idProduct:04x}"
                 try:
-                    serial = usb.util.get_string(dev, dev.iSerialNumber)
-                    product = usb.util.get_string(dev, dev.iProduct)
-                    logger.info(f"  Resetting: {product} (S/N: {serial})")
+                    # Use a short timeout for getting device strings
+                    def get_device_info():
+                        nonlocal device_info
+                        try:
+                            serial = usb.util.get_string(dev, dev.iSerialNumber)
+                            product = usb.util.get_string(dev, dev.iProduct)
+                            device_info = f"{product} (S/N: {serial})"
+                        except Exception:
+                            pass
+
+                    info_thread = threading.Thread(target=get_device_info, daemon=True)
+                    info_thread.start()
+                    info_thread.join(timeout=1.0)  # 1 second timeout
                 except Exception:
-                    logger.info(f"  Resetting: Device VID=0x{dev.idVendor:04x} PID=0x{dev.idProduct:04x}")
+                    pass
+
+                logger.info(f"  Resetting: {device_info}")
 
                 # Perform USB reset (equivalent to unplug/replug)
                 dev.reset()
@@ -411,14 +424,27 @@ class USB4000:
                 pass
             return False
 
-    def close(self) -> None:
+    def close(self, silent: bool = False) -> None:
+        """Close the USB4000 device connection.
+        
+        Args:
+            silent: If True, suppress logging (used during Python shutdown)
+        """
         try:
             if self._device:
                 with _usb_device_lock:
                     self._device.close()
-                logger.debug("USB4000 device closed")
+                if not silent:
+                    try:
+                        logger.debug("USB4000 device closed")
+                    except (NameError, TypeError):
+                        pass  # Logger unavailable during shutdown
         except Exception as e:
-            logger.warning(f"Error closing USB4000: {e}")
+            if not silent:
+                try:
+                    logger.warning(f"Error closing USB4000: {e}")
+                except (NameError, TypeError):
+                    pass  # Logger unavailable during shutdown
         finally:
             self.opened = False
             self._device = None
@@ -429,7 +455,7 @@ class USB4000:
     def __del__(self) -> None:
         try:
             if hasattr(self, "_device") and self._device is not None:
-                self.close()
+                self.close(silent=True)  # Silent during shutdown to avoid logging errors
         except Exception:
             pass
 
@@ -525,20 +551,21 @@ class USB4000:
 
     @property
     def min_integration(self):
-        # FLOOR: Return 3ms minimum for Ocean Optics stability
-        # The hardware minimum is typically ~1ms, but convergence should not go below 3ms
+        # FLOOR: Return 3.5ms minimum for Ocean Optics USB stability
+        # CRITICAL: USB4000/Flame-T require 3.5ms minimum for stable USB communication
+        # Below 3.5ms causes USB timeout errors (Errno 10060)
         if self._device:
             try:
                 with _usb_device_lock:
                     hw_min = self._device.minimum_integration_time_micros / 1_000_000
-                    return max(0.003, hw_min)  # Enforce 3ms floor
+                    return max(0.0035, hw_min)  # Enforce 3.5ms floor (was 3ms - too low!)
             except Exception as e:
                 logger.debug(f"Could not read min integration time: {e}")
-        return 0.003  # 3ms default floor
+        return 0.0035  # 3.5ms default floor (CRITICAL for USB stability)
 
     @property
     def min_integration_ms(self):
-        """Minimum integration time in milliseconds (3ms floor for Ocean Optics)."""
+        """Minimum integration time in milliseconds (3.5ms floor for Ocean Optics USB stability)."""
         return self.min_integration * 1000.0
 
     @property

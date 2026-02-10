@@ -53,7 +53,7 @@ class StartupCalibProgressDialog(QDialog):
         self.setMinimumWidth(460)
         self.setMinimumHeight(200)
         self.setMaximumWidth(520)
-        self.setMaximumHeight(400)
+        self.setMaximumHeight(480)
 
         # Track dialog state to prevent race conditions
         self._is_closing = False
@@ -144,7 +144,9 @@ class StartupCalibProgressDialog(QDialog):
         )
         self.activity_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.activity_label.setFixedHeight(32)
-        self.activity_label.setVisible(True)  # Visible from start
+        # Hide initially when showing start button (shown when calibration runs via show_progress_bar)
+        self._show_start_button = show_start_button
+        self.activity_label.setVisible(not show_start_button)
         main_layout.addWidget(self.activity_label)
 
         self._dot_count = 0
@@ -358,13 +360,12 @@ class StartupCalibProgressDialog(QDialog):
 
     def _do_update_step_description(self, description: str) -> None:
         """Actually update step description label (runs in main thread)."""
+        # HIDDEN: Step description is redundant with the detailed status text below
+        # The black status text already shows the current progress (e.g., "Servo cal: Stage 1...")
+        # So we keep this blue label hidden to avoid duplication
         if not self._is_closing and self.isVisible():
             try:
-                if description:
-                    self.step_description_label.setText(description)
-                    self.step_description_label.setVisible(True)
-                else:
-                    self.step_description_label.setVisible(False)
+                self.step_description_label.setVisible(False)
             except RuntimeError:
                 pass  # Widget deleted
 
