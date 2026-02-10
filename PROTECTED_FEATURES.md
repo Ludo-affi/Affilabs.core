@@ -55,10 +55,11 @@
 
 ### Overnight Mode Checkbox
 - **File**: `affilabs/widgets/method_builder_dialog.py`
-- **Status**: ACTIVE - User explicitly requested (moved to Method Queue bottom, 2026-02-09)
-- **Code Location**: Below Method Queue table (~line 952)
+- **Status**: ACTIVE - User explicitly requested (below queue buttons, left-aligned, subtle)
+- **Code Location**: Below queue control buttons (~line 1059)
 - **Widget**: `self.overnight_mode_check` in MethodBuilderDialog
 - **Functionality**: Updates `settings.OVERNIGHT_MODE` when toggled
+- **Styling**: Small (10px), gray text, 14px indicator, left-aligned
 - **Remove only if**: User explicitly says "remove overnight mode"
 
 ### Build Method Button

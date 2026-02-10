@@ -948,51 +948,6 @@ class MethodBuilderDialog(QDialog):
         )
         layout.addWidget(self.method_table)
 
-        # Overnight Mode checkbox (below Method Queue table)
-        overnight_row = QHBoxLayout()
-        overnight_row.setContentsMargins(0, 8, 0, 8)
-        overnight_row.addStretch()
-
-        self.overnight_mode_check = QCheckBox("🌙 Overnight Mode")
-        self.overnight_mode_check.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.overnight_mode_check.setToolTip(
-            "Enable overnight mode - system will run continuously without user interaction"
-        )
-        # Load current setting from settings module
-        try:
-            import settings as root_settings
-            self.overnight_mode_check.setChecked(getattr(root_settings, "OVERNIGHT_MODE", False))
-        except Exception:
-            pass
-        # Connect to update settings when toggled
-        self.overnight_mode_check.stateChanged.connect(self._on_overnight_mode_changed)
-        self.overnight_mode_check.setStyleSheet(
-            "QCheckBox {"
-            "  spacing: 6px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QCheckBox::indicator {"
-            "  width: 16px;"
-            "  height: 16px;"
-            "  border-radius: 3px;"
-            "  border: 1px solid rgba(0, 0, 0, 0.2);"
-            "  background: white;"
-            "}"
-            "QCheckBox::indicator:checked {"
-            "  background: #007AFF;"
-            "  border-color: #007AFF;"
-            "}"
-            "QCheckBox::indicator:hover {"
-            "  border-color: #007AFF;"
-            "}"
-        )
-        overnight_row.addWidget(self.overnight_mode_check)
-        overnight_row.addStretch()
-        layout.addLayout(overnight_row)
-
         # Queue control buttons
         queue_btn_row = QHBoxLayout()
 
@@ -1098,6 +1053,50 @@ class MethodBuilderDialog(QDialog):
         queue_btn_row.addWidget(self.method_count_label)
         queue_btn_row.addStretch()
         layout.addLayout(queue_btn_row)
+
+        # Overnight Mode checkbox (below button row, left-aligned, subtle)
+        overnight_row = QHBoxLayout()
+        overnight_row.setContentsMargins(0, 4, 0, 0)
+
+        self.overnight_mode_check = QCheckBox("🌙 Overnight Mode")
+        self.overnight_mode_check.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.overnight_mode_check.setToolTip(
+            "Enable overnight mode - system will run continuously without user interaction"
+        )
+        # Load current setting from settings module
+        try:
+            import settings as root_settings
+            self.overnight_mode_check.setChecked(getattr(root_settings, "OVERNIGHT_MODE", False))
+        except Exception:
+            pass
+        # Connect to update settings when toggled
+        self.overnight_mode_check.stateChanged.connect(self._on_overnight_mode_changed)
+        self.overnight_mode_check.setStyleSheet(
+            "QCheckBox {"
+            "  spacing: 4px;"
+            "  font-size: 10px;"
+            "  font-weight: 500;"
+            "  color: #86868B;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QCheckBox::indicator {"
+            "  width: 14px;"
+            "  height: 14px;"
+            "  border-radius: 2px;"
+            "  border: 1px solid rgba(0, 0, 0, 0.15);"
+            "  background: white;"
+            "}"
+            "QCheckBox::indicator:checked {"
+            "  background: #007AFF;"
+            "  border-color: #007AFF;"
+            "}"
+            "QCheckBox::indicator:hover {"
+            "  border-color: #007AFF;"
+            "}"
+        )
+        overnight_row.addWidget(self.overnight_mode_check)
+        overnight_row.addStretch()
+        layout.addLayout(overnight_row)
 
         layout.addStretch()
 
