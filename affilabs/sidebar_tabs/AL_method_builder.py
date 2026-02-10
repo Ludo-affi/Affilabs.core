@@ -287,7 +287,7 @@ class MethodTabBuilder:
             "QFrame {"
             "  background: rgba(142, 142, 147, 0.08);"
             "  border: 1px solid rgba(142, 142, 147, 0.18);"
-            "  border-radius: 8px;"
+            "  border-radius: 0px;"
             "}"
         )
         info_layout = QHBoxLayout(self.sidebar.completed_cycles_info)

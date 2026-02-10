@@ -4,7 +4,8 @@ import logging
 import os
 import sys
 import threading
-from logging import Formatter, RotatingFileHandler
+from logging import Formatter
+from logging.handlers import RotatingFileHandler
 
 from settings import ROOT_DIR
 

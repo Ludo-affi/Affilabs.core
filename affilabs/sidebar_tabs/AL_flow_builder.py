@@ -594,22 +594,22 @@ class FlowTabBuilder:
         start_flush_layout.addWidget(start_buffer_btn)
         self.sidebar.start_buffer_btn = start_buffer_btn
 
-        # Flush Loop button
-        flush_btn = QPushButton("🔄 Flush Loop")
-        flush_btn.setFixedHeight(34)
-        flush_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        flush_btn.setStyleSheet(
-            self._uniform_button_style("#5AC8FA", "#32ADE6", "#209CCA")
-        )
-        flush_btn.setToolTip("Flush sample loop with buffer")
-        start_flush_layout.addWidget(flush_btn)
-        self.sidebar.flush_btn = flush_btn
-
         affipump_card_layout.addLayout(start_flush_layout)
 
-        # Inject buttons row
+        # Injection & Baseline buttons row (with flowrate controls)
         inject_layout = QHBoxLayout()
         inject_layout.setSpacing(8)
+
+        # Baseline button
+        baseline_btn = QPushButton("📊 Baseline")
+        baseline_btn.setFixedHeight(34)
+        baseline_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        baseline_btn.setStyleSheet(
+            self._uniform_button_style("#34C759", "#28A745", "#1E7E34")
+        )
+        baseline_btn.setToolTip("Run baseline acquisition")
+        inject_layout.addWidget(baseline_btn)
+        self.sidebar.baseline_btn = baseline_btn
 
         # Simple Inject button
         inject_simple_btn = QPushButton("💉 Inject (Simple)")
@@ -622,25 +622,57 @@ class FlowTabBuilder:
         inject_layout.addWidget(inject_simple_btn)
         self.sidebar.inject_simple_btn = inject_simple_btn
 
-        # Partial Loop Inject button
-        inject_partial_btn = QPushButton("💉 Inject (Partial Loop)")
-        inject_partial_btn.setFixedHeight(34)
-        inject_partial_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        inject_partial_btn.setStyleSheet(
+        # Advanced Inject button
+        inject_advanced_btn = QPushButton("💉 Inject (Advanced)")
+        inject_advanced_btn.setFixedHeight(34)
+        inject_advanced_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        inject_advanced_btn.setStyleSheet(
             self._uniform_button_style("#AF52DE", "#9A3FCC", "#8230B3")
         )
-        inject_partial_btn.setToolTip("Run partial loop injection (14-step protocol with spike)")
-        inject_layout.addWidget(inject_partial_btn)
-        self.sidebar.inject_partial_btn = inject_partial_btn
+        inject_advanced_btn.setToolTip("Run advanced injection (14-step protocol with spike)")
+        inject_layout.addWidget(inject_advanced_btn)
+        self.sidebar.inject_partial_btn = inject_advanced_btn
 
         affipump_card_layout.addLayout(inject_layout)
 
-        # Maintenance buttons row (Home and Emergency Stop)
+        # Flowrate control for Baseline/Injection (shows when buttons selected)
+        flowrate_row = QHBoxLayout()
+        flowrate_row.setSpacing(8)
+        flowrate_row.setContentsMargins(0, 0, 0, 0)
+
+        flowrate_label = QLabel("Flow Rate:")
+        flowrate_label.setStyleSheet(
+            "font-size: 12px; color: #86868B; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        flowrate_row.addWidget(flowrate_label)
+
+        self.sidebar.injection_flowrate_spin = QSpinBox()
+        self.sidebar.injection_flowrate_spin.setRange(1, 30000)
+        self.sidebar.injection_flowrate_spin.setValue(15)
+        self.sidebar.injection_flowrate_spin.setFixedWidth(80)
+        self.sidebar.injection_flowrate_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.sidebar.injection_flowrate_spin.setStyleSheet(
+            "QSpinBox { background: white; border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; "
+            "padding: 6px 8px; font-size: 13px; font-family: -apple-system, 'SF Mono', 'Menlo', monospace; } "
+            "QSpinBox:focus { border: 2px solid #1D1D1F; padding: 5px 7px; }"
+        )
+        flowrate_row.addWidget(self.sidebar.injection_flowrate_spin)
+
+        flowrate_unit = QLabel("µL/min")
+        flowrate_unit.setStyleSheet(
+            "font-size: 12px; color: #86868B; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        flowrate_row.addWidget(flowrate_unit)
+        flowrate_row.addStretch()
+
+        affipump_card_layout.addLayout(flowrate_row)
+
+        # Maintenance buttons row (Home, Stop, Flush - no flowrate inputs needed)
         maintenance_layout = QHBoxLayout()
         maintenance_layout.setSpacing(8)
 
         # Home Pumps button
-        home_btn = QPushButton("🏠 Home Pumps")
+        home_btn = QPushButton("🏠 Home")
         home_btn.setFixedHeight(34)
         home_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         home_btn.setStyleSheet(
@@ -660,6 +692,17 @@ class FlowTabBuilder:
         emergency_stop_btn.setToolTip("Emergency stop - immediately terminate all pump operations")
         maintenance_layout.addWidget(emergency_stop_btn)
         self.sidebar.pump_emergency_stop_btn = emergency_stop_btn
+
+        # Flush Loop button
+        flush_btn = QPushButton("🔄 Flush")
+        flush_btn.setFixedHeight(34)
+        flush_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        flush_btn.setStyleSheet(
+            self._uniform_button_style("#5AC8FA", "#32ADE6", "#209CCA")
+        )
+        flush_btn.setToolTip("Flush sample loop with buffer")
+        maintenance_layout.addWidget(flush_btn)
+        self.sidebar.flush_btn = flush_btn
 
         affipump_card_layout.addLayout(maintenance_layout)
 

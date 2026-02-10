@@ -5150,147 +5150,105 @@ class AffilabsMainWindow(QMainWindow):
         self.sidebar.set_scan_state(is_scanning)
 
     def _handle_debug_log_download(self) -> None:
-        """Handle debug log download button click."""
+        """Handle debug log download button click - automatically downloads to current directory."""
         import datetime
+        import os
+        import shutil
 
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from PySide6.QtWidgets import QMessageBox
 
-        # Generate filename with timestamp
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_filename = f"AffiLabs_debug_log_{timestamp}.txt"
+        try:
+            # Generate filename with timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"AffiLabs_debug_log_{timestamp}.txt"
 
-        # Open file save dialog
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Debug Log",
-            default_filename,
-            "Log Files (*.txt *.log);;All Files (*.*)",
-        )
+            # Save to current working directory
+            dest_path = os.path.join(os.getcwd(), filename)
 
-        if file_path:
-            try:
-                # In real app, this would collect actual debug log data
-                # For prototype, create a sample debug log
-                debug_content = f"""ezControl Debug Log
-Generated: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-================================================
+            # Source log file path (from logger.py configuration)
+            from settings import ROOT_DIR
+            source_log = os.path.join(ROOT_DIR, "logfile.txt")
 
-SYSTEM INFORMATION
-------------------
-Software Version: 4.0.0
-Python Version: 3.12.0
-Qt Version: 6.10.0
-Operating System: Windows 11
+            # Copy the actual log file
+            if os.path.exists(source_log):
+                shutil.copy2(source_log, dest_path)
+                logger.info(f"Debug log downloaded to: {dest_path}")
+            else:
+                # If source log doesn't exist, create a minimal log
+                with open(dest_path, "w", encoding="utf-8") as f:
+                    f.write(f"ezControl Debug Log\n")
+                    f.write(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Note: Main log file not found at {source_log}\n")
+                logger.warning(f"Source log not found, created minimal log at: {dest_path}")
 
-HARDWARE STATUS
-------------------
-Connected Devices: 1
-  - Device Type: SPR Sensor
-  - Serial Number: SPR-2025-001
-  - Firmware Version: 2.3.1
-  - Connection: USB 3.0
+            # Show success message with option to open folder
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Debug Log Downloaded")
+            msg.setIcon(QMessageBox.Icon.Information)
+            msg.setText("Debug log downloaded successfully")
+            msg.setInformativeText(
+                f"File saved to:\n{dest_path}\n\n"
+                "Click OK to open the folder."
+            )
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+            msg.setDefaultButton(QMessageBox.StandardButton.Ok)
+            msg.setStyleSheet(
+                "QMessageBox {"
+                "  background: {Colors.BACKGROUND_WHITE};"
+                "  font-family: {Fonts.SYSTEM};"
+                "}"
+                "QLabel {"
+                "  color: {Colors.PRIMARY_TEXT};"
+                "  font-size: 13px;"
+                "}"
+                "QPushButton {"
+                "  background: #1D1D1F;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  padding: 6px 16px;"
+                "  font-size: 13px;"
+                "  font-weight: 600;"
+                "  min-width: 60px;"
+                "  min-height: 28px;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #3A3A3C;"
+                "}",
+            )
+            result = msg.exec()
 
-SUBUNIT STATUS
-------------------
-Sensor: Ready
-Optics: Ready
-Fluidics: Not Ready
+            # Open folder if user clicked OK
+            if result == QMessageBox.StandardButton.Ok:
+                try:
+                    folder_path = os.path.dirname(os.path.abspath(dest_path))
+                    os.startfile(folder_path)
+                except Exception as e:
+                    logger.error(f"Could not open folder: {e}")
 
-OPERATIONAL LOG
-------------------
-[2025-11-20 14:23:15] Device powered on
-[2025-11-20 14:23:16] Hardware scan initiated
-[2025-11-20 14:23:17] Device SPR-2025-001 detected
-[2025-11-20 14:23:18] Subunit readiness check completed
-[2025-11-20 14:23:20] Calibration loaded
-[2025-11-20 14:24:00] Recording started - Cycle 1
-[2025-11-20 14:29:00] Recording stopped
+        except Exception as e:
+            # Show error message
+            error_msg = QMessageBox(self)
+            error_msg.setWindowTitle("Error")
+            error_msg.setIcon(QMessageBox.Icon.Critical)
+            error_msg.setText("Failed to download debug log")
+            error_msg.setInformativeText(f"Error: {e!s}")
+            error_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            error_msg.setStyleSheet(
+                "QMessageBox {"
+                "  background: {Colors.BACKGROUND_WHITE};"
+                "}"
+                "QPushButton {"
+                "  background: #FF3B30;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  padding: 6px 16px;"
+                "}",
+            )
+            error_msg.exec()
 
-PERFORMANCE METRICS
-------------------
-Total Operation Hours: 1,247 hrs
-Last Operation: Nov 19, 2025
-Average Session Duration: 3.2 hrs
-Total Cycles Recorded: 8,432
-
-ERROR LOG
-------------------
-[2025-11-19 10:15:23] WARNING: Temperature drift detected (23.2°C -> 23.8°C)
-[2025-11-18 15:42:10] INFO: Fluidics pump recalibrated
-[2025-11-17 08:30:05] WARNING: LED intensity below threshold, auto-adjusted
-
-MAINTENANCE REMINDERS
-------------------
-• Clean optics - Due at 1,500 hrs (253 hrs remaining)
-• Replace flow cell - Due at 2,000 hrs (753 hrs remaining)
-• Calibration check - Due every 250 hrs (Next: 3 hrs)
-
-================================================
-End of Debug Log
-"""
-
-                # Write to file
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(debug_content)
-
-                # Show success message
-                msg = QMessageBox(self)
-                msg.setWindowTitle("Debug Log Saved")
-                msg.setIcon(QMessageBox.Icon.Information)
-                msg.setText("Debug log saved successfully")
-                msg.setInformativeText(f"File saved to:\n{file_path}")
-                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg.setStyleSheet(
-                    "QMessageBox {"
-                    "  background: {Colors.BACKGROUND_WHITE};"
-                    "  font-family: {Fonts.SYSTEM};"
-                    "}"
-                    "QLabel {"
-                    "  color: {Colors.PRIMARY_TEXT};"
-                    "  font-size: 13px;"
-                    "}"
-                    "QPushButton {"
-                    "  background: #1D1D1F;"
-                    "  color: white;"
-                    "  border: none;"
-                    "  border-radius: 6px;"
-                    "  padding: 6px 16px;"
-                    "  font-size: 13px;"
-                    "  font-weight: 600;"
-                    "  min-width: 60px;"
-                    "  min-height: 28px;"
-                    "}"
-                    "QPushButton:hover {"
-                    "  background: #3A3A3C;"
-                    "}",
-                )
-                msg.exec()
-
-                logger.info(f"Debug log saved to: {file_path}")
-
-            except Exception as e:
-                # Show error message
-                error_msg = QMessageBox(self)
-                error_msg.setWindowTitle("Error")
-                error_msg.setIcon(QMessageBox.Icon.Critical)
-                error_msg.setText("Failed to save debug log")
-                error_msg.setInformativeText(f"Error: {e!s}")
-                error_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-                error_msg.setStyleSheet(
-                    "QMessageBox {"
-                    "  background: {Colors.BACKGROUND_WHITE};"
-                    "}"
-                    "QPushButton {"
-                    "  background: #FF3B30;"
-                    "  color: white;"
-                    "  border: none;"
-                    "  border-radius: 6px;"
-                    "  padding: 6px 16px;"
-                    "}",
-                )
-                error_msg.exec()
-
-                logger.error(f"Error saving debug log: {e}")
+            logger.error(f"Error downloading debug log: {e}")
 
     def _toggle_recording(self):
         """Toggle recording state - emit signal for Application to handle."""
