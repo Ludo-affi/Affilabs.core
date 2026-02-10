@@ -14,6 +14,8 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QSplashScreen
 from pathlib import Path
 
+from affilabs.utils.resource_path import get_affilabs_resource
+
 
 def _draw_protein_decorations(painter):
     """Draw stylized, semi-transparent molecular silhouettes as background art.
@@ -142,7 +144,7 @@ def create_splash_screen():
 
     # Try to load and draw icon
     try:
-        icon_path = Path(__file__).parent.parent / "ui" / "img" / "affinite2.ico"
+        icon_path = get_affilabs_resource("ui/img/affinite2.ico")
         if icon_path.exists():
             icon_pixmap = QPixmap(str(icon_path))
             # Draw icon at top left
@@ -226,7 +228,7 @@ def create_splash_screen():
 
         # Icon
         try:
-            icon_path = Path(__file__).parent.parent / "ui" / "img" / "affinite2.ico"
+            icon_path = get_affilabs_resource("ui/img/affinite2.ico")
             if icon_path.exists():
                 icon_pixmap = QPixmap(str(icon_path))
                 painter.drawPixmap(20, 20, 64, 64, icon_pixmap)

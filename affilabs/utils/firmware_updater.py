@@ -30,11 +30,10 @@ class PicoFirmwareUpdater:
 
         """
         self.com_port = com_port
+        from affilabs.utils.resource_path import get_resource_path
+
         self.firmware_path = (
-            Path(__file__).parent.parent.parent
-            / "firmware"
-            / "pico_p4spr"
-            / "affinite_p4spr_v1.8.uf2"
+            get_resource_path("firmware/pico_p4spr/affinite_p4spr_v1.8.uf2")
         )
 
     def get_current_version(self, ser: serial.Serial) -> str | None:

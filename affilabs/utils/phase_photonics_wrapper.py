@@ -166,7 +166,9 @@ class PhasePhotonics:
 
             # Use OEM-recommended DLL (Sensor64bit.dll) for optimal performance
             # Provides 120+ FPS and 8-10ms pixel reading times
-            dll_path = Path(__file__).parent / "Sensor64bit.dll"
+            from affilabs.utils.resource_path import get_affilabs_resource
+
+            dll_path = get_affilabs_resource("utils/Sensor64bit.dll")
             logger.debug("Using Sensor64bit.dll (OEM recommended for high performance)")
 
             if not dll_path.exists():

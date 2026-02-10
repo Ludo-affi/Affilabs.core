@@ -604,9 +604,10 @@ class HardwareManager(QObject):
 
             # Load device config
             import json
-            from pathlib import Path
 
-            config_path = Path(__file__).parent.parent / "config" / "device_config.json"
+            from affilabs.utils.resource_path import get_affilabs_resource
+
+            config_path = get_affilabs_resource("config/device_config.json")
             with open(config_path) as f:
                 config = json.load(f)
 

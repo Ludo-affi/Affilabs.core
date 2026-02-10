@@ -42,7 +42,9 @@ class SparkKnowledgeBase:
 
         if db_path is None:
             # Default to organized data location
-            db_path = Path(__file__).parent.parent.parent / "data" / "spark" / "knowledge_base.json"
+            from affilabs.utils.resource_path import get_resource_path
+
+            db_path = get_resource_path("data/spark/knowledge_base.json")
         self.db = TinyDB(str(db_path))
         self.articles = self.db.table("articles")
         self.faqs = self.db.table("faqs")

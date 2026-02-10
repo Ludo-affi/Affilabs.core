@@ -511,11 +511,13 @@ def run_convergence(
 
         # Check for ML models and load paths if available
         # Production location (bundled with application)
-        model_dir = Path(__file__).parent.parent / "convergence" / "models"
+        from affilabs.utils.resource_path import get_affilabs_resource, get_resource_path
+
+        model_dir = get_affilabs_resource("convergence/models")
 
         # Fallback to development location if production models don't exist
         if not model_dir.exists():
-            project_root = Path(__file__).parent.parent.parent
+            project_root = get_resource_path("")
             model_dir = project_root / "tools" / "ml_training" / "models"
 
         sensitivity_path = model_dir / "sensitivity_classifier.joblib"

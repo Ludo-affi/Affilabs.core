@@ -9,7 +9,7 @@ ${StrContains}  ; Declare StrContains function
 
 ; Installer Information
 !define PRODUCT_NAME "Affilabs-Core"
-!define PRODUCT_VERSION "1.05"
+!define PRODUCT_VERSION "2.0.2"
 !define PRODUCT_PUBLISHER "Affilabs"
 !define PRODUCT_WEB_SITE "https://affinitelabs.com"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
@@ -49,7 +49,7 @@ Section "Main Application" SecMain
   SetOutPath "$INSTDIR"
 
   ; Copy main executable
-  File "dist\Affilabs-Core.exe"
+  File "/oname=Affilabs-Core.exe" "dist\Affilabs-Core-v${PRODUCT_VERSION}.exe"
 
   ; Copy Zadig for driver installation (optional - check if exists)
   ${If} ${FileExists} "installer_files\zadig.exe"

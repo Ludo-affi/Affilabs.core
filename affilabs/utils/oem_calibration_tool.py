@@ -863,12 +863,14 @@ class DeviceProfileManager:
             return
 
         # Path to device_config.json (device-specific if serial provided)
+        from affilabs.utils.resource_path import get_affilabs_resource
+
         if serial_number:
             # Use device-specific config: config/devices/<serial>/device_config.json
-            config_path = Path(__file__).parent.parent / "config" / "devices" / serial_number / "device_config.json"
+            config_path = get_affilabs_resource(f"config/devices/{serial_number}/device_config.json")
         else:
             # Fallback to global config
-            config_path = Path(__file__).parent.parent / "config" / "device_config.json"
+            config_path = get_affilabs_resource("config/device_config.json")
 
         try:
             # Load existing config

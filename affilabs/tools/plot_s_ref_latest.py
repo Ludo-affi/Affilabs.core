@@ -15,7 +15,9 @@ except Exception as e:
     print(f"matplotlib not available: {e}")
     plt = None
 
-CONFIG_DEVICES_DIR = Path(__file__).resolve().parents[1] / "config" / "devices"
+from affilabs.utils.resource_path import get_affilabs_resource
+
+CONFIG_DEVICES_DIR = get_affilabs_resource("config/devices")
 
 
 def find_latest_device_config() -> Path | None:

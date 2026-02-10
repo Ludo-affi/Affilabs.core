@@ -46,7 +46,9 @@ class LEDCalibrationModelLoader:
 
         """
         if qc_base_path is None:
-            project_root = Path(__file__).resolve().parents[2]
+            from affilabs.utils.resource_path import get_resource_path
+
+            project_root = get_resource_path("")
             self.qc_base_path = (
                 project_root / "led_calibration_official" / "spr_calibration" / "data"
             )
@@ -77,7 +79,9 @@ class LEDCalibrationModelLoader:
         self.detector_serial = (detector_serial or "").strip().upper()
 
         # Check new consolidated location FIRST
-        project_root = Path(__file__).resolve().parents[2]
+        from affilabs.utils.resource_path import get_resource_path
+
+        project_root = get_resource_path("")
         active_model_file = (
             project_root / "calibrations" / "active" / self.detector_serial / "led_model.json"
         )

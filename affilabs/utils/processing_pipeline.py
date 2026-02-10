@@ -232,9 +232,10 @@ class PipelineRegistry:
         # Save pipeline preference to config file
         try:
             import json
-            from pathlib import Path
 
-            config_dir = Path(__file__).parent.parent.parent / "settings"
+            from affilabs.utils.resource_path import get_resource_path
+
+            config_dir = get_resource_path("settings")
             config_dir.mkdir(exist_ok=True)
             config_file = config_dir / "pipeline_config.json"
 

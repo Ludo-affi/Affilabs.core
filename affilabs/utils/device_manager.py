@@ -232,7 +232,9 @@ class DeviceManager:
     def _save_startup_config_to_active(self) -> None:
         """Save startup config to calibrations/active/{SERIAL}/startup_config.json."""
         try:
-            project_root = Path(__file__).resolve().parents[2]
+            from affilabs.utils.resource_path import get_resource_path
+
+            project_root = get_resource_path("")
             active_dir = project_root / "calibrations" / "active" / self.current_device_serial
             active_dir.mkdir(parents=True, exist_ok=True)
 

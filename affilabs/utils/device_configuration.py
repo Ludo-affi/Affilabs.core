@@ -174,10 +174,12 @@ class DeviceConfiguration:
         self.silent_load = silent_load  # Store for use in logging methods
 
         if config_path is None:
+            from affilabs.utils.resource_path import get_affilabs_resource
+
             if device_serial:
                 # Device-specific location: config/devices/<serial>/device_config.json
-                config_dir = (
-                    Path(__file__).parent.parent / "config" / "devices" / device_serial
+                config_dir = get_affilabs_resource(
+                    f"config/devices/{device_serial}"
                 )
                 config_dir.mkdir(parents=True, exist_ok=True)
                 self.config_path = config_dir / "device_config.json"
@@ -187,7 +189,7 @@ class DeviceConfiguration:
                     )
             else:
                 # Default location: config/device_config.json (fallback for unknown devices)
-                config_dir = Path(__file__).parent.parent / "config"
+                config_dir = get_affilabs_resource("config")
                 config_dir.mkdir(exist_ok=True)
                 self.config_path = config_dir / "device_config.json"
                 if not silent_load:

@@ -353,7 +353,9 @@ def train_led_model(
     }
 
     # Save to BOTH active location and legacy archive
-    project_root = Path(__file__).resolve().parents[2]
+    from affilabs.utils.resource_path import get_resource_path
+
+    project_root = get_resource_path("")
 
     # 1. Save to active calibrations (primary location)
     active_dir = project_root / "calibrations" / "active" / detector_serial
@@ -529,17 +531,15 @@ def run_oem_model_training_workflow(
                 import json
 
                 # Use device-specific config path (matches where servo cal saves)
-                config_path = (
-                    Path(__file__).parent.parent
-                    / "config"
-                    / "devices"
-                    / detector_serial
-                    / "device_config.json"
+                from affilabs.utils.resource_path import get_affilabs_resource
+
+                config_path = get_affilabs_resource(
+                    f"config/devices/{detector_serial}/device_config.json"
                 )
 
                 # Fallback to global config if device-specific doesn't exist
                 if not config_path.exists():
-                    config_path = Path(__file__).parent.parent / "config" / "device_config.json"
+                    config_path = get_affilabs_resource("config/device_config.json")
 
                 logger.info(f"Loading servo positions from: {config_path}")
 

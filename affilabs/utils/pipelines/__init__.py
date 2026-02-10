@@ -31,9 +31,9 @@ def initialize_pipelines():
     )
 
     # Load saved pipeline preference or default to fourier
-    config_file = (
-        Path(__file__).parent.parent.parent / "settings" / "pipeline_config.json"
-    )
+    from affilabs.utils.resource_path import get_resource_path
+
+    config_file = get_resource_path("settings/pipeline_config.json")
     saved_pipeline = "fourier"  # Default
 
     try:

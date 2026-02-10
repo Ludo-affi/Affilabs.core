@@ -34,6 +34,7 @@ class StartupCalibProgressDialog(QDialog):
     # Internal signals for thread-safe UI updates
     _update_title_signal = Signal(str)
     _update_status_signal = Signal(str)
+    _update_step_description_signal = Signal(str)  # Signal for step description updates
     _set_progress_signal = Signal(int, int)  # (value, maximum)
     _hide_progress_signal = Signal()
     _enable_start_signal = Signal()
@@ -99,6 +100,17 @@ class StartupCalibProgressDialog(QDialog):
         )
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.title_label)
+
+        # Step description label (shows current calibration step)
+        self.step_description_label = QLabel("")
+        self.step_description_label.setStyleSheet(
+            "font-size: 13px; color: #007AFF; font-weight: 600; padding: 4px;",
+        )
+        self.step_description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.step_description_label.setWordWrap(True)
+        self.step_description_label.setVisible(False)  # Hidden until calibration starts
+        self.step_description_label.setMinimumHeight(20)
+        main_layout.addWidget(self.step_description_label)
 
         # Progress bar (can be indeterminate or real progress)
         self.progress_bar = QProgressBar()
@@ -219,6 +231,7 @@ class StartupCalibProgressDialog(QDialog):
         # Connect internal signals for thread-safe UI updates
         self._update_title_signal.connect(self._do_update_title)
         self._update_status_signal.connect(self._do_update_status)
+        self._update_step_description_signal.connect(self._do_update_step_description)
         self._set_progress_signal.connect(self._do_set_progress)
         self._hide_progress_signal.connect(self._do_hide_progress)
         self._enable_start_signal.connect(self._do_enable_start)
@@ -336,6 +349,22 @@ class StartupCalibProgressDialog(QDialog):
             try:
                 self.title_label.setText(title)
                 self.setWindowTitle(title)
+            except RuntimeError:
+                pass  # Widget deleted
+
+    def update_step_description(self, description: str) -> None:
+        """Update the step description label (thread-safe via signal)."""
+        self._update_step_description_signal.emit(description)
+
+    def _do_update_step_description(self, description: str) -> None:
+        """Actually update step description label (runs in main thread)."""
+        if not self._is_closing and self.isVisible():
+            try:
+                if description:
+                    self.step_description_label.setText(description)
+                    self.step_description_label.setVisible(True)
+                else:
+                    self.step_description_label.setVisible(False)
             except RuntimeError:
                 pass  # Widget deleted
 

@@ -6,6 +6,7 @@ Extracted from affilabs_core_ui.py for better modularity.
 
 from pathlib import Path
 
+from affilabs.utils.resource_path import get_affilabs_resource
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
@@ -328,10 +329,8 @@ class NavigationPresenter:
     def _create_company_logo(self, layout):
         """Create company logo label."""
         logo_label = QLabel()
-        # Load logo using relative path from affilabs module
-        logo_path = (
-            Path(__file__).parent.parent / "ui" / "img" / "affinite-no-background.png"
-        )
+        # Load logo using resource path helper (works in frozen exe)
+        logo_path = get_affilabs_resource("ui/img/affinite-no-background.png")
 
         if logo_path.exists():
             logo_pixmap = QPixmap(str(logo_path))
