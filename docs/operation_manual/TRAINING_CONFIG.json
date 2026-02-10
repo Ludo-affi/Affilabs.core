@@ -1,0 +1,241 @@
+{
+  "dataset_info": {
+    "name": "AffiLabs.core v2.0 Operation Manual",
+    "version": "1.0",
+    "created_date": "2026-02-07",
+    "description": "Comprehensive operation and maintenance manual for P4SPR surface plasmon resonance system",
+    "primary_file": "OPERATION_MANUAL.md",
+    "status": "production-ready"
+  },
+  "content_stats": {
+    "total_lines": 1516,
+    "file_size_kb": 63,
+    "total_sections": 14,
+    "tables": 25,
+    "code_blocks": 5,
+    "procedures": 50,
+    "hardware_components": 15,
+    "maintenance_tasks": 30,
+    "troubleshooting_issues": 20,
+    "safety_rules": 10
+  },
+  "sections": [
+    {
+      "id": 1,
+      "name": "Critical Sensor Handling Disclaimer",
+      "type": "safety",
+      "priority": "critical",
+      "content_focus": ["liability", "sensor care", "safety protocols"]
+    },
+    {
+      "id": 2,
+      "name": "Quick Start Guide",
+      "type": "tutorial",
+      "priority": "high",
+      "content_focus": ["setup", "power requirements", "first steps"]
+    },
+    {
+      "id": 3,
+      "name": "System Overview",
+      "type": "reference",
+      "priority": "high",
+      "content_focus": ["hardware specs", "environmental conditions", "power specifications"]
+    },
+    {
+      "id": 4,
+      "name": "Software Purpose & Scope",
+      "type": "architectural",
+      "priority": "high",
+      "content_focus": ["workflow design", "feature overview", "design philosophy"]
+    },
+    {
+      "id": 5,
+      "name": "Getting to Auto-Read Section",
+      "type": "procedure",
+      "priority": "medium",
+      "content_focus": ["auto-baseline", "acquisition setup"]
+    },
+    {
+      "id": 6,
+      "name": "Creating a Method",
+      "type": "procedure",
+      "priority": "medium",
+      "content_focus": ["method builder", "cycle configuration", "workflow design"]
+    },
+    {
+      "id": 7,
+      "name": "Recording an Experiment",
+      "type": "procedure",
+      "priority": "high",
+      "content_focus": ["data acquisition", "real-time monitoring", "annotations"]
+    },
+    {
+      "id": 8,
+      "name": "Editing & Analyzing Data",
+      "type": "procedure",
+      "priority": "high",
+      "content_focus": ["analysis tools", "delta-spr measurement", "data validation"]
+    },
+    {
+      "id": 9,
+      "name": "Data Export Formats",
+      "type": "reference",
+      "priority": "medium",
+      "content_focus": ["file specifications", "export procedures", "data structures"]
+    },
+    {
+      "id": 10,
+      "name": "Manual Operation",
+      "type": "procedure",
+      "priority": "critical",
+      "content_focus": ["sensor installation", "channel addressing", "manual control"]
+    },
+    {
+      "id": 11,
+      "name": "Maintenance",
+      "type": "procedure",
+      "priority": "critical",
+      "content_focus": ["preventive maintenance", "cleaning protocols", "component replacement"]
+    },
+    {
+      "id": 12,
+      "name": "Software Compatibility",
+      "type": "reference",
+      "priority": "medium",
+      "content_focus": ["system requirements", "operating conditions", "version info"]
+    },
+    {
+      "id": 13,
+      "name": "Troubleshooting",
+      "type": "reference",
+      "priority": "high",
+      "content_focus": ["issue resolution", "diagnostic steps", "solutions"]
+    },
+    {
+      "id": 14,
+      "name": "Safety & Liability Summary",
+      "type": "safety",
+      "priority": "critical",
+      "content_focus": ["safety rules", "liability statements", "emergency contacts"]
+    }
+  ],
+  "spark_config": {
+    "enabled": true,
+    "use_case": "Distributed knowledge extraction and indexing",
+    "recommended_partitions": 5,
+    "processing_tasks": [
+      "Extract procedures and create searchable index",
+      "Parse tables into structured data",
+      "Build component relationship graph",
+      "Extract safety rules and critical warnings",
+      "Generate maintenance schedule matrix",
+      "Create troubleshooting decision tree",
+      "Build entity-relationship index"
+    ],
+    "output_formats": ["parquet", "json", "csv"],
+    "spark_version": "3.3+"
+  },
+  "tinyllama_training": {
+    "enabled": true,
+    "use_case": "Fine-tuning for SPR system operation and support chatbot",
+    "model_size": "1.1B parameters minimum",
+    "training_approach": "Instruction-following on procedures and troubleshooting",
+    "dataset_type": "instruction-response pairs",
+    "example_tasks": [
+      "procedure_guidance: 'How do I install a sensor?' → detailed installation steps",
+      "troubleshooting: 'Signal is noisy' → diagnostic and solution steps",
+      "maintenance_reminder: 'Due for biweekly cleaning?' → CLN-KIT procedure",
+      "safety_check: 'Best practices for sensor handling?' → critical safety rules",
+      "equipment_spec: 'What is the operating temperature range?' → specification lookup"
+    ],
+    "training_data_generation": {
+      "enabled": true,
+      "output_file": "training_pairs.jsonl",
+      "pair_count_estimate": 200,
+      "categories": {
+        "procedures": 80,
+        "troubleshooting": 60,
+        "maintenance": 30,
+        "safety": 20,
+        "specifications": 10
+      }
+    },
+    "vocabulary": {
+      "domains": ["surface plasmon resonance", "optics", "microfluidics", "laboratory equipment"],
+      "key_terms": [
+        "SPR", "sensorgram", "ΔSPR", "delta SPR", "microfluidic cell", "optical contact",
+        "polarizer", "Flame-T spectrometer", "channel A/B/C/D", "baseline drift",
+        "compression training", "P4SPR", "P4PRO", "Affinité sensor", "gold surface",
+        "air bubble", "injection", "regeneration", "binding response", "wavelength shift"
+      ]
+    },
+    "quality_metrics": {
+      "coverage": "All 14 sections represented in training data",
+      "safety_emphasis": "All critical warnings included in dataset",
+      "procedure_completeness": "Complete step-by-step procedures with decision points"
+    }
+  },
+  "preprocessing": {
+    "markdown_handling": "preserve_structure",
+    "table_processing": "structured_extraction",
+    "code_block_handling": "keep_original",
+    "special_characters": "preserve_emphasis_markers",
+    "encoding": "utf-8",
+    "line_endings": "lf"
+  },
+  "quality_assurance": {
+    "tests": [
+      "Verify all procedure steps are complete and sequenced",
+      "Check all safety rules are marked with warning symbols",
+      "Validate equipment specifications against device_config.json",
+      "Ensure all section cross-references are valid",
+      "Test troubleshooting decision paths for completeness",
+      "Verify maintenance schedules are consistent"
+    ],
+    "validation_status": "passed",
+    "validation_date": "2026-02-07"
+  },
+  "integration_points": {
+    "affilabs_core": {
+      "live_tab": "data_acquisition_reference",
+      "edit_tab": "analysis_and_measurement_reference",
+      "settings": "hardware_specifications",
+      "help_system": "context_sensitive_documentation"
+    },
+    "support_systems": {
+      "chatbot": "procedure_and_troubleshooting_backend",
+      "knowledge_base": "searchable_documentation",
+      "training": "operator_onboarding_materials",
+      "maintenance": "automated_scheduling_reference"
+    }
+  },
+  "metadata": {
+    "language": "english",
+    "target_audience": ["operators", "maintenance technicians", "researchers", "support staff"],
+    "technical_level": "intermediate to advanced",
+    "domain": "laboratory_equipment_operation",
+    "compliance": ["GLP", "GMP"],
+    "device_focus": "FLMT09788 (Flame-T Spectrometer with P4SPR)"
+  },
+  "version_history": {
+    "1.0": {
+      "date": "2026-02-07",
+      "status": "production-ready",
+      "changes": "Initial release with complete manual, cleaning kit procedures, environmental specs"
+    }
+  },
+  "next_steps": {
+    "immediate": [
+      "Generate training_pairs.jsonl from procedure and troubleshooting sections",
+      "Partition dataset by Spark for distributed processing",
+      "Fine-tune TinyLLaMA on instruction-response pairs",
+      "Build semantic search index for procedures"
+    ],
+    "follow_up": [
+      "Deploy trained model as chatbot API",
+      "Integrate with Affilabs.core help system",
+      "Monitor support queries for coverage gaps",
+      "Iterate on training data based on real user interactions"
+    ]
+  }
+}

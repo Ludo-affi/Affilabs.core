@@ -5,7 +5,9 @@
       "Bash(wc:*)",
       "Bash(tree:*)",
       "Bash(git mv:*)",
-      "Bash(python -c:*)"
+      "Bash(python -c:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)"
     ]
   }
 }

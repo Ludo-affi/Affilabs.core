@@ -46,7 +46,7 @@ def main() -> None:
     params = DetectorParams(
         max_counts=65535.0,
         saturation_threshold=63000.0,
-        min_integration_time=2.5,
+        min_integration_time=3.0,
         max_integration_time=100.0,
     )
 

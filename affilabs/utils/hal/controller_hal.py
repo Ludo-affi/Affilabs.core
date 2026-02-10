@@ -388,6 +388,20 @@ class PicoP4SPRAdapter:
         self._servo_s_pos = None
         self._servo_p_pos = None
 
+        # Load servo positions from device_config.json so set_mode() uses
+        # the correct positions immediately, not stale EEPROM values
+        if device_config is not None:
+            try:
+                positions = device_config.get_servo_positions()
+                if positions:
+                    self._servo_s_pos = positions["s"]
+                    self._servo_p_pos = positions["p"]
+                    logger.info(
+                        f"📌 Loaded servo positions from device_config: S={self._servo_s_pos}, P={self._servo_p_pos}"
+                    )
+            except Exception as e:
+                logger.warning(f"Could not load servo positions from device_config: {e}")
+
     @property
     def _ser(self):
         """Expose serial port for low-level calibration operations."""

@@ -360,38 +360,14 @@ class CalibrationService(QObject):
             pump_instruction = "  ✓  Buffer loaded in pump reservoir (for priming)\n"
 
         message = (
-            "Please verify before calibrating:\n\n"
+            "Please verify before calibrating:\n"
             "  ✓  Prism installed in sensor holder\n"
             "  ✓  Water or buffer applied to prism\n"
             "  ✓  No air bubbles visible\n"
             f"{pump_instruction}"
-            "  ✓  Temperature stabilized (10 min after power-on)\n\n"
+            "  ✓  Temperature stabilized (10 min after power-on)\n"
+            "\n6 steps, may take up to 5 minutes"
         )
-
-        if has_pump:
-            message += (
-                "Calibration Process:\n"
-                "  0. Pump Priming (6 cycles, ~60s)\n"
-                "     → Optical calibration starts during cycle 3\n"
-                "  1. Hardware Validation & LED Verification\n"
-                "  2. Wavelength Calibration\n"
-                "  3. LED Brightness Measurement & 3-Stage Model Load\n"
-                "  4. S-Mode LED Convergence + Reference Capture\n"
-                "  5. P-Mode LED Convergence + Reference + Dark Capture\n"
-                "  6. QC Validation & Result Packaging\n\n"
-                "Takes approximately 2 minutes (pump + optics)."
-            )
-        else:
-            message += (
-                "6-Step Calibration Process:\n"
-                "  1. Hardware Validation & LED Verification\n"
-                "  2. Wavelength Calibration\n"
-                "  3. LED Brightness Measurement & 3-Stage Model Load\n"
-                "  4. S-Mode LED Convergence + Reference Capture\n"
-                "  5. P-Mode LED Convergence + Reference + Dark Capture\n"
-                "  6. QC Validation & Result Packaging\n\n"
-                "Takes approximately 30-60 seconds."
-            )
 
         self._calibration_dialog = StartupCalibProgressDialog(
             parent=self.app.main_window,
@@ -1120,20 +1096,40 @@ class CalibrationService(QObject):
                         # USB buffer clear
                         logger.info("🔄 Clearing USB buffer with dummy reads...")
                         try:
-                            # NOTE: Skip changing integration time - just use current setting
-                            # Changing integration caused detector to hang on first read
+                            # Wake up device by re-setting integration time (triggers fresh USB command)
                             current_int = (
                                 usb._integration_time * 1000
                                 if hasattr(usb, "_integration_time")
                                 else 100
                             )
                             logger.info(
-                                f"   Using current integration time ({current_int:.1f}ms)..."
+                                f"   Waking up device with integration time re-set ({current_int:.1f}ms)..."
                             )
+                            usb.set_integration(current_int)
+                            time.sleep(0.1)  # Let device stabilize
+
+                            # Add timeout handling to prevent infinite blocking
+                            import threading
+
                             for i in range(3):
-                                dummy = usb.read_intensity()
-                                if dummy is not None:
+                                result = [None]  # Mutable container for thread result
+
+                                def read_with_timeout():
+                                    try:
+                                        result[0] = usb.read_intensity()
+                                    except Exception as e:
+                                        logger.warning(f"   Dummy read {i + 1}/3 error: {e}")
+
+                                read_thread = threading.Thread(target=read_with_timeout, daemon=True)
+                                read_thread.start()
+                                read_thread.join(timeout=5.0)  # 5 second timeout
+
+                                if read_thread.is_alive():
+                                    logger.warning(f"   Dummy read {i + 1}/3: TIMEOUT (continuing...)")
+                                elif result[0] is not None:
                                     logger.info(f"   Dummy read {i + 1}/3: Success")
+                                else:
+                                    logger.warning(f"   Dummy read {i + 1}/3: No data (continuing...)")
                                 time.sleep(0.05)
                             logger.info("[OK] USB buffer cleared")
                         except Exception as e:
@@ -1376,16 +1372,34 @@ class CalibrationService(QObject):
                 # CRITICAL FIX: Clear USB device buffer with dummy reads
                 logger.info("🔄 Clearing USB buffer with dummy reads...")
                 try:
-                    # NOTE: Skip changing integration time - just use current setting
-                    # Changing integration caused detector to hang on first read
+                    # Wake up device by re-setting integration time (triggers fresh USB command)
                     current_int = (
                         usb._integration_time * 1000 if hasattr(usb, "_integration_time") else 100
                     )
-                    logger.info(f"   Using current integration time ({current_int:.1f}ms)...")
+                    logger.info(f"   Waking up device with integration time re-set ({current_int:.1f}ms)...")
+                    usb.set_integration(current_int)
+                    time.sleep(0.1)  # Let device stabilize
+
+                    # Add timeout handling to prevent infinite blocking
+                    import threading
+
                     for i in range(3):
-                        dummy = usb.read_intensity()
-                        if dummy is not None:
-                            logger.info(f"   Dummy read {i + 1}/3: Success ({len(dummy)} pixels)")
+                        result = [None]  # Mutable container for thread result
+
+                        def read_with_timeout():
+                            try:
+                                result[0] = usb.read_intensity()
+                            except Exception as e:
+                                logger.warning(f"   Dummy read {i + 1}/3 error: {e}")
+
+                        read_thread = threading.Thread(target=read_with_timeout, daemon=True)
+                        read_thread.start()
+                        read_thread.join(timeout=5.0)  # 5 second timeout
+
+                        if read_thread.is_alive():
+                            logger.warning(f"   Dummy read {i + 1}/3: TIMEOUT (continuing...)")
+                        elif result[0] is not None:
+                            logger.info(f"   Dummy read {i + 1}/3: Success ({len(result[0])} pixels)")
                         else:
                             logger.warning(f"   Dummy read {i + 1}/3: No data (continuing...)")
                         time.sleep(0.05)

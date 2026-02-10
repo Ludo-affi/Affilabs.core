@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -870,86 +871,91 @@ class CompressionTrainerWindow(QMainWindow):
         self.instruction.setMinimumHeight(70)
         instr_inner.addWidget(self.instruction)
 
-        # Sweet spot adjustment (visible only in Step 2)
+        # Compression range settings (collapsible, visible only in Step 2)
         self.sweet_spot_container = QWidget()
         sweet_layout = QVBoxLayout(self.sweet_spot_container)
         sweet_layout.setContentsMargins(0, 8, 0, 0)
-        sweet_layout.setSpacing(6)
+        sweet_layout.setSpacing(0)
 
-        sweet_label = QLabel("Target Compression Range (adjustable):")
-        sweet_label.setStyleSheet(
-            f"font-size: 12px; font-weight: 600; color: {COL_SUBTLE}; "
-            f"font-family: {FONT}; background: transparent;"
+        # Toggle button
+        self.settings_toggle_btn = QPushButton("▸ Advanced Settings")
+        self.settings_toggle_btn.setFixedHeight(28)
+        self.settings_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_toggle_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; color: {COL_SUBTLE}; "
+            f"border: none; text-align: left; padding: 4px; "
+            f"font-size: 12px; font-weight: 600; font-family: {FONT}; }}"
+            f"QPushButton:hover {{ color: {COL_BLUE}; }}"
         )
-        sweet_layout.addWidget(sweet_label)
+        self.settings_toggle_btn.clicked.connect(self._toggle_settings)
+        sweet_layout.addWidget(self.settings_toggle_btn, 0, Qt.AlignmentFlag.AlignLeft)
 
-        sweet_controls = QHBoxLayout()
-        sweet_controls.setSpacing(12)
+        # Settings panel (collapsible)
+        self.settings_panel = QWidget()
+        settings_panel_layout = QHBoxLayout(self.settings_panel)
+        settings_panel_layout.setContentsMargins(0, 8, 0, 0)
+        settings_panel_layout.setSpacing(8)
 
-        # Low value
-        from PySide6.QtWidgets import QDoubleSpinBox
-        low_layout = QVBoxLayout()
-        low_layout.setSpacing(2)
-        low_label = QLabel("Min (%)")
-        low_label.setStyleSheet(f"font-size: 11px; color: {COL_SUBTLE}; font-family: {FONT};")
-        low_layout.addWidget(low_label)
-        self.sweet_low_spin = QDoubleSpinBox()
-        self.sweet_low_spin.setRange(85.0, 99.0)
-        self.sweet_low_spin.setSingleStep(0.5)
-        self.sweet_low_spin.setValue(self.cfg.sweet_spot_low * 100)
-        self.sweet_low_spin.setSuffix("%")
-        self.sweet_low_spin.setDecimals(1)
-        self.sweet_low_spin.setFixedWidth(90)
+        # Lower limit
+        lower_label = QLabel("Lower:")
+        lower_label.setStyleSheet(
+            f"font-size: 12px; color: {COL_TEXT}; font-family: {FONT};"
+        )
+        settings_panel_layout.addWidget(lower_label)
+
+        self.sweet_low_spin = QSpinBox()
+        self.sweet_low_spin.setRange(85, 150)
+        self.sweet_low_spin.setSingleStep(1)
+        self.sweet_low_spin.setValue(int(self.cfg.sweet_spot_low * 100))
+        self.sweet_low_spin.setFixedWidth(70)
+        self.sweet_low_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.sweet_low_spin.setStyleSheet(
-            f"QDoubleSpinBox {{ background: white; border: 1.5px solid {COL_BORDER}; "
-            f"border-radius: 6px; padding: 4px 8px; font-size: 13px; font-family: {FONT}; }}"
+            f"QSpinBox {{ background: white; border: 1px solid {COL_BORDER}; "
+            f"border-radius: 4px; padding: 4px; font-size: 13px; "
+            f"font-weight: 600; color: {COL_TEXT}; font-family: {FONT}; }}"
+            f"QSpinBox:focus {{ border-color: {COL_BLUE}; }}"
         )
-        low_layout.addWidget(self.sweet_low_spin)
-        sweet_controls.addLayout(low_layout)
+        settings_panel_layout.addWidget(self.sweet_low_spin)
 
-        # High value
-        high_layout = QVBoxLayout()
-        high_layout.setSpacing(2)
-        high_label = QLabel("Max (%)")
-        high_label.setStyleSheet(f"font-size: 11px; color: {COL_SUBTLE}; font-family: {FONT};")
-        high_layout.addWidget(high_label)
-        self.sweet_high_spin = QDoubleSpinBox()
-        self.sweet_high_spin.setRange(85.0, 99.0)
-        self.sweet_high_spin.setSingleStep(0.5)
-        self.sweet_high_spin.setValue(self.cfg.sweet_spot_high * 100)
-        self.sweet_high_spin.setSuffix("%")
-        self.sweet_high_spin.setDecimals(1)
-        self.sweet_high_spin.setFixedWidth(90)
-        self.sweet_high_spin.setStyleSheet(
-            f"QDoubleSpinBox {{ background: white; border: 1.5px solid {COL_BORDER}; "
-            f"border-radius: 6px; padding: 4px 8px; font-size: 13px; font-family: {FONT}; }}"
+        # Upper limit
+        upper_label = QLabel("Upper:")
+        upper_label.setStyleSheet(
+            f"font-size: 12px; color: {COL_TEXT}; font-family: {FONT};"
         )
-        high_layout.addWidget(self.sweet_high_spin)
-        sweet_controls.addLayout(high_layout)
+        settings_panel_layout.addWidget(upper_label)
+
+        self.sweet_high_spin = QSpinBox()
+        self.sweet_high_spin.setRange(85, 150)
+        self.sweet_high_spin.setSingleStep(1)
+        self.sweet_high_spin.setValue(int(self.cfg.sweet_spot_high * 100))
+        self.sweet_high_spin.setFixedWidth(70)
+        self.sweet_high_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.sweet_high_spin.setStyleSheet(
+            f"QSpinBox {{ background: white; border: 1px solid {COL_BORDER}; "
+            f"border-radius: 4px; padding: 4px; font-size: 13px; "
+            f"font-weight: 600; color: {COL_TEXT}; font-family: {FONT}; }}"
+            f"QSpinBox:focus {{ border-color: {COL_BLUE}; }}"
+        )
+        settings_panel_layout.addWidget(self.sweet_high_spin)
 
         # Reset button
         reset_btn = QPushButton("Reset")
-        reset_btn.setFixedHeight(28)
-        reset_btn.setFixedWidth(70)
+        reset_btn.setFixedHeight(26)
+        reset_btn.setFixedWidth(60)
         reset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         reset_btn.setStyleSheet(
-            f"QPushButton {{ background: #F2F2F7; color: {COL_SUBTLE}; "
-            f"border: 1px solid {COL_BORDER}; border-radius: 6px; "
-            f"font-size: 12px; font-weight: 600; font-family: {FONT}; }}"
-            f"QPushButton:hover {{ background: #E8E8ED; }}"
+            f"QPushButton {{ background: {COL_BORDER}; color: {COL_SUBTLE}; "
+            f"border: none; border-radius: 4px; "
+            f"font-size: 11px; font-weight: 600; font-family: {FONT}; }}"
+            f"QPushButton:hover {{ background: #D1D1D6; }}"
         )
         reset_btn.clicked.connect(self._reset_sweet_spot_to_defaults)
-        sweet_controls.addWidget(reset_btn, 0, Qt.AlignmentFlag.AlignBottom)
-        sweet_controls.addStretch()
+        settings_panel_layout.addWidget(reset_btn)
 
-        sweet_layout.addLayout(sweet_controls)
+        settings_panel_layout.addStretch()
 
-        sweet_help = QLabel("Adjust if sensor shows different optimal compression")
-        sweet_help.setStyleSheet(
-            f"font-size: 10px; font-style: italic; color: {COL_SUBTLE}; "
-            f"font-family: {FONT}; background: transparent;"
-        )
-        sweet_layout.addWidget(sweet_help)
+        sweet_layout.addWidget(self.settings_panel)
+        self.settings_panel.hide()  # Collapsed by default
 
         instr_inner.addWidget(self.sweet_spot_container)
         self.sweet_spot_container.hide()  # Hidden by default, shown in Step 2
@@ -1094,10 +1100,19 @@ class CompressionTrainerWindow(QMainWindow):
         self._stage = stage
         self._update_stage_ui()
 
+    def _toggle_settings(self) -> None:
+        """Toggle advanced settings visibility."""
+        visible = self.settings_panel.isVisible()
+        self.settings_panel.setVisible(not visible)
+        if visible:
+            self.settings_toggle_btn.setText("▸ Advanced Settings")
+        else:
+            self.settings_toggle_btn.setText("▾ Advanced Settings")
+
     def _reset_sweet_spot_to_defaults(self) -> None:
         """Reset sweet spot range to default values."""
-        self.sweet_low_spin.setValue(0.94 * 100)
-        self.sweet_high_spin.setValue(0.96 * 100)
+        self.sweet_low_spin.setValue(94)
+        self.sweet_high_spin.setValue(96)
 
     def _update_stage_ui(self) -> None:
         s = self._stage
@@ -1370,8 +1385,8 @@ class CompressionTrainerWindow(QMainWindow):
             return
 
         self._chip_water_ratio = self._averaged_ratio()
-        
-        # Get user-adjusted sweet spot values from spinboxes
+
+        # Get user-adjusted sweet spot values from spinboxes (convert from integer to decimal)
         sweet_lo = self.sweet_low_spin.value() / 100.0
         sweet_hi = self.sweet_high_spin.value() / 100.0
         

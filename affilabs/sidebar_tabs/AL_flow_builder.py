@@ -252,72 +252,10 @@ class FlowTabBuilder:
             tab_layout: QVBoxLayout to add flow tab widgets to
 
         """
-        # Sections not requiring flow (above)
-        self._build_valve_control(tab_layout)
-        self._build_internal_pump_control(tab_layout)
-
-        # Flow display and sections requiring flow (below)
         self._build_intelligence_bar(tab_layout)
         self._build_affipump_control(tab_layout)
-
-        # Overnight Mode checkbox
-        overnight_layout = QHBoxLayout()
-        overnight_layout.addSpacing(12)
-
-        overnight_checkbox = QCheckBox("🌙 Overnight Mode (1 point/min)")
-        overnight_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
-        overnight_checkbox.setStyleSheet(
-            "QCheckBox {"
-            "  spacing: 6px;"
-            "  font-size: 12px;"
-            "  font-weight: 500;"
-            "  color: #1D1D1F;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QCheckBox::indicator {"
-            "  width: 18px;"
-            "  height: 18px;"
-            "  border-radius: 3px;"
-            "  border: 1px solid rgba(0, 0, 0, 0.2);"
-            "  background: white;"
-            "}"
-            "QCheckBox::indicator:checked {"
-            "  background: #007AFF;"
-            "  border-color: #007AFF;"
-            "  image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOSIgdmlld0JveD0iMCAwIDEyIDkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgNEw0LjUgNy41TDExIDEiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+);"
-            "}"
-        )
-        overnight_checkbox.setToolTip(
-            "Slow acquisition mode: 15 seconds between channels = 1 data point per minute.\n"
-            "Ideal for overnight stability monitoring with minimal data collection."
-        )
-        try:
-            import settings
-            overnight_checkbox.setChecked(getattr(settings, 'OVERNIGHT_MODE', False))
-        except Exception:
-            pass
-
-        def _on_overnight_changed(checked):
-            try:
-                import settings
-                settings.OVERNIGHT_MODE = checked
-                if settings.OVERNIGHT_MODE:
-                    from affilabs.utils.logger import logger
-                    logger.info("🌙 Overnight mode ENABLED (1 point/minute)")
-                else:
-                    from affilabs.utils.logger import logger
-                    logger.info("☀️ Overnight mode DISABLED (normal acquisition)")
-            except Exception:
-                pass
-
-        overnight_checkbox.toggled.connect(_on_overnight_changed)
-        overnight_layout.addWidget(overnight_checkbox)
-        overnight_layout.addStretch()
-
-        overnight_container = QWidget()
-        overnight_container.setLayout(overnight_layout)
-        tab_layout.addWidget(overnight_container)
+        self._build_valve_control(tab_layout)
+        self._build_internal_pump_control(tab_layout)
 
         # Add stretch to push content to top
         tab_layout.addStretch()
@@ -538,95 +476,7 @@ class FlowTabBuilder:
         )
         affipump_card_layout.addWidget(operations_label)
 
-        # Start Buffer and Flush row
-        start_flush_layout = QHBoxLayout()
-        start_flush_layout.setSpacing(8)
-
-        # Start Buffer button
-        start_buffer_btn = QPushButton("▶ Start Buffer")
-        start_buffer_btn.setFixedHeight(34)
-        start_buffer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        start_buffer_btn.setStyleSheet(
-            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
-        )
-        start_buffer_btn.setToolTip("Start continuous buffer flow")
-        start_flush_layout.addWidget(start_buffer_btn)
-        self.sidebar.start_buffer_btn = start_buffer_btn
-
-        affipump_card_layout.addLayout(start_flush_layout)
-
-        # Injection & Baseline buttons row (with flowrate controls)
-        inject_layout = QHBoxLayout()
-        inject_layout.setSpacing(8)
-
-        # Baseline button
-        baseline_btn = QPushButton("📊 Baseline")
-        baseline_btn.setFixedHeight(34)
-        baseline_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        baseline_btn.setStyleSheet(
-            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
-        )
-        baseline_btn.setToolTip("Run baseline acquisition")
-        inject_layout.addWidget(baseline_btn)
-        self.sidebar.baseline_btn = baseline_btn
-
-        # Simple Inject button
-        inject_simple_btn = QPushButton("💉 Inject (Simple)")
-        inject_simple_btn.setFixedHeight(34)
-        inject_simple_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        inject_simple_btn.setStyleSheet(
-            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
-        )
-        inject_simple_btn.setToolTip("Run simple injection (full syringe dispense with contact time)")
-        inject_layout.addWidget(inject_simple_btn)
-        self.sidebar.inject_simple_btn = inject_simple_btn
-
-        # Advanced Inject button
-        inject_advanced_btn = QPushButton("💉 Inject (Advanced)")
-        inject_advanced_btn.setFixedHeight(34)
-        inject_advanced_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        inject_advanced_btn.setStyleSheet(
-            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
-        )
-        inject_advanced_btn.setToolTip("Run advanced injection (14-step protocol with spike)")
-        inject_layout.addWidget(inject_advanced_btn)
-        self.sidebar.inject_partial_btn = inject_advanced_btn
-
-        affipump_card_layout.addLayout(inject_layout)
-
-        # Flowrate control for Baseline/Injection (shows when buttons selected)
-        flowrate_row = QHBoxLayout()
-        flowrate_row.setSpacing(8)
-        flowrate_row.setContentsMargins(0, 0, 0, 0)
-
-        flowrate_label = QLabel("Flow Rate:")
-        flowrate_label.setStyleSheet(
-            "font-size: 12px; color: #86868B; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-        )
-        flowrate_row.addWidget(flowrate_label)
-
-        self.sidebar.injection_flowrate_spin = QSpinBox()
-        self.sidebar.injection_flowrate_spin.setRange(1, 30000)
-        self.sidebar.injection_flowrate_spin.setValue(15)
-        self.sidebar.injection_flowrate_spin.setFixedWidth(80)
-        self.sidebar.injection_flowrate_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
-        self.sidebar.injection_flowrate_spin.setStyleSheet(
-            "QSpinBox { background: white; border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; "
-            "padding: 6px 8px; font-size: 13px; font-family: -apple-system, 'SF Mono', 'Menlo', monospace; } "
-            "QSpinBox:focus { border: 2px solid #1D1D1F; padding: 5px 7px; }"
-        )
-        flowrate_row.addWidget(self.sidebar.injection_flowrate_spin)
-
-        flowrate_unit = QLabel("µL/min")
-        flowrate_unit.setStyleSheet(
-            "font-size: 12px; color: #86868B; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-        )
-        flowrate_row.addWidget(flowrate_unit)
-        flowrate_row.addStretch()
-
-        affipump_card_layout.addLayout(flowrate_row)
-
-        # Maintenance buttons row (Home, Stop, Flush - no flowrate inputs needed)
+        # Maintenance buttons row (Home, Stop, Flush - above flowrate)
         maintenance_layout = QHBoxLayout()
         maintenance_layout.setSpacing(8)
 
@@ -664,6 +514,94 @@ class FlowTabBuilder:
         self.sidebar.flush_btn = flush_btn
 
         affipump_card_layout.addLayout(maintenance_layout)
+
+        # Flowrate control for Baseline/Injection
+        flowrate_row = QHBoxLayout()
+        flowrate_row.setSpacing(8)
+        flowrate_row.setContentsMargins(0, 0, 0, 0)
+
+        flowrate_label = QLabel("Flow Rate:")
+        flowrate_label.setStyleSheet(
+            "font-size: 12px; color: #86868B; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        flowrate_row.addWidget(flowrate_label)
+
+        self.sidebar.injection_flowrate_spin = QSpinBox()
+        self.sidebar.injection_flowrate_spin.setRange(1, 30000)
+        self.sidebar.injection_flowrate_spin.setValue(15)
+        self.sidebar.injection_flowrate_spin.setFixedWidth(80)
+        self.sidebar.injection_flowrate_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.sidebar.injection_flowrate_spin.setStyleSheet(
+            "QSpinBox { background: white; border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; "
+            "padding: 6px 8px; font-size: 13px; font-family: -apple-system, 'SF Mono', 'Menlo', monospace; } "
+            "QSpinBox:focus { border: 2px solid #1D1D1F; padding: 5px 7px; }"
+        )
+        flowrate_row.addWidget(self.sidebar.injection_flowrate_spin)
+
+        flowrate_unit = QLabel("µL/min")
+        flowrate_unit.setStyleSheet(
+            "font-size: 12px; color: #86868B; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        flowrate_row.addWidget(flowrate_unit)
+        flowrate_row.addStretch()
+
+        affipump_card_layout.addLayout(flowrate_row)
+
+        # Start Buffer row (below flowrate)
+        start_flush_layout = QHBoxLayout()
+        start_flush_layout.setSpacing(8)
+
+        # Start Buffer button
+        start_buffer_btn = QPushButton("▶ Start Buffer")
+        start_buffer_btn.setFixedHeight(34)
+        start_buffer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        start_buffer_btn.setStyleSheet(
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
+        )
+        start_buffer_btn.setToolTip("Start continuous buffer flow")
+        start_flush_layout.addWidget(start_buffer_btn)
+        self.sidebar.start_buffer_btn = start_buffer_btn
+
+        affipump_card_layout.addLayout(start_flush_layout)
+
+        # Injection & Baseline buttons row (below flowrate)
+        inject_layout = QHBoxLayout()
+        inject_layout.setSpacing(8)
+
+        # Baseline button
+        baseline_btn = QPushButton("📊 Baseline")
+        baseline_btn.setFixedHeight(34)
+        baseline_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        baseline_btn.setStyleSheet(
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
+        )
+        baseline_btn.setToolTip("Run baseline acquisition")
+        inject_layout.addWidget(baseline_btn)
+        self.sidebar.baseline_btn = baseline_btn
+
+        # Simple Inject button
+        inject_simple_btn = QPushButton("💉 Inject (Simple)")
+        inject_simple_btn.setFixedHeight(34)
+        inject_simple_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        inject_simple_btn.setStyleSheet(
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
+        )
+        inject_simple_btn.setToolTip("Run simple injection (full syringe dispense with contact time)")
+        inject_layout.addWidget(inject_simple_btn)
+        self.sidebar.inject_simple_btn = inject_simple_btn
+
+        # Advanced Inject button
+        inject_advanced_btn = QPushButton("💉 Inject (Advanced)")
+        inject_advanced_btn.setFixedHeight(34)
+        inject_advanced_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        inject_advanced_btn.setStyleSheet(
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
+        )
+        inject_advanced_btn.setToolTip("Run advanced injection (14-step protocol with spike)")
+        inject_layout.addWidget(inject_advanced_btn)
+        self.sidebar.inject_partial_btn = inject_advanced_btn
+
+        affipump_card_layout.addLayout(inject_layout)
 
         # Advanced Settings button row
         advanced_layout = QHBoxLayout()

@@ -186,10 +186,10 @@ class StartupCalibProgressDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(False)  # Non-blocking - allows background processing
-        self.setMinimumWidth(500)
-        self.setMinimumHeight(400)
-        self.setMaximumWidth(600)
-        self.setMaximumHeight(700)
+        self.setMinimumWidth(460)
+        self.setMinimumHeight(200)
+        self.setMaximumWidth(520)
+        self.setMaximumHeight(400)
 
         # Track dialog state to prevent race conditions
         self._is_closing = False
@@ -222,8 +222,8 @@ class StartupCalibProgressDialog(QDialog):
 
         # Main layout
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(32, 32, 32, 32)
-        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(24, 20, 24, 20)
+        main_layout.setSpacing(10)
 
         # Title
         self.title_label = QLabel(title)
@@ -265,12 +265,12 @@ class StartupCalibProgressDialog(QDialog):
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
-        self.status_label.setMinimumHeight(50)
-        self.status_label.setMaximumHeight(280)
+        self.status_label.setMinimumHeight(30)
+        self.status_label.setMaximumHeight(160)
         main_layout.addWidget(self.status_label)
 
-        # Add spacer for better vertical distribution
-        main_layout.addSpacing(10)
+        # Small spacer before buttons
+        main_layout.addSpacing(4)
 
         # Start button (optional, initially disabled if shown)
         self.start_button = None

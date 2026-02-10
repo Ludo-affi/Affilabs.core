@@ -6,7 +6,8 @@ Replaces the cramped sidebar form with a spacious popup dialog for better UX.
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QPlainTextEdit, QFrame, QTextEdit, QScrollArea, QSizePolicy,
-    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QLineEdit, QComboBox
+    QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QLineEdit, QComboBox,
+    QCheckBox
 )
 from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QKeyEvent, QCursor, QColor
@@ -947,6 +948,51 @@ class MethodBuilderDialog(QDialog):
         )
         layout.addWidget(self.method_table)
 
+        # Overnight Mode checkbox (below Method Queue table)
+        overnight_row = QHBoxLayout()
+        overnight_row.setContentsMargins(0, 8, 0, 8)
+        overnight_row.addStretch()
+
+        self.overnight_mode_check = QCheckBox("🌙 Overnight Mode")
+        self.overnight_mode_check.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.overnight_mode_check.setToolTip(
+            "Enable overnight mode - system will run continuously without user interaction"
+        )
+        # Load current setting from settings module
+        try:
+            import settings as root_settings
+            self.overnight_mode_check.setChecked(getattr(root_settings, "OVERNIGHT_MODE", False))
+        except Exception:
+            pass
+        # Connect to update settings when toggled
+        self.overnight_mode_check.stateChanged.connect(self._on_overnight_mode_changed)
+        self.overnight_mode_check.setStyleSheet(
+            "QCheckBox {"
+            "  spacing: 6px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  color: #1D1D1F;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QCheckBox::indicator {"
+            "  width: 16px;"
+            "  height: 16px;"
+            "  border-radius: 3px;"
+            "  border: 1px solid rgba(0, 0, 0, 0.2);"
+            "  background: white;"
+            "}"
+            "QCheckBox::indicator:checked {"
+            "  background: #007AFF;"
+            "  border-color: #007AFF;"
+            "}"
+            "QCheckBox::indicator:hover {"
+            "  border-color: #007AFF;"
+            "}"
+        )
+        overnight_row.addWidget(self.overnight_mode_check)
+        overnight_row.addStretch()
+        layout.addLayout(overnight_row)
+
         # Queue control buttons
         queue_btn_row = QHBoxLayout()
 
@@ -1542,6 +1588,15 @@ Baseline 2min
             self._local_cycles[row], self._local_cycles[row + 1] = self._local_cycles[row + 1], self._local_cycles[row]
             self._refresh_method_table()
             self.method_table.selectRow(row + 1)
+
+    def _on_overnight_mode_changed(self, state):
+        """Update settings.OVERNIGHT_MODE when checkbox is toggled."""
+        try:
+            import settings as root_settings
+            root_settings.OVERNIGHT_MODE = (state == Qt.CheckState.Checked.value)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to update OVERNIGHT_MODE setting: {e}")
 
     def _on_push_to_queue(self):
         """Push all cycles to main queue."""

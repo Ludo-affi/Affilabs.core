@@ -108,7 +108,7 @@ def run_startup_calibration(
         # STEP 1: Hardware Validation & LED Preparation
         # =================================================================
         if progress_callback:
-            progress_callback("Step 1/6: Preparing LEDs...", 5)
+            progress_callback("Step 1/6", 5)
 
         logger.info("STEP 1: Hardware Validation & LED Preparation")
         logger.info("-" * 80)
@@ -135,7 +135,7 @@ def run_startup_calibration(
         # STEP 2: Wavelength Calibration
         # =================================================================
         if progress_callback:
-            progress_callback("Step 2/6: Wavelength calibration...", 17)
+            progress_callback("Step 2/6", 17)
 
         logger.info("STEP 2: Wavelength Calibration")
         logger.info("-" * 80)
@@ -170,7 +170,7 @@ def run_startup_calibration(
         # STEP 3: LED Brightness Measurement & Model Validation
         # =================================================================
         if progress_callback:
-            progress_callback("Step 3/6: LED brightness & model check...", 30)
+            progress_callback("Step 3/6", 30)
 
         logger.info("STEP 3: LED Brightness Measurement & Model Validation")
         logger.info("-" * 80)
@@ -425,7 +425,7 @@ def run_startup_calibration(
         # STEP 4: S-Mode LED Convergence + Reference Capture
         # =================================================================
         if progress_callback:
-            progress_callback("Step 4/6: S-mode LED convergence...", 45)
+            progress_callback("Step 4/6", 45)
 
         logger.info("STEP 4: S-Mode LED Convergence + Reference Capture")
         logger.info("-" * 80)
@@ -951,7 +951,7 @@ def run_startup_calibration(
         # STEP 5: P-Mode LED Convergence + Reference + Dark Capture
         # =================================================================
         if progress_callback:
-            progress_callback("Step 5/6: P-mode LED convergence...", 65)
+            progress_callback("Step 5/6", 65)
 
         logger.info("STEP 5: P-Mode LED Convergence + Reference + Dark Capture")
         logger.info("-" * 80)
@@ -1206,7 +1206,7 @@ def run_startup_calibration(
         # STEP 6: QC Validation & Result Packaging
         # =================================================================
         if progress_callback:
-            progress_callback("Step 6/6: QC validation...", 85)
+            progress_callback("Step 6/6", 85)
 
         logger.info("STEP 6: QC Validation & Result Packaging")
         logger.info("-" * 80)

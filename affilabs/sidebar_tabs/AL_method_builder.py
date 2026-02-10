@@ -228,6 +228,21 @@ class MethodTabBuilder:
 
     def _build_cycle_settings(self, tab_layout: QVBoxLayout):
         """Build method builder section (replaced with button to open popup)."""
+        # Container for Build Method section
+        from PySide6.QtWidgets import QFrame
+
+        method_container = QFrame()
+        method_container.setStyleSheet(
+            "QFrame {"
+            "  background: #F5F5F7;"
+            "  border-radius: 8px;"
+            "  padding: 12px;"
+            "}"
+        )
+        method_layout = QVBoxLayout(method_container)
+        method_layout.setContentsMargins(12, 12, 12, 12)
+        method_layout.setSpacing(8)
+
         # Build Method button
         self.sidebar.build_method_btn = QPushButton("➕ Build Method")
         self.sidebar.build_method_btn.setFixedHeight(32)
@@ -250,7 +265,10 @@ class MethodTabBuilder:
             "}"
         )
         self.sidebar.build_method_btn.setToolTip("Open method builder to create and queue cycles")
-        tab_layout.addWidget(self.sidebar.build_method_btn)
+        method_layout.addWidget(self.sidebar.build_method_btn)
+
+        # Add container to main layout
+        tab_layout.addWidget(method_container)
         tab_layout.addSpacing(12)
 
     def _build_note_input(self, parent_layout: QVBoxLayout):

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -49,10 +49,10 @@ class StartupCalibProgressDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(False)  # Non-blocking - allows background processing
-        self.setMinimumWidth(500)
-        self.setMinimumHeight(400)
-        self.setMaximumWidth(600)
-        self.setMaximumHeight(700)
+        self.setMinimumWidth(460)
+        self.setMinimumHeight(200)
+        self.setMaximumWidth(520)
+        self.setMaximumHeight(400)
 
         # Track dialog state to prevent race conditions
         self._is_closing = False
@@ -85,8 +85,8 @@ class StartupCalibProgressDialog(QDialog):
 
         # Main layout
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(32, 32, 32, 32)
-        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(24, 20, 24, 20)
+        main_layout.setSpacing(10)
 
         # Title
         self.title_label = QLabel(title)
@@ -121,6 +121,20 @@ class StartupCalibProgressDialog(QDialog):
         )
         main_layout.addWidget(self.progress_bar)
 
+        # Animated activity indicator (pulsing dots below progress bar)
+        self.activity_label = QLabel("Working...")
+        self.activity_label.setStyleSheet(
+            "font-size: 14px; color: #007AFF; font-weight: bold; padding: 8px;",
+        )
+        self.activity_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.activity_label.setFixedHeight(32)
+        self.activity_label.setVisible(False)
+        main_layout.addWidget(self.activity_label)
+
+        self._dot_count = 0
+        self._dot_timer = QTimer(self)
+        self._dot_timer.timeout.connect(self._animate_dots)
+
         # Status message
         self.status_label = QLabel(message)
         self.status_label.setStyleSheet(
@@ -128,12 +142,12 @@ class StartupCalibProgressDialog(QDialog):
         )
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
-        self.status_label.setMinimumHeight(50)
-        self.status_label.setMaximumHeight(280)
+        self.status_label.setMinimumHeight(30)
+        self.status_label.setMaximumHeight(160)
         main_layout.addWidget(self.status_label)
 
-        # Add spacer for better vertical distribution
-        main_layout.addSpacing(10)
+        # Small spacer before buttons
+        main_layout.addSpacing(4)
 
         # Start button (optional, initially disabled if shown)
         self.start_button = None
@@ -251,6 +265,7 @@ class StartupCalibProgressDialog(QDialog):
     def closeEvent(self, event: Any) -> None:
         """Clean up overlay when dialog closes."""
         self._is_closing = True
+        self._dot_timer.stop()
 
         # Remove event filter
         if self.parent_window:
@@ -353,14 +368,27 @@ class StartupCalibProgressDialog(QDialog):
                 pass  # Widget deleted
 
     def show_progress_bar(self) -> None:
-        """Show progress bar (when calibration starts)."""
+        """Show progress bar and start activity animation (when calibration starts)."""
         if not self._is_closing and self.isVisible():
             try:
                 self.progress_bar.show()
                 self.progress_bar.setMaximum(100)
                 self.progress_bar.setValue(0)
+                self.activity_label.setVisible(True)
+                self._dot_timer.start(400)
             except RuntimeError:
                 pass  # Widget deleted
+
+    def _animate_dots(self) -> None:
+        """Cycle dots to show the system is still working."""
+        self._dot_count = (self._dot_count % 3) + 1
+        dots = "." * self._dot_count
+        self.activity_label.setText(f"Working{dots}")
+
+    def _stop_activity_animation(self) -> None:
+        """Stop the dot animation."""
+        self._dot_timer.stop()
+        self.activity_label.setVisible(False)
 
     def enable_start_button_pre_calib(self) -> None:
         """Enable the Start button for pre-calibration checklist (thread-safe)."""

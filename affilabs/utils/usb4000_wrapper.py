@@ -537,6 +537,11 @@ class USB4000:
         return 0.003  # 3ms default floor
 
     @property
+    def min_integration_ms(self):
+        """Minimum integration time in milliseconds (3ms floor for Ocean Optics)."""
+        return self.min_integration * 1000.0
+
+    @property
     def integration_time(self):
         return self._integration_time
 

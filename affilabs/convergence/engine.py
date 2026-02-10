@@ -261,25 +261,39 @@ class ConvergenceEngine:
 
         # State - with smarter initial LED calculation
         initial_leds = {}
+
+        # Find weakest channel (lowest slope = needs most light)
+        weakest_ch = None
+        weakest_slope_at_10ms = None
+        if model_slopes_at_10ms:
+            weakest_ch = min(model_slopes_at_10ms, key=model_slopes_at_10ms.get)
+            weakest_slope_at_10ms = model_slopes_at_10ms[weakest_ch]
+
         for ch in recipe.channels:
             # Start with recipe default or 10
             led = recipe.initial_leds.get(ch, 10)
 
-            # If we have model slopes, calculate a conservative initial LED to avoid saturation
-            if model_slopes_at_10ms and ch in model_slopes_at_10ms:
-                slope_at_initial = model_slopes_at_10ms[ch] * (recipe.initial_integration_ms / 10.0)
-                if slope_at_initial > 0:
-                    # Calculate LED for target, then apply safety factor
-                    target_signal = recipe.target_percent * params.max_counts
-                    predicted_led = target_signal / slope_at_initial
-                    conservative_led = int(predicted_led * self.CONSERVATIVE_LED_FACTOR)
+            # If we have model slopes, calculate initial LED relative to weakest channel
+            if model_slopes_at_10ms and ch in model_slopes_at_10ms and weakest_ch is not None:
+                slope_at_10ms = model_slopes_at_10ms[ch]
 
-                    # Use the more conservative value
-                    if conservative_led < led and conservative_led >= 10:
-                        led = conservative_led
-                        self._log("info",
-                                 f"  🔵 {ch.upper()} initial LED adjusted: {recipe.initial_leds.get(ch, 10)}→{led} "
-                                 f"({self.CONSERVATIVE_LED_FACTOR*100:.0f}% of predicted based on slope={slope_at_initial:.1f})")
+                if ch == weakest_ch:
+                    # Weakest channel: MAX at 255 (it needs the most light!)
+                    led = 255
+                    self._log("info",
+                             f"  🔵 {ch.upper()} initial LED: {recipe.initial_leds.get(ch, 10)}→{led} "
+                             f"(weakest channel - maxed)")
+                else:
+                    # Other channels: scale relative to weakest, apply conservative factor
+                    # Formula: LED = (weakest_slope / ch_slope) * 255 * 0.75
+                    slope_ratio = weakest_slope_at_10ms / slope_at_10ms
+                    conservative_led = int(255 * slope_ratio * self.CONSERVATIVE_LED_FACTOR)
+                    conservative_led = max(10, min(255, conservative_led))  # Clamp to valid range
+
+                    led = conservative_led
+                    self._log("info",
+                             f"  🔵 {ch.upper()} initial LED adjusted: {recipe.initial_leds.get(ch, 10)}→{led} "
+                             f"({self.CONSERVATIVE_LED_FACTOR*100:.0f}% scaled from weakest, slope_ratio={slope_ratio:.2f})")
 
             initial_leds[ch] = led
 
@@ -858,8 +872,8 @@ class ConvergenceEngine:
                         self._log("info", f"  💡 {num_saturating} channel(s) saturating (≤3) - reducing their LEDs instead of cutting integration")
 
                     weakest_slope = None
-                    if model_slopes_at_10ms and weakest_ch in model_slopes_at_10ms:
-                        weakest_slope = model_slopes_at_10ms[weakest_ch] * (state.integration_ms / 10.0)
+                    if state.model_slopes_at_10ms and weakest_ch in state.model_slopes_at_10ms:
+                        weakest_slope = state.model_slopes_at_10ms[weakest_ch] * (state.integration_ms / 10.0)
 
                     # Normalize/reduce saturating channels
                     for ch in acc.saturating:
@@ -879,8 +893,8 @@ class ConvergenceEngine:
                             continue  # Don't adjust weakest itself
 
                         ch_slope = None
-                        if model_slopes_at_10ms and ch in model_slopes_at_10ms:
-                            ch_slope = model_slopes_at_10ms[ch] * (state.integration_ms / 10.0)
+                        if state.model_slopes_at_10ms and ch in state.model_slopes_at_10ms:
+                            ch_slope = state.model_slopes_at_10ms[ch] * (state.integration_ms / 10.0)
 
                         if weakest_slope and ch_slope and weakest_slope > 0 and ch_slope > 0 and (weakest_led >= 255 and weakest_locked):
                             # Normalize: LED_norm = (slope_weakest / slope_ch) × 255 × safety
@@ -888,9 +902,21 @@ class ConvergenceEngine:
                             new_led = int(normalized_led * safety_margin)
                             new_led = max(10, min(255, new_led))
 
-                            self._log("info",
-                                     f"  📐 {ch.upper()} LED {state.leds[ch]}→{new_led} "
-                                     f"(normalized: {weakest_slope:.1f}/{ch_slope:.1f} × 255 × {safety_margin:.2f}, {sat_pixels} sat px)")
+                            # If normalized formula produces same or higher LED
+                            # but channel is STILL saturating, the slope model is
+                            # underestimating actual signal.  Fall back to
+                            # multiplicative reduction from current LED so we
+                            # actually decrease each iteration.
+                            if new_led >= state.leds[ch] and sat_pixels > 0:
+                                new_led = max(10, int(state.leds[ch] * safety_margin))
+                                self._log("info",
+                                         f"  📐 {ch.upper()} LED {state.leds[ch]}→{new_led} "
+                                         f"(normalized would stay {int(normalized_led * safety_margin)}, "
+                                         f"forcing {int((1-safety_margin)*100)}% reduction to clear {sat_pixels} sat px)")
+                            else:
+                                self._log("info",
+                                         f"  📐 {ch.upper()} LED {state.leds[ch]}→{new_led} "
+                                         f"(normalized: {weakest_slope:.1f}/{ch_slope:.1f} × 255 × {safety_margin:.2f}, {sat_pixels} sat px)")
 
                             # ML TRAINING: LED decision reasoning
                             self._log("info", f"    LED_DECISION: {ch.upper()} {state.leds[ch]}-{new_led} (reason=weakest_normalization, weakest_ratio={weakest_slope/ch_slope:.3f}, sat_pixels={sat_pixels}, confidence=high)")
@@ -1405,11 +1431,24 @@ class ConvergenceEngine:
                         if max_led_change < 50:  # Reasonable change
                             chosen_option = "option1"
 
+                    # CRITICAL: Don't increase integration if ANY channel is saturating
+                    any_saturation = any(
+                        sat_pixels[ch] > 0 for ch in recipe.channels if ch in sat_pixels
+                    )
+
                     if chosen_option is None and option3_feasible:
-                        chosen_option = "option3"
+                        # Only allow option3 (increase integration) if NOT saturating
+                        if not any_saturation or option3_integration <= state.integration_ms:
+                            chosen_option = "option3"
+                        else:
+                            self._log("warning", f"  ⚠️  Skipping option3 (increase integration to {option3_integration:.1f}ms) - channels currently saturating")
 
                     if chosen_option is None and option2_feasible:
-                        chosen_option = "option2"
+                        # Only allow option2 (increase integration) if NOT saturating
+                        if not any_saturation or option2_integration <= state.integration_ms:
+                            chosen_option = "option2"
+                        else:
+                            self._log("warning", f"  ⚠️  Skipping option2 (increase integration to {option2_integration:.1f}ms) - channels currently saturating")
 
                     # Apply chosen optimization
                     if chosen_option == "option1":

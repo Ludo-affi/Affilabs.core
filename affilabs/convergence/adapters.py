@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Mapping, Optional, Sequence
 
 from .interfaces import Spectrometer, LEDActuator, ROIExtractor, Logger
