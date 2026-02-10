@@ -392,18 +392,6 @@ class EditsTab:
         self.export_toggle_btn.clicked.connect(self._toggle_export_sidebar)
         controls_layout.addWidget(self.export_toggle_btn)
 
-        # Spark AI button
-        spark_btn = QPushButton("✨ Spark AI")
-        spark_btn.setFixedHeight(28)
-        spark_btn.setStyleSheet(
-            "QPushButton { background: #7C3AED; color: white; border: 1px solid #7C3AED; "
-            "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 4px 10px; }"
-            "QPushButton:hover { background: #6D28D9; }"
-        )
-        spark_btn.setToolTip("Open Spark AI assistant for data analysis")
-        spark_btn.clicked.connect(self._open_spark_ai)
-        controls_layout.addWidget(spark_btn)
-
         # Filter dropdown
         filter_label = QLabel("Show:")
         filter_label.setStyleSheet("font-size: 11px; color: #86868B;")
@@ -3857,35 +3845,6 @@ class EditsTab:
             # Show all columns in expanded view
             for col in range(6):
                 self.cycle_data_table.setColumnHidden(col, False)
-
-    def _open_spark_ai(self):
-        """Open Spark AI assistant for data analysis."""
-        import webbrowser
-        from affilabs.utils.logger import logger
-
-        # Spark AI URL (placeholder - update with actual URL when available)
-        spark_url = "https://claude.ai/"
-
-        try:
-            webbrowser.open(spark_url)
-            logger.info("✨ Opened Spark AI assistant in browser")
-
-            # Optional: Show message to user
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.information(
-                self.main_window,
-                "Spark AI",
-                "Opening Spark AI assistant in your browser.\n\n"
-                "You can upload your exported data for advanced analysis."
-            )
-        except Exception as e:
-            logger.error(f"Failed to open Spark AI: {e}")
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(
-                self.main_window,
-                "Error",
-                f"Failed to open Spark AI:\n{e}"
-            )
 
     def _apply_cycle_filter(self, filter_text):
         """Filter cycles by type based on priority (concentration is key, baseline less important)."""
