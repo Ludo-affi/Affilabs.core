@@ -136,11 +136,6 @@ def create_splash_screen():
     radial.setColorAt(1, QColor(0, 0, 0, 0))
     painter.setBrush(radial)
     painter.drawRoundedRect(0, 0, 700, 400, 20, 20)
-    
-    # Draw outer border - subtle shine
-    painter.setPen(QPen(QColor(100, 150, 255, 80), 2))
-    painter.setBrush(Qt.NoBrush)
-    painter.drawRoundedRect(1, 1, 698, 398, 20, 20)
 
     # Draw molecular decorations (IgG antibody, globular protein, DNA helix)
     _draw_protein_decorations(painter)
@@ -184,7 +179,7 @@ def create_splash_screen():
     version_font = QFont("Segoe UI", 9)
     painter.setFont(version_font)
     painter.setPen(QColor(150, 180, 220, 150))
-    painter.drawText(0, 360, 700, 20, Qt.AlignCenter, "Version 2.0.1  •  © 2026 Affinite Instruments")
+    painter.drawText(0, 360, 700, 20, Qt.AlignCenter, "Version 2.0.2  •  © 2026 Affinite Instruments")
     
     painter.end()
     
@@ -225,11 +220,6 @@ def create_splash_screen():
         radial.setColorAt(1, QColor(0, 0, 0, 0))
         painter.setBrush(radial)
         painter.drawRoundedRect(0, 0, 700, 400, 20, 20)
-        
-        # Border
-        painter.setPen(QPen(QColor(100, 150, 255, 80), 2))
-        painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(1, 1, 698, 398, 20, 20)
 
         # Draw molecular decorations (IgG antibody, globular protein, DNA helix)
         _draw_protein_decorations(painter)
@@ -271,7 +261,7 @@ def create_splash_screen():
         version_font = QFont("Segoe UI", 9)
         painter.setFont(version_font)
         painter.setPen(QColor(150, 180, 220, 150))
-        painter.drawText(0, 360, 700, 20, Qt.AlignCenter, "Version 2.0.1  •  © 2026 Affinite Instruments")
+        painter.drawText(0, 360, 700, 20, Qt.AlignCenter, "Version 2.0.2  •  © 2026 Affinite Instruments")
         
         painter.end()
         

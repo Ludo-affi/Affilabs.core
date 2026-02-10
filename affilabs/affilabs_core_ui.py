@@ -6543,7 +6543,6 @@ class AffilabsMainWindow(QMainWindow):
         # Connect export buttons
         self.sidebar.export_data_btn.clicked.connect(self._on_export_data)
         self.sidebar.export_animl_btn.clicked.connect(self._on_export_animl)
-        self.sidebar.send_to_edits_btn.clicked.connect(self._on_send_to_edits_clicked)
 
         # Connect settings tab controls
         self.sidebar.advanced_settings_btn.clicked.connect(self.open_advanced_settings)

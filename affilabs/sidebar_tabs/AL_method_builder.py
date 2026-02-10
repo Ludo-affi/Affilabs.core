@@ -286,7 +286,7 @@ class MethodTabBuilder:
         self.sidebar.completed_cycles_info.setStyleSheet(
             "QFrame {"
             "  background: rgba(142, 142, 147, 0.08);"
-            "  border: 1px solid rgba(142, 142, 147, 0.18);"
+            "  border: none;"
             "  border-radius: 0px;"
             "}"
         )

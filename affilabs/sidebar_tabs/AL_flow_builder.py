@@ -166,7 +166,7 @@ class AdvancedFlowRatesDialog(QDialog):
         self.prime_btn.setFixedHeight(36)
         self.prime_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.prime_btn.setStyleSheet(
-            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
+            self._colored_button_style("#1D1D1F", "#3A3A3C", "#48484A")
         )
         self.prime_btn.setToolTip("Run prime pump sequence (6 cycles)")
         ops_layout.addWidget(self.prime_btn)
@@ -176,7 +176,7 @@ class AdvancedFlowRatesDialog(QDialog):
         self.cleanup_btn.setFixedHeight(36)
         self.cleanup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cleanup_btn.setStyleSheet(
-            self._colored_button_style("#34C759", "#28A745", "#1E7E34")
+            self._colored_button_style("#1D1D1F", "#3A3A3C", "#48484A")
         )
         self.cleanup_btn.setToolTip("Run cleanup sequence (9-phase complete cleaning)")
         ops_layout.addWidget(self.cleanup_btn)
@@ -252,10 +252,72 @@ class FlowTabBuilder:
             tab_layout: QVBoxLayout to add flow tab widgets to
 
         """
-        self._build_intelligence_bar(tab_layout)
-        self._build_affipump_control(tab_layout)
+        # Sections not requiring flow (above)
         self._build_valve_control(tab_layout)
         self._build_internal_pump_control(tab_layout)
+
+        # Flow display and sections requiring flow (below)
+        self._build_intelligence_bar(tab_layout)
+        self._build_affipump_control(tab_layout)
+
+        # Overnight Mode checkbox
+        overnight_layout = QHBoxLayout()
+        overnight_layout.addSpacing(12)
+
+        overnight_checkbox = QCheckBox("🌙 Overnight Mode (1 point/min)")
+        overnight_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
+        overnight_checkbox.setStyleSheet(
+            "QCheckBox {"
+            "  spacing: 6px;"
+            "  font-size: 12px;"
+            "  font-weight: 500;"
+            "  color: #1D1D1F;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QCheckBox::indicator {"
+            "  width: 18px;"
+            "  height: 18px;"
+            "  border-radius: 3px;"
+            "  border: 1px solid rgba(0, 0, 0, 0.2);"
+            "  background: white;"
+            "}"
+            "QCheckBox::indicator:checked {"
+            "  background: #007AFF;"
+            "  border-color: #007AFF;"
+            "  image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOSIgdmlld0JveD0iMCAwIDEyIDkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgNEw0LjUgNy41TDExIDEiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+);"
+            "}"
+        )
+        overnight_checkbox.setToolTip(
+            "Slow acquisition mode: 15 seconds between channels = 1 data point per minute.\n"
+            "Ideal for overnight stability monitoring with minimal data collection."
+        )
+        try:
+            import settings
+            overnight_checkbox.setChecked(getattr(settings, 'OVERNIGHT_MODE', False))
+        except Exception:
+            pass
+
+        def _on_overnight_changed(checked):
+            try:
+                import settings
+                settings.OVERNIGHT_MODE = checked
+                if settings.OVERNIGHT_MODE:
+                    from affilabs.utils.logger import logger
+                    logger.info("🌙 Overnight mode ENABLED (1 point/minute)")
+                else:
+                    from affilabs.utils.logger import logger
+                    logger.info("☀️ Overnight mode DISABLED (normal acquisition)")
+            except Exception:
+                pass
+
+        overnight_checkbox.toggled.connect(_on_overnight_changed)
+        overnight_layout.addWidget(overnight_checkbox)
+        overnight_layout.addStretch()
+
+        overnight_container = QWidget()
+        overnight_container.setLayout(overnight_layout)
+        tab_layout.addWidget(overnight_container)
 
         # Add stretch to push content to top
         tab_layout.addStretch()
@@ -280,26 +342,17 @@ class FlowTabBuilder:
 
     def _build_intelligence_bar(self, tab_layout: QVBoxLayout):
         """Build intelligence bar section."""
-        intel_section = QLabel("FLUIDICS EXPERIMENTS")
-        intel_section.setFixedHeight(15)
-        intel_section.setStyleSheet(section_header_style())
-        intel_section.setToolTip(
-            "Configure flow rates for Setup, Functionalization, Assay, and advanced operations",
-        )
-        tab_layout.addWidget(intel_section)
-        tab_layout.addSpacing(8)
-
         intel_bar = QFrame()
         intel_bar.setStyleSheet(
             "QFrame {  background: transparent;  border: none;}",
         )
         intel_bar_layout = QHBoxLayout(intel_bar)
-        intel_bar_layout.setContentsMargins(16, 12, 16, 8)
-        intel_bar_layout.setSpacing(12)
+        intel_bar_layout.setContentsMargins(8, 4, 8, 4)
+        intel_bar_layout.setSpacing(8)
 
         # Cycle status message (will show running cycles and queued cycles)
         self.sidebar.flow_intel_message_label = QLabel("No cycles running")
-        self.sidebar.flow_intel_message_label.setFixedHeight(20)
+        self.sidebar.flow_intel_message_label.setFixedHeight(18)
         self.sidebar.flow_intel_message_label.setStyleSheet(
             "font-size: 12px;"
             "color: #86868B;"
@@ -312,7 +365,7 @@ class FlowTabBuilder:
         intel_bar_layout.addStretch()
 
         tab_layout.addWidget(intel_bar)
-        tab_layout.addSpacing(8)
+        tab_layout.addSpacing(4)
 
         # === FLOW STATUS BOARD ===
         self._build_flow_status_board(tab_layout)
@@ -466,106 +519,12 @@ class FlowTabBuilder:
             is_expanded=True,
         )
 
-        affipump_help = QLabel(
-            "Configure flow rates for Setup, Functionalization, Assay, and advanced operations",
-        )
-        affipump_help.setStyleSheet(self._help_text_style())
-        affipump_section.content_layout.addWidget(affipump_help)
-
         # Card container
         affipump_card = QFrame()
         affipump_card.setStyleSheet(self._card_container_style())
         affipump_card_layout = QVBoxLayout(affipump_card)
         affipump_card_layout.setContentsMargins(12, 8, 12, 8)
         affipump_card_layout.setSpacing(6)
-
-        # Main Flow Rates
-        rates_label = QLabel("Main Flow Rates")
-        rates_label.setStyleSheet(
-            "font-size: 13px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        affipump_card_layout.addWidget(rates_label)
-
-        # Setup flow rate
-        self._add_flow_rate_control(
-            affipump_card_layout,
-            "Setup:",
-            "pump_setup_spin",
-            25,
-            1,
-            30000,
-            "Default in autoread cycle",
-        )
-
-        # Functionalization flow rate
-        self._add_flow_rate_control(
-            affipump_card_layout,
-            "Functionalization:",
-            "pump_functionalization_spin",
-            10,
-            1,
-            30000,
-            "Immobilization cycle",
-        )
-
-        # Assay flow rate
-        self._add_flow_rate_control(
-            affipump_card_layout,
-            "Assay:",
-            "pump_assay_spin",
-            15,
-            1,
-            30000,
-            "Concentration cycle",
-        )
-
-        # Quick Preset buttons
-        preset_row = QHBoxLayout()
-        preset_row.setSpacing(4)
-
-        preset_label = QLabel("Quick:")
-        preset_label.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        preset_row.addWidget(preset_label)
-
-        for preset_val in [5, 10, 25, 50, 100]:
-            preset_btn = QPushButton(str(preset_val))
-            preset_btn.setFixedSize(36, 24)
-            preset_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            preset_btn.setStyleSheet(
-                "QPushButton {"
-                "  background: #007AFF;"
-                "  color: white;"
-                "  border: none;"
-                "  border-radius: 4px;"
-                "  font-size: 11px;"
-                "  font-weight: 600;"
-                "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
-                "}"
-                "QPushButton:hover {"
-                "  background: #0051D5;"
-                "}"
-                "QPushButton:pressed {"
-                "  background: #004BB5;"
-                "}"
-            )
-            preset_btn.setToolTip(f"Set all flow rates to {preset_val} µL/min")
-            preset_btn.clicked.connect(lambda checked, v=preset_val: self._set_preset_flow_rate(v))
-            preset_row.addWidget(preset_btn)
-
-        preset_row.addStretch()
-        affipump_card_layout.addLayout(preset_row)
-        affipump_card_layout.addSpacing(4)
-
-        self._add_separator(affipump_card_layout)
 
         # Pump Operations label
         operations_label = QLabel("Pump Operations")
@@ -588,7 +547,7 @@ class FlowTabBuilder:
         start_buffer_btn.setFixedHeight(34)
         start_buffer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         start_buffer_btn.setStyleSheet(
-            self._uniform_button_style("#34C759", "#28A745", "#1E7E34")
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
         )
         start_buffer_btn.setToolTip("Start continuous buffer flow")
         start_flush_layout.addWidget(start_buffer_btn)
@@ -605,7 +564,7 @@ class FlowTabBuilder:
         baseline_btn.setFixedHeight(34)
         baseline_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         baseline_btn.setStyleSheet(
-            self._uniform_button_style("#34C759", "#28A745", "#1E7E34")
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
         )
         baseline_btn.setToolTip("Run baseline acquisition")
         inject_layout.addWidget(baseline_btn)
@@ -616,7 +575,7 @@ class FlowTabBuilder:
         inject_simple_btn.setFixedHeight(34)
         inject_simple_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         inject_simple_btn.setStyleSheet(
-            self._uniform_button_style("#FF9500", "#E08500", "#C77500")
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
         )
         inject_simple_btn.setToolTip("Run simple injection (full syringe dispense with contact time)")
         inject_layout.addWidget(inject_simple_btn)
@@ -627,7 +586,7 @@ class FlowTabBuilder:
         inject_advanced_btn.setFixedHeight(34)
         inject_advanced_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         inject_advanced_btn.setStyleSheet(
-            self._uniform_button_style("#AF52DE", "#9A3FCC", "#8230B3")
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
         )
         inject_advanced_btn.setToolTip("Run advanced injection (14-step protocol with spike)")
         inject_layout.addWidget(inject_advanced_btn)
@@ -676,7 +635,7 @@ class FlowTabBuilder:
         home_btn.setFixedHeight(34)
         home_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         home_btn.setStyleSheet(
-            self._uniform_button_style("#007AFF", "#0051D5", "#004BB5")
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
         )
         home_btn.setToolTip("Home both pumps to zero position")
         maintenance_layout.addWidget(home_btn)
@@ -684,7 +643,7 @@ class FlowTabBuilder:
 
         # Emergency Stop button
         emergency_stop_btn = QPushButton("🛑 STOP")
-        emergency_stop_btn.setFixedHeight(34)
+        emergency_stop_btn.setFixedHeight(28)
         emergency_stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         emergency_stop_btn.setStyleSheet(
             self._uniform_button_style("#FF3B30", "#FF4D42", "#C01818")
@@ -698,7 +657,7 @@ class FlowTabBuilder:
         flush_btn.setFixedHeight(34)
         flush_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         flush_btn.setStyleSheet(
-            self._uniform_button_style("#5AC8FA", "#32ADE6", "#209CCA")
+            self._colored_button_style("#007AFF", "#0051D5", "#004BB5")
         )
         flush_btn.setToolTip("Flush sample loop with buffer")
         maintenance_layout.addWidget(flush_btn)
@@ -716,7 +675,7 @@ class FlowTabBuilder:
         advanced_btn.setStyleSheet(
             "QPushButton {"
             "  background: white;"
-            "  color: #007AFF;"
+            "  color: #1D1D1F;"
             "  border: 1px solid rgba(0, 0, 0, 0.15);"
             "  border-radius: 6px;"
             "  font-size: 16px;"
@@ -725,12 +684,12 @@ class FlowTabBuilder:
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QPushButton:hover {"
-            "  background: rgba(0, 122, 255, 0.1);"
-            "  color: #0051D5;"
-            "  border: 1px solid #007AFF;"
+            "  background: rgba(29, 29, 31, 0.08);"
+            "  color: #1D1D1F;"
+            "  border: 1px solid #1D1D1F;"
             "}"
             "QPushButton:pressed {"
-            "  background: rgba(0, 122, 255, 0.2);"
+            "  background: rgba(29, 29, 31, 0.15);"
             "}"
         )
         advanced_btn.setToolTip("Advanced flow rate settings")
@@ -750,12 +709,6 @@ class FlowTabBuilder:
             "Internal Pump Control (P4PRO+)",
             is_expanded=True,
         )
-
-        internal_pump_help = QLabel(
-            "Control P4PROPLUS internal peristaltic pumps - sync or individual operation",
-        )
-        internal_pump_help.setStyleSheet(self._help_text_style())
-        internal_pump_section.content_layout.addWidget(internal_pump_help)
 
         # Card container
         internal_pump_card = QFrame()
@@ -792,28 +745,32 @@ class FlowTabBuilder:
         sync_layout = QHBoxLayout()
         sync_layout.addStretch()
 
-        sync_pump_btn = QPushButton("Sync")
-        sync_pump_btn.setCheckable(True)
+        sync_pump_btn = QCheckBox("Sync")
         sync_pump_btn.setChecked(True)
-        sync_pump_btn.setFixedHeight(32)
         sync_pump_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         sync_pump_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: white;"
-            "  color: #1D1D1F;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 6px;"
-            "  padding: 6px 16px;"
+            "QCheckBox {"
+            "  spacing: 6px;"
             "  font-size: 12px;"
             "  font-weight: 600;"
+            "  color: #1D1D1F;"
+            "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
-            "QPushButton:checked {"
-            "  background: #1D1D1F;"
-            "  color: white;"
+            "QCheckBox::indicator {"
+            "  width: 16px;"
+            "  height: 16px;"
+            "  border-radius: 3px;"
+            "  border: 1px solid rgba(0, 0, 0, 0.2);"
+            "  background: white;"
             "}"
-            "QPushButton:hover:!checked {"
-            "  background: rgba(0, 0, 0, 0.06);"
+            "QCheckBox::indicator:checked {"
+            "  background: #007AFF;"
+            "  border-color: #007AFF;"
+            "  image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOSIgdmlld0JveD0iMCAwIDEyIDkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgNEw0LjUgNy41TDExIDEiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+);"
+            "}"
+            "QCheckBox::indicator:hover {"
+            "  border-color: #007AFF;"
             "}"
         )
         sync_pump_btn.setToolTip("Toggle pump synchronization")
@@ -1108,7 +1065,7 @@ class FlowTabBuilder:
         inject_30s_btn.setProperty("injection_state", "ready")  # States: ready, busy, manual
         inject_30s_btn.setStyleSheet(
             "QPushButton[injection_state='ready'] {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #34C759, stop:1 #30B350);"
+            "  background: #1D1D1F;"
             "  color: white;"
             "  border: none;"
             "  border-radius: 8px;"
@@ -1119,13 +1076,13 @@ class FlowTabBuilder:
             "  letter-spacing: 0.3px;"
             "}"
             "QPushButton[injection_state='ready']:hover {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #2FB04D, stop:1 #2A9F45);"
+            "  background: #3A3A3C;"
             "}"
             "QPushButton[injection_state='ready']:pressed {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #289E43, stop:1 #258F3D);"
+            "  background: #48484A;"
             "}"
             "QPushButton[injection_state='busy'] {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #FF9500, stop:1 #FF6B00);"
+            "  background: #48484A;"
             "  color: white;"
             "  border: none;"
             "  border-radius: 8px;"
@@ -1136,7 +1093,7 @@ class FlowTabBuilder:
             "  letter-spacing: 0.3px;"
             "}"
             "QPushButton[injection_state='manual'] {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5856D6, stop:1 #4845B8);"
+            "  background: #2C2C2E;"
             "  color: white;"
             "  border: none;"
             "  border-radius: 8px;"
@@ -1147,10 +1104,10 @@ class FlowTabBuilder:
             "  letter-spacing: 0.3px;"
             "}"
             "QPushButton[injection_state='manual']:hover {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4745C0, stop:1 #3D3AA5);"
+            "  background: #3A3A3C;"
             "}"
             "QPushButton:disabled {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #D1D1D6, stop:1 #B8B8BD);"
+            "  background: #D1D1D6;"
             "  color: #86868B;"
             "}"
         )
@@ -1304,19 +1261,6 @@ class FlowTabBuilder:
             is_expanded=True,
         )
 
-        valve_help = QLabel(
-            "Control Loop and Channel valve positions for kinetic channels KC1 and KC2",
-        )
-        valve_help.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-style: italic;"
-            "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        valve_section.content_layout.addWidget(valve_help)
-
         # Card container
         valve_card = QFrame()
         valve_card.setStyleSheet(
@@ -1330,28 +1274,32 @@ class FlowTabBuilder:
         sync_layout = QHBoxLayout()
         sync_layout.addStretch()
 
-        sync_valve_btn = QPushButton("Sync")
-        sync_valve_btn.setCheckable(True)
+        sync_valve_btn = QCheckBox("Sync")
         sync_valve_btn.setChecked(True)
-        sync_valve_btn.setFixedHeight(32)
         sync_valve_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         sync_valve_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: white;"
-            "  color: #1D1D1F;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 6px;"
-            "  padding: 6px 16px;"
+            "QCheckBox {"
+            "  spacing: 6px;"
             "  font-size: 12px;"
             "  font-weight: 600;"
+            "  color: #1D1D1F;"
+            "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
-            "QPushButton:checked {"
-            "  background: #1D1D1F;"
-            "  color: white;"
+            "QCheckBox::indicator {"
+            "  width: 16px;"
+            "  height: 16px;"
+            "  border-radius: 3px;"
+            "  border: 1px solid rgba(0, 0, 0, 0.2);"
+            "  background: white;"
             "}"
-            "QPushButton:hover:!checked {"
-            "  background: rgba(0, 0, 0, 0.06);"
+            "QCheckBox::indicator:checked {"
+            "  background: #34C759;"
+            "  border-color: #34C759;"
+            "  image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOSIgdmlld0JveD0iMCAwIDEyIDkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgNEw0LjUgNy41TDExIDEiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+);"
+            "}"
+            "QCheckBox::indicator:hover {"
+            "  border-color: #34C759;"
             "}"
         )
         sync_valve_btn.setToolTip("Toggle valve synchronization")
@@ -1695,7 +1643,7 @@ class FlowTabBuilder:
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QPushButton:checked {"
-            "  background: #34C759;"
+            "  background: #007AFF;"
             "  color: white;"
             "}"
         )
@@ -1775,6 +1723,31 @@ class FlowTabBuilder:
             "}"
         )
 
+    def _mono_button_style(self):
+        """Generate monochrome dark button style."""
+        return (
+            "QPushButton {"
+            "  background: #1D1D1F;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 0px 14px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            f"  font-family: {self.FONT_FAMILY_SYSTEM};"
+            "}"
+            "QPushButton:hover {"
+            "  background: #3A3A3C;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #48484A;"
+            "}"
+            "QPushButton:disabled {"
+            "  background: #D1D1D6;"
+            "  color: #86868B;"
+            "}"
+        )
+
     def _uniform_button_style(self, background: str, hover: str, pressed: str):
         """Generate uniform button style for AffiPump control section.
 
@@ -1811,9 +1784,9 @@ class FlowTabBuilder:
 
     def _toggle_button_style(
         self,
-        base_bg: str = "#34C759",
-        hover_bg: str = "#28A745",
-        pressed_bg: str = "#1E7E34",
+        base_bg: str = "#007AFF",
+        hover_bg: str = "#0051D5",
+        pressed_bg: str = "#004BB5",
         checked_bg: str = "#FF3B30",
         checked_hover: str = "#D32F2F",
         checked_pressed: str = "#B71C1C",

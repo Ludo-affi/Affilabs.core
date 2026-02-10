@@ -230,12 +230,6 @@ class AffilabsSidebar(QWidget):
                 "Calibration and maintenance",
                 self._build_settings_tab,
             ),
-            (
-                "⚡",  # Rotated 90° clockwise via CSS transform
-                "⚡ Spark",
-                "Ask questions about using Affilabs.core",
-                self._build_spark_tab,
-            ),
         ]
 
         # Store tab references for dynamic control
@@ -289,8 +283,7 @@ class AffilabsSidebar(QWidget):
             # Add stretch to push all sections to the top (prevents even spacing when collapsed)
             tab_layout.addStretch()
 
-            # For Spark tab, we want to rotate the lightning icon 90 degrees
-            # We'll add the tab normally but store the index to customize later
+            # Add tab to widget
             self.tab_widget.addTab(scroll_area, label)
 
             scroll_area.setWidget(tab_content)
@@ -298,78 +291,7 @@ class AffilabsSidebar(QWidget):
             # Store tab index for later reference
             self.tab_indices[label] = tab_index
 
-            # Apply rotation to Spark tab icon after it's added
-            if label == "⚡":
-                # Get the tab bar and apply rotation via stylesheet transform
-                # Note: QTabBar doesn't support CSS transforms directly,
-                # so we'll rotate the text using a custom approach
-                from PySide6.QtGui import QPixmap, QPainter, QFont, QFontMetrics
-                from PySide6.QtCore import QSize, QRect
-
-                # Create a rotated pixmap of the lightning symbol
-                # Use smaller size to match text height better
-                icon_size = 28
-                pixmap = QPixmap(icon_size, icon_size)
-                pixmap.fill(Qt.GlobalColor.transparent)
-
-                painter = QPainter(pixmap)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-
-                # Set font to match tab text size
-                font = QFont()
-                font.setPixelSize(20)
-                font.setBold(True)
-                painter.setFont(font)
-
-                # Get font metrics to properly center the text
-                metrics = QFontMetrics(font)
-                text_rect = metrics.boundingRect("⚡")
-
-                # Center the coordinate system
-                painter.translate(icon_size / 2, icon_size / 2)
-                # Rotate 90 degrees clockwise
-                painter.rotate(90)
-
-                # Draw centered (offset by half of text bounds)
-                painter.drawText(
-                    -text_rect.width() / 2,
-                    text_rect.height() / 2 - metrics.descent(),
-                    "⚡"
-                )
-                painter.end()
-
-                # Set as tab icon with updated size
-                self.tab_widget.setTabIcon(tab_index, pixmap)
-                # Set icon size for the tab bar to match text line height
-                self.tab_widget.tabBar().setIconSize(QSize(28, 28))
-                # Clear the text label since we're using icon
-                self.tab_widget.setTabText(tab_index, "")
-
             tab_index += 1
-
-        # Apply light green background to Spark tab button
-        spark_tab_index = self.tab_indices.get("⚡")
-        if spark_tab_index is not None:
-            # Update stylesheet to include green background for Spark tab
-            current_style = self.tab_widget.styleSheet()
-            # Add specific styling that matches based on tab text
-            enhanced_style = current_style.replace(
-                "QTabBar::tab:selected:!disabled {",
-                """QTabBar::tab[text="⚡"] {
-                background: #E8F5E9 !important;
-                color: #1B5E20 !important;
-            }
-            QTabBar::tab[text="⚡"]:selected {
-                background: #C8E6C9 !important;
-                color: #1B5E20 !important;
-            }
-            QTabBar::tab[text="⚡"]:hover:!selected {
-                background: #D4EDD6 !important;
-            }
-            QTabBar::tab:selected:!disabled {"""
-            )
-            self.tab_widget.setStyleSheet(enhanced_style)
 
         container_layout.addWidget(self.tab_widget)
         # Compatibility alias expected by main code
@@ -733,39 +655,14 @@ class AffilabsSidebar(QWidget):
 
         self.export_filesize_label.setText(f"Estimated file size: ~{size_str}")
 
-    def _build_spark_tab(self, tab_layout: QVBoxLayout):
-        """Build Spark AI Help tab placeholder — actual widget loads on first visit."""
-        # Defer SparkHelpWidget creation until user clicks the Spark tab
-        # (importing affilabs.services.spark pulls in torch/transformers/tinydb)
-        self._spark_tab_layout = tab_layout
-        self._spark_loaded = False
-        placeholder = QLabel("Loading Spark AI…")
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        placeholder.setStyleSheet(
-            "color: #86868B; font-size: 13px; font-style: italic; background: transparent;"
-        )
-        tab_layout.addWidget(placeholder, stretch=1)
-
     def _build_settings_tab(self, tab_layout: QVBoxLayout):
         """Build Settings tab with diagnostics, hardware, and calibration using builder."""
         builder = SettingsTabBuilder(self)
         builder.build(tab_layout)
 
     def _on_tab_changed(self, index: int):
-        """Handle tab change events — lazy-load Spark tab on first visit."""
-        spark_index = self.tab_indices.get("⚡")
-        if index == spark_index and not getattr(self, "_spark_loaded", True):
-            self._spark_loaded = True
-            layout = self._spark_tab_layout
-            # Remove placeholder
-            while layout.count():
-                item = layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
-            # Build the real Spark widget
-            from affilabs.widgets.spark_help_widget import SparkHelpWidget
-            self.spark_widget = SparkHelpWidget()
-            layout.addWidget(self.spark_widget, stretch=1)
+        """Handle tab change events."""
+        pass
 
     def _build_deferred_spectroscopy_plots(self):
         """Build spectroscopy plots on-demand when Settings tab is first opened."""
