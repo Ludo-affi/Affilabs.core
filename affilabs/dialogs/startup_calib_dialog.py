@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer, QElapsedTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -58,6 +58,10 @@ class StartupCalibProgressDialog(QDialog):
         self._is_closing = False
         self._is_complete = False
         self._is_error_state = False
+
+        # Elapsed time tracking so users see the process is alive
+        self._elapsed_timer = QElapsedTimer()
+        self._calibration_running = False
 
         # Store parent for overlay and position tracking
         self.parent_window = parent
@@ -121,19 +125,20 @@ class StartupCalibProgressDialog(QDialog):
         )
         main_layout.addWidget(self.progress_bar)
 
-        # Animated activity indicator (pulsing dots below progress bar)
+        # Animated activity indicator with elapsed time
         self.activity_label = QLabel("Working...")
         self.activity_label.setStyleSheet(
             "font-size: 14px; color: #007AFF; font-weight: bold; padding: 8px;",
         )
         self.activity_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.activity_label.setFixedHeight(32)
-        self.activity_label.setVisible(False)
+        self.activity_label.setVisible(True)  # Visible from start
         main_layout.addWidget(self.activity_label)
 
         self._dot_count = 0
         self._dot_timer = QTimer(self)
         self._dot_timer.timeout.connect(self._animate_dots)
+        self._dot_timer.start(1000)  # 1s interval for elapsed time ticking
 
         # Status message
         self.status_label = QLabel(message)
@@ -375,19 +380,33 @@ class StartupCalibProgressDialog(QDialog):
                 self.progress_bar.setMaximum(100)
                 self.progress_bar.setValue(0)
                 self.activity_label.setVisible(True)
-                self._dot_timer.start(400)
+                self._calibration_running = True
+                self._elapsed_timer.start()
+                self._dot_timer.start(1000)
             except RuntimeError:
                 pass  # Widget deleted
 
     def _animate_dots(self) -> None:
-        """Cycle dots to show the system is still working."""
+        """Cycle dots and show elapsed time so users see the process is alive."""
         self._dot_count = (self._dot_count % 3) + 1
         dots = "." * self._dot_count
-        self.activity_label.setText(f"Working{dots}")
+        if self._calibration_running:
+            elapsed_ms = self._elapsed_timer.elapsed()
+            total_secs = elapsed_ms // 1000
+            mins = total_secs // 60
+            secs = total_secs % 60
+            if mins > 0:
+                elapsed_str = f"{mins}m {secs:02d}s"
+            else:
+                elapsed_str = f"{secs}s"
+            self.activity_label.setText(f"Calibrating{dots}  ({elapsed_str} elapsed)")
+        else:
+            self.activity_label.setText(f"Working{dots}")
 
     def _stop_activity_animation(self) -> None:
-        """Stop the dot animation."""
+        """Stop the dot animation and elapsed time tracking."""
         self._dot_timer.stop()
+        self._calibration_running = False
         self.activity_label.setVisible(False)
 
     def enable_start_button_pre_calib(self) -> None:
