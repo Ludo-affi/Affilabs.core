@@ -1049,27 +1049,6 @@ class EditsTab:
         reset_btn.clicked.connect(lambda: self.edits_primary_graph.autoRange())
         header.addWidget(reset_btn)
 
-        # Export graph button
-        export_graph_btn = QPushButton("💾 Export")
-        export_graph_btn.setFixedSize(70, 24)
-        export_graph_btn.setToolTip("Export graph as PNG/JPG/SVG")
-        export_graph_btn.setStyleSheet("""
-            QPushButton {
-                background: #F8F9FA;
-                color: #1D1D1F;
-                border: 1px solid #D1D1D6;
-                border-radius: 4px;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background: #E5E5EA;
-                border: 1px solid #007AFF;
-            }
-        """)
-        export_graph_btn.clicked.connect(self._export_graph_image)
-        header.addWidget(export_graph_btn)
-
         header.addStretch()
         layout.addLayout(header)
 
@@ -1141,28 +1120,6 @@ class EditsTab:
         """)
         reset_bar_btn.clicked.connect(lambda: self.delta_spr_barchart.autoRange())
         header.addWidget(reset_bar_btn)
-
-        # Export button
-        export_btn = QPushButton("💾 Export")
-        export_btn.setFixedSize(70, 24)
-        export_btn.setToolTip("Export bar chart as PNG/JPG/SVG")
-        export_btn.setStyleSheet("""
-            QPushButton {
-                background: #F8F9FA;
-                color: #1D1D1F;
-                border: 1px solid #D1D1D6;
-                border-radius: 5px;
-                font-size: 11px;
-                font-weight: 500;
-                padding: 4px 12px;
-            }
-            QPushButton:hover {
-                background: #E5E5EA;
-                border: 1px solid #007AFF;
-            }
-        """)
-        export_btn.clicked.connect(self._export_barchart_image)
-        header.addWidget(export_btn)
 
         layout.addLayout(header)
 
@@ -3073,8 +3030,8 @@ class EditsTab:
         _REF_MAP = {"None": None, "Ch A": 0, "Ch B": 1, "Ch C": 2, "Ch D": 3}
 
         # Check per-cycle override
-        if hasattr(self, '_cycle_alignment'):
-            per_cycle_ref = self._cycle_alignment.get(row_idx, {}).get('ref', 'Global')
+        if hasattr(self.main_window, '_cycle_alignment'):
+            per_cycle_ref = self.main_window._cycle_alignment.get(row_idx, {}).get('ref', 'Global')
         else:
             per_cycle_ref = 'Global'
 

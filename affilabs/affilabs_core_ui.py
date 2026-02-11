@@ -7249,12 +7249,19 @@ class AffilabsMainWindow(QMainWindow):
                         """)
 
                 # Populate alignment controls from stored data
-                alignment_data = self.edits_tab._cycle_alignment.get(row_idx, {'channel': 'All', 'shift': 0.0})
+                alignment_data = self.edits_tab._cycle_alignment.get(row_idx, {'channel': 'All', 'shift': 0.0, 'ref': 'Global'})
 
                 # Update channel combo
                 self.edits_tab.alignment_channel_combo.blockSignals(True)
                 self.edits_tab.alignment_channel_combo.setCurrentText(alignment_data['channel'])
                 self.edits_tab.alignment_channel_combo.blockSignals(False)
+
+                # Update reference combo
+                if hasattr(self.edits_tab, 'alignment_ref_combo'):
+                    ref_setting = alignment_data.get('ref', 'Global')
+                    self.edits_tab.alignment_ref_combo.blockSignals(True)
+                    self.edits_tab.alignment_ref_combo.setCurrentText(ref_setting)
+                    self.edits_tab.alignment_ref_combo.blockSignals(False)
 
                 # Update shift input and slider
                 shift_value = alignment_data['shift']
@@ -7355,9 +7362,20 @@ class AffilabsMainWindow(QMainWindow):
 
                 cycle = self._loaded_cycles_data[row]
 
-                # Get time range for this cycle
-                start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time'))
-                end_time = cycle.get('end_time_sensorgram')
+                # Get time range for this cycle - try multiple field name variations
+                start_time = (
+                    cycle.get('start_time_sensorgram') or
+                    cycle.get('sensorgram_time') or
+                    cycle.get('start_time') or
+                    cycle.get('time') or
+                    cycle.get('elapsed_time') or
+                    cycle.get('elapsed')
+                )
+                end_time = (
+                    cycle.get('end_time_sensorgram') or
+                    cycle.get('end_time') or
+                    None
+                )
 
                 # Handle NaN values from pandas (convert to None)
                 try:
@@ -7369,7 +7387,7 @@ class AffilabsMainWindow(QMainWindow):
                     pass
 
                 if start_time is None:
-                    logger.warning(f"Cycle {row} has no start time - skipping")
+                    logger.warning(f"Cycle {row} has no start time - available fields: {list(cycle.keys())}")
                     continue
 
                 # If no end time, use start time + duration
@@ -7457,6 +7475,54 @@ class AffilabsMainWindow(QMainWindow):
                     "This usually means the data was not recorded properly."
                 )
                 return
+
+            # Apply reference subtraction if configured
+            ref_channel_idx = None
+            if len(selected_rows) == 1 and hasattr(self.edits_tab, '_get_effective_ref_channel'):
+                ref_channel_idx = self.edits_tab._get_effective_ref_channel(selected_rows[0])
+                if ref_channel_idx is not None:
+                    ref_channel_name = ['a', 'b', 'c', 'd'][ref_channel_idx]
+                    ref_time = np.array(all_cycle_data[ref_channel_name]['time'])
+                    ref_wavelength = np.array(all_cycle_data[ref_channel_name]['wavelength'])
+
+                    if len(ref_time) > 0:
+                        logger.info(f"[REF SUBTRACT] Using Ch {ref_channel_name.upper()} as reference ({len(ref_time)} points)")
+
+                        # Sort reference data by time
+                        ref_sort_idx = np.argsort(ref_time)
+                        ref_time = ref_time[ref_sort_idx]
+                        ref_wavelength = ref_wavelength[ref_sort_idx]
+
+                        # Subtract reference from each channel (except the reference itself)
+                        for ch in ['a', 'b', 'c', 'd']:
+                            if ch == ref_channel_name:
+                                continue  # Don't subtract reference from itself
+
+                            ch_time = np.array(all_cycle_data[ch]['time'])
+                            ch_wavelength = np.array(all_cycle_data[ch]['wavelength'])
+
+                            if len(ch_time) > 0:
+                                # Sort channel data by time
+                                ch_sort_idx = np.argsort(ch_time)
+                                ch_time_sorted = ch_time[ch_sort_idx]
+                                ch_wavelength_sorted = ch_wavelength[ch_sort_idx]
+
+                                # Interpolate reference to match channel time points
+                                ref_interp = np.interp(ch_time_sorted, ref_time, ref_wavelength,
+                                                      left=np.nan, right=np.nan)
+
+                                # Subtract reference (only where we have valid interpolation)
+                                valid_mask = ~np.isnan(ref_interp)
+                                ch_wavelength_subtracted = ch_wavelength_sorted.copy()
+                                ch_wavelength_subtracted[valid_mask] -= ref_interp[valid_mask]
+
+                                # Update the data (keep sorted order)
+                                all_cycle_data[ch]['time'] = ch_time_sorted.tolist()
+                                all_cycle_data[ch]['wavelength'] = ch_wavelength_subtracted.tolist()
+
+                                logger.info(f"[REF SUBTRACT] Ch {ch.upper()}: subtracted {valid_mask.sum()}/{len(ch_time)} points")
+                    else:
+                        logger.warning(f"[REF SUBTRACT] Reference channel {ref_channel_name.upper()} has no data")
 
             # Plot the collected data on the graph
             # Conversion factor: 1 nm wavelength shift = 355 RU

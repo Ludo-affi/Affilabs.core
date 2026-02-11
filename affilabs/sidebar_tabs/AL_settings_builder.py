@@ -107,7 +107,6 @@ class SettingsTabBuilder:
             "QFrame {"
             "  background: rgba(0, 122, 255, 0.06);"
             "  border-radius: 8px;"
-            "  border: 1px solid rgba(0, 122, 255, 0.15);"
             "}"
         )
         prog_layout = QVBoxLayout(self.sidebar.user_progression_frame)
@@ -463,7 +462,7 @@ class SettingsTabBuilder:
         # Add "Capture Baseline" button (REBUILT - cleaner architecture)
         baseline_btn = QPushButton("[REC] Capture 5-Min Baseline")
         baseline_btn.setObjectName("baseline_capture_btn")  # Explicit object name
-        baseline_btn.setFixedHeight(40)
+        baseline_btn.setFixedHeight(32)
         baseline_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         baseline_btn.setStyleSheet(
             "QPushButton#baseline_capture_btn {"
@@ -471,8 +470,8 @@ class SettingsTabBuilder:
             "  color: white;"
             "  border: 2px solid #E02020;"
             "  border-radius: 6px;"
-            "  padding: 10px 16px;"
-            "  font-size: 14px;"
+            "  padding: 6px 12px;"
+            "  font-size: 12px;"
             "  font-weight: bold;"
             "}"
             "QPushButton#baseline_capture_btn:hover {"
@@ -1158,6 +1157,15 @@ class SettingsTabBuilder:
             logger.info(f"Colorblind palette {'enabled' if checked else 'disabled'}")
             # Store the palette choice in sidebar for access by graph updates
             self.sidebar.current_color_palette = palette
+            
+            # Save colorblind mode preference for current user
+            if hasattr(self.sidebar, 'user_combo'):
+                current_user = self.sidebar.user_combo.currentText()
+                if current_user and current_user != "Select User...":
+                    from affilabs.services.user_profile_manager import UserProfileManager
+                    profile_manager = UserProfileManager()
+                    profile_manager.set_colorblind_mode(current_user, checked)
+            
             # Trigger a redraw of the cycle of interest graph if it exists
             if hasattr(self.sidebar, 'app') and hasattr(self.sidebar.app, 'main_window'):
                 # Refresh the graph with new colors
