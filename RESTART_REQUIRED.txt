@@ -1,0 +1,28 @@
+================================================================================
+                        ⚠️  RESTART REQUIRED  ⚠️
+================================================================================
+
+The application is STILL running the OLD version!
+
+YOU MUST:
+1. CLOSE the application window (X button)
+   OR
+   Press Ctrl+C in the terminal
+
+2. Wait 5 seconds
+
+3. Run: python main.py
+
+================================================================================
+
+DO NOT continue using the current session - it has the OLD code loaded!
+
+The AttributeError will NOT go away until you restart.
+
+================================================================================
+
+After restart, the calibration dialog will work correctly with step descriptions.
+
+Cache has been cleared - just need to restart the application.
+
+================================================================================
