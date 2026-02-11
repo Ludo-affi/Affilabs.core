@@ -2208,6 +2208,11 @@ class Application(QApplication):
                 pass
             self._next_cycle_warning_line = None
 
+        # Clear running cycle highlight from queue table
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'summary_table'):
+            self.main_window.sidebar.summary_table.set_running_cycle(None)
+            logger.debug("✓ Queue table highlight cleared (Cancel)")
+
         # Re-enable Start Run button
         if btn := self._sidebar_widget('start_queue_btn'):
             btn.setEnabled(True)
@@ -2292,6 +2297,11 @@ class Application(QApplication):
         self._cycle_end_time = time.time() + (duration_min * 60)
         logger.info(f"✓ Cycle initialized: {cycle_type}, end_time set to {self._cycle_end_time}")
         logger.debug(f"   cycle_num={cycle_num}, total={total_cycles}, duration={duration_min}min")
+
+        # Highlight the running cycle in the queue table
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'summary_table'):
+            self.main_window.sidebar.summary_table.set_running_cycle(cycle.cycle_id)
+            logger.debug(f"✓ Queue table highlighting cycle #{cycle_num} (ID: {cycle.cycle_id})")
 
         # Show "Now Running" banner in sidebar
         self._update_now_running_banner(cycle_type, duration_min, show=True)
@@ -2835,6 +2845,11 @@ class Application(QApplication):
         self._current_cycle = None
         self._cycle_end_time = None
 
+        # Clear running cycle highlight from queue table
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'summary_table'):
+            self.main_window.sidebar.summary_table.set_running_cycle(None)
+            logger.debug("✓ Queue table highlight cleared")
+
         # Hide "Now Running" banner
         self._update_now_running_banner("", 0.0, show=False)
 
@@ -3027,6 +3042,11 @@ class Application(QApplication):
             # Unlock queue now that cycle is complete
             self.queue_presenter.unlock_queue()
             logger.debug("🔓 Queue unlocked after early cycle completion")
+
+            # Clear running cycle highlight from queue table
+            if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'summary_table'):
+                self.main_window.sidebar.summary_table.set_running_cycle(None)
+                logger.debug("✓ Queue table highlight cleared (Next Cycle)")
 
             # Get completed cycles from presenter (includes this one)
             self._completed_cycles = self.queue_presenter.get_completed_cycles()
@@ -3264,15 +3284,16 @@ class Application(QApplication):
 
         This is a minimal test implementation to validate the architecture.
         Creates a segment definition dict without executing it.
+
+        NOTE: Adding cycles is now allowed even when queue is locked (running).
+        This enables users to append additional cycles to an active method.
         """
         import re
         import time
 
-        # Check queue lock (use presenter's lock state)
-        if self.queue_presenter.is_queue_locked():
-            logger.warning("⚠️ Queue is locked during cycle operation - cannot add")
-            self.main_window.set_intel_message("⚠️ Cannot modify queue while cycle is running", Colors.WARNING)
-            return
+        # REMOVED: Queue lock check - users can now add cycles during execution
+        # The queue manager allows appending to the back while preventing
+        # deletion/reordering of cycles already started
 
         logger.info("🔵 TEST MODE: Adding cycle to segment queue")
         logger.debug(f"   Current queue size: {self.queue_presenter.get_queue_size()} cycles")
@@ -8376,58 +8397,6 @@ class Application(QApplication):
         logger.info("="*80)
         self.recording_events.on_record_baseline_clicked()
 
-    def _on_recording_started(self):
-        """Handle baseline recording started signal."""
-        if hasattr(self.main_window, "baseline_capture_btn"):
-            self.main_window.baseline_capture_btn.setText("[STOP] Stop Recording")
-            self.main_window.baseline_capture_btn.setStyleSheet(
-                "QPushButton {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF9500, stop:1 #E08000);"
-                "  color: white;"
-                "  border: none;"
-                "  border-radius: 8px;"
-                "  padding: 8px 16px;"
-                "  font-size: 13px;"
-                "  font-weight: 600;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                "}"
-                "QPushButton:hover {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFA520, stop:1 #F09000);"
-                "}"
-                "QPushButton:pressed {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E08000, stop:1 #C07000);"
-                "}",
-            )
-        logger.info(
-            "≡ƒôè Baseline recording started - button updated to 'Stop Recording'",
-        )
-
-    def _on_recording_progress(self, progress: dict):
-        """Handle baseline recording progress update.
-
-        Args:
-            progress: Dict with 'elapsed', 'remaining', 'count', 'percent' keys
-
-        """
-        self.recording_events.on_baseline_recording_progress(progress)
-
-    def _on_recording_complete(self, filepath: str):
-        """Handle baseline recording complete signal.
-
-        Args:
-            filepath: Path to saved recording file
-
-        """
-        self.recording_events.on_baseline_recording_complete(filepath)
-
-    def _on_recording_error(self, error_msg: str):
-        """Handle baseline recording error signal.
-
-        Args:
-            error_msg: Error description
-
-        """
-        self.recording_events.on_baseline_recording_error(error_msg)
 
     def _on_power_on_requested(self):
         """User requested to power on (connect hardware)."""
@@ -8564,16 +8533,28 @@ class Application(QApplication):
         destination = self.main_window.sidebar.export_dest_input.text() or str(default_directory)
 
         # Get current user and create user-specific directory structure
+        # Priority: user_profile_manager > combo box
         current_user = None
-        if combo := self._sidebar_widget('user_combo'):
-            current_user = combo.currentText()
 
-        if current_user:
+        # Try to get from user_profile_manager first (most reliable)
+        if hasattr(self, 'user_profile_manager') and self.user_profile_manager:
+            current_user = self.user_profile_manager.get_current_user()
+            logger.debug(f"Got current user from profile manager: {current_user}")
+
+        # Fallback to combo box if profile manager not available
+        if not current_user:
+            if combo := self._sidebar_widget('user_combo'):
+                current_user = combo.currentText()
+                logger.debug(f"Got current user from combo box: {current_user}")
+
+        if current_user and current_user != "":
             # Create: output/Username/SPR_data/
             destination_path = Path(destination) / current_user / "SPR_data"
             destination_path.mkdir(parents=True, exist_ok=True)
             destination = str(destination_path)
-            logger.info(f"Using user-specific directory: {destination}")
+            logger.info(f"✅ Using user-specific directory for {current_user}: {destination}")
+        else:
+            logger.warning("⚠️ No current user found - saving to default directory!")
 
         # Use Excel format (format selector was removed for consistency)
         extension = ".xlsx"

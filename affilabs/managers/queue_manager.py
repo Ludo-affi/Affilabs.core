@@ -62,15 +62,18 @@ class QueueManager(QObject):
     def add_cycle(self, cycle: Cycle) -> bool:
         """Add a cycle to the end of the queue.
 
+        NOTE: Adding cycles is ALLOWED even when queue is locked during execution.
+        This enables appending additional cycles to the back of a running queue.
+        Only deletion and reordering are blocked when locked.
+
         Args:
             cycle: Cycle object to add (will be assigned a unique ID)
 
         Returns:
-            True if cycle was added, False if queue is locked
+            True if cycle was added, False on error
         """
-        if self._lock:
-            logger.warning("Cannot add cycle - queue is locked")
-            return False
+        # REMOVED: lock check - allow adding cycles during execution
+        # Users should be able to append new cycles to a running method
 
         # Assign permanent unique ID
         self._cycle_counter += 1
@@ -207,6 +210,10 @@ class QueueManager(QObject):
     def pop_next_cycle(self) -> Optional[Cycle]:
         """Remove and return the first cycle in the queue (FIFO).
 
+        NOTE: Does NOT renumber remaining cycles - they keep their original cycle_num.
+        This allows the queue table to show absolute cycle numbers (e.g. #2, #3, #4 after #1 starts)
+        rather than re-indexing to #1, #2, #3 every time a cycle is popped.
+
         Returns:
             The next Cycle to execute, or None if queue is empty
         """
@@ -215,10 +222,11 @@ class QueueManager(QObject):
             return None
 
         cycle = self._queue.pop(0)
-        self._renumber_cycles()
+        # Deliberately NOT calling _renumber_cycles() here - preserve original cycle numbers
         self.queue_changed.emit()
 
         logger.info(f"⏭ Popped next cycle: {cycle.name} (ID: {cycle.cycle_id})")
+        logger.debug(f"   {len(self._queue)} cycles remaining in queue (NOT renumbered)")
         return cycle
 
     # ==================== COMPLETED CYCLES ====================
@@ -343,7 +351,7 @@ class QueueManager(QObject):
         """
         for i, cycle in enumerate(self._queue):
             cycle.name = f"Cycle {i + 1}"
-            if hasattr(cycle, 'cycle_num'):
+            if hasattr(cycle, "cycle_num"):
                 cycle.cycle_num = i + 1
 
         if len(self._queue) > 0:
@@ -367,9 +375,9 @@ class QueueManager(QObject):
             Dictionary with queue, completed cycles, and counter
         """
         return {
-            'queue': [c.to_dict() for c in self._queue],
-            'completed': [c.to_dict() for c in self._completed],
-            'cycle_counter': self._cycle_counter,
+            "queue": [c.to_dict() for c in self._queue],
+            "completed": [c.to_dict() for c in self._completed],
+            "cycle_counter": self._cycle_counter,
         }
 
     def restore_state(self, state: dict) -> bool:
@@ -383,20 +391,25 @@ class QueueManager(QObject):
         """
         try:
             # Restore queue
-            self._queue = [Cycle.from_dict(c) for c in state.get('queue', [])]
-            self._completed = [Cycle.from_dict(c) for c in state.get('completed', [])]
+            self._queue = [Cycle.from_dict(c) for c in state.get("queue", [])]
+            self._completed = [Cycle.from_dict(c) for c in state.get("completed", [])]
 
             # Restore counter with safety check to prevent duplicate IDs
-            stored_counter = state.get('cycle_counter', 0)
-            all_cycle_ids = [c.cycle_id for c in self._queue + self._completed
-                            if hasattr(c, 'cycle_id') and c.cycle_id]
+            stored_counter = state.get("cycle_counter", 0)
+            all_cycle_ids = [
+                c.cycle_id
+                for c in self._queue + self._completed
+                if hasattr(c, "cycle_id") and c.cycle_id
+            ]
             max_existing_id = max(all_cycle_ids) if all_cycle_ids else 0
             self._cycle_counter = max(stored_counter, max_existing_id)
 
             self.queue_changed.emit()
 
-            logger.info(f"♻️ Restored queue state: {len(self._queue)} queued, "
-                       f"{len(self._completed)} completed, counter={self._cycle_counter}")
+            logger.info(
+                f"♻️ Restored queue state: {len(self._queue)} queued, "
+                f"{len(self._completed)} completed, counter={self._cycle_counter}"
+            )
             return True
         except Exception as e:
             logger.error(f"Failed to restore state: {e}")
@@ -422,17 +435,19 @@ class QueueManager(QObject):
             Cycle with matching ID, or None if not found
         """
         for cycle in self._queue:
-            if hasattr(cycle, 'cycle_id') and cycle.cycle_id == cycle_id:
+            if hasattr(cycle, "cycle_id") and cycle.cycle_id == cycle_id:
                 return cycle
 
         for cycle in self._completed:
-            if hasattr(cycle, 'cycle_id') and cycle.cycle_id == cycle_id:
+            if hasattr(cycle, "cycle_id") and cycle.cycle_id == cycle_id:
                 return cycle
 
         return None
 
     def __repr__(self) -> str:
         """String representation for debugging."""
-        return (f"QueueManager(queued={len(self._queue)}, "
-                f"completed={len(self._completed)}, "
-                f"locked={self._lock})")
+        return (
+            f"QueueManager(queued={len(self._queue)}, "
+            f"completed={len(self._completed)}, "
+            f"locked={self._lock})"
+        )

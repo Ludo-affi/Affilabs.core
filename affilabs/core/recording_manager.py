@@ -107,6 +107,25 @@ class RecordingManager(QObject):
             if self.current_file:
                 self._save_to_file()
                 logger.info(f"Recording stopped - final save to: {self.current_file}")
+
+                # Increment experiment count for current user
+                try:
+                    # Try to get user_profile_manager from various possible locations
+                    user_mgr = None
+                    if hasattr(self, "user_profile_manager"):
+                        user_mgr = self.user_profile_manager
+                    elif hasattr(self.data_mgr, "user_profile_manager"):
+                        user_mgr = self.data_mgr.user_profile_manager
+                    elif hasattr(self.data_mgr, "app") and hasattr(
+                        self.data_mgr.app, "user_profile_manager"
+                    ):
+                        user_mgr = self.data_mgr.app.user_profile_manager
+
+                    if user_mgr:
+                        new_count = user_mgr.increment_experiment_count()
+                        logger.info(f"✅ Experiment count incremented: {new_count}")
+                except Exception as e:
+                    logger.warning(f"Could not increment experiment count: {e}")
             else:
                 logger.info("Recording stopped (data in memory - click Export to save)")
 

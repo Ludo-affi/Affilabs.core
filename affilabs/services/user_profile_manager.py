@@ -29,10 +29,10 @@ class UserProfileManager:
         """Load user profiles from JSON file."""
         if self.config_file.exists():
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file, "r") as f:
                     data = json.load(f)
-                    self.profiles = data.get('users', [])
-                    self.current_user = data.get('current_user', '')
+                    self.profiles = data.get("users", [])
+                    self.current_user = data.get("current_user", "")
                     logger.debug(f"Loaded {len(self.profiles)} user profiles")
             except Exception as e:
                 logger.error(f"Failed to load user profiles: {e}")
@@ -47,11 +47,22 @@ class UserProfileManager:
     def _save_profiles(self) -> None:
         """Save user profiles to JSON file."""
         try:
+            # Preserve existing user_data if it exists
+            existing_user_data = {}
+            if self.config_file.exists():
+                try:
+                    with open(self.config_file, "r") as f:
+                        old_data = json.load(f)
+                        existing_user_data = old_data.get("user_data", {})
+                except Exception:
+                    pass
+
             data = {
-                'users': self.profiles,
-                'current_user': self.current_user
+                "users": self.profiles,
+                "current_user": self.current_user,
+                "user_data": existing_user_data,
             }
-            with open(self.config_file, 'w') as f:
+            with open(self.config_file, "w") as f:
                 json.dump(data, indent=2, fp=f)
             logger.debug(f"Saved {len(self.profiles)} user profiles")
         except Exception as e:
@@ -107,9 +118,46 @@ class UserProfileManager:
 
         self.profiles.append(username)
         self.profiles.sort()  # Keep alphabetically sorted
+
+        # Initialize user_data for the new user
+        self._initialize_user_data(username)
+
         self._save_profiles()
         logger.info(f"Added new user: {username}")
         return True
+
+    def _initialize_user_data(self, username: str) -> None:
+        """Initialize user_data entry for a new user.
+
+        Args:
+            username: Name of user to initialize data for
+        """
+        try:
+            # Load existing data
+            user_data = {}
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    data = json.load(f)
+                    user_data = data.get("user_data", {})
+
+            # Initialize new user with default values
+            if username not in user_data:
+                user_data[username] = {
+                    "experiment_count": 0,
+                    "compression_training": {"completed": False, "score": None, "date": None},
+                }
+
+            # Save back
+            data = {
+                "users": self.profiles,
+                "current_user": self.current_user,
+                "user_data": user_data,
+            }
+            with open(self.config_file, "w") as f:
+                json.dump(data, indent=2, fp=f)
+            logger.debug(f"Initialized user_data for: {username}")
+        except Exception as e:
+            logger.error(f"Failed to initialize user_data for {username}: {e}")
 
     def remove_user(self, username: str) -> bool:
         """Remove a user profile.
@@ -145,10 +193,7 @@ class UserProfileManager:
         Returns:
             Dictionary with user information
         """
-        return {
-            'User': self.current_user,
-            'User_Profile_Count': len(self.profiles)
-        }
+        return {"User": self.current_user, "User_Profile_Count": len(self.profiles)}
 
     def get_progression_summary(self, username: str) -> dict:
         """Get progression summary for a user.
@@ -274,6 +319,105 @@ class UserProfileManager:
         except Exception:
             pass
         return 0
+
+    def increment_experiment_count(self, username: str = None) -> int:
+        """Increment experiment count for a user.
+
+        Args:
+            username: The username to increment. If None, uses current_user.
+
+        Returns:
+            New experiment count after increment.
+        """
+        if username is None:
+            username = self.current_user
+
+        if not username or username not in self.profiles:
+            logger.warning(f"Cannot increment experiment count for invalid user: {username}")
+            return 0
+
+        try:
+            # Load current data
+            user_data = {}
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    data = json.load(f)
+                    user_data = data.get("user_data", {})
+
+            # Initialize if doesn't exist
+            if username not in user_data:
+                user_data[username] = {
+                    "experiment_count": 0,
+                    "compression_training": {"completed": False, "score": None, "date": None},
+                }
+
+            # Increment count
+            user_data[username]["experiment_count"] = (
+                user_data[username].get("experiment_count", 0) + 1
+            )
+            new_count = user_data[username]["experiment_count"]
+
+            # Save back
+            data = {
+                "users": self.profiles,
+                "current_user": self.current_user,
+                "user_data": user_data,
+            }
+            with open(self.config_file, "w") as f:
+                json.dump(data, indent=2, fp=f)
+
+            logger.info(f"Incremented experiment count for {username}: {new_count}")
+            return new_count
+        except Exception as e:
+            logger.error(f"Failed to increment experiment count for {username}: {e}")
+            return 0
+
+    def set_experiment_count(self, username: str, count: int) -> bool:
+        """Set experiment count for a user (for testing or manual adjustment).
+
+        Args:
+            username: The username to update.
+            count: The new experiment count.
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        if username not in self.profiles:
+            logger.warning(f"Cannot set experiment count for non-existent user: {username}")
+            return False
+
+        try:
+            # Load current data
+            user_data = {}
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    data = json.load(f)
+                    user_data = data.get("user_data", {})
+
+            # Initialize if doesn't exist
+            if username not in user_data:
+                user_data[username] = {
+                    "experiment_count": 0,
+                    "compression_training": {"completed": False, "score": None, "date": None},
+                }
+
+            # Set count
+            user_data[username]["experiment_count"] = max(0, count)
+
+            # Save back
+            data = {
+                "users": self.profiles,
+                "current_user": self.current_user,
+                "user_data": user_data,
+            }
+            with open(self.config_file, "w") as f:
+                json.dump(data, indent=2, fp=f)
+
+            logger.info(f"Set experiment count for {username}: {count}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to set experiment count for {username}: {e}")
+            return False
 
     def needs_compression_training(self, username: str) -> bool:
         """Check if a user still needs compression training.

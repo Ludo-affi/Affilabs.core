@@ -1650,20 +1650,23 @@ Baseline 2min
             return
 
         try:
-            # Convert cycles to JSON-serializable format
+            # Convert cycles to JSON-serializable format using Cycle.to_dict()
             method_data = {
                 "version": "1.0",
                 "cycles": []
             }
 
             for cycle in self._local_cycles:
-                cycle_dict = {
-                    "type": cycle.type,
-                    "length_minutes": cycle.length_minutes,
-                    "note": cycle.note or "",
-                    "pumps": cycle.pumps,
-                    "contact_times": cycle.contact_times,
-                }
+                # Use the Cycle model's built-in serialization
+                if hasattr(cycle, 'to_dict'):
+                    cycle_dict = cycle.to_dict()
+                else:
+                    # Fallback for legacy cycle objects
+                    cycle_dict = {
+                        "type": cycle.type,
+                        "length_minutes": cycle.length_minutes,
+                        "note": cycle.note or "",
+                    }
                 method_data["cycles"].append(cycle_dict)
 
             # Write to file
@@ -1719,16 +1722,11 @@ Baseline 2min
                 if reply != QMessageBox.StandardButton.Yes:
                     return
 
-            # Convert JSON back to Cycle objects
+            # Convert JSON back to Cycle objects using Cycle.from_dict()
             loaded_cycles = []
             for cycle_dict in method_data["cycles"]:
-                cycle = Cycle(
-                    type=cycle_dict["type"],
-                    length_minutes=cycle_dict["length_minutes"],
-                    note=cycle_dict.get("note", ""),
-                    pumps=cycle_dict.get("pumps", {}),
-                    contact_times=cycle_dict.get("contact_times", {}),
-                )
+                # Use the Cycle model's built-in deserialization
+                cycle = Cycle.from_dict(cycle_dict)
                 loaded_cycles.append(cycle)
 
             # Update method

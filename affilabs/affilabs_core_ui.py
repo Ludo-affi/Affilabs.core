@@ -2344,9 +2344,10 @@ class AffilabsMainWindow(QMainWindow):
             logger.debug(f"Error updating flag counter: {e}")
 
     def _on_colorblind_mode_changed(self, enabled: bool):
-        """Update button colors when colorblind mode is toggled."""
+        """Update button colors and curve colors when colorblind mode is toggled."""
         from affilabs.utils.ui_styles import UIStyleManager
         from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+        import pyqtgraph as pg
 
         # Select color palette based on mode
         colors = CHANNEL_COLORS_COLORBLIND if enabled else CHANNEL_COLORS
@@ -2360,6 +2361,22 @@ class AffilabsMainWindow(QMainWindow):
         if hasattr(self, 'channel_selection_buttons'):
             for i, (ch, btn) in enumerate(self.channel_selection_buttons.items()):
                 btn.setStyleSheet(UIStyleManager.get_channel_button_style(colors[i]))
+
+        # Update Active Cycle graph curve colors
+        if hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'curves'):
+            # Convert hex colors to RGB tuples for pyqtgraph
+            def hex_to_rgb(hex_color):
+                hex_color = hex_color.lstrip('#')
+                return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+            channel_colors_rgb = [hex_to_rgb(c) for c in colors]
+
+            # Update each curve with new colors
+            selected_channel = getattr(self, 'selected_channel_for_flagging', None)
+            for i, curve in enumerate(self.cycle_of_interest_graph.curves):
+                # Maintain current width (thicker for selected, normal for others)
+                width = 4 if selected_channel == i else 2
+                curve.setPen(pg.mkPen(color=channel_colors_rgb[i], width=width))
 
     def _create_graph_container(
         self,
@@ -2721,14 +2738,18 @@ class AffilabsMainWindow(QMainWindow):
 
         # Update curve highlighting (make selected curve thicker)
         import pyqtgraph as pg
+        from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
 
-        # Get channel colors (same as defined in add_channel_curves)
-        channel_colors = [
-            (0, 0, 0),        # A: Black
-            (255, 0, 0),      # B: Red
-            (0, 0, 255),      # C: Blue
-            (0, 170, 0),      # D: Green
-        ]
+        # Get channel colors based on colorblind mode setting
+        colorblind_enabled = self.colorblind_check.isChecked() if hasattr(self, 'colorblind_check') else False
+        color_palette = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
+
+        # Convert hex colors to RGB tuples for pyqtgraph
+        def hex_to_rgb(hex_color):
+            hex_color = hex_color.lstrip('#')
+            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+        channel_colors = [hex_to_rgb(c) for c in color_palette]
 
         for i, curve in enumerate(self.cycle_of_interest_graph.curves):
             if i == channel_idx:
@@ -5548,12 +5569,15 @@ class AffilabsMainWindow(QMainWindow):
             logger.warning("No cycles in queue to start")
             return
 
-        # Execute first cycle from queue
+        # Set queue running flag so it auto-advances through cycles
+        self._queue_running = True
+
+        # Execute FIRST cycle from queue (index 0)
         cycle_data = self.cycle_queue[0]  # Don't pop yet, wait for completion
         cycle_data["state"] = "running"
 
         logger.info(
-            f"🚀 Starting queued cycle: {cycle_data['type']} - {cycle_data['notes']}",
+            f"🚀 Starting queued run at FIRST cycle (1/{len(self.cycle_queue)}): {cycle_data['type']} - {cycle_data['notes']}",
         )
 
         # Update display to show running state

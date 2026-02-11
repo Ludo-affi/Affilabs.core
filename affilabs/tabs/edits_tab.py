@@ -131,22 +131,45 @@ class EditsTab:
         self.compact_view = False  # Start in expanded view (default)
         self.cycle_filter = "Binding (High)"  # Default: show only concentration/binding cycles
 
-        # Initialize table widget — compact 6-column layout
+        # Initialize table widget — 12-column layout to match add_cycle_to_table format
         # STARTS EMPTY - will be populated ONLY when cycles complete during live acquisition
-        self.cycle_data_table = QTableWidget(0, 6)
-        self.cycle_data_table.setHorizontalHeaderLabels(
-            ["Type", "Time", "Conc.", "ΔSPR", "Flags", "Notes"]
-        )
+        self.cycle_data_table = QTableWidget(0, 12)
+        self.cycle_data_table.setHorizontalHeaderLabels([
+            "Type",         # Column 0: Cycle type with number (e.g., "Baseline 1")
+            "Duration",     # Column 1: Duration in minutes
+            "Start",        # Column 2: Start time in sensorgram (seconds)
+            "Conc.",        # Column 3: Concentration value(s)
+            "Notes",        # Column 4: Notes with cycle_id
+            "ΔCh1",         # Column 5: Delta SPR channel A
+            "ΔCh2",         # Column 6: Delta SPR channel B
+            "ΔCh3",         # Column 7: Delta SPR channel C
+            "ΔCh4",         # Column 8: Delta SPR channel D
+            "Flags",        # Column 9: Event flags
+            "Channel",      # Column 10: Channel selector dropdown
+            "Shift"         # Column 11: Time shift adjustment
+        ])
         # Set column widths: stretch to fill available space
         header = self.cycle_data_table.horizontalHeader()
         header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)       # Type icon
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)     # Time
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)     # Conc
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)     # ΔSPR
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)     # Flags
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)     # Notes
-        self.cycle_data_table.setColumnWidth(0, 55)    # Type icon (fixed minimum)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)          # Type (fixed)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)        # Duration
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)        # Start
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)        # Conc.
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)        # Notes
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)          # ΔCh1
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)          # ΔCh2
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)          # ΔCh3
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)          # ΔCh4
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)        # Flags
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)         # Channel dropdown
+        header.setSectionResizeMode(11, QHeaderView.ResizeMode.Fixed)         # Shift
+        self.cycle_data_table.setColumnWidth(0, 80)    # Type (fixed minimum)
+        self.cycle_data_table.setColumnWidth(5, 60)    # ΔCh1 (compact)
+        self.cycle_data_table.setColumnWidth(6, 60)    # ΔCh2 (compact)
+        self.cycle_data_table.setColumnWidth(7, 60)    # ΔCh3 (compact)
+        self.cycle_data_table.setColumnWidth(8, 60)    # ΔCh4 (compact)
+        self.cycle_data_table.setColumnWidth(10, 80)   # Channel dropdown
+        self.cycle_data_table.setColumnWidth(11, 70)   # Shift spinbox
 
         # Set compact font for better space utilization
         table_font = QFont("-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif")
@@ -166,11 +189,17 @@ class EditsTab:
         # Set column tooltips for better understanding
         tooltips = [
             "Cycle type: BL=Baseline, IM=Immobilization, WS=Wash, CN=Concentration, RG=Regeneration, CU=Custom",
-            "Duration (minutes) @ Start time (seconds)",
-            "Analyte concentration (if applicable)",
-            "Delta SPR response for all channels (in RU): A:val B:val C:val D:val",
+            "Duration in minutes (how long the cycle lasted)",
+            "Start time in sensorgram timeline (seconds from acquisition start)",
+            "Analyte concentration (if applicable) - may show per-channel values like A:100, B:50",
+            "Custom notes or comments for this cycle (includes cycle ID for tracking)",
+            "Delta SPR response for channel A (in RU)",
+            "Delta SPR response for channel B (in RU)",
+            "Delta SPR response for channel C (in RU)",
+            "Delta SPR response for channel D (in RU)",
             "Event flags (injection ▲, wash ■, spike ◆) with times",
-            "Custom notes or comments for this cycle",
+            "Select channel view for analysis",
+            "Time shift adjustment (seconds) for aligning data",
         ]
         for col, tooltip in enumerate(tooltips):
             self.cycle_data_table.horizontalHeaderItem(col).setToolTip(tooltip)
@@ -3787,8 +3816,9 @@ class EditsTab:
     def _apply_compact_view_initial(self):
         """Apply initial column visibility based on compact_view flag."""
         if self.compact_view:
-            self.cycle_data_table.setColumnHidden(1, True)  # Time
-            self.cycle_data_table.setColumnHidden(5, True)  # Notes
+            self.cycle_data_table.setColumnHidden(2, True)   # Start time
+            self.cycle_data_table.setColumnHidden(4, True)   # Notes
+            self.cycle_data_table.setColumnHidden(11, True)  # Shift
 
     def _toggle_compact_view(self):
         """Toggle between compact and expanded table view."""
@@ -3796,11 +3826,12 @@ class EditsTab:
 
         if self.compact_view:
             # Hide less important columns in compact view
-            self.cycle_data_table.setColumnHidden(1, True)   # Time
-            self.cycle_data_table.setColumnHidden(5, True)   # Notes
+            self.cycle_data_table.setColumnHidden(2, True)   # Start time
+            self.cycle_data_table.setColumnHidden(4, True)   # Notes
+            self.cycle_data_table.setColumnHidden(11, True)  # Shift
         else:
             # Show all columns in expanded view
-            for col in range(6):
+            for col in range(12):
                 self.cycle_data_table.setColumnHidden(col, False)
 
     def _apply_cycle_filter(self, filter_text):
