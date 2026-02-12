@@ -49,7 +49,8 @@ class SettingsTabBuilder:
 
         """
         self.sidebar = sidebar
-        self.user_manager = UserProfileManager()
+        # Use shared instance from sidebar (will be set by main app)
+        self.user_manager = None
 
     def build(self, tab_layout: QVBoxLayout):
         """Build the complete Settings tab UI.
@@ -74,6 +75,10 @@ class SettingsTabBuilder:
 
     def _build_user_management(self, tab_layout: QVBoxLayout):
         """Build user management section with progression display."""
+        # Get shared user manager from sidebar (set by main app)
+        if hasattr(self.sidebar, 'user_profile_manager') and self.sidebar.user_profile_manager:
+            self.user_manager = self.sidebar.user_profile_manager
+
         user_mgmt_section = CollapsibleSection(
             "👥 User Management",
             is_expanded=False,
@@ -236,6 +241,10 @@ class SettingsTabBuilder:
 
     def _populate_user_list(self):
         """Populate user list widget with names and progression titles."""
+        # Check if user_manager is available (may not be set during initial UI construction)
+        if not self.user_manager:
+            return
+
         self.sidebar.user_list_widget.clear()
         for username in self.user_manager.get_profiles():
             title, _ = self.user_manager.get_title(username)
@@ -250,6 +259,10 @@ class SettingsTabBuilder:
 
     def _update_progression_display(self):
         """Update the progression banner for the current user."""
+        # Check if user_manager is available (may not be set during initial UI construction)
+        if not self.user_manager:
+            return
+
         current = self.user_manager.get_current_user()
         if not current:
             return
@@ -575,9 +588,9 @@ class SettingsTabBuilder:
         intel_bar_layout.addWidget(self.sidebar.settings_intel_separator)
 
         self.sidebar.settings_intel_message_label = QLabel("→ Hardware configured")
-        self.sidebar.settings_intel_message_label.setFixedHeight(20)
+        self.sidebar.settings_intel_message_label.setFixedHeight(22)
         self.sidebar.settings_intel_message_label.setStyleSheet(
-            "font-size: 12px;"
+            "font-size: 14px;"
             "color: #007AFF;"
             "background: transparent;"
             "font-weight: 600;"
@@ -1157,15 +1170,20 @@ class SettingsTabBuilder:
             logger.info(f"Colorblind palette {'enabled' if checked else 'disabled'}")
             # Store the palette choice in sidebar for access by graph updates
             self.sidebar.current_color_palette = palette
-            
+
             # Save colorblind mode preference for current user
             if hasattr(self.sidebar, 'user_combo'):
                 current_user = self.sidebar.user_combo.currentText()
                 if current_user and current_user != "Select User...":
-                    from affilabs.services.user_profile_manager import UserProfileManager
-                    profile_manager = UserProfileManager()
-                    profile_manager.set_colorblind_mode(current_user, checked)
-            
+                    # Use shared user manager if available
+                    if self.user_manager:
+                        self.user_manager.set_colorblind_mode(current_user, checked)
+                    else:
+                        # Fallback
+                        from affilabs.services.user_profile_manager import UserProfileManager
+                        profile_manager = UserProfileManager()
+                        profile_manager.set_colorblind_mode(current_user, checked)
+
             # Trigger a redraw of the cycle of interest graph if it exists
             if hasattr(self.sidebar, 'app') and hasattr(self.sidebar.app, 'main_window'):
                 # Refresh the graph with new colors

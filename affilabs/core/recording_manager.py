@@ -173,6 +173,25 @@ class RecordingManager(QObject):
                     # Cycles sheet if available
                     if self.data_collector.cycles:
                         df_cycles = pd.DataFrame(self.data_collector.cycles)
+
+                        # Deduplicate cycles to prevent duplicate rows in Excel
+                        if "cycle_id" in df_cycles.columns:
+                            original_count = len(df_cycles)
+                            df_cycles = df_cycles.drop_duplicates(subset=["cycle_id"], keep="first")
+                            if len(df_cycles) < original_count:
+                                logger.warning(
+                                    f"Removed {original_count - len(df_cycles)} duplicate cycle rows during export"
+                                )
+                        elif "cycle_num" in df_cycles.columns:
+                            original_count = len(df_cycles)
+                            df_cycles = df_cycles.drop_duplicates(
+                                subset=["cycle_num"], keep="first"
+                            )
+                            if len(df_cycles) < original_count:
+                                logger.warning(
+                                    f"Removed {original_count - len(df_cycles)} duplicate cycle rows during export"
+                                )
+
                         df_cycles.to_excel(writer, sheet_name="Cycles", index=False)
 
                     # Flags sheet if available

@@ -440,7 +440,7 @@ class MethodBuilderDialog(QDialog):
 
     method_ready = Signal(str, list)  # (action, list of cycles)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, user_manager=None):
         super().__init__(parent)
         self.setWindowTitle("Build Method")
         self.setMinimumSize(700, 650)
@@ -453,7 +453,14 @@ class MethodBuilderDialog(QDialog):
         self._waiting_for_response = False  # Track if we're waiting for user answer
         self._pending_command = None  # Store the command waiting for answer (e.g., "amine_coupling", "build")
         self._spark_popup = None  # Lazy-created Spark popup
-        self._user_manager = UserProfileManager()  # For operator dropdown
+
+        # Use shared user manager if provided, otherwise create fallback
+        if user_manager:
+            self._user_manager = user_manager
+        else:
+            from affilabs.services.user_profile_manager import UserProfileManager
+            self._user_manager = UserProfileManager()
+
         self._setup_ui()
 
     # -- Spark popup -------------------------------------------------------
@@ -1232,7 +1239,7 @@ Each cycle runs for its set duration and auto-advances to the next.</p>
 <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
 <tr style="background:#f0f0f0;"><th>Part</th><th>Required?</th><th>Description</th></tr>
 <tr><td><b>Type</b></td><td>Yes</td><td>One of: Baseline, Concentration, Regeneration, Immobilization, Wash, Other</td></tr>
-<tr><td><b>Duration</b></td><td>Yes</td><td>e.g. <code>5min</code>, <code>30sec</code>, <code>2m</code>, <code>30s</code>. Default is 5 min if omitted.</td></tr>
+<tr><td><b>Duration</b></td><td>Yes</td><td>e.g. <code>5min</code>, <code>30sec</code>, <code>2h</code>, <code>overnight</code>. Supports hours (h/hr), minutes (min/m), seconds (sec/s). Default is 5 min if omitted.</td></tr>
 <tr><td><b>[Tags]</b></td><td>No</td><td>Channel + optional concentration: <code>[A]</code> <code>[ALL:100nM]</code> <code>[B:50µM]</code></td></tr>
 <tr><td><b>contact Ns</b></td><td>No</td><td>Injection contact time: <code>contact 180s</code> or <code>contact 3min</code></td></tr>
 <tr><td><b>partial injection</b></td><td>No</td><td>Use partial (30µL spike) instead of simple injection</td></tr>
@@ -1280,6 +1287,13 @@ Baseline 2min
 Concentration 5min [A:100nM] contact 120s
 Baseline 10min
 Regeneration 30sec [ALL:50mM]
+</pre>
+
+<h4>Overnight Test Example</h4>
+<pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
+Baseline overnight  # 8 hours (auto)
+Baseline 12h        # 12 hours
+Baseline 24hr       # 24 hours
 </pre>
 
 <h4>Amine Coupling + Titration</h4>
@@ -1376,6 +1390,7 @@ Baseline 2min
         type_keywords = [
             ('Baseline', r'baseline'),
             ('Immobilization', r'immobilization|immobilize|immob'),
+            ('Blocking', r'blocking|block'),
             ('Wash', r'\bwash\b'),  # Match 'wash' as standalone word
             ('Concentration', r'concentration|conc|association|binding|inject'),
             ('Regeneration', r'regeneration|regen|clean'),
@@ -1387,16 +1402,24 @@ Baseline 2min
                 cycle_type = type_name
                 break
 
-        # Parse duration from text (e.g., "5min", "30sec", "2min")
+        # Parse duration from text (e.g., "5min", "30sec", "2h", "overnight")
         duration_minutes = 5.0  # default
-        duration_match = re.search(r'(\d+(?:\.\d+)?)(min|sec|m|s)', text, re.IGNORECASE)
-        if duration_match:
-            value = float(duration_match.group(1))
-            unit = duration_match.group(2).lower()
-            if unit in ['sec', 's']:
-                duration_minutes = value / 60.0
-            else:  # min or m
-                duration_minutes = value
+
+        # Special case: "overnight" = 8 hours
+        if 'overnight' in text.lower():
+            duration_minutes = 8 * 60.0  # 480 minutes
+        else:
+            # Parse hours, minutes, or seconds (e.g., "24h", "5min", "30sec")
+            duration_match = re.search(r'(\d+(?:\.\d+)?)(h|hr|hour|hours|min|m|sec|s)\b', text, re.IGNORECASE)
+            if duration_match:
+                value = float(duration_match.group(1))
+                unit = duration_match.group(2).lower()
+                if unit in ['sec', 's']:
+                    duration_minutes = value / 60.0
+                elif unit in ['h', 'hr', 'hour', 'hours']:
+                    duration_minutes = value * 60.0  # Convert hours to minutes
+                else:  # min or m
+                    duration_minutes = value
 
         # Parse concentration tags WITH units: [A:100nM], [B:50µM], [ALL:25pM], etc.
         tags_with_units = re.findall(r"\[([A-D]|ALL):(\d+\.?\d*)([a-zA-Zµ/]+)?\]", text)
@@ -1424,12 +1447,22 @@ Baseline 2min
         # Parse partial injection override (e.g., "partial injection", "partial")
         is_partial = bool(re.search(r'partial\s*(injection)?', text, re.IGNORECASE))
 
+        # Parse manual injection mode override (e.g., "manual injection", "automated")
+        manual_injection_mode = None
+        if re.search(r'manual\s*(?:injection|mode)?', text, re.IGNORECASE):
+            manual_injection_mode = "manual"
+        elif re.search(r'automated\s*(?:injection|mode)?', text, re.IGNORECASE):
+            manual_injection_mode = "automated"
+
         # Auto-set injection method and contact time based on cycle type rules
         injection_method = None
         pump_type = None  # Will be auto-detected during execution
 
         # Injection rules by cycle type
         if cycle_type == "Immobilization":
+            injection_method = "simple"
+            # contact_time from parsing (required by user)
+        elif cycle_type == "Blocking":
             injection_method = "simple"
             # contact_time from parsing (required by user)
         elif cycle_type == "Wash":
@@ -1443,6 +1476,17 @@ Baseline 2min
             if contact_time is None:
                 contact_time = 30.0  # Fixed 30s default for Regeneration
         # Baseline and Other get no injection (None)
+
+        # Build planned_concentrations list for concentration cycles
+        # Format: ["100 nM", "50 nM", "10 nM"]
+        planned_concentrations = []
+        if cycle_type == "Concentration" and concentrations:
+            # Sort concentrations by value (descending) for natural order
+            sorted_conc = sorted(concentrations.items(), key=lambda x: x[1], reverse=True)
+            for ch, val in sorted_conc:
+                # Format as "value unit" (e.g., "100 nM")
+                conc_str = f"{val} {detected_unit}".replace(" .", ".")  # Clean up decimals
+                planned_concentrations.append(conc_str)
 
         # Generate name from type + tags or just text
         if concentrations:
@@ -1466,6 +1510,9 @@ Baseline 2min
             injection_delay=20.0,  # Always 20s
             contact_time=contact_time,
             pump_type=pump_type,  # Auto-detected during execution
+            # Manual injection mode fields
+            manual_injection_mode=manual_injection_mode,
+            planned_concentrations=planned_concentrations,
         )
 
     def _on_add_to_method(self):
@@ -1631,11 +1678,9 @@ Baseline 2min
         from PySide6.QtWidgets import QFileDialog
         import json
         from pathlib import Path
-        from affilabs.services.user_profile_manager import UserProfileManager
 
         # Default save directory - user profile subfolder
-        user_manager = UserProfileManager()
-        username = user_manager.get_current_user()
+        username = self._user_manager.get_current_user()
         default_dir = Path.home() / "Documents" / "Affilabs Methods" / username
         default_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1684,11 +1729,9 @@ Baseline 2min
         import json
         from pathlib import Path
         from affilabs.domain.cycle import Cycle
-        from affilabs.services.user_profile_manager import UserProfileManager
 
         # Default load directory - user profile subfolder
-        user_manager = UserProfileManager()
-        username = user_manager.get_current_user()
+        username = self._user_manager.get_current_user()
         default_dir = Path.home() / "Documents" / "Affilabs Methods" / username
         default_dir.mkdir(parents=True, exist_ok=True)
 

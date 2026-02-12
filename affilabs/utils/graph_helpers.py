@@ -69,17 +69,7 @@ class GraphHelpers:
         ref_spr = app.buffer_mgr.cycle_data[app._reference_channel].spr
 
         if len(ref_time) == 0:
-            print(
-                f"[REF-DEBUG] Reference channel {app._reference_channel} has no data",
-            )
             return
-
-        print(
-            f"[REF-DEBUG] Applying reference subtraction using channel {app._reference_channel}",
-        )
-        print(
-            f"[REF-DEBUG] Reference SPR range: [{ref_spr.min():.2f}, {ref_spr.max():.2f}] RU",
-        )
 
         # Subtract reference from all other channels
         for ch in app._idx_to_channel:
@@ -92,19 +82,12 @@ class GraphHelpers:
             if len(ch_time) == 0:
                 continue
 
-            print(
-                f"[REF-DEBUG] Ch {ch}: Before subtraction, SPR range=[{ch_spr.min():.2f}, {ch_spr.max():.2f}] RU",
-            )
-
             # Interpolate reference to match channel time points
             if len(ref_time) > 1:
                 ref_interp = np.interp(ch_time, ref_time, ref_spr)
                 # Update the cycle data with subtracted values
                 subtracted_spr = ch_spr - ref_interp
                 app.buffer_mgr.cycle_data[ch].spr = subtracted_spr
-                print(
-                    f"[REF-DEBUG] Ch {ch}: After subtraction, SPR range=[{subtracted_spr.min():.2f}, {subtracted_spr.max():.2f}] RU",
-                )
 
     @staticmethod
     def init_kalman_filters(app: Application) -> None:

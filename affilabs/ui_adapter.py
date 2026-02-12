@@ -179,7 +179,7 @@ class UIAdapter(QObject):
             Reference to the dialog for progress updates
 
         """
-        from affilabs_core_ui import StartupCalibProgressDialog
+        from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
 
         dialog = StartupCalibProgressDialog(
             parent=self.ui,

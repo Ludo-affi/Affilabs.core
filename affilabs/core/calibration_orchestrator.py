@@ -108,7 +108,7 @@ def run_startup_calibration(
         # STEP 1: Hardware Validation & LED Preparation
         # =================================================================
         if progress_callback:
-            progress_callback("Step 1/6", 5)
+            progress_callback("Step 1/6: Hardware Validation & LED Preparation", 5)
 
         logger.info("STEP 1: Hardware Validation & LED Preparation")
         logger.info("-" * 80)
@@ -135,7 +135,7 @@ def run_startup_calibration(
         # STEP 2: Wavelength Calibration
         # =================================================================
         if progress_callback:
-            progress_callback("Step 2/6", 17)
+            progress_callback("Step 2/6: Wavelength Calibration", 17)
 
         logger.info("STEP 2: Wavelength Calibration")
         logger.info("-" * 80)
@@ -170,7 +170,7 @@ def run_startup_calibration(
         # STEP 3: LED Brightness Measurement & Model Validation
         # =================================================================
         if progress_callback:
-            progress_callback("Step 3/6", 30)
+            progress_callback("Step 3/6: LED Brightness & Model Validation", 30)
 
         logger.info("STEP 3: LED Brightness Measurement & Model Validation")
         logger.info("-" * 80)
@@ -425,7 +425,7 @@ def run_startup_calibration(
         # STEP 4: S-Mode LED Convergence + Reference Capture
         # =================================================================
         if progress_callback:
-            progress_callback("Step 4/6", 45)
+            progress_callback("Step 4/6: S-Mode LED Convergence & Reference", 45)
 
         logger.info("STEP 4: S-Mode LED Convergence + Reference Capture")
         logger.info("-" * 80)
@@ -477,9 +477,7 @@ def run_startup_calibration(
             logger.info(
                 f"   Test signal (ALL 4 LEDs @ 5%, 5ms): {test_signal:.0f} counts ({signal_percent:.1f}% of detector range)"
             )
-            logger.info(
-                f"   Expected minimum: {critical_threshold:.0f} counts (3% threshold)"
-            )
+            logger.info(f"   Expected minimum: {critical_threshold:.0f} counts (3% threshold)")
             logger.info("   Typical S-mode signal: 15000-20000 counts with good positioning")
 
             if test_signal < critical_threshold:
@@ -951,7 +949,7 @@ def run_startup_calibration(
         # STEP 5: P-Mode LED Convergence + Reference + Dark Capture
         # =================================================================
         if progress_callback:
-            progress_callback("Step 5/6", 65)
+            progress_callback("Step 5/6: P-Mode LED Convergence & Dark Capture", 65)
 
         logger.info("STEP 5: P-Mode LED Convergence + Reference + Dark Capture")
         logger.info("-" * 80)
@@ -1206,7 +1204,7 @@ def run_startup_calibration(
         # STEP 6: QC Validation & Result Packaging
         # =================================================================
         if progress_callback:
-            progress_callback("Step 6/6", 85)
+            progress_callback("Step 6/6: QC Validation & Result Packaging", 85)
 
         logger.info("STEP 6: QC Validation & Result Packaging")
         logger.info("-" * 80)

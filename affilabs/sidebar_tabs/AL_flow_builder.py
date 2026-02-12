@@ -290,9 +290,9 @@ class FlowTabBuilder:
 
         # Cycle status message (will show running cycles and queued cycles)
         self.sidebar.flow_intel_message_label = QLabel("No cycles running")
-        self.sidebar.flow_intel_message_label.setFixedHeight(18)
+        self.sidebar.flow_intel_message_label.setFixedHeight(22)
         self.sidebar.flow_intel_message_label.setStyleSheet(
-            "font-size: 12px;"
+            "font-size: 14px;"
             "color: #86868B;"
             "background: transparent;"
             "font-weight: 600;"

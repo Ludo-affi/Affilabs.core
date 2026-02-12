@@ -75,12 +75,18 @@ class ExcelExporter:
                 # Sheet 1: Raw Data
                 if raw_data_rows:
                     df_raw = pd.DataFrame(raw_data_rows)
+                    # Convert absolute timestamps to elapsed time (t=0 at recording start)
+                    if "time" in df_raw.columns:
+                        df_raw["time"] = df_raw["time"] - recording_start_time
                     df_raw.to_excel(writer, sheet_name="Raw Data", index=False)
                     logger.debug(f"Exported {len(raw_data_rows)} raw data points")
 
                 # Sheet 2: Channel-Specific Data (each channel with its own time column)
                 if raw_data_rows:
                     df_raw = pd.DataFrame(raw_data_rows)
+                    # Convert absolute timestamps to elapsed time (t=0 at recording start)
+                    if "time" in df_raw.columns:
+                        df_raw["time"] = df_raw["time"] - recording_start_time
 
                     # Create separate dataframes for each channel
                     channels = df_raw["channel"].unique()
@@ -107,30 +113,64 @@ class ExcelExporter:
                         cycle_copy = cycle.copy()
 
                         # Format concentrations dict as readable string
-                        if 'concentrations' in cycle_copy and isinstance(cycle_copy['concentrations'], dict):
-                            conc_dict = cycle_copy['concentrations']
+                        if "concentrations" in cycle_copy and isinstance(
+                            cycle_copy["concentrations"], dict
+                        ):
+                            conc_dict = cycle_copy["concentrations"]
                             if conc_dict:
                                 # Format as "A:100.0, B:50.0"
-                                conc_str = ', '.join([f"{ch}:{val}" for ch, val in sorted(conc_dict.items())])
-                                cycle_copy['concentrations_formatted'] = conc_str
+                                conc_str = ", ".join(
+                                    [f"{ch}:{val}" for ch, val in sorted(conc_dict.items())]
+                                )
+                                cycle_copy["concentrations_formatted"] = conc_str
                             else:
-                                cycle_copy['concentrations_formatted'] = ''
+                                cycle_copy["concentrations_formatted"] = ""
 
                         cycles_formatted.append(cycle_copy)
 
                     df_cycles = pd.DataFrame(cycles_formatted)
 
+                    # Deduplicate cycles based on cycle_id or cycle_num to prevent duplicate rows
+                    if "cycle_id" in df_cycles.columns:
+                        original_count = len(df_cycles)
+                        df_cycles = df_cycles.drop_duplicates(subset=["cycle_id"], keep="first")
+                        if len(df_cycles) < original_count:
+                            logger.warning(
+                                f"Removed {original_count - len(df_cycles)} duplicate cycle rows during export"
+                            )
+                    elif "cycle_num" in df_cycles.columns:
+                        original_count = len(df_cycles)
+                        df_cycles = df_cycles.drop_duplicates(subset=["cycle_num"], keep="first")
+                        if len(df_cycles) < original_count:
+                            logger.warning(
+                                f"Removed {original_count - len(df_cycles)} duplicate cycle rows during export"
+                            )
+
                     # Reorder columns for better readability
                     preferred_order = [
-                        'cycle_id', 'cycle_num', 'type', 'name',
-                        'start_time_sensorgram', 'end_time_sensorgram', 'duration_minutes',
-                        'concentration_value', 'concentration_units', 'units',
-                        'concentrations_formatted',
-                        'note', 'delta_spr', 'flags', 'timestamp'
+                        "cycle_id",
+                        "cycle_num",
+                        "type",
+                        "name",
+                        "start_time_sensorgram",
+                        "end_time_sensorgram",
+                        "duration_minutes",
+                        "concentration_value",
+                        "concentration_units",
+                        "units",
+                        "concentrations_formatted",
+                        "note",
+                        "delta_spr",
+                        "flags",
+                        "timestamp",
                     ]
                     # Reorder columns that exist
                     existing_cols = [col for col in preferred_order if col in df_cycles.columns]
-                    other_cols = [col for col in df_cycles.columns if col not in preferred_order and col != 'concentrations']
+                    other_cols = [
+                        col
+                        for col in df_cycles.columns
+                        if col not in preferred_order and col != "concentrations"
+                    ]
                     final_order = existing_cols + other_cols
                     df_cycles = df_cycles[final_order]
 

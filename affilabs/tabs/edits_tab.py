@@ -21,6 +21,7 @@ import pandas as pd
 import numpy as np
 
 from affilabs.utils.logger import logger
+from affilabs.widgets.ui_constants import CycleTypeStyle
 
 
 class EditsTab:
@@ -34,8 +35,21 @@ class EditsTab:
         """
         self.main_window = main_window
 
+        # Get shared user profile manager from main app
+        self.user_manager = None
+        if hasattr(main_window, 'app') and hasattr(main_window.app, 'user_profile_manager'):
+            self.user_manager = main_window.app.user_profile_manager
+
+        # Loaded metadata from Excel file (populated when loading file)
+        self._loaded_metadata = {}
+
         # Per-cycle editing state
         self._cycle_alignment = {}  # {row_idx: {'channel': str, 'shift': float}}
+
+        # Injection detection system (auto-detect + manual correction)
+        self._injection_points = {}  # {row_idx: {'time': float, 'auto': bool, 'confidence': float}}
+        self._injection_marker = None  # Draggable line on graph showing injection point
+        self._auto_detect_enabled = True  # Auto-detection enabled by default
 
         # Flags system for marking/annotating graph points
         self._edits_flags = []
@@ -83,8 +97,18 @@ class EditsTab:
             return None
 
         # Get user profile
-        user_manager = UserProfileManager()
-        user_name = user_manager.get_current_user()
+        if not self.user_manager:
+            # Fallback: try to get from main app if not set in __init__
+            if hasattr(self.main_window, 'app') and hasattr(self.main_window.app, 'user_profile_manager'):
+                self.user_manager = self.main_window.app.user_profile_manager
+
+        if self.user_manager:
+            user_name = self.user_manager.get_current_user()
+        else:
+            # Last resort fallback
+            from affilabs.services.user_profile_manager import UserProfileManager
+            user_manager = UserProfileManager()
+            user_name = user_manager.get_current_user()
 
         # Get device ID
         device_id = "Unknown"
@@ -131,45 +155,22 @@ class EditsTab:
         self.compact_view = False  # Start in expanded view (default)
         self.cycle_filter = "Binding (High)"  # Default: show only concentration/binding cycles
 
-        # Initialize table widget — 12-column layout to match add_cycle_to_table format
+        # Initialize table widget — compact 6-column layout
         # STARTS EMPTY - will be populated ONLY when cycles complete during live acquisition
-        self.cycle_data_table = QTableWidget(0, 12)
-        self.cycle_data_table.setHorizontalHeaderLabels([
-            "Type",         # Column 0: Cycle type with number (e.g., "Baseline 1")
-            "Duration",     # Column 1: Duration in minutes
-            "Start",        # Column 2: Start time in sensorgram (seconds)
-            "Conc.",        # Column 3: Concentration value(s)
-            "Notes",        # Column 4: Notes with cycle_id
-            "ΔCh1",         # Column 5: Delta SPR channel A
-            "ΔCh2",         # Column 6: Delta SPR channel B
-            "ΔCh3",         # Column 7: Delta SPR channel C
-            "ΔCh4",         # Column 8: Delta SPR channel D
-            "Flags",        # Column 9: Event flags
-            "Channel",      # Column 10: Channel selector dropdown
-            "Shift"         # Column 11: Time shift adjustment
-        ])
+        self.cycle_data_table = QTableWidget(0, 6)
+        self.cycle_data_table.setHorizontalHeaderLabels(
+            ["Type", "Time", "Conc.", "ΔSPR", "Flags", "Notes"]
+        )
         # Set column widths: stretch to fill available space
         header = self.cycle_data_table.horizontalHeader()
         header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)          # Type (fixed)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)        # Duration
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)        # Start
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)        # Conc.
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)        # Notes
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)          # ΔCh1
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)          # ΔCh2
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)          # ΔCh3
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)          # ΔCh4
-        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)        # Flags
-        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Fixed)         # Channel dropdown
-        header.setSectionResizeMode(11, QHeaderView.ResizeMode.Fixed)         # Shift
-        self.cycle_data_table.setColumnWidth(0, 80)    # Type (fixed minimum)
-        self.cycle_data_table.setColumnWidth(5, 60)    # ΔCh1 (compact)
-        self.cycle_data_table.setColumnWidth(6, 60)    # ΔCh2 (compact)
-        self.cycle_data_table.setColumnWidth(7, 60)    # ΔCh3 (compact)
-        self.cycle_data_table.setColumnWidth(8, 60)    # ΔCh4 (compact)
-        self.cycle_data_table.setColumnWidth(10, 80)   # Channel dropdown
-        self.cycle_data_table.setColumnWidth(11, 70)   # Shift spinbox
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)       # Type icon
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)     # Time
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)     # Conc
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)     # ΔSPR
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)     # Flags
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)     # Notes
+        self.cycle_data_table.setColumnWidth(0, 55)    # Type icon (fixed minimum)
 
         # Set compact font for better space utilization
         table_font = QFont("-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif")
@@ -189,17 +190,11 @@ class EditsTab:
         # Set column tooltips for better understanding
         tooltips = [
             "Cycle type: BL=Baseline, IM=Immobilization, WS=Wash, CN=Concentration, RG=Regeneration, CU=Custom",
-            "Duration in minutes (how long the cycle lasted)",
-            "Start time in sensorgram timeline (seconds from acquisition start)",
-            "Analyte concentration (if applicable) - may show per-channel values like A:100, B:50",
-            "Custom notes or comments for this cycle (includes cycle ID for tracking)",
-            "Delta SPR response for channel A (in RU)",
-            "Delta SPR response for channel B (in RU)",
-            "Delta SPR response for channel C (in RU)",
-            "Delta SPR response for channel D (in RU)",
+            "Duration (minutes) @ Start time (seconds)",
+            "Analyte concentration (if applicable)",
+            "Delta SPR response for all channels (in RU): A:val B:val C:val D:val",
             "Event flags (injection ▲, wash ■, spike ◆) with times",
-            "Select channel view for analysis",
-            "Time shift adjustment (seconds) for aligning data",
+            "Custom notes or comments for this cycle",
         ]
         for col, tooltip in enumerate(tooltips):
             self.cycle_data_table.horizontalHeaderItem(col).setToolTip(tooltip)
@@ -210,6 +205,7 @@ class EditsTab:
         self.cycle_data_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.cycle_data_table.itemSelectionChanged.connect(self.main_window._on_cycle_selected_in_table)
         self.cycle_data_table.itemSelectionChanged.connect(self._update_export_sidebar_stats)
+        self.cycle_data_table.itemSelectionChanged.connect(self._run_injection_detection)  # Auto-detect on selection
 
         # Enhanced styling: zebra striping, hover, and selection highlight
         self.cycle_data_table.setAlternatingRowColors(True)
@@ -248,6 +244,7 @@ class EditsTab:
 
         # Initialize primary graph (needed by selection panel)
         self.edits_primary_graph = pg.PlotWidget()
+        self.edits_primary_graph.setMenuEnabled(True)  # Enable context menu for export options
         self.edits_primary_graph.setBackground('w')
         self.edits_primary_graph.setLabel('left', 'Response (RU)', color='#1D1D1F')
         self.edits_primary_graph.setLabel('bottom', 'Time (s)', color='#1D1D1F')
@@ -623,10 +620,14 @@ class EditsTab:
         return panel
 
     def _update_metadata_stats(self):
-        """Update metadata statistics based on current table data."""
+        """Update metadata statistics based on loaded metadata or current table data."""
         if not hasattr(self, 'meta_total_cycles'):
             return
 
+        # Check if we have loaded metadata from Excel file
+        loaded_metadata = getattr(self, '_loaded_metadata', {})
+
+        # CYCLES COUNT: Always count from table (dynamic)
         total_visible = 0
         cycle_types = set()
         concentrations = []
@@ -659,9 +660,10 @@ class EditsTab:
                     except (ValueError, IndexError):
                         pass
 
-        # Update labels
+        # Update cycle count
         self.meta_total_cycles.setText(f"{total_visible}")
 
+        # Update cycle types
         if cycle_types:
             types_text = ", ".join(sorted(cycle_types))
             if len(types_text) > 30:
@@ -670,6 +672,7 @@ class EditsTab:
         else:
             self.meta_cycle_types.setText("-")
 
+        # Update concentration range
         if concentrations:
             min_conc = min(concentrations)
             max_conc = max(concentrations)
@@ -677,33 +680,60 @@ class EditsTab:
         else:
             self.meta_conc_range.setText("-")
 
-        # Date — from recording start or today
+        # DATE: Prefer loaded metadata, fall back to recording_mgr or today
         from datetime import datetime
-        if hasattr(self.main_window, 'app') and hasattr(self.main_window.app, 'recording_mgr'):
+        date_str = None
+
+        if loaded_metadata and 'recording_start' in loaded_metadata:
+            date_str = loaded_metadata['recording_start']
+            # If it's ISO format, convert to readable format
+            if 'recording_start_iso' in loaded_metadata:
+                try:
+                    dt_obj = datetime.fromisoformat(loaded_metadata['recording_start_iso'])
+                    date_str = dt_obj.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    pass  # Use the string as-is
+        elif hasattr(self.main_window, 'app') and hasattr(self.main_window.app, 'recording_mgr'):
             rec = self.main_window.app.recording_mgr
             if hasattr(rec, 'recording_start_time') and rec.recording_start_time:
-                self.meta_date.setText(rec.recording_start_time.strftime("%Y-%m-%d %H:%M"))
-            else:
-                self.meta_date.setText(datetime.now().strftime("%Y-%m-%d"))
+                date_str = rec.recording_start_time.strftime("%Y-%m-%d %H:%M")
+
+        if not date_str:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+
+        self.meta_date.setText(date_str)
+
+        # USER: Prefer loaded metadata, fall back to current user
+        user_str = None
+
+        if loaded_metadata and 'User' in loaded_metadata:
+            user_str = loaded_metadata['User']
         else:
-            self.meta_date.setText(datetime.now().strftime("%Y-%m-%d"))
+            try:
+                if self.user_manager:
+                    user = self.user_manager.get_current_user()
+                else:
+                    # Fallback
+                    from affilabs.services.user_profile_manager import UserProfileManager
+                    user_mgr = UserProfileManager()
+                    user = user_mgr.get_current_user()
+                user_str = user if user else None
+            except Exception:
+                pass
 
-        # User — from UserProfileManager
-        try:
-            from affilabs.services.user_profile_manager import UserProfileManager
-            user_mgr = UserProfileManager()
-            user = user_mgr.get_current_user()
-            self.meta_user.setText(user if user else "-")
-        except Exception:
-            self.meta_user.setText("-")
+        self.meta_user.setText(user_str if user_str else "-")
 
-        # Device — from device_config
-        if hasattr(self.main_window, 'device_config') and self.main_window.device_config:
+        # DEVICE: Prefer loaded metadata, fall back to current device
+        device_str = None
+
+        if loaded_metadata and 'device_id' in loaded_metadata:
+            device_str = loaded_metadata['device_id']
+        elif hasattr(self.main_window, 'device_config') and self.main_window.device_config:
             dc = self.main_window.device_config
             device_id = getattr(dc, 'device_serial', '') or ''
-            self.meta_device.setText(device_id if device_id else "-")
-        else:
-            self.meta_device.setText("-")
+            device_str = device_id if device_id else None
+
+        self.meta_device.setText(device_str if device_str else "-")
 
     def _create_alignment_panel(self):
         """Create alignment controls panel (shown when cycle selected)."""
@@ -952,6 +982,41 @@ class EditsTab:
         self.auto_align_btn.clicked.connect(self._auto_align_to_injection)
         layout.addWidget(self.auto_align_btn)
 
+        # Find Multiple Injections button
+        self.find_injections_btn = QPushButton("🔍 Find Multiple Injections")
+        self.find_injections_btn.setToolTip(
+            "Automatically detect multiple injection points within the selected cycle.\n\n"
+            "How it works:\n"
+            "1. Detects first injection (if not already flagged)\n"
+            "2. Searches for additional injections in the next 60 seconds\n"
+            "3. Places flags at each detected injection point\n\n"
+            "Perfect for concentration series with multiple injections!"
+        )
+        self.find_injections_btn.setStyleSheet("""
+            QPushButton {
+                background: #34C759;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 600;
+                padding: 8px 16px;
+                margin-top: 8px;
+            }
+            QPushButton:hover {
+                background: #2DB04E;
+            }
+            QPushButton:pressed {
+                background: #289944;
+            }
+            QPushButton:disabled {
+                background: #C7C7CC;
+                color: #8E8E93;
+            }
+        """)
+        self.find_injections_btn.clicked.connect(self._find_multiple_injections)
+        layout.addWidget(self.find_injections_btn)
+
         layout.addStretch()
 
         return panel
@@ -981,6 +1046,7 @@ class EditsTab:
 
         # Timeline graph
         self.edits_timeline_graph = pg.PlotWidget()
+        self.edits_timeline_graph.setMenuEnabled(True)  # Enable context menu for export options
         self.edits_timeline_graph.setBackground('w')
         self.edits_timeline_graph.setLabel('left', 'Response', units='RU', color='#1D1D1F')
         self.edits_timeline_graph.setLabel('bottom', 'Time', units='s', color='#1D1D1F')
@@ -997,12 +1063,12 @@ class EditsTab:
         self.edits_timeline_cursors['left'] = pg.InfiniteLine(
             pos=0, angle=90, movable=True,
             pen=pg.mkPen('#34C759', width=2, style=Qt.DashLine),
-            label='Start', labelOpts={'position': 0.95, 'color': '#34C759'}
+            label='Start', labelOpts={'position': 0.85, 'color': '#34C759'}
         )
         self.edits_timeline_cursors['right'] = pg.InfiniteLine(
             pos=100, angle=90, movable=True,
             pen=pg.mkPen('#007AFF', width=2, style=Qt.DashLine),
-            label='End', labelOpts={'position': 0.95, 'color': '#007AFF'}
+            label='End', labelOpts={'position': 0.85, 'color': '#007AFF'}
         )
         self.edits_timeline_graph.addItem(self.edits_timeline_cursors['left'])
         self.edits_timeline_graph.addItem(self.edits_timeline_cursors['right'])
@@ -1089,12 +1155,12 @@ class EditsTab:
         self.delta_spr_start_cursor = pg.InfiniteLine(
             pos=0, angle=90, movable=True,
             pen=pg.mkPen(color='#34C759', width=2, style=Qt.PenStyle.DashLine),
-            label='Start', labelOpts={'position': 0.95, 'color': '#34C759'}
+            label='Start', labelOpts={'position': 0.85, 'color': '#34C759'}
         )
         self.delta_spr_stop_cursor = pg.InfiniteLine(
             pos=100, angle=90, movable=True,
             pen=pg.mkPen(color='#FF3B30', width=2, style=Qt.PenStyle.DashLine),
-            label='Stop', labelOpts={'position': 0.95, 'color': '#FF3B30'}
+            label='Stop', labelOpts={'position': 0.85, 'color': '#FF3B30'}
         )
         self.edits_primary_graph.addItem(self.delta_spr_start_cursor)
         self.edits_primary_graph.addItem(self.delta_spr_stop_cursor)
@@ -1154,6 +1220,7 @@ class EditsTab:
 
         # Bar chart
         self.delta_spr_barchart = pg.PlotWidget()
+        self.delta_spr_barchart.setMenuEnabled(True)  # Enable context menu for export options
         self.delta_spr_barchart.setBackground('w')
         self.delta_spr_barchart.setYRange(0, 100)
         self.delta_spr_barchart.getAxis('bottom').setTicks([[(0, 'Ch A'), (1, 'Ch B'), (2, 'Ch C'), (3, 'Ch D')]])
@@ -1167,7 +1234,23 @@ class EditsTab:
 
         # Create bar graph items
         self.delta_spr_bars = []
-        bar_colors = [(0, 0, 0, 180), (255, 0, 0, 180), (0, 0, 255, 180), (0, 170, 0, 180)]
+
+        # Import professional channel colors from UI constants
+        from affilabs.widgets.ui_constants import ChannelColors
+        from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+
+        # Check if colorblind mode is enabled
+        colorblind_enabled = (
+            hasattr(self.main_window, 'colorblind_check') and
+            self.main_window.colorblind_check.isChecked()
+        )
+
+        # Use colorblind palette if enabled, otherwise use default
+        if colorblind_enabled:
+            bar_colors = ChannelColors.get_rgba_from_colors(CHANNEL_COLORS_COLORBLIND)
+        else:
+            bar_colors = ChannelColors.get_all_rgba_for_channels(['A', 'B', 'C', 'D'])
+
         for i, color in enumerate(bar_colors):
             bar = pg.BarGraphItem(x=[i], height=[0], width=0.6, brush=color)
             self.delta_spr_barchart.addItem(bar)
@@ -1217,6 +1300,45 @@ class EditsTab:
         layout.addWidget(self.edits_smooth_slider)
 
         layout.addStretch()
+
+        # Auto-detect injection checkbox with improved visibility
+        self.auto_detect_checkbox = QCheckBox("💉 Show Injection Marker")
+        self.auto_detect_checkbox.setChecked(True)  # Enabled by default
+        self.auto_detect_checkbox.setStyleSheet(
+            "QCheckBox { "
+            "  font-size: 13px; "
+            "  color: #1D1D1F; "
+            "  font-weight: 600; "
+            "  padding: 6px; "
+            "  background: #F5F5F7; "
+            "  border-radius: 6px; "
+            "}"
+            "QCheckBox::indicator { width: 20px; height: 20px; }"
+            "QCheckBox::indicator:checked { "
+            "  background: #FF3B30; "
+            "  border: 2px solid #FF3B30; "
+            "  border-radius: 4px; "
+            "  image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMy41IDhMNi41IDExTDEyLjUgNSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4=); "
+            "}"
+            "QCheckBox::indicator:unchecked { "
+            "  background: white; "
+            "  border: 2px solid #D1D1D6; "
+            "  border-radius: 4px; "
+            "}"
+            "QCheckBox:hover { background: #E8E8EA; }"
+        )
+        self.auto_detect_checkbox.setToolTip(
+            "Toggle injection marker visibility\n\n"
+            "✓ CHECKED: Shows red dashed vertical line at injection point\n"
+            "  • Auto-detects maximum slope in SPR signal\n"
+            "  • Draggable for manual correction\n"
+            "  • Displays on primary graph (top)\n\n"
+            "✗ UNCHECKED: Hides injection marker from graph"
+        )
+        self.auto_detect_checkbox.stateChanged.connect(self._on_auto_detect_toggled)
+        layout.addWidget(self.auto_detect_checkbox)
+
+        layout.addSpacing(12)
 
         # Create Processing Cycle button
         create_processing_btn = QPushButton("📊 Create Processing Cycle")
@@ -1334,6 +1456,46 @@ class EditsTab:
         if self.edits_graph_curves:
             self.edits_graph_curves[ch_idx].setVisible(visible)
 
+    def _calculate_actual_duration(self, cycle_idx, cycle, all_cycles):
+        """Calculate ACTUAL cycle duration (not planned duration).
+
+        Strategy:
+        1. If end_time_sensorgram exists: use (end - start) / 60
+        2. Else if next cycle exists: use (next_start - current_start) / 60
+        3. Else: fall back to duration_minutes field (planned duration)
+
+        Args:
+            cycle_idx: Index of current cycle in all_cycles list
+            cycle: Current cycle dict
+            all_cycles: Complete list of all cycles
+
+        Returns:
+            float: Actual duration in minutes
+        """
+        start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time'))
+        end_time = cycle.get('end_time_sensorgram')
+
+        # Strategy 1: Use recorded end time if available
+        if pd.notna(end_time) and pd.notna(start_time):
+            actual_duration = (end_time - start_time) / 60.0
+            logger.debug(f"Cycle {cycle_idx + 1}: Using recorded end time → {actual_duration:.2f} min")
+            return actual_duration
+
+        # Strategy 2: Calculate from spacing to next cycle
+        if cycle_idx < len(all_cycles) - 1:
+            next_cycle = all_cycles[cycle_idx + 1]
+            next_start = next_cycle.get('start_time_sensorgram', next_cycle.get('sensorgram_time'))
+
+            if pd.notna(next_start) and pd.notna(start_time):
+                actual_duration = (next_start - start_time) / 60.0
+                logger.debug(f"Cycle {cycle_idx + 1}: Calculated from spacing → {actual_duration:.2f} min")
+                return actual_duration
+
+        # Strategy 3: Fall back to planned duration
+        planned_duration = cycle.get('duration_minutes', cycle.get('length_minutes', 0))
+        logger.debug(f"Cycle {cycle_idx + 1}: Using planned duration → {planned_duration:.2f} min")
+        return planned_duration
+
     def _populate_cycles_table(self, cycles_data):
         """Populate the cycles table with loaded cycle data."""
         from PySide6.QtGui import QColor
@@ -1341,7 +1503,7 @@ class EditsTab:
 
         type_counts = {}  # Track numbering per type
 
-        for cycle in cycles_data:
+        for cycle_idx, cycle in enumerate(cycles_data):
             row_idx = self.cycle_data_table.rowCount()
             self.cycle_data_table.insertRow(row_idx)
 
@@ -1354,32 +1516,44 @@ class EditsTab:
             type_item.setToolTip(f"{cycle_type} {type_counts[cycle_type]}")
             self.cycle_data_table.setItem(row_idx, 0, type_item)
 
-            # --- Col 1: Time (duration @ start) ---
-            duration_min = cycle.get('duration_minutes', 0)
+            # --- Col 1: Time (ACTUAL duration @ start) ---
+            # Calculate ACTUAL duration (not planned)
+            actual_duration_min = self._calculate_actual_duration(cycle_idx, cycle, cycles_data)
             start_time = cycle.get('start_time_sensorgram', 0)
-            if isinstance(duration_min, (int, float)) and isinstance(start_time, (int, float)):
-                time_str = f"{duration_min:.1f}m @ {start_time:.0f}s"
+
+            # Handle NaN values
+            if pd.notna(actual_duration_min) and pd.notna(start_time) and isinstance(actual_duration_min, (int, float)) and isinstance(start_time, (int, float)):
+                time_str = f"{actual_duration_min:.1f}m @ {start_time:.0f}s"
             else:
-                time_str = f"{duration_min}m @ {start_time}s"
+                time_str = f"{actual_duration_min}m @ {start_time}s" if actual_duration_min != 0 or start_time != 0 else "—"
             self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(time_str))
 
             # --- Col 2: Concentration ---
-            self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(cycle.get('concentration_value', ''))))
+            conc_val = cycle.get('concentration_value', '')
+            conc_str = str(conc_val) if pd.notna(conc_val) and conc_val != '' else ''
+            self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(conc_str))
 
             # --- Col 3: ΔSPR (combined 4 channels) ---
             delta_parts = []
             for ch_key, ch_label in [('delta_ch1', 'A'), ('delta_ch2', 'B'), ('delta_ch3', 'C'), ('delta_ch4', 'D')]:
                 val = cycle.get(ch_key, '')
-                if isinstance(val, (int, float)):
+                if pd.notna(val) and isinstance(val, (int, float)):
                     delta_parts.append(f"{ch_label}:{val:.0f}")
-                elif val:
+                elif val and pd.notna(val):
                     delta_parts.append(f"{ch_label}:{val}")
             # Also check delta_spr_by_channel dict
             if not delta_parts:
                 delta_by_ch = cycle.get('delta_spr_by_channel', {})
+                if isinstance(delta_by_ch, str):
+                    # If it's a string representation of dict, try to parse it
+                    import ast
+                    try:
+                        delta_by_ch = ast.literal_eval(delta_by_ch)
+                    except:
+                        delta_by_ch = {}
                 for ch in ['A', 'B', 'C', 'D']:
                     val = delta_by_ch.get(ch, '')
-                    if isinstance(val, (int, float)):
+                    if pd.notna(val) and isinstance(val, (int, float)):
                         delta_parts.append(f"{ch}:{val:.0f}")
             delta_str = " ".join(delta_parts) if delta_parts else ''
             self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(delta_str))
@@ -1395,7 +1569,17 @@ class EditsTab:
                 flags_display = " ".join(parts)
             else:
                 raw_flags = cycle.get('flags', '')
-                flags_display = str(raw_flags) if raw_flags else ''
+                # Handle string representation of list
+                if isinstance(raw_flags, str) and raw_flags.startswith('['):
+                    import ast
+                    try:
+                        raw_flags = ast.literal_eval(raw_flags)
+                    except:
+                        pass
+                if isinstance(raw_flags, list) and raw_flags:
+                    flags_display = ', '.join(raw_flags)
+                else:
+                    flags_display = str(raw_flags) if raw_flags and pd.notna(raw_flags) else ''
             self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(flags_display))
 
             # --- Col 5: Notes ---
@@ -2064,6 +2248,25 @@ class EditsTab:
                 f"Failed to export data:\n{str(e)}"
             )
 
+    def update_barchart_colors(self, colorblind_enabled: bool):
+        """Update bar chart colors when colorblind mode is toggled.
+
+        Args:
+            colorblind_enabled: True if colorblind mode is enabled
+        """
+        from affilabs.widgets.ui_constants import ChannelColors
+        from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+
+        # Get appropriate color palette
+        if colorblind_enabled:
+            bar_colors = ChannelColors.get_rgba_from_colors(CHANNEL_COLORS_COLORBLIND)
+        else:
+            bar_colors = ChannelColors.get_all_rgba_for_channels(['A', 'B', 'C', 'D'])
+
+        # Update each bar's color
+        for i, (bar, color) in enumerate(zip(self.delta_spr_bars, bar_colors)):
+            bar.setOpts(brush=color)
+
     def _on_alignment_channel_changed(self, channel):
         """Handle channel change in alignment panel."""
         from affilabs.utils.logger import logger
@@ -2202,13 +2405,20 @@ class EditsTab:
         type_item.setToolTip(f"{cycle_type} {cycle_num}")
         self.cycle_data_table.setItem(row_idx, 0, type_item)
 
-        # Col 1: Time
-        duration = cycle.get('duration_minutes', '')
-        start = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time', 0))
-        if isinstance(duration, (int, float)) and isinstance(start, (int, float)):
-            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(f"{duration:.1f}m @ {start:.0f}s"))
+        # Col 1: Time (ACTUAL duration @ start)
+        # Get all cycles to calculate actual duration from spacing if needed
+        all_cycles = getattr(self.main_window, '_loaded_cycles_data', [])
+        if all_cycles:
+            actual_duration = self._calculate_actual_duration(row_idx, cycle, all_cycles)
         else:
-            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(f"{duration}m @ {start}s"))
+            # Fallback if no loaded cycles (shouldn't happen in normal operation)
+            actual_duration = cycle.get('duration_minutes', '')
+
+        start = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time', 0))
+        if isinstance(actual_duration, (int, float)) and isinstance(start, (int, float)):
+            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(f"{actual_duration:.1f}m @ {start:.0f}s"))
+        else:
+            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(f"{actual_duration}m @ {start}s"))
 
         # Col 2: Concentration
         self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(cycle.get('concentration_value', ''))))
@@ -2499,11 +2709,11 @@ class EditsTab:
             label = pg.TextItem(
                 text=label_text,
                 color=(60, 60, 60),
-                anchor=(0, 1),
+                anchor=(0, 0.5),  # Left-center anchor for better visibility
                 fill=pg.mkBrush(255, 255, 255, 220),
                 border=pg.mkPen((180, 180, 180), width=1)
             )
-            # Position label at start + small offset, at top of graph
+            # Position label at start + small offset, centered vertically
             label.setPos(start + 2, 0)
             self.edits_timeline_graph.addItem(label)
             self.edits_cycle_labels.append(label)
@@ -2586,6 +2796,12 @@ class EditsTab:
             return  # No selection, don't show menu
 
         if len(selected_rows) == 1:
+            # Single cycle selected - offer to edit timing
+            edit_action = menu.addAction("✏️ Edit Cycle Timing")
+            edit_action.triggered.connect(lambda: self._edit_cycle_timing(selected_rows[0]))
+
+            menu.addSeparator()
+
             # Single cycle selected - offer to load to reference slots
             ref_menu = menu.addMenu("📊 Load to Reference Graph")
 
@@ -2681,6 +2897,189 @@ class EditsTab:
                 "font-weight: 600;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             )
+
+    def _edit_cycle_timing(self, row_index):
+        """Open dialog to manually edit cycle start/end times.
+
+        Args:
+            row_index: Row index in cycle table
+        """
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton, QFormLayout
+        from affilabs.utils.logger import logger
+
+        # Get current cycle data
+        if not hasattr(self.main_window, '_loaded_cycles_data') or row_index >= len(self.main_window._loaded_cycles_data):
+            logger.warning(f"Cannot edit cycle timing - row {row_index} not found in loaded data")
+            return
+
+        cycle_data = self.main_window._loaded_cycles_data[row_index]
+
+        # Get current values
+        current_start = cycle_data.get('start_time_sensorgram', 0)
+        current_end = cycle_data.get('end_time_sensorgram', 0)
+        current_duration = cycle_data.get('duration_minutes', 0)
+
+        # Handle NaN values
+        if pd.isna(current_start):
+            current_start = 0
+        if pd.isna(current_end):
+            current_end = current_start + (current_duration * 60 if not pd.isna(current_duration) else 0)
+        if pd.isna(current_duration):
+            current_duration = (current_end - current_start) / 60 if current_end > current_start else 0
+
+        # Create dialog
+        dialog = QDialog(self.main_window)
+        dialog.setWindowTitle(f"Edit Timing - Cycle {row_index + 1}")
+        dialog.setMinimumWidth(400)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(16)
+
+        # Info label
+        cycle_type = cycle_data.get('type', 'Unknown')
+        info_label = QLabel(f"<b>{cycle_type} (Cycle {row_index + 1})</b>")
+        info_label.setStyleSheet("font-size: 14px; color: #1D1D1F; padding: 8px;")
+        layout.addWidget(info_label)
+
+        # Form layout for timing inputs
+        form_layout = QFormLayout()
+        form_layout.setSpacing(12)
+
+        # Start time input (seconds)
+        start_spin = QDoubleSpinBox()
+        start_spin.setRange(0, 999999)
+        start_spin.setValue(current_start)
+        start_spin.setSuffix(" s")
+        start_spin.setDecimals(2)
+        start_spin.setMinimumWidth(150)
+        start_spin.setStyleSheet("""
+            QDoubleSpinBox {
+                padding: 6px;
+                font-size: 13px;
+                border: 1px solid #D1D1D6;
+                border-radius: 6px;
+            }
+            QDoubleSpinBox:focus {
+                border: 2px solid #007AFF;
+            }
+        """)
+        form_layout.addRow("Start Time:", start_spin)
+
+        # End time input (seconds)
+        end_spin = QDoubleSpinBox()
+        end_spin.setRange(0, 999999)
+        end_spin.setValue(current_end)
+        end_spin.setSuffix(" s")
+        end_spin.setDecimals(2)
+        end_spin.setMinimumWidth(150)
+        end_spin.setStyleSheet(start_spin.styleSheet())
+        form_layout.addRow("End Time:", end_spin)
+
+        # Duration (calculated, read-only display)
+        duration_label = QLabel(f"{current_duration:.2f} min")
+        duration_label.setStyleSheet("font-size: 13px; color: #86868B; padding: 6px;")
+        form_layout.addRow("Duration:", duration_label)
+
+        # Auto-update duration when times change
+        def update_duration():
+            start = start_spin.value()
+            end = end_spin.value()
+            duration_min = (end - start) / 60
+            duration_label.setText(f"{duration_min:.2f} min")
+            # Validate times
+            if end <= start:
+                duration_label.setStyleSheet("font-size: 13px; color: #FF3B30; padding: 6px; font-weight: 600;")
+            else:
+                duration_label.setStyleSheet("font-size: 13px; color: #86868B; padding: 6px;")
+
+        start_spin.valueChanged.connect(update_duration)
+        end_spin.valueChanged.connect(update_duration)
+
+        layout.addLayout(form_layout)
+
+        # Button row
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setFixedHeight(36)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: #F2F2F7;
+                color: #1D1D1F;
+                border: none;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                padding: 0 20px;
+            }
+            QPushButton:hover {
+                background: #E5E5EA;
+            }
+        """)
+        cancel_btn.clicked.connect(dialog.reject)
+        button_layout.addWidget(cancel_btn)
+
+        save_btn = QPushButton("✓ Save")
+        save_btn.setFixedHeight(36)
+        save_btn.setStyleSheet("""
+            QPushButton {
+                background: #007AFF;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                padding: 0 20px;
+            }
+            QPushButton:hover {
+                background: #0051D5;
+            }
+        """)
+
+        def save_changes():
+            new_start = start_spin.value()
+            new_end = end_spin.value()
+
+            # Validate
+            if new_end <= new_start:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    dialog,
+                    "Invalid Timing",
+                    "End time must be after start time!"
+                )
+                return
+
+            # Update cycle data
+            cycle_data['start_time_sensorgram'] = new_start
+            cycle_data['end_time_sensorgram'] = new_end
+            cycle_data['duration_minutes'] = (new_end - new_start) / 60
+
+            # Update table display
+            time_str = f"{cycle_data['duration_minutes']:.1f}m @ {new_start:.0f}s"
+            self.cycle_data_table.item(row_index, 1).setText(time_str)
+
+            logger.info(f"✏️ Updated cycle {row_index + 1} timing: {new_start:.2f}s → {new_end:.2f}s ({cycle_data['duration_minutes']:.2f} min)")
+
+            # Show confirmation
+            if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'intel_message_label'):
+                self.main_window.sidebar.intel_message_label.setText(
+                    f"✏️ Updated Cycle {row_index + 1} timing"
+                )
+                self.main_window.sidebar.intel_message_label.setStyleSheet(
+                    "font-size: 12px; color: #34C759; background: transparent; font-weight: 600;"
+                )
+
+            dialog.accept()
+
+        save_btn.clicked.connect(save_changes)
+        button_layout.addWidget(save_btn)
+
+        layout.addLayout(button_layout)
+
+        # Show dialog
+        dialog.exec()
 
     def _update_delta_spr_barchart(self):
         """Update Delta SPR bar chart based on cursor positions."""
@@ -2944,6 +3343,206 @@ class EditsTab:
             f"All cycles shifted so injection times match."
         )
         logger.info(f"✓ Auto-aligned {aligned_count} cycles to injection at {reference_time:.2f}s")
+
+    def _find_multiple_injections(self):
+        """Find and flag multiple injection points within the selected cycle.
+
+        Uses the existing injection detection algorithm to find all injection
+        points within a 60-second window after the first injection.
+        """
+        from PySide6.QtWidgets import QMessageBox, QInputDialog
+        from affilabs.utils.logger import logger
+        from affilabs.utils.spr_signal_processing import auto_detect_injection_point
+        import numpy as np
+
+        # Get selected cycle
+        selected_rows = sorted(set(item.row() for item in self.cycle_data_table.selectedItems()))
+        if len(selected_rows) != 1:
+            QMessageBox.warning(
+                self.main_window,
+                "Select Single Cycle",
+                "Please select exactly one cycle to detect multiple injections.\n\n"
+                "This feature analyzes injection points within a single cycle."
+            )
+            return
+
+        row_idx = selected_rows[0]
+
+        # Get cycle data
+        if not hasattr(self.main_window, '_loaded_cycles_data') or row_idx >= len(self.main_window._loaded_cycles_data):
+            QMessageBox.warning(self.main_window, "No Data", "Cycle data not loaded.")
+            return
+
+        cycle = self.main_window._loaded_cycles_data[row_idx]
+
+        # Get time window from user
+        search_window, ok = QInputDialog.getDouble(
+            self.main_window,
+            "Search Time Window",
+            "Search for injections within how many seconds?\n"
+            "(Typical: 60-120 seconds for concentration series)",
+            value=60.0,
+            min=10.0,
+            max=300.0,
+            decimals=1
+        )
+        if not ok:
+            return
+
+        # Get raw data
+        all_data = cycle.get('all_cycle_data', {})
+        if not all_data:
+            QMessageBox.warning(self.main_window, "No Data", "No raw data available for this cycle.")
+            return
+
+        # Try channels in order: A, B, C, D
+        channel_priority = ['a', 'b', 'c', 'd']
+        detected_injections = []
+        search_start_time = None
+
+        for channel in channel_priority:
+            if channel not in all_data or not all_data[channel]:
+                continue
+
+            # Extract wavelength data
+            data_points = all_data[channel]
+            if len(data_points) < 100:
+                continue
+
+            times = np.array([p['time'] for p in data_points])
+            wavelengths = np.array([p['wavelength'] for p in data_points])
+
+            # Calculate baseline from first 50 points
+            baseline = np.mean(wavelengths[:50]) if len(wavelengths) >= 50 else wavelengths[0]
+
+            # Convert to RU
+            values_ru = (wavelengths - baseline) * 355.0
+
+            # Search for first injection across full time range
+            if search_start_time is None:
+                result = auto_detect_injection_point(times, values_ru)
+                if result and result.get('confidence', 0) > 0.3:
+                    first_injection_time = result['injection_time']
+                    search_start_time = first_injection_time
+                    detected_injections.append({
+                        'time': first_injection_time,
+                        'confidence': result['confidence'],
+                        'channel': channel.upper()
+                    })
+                    logger.info(f"First injection detected at t={first_injection_time:.2f}s (channel {channel.upper()}, confidence={result['confidence']:.2%})")
+                    break
+
+        if search_start_time is None:
+            QMessageBox.information(
+                self.main_window,
+                "No Injection Found",
+                "Could not detect the first injection point.\n\n"
+                "Try:\n"
+                "• Ensure the cycle has a clear injection spike\n"
+                "• Check that SPR signal rises >2 RU\n"
+                "• Manually place a flag if auto-detection fails"
+            )
+            return
+
+        # Now search for additional injections after the first one
+        search_end_time = search_start_time + search_window
+        search_interval = 5.0  # Look every 5 seconds
+
+        current_search_start = search_start_time + search_interval
+
+        while current_search_start < search_end_time:
+            # Get data for this search window
+            for channel in channel_priority:
+                if channel not in all_data or not all_data[channel]:
+                    continue
+
+                data_points = all_data[channel]
+                times = np.array([p['time'] for p in data_points])
+                wavelengths = np.array([p['wavelength'] for p in data_points])
+
+                # Filter to search window
+                mask = (times >= current_search_start) & (times < current_search_start + 30.0)
+                if np.sum(mask) < 50:
+                    continue
+
+                window_times = times[mask]
+                window_wavelengths = wavelengths[mask]
+
+                # Calculate baseline
+                baseline = np.mean(window_wavelengths[:20]) if len(window_wavelengths) >= 20 else window_wavelengths[0]
+                window_values_ru = (window_wavelengths - baseline) * 355.0
+
+                # Detect injection in this window
+                result = auto_detect_injection_point(window_times, window_values_ru)
+                if result and result.get('confidence', 0) > 0.3:
+                    injection_time = result['injection_time']
+
+                    # Check if this is a new injection (not too close to previous ones)
+                    is_new = all(abs(injection_time - inj['time']) > 3.0 for inj in detected_injections)
+
+                    if is_new:
+                        detected_injections.append({
+                            'time': injection_time,
+                            'confidence': result['confidence'],
+                            'channel': channel.upper()
+                        })
+                        logger.info(f"Additional injection detected at t={injection_time:.2f}s (channel {channel.upper()}, confidence={result['confidence']:.2%})")
+                        current_search_start = injection_time + search_interval
+                        break
+                else:
+                    current_search_start += search_interval
+            else:
+                # No injection found in this window across any channel
+                current_search_start += search_interval
+
+        # Show results
+        if len(detected_injections) == 1:
+            QMessageBox.information(
+                self.main_window,
+                "Single Injection",
+                f"Found only 1 injection at t={detected_injections[0]['time']:.1f}s\n\n"
+                f"No additional injections detected within {search_window:.0f}s window."
+            )
+            return
+
+        # Place flags at detected injections
+        if not hasattr(cycle, 'flag_data'):
+            cycle['flag_data'] = []
+
+        flags_placed = 0
+        for i, inj in enumerate(detected_injections):
+            # Check if flag already exists at this time
+            existing = any(
+                abs(f.get('time', 0) - inj['time']) < 1.0 and f.get('type') == 'injection'
+                for f in cycle.get('flag_data', [])
+            )
+
+            if not existing:
+                cycle['flag_data'].append({
+                    'time': inj['time'],
+                    'type': 'injection',
+                    'note': f"Auto-detected injection {i+1} ({inj['confidence']:.0%} confidence)",
+                    'channel': inj['channel']
+                })
+                flags_placed += 1
+
+        # Refresh graph to show new flags
+        if hasattr(self.main_window, '_on_cycle_selected_in_table'):
+            self.main_window._on_cycle_selected_in_table()
+
+        # Show summary
+        summary_lines = [f"✓ Found {len(detected_injections)} injections:\n"]
+        for i, inj in enumerate(detected_injections):
+            summary_lines.append(f"{i+1}. t={inj['time']:.1f}s (Ch {inj['channel']}, {inj['confidence']:.0%} confidence)")
+
+        summary_lines.append(f"\n{flags_placed} new flags placed.")
+
+        QMessageBox.information(
+            self.main_window,
+            "Multiple Injections Detected",
+            "\n".join(summary_lines)
+        )
+        logger.info(f"✓ Detected {len(detected_injections)} injections in cycle {row_idx + 1}, placed {flags_placed} new flags")
 
     def _on_shift_input_changed(self, text):
         """Sync slider when input box changes."""
@@ -3470,9 +4069,13 @@ class EditsTab:
 
         # Get user profile
         try:
-            from affilabs.services.user_profile_manager import UserProfileManager
-            user_mgr = UserProfileManager()
-            username = user_mgr.get_current_user() or "Default"
+            if self.user_manager:
+                username = self.user_manager.get_current_user() or "Default"
+            else:
+                # Fallback
+                from affilabs.services.user_profile_manager import UserProfileManager
+                user_mgr = UserProfileManager()
+                username = user_mgr.get_current_user() or "Default"
         except Exception:
             username = "Default"
 
@@ -3816,9 +4419,8 @@ class EditsTab:
     def _apply_compact_view_initial(self):
         """Apply initial column visibility based on compact_view flag."""
         if self.compact_view:
-            self.cycle_data_table.setColumnHidden(2, True)   # Start time
-            self.cycle_data_table.setColumnHidden(4, True)   # Notes
-            self.cycle_data_table.setColumnHidden(11, True)  # Shift
+            self.cycle_data_table.setColumnHidden(1, True)  # Time
+            self.cycle_data_table.setColumnHidden(5, True)  # Notes
 
     def _toggle_compact_view(self):
         """Toggle between compact and expanded table view."""
@@ -3826,12 +4428,11 @@ class EditsTab:
 
         if self.compact_view:
             # Hide less important columns in compact view
-            self.cycle_data_table.setColumnHidden(2, True)   # Start time
-            self.cycle_data_table.setColumnHidden(4, True)   # Notes
-            self.cycle_data_table.setColumnHidden(11, True)  # Shift
+            self.cycle_data_table.setColumnHidden(1, True)   # Time
+            self.cycle_data_table.setColumnHidden(5, True)   # Notes
         else:
             # Show all columns in expanded view
-            for col in range(12):
+            for col in range(6):
                 self.cycle_data_table.setColumnHidden(col, False)
 
     def _apply_cycle_filter(self, filter_text):
@@ -3995,3 +4596,213 @@ class EditsTab:
     def _toggle_column_visibility(self, col, visible):
         """Toggle column visibility."""
         self.cycle_data_table.setColumnHidden(col, not visible)
+
+    # =========================
+    # INJECTION AUTO-DETECTION
+    # =========================
+
+    def _on_auto_detect_toggled(self, state):
+        """Handle auto-detect checkbox toggle with visual feedback."""
+        self._auto_detect_enabled = (state == Qt.CheckState.Checked.value)
+
+        if self._auto_detect_enabled:
+            # Show feedback and re-run detection
+            if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'intel_message_label'):
+                self.main_window.sidebar.intel_message_label.setText(
+                    "💉 Injection marker enabled - Detecting injection point..."
+                )
+                self.main_window.sidebar.intel_message_label.setStyleSheet(
+                    "font-size: 14px; color: #007AFF; background: transparent; font-weight: 600;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                )
+
+            # Re-run detection on currently selected cycle
+            self._run_injection_detection()
+        else:
+            # Hide injection marker and show feedback
+            self._hide_injection_marker()
+
+            if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'intel_message_label'):
+                self.main_window.sidebar.intel_message_label.setText(
+                    "Injection marker hidden"
+                )
+                self.main_window.sidebar.intel_message_label.setStyleSheet(
+                    "font-size: 14px; color: #8E8E93; background: transparent; font-weight: 500;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                )
+
+        logger.info(f"Injection marker: {'shown' if self._auto_detect_enabled else 'hidden'}")
+
+    def _run_injection_detection(self):
+        """Run auto-detection on currently selected cycle and show marker."""
+        if not self._auto_detect_enabled:
+            return
+
+        # Get selected cycle
+        selected_rows = sorted(set(item.row() for item in self.cycle_data_table.selectedItems()))
+        if len(selected_rows) != 1:
+            # Only auto-detect for single selection
+            self._hide_injection_marker()
+            return
+
+        row_idx = selected_rows[0]
+
+        # Check if already detected (and not manually corrected)
+        if row_idx in self._injection_points and not self._injection_points[row_idx].get('manual_override', False):
+            # Already detected, just show marker
+            self._show_injection_marker(row_idx)
+            return
+
+        # Get cycle data
+        if not hasattr(self.main_window, '_loaded_cycles_data') or row_idx >= len(self.main_window._loaded_cycles_data):
+            return
+
+        cycle = self.main_window._loaded_cycles_data[row_idx]
+
+        # Extract data for detection (use first active channel)
+        raw_data = None
+        if hasattr(self.main_window.app, 'recording_mgr') and self.main_window.app.recording_mgr:
+            if hasattr(self.main_window.app.recording_mgr, 'data_collector'):
+                raw_data = self.main_window.app.recording_mgr.data_collector.raw_data_rows
+
+        if not raw_data:
+            logger.debug("No raw data available for injection detection")
+            return
+
+        # Get cycle time boundaries
+        start_time = cycle.get('start_time_sensorgram', 0)
+        end_time = cycle.get('end_time_sensorgram', 0)
+
+        # Extract channel data (try A first, then B, C, D)
+        for channel in ['a', 'b', 'c', 'd']:
+            times_list = []
+            values_list = []
+
+            for row in raw_data:
+                if row.get('channel') != channel:
+                    continue
+
+                time = row.get('time', 0)
+                if start_time <= time <= end_time:
+                    value = row.get('value')
+                    if pd.notna(time) and pd.notna(value):
+                        times_list.append(time)
+                        values_list.append(value)
+
+            if len(times_list) > 50:  # Need sufficient data points
+                # Found data - run detection
+                times = np.array(times_list)
+                values = np.array(values_list)
+
+                # Sort by time
+                sort_idx = np.argsort(times)
+                times = times[sort_idx]
+                values = values[sort_idx]
+
+                # Convert to RU (baseline correction)
+                if len(values) > 0:
+                    baseline = values[0]
+                    values_ru = (values - baseline) * 355.0
+                else:
+                    values_ru = values
+
+                # Run auto-detection
+                from affilabs.utils.spr_signal_processing import auto_detect_injection_point
+                result = auto_detect_injection_point(times, values_ru)
+
+                if result['injection_time'] is not None and result['confidence'] > 0.3:
+                    # Store detection result
+                    self._injection_points[row_idx] = {
+                        'time': result['injection_time'],
+                        'channel': channel.upper(),
+                        'confidence': result['confidence'],
+                        'auto': True,
+                        'manual_override': False,
+                    }
+
+                    logger.info(
+                        f"→ Auto-detected injection in Cycle {row_idx + 1} at t={result['injection_time']:.2f}s "
+                        f"(Channel {channel.upper()}, confidence: {result['confidence']:.2f})"
+                    )
+
+                    # Show marker
+                    self._show_injection_marker(row_idx)
+                    return
+
+        logger.debug(f"Could not auto-detect injection in Cycle {row_idx + 1}")
+
+    def _show_injection_marker(self, row_idx):
+        """Show draggable injection marker on graph."""
+        if row_idx not in self._injection_points:
+            return
+
+        injection_data = self._injection_points[row_idx]
+        injection_time = injection_data['time']
+
+        # Remove old marker if exists
+        if self._injection_marker is not None:
+            try:
+                self.edits_primary_graph.removeItem(self._injection_marker)
+            except:
+                pass
+
+        # Create draggable vertical line
+        self._injection_marker = pg.InfiniteLine(
+            pos=injection_time,
+            angle=90,  # Vertical
+            pen=pg.mkPen(color=(255, 59, 48, 200), width=3, style=Qt.PenStyle.DashLine),
+            movable=True,  # Allow dragging
+            label="Injection",
+            labelOpts={'position': 0.85, 'color': (255, 59, 48), 'fill': (255, 255, 255, 200), 'movable': False}
+        )
+
+        # Connect drag signal for manual correction
+        self._injection_marker.sigPositionChanged.connect(lambda: self._on_injection_marker_moved(row_idx))
+
+        self.edits_primary_graph.addItem(self._injection_marker)
+
+        # Update intelligence bar
+        confidence_pct = int(injection_data['confidence'] * 100)
+        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'intel_message_label'):
+            self.main_window.sidebar.intel_message_label.setText(
+                f"Injection detected at t={injection_time:.2f}s ({confidence_pct}% confidence) - Drag line to adjust"
+            )
+            self.main_window.sidebar.intel_message_label.setStyleSheet(
+                "font-size: 14px; color: #007AFF; background: transparent; font-weight: 600;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
+
+    def _hide_injection_marker(self):
+        """Hide injection marker from graph."""
+        if self._injection_marker is not None:
+            try:
+                self.edits_primary_graph.removeItem(self._injection_marker)
+            except:
+                pass
+            self._injection_marker = None
+
+    def _on_injection_marker_moved(self, row_idx):
+        """Handle manual adjustment of injection marker."""
+        if self._injection_marker is None:
+            return
+
+        new_time = self._injection_marker.value()
+
+        # Update stored injection point
+        if row_idx in self._injection_points:
+            old_time = self._injection_points[row_idx]['time']
+            self._injection_points[row_idx]['time'] = new_time
+            self._injection_points[row_idx]['manual_override'] = True  # Mark as manually corrected
+            self._injection_points[row_idx]['auto'] = False
+
+            logger.info(f"Injection point manually adjusted: {old_time:.2f}s → {new_time:.2f}s")
+
+            # Update intelligence bar
+            if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'intel_message_label'):
+                self.main_window.sidebar.intel_message_label.setText(
+                    f"✓ Injection corrected to t={new_time:.2f}s (manual)"
+                )
+                self.main_window.sidebar.intel_message_label.setStyleSheet(
+                    "font-size: 14px; color: #34C759; background: transparent; font-weight: 600;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                )

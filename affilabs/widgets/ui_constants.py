@@ -20,6 +20,8 @@ class CycleTypeStyle:
     # Map of cycle type → (abbreviation, hex color)
     MAP: Final[dict[str, tuple[str, str]]] = {
         "Baseline": ("BL", "#007AFF"),
+        "Immobilization": ("IM", "#AF52DE"),
+        "Blocking": ("BK", "#FF2D55"),
         "Concentration": ("CN", "#FF9500"),
         "Regeneration": ("RG", "#FF3B30"),
         "Association": ("AS", "#34C759"),
@@ -50,6 +52,73 @@ class CycleTypeStyle:
 
         """
         return cls.MAP.get(cycle_type, cls._DEFAULT)
+
+
+# ============================================================================
+# CHANNEL COLORS
+# ============================================================================
+
+
+class ChannelColors:
+    """Professional channel color palette for bar charts and visualizations.
+
+    Uses Apple iOS color scheme for consistency with app design.
+    Colors are colorblind-friendly and have good visual contrast.
+    """
+
+    # Channel A-D colors (Apple iOS colors from CycleTypeStyle)
+    MAP: Final[dict[str, str]] = {
+        'A': '#007AFF',  # Blue - professional, primary channel
+        'B': '#FF9500',  # Orange - warm, distinct
+        'C': '#34C759',  # Green - natural, complements blue
+        'D': '#AF52DE',  # Purple - unique, balanced palette
+    }
+
+    # RGBA tuples for PyQtGraph (with Alpha=200 for good visibility)
+    RGBA_MAP: Final[dict[str, tuple[int, int, int, int]]] = {
+        'A': (0, 122, 255, 200),      # Blue
+        'B': (255, 149, 0, 200),       # Orange
+        'C': (52, 199, 89, 200),       # Green
+        'D': (175, 82, 222, 200),      # Purple
+    }
+
+    @classmethod
+    def get_hex(cls, channel: str) -> str:
+        """Get hex color for a channel.
+
+        Args:
+            channel: Channel identifier ('A', 'B', 'C', 'D')
+
+        Returns:
+            Hex color code (e.g., '#007AFF')
+        """
+        return cls.MAP.get(channel.upper(), '#86868B')
+
+    @classmethod
+    def get_rgba(cls, channel: str) -> tuple[int, int, int, int]:
+        """Get RGBA tuple for a channel (for PyQtGraph).
+
+        Args:
+            channel: Channel identifier ('A', 'B', 'C', 'D')
+
+        Returns:
+            RGBA tuple (R, G, B, Alpha)
+        """
+        return cls.RGBA_MAP.get(channel.upper(), (134, 134, 139, 200))
+
+    @classmethod
+    def get_all_rgba_for_channels(cls, channels: list[str] = None) -> list[tuple[int, int, int, int]]:
+        """Get RGBA colors for a list of channels in order.
+
+        Args:
+            channels: List of channel identifiers (default: ['A', 'B', 'C', 'D'])
+
+        Returns:
+            List of RGBA tuples
+        """
+        if channels is None:
+            channels = ['A', 'B', 'C', 'D']
+        return [cls.get_rgba(ch) for ch in channels]
 
 
 # ============================================================================

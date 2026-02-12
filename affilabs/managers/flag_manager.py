@@ -7,8 +7,14 @@ This manager encapsulates all flag-related logic:
 - Flag type management (injection, wash, spike)
 - Injection alignment and channel time shifts
 - Flag selection and keyboard movement
+- Auto-calculated markers (wash deadline, etc.)
 - Exporting flags to recording manager
 - Clearing flags for new cycles
+
+UNIFIED MARKER SYSTEM:
+- User-placed flags: InjectionFlag, WashFlag, SpikeFlag (domain models)
+- Auto-markers: Wash deadline, injection deadline (AutoMarker, calculated by system)
+- Both stored in unified marker list for selection/movement
 
 DEPENDENCIES:
 - main_window.cycle_of_interest_graph (UI component)
@@ -18,12 +24,14 @@ DEPENDENCIES:
 USAGE:
     flag_mgr = FlagManager(app_instance)
     flag_mgr.show_flag_type_menu(event, channel, time, spr)
+    flag_mgr.create_auto_marker(marker_type, time, contact_time)
     flag_mgr.clear_all_flags()
 """
 
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -38,6 +46,30 @@ from affilabs.utils.logger import logger
 
 if TYPE_CHECKING:
     from main import Application
+
+
+@dataclass
+class AutoMarker:
+    """Auto-calculated marker for system-generated timeline events.
+
+    Represents markers that are calculated by the system (e.g., wash deadline)
+    rather than manually placed by the user. Can be moved/adjusted like flags.
+
+    Attributes:
+        marker_type: Type of auto-marker ('wash_deadline', 'injection_deadline', etc.)
+        time: Position on timeline (seconds)
+        label: Display label (e.g., '⏱ Wash Due')
+        color: Color code (e.g., '#FF9500')
+        marker: PyQtGraph visual object (InfiniteLine or similar)
+        is_selectable: Whether user can select/move this marker
+    """
+
+    marker_type: str
+    time: float
+    label: str
+    color: str
+    marker: any = None
+    is_selectable: bool = True
 
 
 class FlagManager:
@@ -61,8 +93,13 @@ class FlagManager:
             Flag
         ] = []  # List of Flag instances (InjectionFlag, WashFlag, SpikeFlag)
 
+        # Auto-marker storage - system-calculated markers (wash deadline, etc.)
+        self._auto_markers: list[AutoMarker] = []
+
         # Flag selection state (for keyboard movement)
-        self._selected_flag_idx = None
+        # Can select either user-placed flags OR auto-markers
+        self._selected_marker_type = None  # 'flag' or 'auto_marker'
+        self._selected_marker_idx = None
         self._flag_highlight_ring = None
         self._selected_flag_channel = "a"  # Default to Channel A
 
@@ -71,6 +108,14 @@ class FlagManager:
         self._injection_reference_channel = None
         self._injection_alignment_line = None
         self._injection_snap_tolerance = 10.0  # Seconds
+
+        # Contact time timer overlay
+        self._contact_timer_overlay = None  # Text item for contact time display
+        self._contact_timer_start_time = None  # When contact time started
+        self._contact_timer_duration = None  # Total contact duration (seconds)
+        self._contact_timer_position = (20, 20)  # Default top-left position in pixels
+        self._contact_timer_dragging = False
+        self._contact_timer_drag_offset = (0, 0)
 
         # Install keyboard event filter for flag movement
         self._setup_keyboard_event_filter()
@@ -86,7 +131,7 @@ class FlagManager:
             def eventFilter(self, obj, event):
                 if event.type() == QEvent.Type.KeyPress:
                     # Check if a flag is selected
-                    if self.flag_mgr._selected_flag_idx is not None:
+                    if self.flag_mgr._selected_marker_idx is not None:
                         key = event.key()
 
                         # Arrow keys move flag
@@ -219,13 +264,14 @@ class FlagManager:
         )
 
         # Create visual marker using flag's appearance properties
+        # Thicker white outline for better contrast against graph background
         marker = pg.ScatterPlotItem(
             [flag.time],
             [flag.spr],
             symbol=flag.marker_symbol,
             size=flag.marker_size,
             brush=pg.mkBrush(flag.marker_color),
-            pen=pg.mkPen("w", width=2),
+            pen=pg.mkPen("#FFFFFF", width=3),  # Thicker white outline
         )
 
         # Add marker to graph
@@ -321,40 +367,64 @@ class FlagManager:
             )
 
     def try_select_flag_for_movement(self, time_clicked: float, spr_clicked: float):
-        """Check if click is near a flag and select it for keyboard movement."""
-        if not self._flag_markers:
-            return
+        """Check if click is near a flag or auto-marker and select it for keyboard movement.
 
-        # Find flag closest to click
+        Searches both user-placed flags and auto-calculated markers in order of proximity.
+        """
         min_distance = float("inf")
         closest_flag_idx = None
+        closest_type = None
 
         # Get view range for normalization
         view_range = self.app.main_window.cycle_of_interest_graph.viewRange()
         time_range = view_range[0][1] - view_range[0][0]
         spr_range = view_range[1][1] - view_range[1][0]
 
-        for idx, flag in enumerate(self._flag_markers):
-            # Calculate normalized 2D distance
-            time_dist = abs(flag.time - time_clicked) / time_range
-            spr_dist = abs(flag.spr - spr_clicked) / spr_range
-            distance = np.sqrt(time_dist**2 + spr_dist**2)
+        # Check user-placed flags
+        if self._flag_markers:
+            for idx, flag in enumerate(self._flag_markers):
+                # Calculate normalized 2D distance
+                time_dist = abs(flag.time - time_clicked) / time_range
+                spr_dist = abs(flag.spr - spr_clicked) / spr_range
+                distance = np.sqrt(time_dist**2 + spr_dist**2)
 
-            if distance < min_distance:
-                min_distance = distance
-                closest_flag_idx = idx
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_flag_idx = idx
+                    closest_type = "flag"
 
-        # Select flag if within tolerance (3% of screen diagonal)
+        # Check auto-markers (only time component matters for vertical lines)
+        if self._auto_markers:
+            for idx, auto_marker in enumerate(self._auto_markers):
+                if not auto_marker.is_selectable:
+                    continue
+
+                # For vertical lines, only check time distance
+                time_dist = abs(auto_marker.time - time_clicked) / time_range
+                distance = time_dist  # Vertical line: only time matters
+
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_flag_idx = idx
+                    closest_type = "auto_marker"
+
+        # Select marker if within tolerance (3% of screen diagonal)
         if closest_flag_idx is not None and min_distance < 0.03:
-            self._selected_flag_idx = closest_flag_idx
-            flag = self._flag_markers[closest_flag_idx]
+            self._selected_marker_type = closest_type
+            self._selected_marker_idx = closest_flag_idx
 
-            # Visual feedback: highlight selected flag
-            self._highlight_selected_flag(closest_flag_idx)
-
-            logger.info(
-                f"🎯 Selected {flag.flag_type} flag (use arrow keys ← → to move, ESC to deselect)"
-            )
+            if closest_type == "flag":
+                flag = self._flag_markers[closest_flag_idx]
+                self._highlight_selected_flag(closest_flag_idx)
+                logger.info(
+                    f"🎯 Selected {flag.flag_type} flag (use arrow keys ← → to move, ESC to deselect)"
+                )
+            else:
+                auto_marker = self._auto_markers[closest_flag_idx]
+                self._highlight_selected_marker(closest_flag_idx)
+                logger.info(
+                    f"🎯 Selected {auto_marker.label} (use arrow keys ← → to adjust, ESC to deselect)"
+                )
 
     def _highlight_selected_flag(self, flag_idx: int):
         """Highlight the selected flag with a yellow ring."""
@@ -375,16 +445,72 @@ class FlagManager:
         )
         self.app.main_window.cycle_of_interest_graph.addItem(self._flag_highlight_ring)
 
+    def _highlight_selected_marker(self, auto_marker_idx: int):
+        """Highlight the selected auto-marker with a brightened line."""
+        # Remove previous highlight if any
+        if self._flag_highlight_ring is not None:
+            self.app.main_window.cycle_of_interest_graph.removeItem(self._flag_highlight_ring)
+
+        auto_marker = self._auto_markers[auto_marker_idx]
+
+        # Brighten the InfiniteLine by updating its pen
+        if auto_marker.marker is not None:
+            auto_marker.marker.setPen(pg.mkPen(auto_marker.color, width=3))
+
+        # Create a vertical highlight at the marker's time position
+        from PySide6.QtCore import Qt
+
+        self._flag_highlight_ring = pg.InfiniteLine(
+            pos=auto_marker.time,
+            angle=90,
+            pen=pg.mkPen("y", width=4, style=Qt.PenStyle.SolidLine),  # Yellow solid highlight
+        )
+        self.app.main_window.cycle_of_interest_graph.addItem(self._flag_highlight_ring)
+
     def move_selected_flag(self, direction: int):
-        """Move the selected flag left (-1) or right (+1) by one data point.
+        """Move the selected flag or auto-marker left (-1) or right (+1) by one second.
 
         Args:
-            direction: -1 for left, +1 for right
+            direction: -1 for left, +1 for right (±1 second per press)
         """
-        if self._selected_flag_idx is None or self._selected_flag_idx >= len(self._flag_markers):
+        # Handle auto-marker movement
+        if self._selected_marker_type == "auto_marker":
+            if self._selected_marker_idx is None or self._selected_marker_idx >= len(
+                self._auto_markers
+            ):
+                return
+
+            auto_marker = self._auto_markers[self._selected_marker_idx]
+
+            # Move by ±1 second
+            new_time = auto_marker.time + direction
+
+            # Prevent moving before t=0
+            if new_time < 0:
+                new_time = 0
+
+            # Update marker position
+            if auto_marker.marker is not None:
+                auto_marker.marker.setPos(new_time)
+
+            auto_marker.time = new_time
+
+            # Update highlight
+            self._highlight_selected_marker(self._selected_marker_idx)
+
+            logger.info(f"→ Moved {auto_marker.label}: {new_time:.1f}s")
             return
 
-        flag = self._flag_markers[self._selected_flag_idx]
+        # Handle user-placed flag movement
+        if self._selected_marker_type != "flag":
+            return
+
+        if self._selected_marker_idx is None or self._selected_marker_idx >= len(
+            self._flag_markers
+        ):
+            return
+
+        flag = self._flag_markers[self._selected_marker_idx]
         channel = flag.channel
 
         # Get DISPLAY data (rebased time)
@@ -414,13 +540,14 @@ class FlagManager:
         self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
 
         # Create new marker at new position using flag's appearance properties
+        # Thicker white outline for better contrast
         new_marker = pg.ScatterPlotItem(
             [new_time],
             [new_spr],
             symbol=flag.marker_symbol,
             size=flag.marker_size,
             brush=pg.mkBrush(flag.marker_color),
-            pen=pg.mkPen("w", width=2),
+            pen=pg.mkPen("#FFFFFF", width=3),  # Thicker white outline
         )
         self.app.main_window.cycle_of_interest_graph.addItem(new_marker)
 
@@ -466,12 +593,227 @@ class FlagManager:
             self.app.main_window.cycle_of_interest_graph.removeItem(self._flag_highlight_ring)
             self._flag_highlight_ring = None
 
-        self._selected_flag_idx = None
-        logger.debug("Flag deselected")
+        self._selected_marker_type = None
+        self._selected_marker_idx = None
+        logger.debug("Marker deselected")
+
+    def create_auto_marker(self, marker_type: str, time: float, label: str, color: str):
+        """Create an auto-calculated marker on the cycle graph.
+
+        Args:
+            marker_type: Type of marker ('wash_deadline', 'injection_deadline', etc.)
+            time: Position on timeline (seconds)
+            label: Display label (e.g., '⏱ Wash Due')
+            color: Color code (e.g., '#FF9500')
+
+        Returns:
+            AutoMarker instance, or None if failed
+        """
+        try:
+            if not hasattr(self.app.main_window, "cycle_of_interest_graph"):
+                return None
+
+            # Create vertical line marker
+            from PySide6.QtCore import Qt
+
+            visual_marker = pg.InfiniteLine(
+                pos=time,
+                angle=90,  # Vertical line
+                pen=pg.mkPen(color=color, width=2, style=Qt.PenStyle.DashLine),
+                label={
+                    "text": label,
+                    "color": color,
+                    "fill": (*self._hex_to_rgb(color), 100),
+                    "movable": False,
+                },
+            )
+
+            # Add to graph
+            self.app.main_window.cycle_of_interest_graph.addItem(visual_marker)
+
+            # Create AutoMarker instance
+            auto_marker = AutoMarker(
+                marker_type=marker_type,
+                time=time,
+                label=label,
+                color=color,
+                marker=visual_marker,
+                is_selectable=True,
+            )
+
+            self._auto_markers.append(auto_marker)
+            logger.info(f"✓ Created auto-marker: {label} at t={time:.1f}s")
+            return auto_marker
+
+        except Exception as e:
+            logger.debug(f"Could not create auto-marker: {e}")
+            return None
+
+    def clear_auto_markers(self):
+        """Remove all auto-calculated markers from graph."""
+        try:
+            for auto_marker in self._auto_markers:
+                if auto_marker.marker is not None:
+                    self.app.main_window.cycle_of_interest_graph.removeItem(auto_marker.marker)
+            self._auto_markers.clear()
+            logger.debug("✓ Auto-markers cleared")
+        except Exception as e:
+            logger.debug(f"Could not clear auto-markers: {e}")
+
+    def create_contact_timer_overlay(self, duration: float):
+        """Create draggable contact time timer overlay on cycle graph.
+
+        Args:
+            duration: Contact time duration in seconds
+        """
+        try:
+            if not hasattr(self.app.main_window, "cycle_of_interest_graph"):
+                return
+
+            import time as time_module
+
+            # Store timer state
+            self._contact_timer_start_time = time_module.time()
+            self._contact_timer_duration = duration
+
+            # Create text item with large, bold, easy-to-read font
+            self._contact_timer_overlay = pg.TextItem(
+                text=f"⏱ 0s / {duration:.0f}s",
+                color="#000000",  # Black text
+                anchor=(0, 0),  # Anchor to top-left
+                fill=pg.mkBrush(255, 255, 200, 200),  # Light yellow background, semi-transparent
+            )
+
+            # Set large, bold font
+            font = self._contact_timer_overlay.font()
+            font.setPointSize(14)
+            font.setBold(True)
+            font.setFamily("Monospace")
+            self._contact_timer_overlay.setFont(font)
+
+            # Add shadow/outline for better visibility
+            self._contact_timer_overlay.setDefault()
+
+            # Position at saved location (top-left by default)
+            vb = self.app.main_window.cycle_of_interest_graph.plotItem.vb
+            view_rect = vb.viewRect()
+
+            # Convert pixel coordinates to data coordinates
+            pixel_pos = self._contact_timer_position
+            scene_pos = vb.mapViewToScene(
+                view_rect.topLeft()
+            ) + self.app.main_window.cycle_of_interest_graph.mapFromScene(
+                vb.mapViewToScene(view_rect.topLeft())
+            )
+
+            self._contact_timer_overlay.setPos(pixel_pos[0], pixel_pos[1])
+
+            # Add to graph
+            self.app.main_window.cycle_of_interest_graph.addItem(self._contact_timer_overlay)
+
+            logger.info(f"✓ Contact timer created: {duration:.0f}s")
+
+        except Exception as e:
+            logger.debug(f"Could not create contact timer overlay: {e}")
+
+    def update_contact_timer_display(self):
+        """Update contact timer overlay with current elapsed/remaining time.
+
+        Should be called every second during contact time.
+        """
+        if (
+            self._contact_timer_overlay is None
+            or self._contact_timer_start_time is None
+            or self._contact_timer_duration is None
+        ):
+            return
+
+        try:
+            import time as time_module
+
+            # Calculate elapsed time
+            elapsed = time_module.time() - self._contact_timer_start_time
+
+            # Cap at duration (don't go over)
+            elapsed = min(elapsed, self._contact_timer_duration)
+
+            # Update text with elapsed / total
+            self._contact_timer_overlay.setText(
+                f"⏱ {elapsed:.0f}s / {self._contact_timer_duration:.0f}s"
+            )
+
+        except Exception as e:
+            logger.debug(f"Could not update contact timer: {e}")
+
+    def clear_contact_timer_overlay(self):
+        """Remove and clean up contact timer overlay."""
+        try:
+            if self._contact_timer_overlay is not None:
+                self.app.main_window.cycle_of_interest_graph.removeItem(self._contact_timer_overlay)
+            self._contact_timer_overlay = None
+            self._contact_timer_start_time = None
+            self._contact_timer_duration = None
+            logger.debug("✓ Contact timer cleared")
+        except Exception as e:
+            logger.debug(f"Could not clear contact timer: {e}")
+
+    def make_timer_draggable(self):
+        """Enable dragging for the contact timer overlay.
+
+        Installs mouse event handler on the timer text item.
+        """
+        if self._contact_timer_overlay is None:
+            return
+
+        # Store reference to flag manager for closure
+        flag_mgr = self
+
+        class DraggableTimerHandler:
+            def __init__(self, timer_item):
+                self.timer_item = timer_item
+                self.dragging = False
+                self.drag_offset = (0, 0)
+
+            def mouseDragEvent(self, ev):
+                """Handle mouse drag on timer."""
+                if ev.isStart():
+                    self.dragging = True
+                    self.drag_offset = (
+                        ev.pos().x() - self.timer_item.pos().x(),
+                        ev.pos().y() - self.timer_item.pos().y(),
+                    )
+                elif ev.isFinish():
+                    self.dragging = False
+                    # Save new position
+                    flag_mgr._contact_timer_position = (
+                        int(self.timer_item.pos().x()),
+                        int(self.timer_item.pos().y()),
+                    )
+                    logger.info(f"Timer position saved: {flag_mgr._contact_timer_position}")
+                else:
+                    # Move timer with mouse
+                    new_x = ev.pos().x() - self.drag_offset[0]
+                    new_y = ev.pos().y() - self.drag_offset[1]
+                    self.timer_item.setPos(new_x, new_y)
+
+        # Attach custom mouse handler
+        try:
+            original_mouseDrag = self._contact_timer_overlay.mouseDragEvent
+            handler = DraggableTimerHandler(self._contact_timer_overlay)
+            self._contact_timer_overlay.mouseDragEvent = handler.mouseDragEvent
+            logger.debug("✓ Timer made draggable")
+        except Exception as e:
+            logger.debug(f"Could not make timer draggable: {e}")
+
+    @staticmethod
+    def _hex_to_rgb(hex_color: str) -> tuple:
+        """Convert hex color to RGB tuple."""
+        hex_color = hex_color.lstrip("#")
+        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
 
     def clear_all_flags(self):
-        """Clear all flags when user clicks Clear Flags button."""
-        logger.info("[FlagManager] Clearing all flags")
+        """Clear all flags and auto-markers when user clicks Clear Flags button."""
+        logger.info("[FlagManager] Clearing all flags and markers")
         try:
             # Remove all visual markers from graph
             for flag in self._flag_markers:
@@ -486,16 +828,31 @@ class FlagManager:
                 self._flag_highlight_ring = None
 
             # Clear selection
-            self._selected_flag_idx = None
+            self._selected_marker_type = None
+            self._selected_marker_idx = None
 
-            # Don't clear injection alignment - only clear when cycle ends
+            # Clear auto-markers
+            self.clear_auto_markers()
 
-            logger.info("✓ All flags cleared")
+            # Clear injection alignment line and references
+            self._injection_reference_time = None
+            self._injection_reference_channel = None
+            if self._injection_alignment_line is not None:
+                self.app.main_window.cycle_of_interest_graph.removeItem(
+                    self._injection_alignment_line
+                )
+                self._injection_alignment_line = None
+
+            # Reset channel time shifts to default
+            if hasattr(self.app, "_channel_time_shifts"):
+                self.app._channel_time_shifts = {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
+
+            logger.info("✓ All flags cleared and timing reset")
         except Exception as e:
             logger.error(f"[ERROR] Error clearing flags: {e}", exc_info=True)
 
     def clear_flags_for_new_cycle(self):
-        """Clear all flags when a cycle ends to start fresh for the next cycle.
+        """Clear all flags and auto-markers when a cycle ends to start fresh for the next cycle.
 
         This also resets channel time shifts to default (live sensorgram timing).
         Flags are cycle-specific, so timing adjustments should not carry over.
@@ -513,7 +870,14 @@ class FlagManager:
                 self._flag_highlight_ring = None
 
             # Clear flag selection
-            self._selected_flag_idx = None
+            self._selected_marker_type = None
+            self._selected_marker_idx = None
+
+            # Clear auto-markers
+            self.clear_auto_markers()
+
+            # Clear contact timer overlay
+            self.clear_contact_timer_overlay()
 
             # Clear injection alignment reference and line
             self._injection_reference_time = None

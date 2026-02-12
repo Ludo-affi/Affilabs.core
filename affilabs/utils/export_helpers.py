@@ -499,6 +499,19 @@ class ExportHelpers:
                             # Sheet 2: Cycles (if available)
                             if cycles_data:
                                 df_cycles = pd.DataFrame(cycles_data)
+
+                                # Deduplicate cycles to prevent duplicate rows in Excel
+                                if 'cycle_id' in df_cycles.columns:
+                                    original_count = len(df_cycles)
+                                    df_cycles = df_cycles.drop_duplicates(subset=['cycle_id'], keep='first')
+                                    if len(df_cycles) < original_count:
+                                        print(f"Warning: Removed {original_count - len(df_cycles)} duplicate cycle rows during export")
+                                elif 'cycle_num' in df_cycles.columns:
+                                    original_count = len(df_cycles)
+                                    df_cycles = df_cycles.drop_duplicates(subset=['cycle_num'], keep='first')
+                                    if len(df_cycles) < original_count:
+                                        print(f"Warning: Removed {original_count - len(df_cycles)} duplicate cycle rows during export")
+
                                 df_cycles.to_excel(writer, sheet_name='Cycles', index=False)
 
                             # Sheet 3: Flags (if available from recording manager)

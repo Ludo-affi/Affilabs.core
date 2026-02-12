@@ -507,3 +507,142 @@ def validate_sp_orientation(
         "is_flat": False,
         "confidence": confidence,
     }
+
+
+def auto_detect_injection_point(
+    times: np.ndarray,
+    values: np.ndarray,
+    smoothing_window: int = 11,
+    baseline_points: int = 50,
+    min_rise_threshold: float = 2.0,
+) -> dict:
+    """Automatically detect injection point in SPR sensorgram data.
+
+    Detects the injection as the point of maximum positive slope (steepest rise)
+    in the SPR signal. This corresponds to the analyte binding event.
+
+    Algorithm:
+    1. Calculate first derivative (slope) using np.diff
+    2. Apply Savitzky-Golay smoothing to remove noise spikes
+    3. Find maximum slope index
+    4. Validate: Check that signal rises significantly after injection
+    5. Return injection time and confidence score
+
+    Args:
+        times: Time array (seconds)
+        values: SPR signal array (RU or raw units)
+        smoothing_window: Savitzky-Golay window for slope smoothing (default: 11, must be odd)
+        baseline_points: Number of initial points to use for baseline mean (default: 50)
+        min_rise_threshold: Minimum signal rise (RU) to confirm injection (default: 2.0)
+
+    Returns:
+        dict: {
+            'injection_time': float - Detected injection time (seconds), or None if not found
+            'injection_index': int - Array index of injection point, or None
+            'confidence': float - Detection confidence 0-1 (1=high confidence)
+            'max_slope': float - Maximum slope value at injection (RU/s)
+            'signal_rise': float - Total signal rise after injection (RU)
+        }
+
+    Example:
+        >>> times = np.linspace(0, 300, 1000)
+        >>> values = np.concatenate([np.zeros(400), np.linspace(0, 50, 600)])  # Step at t=120s
+        >>> result = auto_detect_injection_point(times, values)
+        >>> print(f"Injection at {result['injection_time']:.1f}s, confidence: {result['confidence']:.2f}")
+    """
+    try:
+        if len(times) < 10 or len(values) < 10:
+            return {
+                'injection_time': None,
+                'injection_index': None,
+                'confidence': 0.0,
+                'max_slope': 0.0,
+                'signal_rise': 0.0,
+            }
+
+        # Calculate derivative (rate of change)
+        dt = np.diff(times)
+        dy = np.diff(values)
+
+        # Avoid division by zero
+        with np.errstate(divide='ignore', invalid='ignore'):
+            slope = np.where(dt > 0, dy / dt, 0)
+
+        # Apply Savitzky-Golay smoothing to slope if enough points
+        if len(slope) >= smoothing_window and smoothing_window >= 3:
+            # Ensure window is odd
+            if smoothing_window % 2 == 0:
+                smoothing_window += 1
+            try:
+                slope_smooth = savgol_filter(slope, window_length=smoothing_window, polyorder=2)
+            except Exception:
+                slope_smooth = slope  # Fallback if SG filter fails
+        else:
+            slope_smooth = slope
+
+        # Find maximum positive slope
+        max_slope_idx = np.argmax(slope_smooth)
+        max_slope_value = slope_smooth[max_slope_idx]
+
+        # Injection time is at the max slope index (shifted by +1 due to np.diff)
+        injection_idx = max_slope_idx
+        injection_time = times[injection_idx]
+
+        # Calculate baseline and signal rise for validation
+        baseline_end = min(baseline_points, injection_idx)
+        if baseline_end > 0:
+            baseline_mean = np.mean(values[:baseline_end])
+        else:
+            baseline_mean = values[0]
+
+        # Signal rise = max value after injection - baseline
+        post_injection_values = values[injection_idx:]
+        if len(post_injection_values) > 0:
+            signal_peak = np.max(post_injection_values)
+            signal_rise = signal_peak - baseline_mean
+        else:
+            signal_rise = 0.0
+
+        # Calculate confidence score (0-1)
+        # Factors: slope magnitude, signal rise, position not at edges
+        slope_confidence = min(max_slope_value / 10.0, 1.0)  # Normalize to 0-1 (10 RU/s = max)
+        rise_confidence = min(signal_rise / 20.0, 1.0)  # Normalize (20 RU rise = max)
+
+        # Penalize edge detections (likely false positives)
+        edge_margin = int(len(times) * 0.05)  # 5% from edges
+        if injection_idx < edge_margin or injection_idx > len(times) - edge_margin:
+            edge_confidence = 0.3
+        else:
+            edge_confidence = 1.0
+
+        confidence = (slope_confidence + rise_confidence + edge_confidence) / 3.0
+
+        # Validate: signal must rise above threshold
+        if signal_rise < min_rise_threshold:
+            logger.debug(
+                f"Auto-detection: Weak signal rise ({signal_rise:.2f} < {min_rise_threshold} RU)"
+            )
+            confidence *= 0.5  # Reduce confidence but don't reject
+
+        logger.debug(
+            f"Auto-detected injection at t={injection_time:.2f}s "
+            f"(slope: {max_slope_value:.2f} RU/s, rise: {signal_rise:.1f} RU, conf: {confidence:.2f})"
+        )
+
+        return {
+            'injection_time': float(injection_time),
+            'injection_index': int(injection_idx),
+            'confidence': float(confidence),
+            'max_slope': float(max_slope_value),
+            'signal_rise': float(signal_rise),
+        }
+
+    except Exception as e:
+        logger.warning(f"Auto-detection failed: {e}")
+        return {
+            'injection_time': None,
+            'injection_index': None,
+            'confidence': 0.0,
+            'max_slope': 0.0,
+            'signal_rise': 0.0,
+        }

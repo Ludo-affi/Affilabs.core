@@ -7,7 +7,18 @@
       "Bash(git mv:*)",
       "Bash(python -c:*)",
       "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(pip install:*)",
+      "Bash(..venvScriptspython.exe -m pip install:*)",
+      "Bash(python -m ensurepip:*)",
+      "Bash(\".venv/Scripts/python.exe\" -m ensurepip --upgrade)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install tinydb)",
+      "Bash(\".venv/Scripts/python.exe\" main.py)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install pydantic pandas openpyxl pyqtgraph PySide6 numpy seaborn)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install pyserial scipy requests)",
+      "Bash(\".venv/Scripts/python.exe\" -m pip install --index-url https://gitlab.com/api/v4/groups/affinite-software/-/packages/pypi/simple pump-controller oceandirect)",
+      "Bash(python:*)",
+      "Bash(python3:*)"
     ]
   }
 }

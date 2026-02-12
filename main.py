@@ -710,6 +710,12 @@ class Application(QApplication):
         # Next cycle warning line for active cycle graph
         self._next_cycle_warning_line = None
 
+        # Contact time marker for manual injection cycles
+        self._contact_time_marker = None  # Vertical line showing when to wash/regen
+        self._injection_completion_time = None  # Sensorgram time when injection completed
+        self._contact_timer_update_timer = QTimer()  # Timer to update contact time display every second
+        self._contact_timer_update_timer.timeout.connect(self._update_contact_timer_display)
+
         # Internal pump state tracking (P4PROPLUS)
         self._pump1_running = False
         self._pump2_running = False
@@ -838,6 +844,11 @@ class Application(QApplication):
         self.experiment_folder_mgr = ExperimentFolderManager()
         logger.debug("✓ ExperimentFolderManager")
 
+        # User profile manager (centralized singleton)
+        from affilabs.services.user_profile_manager import UserProfileManager
+        self.user_profile_manager = UserProfileManager()
+        logger.debug("✓ UserProfileManager (centralized)")
+
         # Phase 1.2 business services
         self.transmission_calc = TransmissionCalculator()
         if self.transmission_calc is None:
@@ -879,6 +890,8 @@ class Application(QApplication):
         # Give sidebar access to app for _completed_cycles
         if hasattr(self.main_window, 'sidebar'):
             self.main_window.sidebar.app = self
+            # Share centralized user profile manager with sidebar
+            self.main_window.sidebar.user_profile_manager = self.user_profile_manager
 
         # Wire up elapsed time getter for pause markers
         def get_elapsed_time():
@@ -965,6 +978,17 @@ class Application(QApplication):
         )
 
         self.recording_events = RecordingEventCoordinator(self)
+
+        # Injection coordinator (handles manual and automated injections)
+        from affilabs.coordinators.injection_coordinator import InjectionCoordinator
+
+        self.injection_coordinator = InjectionCoordinator(
+            self.hardware_mgr,
+            self.pump_mgr,
+            buffer_mgr=self.buffer_mgr,
+            parent=self.main_window,
+        )
+        logger.debug("✓ InjectionCoordinator")
 
         # UI update coordinator and dialog manager
         if COORDINATORS_AVAILABLE:
@@ -1440,6 +1464,11 @@ class Application(QApplication):
         if hasattr(sidebar, 'queued_run_started'):
             sidebar.queued_run_started.connect(self._on_start_queued_run)
             logger.info("✓ Start Queued Run button connected")
+
+        # Connect Queue Cancel (Stop Run button)
+        if hasattr(sidebar, 'queue_cancel_requested'):
+            sidebar.queue_cancel_requested.connect(self._cancel_active_cycle)
+            logger.info("✓ Queue Cancel (Stop Run) button connected")
 
         # Connect Next Cycle button
         if hasattr(sidebar, 'next_cycle_requested'):
@@ -2091,6 +2120,12 @@ class Application(QApplication):
             self.pump_mgr.status_updated.connect(self._on_pump_status_updated)
             logger.debug("✓ PumpManager signals connected")
 
+        # === INJECTION COORDINATOR SIGNALS ===
+        if hasattr(self, 'injection_coordinator') and self.injection_coordinator:
+            self.injection_coordinator.injection_completed.connect(self._show_contact_time_marker)
+            self.injection_coordinator.auto_detect_injection_requested.connect(self._on_manual_injection_auto_detect)
+            logger.debug("✓ InjectionCoordinator signals connected")
+
         # Manager signals are connected in _connect_signals() (called from __init__)
         # This method is reserved for future manager signal organization
 
@@ -2173,6 +2208,8 @@ class Application(QApplication):
         and restores the intelligence refresh timer.  Unlike
         ``_on_cycle_completed`` this does **not** auto-start the next
         queued cycle, so the run truly stops.
+        
+        Also saves the partial cycle data to the Edits table automatically.
         """
         # Stop both timers (display-update + end-of-cycle)
         if hasattr(self, '_cycle_timer') and self._cycle_timer.isActive():
@@ -2184,8 +2221,43 @@ class Application(QApplication):
         if hasattr(self.main_window, 'intelligence_refresh_timer'):
             self.main_window.intelligence_refresh_timer.start(5000)
 
-        # Clear cycle state
+        # Save incomplete cycle data before clearing
         had_cycle = self._current_cycle is not None
+        if had_cycle and self._current_cycle is not None:
+            # Get current sensorgram time as early end time
+            end_sensorgram_time = None
+            if hasattr(self.main_window, 'full_timeline_graph'):
+                timeline = self.main_window.full_timeline_graph
+                if hasattr(timeline, 'stop_cursor'):
+                    end_sensorgram_time = timeline.stop_cursor.value()
+            
+            # Set end time on cycle (even if incomplete)
+            if end_sensorgram_time is not None:
+                self._current_cycle.end_time_sensorgram = end_sensorgram_time
+                logger.info(f"💾 Saving incomplete cycle (stopped at {end_sensorgram_time:.2f}s)")
+            
+            # Export and save to table and recording
+            try:
+                cycle_export_data = self._current_cycle.to_export_dict()
+                
+                # Save to Edits table
+                if hasattr(self.main_window, 'add_cycle_to_table'):
+                    self.main_window.add_cycle_to_table(cycle_export_data)
+                    logger.info(f"✓ Incomplete {cycle_export_data.get('type', 'cycle')} saved to Edits table")
+                
+                # Save to recording if active
+                if hasattr(self, 'recording_mgr') and self.recording_mgr.is_recording:
+                    self.recording_mgr.add_cycle(cycle_export_data)
+                    logger.info(f"✓ Incomplete cycle added to recording")
+                
+                # Mark as completed in queue presenter
+                if hasattr(self, 'queue_presenter'):
+                    self.queue_presenter.mark_cycle_completed(self._current_cycle)
+                    
+            except Exception as e:
+                logger.error(f"Failed to save incomplete cycle: {e}")
+
+        # Clear cycle state
         self._current_cycle = None
         self._cycle_end_time = None
 
@@ -2213,14 +2285,62 @@ class Application(QApplication):
             self.main_window.sidebar.summary_table.set_running_cycle(None)
             logger.debug("✓ Queue table highlight cleared (Cancel)")
 
-        # Re-enable Start Run button
-        if btn := self._sidebar_widget('start_queue_btn'):
-            btn.setEnabled(True)
+        # Change Stop Run button back to Start Run
+        self._set_start_button_to_start_mode()
+
         if btn := self._sidebar_widget('next_cycle_btn'):
             btn.setEnabled(False)
 
         if had_cycle:
             logger.info("🛑 Active cycle cancelled – timers stopped, queue unlocked")
+
+    def _set_start_button_to_stop_mode(self):
+        """Change Start Run button to Stop Run mode (red, cancels execution)."""
+        if btn := self._sidebar_widget('start_queue_btn'):
+            btn.setText("⏹ Stop Run")
+            btn.setToolTip("Stop the running cycle queue")
+            btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #FF3B30;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  padding: 6px 16px;"
+                "  font-size: 12px;"
+                "  font-weight: 600;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "}"
+                "QPushButton:hover { background: #E02020; }"
+                "QPushButton:pressed { background: #C01010; }"
+            )
+            # Store state so click handler knows what to do
+            btn.setProperty("mode", "stop")
+            logger.debug("✓ Start button changed to Stop mode (red)")
+
+    def _set_start_button_to_start_mode(self):
+        """Change Stop Run button back to Start Run mode (green, starts execution)."""
+        if btn := self._sidebar_widget('start_queue_btn'):
+            btn.setText("▶ Start Run")
+            btn.setToolTip("Start executing the queued cycles")
+            btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #34C759;"
+                "  color: white;"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  padding: 6px 16px;"
+                "  font-size: 12px;"
+                "  font-weight: 600;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "}"
+                "QPushButton:hover { background: #30B350; }"
+                "QPushButton:pressed { background: #2A9D46; }"
+                "QPushButton:disabled { background: #C7C7CC; }"
+            )
+            btn.setEnabled(True)
+            # Store state so click handler knows what to do
+            btn.setProperty("mode", "start")
+            logger.debug("✓ Stop button changed back to Start mode (green)")
 
     def _on_start_button_clicked(self):
         """Start the next cycle from queue or auto-read mode."""
@@ -2309,7 +2429,8 @@ class Application(QApplication):
         # Update status bar operation status
         if hasattr(self.main_window, 'update_status_operation'):
             duration_str = f"{int(duration_min):02d}:{int((duration_min % 1) * 60):02d}"
-            self.main_window.update_status_operation(f"Running: {cycle_type} ({duration_str})")
+            notes = getattr(cycle, 'note', '') or ''
+            self.main_window.update_status_operation(f"Running: {cycle_type} ({duration_str})", notes=notes)
 
         # Schedule auto-completion when cycle duration expires
         duration_ms = int(duration_min * 60 * 1000)
@@ -2345,12 +2466,13 @@ class Application(QApplication):
                 logger.info(f"▶ Starting buffer flow for {cycle_type} @ {cycle.flow_rate} µL/min")
                 self._start_buffer_for_cycle(cycle.flow_rate)
 
-        # Schedule injection if cycle requires it AND pump is available
+        # Schedule injection if cycle requires it AND pump is available OR manual mode enabled
         if cycle.injection_method is not None:
-            if has_pump or has_internal:
+            is_manual_mode = self.hardware_mgr.requires_manual_injection
+            if has_pump or has_internal or is_manual_mode:
                 self._schedule_injection(cycle)
             else:
-                logger.warning(f"⚠️ Cycle requires {cycle.injection_method} injection but no pump connected — skipping injection")
+                logger.warning(f"⚠️ Cycle requires {cycle.injection_method} injection but no pump or manual mode available — skipping injection")
 
         # Update progress bar to show current cycle
         if bar := self._sidebar_widget('queue_progress_bar'):
@@ -2363,9 +2485,8 @@ class Application(QApplication):
             except Exception as e:
                 logger.warning(f"Could not update progress bar: {e}")
 
-        # Disable Start Run button during cycle execution
-        if btn := self._sidebar_widget('start_queue_btn'):
-            btn.setEnabled(False)
+        # Change Start Run button to Stop Run during cycle execution
+        self._set_start_button_to_stop_mode()
 
         # Enable Next Cycle button during cycle execution
         if btn := self._sidebar_widget('next_cycle_btn'):
@@ -2493,70 +2614,58 @@ class Application(QApplication):
         QTimer.singleShot(delay_ms, lambda: self._execute_injection(cycle))
 
     def _execute_injection(self, cycle):
-        """Execute injection method for cycle.
+        """Execute injection for cycle - delegates to InjectionCoordinator.
 
-        Stops any running pump operation (e.g. buffer) first, waits for idle,
-        then triggers the injection. The method queue drives what happens next.
+        InjectionCoordinator handles both manual and automated modes:
+        - Manual mode: Shows dialog, blocks until user completes
+        - Automated mode: Runs pump injection in background thread
 
         Args:
             cycle: Cycle object with injection parameters
         """
-        # Validate pump available
+        # Validate pump or manual injection available
         has_affipump = self.pump_mgr.is_available
-        has_internal = (self.hardware_mgr.ctrl and
-                       hasattr(self.hardware_mgr.ctrl, 'has_internal_pumps') and
-                       self.hardware_mgr.ctrl.has_internal_pumps())
+        has_internal = (
+            self.hardware_mgr.ctrl
+            and hasattr(self.hardware_mgr.ctrl, "has_internal_pumps")
+            and self.hardware_mgr.ctrl.has_internal_pumps()
+        )
+        is_manual_mode = self.hardware_mgr.requires_manual_injection
 
-        if not has_affipump and not has_internal:
-            logger.error("❌ Injection failed - no pump available")
-            self.main_window.set_intel_message("❌ Injection failed - no pump", "#FF3B30")
+        if not has_affipump and not has_internal and not is_manual_mode:
+            logger.error("❌ Injection failed - no pump or manual injection available")
+            self.main_window.set_intel_message(
+                "❌ Injection failed - no hardware", "#FF3B30"
+            )
             return
 
-        # Get assay rate: cycle.flow_rate (from method) takes priority over UI spin
+        # Get flow rate (cycle.flow_rate takes priority over UI spin)
         if cycle.flow_rate is not None and cycle.flow_rate > 0:
             assay_rate = cycle.flow_rate
-            logger.info(f"Using cycle flow_rate: {assay_rate} µL/min (from method definition)")
+            logger.info(
+                f"Using cycle flow_rate: {assay_rate} µL/min (from method definition)"
+            )
         else:
             assay_rate = 100.0
-            if spin := self._sidebar_widget('pump_assay_spin'):
+            if spin := self._sidebar_widget("pump_assay_spin"):
                 assay_rate = float(spin.value())
             logger.info(f"Using UI assay rate: {assay_rate} µL/min (no cycle flow_rate set)")
 
-        # Stop pump and inject in background thread (stop_and_wait_for_idle is async)
-        def run_stop_then_inject():
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                # Step 1: Stop any running pump operation and wait for idle
-                if not self.pump_mgr.is_idle:
-                    logger.info("⏹ Stopping pump before injection...")
-                    idle_ok = loop.run_until_complete(self.pump_mgr.stop_and_wait_for_idle(timeout=30.0))
-                    if not idle_ok:
-                        logger.error("❌ Could not stop pump for injection")
-                        self.pump_mgr.error_occurred.emit("inject", "Could not stop pump for injection")
-                        return
+        # Delegate to injection coordinator
+        success = self.injection_coordinator.execute_injection(
+            cycle, assay_rate, parent_widget=self.main_window
+        )
 
-                # Step 2: Execute the injection with channel selection
-                # cycle.channels overrides pump_mgr.default_channels
-                ch = cycle.channels  # None = inject_simple/partial will use default_channels
-                if cycle.injection_method == "simple":
-                    logger.info(f"💉 AUTO-INJECT: Simple injection @ {assay_rate} µL/min (channels={ch or 'default'})")
-                    loop.run_until_complete(self.pump_mgr.inject_simple(assay_rate, channels=ch))
-                elif cycle.injection_method == "partial":
-                    logger.info(f"💉 AUTO-INJECT: Partial injection @ {assay_rate} µL/min (channels={ch or 'default'})")
-                    loop.run_until_complete(self.pump_mgr.inject_partial_loop(assay_rate, channels=ch))
-            except Exception as e:
-                logger.exception(f"Injection thread error: {e}")
-            finally:
-                loop.close()
-
-        thread = threading.Thread(target=run_stop_then_inject, daemon=True, name="CycleInjection")
-        thread.start()
+        if not success:
+            logger.warning("Injection was cancelled or failed")
+            # Note: Cycle continues even if injection cancelled
+            # User can still complete the cycle manually
 
         # Log event to sensorgram
-        if hasattr(self, 'recording_mgr'):
-            event_name = f"Auto-Injection ({cycle.injection_method})"
+        if hasattr(self, "recording_mgr"):
+            mode = "Manual" if is_manual_mode else "Auto"
+            method = cycle.injection_method or "unknown"
+            event_name = f"{mode} Injection ({method})"
             if cycle.contact_time:
                 event_name += f" - {cycle.contact_time}s contact"
             self.recording_mgr.log_event(event_name)
@@ -2658,41 +2767,16 @@ class Application(QApplication):
         logger.debug(f"Setting intelligence message: {message_text}")
         self.main_window.set_intel_message(message_text, color)
 
-        # Update status bar operation with remaining time
-        if hasattr(self.main_window, 'update_status_operation'):
-            remaining_min = int(remaining_sec // 60)
-            remaining_sec_rem = int(remaining_sec % 60)
-            self.main_window.update_status_operation(
-                f"Running: {cycle_type} ({remaining_min:02d}:{remaining_sec_rem:02d} remaining)"
-            )
-
         # Show/hide warning line on active cycle graph when <10s to next cycle
         self._update_next_cycle_warning_visual(remaining_sec, total_sec)
 
-        # Update overlay using graph's update method
-        try:
-            if hasattr(self.main_window, 'cycle_of_interest_graph'):
-                graph = self.main_window.cycle_of_interest_graph
-                logger.debug(f"Found cycle_of_interest_graph, has update_delta_overlay: {hasattr(graph, 'update_delta_overlay')}")
-                if hasattr(graph, 'update_delta_overlay'):
-                    # Add next cycle info to overlay if within 10 seconds
-                    overlay_type = f"{cycle_type} (Cycle {cycle_num}/{total_cycles})"
-                    if next_cycle_warning:
-                        overlay_type += next_cycle_warning
+        # Cycle display is handled by intelligence bar at bottom
+        # Graph overlay updates are not needed for PlotWidget type
+        if elapsed_sec < 2:
+            logger.debug(f"✓ Cycle display: {cycle_type} {time_format}")
 
-                    graph.update_delta_overlay(
-                        cycle_type=overlay_type,
-                        elapsed_sec=elapsed_sec,
-                        total_sec=total_sec
-                    )
-                    # Log first update only
-                    if elapsed_sec < 2:
-                        logger.info(f"✓ Overlay updated: {cycle_type} {elapsed_min:02d}:{elapsed_sec_rem:02d}/{total_min:02d}:{total_sec_rem:02d}")
-                        logger.debug(f"   Overlay params: type={overlay_type}, elapsed={elapsed_sec:.1f}s, total={total_sec:.1f}s")
-                else:
-                    if elapsed_sec < 2:
-                        logger.error("❌ cycle_of_interest_graph does NOT have update_delta_overlay method!")
-            else:
+        try:
+            if not hasattr(self.main_window, 'cycle_of_interest_graph'):
                 if elapsed_sec < 2:
                     logger.error("❌ main_window does NOT have cycle_of_interest_graph attribute!")
         except Exception as e:
@@ -2804,6 +2888,9 @@ class Application(QApplication):
         # Clear all flags for clean start of next cycle
         self.flag_mgr.clear_flags_for_new_cycle()
 
+        # Clear contact time marker from previous injection
+        self._clear_contact_time_marker()
+
         # Calculate end time in sensorgram time (not Unix timestamp!)
         end_sensorgram_time = None
         if hasattr(self.main_window, 'full_timeline_graph'):
@@ -2811,6 +2898,11 @@ class Application(QApplication):
             if hasattr(timeline, 'stop_cursor'):
                 # End time is current stop cursor position (sensorgram seconds)
                 end_sensorgram_time = timeline.stop_cursor.value()
+
+        # CRITICAL: Set end time on cycle object before export
+        if end_sensorgram_time is not None:
+            self._current_cycle.end_time_sensorgram = end_sensorgram_time
+            logger.debug(f"✓ Cycle end time set: {end_sensorgram_time:.2f}s")
 
         # Mark cycle as completed using presenter
         self.queue_presenter.mark_cycle_completed(self._current_cycle)
@@ -2887,9 +2979,8 @@ class Application(QApplication):
             # No more cycles in queue
             logger.info("✓ Queue completed - all cycles finished")
 
-            # Re-enable Start Run button
-            if btn := self._sidebar_widget('start_queue_btn'):
-                btn.setEnabled(True)
+            # Change Stop Run button back to Start Run
+            self._set_start_button_to_start_mode()
 
             # Unlock queue when all cycles complete
             self.queue_presenter.unlock_queue()
@@ -2925,6 +3016,192 @@ class Application(QApplication):
 
             # Start the auto-read cycle after 1 second
             QTimer.singleShot(1000, self._on_start_button_clicked)
+
+    def _show_contact_time_marker(self):
+        """Show contact time deadline marker on cycle of interest graph.
+
+        Called when manual injection completes. Displays a vertical line at the
+        calculated wash/regeneration time (injection_time + contact_time).
+
+        The marker helps users know when to perform the next action (wash/regen)
+        without requiring manual flag placement. User can select and adjust marker
+        position using arrow keys if needed.
+        """
+        if not self._current_cycle or not hasattr(self._current_cycle, 'contact_time'):
+            return
+
+        if self._current_cycle.contact_time is None:
+            return
+
+        # Get current sensorgram time (when injection was completed)
+        try:
+            if not hasattr(self.main_window, 'full_timeline_graph'):
+                return
+
+            timeline = self.main_window.full_timeline_graph
+            if not hasattr(timeline, 'stop_cursor'):
+                return
+
+            # Current sensorgram time when injection completed
+            injection_time = timeline.stop_cursor.value()
+            self._injection_completion_time = injection_time
+
+            # Calculate wash deadline time
+            wash_time = injection_time + self._current_cycle.contact_time
+            contact_duration = self._current_cycle.contact_time
+
+            # Use FlagManager to create auto-marker
+            self.flag_mgr.create_auto_marker(
+                marker_type='wash_deadline',
+                time=wash_time,
+                label='⏱ Wash Due',
+                color='#FF9500'
+            )
+
+            # Create draggable contact time timer overlay
+            self.flag_mgr.create_contact_timer_overlay(contact_duration)
+            self.flag_mgr.make_timer_draggable()
+
+            # Start timer update loop (update every second)
+            self._contact_timer_update_timer.start(1000)  # 1000ms = 1 second
+
+            # Calculate time relative to start cursor for display
+            start_time = timeline.start_cursor.value()
+            relative_wash_time = wash_time - start_time
+
+            logger.info(
+                f"⏱ Contact time marker: {contact_duration:.0f}s "
+                f"(wash due at +{relative_wash_time:.1f}s)"
+            )
+
+        except Exception as e:
+            logger.debug(f"Could not show contact time marker: {e}")
+
+    def _on_manual_injection_auto_detect(self, channels: str):
+        """Automatically detect and flag injection point after manual injection.
+
+        Called when user completes manual injection. Waits 3 seconds for the
+        injection spike to form, then analyzes recent sensorgram data to find
+        the injection point and places a flag.
+
+        Args:
+            channels: Target channels for injection (e.g., "AC", "BD")
+        """
+        from PySide6.QtCore import QTimer
+
+        # Delay 3 seconds to let injection spike form in the data
+        logger.info("⏱ Waiting 3 seconds for injection spike to form...")
+        QTimer.singleShot(3000, lambda: self._perform_injection_detection(channels))
+
+    def _perform_injection_detection(self, channels: str):
+        """Perform the actual injection detection (called after delay).
+
+        Args:
+            channels: Target channels for injection (e.g., "AC", "BD")
+        """
+        from affilabs.utils.spr_signal_processing import auto_detect_injection_point
+        import numpy as np
+
+        try:
+            # Get the primary channel for detection (use first channel)
+            channel_letter = channels[0].lower()  # "AC" -> "a"
+
+            # Get current sensorgram data from buffer manager
+            if not hasattr(self, 'buffer_mgr') or not self.buffer_mgr.timeline_data:
+                logger.warning("⚠️ No sensorgram data available for injection detection")
+                return
+
+            timeline_data = self.buffer_mgr.timeline_data
+
+            # Check if channel data exists
+            if channel_letter not in timeline_data or len(timeline_data[channel_letter].time) == 0:
+                logger.warning(f"⚠️ No data for channel {channel_letter.upper()}")
+                return
+
+            # Get time and wavelength data for the channel
+            channel_data = timeline_data[channel_letter]
+            all_times = np.array(channel_data.time)
+            all_wavelengths = np.array(channel_data.wavelength)
+
+            if len(all_times) < 10:
+                logger.warning("⚠️ Insufficient data points for injection detection")
+                return
+
+            # Filter to last 60 seconds only (recent data where injection likely occurred)
+            current_time = all_times[-1] if len(all_times) > 0 else 0
+            lookback_start = current_time - 60.0  # 60 seconds ago
+            recent_mask = all_times >= lookback_start
+
+            times = all_times[recent_mask]
+            wavelengths = all_wavelengths[recent_mask]
+
+            if len(times) < 10:
+                logger.warning(f"⚠️ Insufficient recent data (only {len(times)} points in last 60s)")
+                return
+
+            logger.info(f"🔍 Analyzing last {len(times)} data points ({current_time - times[0]:.1f}s window)")
+
+            # Convert to RU (baseline-corrected using first point in recent window)
+            baseline = wavelengths[0] if len(wavelengths) > 0 else 0
+            values_ru = (wavelengths - baseline) * 355.0
+
+            # Run auto-detection with lowered threshold (0.2 instead of 0.3)
+            result = auto_detect_injection_point(times, values_ru)
+
+            if result['injection_time'] is not None and result['confidence'] > 0.2:
+                injection_time = result['injection_time']
+                confidence = result['confidence']
+
+                logger.info(
+                    f"✓ Auto-detected manual injection at t={injection_time:.2f}s "
+                    f"(Channel {channel_letter.upper()}, confidence: {confidence:.1%})"
+                )
+
+                # Place flag at injection point using FlagManager
+                if hasattr(self, 'flag_mgr'):
+                    flag_text = f"Injection (Manual)"
+                    self.flag_mgr.add_flag(injection_time, flag_text, channel=channel_letter.upper())
+                    logger.info(f"📍 Placed injection flag at t={injection_time:.2f}s")
+                else:
+                    logger.warning("⚠️ FlagManager not available, could not place flag")
+
+            else:
+                confidence_pct = result.get('confidence', 0) * 100 if result.get('confidence') else 0
+                logger.warning(
+                    f"⚠️ Could not reliably detect injection point "
+                    f"(confidence: {confidence_pct:.0f}% < 20% threshold)"
+                )
+                logger.info(f"💡 Tip: You can manually place a flag at the injection time in the Live tab")
+
+        except Exception as e:
+            logger.error(f"❌ Error during auto-detection of manual injection: {e}")
+            logger.exception(e)
+
+    def _clear_contact_time_marker(self):
+        """Remove contact time markers from graph.
+
+        Called when cycle completes or when clearing for a new cycle.
+        Delegates to FlagManager for unified marker cleanup.
+        """
+        try:
+            # Stop timer updates
+            self._contact_timer_update_timer.stop()
+
+            # Clear all auto-markers (including wash deadline)
+            self.flag_mgr.clear_auto_markers()
+            self._injection_completion_time = None
+        except Exception as e:
+            logger.debug(f"Could not clear contact time marker: {e}")
+
+    def _update_contact_timer_display(self):
+        """Update contact timer overlay every second during contact time.
+
+        Called by _contact_timer_update_timer every 1000ms.
+        """
+        try:
+            self.flag_mgr.update_contact_timer_display()
+        except Exception as e:
+            logger.debug(f"Could not update contact timer display: {e}")
 
     def _calculate_cycle_analysis(self, cycle):
         """Calculate delta SPR and detect flags for a completed cycle.
@@ -3035,6 +3312,11 @@ class Application(QApplication):
                 timeline = self.main_window.full_timeline_graph
                 if hasattr(timeline, 'stop_cursor'):
                     end_sensorgram_time = timeline.stop_cursor.value()
+
+            # CRITICAL: Set end time on cycle object before export
+            if end_sensorgram_time is not None:
+                self._current_cycle.end_time_sensorgram = end_sensorgram_time
+                logger.debug(f"✓ Cycle end time set (early completion): {end_sensorgram_time:.2f}s")
 
             # Mark cycle as completed via presenter (even though it's early)
             self.queue_presenter.mark_cycle_completed(self._current_cycle)
@@ -3244,7 +3526,10 @@ class Application(QApplication):
 
         # Reuse existing dialog or create new one
         if not hasattr(self, '_method_builder_dialog') or not self._method_builder_dialog:
-            self._method_builder_dialog = MethodBuilderDialog(self.main_window)
+            self._method_builder_dialog = MethodBuilderDialog(
+                self.main_window, 
+                user_manager=self.user_profile_manager
+            )
             self._method_builder_dialog.method_ready.connect(self._on_method_ready)
 
         self._method_builder_dialog.show()  # Non-modal - stays open
@@ -4387,6 +4672,23 @@ class Application(QApplication):
         """Recording started - export current experiment state to metadata."""
         self.recording_events.on_recording_started(filename)
 
+        # Turn record button RED to indicate recording is active
+        self.main_window.record_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF2D55;
+                color: white;
+                font-weight: bold;
+                padding: 8px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #E41E3A;
+            }
+            QPushButton:pressed {
+                background-color: #CC1A30;
+            }
+        """)
+
         # Log recording start event for graph marker
         self.recording_mgr.log_event("Recording Started")
 
@@ -4454,6 +4756,36 @@ class Application(QApplication):
     def _on_recording_stopped(self):
         """Recording stopped."""
         self.recording_events.on_recording_stopped()
+
+        # Reset record button to default styling (remove RED)
+        self.main_window.record_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #F5F5F7;"
+            "  color: rgb(46, 48, 227);"
+            "  border: 1px solid rgba(46, 48, 227, 0.3);"
+            "  border-radius: 4px;"
+            "  font-size: 20px;"
+            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover:!checked {"
+            "  background: rgba(46, 48, 227, 0.15);"
+            "  border: 1px solid rgba(46, 48, 227, 0.4);"
+            "}"
+            "QPushButton:checked {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1;"
+            "  color: white;"
+            "  border: 1px solid rgba(255, 59, 48, 0.3);"
+            "}"
+            "QPushButton:hover:checked {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1;"
+            "  border: 1px solid rgba(230, 52, 42, 0.3);"
+            "}"
+            "QPushButton:disabled {"
+            "  background: rgba(46, 48, 227, 0.1);"
+            "  color: rgba(46, 48, 227, 0.3);"
+            "  border: 1px solid rgba(46, 48, 227, 0.1);"
+            "}"
+        )
 
     def _on_recording_error(self, error: str):
         """Recording error occurred."""

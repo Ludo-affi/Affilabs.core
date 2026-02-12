@@ -43,7 +43,6 @@ from affilabs.ui_styles import (
 )
 from affilabs.utils.logger import logger
 
-
 class AdvancedSettingsDialog(QDialog):
     """Dialog for advanced application settings and device information."""
 
@@ -78,10 +77,10 @@ class AdvancedSettingsDialog(QDialog):
         # Tab widget for Settings and Diagnostics (if DEV mode)
         self.tabs = QTabWidget()
         tab_widget_style = (
-            "QTabWidget::pane { border: none; }"
+            "QTabWidget::pane {  }"
             "QTabBar::tab { padding: 8px 20px; margin-right: 4px; "
-            f"background: {Colors.BACKGROUND_LIGHT}; border-top-left-radius: 6px; "
-            "border-top-right-radius: 6px; font-size: 13px; font-weight: 500; }"
+            f"background: {Colors.BACKGROUND_LIGHT}; "
+            " font-size: 13px; font-weight: 500; }"
             f"QTabBar::tab:selected {{ background: white; color: {Colors.PRIMARY_TEXT}; }}"
             f"QTabBar::tab:!selected {{ color: {Colors.SECONDARY_TEXT}; }}"
         )
@@ -301,10 +300,10 @@ class AdvancedSettingsDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
         )
         dialog_button_style = (
-            "QPushButton { padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; min-width: 80px; }"
-            f"QPushButton[text='OK'] {{ background: {Colors.PRIMARY_TEXT}; color: white; border: none; }}"
+            "QPushButton { padding: 8px 20px;  font-size: 13px; font-weight: 600; min-width: 80px; }"
+            f"QPushButton[text='OK'] {{ background: {Colors.PRIMARY_TEXT}; color: white;  }}"
             "QPushButton[text='OK']:hover { background: #3A3A3C; }"
-            f"QPushButton[text='Cancel'] {{ background: white; color: {Colors.PRIMARY_TEXT}; border: 1px solid {Colors.OVERLAY_LIGHT_10}; }}"
+            f"QPushButton[text='Cancel'] {{ background: white; color: {Colors.PRIMARY_TEXT};  }}"
             f"QPushButton[text='Cancel']:hover {{ background: {Colors.OVERLAY_LIGHT_6}; }}"
         )
         button_box.setStyleSheet(dialog_button_style)
@@ -345,8 +344,8 @@ class AdvancedSettingsDialog(QDialog):
                 "QPushButton {"
                 "  background: #F5F5F7;"
                 "  color: #1D1D1F;"
-                "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  padding: 8px 20px;"
                 "  font-size: 13px;"
                 "  font-weight: 600;"

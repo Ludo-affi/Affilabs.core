@@ -10,6 +10,8 @@ venv_new/
 .venv312/
 venv/
 env/
+venv_39/
+venv_312_test/
 
 # Project specific
 local_settings.py

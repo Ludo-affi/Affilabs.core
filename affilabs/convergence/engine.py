@@ -578,12 +578,12 @@ class ConvergenceEngine:
                     max_signal = max(signals.values()) if signals else 0
                     over_target_pct = (max_signal / target_signal - 1.0) if target_signal > 0 else 0
 
-                    if state.integration_ms > 3.0 and over_target_pct > 0.25:  # Only if >25% over target
-                        # Calculate proportional reduction instead of fixed drop to 3.0ms
+                    if state.integration_ms > params.min_integration_time and over_target_pct > 0.25:  # Only if >25% over target
+                        # Calculate proportional reduction instead of fixed drop to min
                         # If 50% over target, reduce by 33% (multiply by 0.67)
                         # If 25% over target, reduce by 20% (multiply by 0.80)
                         reduction_factor = 1.0 / (1.0 + over_target_pct * 0.5)  # Smoother reduction
-                        new_time = max(3.0, state.integration_ms * reduction_factor)
+                        new_time = max(params.min_integration_time, state.integration_ms * reduction_factor)
 
                         state.integration_ms = new_time
                         state.clear_for_integration_change()
@@ -1433,7 +1433,7 @@ class ConvergenceEngine:
 
                     # CRITICAL: Don't increase integration if ANY channel is saturating
                     any_saturation = any(
-                        sat_pixels[ch] > 0 for ch in recipe.channels if ch in sat_pixels
+                        saturation.get(ch, 0) > 0 for ch in recipe.channels if ch in saturation
                     )
 
                     if chosen_option is None and option3_feasible:

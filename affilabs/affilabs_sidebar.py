@@ -74,6 +74,7 @@ class AffilabsSidebar(QWidget):
     cycle_queued = Signal(object)  # CycleConfigViewModel
     queue_cleared = Signal()
     queued_run_started = Signal()
+    queue_cancel_requested = Signal()  # Cancel running queue
     next_cycle_requested = Signal()  # Skip to next cycle
 
     def __init__(self, parent=None, detector_type="USB4000", app=None):
@@ -415,7 +416,7 @@ class AffilabsSidebar(QWidget):
         if hasattr(self, "start_run_btn"):
             self.start_run_btn.clicked.connect(self._on_start_run_clicked)
         if hasattr(self, "start_queue_btn"):
-            self.start_queue_btn.clicked.connect(self._on_start_run_clicked)
+            self.start_queue_btn.clicked.connect(self._on_start_stop_toggle_clicked)
         if hasattr(self, "next_cycle_btn"):
             self.next_cycle_btn.clicked.connect(self._on_next_cycle_clicked)
 
@@ -449,6 +450,17 @@ class AffilabsSidebar(QWidget):
     def _on_start_run_clicked(self):
         """Handle start queued run button click - emit high-level signal."""
         self.queued_run_started.emit()
+
+    def _on_start_stop_toggle_clicked(self):
+        """Handle start/stop button toggle - route to start or cancel based on mode."""
+        if hasattr(self, "start_queue_btn"):
+            mode = self.start_queue_btn.property("mode") or "start"
+            if mode == "start":
+                # Button is in Start mode - emit start signal
+                self.queued_run_started.emit()
+            else:
+                # Button is in Stop mode - emit cancel signal
+                self.queue_cancel_requested.emit()
 
     def _on_next_cycle_clicked(self):
         """Handle next cycle button click - emit high-level signal."""

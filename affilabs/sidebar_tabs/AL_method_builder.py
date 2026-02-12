@@ -150,7 +150,8 @@ class MethodTabBuilder:
 
         """
         self.sidebar = sidebar
-        self.user_manager = UserProfileManager()
+        # Use shared instance from sidebar (will be set by main app)
+        self.user_manager = None
         self._app_reference = None
 
     def set_app_reference(self, app):
@@ -290,12 +291,18 @@ class MethodTabBuilder:
         self.sidebar.method_name_label = QLabel("Untitled Method")
         self.sidebar.method_name_label.setVisible(False)
         self.sidebar.user_combo = QComboBox()
-        self.sidebar.user_combo.addItems(self.user_manager.get_profiles())
-        current_user = self.user_manager.get_current_user()
-        if current_user:
-            index = self.sidebar.user_combo.findText(current_user)
-            if index >= 0:
-                self.sidebar.user_combo.setCurrentIndex(index)
+
+        # Get shared user manager from sidebar (set by main app)
+        if hasattr(self.sidebar, 'user_profile_manager') and self.sidebar.user_profile_manager:
+            self.user_manager = self.sidebar.user_profile_manager
+
+        if self.user_manager:
+            self.sidebar.user_combo.addItems(self.user_manager.get_profiles())
+            current_user = self.user_manager.get_current_user()
+            if current_user:
+                index = self.sidebar.user_combo.findText(current_user)
+                if index >= 0:
+                    self.sidebar.user_combo.setCurrentIndex(index)
         self.sidebar.user_combo.currentTextChanged.connect(self._on_user_changed)
         self.sidebar.user_combo.setVisible(False)
 
@@ -490,6 +497,7 @@ class MethodTabBuilder:
         self.sidebar.start_queue_btn = QPushButton("▶ Start Run")
         self.sidebar.start_queue_btn.setFixedHeight(32)
         self.sidebar.start_queue_btn.setToolTip("Start executing the queued cycles")
+        self.sidebar.start_queue_btn.setProperty("mode", "start")  # Initialize in start mode
         self.sidebar.start_queue_btn.setStyleSheet(
             "QPushButton {"
             "  background: #34C759;"
@@ -644,7 +652,6 @@ class MethodTabBuilder:
 
         """
         if user_name and user_name != "Select User...":
-            # Get UserProfileManager instance
-            from affilabs.services.user_profile_manager import UserProfileManager
-            profile_manager = UserProfileManager()
-            profile_manager.set_current_user(user_name)
+            # Use shared instance instead of creating new one
+            if self.user_manager:
+                self.user_manager.set_current_user(user_name)

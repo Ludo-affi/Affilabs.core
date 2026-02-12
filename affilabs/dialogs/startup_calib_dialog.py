@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-
 class StartupCalibProgressDialog(QDialog):
     """Non-modal progress dialog for calibration with Start button integration."""
 
@@ -82,9 +81,9 @@ class StartupCalibProgressDialog(QDialog):
         # Remove window close button and make it frameless for modern look
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
 
-        # Style with border and rounded corners
+        # Style with border and rounded corners (thicker border to show through shadow)
         self.setStyleSheet(
-            "QDialog { background: #FFFFFF; border: 2px solid #007AFF; border-radius: 12px; }"
+            "QDialog { background: #FFFFFF; border: 3px solid #007AFF; border-radius: 12px; }"
             "QLabel { font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; color: #1D1D1F; }",
         )
 
@@ -101,7 +100,7 @@ class StartupCalibProgressDialog(QDialog):
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.title_label)
 
-        # Step description label (shows current calibration step)
+        # Step description label (shows current calibration step with Working... indicator)
         self.step_description_label = QLabel("")
         self.step_description_label.setStyleSheet(
             "font-size: 13px; color: #007AFF; font-weight: 600; padding: 4px;",
@@ -111,6 +110,9 @@ class StartupCalibProgressDialog(QDialog):
         self.step_description_label.setVisible(False)  # Hidden until calibration starts
         self.step_description_label.setMinimumHeight(20)
         main_layout.addWidget(self.step_description_label)
+
+        # Track base step text (without Working... suffix)
+        self._current_step_text = ""
 
         # Progress bar (can be indeterminate or real progress)
         self.progress_bar = QProgressBar()
@@ -123,16 +125,15 @@ class StartupCalibProgressDialog(QDialog):
         self.progress_bar.setStyleSheet(
             "QProgressBar {"
             "  background: rgba(0, 0, 0, 0.06);"
-            "  border-radius: 4px;"
-            "  border: 1px solid #D1D1D6;"
+            "  border: none;"
             "  color: #1D1D1F;"
             "  font-size: 12px;"
             "  font-weight: 700;"
             "  text-align: center;"
             "}"
             "QProgressBar::chunk {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #007AFF, stop:1 #00C7BE);"
-            "  border-radius: 4px;"
+            "  background: #007AFF;"
+            "  border: none;"
             "}",
         )
         main_layout.addWidget(self.progress_bar)
@@ -172,7 +173,6 @@ class StartupCalibProgressDialog(QDialog):
         self.start_button = None
         self.retry_button = None
         self.continue_button = None
-        self.close_button = None
 
         # Button container for dynamic button switching
         self.button_container = QWidget()
@@ -188,8 +188,6 @@ class StartupCalibProgressDialog(QDialog):
                 "QPushButton {"
                 "  background: #007AFF;"
                 "  color: white;"
-                "  border: none;"
-                "  border-radius: 6px;"
                 "  font-size: 13px;"
                 "  font-weight: 600;"
                 "  padding: 8px 16px;"
@@ -208,25 +206,6 @@ class StartupCalibProgressDialog(QDialog):
             self.start_button.clicked.connect(self._on_start_clicked)
             self.button_layout.addWidget(self.start_button)
 
-        # Add Cancel/Close button (always available)
-        self.close_button = QPushButton("Cancel")
-        self.close_button.setFixedSize(100, 36)
-        self.close_button.setStyleSheet(
-            "QPushButton {"
-            "  background: #8E8E93;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #636366;"
-            "}"
-        )
-        self.close_button.clicked.connect(self.close)
-        self.button_layout.addWidget(self.close_button)
-
         self.button_layout.addStretch()
         main_layout.addWidget(self.button_container)
 
@@ -239,12 +218,12 @@ class StartupCalibProgressDialog(QDialog):
         self._enable_start_signal.connect(self._do_enable_start)
         self._close_signal.connect(self._do_close)
 
-        # Add shadow effect
+        # Add shadow effect (reduced blur to preserve border visibility)
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(30)
+        shadow.setBlurRadius(20)  # Reduced from 30
         shadow.setXOffset(0)
-        shadow.setYOffset(4)
-        shadow.setColor(QColor(0, 0, 0, 40))
+        shadow.setYOffset(3)  # Reduced from 4
+        shadow.setColor(QColor(0, 0, 0, 35))  # Reduced from 40
         self.setGraphicsEffect(shadow)
 
         # Center on parent when dialog is initialized
@@ -360,12 +339,12 @@ class StartupCalibProgressDialog(QDialog):
 
     def _do_update_step_description(self, description: str) -> None:
         """Actually update step description label (runs in main thread)."""
-        # HIDDEN: Step description is redundant with the detailed status text below
-        # The black status text already shows the current progress (e.g., "Servo cal: Stage 1...")
-        # So we keep this blue label hidden to avoid duplication
         if not self._is_closing and self.isVisible():
             try:
-                self.step_description_label.setVisible(False)
+                # Store base text and add Working... suffix
+                self._current_step_text = description
+                self.step_description_label.setText(f"{description} - Working...")
+                self.step_description_label.setVisible(True)
             except RuntimeError:
                 pass  # Widget deleted
 
@@ -430,6 +409,10 @@ class StartupCalibProgressDialog(QDialog):
             else:
                 elapsed_str = f"{secs}s"
             self.activity_label.setText(f"Calibrating{dots}  ({elapsed_str} elapsed)")
+
+            # Also update step description with animated dots
+            if self._current_step_text and self.step_description_label.isVisible():
+                self.step_description_label.setText(f"{self._current_step_text} - Working{dots}")
         else:
             self.activity_label.setText(f"Working{dots}")
 
@@ -516,8 +499,8 @@ class StartupCalibProgressDialog(QDialog):
                     "QPushButton {"
                     "  background: #007AFF;"
                     "  color: white;"
-                    "  border: none;"
-                    "  border-radius: 6px;"
+                    "  "
+                    "  "
                     "  font-size: 13px;"
                     "  font-weight: 600;"
                     "}"
@@ -535,8 +518,8 @@ class StartupCalibProgressDialog(QDialog):
                     "QPushButton {"
                     "  background: #FF9500;"
                     "  color: white;"
-                    "  border: none;"
-                    "  border-radius: 6px;"
+                    "  "
+                    "  "
                     "  font-size: 13px;"
                     "  font-weight: 600;"
                     "}"
@@ -581,8 +564,8 @@ class StartupCalibProgressDialog(QDialog):
                     "QPushButton {"
                     "  background: #FF9500;"
                     "  color: white;"
-                    "  border: none;"
-                    "  border-radius: 6px;"
+                    "  "
+                    "  "
                     "  font-size: 13px;"
                     "  font-weight: 600;"
                     "}"

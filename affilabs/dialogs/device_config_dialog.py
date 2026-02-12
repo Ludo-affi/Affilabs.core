@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-
 class DeviceConfigDialog(QDialog):
     """Dialog to collect missing device configuration information."""
 
@@ -46,11 +45,11 @@ class DeviceConfigDialog(QDialog):
         self.controller = controller  # For EEPROM sync
         self.device_config = device_config  # DeviceConfiguration instance
 
-        # Apply modern styling
+        # Apply modern styling with visible border
         self.setStyleSheet(
             "QDialog {"
             "  background: #FFFFFF;"
-            "  border: 2px solid #007AFF;"
+            "  border: 3px solid #007AFF;"
             "  border-radius: 12px;"
             "}"
             "QLabel {"
@@ -88,7 +87,7 @@ class DeviceConfigDialog(QDialog):
             "color: #86868B;"
             "padding: 8px 12px;"
             "background: #F5F5F7;"
-            "border-radius: 6px;",
+            "",
         )
         self._update_config_source_indicator()
         layout.addWidget(self.config_source_label)
@@ -102,25 +101,25 @@ class DeviceConfigDialog(QDialog):
         combo_style = (
             "QComboBox {"
             "  padding: 8px 12px;"
-            "  border: 1px solid #D1D1D6;"
-            "  border-radius: 6px;"
+            "  "
+            "  "
             "  background: #FFFFFF;"
             "  font-size: 13px;"
             "  color: #1D1D1F;"
             "  min-height: 20px;"
             "}"
             "QComboBox:hover {"
-            "  border: 1px solid #007AFF;"
+            "  "
             "}"
             "QComboBox:focus {"
-            "  border: 2px solid #007AFF;"
+            "  "
             "}"
             "QComboBox:disabled {"
             "  background: #F5F5F7;"
             "  color: #86868B;"
             "}"
             "QComboBox::drop-down {"
-            "  border: none;"
+            "  "
             "  width: 30px;"
             "  subcontrol-origin: padding;"
             "  subcontrol-position: center right;"
@@ -134,8 +133,8 @@ class DeviceConfigDialog(QDialog):
             "  height: 0;"
             "}"
             "QComboBox QAbstractItemView {"
-            "  border: 1px solid #D1D1D6;"
-            "  border-radius: 6px;"
+            "  "
+            "  "
             "  background: #FFFFFF;"
             "  selection-background-color: #007AFF;"
             "  selection-color: #FFFFFF;"
@@ -144,7 +143,7 @@ class DeviceConfigDialog(QDialog):
             "}"
             "QComboBox QAbstractItemView::item {"
             "  padding: 8px 12px;"
-            "  border-radius: 4px;"
+            "  "
             "  color: #1D1D1F;"
             "  min-height: 24px;"
             "}"
@@ -161,13 +160,13 @@ class DeviceConfigDialog(QDialog):
         input_style = (
             "QLineEdit {"
             "  padding: 6px 12px;"
-            "  border: 1px solid #D1D1D6;"
-            "  border-radius: 6px;"
+            "  "
+            "  "
             "  background: #FFFFFF;"
             "  font-size: 13px;"
             "}"
             "QLineEdit:focus {"
-            "  border: 2px solid #007AFF;"
+            "  "
             "}"
         )
 
@@ -228,8 +227,8 @@ class DeviceConfigDialog(QDialog):
             "QPushButton {"
             "  padding: 8px 20px;"
             "  background: #F5F5F7;"
-            "  border: none;"
-            "  border-radius: 6px;"
+            "  "
+            "  "
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  color: #1D1D1F;"
@@ -248,8 +247,8 @@ class DeviceConfigDialog(QDialog):
                 "QPushButton {"
                 "  padding: 8px 20px;"
                 "  background: #FF9500;"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  font-size: 13px;"
                 "  font-weight: 600;"
                 "  color: #FFFFFF;"
@@ -273,8 +272,8 @@ class DeviceConfigDialog(QDialog):
             "QPushButton {"
             "  padding: 8px 20px;"
             "  background: #007AFF;"
-            "  border: none;"
-            "  border-radius: 6px;"
+            "  "
+            "  "
             "  font-size: 13px;"
             "  font-weight: 600;"
             "  color: #FFFFFF;"
@@ -288,12 +287,12 @@ class DeviceConfigDialog(QDialog):
 
         layout.addLayout(button_layout)
 
-        # Add shadow effect
+        # Add shadow effect (reduced blur to preserve border visibility)
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(30)
+        shadow.setBlurRadius(20)
         shadow.setXOffset(0)
-        shadow.setYOffset(4)
-        shadow.setColor(QColor(0, 0, 0, 40))
+        shadow.setYOffset(3)
+        shadow.setColor(QColor(0, 0, 0, 35))
         self.setGraphicsEffect(shadow)
 
     def _on_controller_changed(self, controller_text: str) -> None:
@@ -324,7 +323,7 @@ class DeviceConfigDialog(QDialog):
                 "color: #FF9500;"
                 "padding: 8px 12px;"
                 "background: #FFF3E0;"
-                "border-radius: 6px;",
+                "",
             )
         else:
             self.config_source_label.setText("💾 Configuration loaded from JSON file")
@@ -333,7 +332,7 @@ class DeviceConfigDialog(QDialog):
                 "color: #34C759;"
                 "padding: 8px 12px;"
                 "background: #E8F5E9;"
-                "border-radius: 6px;",
+                "",
             )
 
     def _on_push_to_eeprom(self) -> None:

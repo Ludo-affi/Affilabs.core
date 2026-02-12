@@ -45,6 +45,11 @@ class SparkKnowledgeBase:
             from affilabs.utils.resource_path import get_resource_path
 
             db_path = get_resource_path("data/spark/knowledge_base.json")
+
+        # Ensure parent directory exists
+        db_file = Path(db_path)
+        db_file.parent.mkdir(parents=True, exist_ok=True)
+
         self.db = TinyDB(str(db_path))
         self.articles = self.db.table("articles")
         self.faqs = self.db.table("faqs")

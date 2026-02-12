@@ -253,6 +253,33 @@ class HardwareManager(QObject):
 
         return self.device_config
 
+    @property
+    def requires_manual_injection(self) -> bool:
+        """Check if hardware requires manual injection (P4SPR without AffiPump).
+
+        Manual injection mode is needed when:
+        - P4SPR controller is detected (static fluidic system)
+        - AND no AffiPump is connected (no automated pump available)
+
+        Returns:
+            True if manual syringe injection is required, False otherwise
+        """
+        is_p4spr = self._ctrl_type == "PicoP4SPR"
+        has_affipump = self.pump is not None
+        return is_p4spr and not has_affipump
+
+    @property
+    def is_p4spr_available(self) -> bool:
+        """Check if P4SPR hardware is connected and available.
+
+        Used to enable concentration cycle manual injection mode UI.
+        Returns True if P4SPR controller is detected, regardless of pump status.
+
+        Returns:
+            True if P4SPR controller is connected, False otherwise
+        """
+        return self._ctrl_type == "PicoP4SPR"
+
     def _try_reconnect_controller(self) -> bool | None:
         """Fast reconnect to cached controller port/type after file reload."""
         if not self._ctrl_port or not self._ctrl_type:

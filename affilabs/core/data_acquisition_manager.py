@@ -866,7 +866,14 @@ class DataAcquisitionManager(QObject):
                 # DETECTOR-SPECIFIC SCAN CALCULATION
                 # Phase Photonics: Software averaging (integration_time × 1.93)
                 # USB4000: Software averaging (detector_window / integration_time)
-                from affilabs.utils.phase_photonics_wrapper import PhasePhotonics
+
+                # Conditional import - only needed if Phase Photonics hardware is present
+                try:
+                    from affilabs.utils.phase_photonics_wrapper import PhasePhotonics
+                except (ModuleNotFoundError, ImportError):
+                    # ftd2xx dependency not installed - Phase Photonics hardware not available
+                    PhasePhotonics = None
+
                 from affilabs.utils.hal.adapters import OceanSpectrometerAdapter
 
                 # Unwrap detector if it's in an adapter
@@ -874,13 +881,15 @@ class DataAcquisitionManager(QObject):
                 if isinstance(detector, OceanSpectrometerAdapter):
                     detector = detector._usb  # Get the wrapped detector
 
-                if isinstance(detector, PhasePhotonics):
+                if PhasePhotonics and isinstance(detector, PhasePhotonics):
                     # Phase Photonics: Software averaging (hardware averaging is broken!)
                     # Total Time = num_scans × (integration_time × 1.93)
                     num_scans = detector.calculate_optimal_scans(
                         p_integration_time_effective, detector_window_ms
                     )
-                    total_time = num_scans * (p_integration_time_effective * detector.TIMING_MULTIPLIER)
+                    total_time = num_scans * (
+                        p_integration_time_effective * detector.TIMING_MULTIPLIER
+                    )
                     logger.info(
                         f"[PHASE] Auto-configured: {num_scans} scans × {p_integration_time_effective:.1f}ms × 1.93 = "
                         f"{total_time:.1f}ms total (budget: {detector_window_ms:.1f}ms)"

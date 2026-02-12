@@ -510,7 +510,7 @@ class HardwareEventCoordinator:
         logger.info("STARTING OEM MODEL TRAINING WORKFLOW")
         logger.info("=" * 80)
 
-        from affilabs_core_ui import StartupCalibProgressDialog
+        from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
 
         # Show progress dialog
         training_dialog = StartupCalibProgressDialog(

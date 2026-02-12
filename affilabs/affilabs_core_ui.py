@@ -1,4 +1,4 @@
-"""AffiLabs.core Production UI - Main Window
+﻿"""AffiLabs.core Production UI - Main Window
 
 PRODUCTION CODE - Used by main_simplified.py
 
@@ -27,7 +27,7 @@ UI ARCHITECTURE:
 INTEGRATION REFERENCE:
 ======================
 
-1. SIGNALS (UI → Application):
+1. SIGNALS (UI â†’ Application):
    - power_on_requested / power_off_requested: User pressed power button
    - recording_start_requested / recording_stop_requested: User pressed record button
    - acquisition_pause_requested(bool): User paused/resumed acquisition
@@ -158,985 +158,14 @@ from affilabs.ui_styles import (
     Fonts,
     Dimensions,
     create_card_shadow,
+    label_style,
 )
 from affilabs.utils.logger import logger
 
-
-class StartupCalibProgressDialog(QDialog):
-    """Non-modal progress dialog for calibration with Start button integration."""
-
-    start_clicked = Signal()  # Signal emitted when Start button is clicked
-    retry_clicked = Signal()  # Signal emitted when Retry button is clicked
-    continue_anyway_clicked = Signal()  # Signal emitted when Continue Anyway is clicked
-
-    # Internal signals for thread-safe UI updates
-    _update_title_signal = Signal(str)
-    _update_status_signal = Signal(str)
-    _set_progress_signal = Signal(int, int)  # (value, maximum)
-    _hide_progress_signal = Signal()
-    _enable_start_signal = Signal()
-
-    def __init__(
-        self,
-        parent: QWidget | None = None,
-        title: str = "Processing",
-        message: str = "Please wait...",
-        show_start_button: bool = False,
-    ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.setModal(False)  # Non-blocking - allows background processing
-        self.setMinimumWidth(460)
-        self.setMinimumHeight(200)
-        self.setMaximumWidth(520)
-        self.setMaximumHeight(400)
-
-        # Track dialog state to prevent race conditions
-        self._is_closing = False
-        self._is_complete = False
-        self._is_error_state = False
-
-        # Store parent for overlay and position tracking
-        self.parent_window = parent
-        self.overlay = None
-
-        # Create semi-transparent overlay on parent window
-        if self.parent_window:
-            self.overlay = QWidget(self.parent_window)
-            self.overlay.setStyleSheet("background-color: rgba(0, 0, 0, 0.5);")
-            self.overlay.setGeometry(self.parent_window.rect())
-            self.overlay.show()
-            self.overlay.raise_()
-
-            # Install event filter to track parent window movements
-            self.parent_window.installEventFilter(self)
-
-        # Remove window close button and make it frameless for modern look
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
-
-        # Style with border and rounded corners
-        self.setStyleSheet(
-            "QDialog { background: {Colors.BACKGROUND_WHITE}; border: 2px solid #007AFF; border-radius: {Dimensions.BORDER_RADIUS_LG}; }"
-            "QLabel { font-family: {Fonts.SYSTEM}; color: {Colors.PRIMARY_TEXT}; }",
-        )
-
-        # Main layout
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(24, 20, 24, 20)
-        main_layout.setSpacing(10)
-
-        # Title
-        self.title_label = QLabel(title)
-        self.title_label.setStyleSheet(
-            "font-size: 18px;font-weight: {Fonts.WEIGHT_BOLD};color: {Colors.PRIMARY_TEXT};",
-        )
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(self.title_label)
-
-        # Progress bar (can be indeterminate or real progress)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setMinimum(0)
-        self.progress_bar.setMaximum(0)  # Start in indeterminate mode
-        self.progress_bar.setTextVisible(True)
-        self.progress_bar.setFixedHeight(Dimensions.HEIGHT_BUTTON_SM)
-        self.progress_bar.setVisible(False)  # Hidden initially for checklist
-        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.progress_bar.setStyleSheet(
-            "QProgressBar {"
-            "  background: rgba(0, 0, 0, 0.06);"
-            "  border-radius: 4px;"
-            "  border: 1px solid #D1D1D6;"
-            "  color: {Colors.PRIMARY_TEXT};"
-            "  font-size: 12px;"
-            "  font-weight: {Fonts.WEIGHT_BOLD};"
-            "  text-align: center;"
-            "}"
-            "QProgressBar::chunk {"
-            "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #007AFF, stop:1 #00C7BE);"
-            "  border-radius: 4px;"
-            "}",
-        )
-        main_layout.addWidget(self.progress_bar)
-
-        # Status message
-        self.status_label = QLabel(message)
-        self.status_label.setStyleSheet(
-            "font-size: 14px;color: {Colors.SECONDARY_TEXT};padding: 0px;",
-        )
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setWordWrap(True)
-        self.status_label.setMinimumHeight(30)
-        self.status_label.setMaximumHeight(160)
-        main_layout.addWidget(self.status_label)
-
-        # Small spacer before buttons
-        main_layout.addSpacing(4)
-
-        # Start button (optional, initially disabled if shown)
-        self.start_button = None
-        self.retry_button = None
-        self.continue_button = None
-
-        # Button container for dynamic button switching
-        self.button_container = QWidget()
-        self.button_layout = QHBoxLayout(self.button_container)
-        self.button_layout.setContentsMargins(0, 0, 0, 0)
-        self.button_layout.addStretch()
-
-        if show_start_button:
-            self.start_button = QPushButton("Start")
-            self.start_button.setEnabled(False)  # Start disabled
-            self.start_button.setFixedSize(140, 36)
-            self.start_button.setStyleSheet(
-                "QPushButton {"
-                "  background: #007AFF;"
-                "  color: white;"
-                "  border: none;"
-                "  border-radius: 6px;"
-                "  font-size: 13px;"
-                "  font-weight: 600;"
-                "  padding: 8px 16px;"
-                "}"
-                "QPushButton:hover {"
-                "  background: #0051D5;"
-                "}"
-                "QPushButton:pressed {"
-                "  background: #004FC4;"
-                "}"
-                "QPushButton:disabled {"
-                "  background: #E5E5EA;"
-                "  color: {Colors.SECONDARY_TEXT};"
-                "}",
-            )
-            self.start_button.clicked.connect(self._on_start_clicked)
-            self.button_layout.addWidget(self.start_button)
-
-        self.button_layout.addStretch()
-        main_layout.addWidget(self.button_container)
-
-        # Connect internal signals for thread-safe UI updates
-        self._update_title_signal.connect(self._do_update_title)
-        self._update_status_signal.connect(self._do_update_status)
-        self._set_progress_signal.connect(self._do_set_progress)
-        self._hide_progress_signal.connect(self._do_hide_progress)
-        self._enable_start_signal.connect(self._do_enable_start)
-
-        # Add shadow effect
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(30)
-        shadow.setXOffset(0)
-        shadow.setYOffset(4)
-        shadow.setColor(QColor(0, 0, 0, 40))
-        self.setGraphicsEffect(shadow)
-
-        # Center on parent when dialog is initialized
-        if self.parent_window:
-            self._center_on_parent()
-
-    def _on_start_clicked(self) -> None:
-        """Handle start button click."""
-        try:
-            if not self._is_closing:
-                # Check if this is the initial start (pre-calibration) or final start (post-calibration)
-                if self._is_complete:
-                    # Post-calibration: Emit signal to start acquisition, dialog will close after
-                    from affilabs.utils.logger import logger
-
-                    logger.info(
-                        "📋 Dialog Start button clicked (post-calibration) - emitting signal",
-                    )
-                    self.start_clicked.emit()
-                    logger.info(
-                        "📋 Signal emitted, dialog will close after acquisition starts",
-                    )
-                    # Don't close immediately - let coordinator close it after acquisition starts
-                    # self._is_closing = True
-                    # self.close()
-                else:
-                    # Pre-calibration: Emit signal but keep dialog open for progress updates
-                    self.start_clicked.emit()
-                    # Dialog stays open to show calibration progress
-        except Exception as e:
-            from affilabs.utils.logger import logger
-
-            logger.error(f"❌ Error in _on_start_clicked: {e}", exc_info=True)
-            import traceback
-
-            try:
-                print(traceback.format_exc())
-            except:
-                pass
-
-    def closeEvent(self, event: Any) -> None:
-        """Clean up overlay when dialog closes."""
-        self._is_closing = True
-
-        # Remove event filter
-        if self.parent_window:
-            try:
-                self.parent_window.removeEventFilter(self)
-            except RuntimeError:
-                pass
-
-        if self.overlay:
-            try:
-                self.overlay.hide()
-                self.overlay.deleteLater()
-            except RuntimeError:
-                pass  # Widget already deleted
-            self.overlay = None
-        super().closeEvent(event)
-
-    def eventFilter(self, obj: Any, event: Any) -> bool:
-        """Track parent window movements and reposition dialog."""
-        if obj == self.parent_window and not self._is_closing:
-            if event.type() == event.Type.Move:
-                # Recenter dialog on parent
-                self._center_on_parent()
-            elif event.type() == event.Type.Resize:
-                # Update overlay size
-                if self.overlay:
-                    self.overlay.setGeometry(self.parent_window.rect())
-                # Recenter dialog
-                self._center_on_parent()
-        return super().eventFilter(obj, event)
-
-    def _center_on_parent(self) -> None:
-        """Center the dialog on the parent window."""
-        if self.parent_window and not self._is_closing:
-            parent_geometry = self.parent_window.geometry()
-            dialog_width = self.width()
-            dialog_height = self.height()
-
-            x = parent_geometry.x() + (parent_geometry.width() - dialog_width) // 2
-            y = parent_geometry.y() + (parent_geometry.height() - dialog_height) // 2
-
-            self.move(x, y)
-
-    def update_status(self, message: str) -> None:
-        """Update the status message (thread-safe via signal)."""
-        self._update_status_signal.emit(message)
-
-    def _do_update_status(self, message: str) -> None:
-        """Actually update status label (runs in main thread)."""
-        if not self._is_closing and self.isVisible():
-            try:
-                self.status_label.setText(message)
-            except RuntimeError as e:
-                logger.error(f"RuntimeError in _do_update_status: {e}")
-            except Exception as e:
-                logger.error(f"Exception in _do_update_status: {e}")
-                import traceback
-
-                try:
-                    print(traceback.format_exc())
-                except:
-                    pass
-
-    def update_title(self, title: str):
-        """Update the title (thread-safe via signal)."""
-        self._update_title_signal.emit(title)
-
-    def _do_update_title(self, title: str) -> None:
-        """Actually update title (runs in main thread)."""
-        if not self._is_closing and self.isVisible():
-            try:
-                self.title_label.setText(title)
-                self.setWindowTitle(title)
-            except RuntimeError as e:
-                logger.error(f"RuntimeError in _do_update_title: {e}")
-            except Exception as e:
-                logger.error(f"Exception in _do_update_title: {e}")
-                import traceback
-
-                try:
-                    print(traceback.format_exc())
-                except:
-                    pass
-
-    def set_progress(self, value: int, maximum: int = 100):
-        """Set progress bar to show actual progress (thread-safe).
-
-        Args:
-            value: Current progress value
-            maximum: Maximum progress value (default 100)
-
-        """
-        self._set_progress_signal.emit(value, maximum)
-
-    def _do_set_progress(self, value: int, maximum: int) -> None:
-        """Actually set progress (runs in main thread).
-
-        Args:
-            value: Current progress value
-            maximum: Maximum progress value
-
-        """
-        if not self._is_closing and self.isVisible():
-            try:
-                # Always ensure progress bar is in determinate mode with correct maximum
-                if self.progress_bar.maximum() != maximum:
-                    self.progress_bar.setMaximum(maximum)
-                    self.progress_bar.setTextVisible(True)
-
-                self.progress_bar.setValue(value)
-
-                # Update text to show percentage
-                if maximum > 0:
-                    percentage = int((value / maximum) * 100)
-                    self.progress_bar.setFormat(f"{percentage}%")
-            except RuntimeError:
-                pass  # Widget deleted
-
-    def hide_progress_bar(self) -> None:
-        """Hide progress bar (thread-safe via signal)."""
-        self._hide_progress_signal.emit()
-
-    def _do_hide_progress(self) -> None:
-        """Actually hide progress bar (runs in main thread)."""
-        if not self._is_closing and self.isVisible():
-            try:
-                self.progress_bar.hide()
-            except RuntimeError as e:
-                logger.error(f"RuntimeError in _do_hide_progress: {e}")
-            except Exception as e:
-                logger.error(f"Exception in _do_hide_progress: {e}")
-                import traceback
-
-                try:
-                    print(traceback.format_exc())
-                except:
-                    pass
-
-    def show_progress_bar(self) -> None:
-        """Show progress bar (when calibration starts)."""
-        if not self._is_closing and self.isVisible():
-            try:
-                self.progress_bar.show()
-                self.progress_bar.setMaximum(100)
-                self.progress_bar.setValue(0)
-            except RuntimeError:
-                pass  # Widget deleted
-
-    def enable_start_button_pre_calib(self) -> None:
-        """Enable the Start button for pre-calibration checklist (thread-safe).
-
-        Does NOT set _is_complete flag - dialog will stay open during calibration.
-        """
-        from affilabs.utils.logger import logger
-
-        logger.debug(
-            f"🔧 enable_start_button_pre_calib() called: _is_complete={self._is_complete}",
-        )
-        if not self._is_closing and self.isVisible() and self.start_button:
-            try:
-                self._is_error_state = False
-                self.start_button.setEnabled(True)
-                logger.debug(
-                    f"   ✅ Button enabled, _is_complete={self._is_complete} (should be False)",
-                )
-            except RuntimeError:
-                pass  # Widget deleted
-
-    def enable_start_button(self) -> None:
-        """Enable the Start button when calibration is complete (thread-safe via signal)."""
-        self._enable_start_signal.emit()
-
-    def _do_enable_start(self) -> None:
-        """Actually enable start button (runs in main thread)."""
-        if not self._is_closing and self.isVisible() and self.start_button:
-            try:
-                self._is_complete = True
-                self._is_error_state = False
-                self.start_button.setEnabled(True)
-            except RuntimeError as e:
-                logger.error(f"RuntimeError in _do_enable_start: {e}")
-            except Exception as e:
-                logger.error(f"Exception in _do_enable_start: {e}")
-                import traceback
-
-                try:
-                    print(traceback.format_exc())
-                except:
-                    pass
-
-    def show_error_state(
-        self,
-        error_message: str,
-        retry_count: int,
-        max_retries: int,
-    ) -> None:
-        """Switch dialog to error state with Retry/Continue buttons.
-
-        Args:
-            error_message: Error description to show
-            retry_count: Current retry attempt
-            max_retries: Maximum retry attempts allowed
-
-        """
-        if self._is_closing or not self.isVisible():
-            return
-
-        try:
-            self._is_error_state = True
-            self._is_complete = False
-
-            # Update title and status
-            self.title_label.setText("⚠️ Calibration Failed")
-            self.title_label.setStyleSheet(
-                "font-size: 18px;"
-                "font-weight: {Fonts.WEIGHT_BOLD};"
-                "color: #FF3B30;",  # Red color for error
-            )
-
-            retries_left = max_retries - retry_count
-            full_message = f"{error_message}\n\nRetries remaining: {retries_left}"
-            self.status_label.setText(full_message)
-
-            # Hide Start button if it exists
-            if self.start_button:
-                self.start_button.hide()
-
-            # Create Retry and Continue buttons if they don't exist
-            if not self.retry_button:
-                self.retry_button = QPushButton("Retry Calibration")
-                self.retry_button.setFixedSize(160, 36)
-                self.retry_button.setStyleSheet(
-                    "QPushButton {"
-                    "  background: #007AFF;"
-                    "  color: white;"
-                    "  border: none;"
-                    "  border-radius: 6px;"
-                    "  font-size: 13px;"
-                    "  font-weight: 600;"
-                    "}"
-                    "QPushButton:hover {"
-                    "  background: #0051D5;"
-                    "}",
-                )
-                self.retry_button.clicked.connect(self._on_retry_clicked)
-                self.button_layout.insertWidget(1, self.retry_button)
-
-            if not self.continue_button:
-                self.continue_button = QPushButton("Continue Anyway")
-                self.continue_button.setFixedSize(160, 36)
-                self.continue_button.setStyleSheet(
-                    "QPushButton {"
-                    "  background: #FF9500;"
-                    "  color: white;"
-                    "  border: none;"
-                    "  border-radius: 6px;"
-                    "  font-size: 13px;"
-                    "  font-weight: 600;"
-                    "}"
-                    "QPushButton:hover {"
-                    "  background: #FF8000;"
-                    "}",
-                )
-                self.continue_button.clicked.connect(self._on_continue_clicked)
-                self.button_layout.insertWidget(2, self.continue_button)
-
-            self.retry_button.show()
-            self.continue_button.show()
-
-        except RuntimeError:
-            pass  # Widget deleted
-
-    def show_max_retries_error(self, error_message: str):
-        """Show error state when max retries reached - only Continue button.
-
-        Args:
-            error_message: Error description to show
-
-        """
-        if self._is_closing or not self.isVisible():
-            return
-
-        try:
-            self._is_error_state = True
-
-            # Update title and status
-            self.title_label.setText("🛑 Calibration Failed")
-            self.status_label.setText(
-                f"{error_message}\n\nMaximum retry attempts reached.\nPlease contact technical support.",
-            )
-
-            # Hide Start and Retry buttons
-            if self.start_button:
-                self.start_button.hide()
-            if self.retry_button:
-                self.retry_button.hide()
-
-            # Show only Continue button
-            if not self.continue_button:
-                self.continue_button = QPushButton("Continue Anyway")
-                self.continue_button.setFixedSize(160, 36)
-                self.continue_button.setStyleSheet(
-                    "QPushButton {"
-                    "  background: #FF9500;"
-                    "  color: white;"
-                    "  border: none;"
-                    "  border-radius: 6px;"
-                    "  font-size: 13px;"
-                    "  font-weight: 600;"
-                    "}"
-                    "QPushButton:hover {"
-                    "  background: #FF8000;"
-                    "}",
-                )
-                self.continue_button.clicked.connect(self._on_continue_clicked)
-                self.button_layout.insertWidget(1, self.continue_button)
-
-            self.continue_button.show()
-
-        except RuntimeError:
-            pass  # Widget deleted
-
-    def reset_to_progress_state(self):
-        """Reset dialog back to progress state (for retry)."""
-        if self._is_closing or not self.isVisible():
-            return
-
-        try:
-            self._is_error_state = False
-            self._is_complete = False
-
-            # Reset title color
-            self.title_label.setStyleSheet(
-                "font-size: 18px;font-weight: {Fonts.WEIGHT_BOLD};color: {Colors.PRIMARY_TEXT};",
-            )
-
-            # Hide error buttons
-            if self.retry_button:
-                self.retry_button.hide()
-            if self.continue_button:
-                self.continue_button.hide()
-
-            # Reset progress bar
-            self.progress_bar.setValue(0)
-
-        except RuntimeError:
-            pass  # Widget deleted
-
-    def _on_retry_clicked(self) -> None:
-        """Handle retry button click."""
-        if not self._is_closing:
-            self.retry_clicked.emit()
-
-    def _on_continue_clicked(self) -> None:
-        """Handle continue anyway button click."""
-        if not self._is_closing:
-            self.continue_anyway_clicked.emit()
-
-
-class DeviceConfigDialog(QDialog):
-    """Dialog to collect missing device configuration information."""
-
-    def __init__(
-        self,
-        parent: QWidget | None = None,
-        device_serial: str | None = None,
-        controller_type: str = "",
-        controller=None,
-        device_config=None,
-    ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Device Configuration Required")
-        self.setFixedWidth(500)
-        self.setModal(True)
-        self.controller_type = controller_type
-        self.controller = controller  # For EEPROM sync
-        self.device_config = device_config  # DeviceConfiguration instance
-
-        # Apply modern styling
-        self.setStyleSheet(
-            "QDialog {"
-            "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: 2px solid #007AFF;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
-            "}"
-            "QLabel {"
-            "  color: {Colors.PRIMARY_TEXT};"
-            "  font-size: 13px;"
-            "}",
-        )
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(20)
-
-        # Title
-        title = QLabel("⚙️ Device Configuration")
-        title.setStyleSheet(
-            "font-size: 20px;font-weight: 600;color: {Colors.PRIMARY_TEXT};",
-        )
-        layout.addWidget(title)
-
-        # Description
-        desc = QLabel(
-            f"Please provide the following information for device:\n<b>{device_serial or 'Unknown'}</b>",
-        )
-        desc.setTextFormat(Qt.TextFormat.RichText)  # Enable HTML formatting
-        desc.setStyleSheet(
-            "font-size: 13px;color: {Colors.SECONDARY_TEXT};",
-        )
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
-
-        # Config source indicator (EEPROM vs JSON)
-        self.config_source_label = QLabel()
-        self.config_source_label.setStyleSheet(
-            "font-size: 12px;"
-            "color: {Colors.SECONDARY_TEXT};"
-            "padding: 8px 12px;"
-            "background: #F5F5F7;"
-            "border-radius: 6px;",
-        )
-        self._update_config_source_indicator()
-        layout.addWidget(self.config_source_label)
-
-        # Form layout
-        form = QFormLayout()
-        form.setSpacing(12)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        # Shared combo box styling
-        combo_style = (
-            "QComboBox {"
-            "  padding: 8px 12px;"
-            "  border: 1px solid #D1D1D6;"
-            "  border-radius: 6px;"
-            "  background: {Colors.BACKGROUND_WHITE};"
-            "  font-size: 13px;"
-            "  color: {Colors.PRIMARY_TEXT};"
-            "  min-height: 20px;"
-            "}"
-            "QComboBox:hover {"
-            "  border: 1px solid #007AFF;"
-            "}"
-            "QComboBox:focus {"
-            "  border: 2px solid #007AFF;"
-            "}"
-            "QComboBox:disabled {"
-            "  background: #F5F5F7;"
-            "  color: {Colors.SECONDARY_TEXT};"
-            "}"
-            "QComboBox::drop-down {"
-            "  border: none;"
-            "  width: 30px;"
-            "  subcontrol-origin: padding;"
-            "  subcontrol-position: center right;"
-            "}"
-            "QComboBox::down-arrow {"
-            "  image: none;"
-            "  border-left: 5px solid transparent;"
-            "  border-right: 5px solid transparent;"
-            "  border-top: 6px solid #86868B;"
-            "  width: 0;"
-            "  height: 0;"
-            "}"
-            "QComboBox QAbstractItemView {"
-            "  border: 1px solid #D1D1D6;"
-            "  border-radius: 6px;"
-            "  background: {Colors.BACKGROUND_WHITE};"
-            "  selection-background-color: #007AFF;"
-            "  selection-color: #FFFFFF;"
-            "  padding: 4px;"
-            "  outline: none;"
-            "}"
-            "QComboBox QAbstractItemView::item {"
-            "  padding: 8px 12px;"
-            "  border-radius: 4px;"
-            "  color: {Colors.PRIMARY_TEXT};"
-            "  min-height: 24px;"
-            "}"
-            "QComboBox QAbstractItemView::item:hover {"
-            "  background: #F5F5F7;"
-            "}"
-            "QComboBox QAbstractItemView::item:selected {"
-            "  background: #007AFF;"
-            "  color: #FFFFFF;"
-            "}"
-        )
-
-        # Shared input styling
-        input_style = (
-            "QLineEdit {"
-            "  padding: 6px 12px;"
-            "  border: 1px solid #D1D1D6;"
-            "  border-radius: 6px;"
-            "  background: {Colors.BACKGROUND_WHITE};"
-            "  font-size: 13px;"
-            "}"
-            "QLineEdit:focus {"
-            "  border: 2px solid #007AFF;"
-            "}"
-        )
-
-        # LED Model (LCW or OWW)
-        self.led_model_combo = QComboBox()
-        self.led_model_combo.addItems(["LCW", "OWW"])
-        self.led_model_combo.setStyleSheet(combo_style)
-        form.addRow("LED Model:", self.led_model_combo)
-
-        # Controller Options (hardware types excluding pumps)
-        self.controller_combo = QComboBox()
-        self.controller_combo.addItems(["Arduino", "PicoP4SPR", "PicoEZSPR"])
-        self.controller_combo.setStyleSheet(combo_style)
-
-        # Pre-select based on detected controller type
-        if self.controller_type in ["Arduino", "PicoP4SPR", "PicoEZSPR"]:
-            index = self.controller_combo.findText(self.controller_type)
-            if index >= 0:
-                self.controller_combo.setCurrentIndex(index)
-
-        # Connect change to update polarizer
-        self.controller_combo.currentTextChanged.connect(self._on_controller_changed)
-        form.addRow("Controller:", self.controller_combo)
-
-        # Fiber Diameter (A=100, B=200)
-        self.fiber_diameter_combo = QComboBox()
-        self.fiber_diameter_combo.addItems(["A (100 µm)", "B (200 µm)"])
-        self.fiber_diameter_combo.setStyleSheet(combo_style)
-        form.addRow("Fiber Diameter:", self.fiber_diameter_combo)
-
-        # Polarizer Type (barrel or circle, default circle for Arduino/PicoP4SPR)
-        self.polarizer_type_combo = QComboBox()
-        self.polarizer_type_combo.addItems(["circle", "barrel"])
-        self.polarizer_type_combo.setStyleSheet(combo_style)
-
-        # Set default based on controller
-        self._update_polarizer_default()
-
-        form.addRow("Polarizer:", self.polarizer_type_combo)
-
-        # Device ID (detector serial number)
-        self.device_id_input = QLineEdit()
-        self.device_id_input.setPlaceholderText("Enter detector serial number")
-        self.device_id_input.setText(
-            device_serial or "",
-        )  # Pre-fill with detected serial
-        self.device_id_input.setStyleSheet(input_style)
-        form.addRow("Device ID:", self.device_id_input)
-
-        layout.addLayout(form)
-
-        # Buttons
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setStyleSheet(
-            "QPushButton {"
-            "  padding: 8px 20px;"
-            "  background: #F5F5F7;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  font-size: 13px;"
-            "  font-weight: 500;"
-            "  color: {Colors.PRIMARY_TEXT};"
-            "}"
-            "QPushButton:hover {"
-            "  background: #E5E5E7;"
-            "}",
-        )
-        cancel_btn.clicked.connect(self.reject)
-        button_layout.addWidget(cancel_btn)
-
-        # Push to EEPROM button (only show if controller connected)
-        if self.controller is not None:
-            eeprom_btn = QPushButton("Push to EEPROM")
-            eeprom_btn.setStyleSheet(
-                "QPushButton {"
-                "  padding: 8px 20px;"
-                "  background: #FF9500;"
-                "  border: none;"
-                "  border-radius: 6px;"
-                "  font-size: 13px;"
-                "  font-weight: 600;"
-                "  color: #FFFFFF;"
-                "}"
-                "QPushButton:hover {"
-                "  background: #FF8000;"
-                "}"
-                "QPushButton:disabled {"
-                "  background: #E5E5E7;"
-                "  color: {Colors.SECONDARY_TEXT};"
-                "}",
-            )
-            eeprom_btn.setToolTip(
-                "Save configuration to device EEPROM for portable backup",
-            )
-            eeprom_btn.clicked.connect(self._on_push_to_eeprom)
-            button_layout.addWidget(eeprom_btn)
-
-        save_btn = QPushButton("Save Configuration")
-        save_btn.setStyleSheet(
-            "QPushButton {"
-            "  padding: 8px 20px;"
-            "  background: #007AFF;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "  color: #FFFFFF;"
-            "}"
-            "QPushButton:hover {"
-            "  background: #0051D5;"
-            "}",
-        )
-        save_btn.clicked.connect(self.accept)
-        button_layout.addWidget(save_btn)
-
-        layout.addLayout(button_layout)
-
-        # Add shadow effect
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(30)
-        shadow.setXOffset(0)
-        shadow.setYOffset(4)
-        shadow.setColor(QColor(0, 0, 0, 40))
-        self.setGraphicsEffect(shadow)
-
-    def _on_controller_changed(self, controller_text):
-        """Update polarizer default when controller changes."""
-        self.controller_type = controller_text
-        self._update_polarizer_default()
-
-    def _update_polarizer_default(self):
-        """Set polarizer default based on controller type."""
-        if self.controller_type in ["Arduino", "PicoP4SPR"]:
-            self.polarizer_type_combo.setCurrentText("circle")
-        elif self.controller_type == "PicoEZSPR":
-            self.polarizer_type_combo.setCurrentText("barrel")
-
-    def _update_config_source_indicator(self):
-        """Update the config source indicator label."""
-        if self.device_config is None:
-            self.config_source_label.setText("ℹ️ New configuration")
-            return
-
-        if (
-            hasattr(self.device_config, "loaded_from_eeprom")
-            and self.device_config.loaded_from_eeprom
-        ):
-            self.config_source_label.setText("📦 Configuration loaded from EEPROM")
-            self.config_source_label.setStyleSheet(
-                "font-size: 12px;"
-                "color: #FF9500;"
-                "padding: 8px 12px;"
-                "background: #FFF3E0;"
-                "border-radius: 6px;",
-            )
-        else:
-            self.config_source_label.setText("💾 Configuration loaded from JSON file")
-            self.config_source_label.setStyleSheet(
-                "font-size: 12px;"
-                "color: #34C759;"
-                "padding: 8px 12px;"
-                "background: #E8F5E9;"
-                "border-radius: 6px;",
-            )
-
-    def _on_push_to_eeprom(self):
-        """Push current form configuration to EEPROM."""
-        if self.controller is None:
-            from PySide6.QtWidgets import QMessageBox
-
-            QMessageBox.warning(
-                self,
-                "No Controller",
-                "Cannot push to EEPROM: No controller connected.",
-            )
-            return
-
-        # Update device_config with current form values (if it exists)
-        if self.device_config is not None:
-            config_data = self.get_config_data()
-            self.device_config.set_hardware_config(
-                led_pcb_model=config_data["led_pcb_model"],
-                optical_fiber_diameter_um=config_data["optical_fiber_diameter_um"],
-                polarizer_type=config_data["polarizer_type"],
-            )
-
-        # Sync to EEPROM
-        from affilabs.utils.logger import logger
-
-        logger.info("Pushing configuration to EEPROM...")
-
-        if self.device_config is not None:
-            success = self.device_config.sync_to_eeprom(self.controller)
-        else:
-            # No device_config yet - create temporary EEPROM config from form
-            from PySide6.QtWidgets import QMessageBox
-
-            QMessageBox.information(
-                self,
-                "Save First",
-                "Please save the configuration to JSON first, then push to EEPROM.",
-            )
-            return
-
-        # Show result
-        from PySide6.QtWidgets import QMessageBox
-
-        if success:
-            QMessageBox.information(
-                self,
-                "EEPROM Sync Complete",
-                "✓ Configuration successfully pushed to device EEPROM.\n\n"
-                "The device can now be used on other computers without reconfiguration.",
-            )
-            logger.info("✓ EEPROM sync successful")
-        else:
-            QMessageBox.warning(
-                self,
-                "EEPROM Sync Failed",
-                "Failed to push configuration to EEPROM.\n\n"
-                "Check the logs for details.",
-            )
-            logger.error("✗ EEPROM sync failed")
-
-    def get_config_data(self):
-        """Get the configuration data from the form."""
-        # Map LED model abbreviations to full names
-        led_model_map = {
-            "LCW": "luminus_cool_white",
-            "OWW": "osram_warm_white",
-        }
-
-        # Extract fiber diameter from selection (e.g., "A (100 µm)" -> 100)
-        fiber_text = self.fiber_diameter_combo.currentText()
-        if "A" in fiber_text:
-            fiber_diameter = 100
-        elif "B" in fiber_text:
-            fiber_diameter = 200
-        else:
-            fiber_diameter = 200  # Default
-
-        # Get controller type
-        controller_type = self.controller_combo.currentText()
-
-        # Determine controller model name from type
-        controller_model = "Raspberry Pi Pico P4SPR"  # Default
-        if controller_type == "Arduino":
-            controller_model = "Arduino P4SPR"
-        elif controller_type == "PicoP4SPR":
-            controller_model = "Raspberry Pi Pico P4SPR"
-        elif controller_type == "PicoEZSPR":
-            controller_model = "Raspberry Pi Pico EZSPR"
-
-        return {
-            "led_pcb_model": led_model_map.get(
-                self.led_model_combo.currentText(),
-                "luminus_cool_white",
-            ),
-            "optical_fiber_diameter_um": fiber_diameter,
-            "polarizer_type": self.polarizer_type_combo.currentText(),
-            "device_id": self.device_id_input.text().strip() or None,
-            "controller_model": controller_model,
-            "controller_type": controller_type,
-        }
+# Dialog classes moved to affilabs/dialogs/ for modularity:
+# - StartupCalibProgressDialog -> affilabs/dialogs/startup_calib_dialog.py
+# - DeviceConfigDialog -> affilabs/dialogs/device_config_dialog.py
+# Import from affilabs.dialogs if needed
 
 
 class AffilabsMainWindow(QMainWindow):
@@ -1144,7 +173,7 @@ class AffilabsMainWindow(QMainWindow):
 
     QUICK REFERENCE FOR INTEGRATION:
     ================================
-    Signals (UI → App):
+    Signals (UI â†’ App):
         - power_on_requested / power_off_requested
         - recording_start_requested / recording_stop_requested
         - acquisition_pause_requested(bool)
@@ -1359,21 +388,21 @@ class AffilabsMainWindow(QMainWindow):
             self.transmission_plot = self.sidebar.transmission_plot
             self.transmission_curves = self.sidebar.transmission_curves
             logger.debug(
-                f"✓ Forwarded transmission plot ({len(self.transmission_curves)} curves)",
+                f"âœ“ Forwarded transmission plot ({len(self.transmission_curves)} curves)",
             )
         else:
             logger.warning(
-                "⚠️ transmission_plot NOT found in sidebar - plots will not work",
+                "âš ï¸ transmission_plot NOT found in sidebar - plots will not work",
             )
 
         if hasattr(self.sidebar, "raw_data_plot"):
             self.raw_data_plot = self.sidebar.raw_data_plot
             self.raw_data_curves = self.sidebar.raw_data_curves
             logger.debug(
-                f"✓ Forwarded raw plot ({len(self.raw_data_curves)} curves)",
+                f"âœ“ Forwarded raw plot ({len(self.raw_data_curves)} curves)",
             )
         else:
-            logger.warning("⚠️ raw_data_plot NOT found in sidebar - plots will not work")
+            logger.warning("âš ï¸ raw_data_plot NOT found in sidebar - plots will not work")
 
         # Forward calibration buttons
         self.simple_led_calibration_btn = self.sidebar.simple_led_calibration_btn
@@ -1385,9 +414,9 @@ class AffilabsMainWindow(QMainWindow):
         # Forward baseline capture button (REBUILT)
         if hasattr(self.sidebar, "baseline_capture_btn"):
             self.baseline_capture_btn = self.sidebar.baseline_capture_btn
-            logger.debug("✓ Forwarded baseline capture button")
+            logger.debug("âœ“ Forwarded baseline capture button")
         else:
-            logger.warning("⚠️ baseline_capture_btn NOT found in sidebar")
+            logger.warning("âš ï¸ baseline_capture_btn NOT found in sidebar")
 
         right_widget = QWidget()
         right_widget.setMinimumWidth(
@@ -1420,7 +449,56 @@ class AffilabsMainWindow(QMainWindow):
         # Set initial sizes: 520px for sidebar (more space due to wide Static section), rest for main content
         self.splitter.setSizes([520, 880])
 
-        main_layout.addWidget(self.splitter)
+        # Create vertical layout for main content + status bar
+        content_with_status_layout = QVBoxLayout()
+        content_with_status_layout.setContentsMargins(0, 0, 0, 0)
+        content_with_status_layout.setSpacing(0)
+        content_with_status_layout.addWidget(self.splitter)
+
+        # Add operation status bar at bottom (matches navigation bar style)
+        self.operation_status_bar = QFrame()
+        self.operation_status_bar.setFixedHeight(50)  # Increased from 36px for better visibility
+        self.operation_status_bar.setStyleSheet(f"""
+            QFrame {{
+                background: {Colors.BACKGROUND_WHITE};
+            }}
+        """)
+
+        status_layout = QHBoxLayout(self.operation_status_bar)
+        status_layout.setContentsMargins(20, 0, 20, 0)
+        status_layout.setSpacing(16)
+
+        # System intelligence status (left side)
+        self.bottom_intel_status_label = QLabel("â—")
+        self.bottom_intel_status_label.setStyleSheet(
+            label_style(14, color=Colors.SECONDARY_TEXT, weight=int(Fonts.WEIGHT_BOLD))
+        )
+        status_layout.addWidget(self.bottom_intel_status_label)
+
+        # Intelligence message (system state info)
+        self.bottom_intel_message_label = QLabel("Initializing...")
+        self.bottom_intel_message_label.setStyleSheet(
+            label_style(13, color=Colors.SECONDARY_TEXT, weight=int(Fonts.WEIGHT_SEMIBOLD))
+        )
+        status_layout.addWidget(self.bottom_intel_message_label)
+
+        status_layout.addStretch()
+
+        # Cycle notes label (secondary information) - right side
+        self.cycle_notes_label = QLabel("")
+        self.cycle_notes_label.setStyleSheet(
+            label_style(13, color=Colors.SECONDARY_TEXT, weight=int(Fonts.WEIGHT_NORMAL))
+        )
+        self.cycle_notes_label.setWordWrap(False)  # Keep on one line
+        status_layout.addWidget(self.cycle_notes_label)
+
+        content_with_status_layout.addWidget(self.operation_status_bar)
+
+        # Wrap in container widget
+        content_with_status_widget = QWidget()
+        content_with_status_widget.setLayout(content_with_status_layout)
+
+        main_layout.addWidget(content_with_status_widget)
 
         # Ensure Sensorgram page (index 0) is shown by default
         self.content_stack.setCurrentIndex(0)
@@ -1429,7 +507,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create the Sensorgram tab content with dual-graph layout (master-detail pattern)."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {  background: #F8F9FA;  border: none;}",
+            "QFrame {  background: #F8F9FA;  }",
         )
 
         content_layout = QVBoxLayout(content_widget)
@@ -1509,8 +587,8 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QSplitter::handle {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "  border: none;"
-            "  border-radius: 4px;"
+            "  "
+            "  "
             "  margin: 0px 16px;"
             "}"
             "QSplitter::handle:hover {"
@@ -1616,7 +694,7 @@ class AffilabsMainWindow(QMainWindow):
         so the transition is seamless when real graphs load.
         """
         placeholder = QFrame()
-        placeholder.setStyleSheet("QFrame { background: {Colors.BACKGROUND_WHITE}; border: none; }")
+        placeholder.setStyleSheet("QFrame { background: {Colors.BACKGROUND_WHITE};  }")
 
         layout = QVBoxLayout(placeholder)
         layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
@@ -1627,8 +705,8 @@ class AffilabsMainWindow(QMainWindow):
         timeline_card.setStyleSheet(f"""
             QFrame {{
                 background: {Colors.BACKGROUND_WHITE};
-                border: 1px solid {Colors.OVERLAY_LIGHT_10};
-                border-radius: {Dimensions.BORDER_RADIUS_LG};
+
+
             }}
         """)
         timeline_layout = QVBoxLayout(timeline_card)
@@ -1652,8 +730,8 @@ class AffilabsMainWindow(QMainWindow):
         timeline_skeleton.setStyleSheet(f"""
             QFrame {{
                 background: {Colors.BACKGROUND_LIGHT};
-                border: 1px dashed {Colors.OVERLAY_LIGHT_20};
-                border-radius: 8px;
+
+
             }}
         """)
         skeleton_layout = QVBoxLayout(timeline_skeleton)
@@ -1672,8 +750,8 @@ class AffilabsMainWindow(QMainWindow):
         cycle_card.setStyleSheet(f"""
             QFrame {{
                 background: {Colors.BACKGROUND_WHITE};
-                border: 1px solid {Colors.OVERLAY_LIGHT_10};
-                border-radius: {Dimensions.BORDER_RADIUS_LG};
+
+
             }}
         """)
         cycle_layout = QVBoxLayout(cycle_card)
@@ -1696,8 +774,8 @@ class AffilabsMainWindow(QMainWindow):
         cycle_skeleton.setStyleSheet(f"""
             QFrame {{
                 background: {Colors.BACKGROUND_LIGHT};
-                border: 1px dashed {Colors.OVERLAY_LIGHT_20};
-                border-radius: 8px;
+
+
             }}
         """)
         cycle_skeleton_layout = QVBoxLayout(cycle_skeleton)
@@ -1724,7 +802,7 @@ class AffilabsMainWindow(QMainWindow):
             return  # Already loaded
 
         try:
-            logger.info("📊 Loading sensorgram graphs...")
+            logger.info("ðŸ“Š Loading sensorgram graphs...")
 
             # Create real sensorgram content
             sensorgram_widget = self._create_sensorgram_content()
@@ -1738,10 +816,10 @@ class AffilabsMainWindow(QMainWindow):
             self.navigation_presenter.switch_page(0)
 
             self._deferred_ui_loaded = True
-            logger.info("✓ Sensorgram graphs loaded successfully")
+            logger.info("âœ“ Sensorgram graphs loaded successfully")
 
         except Exception as e:
-            logger.error(f"❌ Failed to load deferred graphs: {e}", exc_info=True)
+            logger.error(f"âŒ Failed to load deferred graphs: {e}", exc_info=True)
             # Update placeholder with error message
             if hasattr(self, "_loading_label"):
                 self._loading_label.setText(f"Error loading graphs: {e}")
@@ -1806,6 +884,16 @@ class AffilabsMainWindow(QMainWindow):
 
             first_row_layout.addWidget(ch_btn)
 
+        # User Timer button - ONLY for manual user-set timers (NOT cycle countdowns)
+        from affilabs.widgets.timer_button import TimerButton
+        self.timer_button = TimerButton(parent=self)
+        self.timer_button.setFixedSize(70, 32)  # Wider to fit timer display (MM:SS)
+        self.timer_button.set_compact_mode(True)  # Icon-only mode
+        self.timer_button.clicked.connect(self._on_timer_button_clicked)
+        self.timer_button.clear_requested.connect(self._on_clear_manual_timer)
+        self.timer_button.restart_requested.connect(self._on_restart_manual_timer)
+        first_row_layout.addWidget(self.timer_button)
+
         first_row_layout.addStretch()
 
         # Live Data checkbox
@@ -1813,9 +901,9 @@ class AffilabsMainWindow(QMainWindow):
         self.live_data_checkbox.setChecked(True)
         self.live_data_checkbox.setToolTip(
             "Enable/disable live cursor auto-follow\n"
-            "• Checked: Stop cursor follows latest data point\n"
-            "• Unchecked: Stop cursor freezes, data keeps recording\n"
-            "• Cycle of Interest graph always updates between cursors",
+            "â€¢ Checked: Stop cursor follows latest data point\n"
+            "â€¢ Unchecked: Stop cursor freezes, data keeps recording\n"
+            "â€¢ Cycle of Interest graph always updates between cursors",
         )
         self.live_data_checkbox.setStyleSheet(UIStyleManager.get_live_checkbox_style())
         self.live_data_checkbox.toggled.connect(
@@ -1831,9 +919,9 @@ class AffilabsMainWindow(QMainWindow):
         self.clear_graph_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_STD)
         self.clear_graph_btn.setToolTip(
             "Clear all timeline data and reset graphs\n"
-            "• Clears all channel data (A, B, C, D)\n"
-            "• Resets baseline wavelengths\n"
-            "• Does not stop acquisition",
+            "â€¢ Clears all channel data (A, B, C, D)\n"
+            "â€¢ Resets baseline wavelengths\n"
+            "â€¢ Does not stop acquisition",
         )
         self.clear_graph_btn.setStyleSheet(
             UIStyleManager.get_clear_button_style("neutral"),
@@ -1876,8 +964,8 @@ class AffilabsMainWindow(QMainWindow):
         panel.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "  padding: 6px;"
             "}",
         )
@@ -1916,8 +1004,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: #F8F9FA;"
                 "  color: {Colors.PRIMARY_TEXT};"
-                "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  font-size: 11px;"
                 "  font-weight: 500;"
                 "  font-family: {Fonts.SYSTEM};"
@@ -1949,8 +1037,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: #007AFF;"
             "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
+            "  "
+            "  "
             "  font-size: 11px;"
             "  font-weight: 600;"
             "  font-family: {Fonts.SYSTEM};"
@@ -2265,6 +1353,10 @@ class AffilabsMainWindow(QMainWindow):
             # Update flag counter
             self._update_flag_counter()
 
+            # Refresh the Active Cycle display to show updated timing (removes alignment line)
+            if hasattr(self.app, '_refresh_active_cycle_display'):
+                self.app._refresh_active_cycle_display()
+
         except Exception as e:
             logger.error(f"❌ Error clearing flags/markers: {e}")
             print(f"❌ Error clearing flags/markers: {e}")
@@ -2275,13 +1367,13 @@ class AffilabsMainWindow(QMainWindow):
             logger.info("🔄 Reset Timing button clicked")
 
             if not hasattr(self, "app") or not self.app:
-                logger.warning("❌ App reference not found")
+                logger.warning("âŒ App reference not found")
                 return
 
             # Clear channel time shifts
             if hasattr(self.app, '_channel_time_shifts'):
                 self.app._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
-                logger.info("✅ Reset all channel time shifts to 0.0")
+                logger.info("âœ… Reset all channel time shifts to 0.0")
 
             # Clear injection reference if it exists in flag manager
             if hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
@@ -2297,18 +1389,18 @@ class AffilabsMainWindow(QMainWindow):
                             pass
                     self.app.flag_mgr._injection_alignment_line = None
 
-                logger.info("✅ Cleared injection alignment reference")
+                logger.info("âœ… Cleared injection alignment reference")
 
             # Refresh the Active Cycle display to show updated timing
             if hasattr(self.app, '_refresh_active_cycle_display'):
                 self.app._refresh_active_cycle_display()
 
-            print("✅ Channel timing reset to default")
-            logger.info("✅ Channel timing reset complete")
+            print("âœ… Channel timing reset to default")
+            logger.info("âœ… Channel timing reset complete")
 
         except Exception as e:
-            logger.error(f"❌ Error resetting channel timing: {e}")
-            print(f"❌ Error resetting timing: {e}")
+            logger.error(f"âŒ Error resetting channel timing: {e}")
+            print(f"âŒ Error resetting timing: {e}")
 
     def _update_flag_counter(self):
         """Update the flag counter label with current number of flags."""
@@ -2378,6 +1470,10 @@ class AffilabsMainWindow(QMainWindow):
                 width = 4 if selected_channel == i else 2
                 curve.setPen(pg.mkPen(color=channel_colors_rgb[i], width=width))
 
+        # Update Edits tab bar chart colors
+        if hasattr(self, 'edits_tab') and hasattr(self.edits_tab, 'update_barchart_colors'):
+            self.edits_tab.update_barchart_colors(enabled)
+
     def _create_graph_container(
         self,
         title: str,
@@ -2392,8 +1488,8 @@ class AffilabsMainWindow(QMainWindow):
         container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         # Add shadow
@@ -2425,13 +1521,13 @@ class AffilabsMainWindow(QMainWindow):
         delta_display = None
         if show_delta_spr:
             delta_display = QLabel(
-                "Δ SPR: Ch A: 0.0 RU  |  Ch B: 0.0 RU  |  Ch C: 0.0 RU  |  Ch D: 0.0 RU",
+                "Î” SPR: Ch A: 0.0 RU  |  Ch B: 0.0 RU  |  Ch C: 0.0 RU  |  Ch D: 0.0 RU",
             )
             delta_display.setStyleSheet(
                 "QLabel {"
                 "  background: rgba(0, 0, 0, 0.08);"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  padding: 8px 14px;"
                 "  font-size: 12px;"
                 "  color: {Colors.PRIMARY_TEXT};"
@@ -2451,14 +1547,14 @@ class AffilabsMainWindow(QMainWindow):
             flag_row = QHBoxLayout()
             flag_row.setSpacing(8)
 
-            # Flagging channel selection label
+            # Flagging channel selection label with improved styling
             flag_label = QLabel("Flag Controls:")
             flag_label.setStyleSheet(
                 "QLabel {"
-                "  font-size: 12px;"
-                "  font-weight: 600;"
+                "  font-size: 13px;"
+                "  font-weight: 700;"
                 "  color: #1D1D1F;"
-                "  padding-right: 4px;"
+                "  padding-right: 6px;"
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
             )
@@ -2476,25 +1572,28 @@ class AffilabsMainWindow(QMainWindow):
                 "Select Channel D for flagging",
             ]
 
-            # Monochrome style for flag selection buttons (different from display toggles)
+            # Improved monochrome style for flag selection buttons
             flag_button_style = (
                 "QPushButton {"
-                "  background: #D1D1D6;"
-                "  color: #1D1D1F;"
-                "  border: none;"
-                "  border-radius: 4px;"
-                "  font-size: 11px;"
+                "  background: #007AFF;"
+                "  color: #FFFFFF;"
+                "  "
+                "  "
+                "  font-size: 12px;"
                 "  font-weight: 700;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 "}"
                 "QPushButton:!checked {"
                 "  background: rgba(0, 0, 0, 0.05);"
                 "  color: #86868B;"
-                "  border: 1px solid rgba(0, 0, 0, 0.08);"
+                "  "
                 "}"
                 "QPushButton:hover:!checked {"
                 "  background: rgba(0, 0, 0, 0.08);"
-                "  border: 1px solid rgba(0, 0, 0, 0.12);"
+                "  "
+                "}"
+                "QPushButton:hover:checked {"
+                "  background: #0051D5;"
                 "}"
             )
 
@@ -2503,14 +1602,14 @@ class AffilabsMainWindow(QMainWindow):
                 ch_btn = QPushButton(ch)
                 ch_btn.setCheckable(True)
                 ch_btn.setChecked(ch == "A")  # Channel A selected by default
-                ch_btn.setFixedSize(36, 32)
+                ch_btn.setFixedSize(40, 34)  # Slightly larger for better touch target
                 ch_btn.setToolTip(tooltip)
                 ch_btn.setStyleSheet(flag_button_style)
                 ch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
                 # Store reference and connect to channel selection for flagging
                 self.channel_selection_buttons[ch] = ch_btn
-                channel_letter_lower = ch.lower()  # 'A'→'a', 'B'→'b', etc.
+                channel_letter_lower = ch.lower()  # 'A'â†’'a', 'B'â†’'b', etc.
                 ch_btn.clicked.connect(
                     lambda _, channel=channel_letter_lower: self._on_flag_channel_selected(channel)
                 )
@@ -2520,13 +1619,16 @@ class AffilabsMainWindow(QMainWindow):
             # Spacing between channel buttons and controls
             flag_row.addSpacing(12)
 
-            # Flag counter display
+            # Flag counter display with improved styling
             self.flag_counter_label = QLabel("Flags: 0")
             self.flag_counter_label.setStyleSheet(
                 "QLabel { "
-                "  font-size: 11px; "
-                "  color: #86868B; "
-                "  padding: 4px 8px; "
+                "  font-size: 12px; "
+                "  font-weight: 600; "
+                "  color: #1D1D1F; "
+                "  padding: 5px 10px; "
+                "  background: rgba(0, 0, 0, 0.03); "
+                "   "
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; "
                 "}"
             )
@@ -2536,34 +1638,37 @@ class AffilabsMainWindow(QMainWindow):
             # Spacing before action buttons
             flag_row.addSpacing(8)
 
-            # Clear Flags button
-            self.clear_flags_btn = QPushButton("C")
-            self.clear_flags_btn.setFixedHeight(32)
-            self.clear_flags_btn.setFixedWidth(32)
+            # Clear Flags button with improved styling
+            self.clear_flags_btn = QPushButton("✕")
+            self.clear_flags_btn.setFixedHeight(34)
+            self.clear_flags_btn.setFixedWidth(34)
             self.clear_flags_btn.setToolTip(
                 "Clear All Flags\n"
                 "Remove all flags from Live Sensorgram\n"
                 "• Clears all flag markers\n"
-                "• Does not affect recorded data",
+                "• Removes injection alignment line\n"
+                "• Resets channel timing to default\n"
+                "• Does not affect recorded data"
             )
             self.clear_flags_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: rgba(0, 0, 0, 0.06);"
-                "  color: #8E8E93;"
-                "  border: 1px solid rgba(0, 0, 0, 0.08);"
-                "  border-radius: 4px;"
-                "  font-size: 11px;"
-                "  font-weight: 500;"
+                "  background: rgba(255, 59, 48, 0.1);"
+                "  color: #FF3B30;"
+                "  "
+                "  "
+                "  font-size: 14px;"
+                "  font-weight: 700;"
                 "  padding: 0px 12px;"
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
                 "QPushButton:hover {"
-                "  background: rgba(255, 59, 48, 0.15);"
+                "  background: rgba(255, 59, 48, 0.18);"
                 "  color: #FF3B30;"
-                "  border: 1px solid rgba(255, 59, 48, 0.2);"
+                "  "
                 "}"
                 "QPushButton:pressed {"
-                "  background: rgba(255, 59, 48, 0.25);"
+                "  background: rgba(255, 59, 48, 0.3);"
+                "  "
                 "}"
             )
             self.clear_flags_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -2577,15 +1682,15 @@ class AffilabsMainWindow(QMainWindow):
             self.reset_timing_btn.setToolTip(
                 "Reset Timing\n"
                 "Reset all channel time shifts to default\n"
-                "• Removes injection alignment offsets\n"
-                "• Restores original timing"
+                "â€¢ Removes injection alignment offsets\n"
+                "â€¢ Restores original timing"
             )
             self.reset_timing_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: #8E8E93;"
-                "  border: 1px solid rgba(0, 0, 0, 0.08);"
-                "  border-radius: 4px;"
+                "  "
+                "  "
                 "  font-size: 11px;"
                 "  font-weight: 500;"
                 "  padding: 0px 12px;"
@@ -2594,7 +1699,7 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton:hover {"
                 "  background: rgba(255, 149, 0, 0.15);"
                 "  color: #FF9500;"
-                "  border: 1px solid rgba(255, 149, 0, 0.2);"
+                "  "
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(255, 149, 0, 0.25);"
@@ -2609,7 +1714,7 @@ class AffilabsMainWindow(QMainWindow):
             layout.addLayout(flag_row)
 
         # Create standardized time-series plot
-        left_label = "Δ SPR (RU)" if show_delta_spr else "λ (nm)"
+        left_label = "Î” SPR (RU)" if show_delta_spr else "Î» (nm)"
         plot_widget = create_time_plot(left_label)
 
         # Create plot curves for 4 channels with distinct colors
@@ -2621,22 +1726,23 @@ class AffilabsMainWindow(QMainWindow):
         start_cursor = None
         stop_cursor = None
 
-        # Enable curve clicking for channel selection (ONLY on Active Cycle graph)
-        if show_delta_spr:  # Active Cycle (bottom graph)
-            for i, curve in enumerate(curves):
-                try:
-                    # Make curve clickable with larger tolerance (18px)
-                    curve.setCurveClickable(True, width=18)
-                    # Connect to channel selection for flagging
-                    channel_letter = chr(ord('a') + i)  # 0→'a', 1→'b', 2→'c', 3→'d'
-                    curve.sigClicked.connect(
-                        lambda *args, ch=channel_letter: self._on_flag_channel_selected(ch)
-                    )
-                    logger.debug(f"[ACTIVE CYCLE] Connected click handler for channel {channel_letter.upper()}")
-                except AttributeError as e:
-                    logger.warning(f"[ACTIVE CYCLE] Could not make curve {i} clickable: {e}")
-                except Exception as e:
-                    logger.warning(f"[ACTIVE CYCLE] Error connecting curve {i} click: {e}")
+        # Curve clicking for channel selection DISABLED
+        # Users can select channels from the sidebar instead
+        # if show_delta_spr:  # Active Cycle (bottom graph)
+        #     for i, curve in enumerate(curves):
+        #         try:
+        #             # Make curve clickable with larger tolerance (18px)
+        #             curve.setCurveClickable(True, width=18)
+        #             # Connect to channel selection for flagging
+        #             channel_letter = chr(ord('a') + i)  # 0â†’'a', 1â†’'b', 2â†’'c', 3â†’'d'
+        #             curve.sigClicked.connect(
+        #                 lambda *args, ch=channel_letter: self._on_flag_channel_selected(ch)
+        #             )
+        #             logger.debug(f"[ACTIVE CYCLE] Connected click handler for channel {channel_letter.upper()}")
+        #         except AttributeError as e:
+        #             logger.warning(f"[ACTIVE CYCLE] Could not make curve {i} clickable: {e}")
+        #         except Exception as e:
+        #             logger.warning(f"[ACTIVE CYCLE] Error connecting curve {i} click: {e}")
 
         if not show_delta_spr:  # Only for Live Sensorgram (top graph)
             # Start cursor - thicker line (3px) for easier interaction
@@ -2654,6 +1760,8 @@ class AffilabsMainWindow(QMainWindow):
                     "rotateAxis": (1, 0),  # Rotate 180 degrees total (horizontal)
                 },
             )
+            # Hide label by default (show only on 3s hover)
+            start_cursor.label.setVisible(False)
             # Thicker hover effect (5px) for clear visual feedback
             start_cursor.setHoverPen(pg.mkPen(color="#666666", width=5))
             plot_widget.addItem(start_cursor)
@@ -2673,9 +1781,38 @@ class AffilabsMainWindow(QMainWindow):
                     "rotateAxis": (1, 0),  # Rotate 180 degrees total (horizontal)
                 },
             )
+            # Hide label by default (show only on 3s hover)
+            stop_cursor.label.setVisible(False)
             # Thicker hover effect (5px) for clear visual feedback
             stop_cursor.setHoverPen(pg.mkPen(color="#666666", width=5))
             plot_widget.addItem(stop_cursor)
+
+            # Setup hover timers for delayed label display (3 seconds)
+            from PySide6.QtCore import QTimer
+            start_cursor._hover_timer = QTimer()
+            start_cursor._hover_timer.setSingleShot(True)
+            start_cursor._hover_timer.timeout.connect(lambda: start_cursor.label.setVisible(True))
+
+            stop_cursor._hover_timer = QTimer()
+            stop_cursor._hover_timer.setSingleShot(True)
+            stop_cursor._hover_timer.timeout.connect(lambda: stop_cursor.label.setVisible(True))
+
+            # Override hoverEvent to handle label visibility
+            def make_hover_handler(cursor):
+                original_hover = cursor.hoverEvent
+                def hover_event(ev):
+                    original_hover(ev)
+                    if ev.isExit():
+                        # Mouse left - cancel timer and hide label
+                        cursor._hover_timer.stop()
+                        cursor.label.setVisible(False)
+                    else:
+                        # Mouse entered - start 3 second timer
+                        cursor._hover_timer.start(3000)
+                return hover_event
+
+            start_cursor.hoverEvent = make_hover_handler(start_cursor)
+            stop_cursor.hoverEvent = make_hover_handler(stop_cursor)
 
         # Store references to curves and cursors on the plot widget
         plot_widget.curves = curves
@@ -2709,7 +1846,7 @@ class AffilabsMainWindow(QMainWindow):
     def _on_flag_channel_selected(self, channel: str):
         """Handle channel selection for flag placement in Active Cycle graph.
 
-        Clicking a curve in Active Cycle graph:
+        Selecting a channel from the sidebar:
         - Selects the channel for flagging
         - Highlights the curve
         - Enables flagging mode
@@ -2721,7 +1858,7 @@ class AffilabsMainWindow(QMainWindow):
             return
 
         # Store selected channel for flagging operations
-        channel_idx = ord(channel) - ord('a')  # 'a'→0, 'b'→1, 'c'→2, 'd'→3
+        channel_idx = ord(channel) - ord('a')  # 'a'â†’0, 'b'â†’1, 'c'â†’2, 'd'â†’3
         channel_letter = channel.upper()
 
         self.selected_channel_for_flagging = channel_idx
@@ -2798,7 +1935,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Check if a channel is selected for flagging
         if not hasattr(self, "selected_channel_for_flagging"):
-            print("Please select a channel first by clicking on its curve")
+            print("Please select a channel first from the sidebar")
             return
 
         # Get click position in data coordinates
@@ -2854,7 +1991,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Add text label at the top
         flag_text = pg.TextItem(
-            text=f"🚩 Ch{channel_letter}",
+            text=f"ðŸš© Ch{channel_letter}",
             color=color,
             anchor=(0.5, 1),  # Center, bottom
         )
@@ -2957,7 +2094,7 @@ class AffilabsMainWindow(QMainWindow):
         # Truncate event name if too long
         display_text = event_name if len(event_name) <= 30 else event_name[:27] + "..."
         event_text = pg.TextItem(
-            text=f"📍 {display_text}",
+            text=f"ðŸ“ {display_text}",
             color=color,
             anchor=(0.5, 1),  # Center, bottom - anchor at bottom so text hangs from top of graph
         )
@@ -3032,7 +2169,7 @@ class AffilabsMainWindow(QMainWindow):
             if start_pos > stop_pos:
                 start_pos, stop_pos = stop_pos, start_pos
 
-            # Update label text dynamically
+            # Update label text dynamically (labels only visible on hover)
             start_cursor.label.setFormat(f"Start: {start_pos:.1f}s")
             stop_cursor.label.setFormat(f"Stop: {stop_pos:.1f}s")
 
@@ -3070,7 +2207,7 @@ class AffilabsMainWindow(QMainWindow):
 
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {  background: #F8F9FA;  border: none;}",
+            "QFrame {  background: #F8F9FA;  }",
         )
 
         content_layout = QVBoxLayout(content_widget)
@@ -3078,7 +2215,7 @@ class AffilabsMainWindow(QMainWindow):
         content_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Empty state message
-        empty_icon = QLabel("📑")
+        empty_icon = QLabel("ðŸ“‘")
         empty_icon.setStyleSheet(
             "QLabel {  font-size: 64px;  background: {Colors.TRANSPARENT};}",
         )
@@ -3148,7 +2285,7 @@ class AffilabsMainWindow(QMainWindow):
             self,
             "Load Excel File",
             "",
-            "Excel Files (*.xlsx);;All Files (*)"
+            "Excel Files (*.xlsx);All Files (*)"
         )
 
         if not file_path:
@@ -3160,27 +2297,92 @@ class AffilabsMainWindow(QMainWindow):
             # Read all sheets
             excel_data = pd.read_excel(file_path, sheet_name=None, engine='openpyxl')
 
-            # Load raw data from channel sheets (Channel_A, Channel_B, etc.)
-            raw_data_rows = []
-            for sheet_name in ['Channel_A', 'Channel_B', 'Channel_C', 'Channel_D']:
-                if sheet_name in excel_data:
-                    df = excel_data[sheet_name]
-                    channel = sheet_name.split('_')[1].lower()  # 'a', 'b', 'c', or 'd'
+            # Load metadata from Metadata sheet
+            loaded_metadata = {}
+            if 'Metadata' in excel_data:
+                df_meta = excel_data['Metadata']
+                if 'key' in df_meta.columns and 'value' in df_meta.columns:
+                    for _, row in df_meta.iterrows():
+                        if pd.notna(row['key']) and pd.notna(row['value']):
+                            loaded_metadata[str(row['key'])] = str(row['value'])
+                    logger.info(f"âœ“ Loaded {len(loaded_metadata)} metadata items from Metadata sheet")
+                else:
+                    logger.warning(f"Metadata sheet missing 'key' or 'value' column. Found: {list(df_meta.columns)}")
 
-                    # Convert DataFrame rows to raw data format
-                    for idx, row in df.iterrows():
-                        if 'Elapsed Time (s)' in row and 'Wavelength (nm)' in row:
-                            raw_data_rows.append({
-                                'time': row['Elapsed Time (s)'],
-                                'channel': channel,
-                                'value': row['Wavelength (nm)']
-                            })
+            # Store loaded metadata for Edits tab
+            self._loaded_metadata = loaded_metadata
+
+            # Load raw data - try multiple formats in order of preference
+            raw_data_rows = []
+
+            # FORMAT 1: "Raw Data" sheet (current export format - simplest)
+            if 'Raw Data' in excel_data:
+                df_raw = excel_data['Raw Data']
+                logger.info(f"Loading from 'Raw Data' sheet with columns: {list(df_raw.columns)}")
+
+                for idx, row in df_raw.iterrows():
+                    if 'time' in row and 'channel' in row and 'value' in row:
+                        raw_data_rows.append({
+                            'time': float(row['time']),
+                            'channel': str(row['channel']).lower(),
+                            'value': float(row['value'])
+                        })
+                logger.info(f"âœ“ Loaded {len(raw_data_rows)} data points from 'Raw Data' sheet")
+
+            # FORMAT 2: "Channel Data" sheet (current export format - side-by-side columns)
+            elif 'Channel Data' in excel_data:
+                df_channel = excel_data['Channel Data']
+                logger.info(f"Loading from 'Channel Data' sheet with columns: {list(df_channel.columns)}")
+
+                # Parse columns like "Time A (s)", "Channel A (nm)", "Time B (s)", "Channel B (nm)", etc.
+                for ch in ['A', 'B', 'C', 'D']:
+                    time_col = f"Time {ch} (s)"
+                    value_col = f"Channel {ch} (nm)"
+
+                    if time_col in df_channel.columns and value_col in df_channel.columns:
+                        for idx, row in df_channel.iterrows():
+                            if pd.notna(row[time_col]) and pd.notna(row[value_col]):
+                                raw_data_rows.append({
+                                    'time': float(row[time_col]),
+                                    'channel': ch.lower(),
+                                    'value': float(row[value_col])
+                                })
+                logger.info(f"âœ“ Loaded {len(raw_data_rows)} data points from 'Channel Data' sheet")
+
+            # FORMAT 3: Old format - separate "Channel_A", "Channel_B" sheets (legacy)
+            else:
+                for sheet_name in ['Channel_A', 'Channel_B', 'Channel_C', 'Channel_D']:
+                    if sheet_name in excel_data:
+                        df = excel_data[sheet_name]
+                        channel = sheet_name.split('_')[1].lower()  # 'a', 'b', 'c', or 'd'
+
+                        # Convert DataFrame rows to raw data format
+                        for idx, row in df.iterrows():
+                            if 'Elapsed Time (s)' in row and 'Wavelength (nm)' in row:
+                                raw_data_rows.append({
+                                    'time': row['Elapsed Time (s)'],
+                                    'channel': channel,
+                                    'value': row['Wavelength (nm)']
+                                })
+                logger.info(f"âœ“ Loaded {len(raw_data_rows)} data points from legacy Channel_X sheets")
 
             # Load cycles table and parse time ranges
             cycles_data = []
             if 'Cycles' in excel_data:
                 df_cycles = excel_data['Cycles']
                 logger.info(f"Cycles sheet columns: {list(df_cycles.columns)}")
+
+                # Check for duplicates and deduplicate if needed
+                if 'cycle_id' in df_cycles.columns:
+                    original_count = len(df_cycles)
+                    df_cycles = df_cycles.drop_duplicates(subset=['cycle_id'], keep='first')
+                    if len(df_cycles) < original_count:
+                        logger.warning(f"Removed {original_count - len(df_cycles)} duplicate cycle rows based on cycle_id")
+                elif 'cycle_num' in df_cycles.columns:
+                    original_count = len(df_cycles)
+                    df_cycles = df_cycles.drop_duplicates(subset=['cycle_num'], keep='first')
+                    if len(df_cycles) < original_count:
+                        logger.warning(f"Removed {original_count - len(df_cycles)} duplicate cycle rows based on cycle_num")
 
                 for idx, row in df_cycles.iterrows():
                     # Debug: log first row to see what we're getting
@@ -3257,6 +2459,11 @@ class AffilabsMainWindow(QMainWindow):
                 self.app.recording_mgr.data_collector.raw_data_rows = raw_data_rows
                 self.app.recording_mgr.data_collector.cycles = cycles_data
 
+                # Restore loaded metadata
+                if loaded_metadata:
+                    self.app.recording_mgr.data_collector.metadata = loaded_metadata
+                    logger.info(f"Restored {len(loaded_metadata)} metadata items to data collector")
+
                 logger.info(f"Loaded {len(raw_data_rows)} raw data points and {len(cycles_data)} cycles")
                 logger.info(f"Data collector now has {len(self.app.recording_mgr.data_collector.raw_data_rows)} raw data rows")
             else:
@@ -3267,6 +2474,8 @@ class AffilabsMainWindow(QMainWindow):
 
             # Update the edits tab with loaded cycles
             if hasattr(self, 'edits_tab'):
+                # Pass loaded metadata to edits tab
+                self.edits_tab._loaded_metadata = loaded_metadata
                 self.edits_tab._populate_cycles_table(cycles_data)
 
                 # Set timeline cursors to show all data (if they exist)
@@ -3307,7 +2516,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create right panel with primary graph and thumbnail selectors."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  }",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3319,8 +2528,8 @@ class AffilabsMainWindow(QMainWindow):
         primary_graph.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         primary_graph.setGraphicsEffect(create_card_shadow())
@@ -3359,8 +2568,8 @@ class AffilabsMainWindow(QMainWindow):
                 f"QPushButton {{"
                 f"  background: {color};"
                 "  color: white;"
-                "  border: none;"
-                "  border-radius: 4px;"
+                "  "
+                "  "
                 "  font-size: 11px;"
                 "  font-weight: 600;"
                 "  font-family: {Fonts.SYSTEM};"
@@ -3451,8 +2660,8 @@ class AffilabsMainWindow(QMainWindow):
         references_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         references_container.setGraphicsEffect(create_card_shadow())
@@ -3482,8 +2691,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  border: none;"
-            "  border-radius: 4px;"
+            "  "
+            "  "
             "  font-size: 11px;"
             "  font-weight: 500;"
             "  padding: 0px 8px;"
@@ -3512,8 +2721,8 @@ class AffilabsMainWindow(QMainWindow):
             ref_frame.setStyleSheet(
                 "QFrame {"
                 "  background: rgba(0, 0, 0, 0.02);"
-                "  border: 1px dashed rgba(0, 0, 0, 0.15);"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "}",
             )
             ref_frame.setAcceptDrops(True)
@@ -3577,7 +2786,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create the Analyze tab content with processed data graph, statistics, and kinetic analysis."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {  background: #F8F9FA;  border: none;}",
+            "QFrame {  background: #F8F9FA;  }",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -3598,7 +2807,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create left panel with processed data and statistics graphs."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  }",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3610,8 +2819,8 @@ class AffilabsMainWindow(QMainWindow):
         main_graph.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         main_graph.setGraphicsEffect(create_card_shadow())
@@ -3647,8 +2856,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: {Colors.SECONDARY_TEXT};"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  font-size: 12px;"
                 "  font-weight: 500;"
                 "  font-family: {Fonts.SYSTEM};"
@@ -3671,8 +2880,8 @@ class AffilabsMainWindow(QMainWindow):
         graph_canvas.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: 1px solid rgba(0, 0, 0, 0.08);"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "}",
         )
         canvas_layout = QVBoxLayout(graph_canvas)
@@ -3700,8 +2909,8 @@ class AffilabsMainWindow(QMainWindow):
         stats_graph.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         stats_graph.setGraphicsEffect(create_card_shadow())
@@ -3725,14 +2934,14 @@ class AffilabsMainWindow(QMainWindow):
         stats_header.addWidget(stats_title)
         stats_header.addStretch()
 
-        # R² display
-        r_squared = QLabel("R² = 0.9987")
+        # RÂ² display
+        r_squared = QLabel("RÂ² = 0.9987")
         r_squared.setStyleSheet(
             "QLabel {"
             "  background: rgba(52, 199, 89, 0.1);"
             "  color: #34C759;"
-            "  border: none;"
-            "  border-radius: 6px;"
+            "  "
+            "  "
             "  padding: 6px 12px;"
             "  font-size: 12px;"
             "  font-weight: 600;"
@@ -3748,15 +2957,15 @@ class AffilabsMainWindow(QMainWindow):
         stats_canvas.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: 1px solid rgba(0, 0, 0, 0.08);"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "}",
         )
         stats_canvas_layout = QVBoxLayout(stats_canvas)
         stats_placeholder = QLabel(
             "[Residuals / Chi-Square Plot]\n\n"
             "Statistical analysis visualization\n"
-            "Chi² = 1.23e-4, RMSE = 0.012",
+            "ChiÂ² = 1.23e-4, RMSE = 0.012",
         )
         stats_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stats_placeholder.setStyleSheet(
@@ -3778,7 +2987,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create right panel with model selection, data table, and export options."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  }",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -3790,8 +2999,8 @@ class AffilabsMainWindow(QMainWindow):
         model_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         model_container.setGraphicsEffect(create_card_shadow())
@@ -3832,8 +3041,8 @@ class AffilabsMainWindow(QMainWindow):
             "QComboBox {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  border: none;"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "  padding: 8px 12px;"
             "  font-size: 13px;"
             "  font-weight: 500;"
@@ -3843,12 +3052,12 @@ class AffilabsMainWindow(QMainWindow):
             "  background: rgba(0, 0, 0, 0.08);"
             "}"
             "QComboBox::drop-down {"
-            "  border: none;"
+            "  "
             "  width: 20px;"
             "}"
             "QComboBox::down-arrow {"
             "  image: none;"
-            "  border: none;"
+            "  "
             "}",
         )
         model_layout.addWidget(model_dropdown)
@@ -3860,8 +3069,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: #1D1D1F;"
             "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "  font-size: 13px;"
             "  font-weight: 600;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3913,8 +3122,8 @@ class AffilabsMainWindow(QMainWindow):
         data_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         data_container.setGraphicsEffect(create_card_shadow())
@@ -3945,8 +3154,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: rgba(0, 0, 0, 0.06);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  border: none;"
-            "  border-radius: 6px;"
+            "  "
+            "  "
             "  font-size: 12px;"
             "  font-weight: 500;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3975,8 +3184,8 @@ class AffilabsMainWindow(QMainWindow):
         data_table.setStyleSheet(
             "QTableWidget {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: 1px solid rgba(0, 0, 0, 0.08);"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "  gridline-color: rgba(0, 0, 0, 0.06);"
             "  font-size: 12px;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3989,7 +3198,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: rgba(0, 0, 0, 0.03);"
             "  color: {Colors.SECONDARY_TEXT};"
             "  padding: 8px;"
-            "  border: none;"
+            "  "
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 600;"
             "  font-size: 11px;"
@@ -4000,10 +3209,10 @@ class AffilabsMainWindow(QMainWindow):
         from PySide6.QtWidgets import QTableWidgetItem
 
         results = [
-            ("ka (M⁻¹s⁻¹)", "1.23e5 ± 0.04e5"),
-            ("kd (s⁻¹)", "3.45e-4 ± 0.12e-4"),
-            ("KD (M)", "2.80e-9 ± 0.15e-9"),
-            ("Δ SPR (nm)", "0.45 ± 0.02"),
+            ("ka (Mâ»Â¹sâ»Â¹)", "1.23e5 Â± 0.04e5"),
+            ("kd (sâ»Â¹)", "3.45e-4 Â± 0.12e-4"),
+            ("KD (M)", "2.80e-9 Â± 0.15e-9"),
+            ("Î” SPR (nm)", "0.45 Â± 0.02"),
         ]
 
         for row, (param, value) in enumerate(results):
@@ -4019,8 +3228,8 @@ class AffilabsMainWindow(QMainWindow):
         export_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         export_container.setGraphicsEffect(create_card_shadow())
@@ -4051,8 +3260,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  border: none;"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  font-family: {Fonts.SYSTEM};"
@@ -4077,8 +3286,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: rgba(0, 122, 255, 0.1);"
             "  color: #007AFF;"
-            "  border: none;"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  font-family: {Fonts.SYSTEM};"
@@ -4103,7 +3312,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create the Report tab content for generating PDF reports with graphs, tables, and notes."""
         content_widget = QFrame()
         content_widget.setStyleSheet(
-            "QFrame {  background: #F8F9FA;  border: none;}",
+            "QFrame {  background: #F8F9FA;  }",
         )
 
         content_layout = QHBoxLayout(content_widget)
@@ -4124,7 +3333,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create left panel with report preview canvas."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  }",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -4155,8 +3364,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: #FF3B30;"
             "  color: white;"
-            "  border: none;"
-            "  border-radius: 10px;"
+            "  "
+            "  "
             "  font-size: 13px;"
             "  font-weight: 600;"
             "  padding: 0px 20px;"
@@ -4178,8 +3387,8 @@ class AffilabsMainWindow(QMainWindow):
         canvas.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         shadow = QGraphicsDropShadowEffect()
@@ -4196,7 +3405,7 @@ class AffilabsMainWindow(QMainWindow):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet(
-            "QScrollArea {  border: none;  background: {Colors.TRANSPARENT};}",
+            "QScrollArea {    background: {Colors.TRANSPARENT};}",
         )
 
         scroll_content = QWidget()
@@ -4239,8 +3448,8 @@ class AffilabsMainWindow(QMainWindow):
         graph_placeholder.setStyleSheet(
             "QFrame {"
             "  background: rgba(0, 122, 255, 0.05);"
-            "  border: 2px dashed rgba(0, 0, 0, 0.1);"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "}",
         )
         graph_label = QLabel("[Graph Element]\n\nClick to insert graph")
@@ -4250,7 +3459,7 @@ class AffilabsMainWindow(QMainWindow):
             "  font-size: 13px;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
-            "  border: none;"
+            "  "
             "  font-family: {Fonts.SYSTEM};"
             "}",
         )
@@ -4280,8 +3489,8 @@ class AffilabsMainWindow(QMainWindow):
         notes_edit.setStyleSheet(
             "QTextEdit {"
             "  background: rgba(0, 0, 0, 0.03);"
-            "  border: 1px solid rgba(0, 0, 0, 0.08);"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "  padding: 12px;"
             "  font-size: 13px;"
             "  color: {Colors.PRIMARY_TEXT};"
@@ -4296,8 +3505,8 @@ class AffilabsMainWindow(QMainWindow):
         table_placeholder.setStyleSheet(
             "QFrame {"
             "  background: rgba(52, 199, 89, 0.05);"
-            "  border: 2px dashed rgba(52, 199, 89, 0.3);"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "}",
         )
         table_label = QLabel("[Table Element]\n\nClick to insert data table")
@@ -4307,7 +3516,7 @@ class AffilabsMainWindow(QMainWindow):
             "  font-size: 13px;"
             "  color: #34C759;"
             "  background: {Colors.TRANSPARENT};"
-            "  border: none;"
+            "  "
             "  font-family: {Fonts.SYSTEM};"
             "}",
         )
@@ -4328,7 +3537,7 @@ class AffilabsMainWindow(QMainWindow):
         """Create right panel with report tools and content library."""
         panel = QFrame()
         panel.setStyleSheet(
-            "QFrame {  background: {Colors.TRANSPARENT};  border: none;}",
+            "QFrame {  background: {Colors.TRANSPARENT};  }",
         )
 
         panel_layout = QVBoxLayout(panel)
@@ -4340,8 +3549,8 @@ class AffilabsMainWindow(QMainWindow):
         elements_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         elements_container.setGraphicsEffect(create_card_shadow())
@@ -4364,11 +3573,11 @@ class AffilabsMainWindow(QMainWindow):
 
         # Element buttons
         element_btns = [
-            ("📊 Graph", "Insert saved graph"),
-            ("📈 Bar Chart", "Create bar chart"),
-            ("📋 Table", "Insert data table"),
-            ("📝 Text Box", "Add text section"),
-            ("🖼️ Image", "Insert image"),
+            ("ðŸ“Š Graph", "Insert saved graph"),
+            ("ðŸ“ˆ Bar Chart", "Create bar chart"),
+            ("ðŸ“‹ Table", "Insert data table"),
+            ("ðŸ“ Text Box", "Add text section"),
+            ("ðŸ–¼ï¸ Image", "Insert image"),
         ]
 
         for icon_text, tooltip in element_btns:
@@ -4379,8 +3588,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.04);"
                 "  color: {Colors.PRIMARY_TEXT};"
-                "  border: none;"
-                "  border-radius: 8px;"
+                "  "
+                "  "
                 "  font-size: 13px;"
                 "  font-weight: 500;"
                 "  text-align: left;"
@@ -4403,8 +3612,8 @@ class AffilabsMainWindow(QMainWindow):
         chart_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         chart_container.setGraphicsEffect(create_card_shadow())
@@ -4438,8 +3647,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: {Colors.SECONDARY_TEXT};"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  font-size: 12px;"
                 "  font-weight: 500;"
                 "  font-family: {Fonts.SYSTEM};"
@@ -4481,8 +3690,8 @@ class AffilabsMainWindow(QMainWindow):
             "QComboBox {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  border: none;"
-            "  border-radius: 6px;"
+            "  "
+            "  "
             "  padding: 6px 10px;"
             "  font-size: 12px;"
             "  font-family: {Fonts.SYSTEM};"
@@ -4497,8 +3706,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: #1D1D1F;"
             "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
+            "  "
+            "  "
             "  font-size: 13px;"
             "  font-weight: 600;"
             "  font-family: {Fonts.SYSTEM};"
@@ -4516,8 +3725,8 @@ class AffilabsMainWindow(QMainWindow):
         library_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  border: none;"
-            "  border-radius: {Dimensions.BORDER_RADIUS_LG};"
+            "  "
+            "  "
             "}",
         )
         library_container.setGraphicsEffect(create_card_shadow())
@@ -4540,9 +3749,9 @@ class AffilabsMainWindow(QMainWindow):
 
         # Saved items list
         saved_items = [
-            "📊 Sensorgram_ChA",
-            "📈 Kinetic_Fit_Plot",
-            "📋 Results_Table_1",
+            "ðŸ“Š Sensorgram_ChA",
+            "ðŸ“ˆ Kinetic_Fit_Plot",
+            "ðŸ“‹ Results_Table_1",
         ]
 
         for item in saved_items:
@@ -4552,8 +3761,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.03);"
                 "  color: {Colors.PRIMARY_TEXT};"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  font-size: 12px;"
                 "  font-weight: 400;"
                 "  text-align: left;"
@@ -4580,16 +3789,15 @@ class AffilabsMainWindow(QMainWindow):
             # Gray - No device connected
             self.power_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.4), stop:1 rgba(46, 48, 227, 0.5));"
+                "  background: rgba(46, 48, 227, 0.2);"
                 "  color: white;"
                 "  border: 1px solid rgba(46, 48, 227, 0.2);"
-                "  border-radius: 8px;"
                 "  font-size: 18px;"
                 "  font-weight: 400;"
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
                 "QPushButton:hover {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.5), stop:1 rgba(46, 48, 227, 0.6));"
+                "  background: rgba(46, 48, 227, 0.3);"
                 "  border: 1px solid rgba(46, 48, 227, 0.3);"
                 "}",
             )
@@ -4598,17 +3806,16 @@ class AffilabsMainWindow(QMainWindow):
             # Yellow - Searching for device
             self.power_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFCC00, stop:1 #E6B800);"
+                "  background: #FFCC00;"
                 "  color: white;"
-                "  border: 1px solid rgba(255, 204, 0, 0.3);"
-                "  border-radius: 8px;"
+                "  border: 1px solid #FFB800;"
                 "  font-size: 18px;"
                 "  font-weight: 400;"
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
                 "QPushButton:hover {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E6B800, stop:1 #CCA300);"
-                "  border: 1px solid rgba(230, 184, 0, 0.3);"
+                "  background: #FFD700;"
+                "  border: 1px solid #FFC700;"
                 "}",
             )
             self.power_btn.setToolTip("Searching for Device...\nClick to CANCEL search")
@@ -4616,17 +3823,16 @@ class AffilabsMainWindow(QMainWindow):
             # Green - Device powered and connected
             self.power_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #34C759, stop:1 #2EAF4F);"
+                "  background: #34C759;"
                 "  color: white;"
-                "  border: 1px solid rgba(52, 199, 89, 0.3);"
-                "  border-radius: 8px;"
+                "  border: 1px solid #2FB350;"
                 "  font-size: 18px;"
                 "  font-weight: 400;"
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
                 "QPushButton:hover {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2EAF4F, stop:1 #289845);"
-                "  border: 1px solid rgba(46, 175, 79, 0.3);"
+                "  background: #30B54A;"
+                "  border: 1px solid #299542;"
                 "}",
             )
             self.power_btn.setToolTip(
@@ -4637,9 +3843,9 @@ class AffilabsMainWindow(QMainWindow):
         """Handle power button click - connects/disconnects hardware.
 
         Button behavior:
-        - DISCONNECTED (gray): Click to start connection → SEARCHING (yellow)
-        - SEARCHING (yellow): Click to cancel search → DISCONNECTED (gray)
-        - CONNECTED (green): Click to disconnect → DISCONNECTED (gray)
+        - DISCONNECTED (gray): Click to start connection â†’ SEARCHING (yellow)
+        - SEARCHING (yellow): Click to cancel search â†’ DISCONNECTED (gray)
+        - CONNECTED (green): Click to disconnect â†’ DISCONNECTED (gray)
         """
         current_state = self.power_btn.property("powerState")
         logger.info(f"Power button clicked: current_state={current_state}")
@@ -4704,8 +3910,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: {Colors.PRIMARY_TEXT};"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  padding: 6px 16px;"
                 "  font-size: 13px;"
                 "  min-width: 60px;"
@@ -4768,7 +3974,7 @@ class AffilabsMainWindow(QMainWindow):
     def enable_controls(self) -> None:
         """Enable record and pause buttons after calibration completes."""
         try:
-            logger.info("🎮 Enabling recording controls (calibration complete)")
+            logger.info("ðŸŽ® Enabling recording controls (calibration complete)")
             self.record_btn.setEnabled(True)
             self.pause_btn.setEnabled(True)
             self.record_btn.setToolTip("Start Recording\n(Click to begin saving data)")
@@ -4831,7 +4037,7 @@ class AffilabsMainWindow(QMainWindow):
 
     def _handle_add_hardware(self) -> None:
         """Handle Add Hardware button click - scan for peripheral devices only."""
-        logger.info("🔌 User requested peripheral device scan (Affipump)...")
+        logger.info("ðŸ”Œ User requested peripheral device scan (Affipump)...")
 
         # Check if application and kinetic manager are available
         if hasattr(self, "app") and self.app:
@@ -4839,7 +4045,7 @@ class AffilabsMainWindow(QMainWindow):
                 try:
                     # Scan for Affipump
                     self.app.kinetic_mgr.scan_for_pump()
-                    logger.info("✓ Peripheral scan initiated")
+                    logger.info("âœ“ Peripheral scan initiated")
                 except Exception as e:
                     logger.error(f"Failed to scan for peripherals: {e}")
                     from affilabs.ui.ui_message import error as ui_error
@@ -4909,7 +4115,7 @@ class AffilabsMainWindow(QMainWindow):
             else:
                 # Unknown controller - log warning but don't display
                 logger.warning(
-                    f"⚠️ Unknown controller type '{ctrl_type}' - not displayed in Hardware Connected",
+                    f"âš ï¸ Unknown controller type '{ctrl_type}' - not displayed in Hardware Connected",
                 )
 
         # Kinetic Controller (KNX)
@@ -4921,7 +4127,7 @@ class AffilabsMainWindow(QMainWindow):
             else:
                 # Unknown kinetic type - log warning but don't display
                 logger.warning(
-                    f"⚠️ Unknown kinetic type '{knx_type}' - not displayed in Hardware Connected",
+                    f"âš ï¸ Unknown kinetic type '{knx_type}' - not displayed in Hardware Connected",
                 )
 
         # Pump (AffiPump) - only show if external pump actually connected
@@ -4952,7 +4158,7 @@ class AffilabsMainWindow(QMainWindow):
         self._update_subunit_readiness_from_status(status)
 
         # Update operation mode availability based on hardware
-        logger.debug(f"📥 update_hardware_status received: flow_calibrated={status.get('flow_calibrated', 'NOT SET')}")
+        logger.debug(f"ðŸ“¥ update_hardware_status received: flow_calibrated={status.get('flow_calibrated', 'NOT SET')}")
         self._update_operation_modes(status)
 
     def _update_subunit_readiness_from_status(self, status: dict[str, Any]) -> None:
@@ -5097,7 +4303,7 @@ class AffilabsMainWindow(QMainWindow):
                     from affilabs.utils.logger import logger
 
                     logger.warning(
-                        f"⚠️ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]",
+                        f"âš ï¸ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]",
                     )
                     logger.warning(
                         "   Live sensorgram background set to light red - please resolve optics issues",
@@ -5116,7 +4322,7 @@ class AffilabsMainWindow(QMainWindow):
 
             from affilabs.utils.logger import logger
 
-            logger.info("✅ Optics ready - sensorgram background restored to normal")
+            logger.info("âœ… Optics ready - sensorgram background restored to normal")
 
     def _update_operation_modes(self, status: dict[str, Any]) -> None:
         """Update available operation modes based on hardware type."""
@@ -5137,7 +4343,7 @@ class AffilabsMainWindow(QMainWindow):
         # For P4PROPLUS (internal pumps) and other flow controllers, still needs calibration
         flow_available = status.get("flow_calibrated", False)  # Enabled after calibration completes
 
-        logger.info("🔄 Operation modes update:")
+        logger.info("ðŸ”„ Operation modes update:")
         logger.info(f"   ctrl_type={ctrl_type}")
         logger.info(f"   pump_connected={has_pump}")
         logger.info(f"   flow_calibrated={status.get('flow_calibrated', 'NOT IN STATUS DICT')}")
@@ -5146,7 +4352,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # P4SPR static device - only Static mode
         if ctrl_type in ["P4SPR", "PicoP4SPR"]:
-            logger.info(f"P4SPR device detected - Static mode: {'✅ Available' if static_available else '❌ Disabled'}")
+            logger.info(f"P4SPR device detected - Static mode: {'âœ… Available' if static_available else 'âŒ Disabled'}")
             if has_pump:
                 logger.info("Pump detected - Flow mode also available")
             else:
@@ -5154,12 +4360,12 @@ class AffilabsMainWindow(QMainWindow):
 
         # EZSPR or other devices
         elif ctrl_type in ["EZSPR", "PicoEZSPR"]:
-            logger.info(f"EZSPR device detected - Static mode: {'✅ Available' if static_available else '❌ Disabled'}, Flow mode: {'✅ Available' if flow_available else '❌ Disabled'}")
+            logger.info(f"EZSPR device detected - Static mode: {'âœ… Available' if static_available else 'âŒ Disabled'}, Flow mode: {'âœ… Available' if flow_available else 'âŒ Disabled'}")
 
         # Update UI indicators
         if hasattr(self.sidebar, "set_operation_mode_availability"):
             self.sidebar.set_operation_mode_availability(static_available, flow_available)
-            logger.debug(f"✓ Called set_operation_mode_availability(static={static_available}, flow={flow_available})")
+            logger.debug(f"âœ“ Called set_operation_mode_availability(static={static_available}, flow={flow_available})")
 
     def _update_scan_button_style(self) -> None:
         """Update scan button style based on scanning state.
@@ -5225,8 +4431,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: #1D1D1F;"
                 "  color: white;"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  padding: 6px 16px;"
                 "  font-size: 13px;"
                 "  font-weight: 600;"
@@ -5262,8 +4468,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: #FF3B30;"
                 "  color: white;"
-                "  border: none;"
-                "  border-radius: 6px;"
+                "  "
+                "  "
                 "  padding: 6px 16px;"
                 "}",
             )
@@ -5303,14 +4509,14 @@ class AffilabsMainWindow(QMainWindow):
         if is_paused:
             # Pause acquisition
             self.pause_btn.setToolTip("Resume Live Acquisition")
-            logger.info("⏸ Live acquisition paused")
+            logger.info("â¸ Live acquisition paused")
             # Emit signal to pause acquisition
             if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(True)
         else:
             # Resume acquisition
             self.pause_btn.setToolTip("Pause Live Acquisition")
-            logger.info("▶️ Live acquisition resumed")
+            logger.info("â–¶ï¸ Live acquisition resumed")
             # Emit signal to resume acquisition
             if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(False)
@@ -5360,8 +4566,8 @@ class AffilabsMainWindow(QMainWindow):
                 self.recording_indicator.setStyleSheet(
                     "QFrame {"
                     "  background: rgba(255, 59, 48, 0.1);"
-                    "  border: 1px solid rgba(255, 59, 48, 0.3);"
-                    "  border-radius: 6px;"
+                    "  "
+                    "  "
                     "}",
                 )
         else:
@@ -5384,7 +4590,7 @@ class AffilabsMainWindow(QMainWindow):
                 self.recording_indicator.setStyleSheet(
                     "QFrame {"
                 "  background: rgba(0, 0, 0, 0.04);"
-                "  border-radius: 6px;"
+                "  "
                 "}",
             )
 
@@ -5577,7 +4783,7 @@ class AffilabsMainWindow(QMainWindow):
         cycle_data["state"] = "running"
 
         logger.info(
-            f"🚀 Starting queued run at FIRST cycle (1/{len(self.cycle_queue)}): {cycle_data['type']} - {cycle_data['notes']}",
+            f"ðŸš€ Starting queued run at FIRST cycle (1/{len(self.cycle_queue)}): {cycle_data['type']} - {cycle_data['notes']}",
         )
 
         # Update display to show running state
@@ -5642,7 +4848,7 @@ class AffilabsMainWindow(QMainWindow):
         if hasattr(self.sidebar, 'queue_size_label'):
             self.sidebar.queue_size_label.setText(f"Showing last {new_rows} cycles")
 
-        logger.info(f"✓ Queue expanded: capacity now {self.max_queue_size}, table shows {new_rows} rows")
+        logger.info(f"âœ“ Queue expanded: capacity now {self.max_queue_size}, table shows {new_rows} rows")
 
         # Re-enable Add to Queue button if it was disabled
         if hasattr(self, 'add_to_queue_btn'):
@@ -5714,7 +4920,7 @@ class AffilabsMainWindow(QMainWindow):
             # Update queue display to show running state
             self._update_queue_display()
 
-            logger.info(f"🏃 Cycle started: {cycle_data['type']} ({cycle_data.get('length_minutes', 0)} min) - {cycle_data.get('notes', 'No notes')}")
+            logger.info(f"ðŸƒ Cycle started: {cycle_data['type']} ({cycle_data.get('length_minutes', 0)} min) - {cycle_data.get('notes', 'No notes')}")
         else:
             # No queue items - use current form values
             # TODO: Extract form values and create cycle
@@ -5733,7 +4939,7 @@ class AffilabsMainWindow(QMainWindow):
             if self.cycle_queue and self.cycle_queue[0] == self._current_running_cycle:
                 self.cycle_queue.pop(0)
 
-            logger.info(f"✅ Cycle completed: {self._current_running_cycle['type']}")
+            logger.info(f"âœ… Cycle completed: {self._current_running_cycle['type']}")
             self._current_running_cycle = None
 
             # Update display
@@ -5746,7 +4952,7 @@ class AffilabsMainWindow(QMainWindow):
 
             # Start next cycle if queue is running and has cycles
             if self.cycle_queue and hasattr(self, '_queue_running') and self._queue_running:
-                logger.info(f"🔄 Auto-starting next cycle in queue ({len(self.cycle_queue)} remaining)")
+                logger.info(f"ðŸ”„ Auto-starting next cycle in queue ({len(self.cycle_queue)} remaining)")
                 # Use QTimer to start next cycle after a short delay
                 from PySide6.QtCore import QTimer
                 QTimer.singleShot(500, self._start_next_queued_cycle)
@@ -5763,7 +4969,7 @@ class AffilabsMainWindow(QMainWindow):
             if self.cycle_queue and self.cycle_queue[0] == self._current_running_cycle:
                 self.cycle_queue.pop(0)
 
-            logger.info(f"❌ Cycle cancelled: {self._current_running_cycle['type']}")
+            logger.info(f"âŒ Cycle cancelled: {self._current_running_cycle['type']}")
             self._current_running_cycle = None
 
             # Update display to remove cancelled cycle
@@ -5777,15 +4983,15 @@ class AffilabsMainWindow(QMainWindow):
     def _start_next_queued_cycle(self):
         """Start the next cycle in the queue automatically."""
         if self.cycle_queue and not self._current_running_cycle:
-            logger.info(f"🚀 Auto-starting next queued cycle")
+            logger.info(f"ðŸš€ Auto-starting next queued cycle")
             self.start_cycle()
         else:
             if not self.cycle_queue:
-                logger.info(f"✓ Queue completed - no more cycles")
+                logger.info(f"âœ“ Queue completed - no more cycles")
                 if hasattr(self, '_queue_running'):
                     self._queue_running = False
             elif self._current_running_cycle:
-                logger.warning(f"⚠️ Cannot start next cycle - current cycle still running")
+                logger.warning(f"âš ï¸ Cannot start next cycle - current cycle still running")
 
     def start_cycle_countdown(self, duration_minutes: int):
         """Start countdown timer for cycle duration.
@@ -5799,10 +5005,15 @@ class AffilabsMainWindow(QMainWindow):
         self.cycle_duration_seconds = duration_minutes * 60
         self.cycle_start_time = time.time()
         self.cycle_countdown_timer.start(1000)  # Update every second
-        logger.info(f"⏱️ Started countdown timer for {duration_minutes} min cycle")
+        logger.info(f"â±ï¸ Started countdown timer for {duration_minutes} min cycle")
 
     def _update_countdown(self):
-        """Update countdown timer display based on cycle progress."""
+        """Update countdown timer display based on cycle progress.
+
+        NOTE: This method is currently unused - cycle countdown is now displayed
+        in the intelligence bar via set_intel_message() called from main.py.
+        Kept for potential future use.
+        """
         if self.cycle_start_time is None:
             return
 
@@ -5810,12 +5021,6 @@ class AffilabsMainWindow(QMainWindow):
 
         elapsed = time.time() - self.cycle_start_time
         remaining = max(0, self.cycle_duration_seconds - elapsed)
-
-        minutes = int(remaining // 60)
-        seconds = int(remaining % 60)
-
-        if hasattr(self.sidebar, "countdown_label"):
-            self.sidebar.countdown_label.setText(f"{minutes:02d}:{seconds:02d}")
 
         # Stop timer when countdown reaches zero
         if remaining <= 0:
@@ -5846,7 +5051,7 @@ class AffilabsMainWindow(QMainWindow):
             "for regulatory compliance and LIMS integration."
         )
 
-        logger.info("📋 AnIML export requested (Pro feature)")
+        logger.info("ðŸ“‹ AnIML export requested (Pro feature)")
 
     def _on_send_to_edits_clicked(self):
         """Transfer live recording data to Edits tab for review and modification."""
@@ -5855,7 +5060,7 @@ class AffilabsMainWindow(QMainWindow):
         # The app has access to both recording manager and edits tab
         self.send_to_edits_requested.emit()
 
-        logger.info("📤 Send to Edits requested - signal emitted")
+        logger.info("ðŸ“¤ Send to Edits requested - signal emitted")
 
     def _on_quick_csv_preset(self):
         """Quick CSV export preset - all data, all channels, CSV format."""
@@ -5994,8 +5199,208 @@ class AffilabsMainWindow(QMainWindow):
             "preset": None,  # Will be set by preset buttons
         }
 
+    def update_status_operation(self, message: str, notes: str = "") -> None:
+        """Update the bottom operation status bar.
+
+        Args:
+            message: Status message to display (e.g., "Running: Concentration (01:52)", "Idle")
+            notes: Optional cycle notes to display alongside status
+        """
+        if hasattr(self, 'operation_status_label'):
+            # Skip displaying "Running:" messages - they now appear in Timer button above Live Sensorgram
+            if "Running" in message or "Acquiring" in message:
+                return
+
+            self.operation_status_label.setText(message)
+            # Color based on state using design system colors
+            if "Idle" in message:
+                color = Colors.SECONDARY_TEXT  # Gray for idle
+                weight = int(Fonts.WEIGHT_SEMIBOLD)
+            elif "Error" in message or "Failed" in message:
+                color = Colors.ERROR  # Red for errors
+                weight = int(Fonts.WEIGHT_BOLD)
+            else:
+                color = Colors.INFO  # Blue for other states
+                weight = int(Fonts.WEIGHT_SEMIBOLD)
+
+            self.operation_status_label.setStyleSheet(
+                label_style(14, color=color, weight=weight)
+            )
+
+        # Update cycle notes if available
+        if hasattr(self, 'cycle_notes_label'):
+            if notes:
+                self.cycle_notes_label.setText(f"📝 {notes}")
+                self.cycle_notes_label.show()
+            else:
+                self.cycle_notes_label.setText("")
+                self.cycle_notes_label.hide()
+
+    def update_timer_button(self, cycle_type: str, remaining_seconds: float, is_manual: bool = False) -> None:
+        """Update the Timer button above Live Sensorgram with countdown.
+
+        NOTE: This timer is ONLY for manual user-set timers, NOT for cycle countdowns.
+        Cycle countdown is shown in the intelligence bar at the bottom.
+
+        Args:
+            cycle_type: Type of timer (label for manual timers)
+            remaining_seconds: Seconds remaining in timer
+            is_manual: Must be True - only manual timers are displayed
+        """
+        # ONLY update for manual user timers, never for cycle countdowns
+        if is_manual and hasattr(self, 'timer_button'):
+            self.timer_button.update_countdown(cycle_type, remaining_seconds, is_manual=is_manual)
+
+    def clear_timer_button(self) -> None:
+        """Clear the Timer button display when no cycle is running."""
+        if hasattr(self, 'timer_button'):
+            self.timer_button.clear()
+
+    def _on_timer_button_clicked(self):
+        """Handle Timer button click - show manual timer dialog.
+
+        Opens a dialog allowing user to set a custom countdown timer for
+        manual experiment tracking (e.g., incubation times, wait periods).
+        """
+        from affilabs.dialogs.manual_timer_dialog import ManualTimerDialog
+        from affilabs.utils.logger import logger
+
+        dialog = ManualTimerDialog(parent=self)
+        if dialog.exec() == ManualTimerDialog.DialogCode.Accepted:
+            minutes, seconds = dialog.get_duration()
+            label = dialog.get_label() or "Custom Timer"
+            font_size = dialog.get_font_size()
+            sound_enabled = dialog.get_sound_enabled()
+
+            total_seconds = minutes * 60 + seconds
+
+            if total_seconds > 0:
+                # Set font size for timer button
+                if hasattr(self, 'timer_button'):
+                    self.timer_button.set_font_size(font_size)
+
+                # Update timer button with custom timer
+                self.update_timer_button(label, total_seconds, is_manual=True)
+                logger.info(f"â± Manual timer set: {label} ({minutes}:{seconds:02d}) - Font: {font_size}, Sound: {sound_enabled}")
+
+                # Start countdown for manual timer
+                self._start_manual_timer_countdown(label, total_seconds, sound_enabled)
+            else:
+                logger.warning("Manual timer duration must be greater than 0")
+
+    def _start_manual_timer_countdown(self, label: str, total_seconds: int, sound_enabled: bool):
+        """Start countdown timer for manual timers.
+
+        Args:
+            label: Timer label
+            total_seconds: Duration in seconds
+            sound_enabled: Whether to play sound on completion
+        """
+        from PySide6.QtCore import QTimer
+        from affilabs.utils.logger import logger
+
+        # Stop any existing manual timer
+        if hasattr(self, '_manual_timer') and self._manual_timer:
+            self._manual_timer.stop()
+
+        # Create timer state (save initial duration for restart functionality)
+        self._manual_timer_remaining = total_seconds
+        self._manual_timer_label = label
+        self._manual_timer_sound = sound_enabled
+        self._manual_timer_initial_duration = total_seconds  # Save original duration for restart
+
+        # Create QTimer for countdown
+        self._manual_timer = QTimer(self)
+        self._manual_timer.timeout.connect(self._on_manual_timer_tick)
+        self._manual_timer.start(1000)  # Update every second
+
+    def _on_manual_timer_tick(self):
+        """Handle manual timer countdown tick."""
+        from affilabs.utils.logger import logger
+
+        self._manual_timer_remaining -= 1
+
+        if self._manual_timer_remaining > 0:
+            # Update timer display
+            self.update_timer_button(self._manual_timer_label, self._manual_timer_remaining, is_manual=True)
+        else:
+            # Timer completed
+            self._manual_timer.stop()
+            logger.info(f"â± Manual timer '{self._manual_timer_label}' completed!")
+
+            # Play sound if enabled
+            if self._manual_timer_sound:
+                self._play_timer_sound()
+
+            # Clear timer button
+            self.clear_timer_button()
+
+            # Show completion notification
+            from PySide6.QtWidgets import QMessageBox
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Timer Complete")
+            msg.setText(f"⏱ {self._manual_timer_label}")
+            msg.setInformativeText("Timer has finished!")
+            msg.setIcon(QMessageBox.Icon.Information)
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+
+    def _play_timer_sound(self):
+        """Play notification sound when timer completes."""
+        try:
+            import sys
+            # Use system beep
+            if sys.platform == "win32":
+                import winsound
+                winsound.MessageBeep(winsound.MB_ICONASTERISK)
+            else:
+                # Try to beep on other platforms
+                print('\a')  # Terminal bell
+        except Exception as e:
+            from affilabs.utils.logger import logger
+            logger.debug(f"Could not play timer sound: {e}")
+
+    def _on_clear_manual_timer(self):
+        """Handle request to clear manual timer (from context menu)."""
+        from affilabs.utils.logger import logger
+
+        # Stop the manual timer if running
+        if hasattr(self, '_manual_timer') and self._manual_timer:
+            self._manual_timer.stop()
+            logger.info(f"â± Manual timer '{self._manual_timer_label}' cleared by user")
+
+        # Clear the timer button display
+        self.clear_timer_button()
+
+    def _on_restart_manual_timer(self):
+        """Handle request to restart manual timer (from context menu)."""
+        from affilabs.utils.logger import logger
+
+        # Check if we have a timer to restart
+        if not hasattr(self, '_manual_timer_initial_duration'):
+            logger.warning("No manual timer to restart")
+            return
+
+        # Get saved timer settings
+        initial_duration = self._manual_timer_initial_duration
+        label = self._manual_timer_label
+        sound_enabled = self._manual_timer_sound
+
+        logger.info(f"ðŸ”„ Restarting manual timer '{label}' ({initial_duration}s)")
+
+        # Restart timer with original settings
+        self._start_manual_timer_countdown(label, initial_duration, sound_enabled)
+
+        # Update display immediately
+        self.update_timer_button(label, initial_duration, is_manual=True)
+
     def _refresh_intelligence_bar(self):
-        """Refresh the Intelligence Bar display with current system diagnostics."""
+        """Refresh the Intelligence Bar display with current system diagnostics.
+
+        NOTE: If a cycle is currently running, this method will ONLY update the status
+        indicator (âœ“/âš /âŒ) but NOT the message, to avoid overriding the cycle countdown
+        display that's updated every second via set_intel_message().
+        """
         try:
             # Get system intelligence instance and run diagnosis
             intelligence = get_system_intelligence()
@@ -6006,9 +5411,12 @@ class AffilabsMainWindow(QMainWindow):
             is_calibrated = hasattr(self, 'app') and hasattr(self.app, 'data_mgr') and getattr(self.app.data_mgr, 'calibrated', False)
             queue_count = len(self.segment_queue) if hasattr(self, 'segment_queue') else 0
 
+            # Check if a cycle is currently running (don't override cycle countdown)
+            is_cycle_running = hasattr(self, 'app') and hasattr(self.app, '_current_cycle') and self.app._current_cycle is not None
+
             # Update status based on system state
             if system_state == SystemState.HEALTHY:
-                status_text = "✓"
+                status_text = "âœ“"
                 status_color = "#34C759"  # Green
 
                 # Provide contextual messaging based on what's happening - use icons for brevity
@@ -6043,7 +5451,7 @@ class AffilabsMainWindow(QMainWindow):
                     message_text = "Attention required"
                 message_color = "#FF9500"
             elif system_state == SystemState.ERROR:
-                status_text = "❌"
+                status_text = "âŒ"
                 status_color = "#FF3B30"  # Red
                 if active_issues:
                     message_text = f"{active_issues[0].title}"
@@ -6051,12 +5459,13 @@ class AffilabsMainWindow(QMainWindow):
                     message_text = "System error"
                 message_color = "#FF3B30"
             else:  # UNKNOWN
-                status_text = "●"
+                status_text = "â—"
                 status_color = "#86868B"  # Gray
                 message_text = "Initializing..."
                 message_color = "#86868B"
 
-            # Update the UI labels
+            # Update the sidebar intelligence labels
+            # Update the sidebar intelligence status indicator (always)
             self.sidebar.intel_status_label.setText(status_text)
             self.sidebar.intel_status_label.setStyleSheet(
                 f"font-size: 12px;"
@@ -6066,26 +5475,55 @@ class AffilabsMainWindow(QMainWindow):
                 f"font-family: {Fonts.SYSTEM};",
             )
 
-            self.sidebar.intel_message_label.setText(message_text)
-            self.sidebar.intel_message_label.setStyleSheet(
-                f"font-size: 12px;"
-                f"color: {message_color};"
-                f"background: {Colors.TRANSPARENT};"
-                f"font-weight: 600;"
-                f"font-family: {Fonts.SYSTEM};",
-            )
+            # Update sidebar message ONLY if no cycle is running (to avoid overriding cycle countdown)
+            if not is_cycle_running:
+                self.sidebar.intel_message_label.setText(message_text)
+                self.sidebar.intel_message_label.setStyleSheet(
+                    f"font-size: 14px;"
+                    f"color: {message_color};"
+                    f"background: {Colors.TRANSPARENT};"
+                    f"font-weight: 600;"
+                    f"font-family: {Fonts.SYSTEM};",
+                )
+
+            # Update the bottom status bar intelligence labels
+            if hasattr(self, 'bottom_intel_status_label'):
+                # Update status indicator (always)
+                self.bottom_intel_status_label.setText(status_text)
+                self.bottom_intel_status_label.setStyleSheet(
+                    f"font-size: 14px;"
+                    f"color: {status_color};"
+                    f"background: {Colors.TRANSPARENT};"
+                    f"font-weight: {Fonts.WEIGHT_BOLD};"
+                    f"font-family: {Fonts.SYSTEM};",
+                )
+
+            if hasattr(self, 'bottom_intel_message_label') and not is_cycle_running:
+                # Update message ONLY if no cycle is running (to avoid overriding cycle countdown)
+                self.bottom_intel_message_label.setText(message_text)
+                self.bottom_intel_message_label.setStyleSheet(
+                    f"font-size: 13px;"
+                    f"color: {message_color};"
+                    f"background: {Colors.TRANSPARENT};"
+                    f"font-weight: {Fonts.WEIGHT_SEMIBOLD};"
+                    f"font-family: {Fonts.SYSTEM};",
+                )
 
         except Exception as e:
             logger.error(f"Error refreshing intelligence bar: {e}")
 
     def set_intel_message(self, message: str, color: str = "#007AFF") -> None:
-        """Set a custom message in the intelligence bar.
+        """Set a custom message in BOTH intelligence bars (sidebar and bottom).
+
+        This method synchronizes the intelligence message across both locations
+        to ensure consistent information display during cycle execution.
 
         Args:
             message: Message text to display
             color: Hex color code for the message (default: blue #007AFF)
         """
         try:
+            # Update sidebar intelligence bar
             if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'intel_message_label'):
                 self.sidebar.intel_message_label.setText(message)
                 self.sidebar.intel_message_label.setStyleSheet(
@@ -6093,6 +5531,17 @@ class AffilabsMainWindow(QMainWindow):
                     f"color: {color};"
                     f"background: {Colors.TRANSPARENT};"
                     f"font-weight: 600;"
+                    f"font-family: {Fonts.SYSTEM};",
+                )
+
+            # Update bottom status bar intelligence label (synchronized)
+            if hasattr(self, 'bottom_intel_message_label'):
+                self.bottom_intel_message_label.setText(message)
+                self.bottom_intel_message_label.setStyleSheet(
+                    f"font-size: 13px;"
+                    f"color: {color};"
+                    f"background: {Colors.TRANSPARENT};"
+                    f"font-weight: {Fonts.WEIGHT_SEMIBOLD};"
                     f"font-family: {Fonts.SYSTEM};",
                 )
         except Exception as e:
@@ -6127,16 +5576,16 @@ class AffilabsMainWindow(QMainWindow):
             if state == "queued":
                 if row == 0:
                     # First item is ready to start
-                    state_text = "▶️ Ready"
+                    state_text = "â–¶ï¸ Ready"
                     state_color = QColor(227, 242, 253)  # Light blue
                 else:
-                    state_text = "🟡 Queued"
+                    state_text = "ðŸŸ¡ Queued"
                     state_color = QColor(245, 245, 245)  # Light gray
             elif state == "running":
-                state_text = "🏃 Running"
+                state_text = "ðŸƒ Running"
                 state_color = QColor(255, 243, 205)  # Light yellow/amber
             elif state == "completed":
-                state_text = "✓ Done"
+                state_text = "âœ“ Done"
                 state_color = QColor(232, 245, 233)  # Light green
 
             # Set cell values
@@ -6231,7 +5680,7 @@ class AffilabsMainWindow(QMainWindow):
             )
 
             logger.info(
-                f"✓ Loaded current settings: S={s_pos}°, P={p_pos}°, LEDs={led_intensities} (source={source})",
+                f"âœ“ Loaded current settings: S={s_pos}Â°, P={p_pos}Â°, LEDs={led_intensities} (source={source})",
             )
 
             # Initialize pipeline selector to current configuration
@@ -6333,7 +5782,7 @@ class AffilabsMainWindow(QMainWindow):
             calibration_data = getattr(self.app.data_mgr, "calibration_data", None)
             if calibration_data:
                 dialog.load_calibration_params(calibration_data)
-                logger.info("✓ Loaded calibration parameters into Advanced Settings")
+                logger.info("âœ“ Loaded calibration parameters into Advanced Settings")
 
         # Load device info if available
         if self.device_config:
@@ -6374,12 +5823,12 @@ class AffilabsMainWindow(QMainWindow):
                 # Currently in S, switch to P
                 ctrl.set_mode("p")
                 self.polarizer_toggle_btn.setText("Position: P")
-                logger.info("✅ Switched to P-mode")
+                logger.info("âœ… Switched to P-mode")
             else:
                 # Currently in P, switch to S
                 ctrl.set_mode("s")
                 self.polarizer_toggle_btn.setText("Position: S")
-                logger.info("✅ Switched to S-mode")
+                logger.info("âœ… Switched to S-mode")
 
         except Exception as e:
             logger.error(f"Failed to toggle polarizer: {e}")
@@ -6388,12 +5837,12 @@ class AffilabsMainWindow(QMainWindow):
     def _apply_settings(self):
         """Apply polarizer and LED settings from the Settings tab.
 
-        ARCHITECTURE: Signal-based communication (UI → Application)
+        ARCHITECTURE: Signal-based communication (UI â†’ Application)
         UI validates input and emits signal with settings dict.
         Application layer handles business logic (hardware access, config save).
         """
         try:
-            logger.info("🔧 UI: Parsing settings...")
+            logger.info("ðŸ”§ UI: Parsing settings...")
 
             # Get polarizer positions
             s_pos_text = self.s_position_input.text()
@@ -6454,16 +5903,16 @@ class AffilabsMainWindow(QMainWindow):
             }
 
             # Emit signal - Application layer handles business logic
-            # This respects HAL architecture: UI → Application → Hardware
-            logger.info("🔧 UI: Emitting apply_led_settings_requested signal")
+            # This respects HAL architecture: UI â†’ Application â†’ Hardware
+            logger.info("ðŸ”§ UI: Emitting apply_led_settings_requested signal")
             self.apply_led_settings_requested.emit(settings)
-            logger.info("✅ Settings saved to device config")
+            logger.info("âœ… Settings saved to device config")
 
             # Note: Message boxes removed - visual feedback now via button style change only
             # LED brightness updates are now live (no need for confirmation dialogs)
 
         except Exception as e:
-            logger.error(f"❌ Failed to apply settings: {e}", exc_info=True)
+            logger.error(f"âŒ Failed to apply settings: {e}", exc_info=True)
             QMessageBox.warning(self, "Error", f"Failed to apply settings: {e}")
 
     def _handle_simple_led_calibration(self) -> None:
@@ -6504,20 +5953,20 @@ class AffilabsMainWindow(QMainWindow):
             self.baseline_capture_btn.setText("🔴 Record 5-Min Baseline Data")
             self.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF3B30, stop:1 #E02020);"
+                "  background: #FF3B30;"
                 "  color: white;"
-                "  border: none;"
-                "  border-radius: 8px;"
+                "  "
+                "  "
                 "  padding: 8px 16px;"
                 "  font-size: 13px;"
                 "  font-weight: 600;"
                 "  font-family: {Fonts.SYSTEM};"
                 "}"
                 "QPushButton:hover {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF4D42, stop:1 #F03030);"
+                "  background: #007AFF;"
                 "}"
                 "QPushButton:pressed {"
-                "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E02020, stop:1 #C01818);"
+                "  background: #007AFF;"
                 "}"
                 "QPushButton:disabled {"
                 "  background: #D1D1D6;"
@@ -6525,8 +5974,8 @@ class AffilabsMainWindow(QMainWindow):
                 "}",
             )
 
-        QMessageBox.critical(self, "Recording Error", f"❌ {error_msg}")
-        logger.error(f"❌ Baseline recording error: {error_msg}")
+        QMessageBox.critical(self, "Recording Error", f"âŒ {error_msg}")
+        logger.error(f"âŒ Baseline recording error: {error_msg}")
 
     def _connect_signals(self) -> None:
         """Connect UI signals."""
@@ -6628,9 +6077,9 @@ class AffilabsMainWindow(QMainWindow):
             # 3. Pumps are stopped
             # NO EXIT PATH bypasses this graceful shutdown
             if app_instance and hasattr(app_instance, 'close'):
-                logger.info("🔒 Triggering graceful hardware shutdown...")
+                logger.info("ðŸ”’ Triggering graceful hardware shutdown...")
                 app_instance.close()
-                logger.info("✓ Hardware shutdown complete")
+                logger.info("âœ“ Hardware shutdown complete")
 
             devices_to_unplug = []
             if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
@@ -6666,24 +6115,24 @@ class AffilabsMainWindow(QMainWindow):
         from PySide6.QtWidgets import QTableWidgetItem, QComboBox, QDoubleSpinBox
         from affilabs.utils.logger import logger
 
-        logger.info(f"📝 Adding COMPLETED cycle to table: {cycle_data.get('type', 'Unknown')}")
+        logger.info(f"ðŸ“ Adding COMPLETED cycle to table: {cycle_data.get('type', 'Unknown')}")
 
         try:
             # Verify edits_tab exists
             if not hasattr(self, 'edits_tab'):
-                logger.error("❌ CRITICAL: edits_tab does NOT exist on main_window! Cannot add cycle to table.")
+                logger.error("âŒ CRITICAL: edits_tab does NOT exist on main_window! Cannot add cycle to table.")
                 logger.error(f"   main_window attributes: {dir(self)}")
                 return
 
             # Verify cycle_data_table exists
             if not hasattr(self.edits_tab, 'cycle_data_table'):
-                logger.error("❌ CRITICAL: cycle_data_table does NOT exist on edits_tab! Cannot add cycle.")
+                logger.error("âŒ CRITICAL: cycle_data_table does NOT exist on edits_tab! Cannot add cycle.")
                 logger.error(f"   edits_tab attributes: {dir(self.edits_tab)}")
                 return
 
             cycle_table = self.edits_tab.cycle_data_table
 
-            logger.debug(f"✓ Cycle table found, current rows: {cycle_table.rowCount()}")
+            logger.debug(f"âœ“ Cycle table found, current rows: {cycle_table.rowCount()}")
 
             # Initialize type counter if it doesn't exist
             if not hasattr(self, '_cycle_type_counts'):
@@ -6755,7 +6204,7 @@ class AffilabsMainWindow(QMainWindow):
                 notes_display = notes
             cycle_table.setItem(row_idx, 4, QTableWidgetItem(str(notes_display)))
 
-            # Columns 5-8: Delta SPR for channels A, B, C, D (ΔCh1, ΔCh2, ΔCh3, ΔCh4)
+            # Columns 5-8: Delta SPR for channels A, B, C, D (Î”Ch1, Î”Ch2, Î”Ch3, Î”Ch4)
             delta_spr_by_channel = cycle_data.get('delta_spr_by_channel', {})
             for idx, ch in enumerate(['A', 'B', 'C', 'D']):
                 col_idx = 5 + idx  # Columns 5, 6, 7, 8
@@ -6778,16 +6227,16 @@ class AffilabsMainWindow(QMainWindow):
             channel_combo.setStyleSheet("""
                 QComboBox {
                     background: white;
-                    border: 1px solid #D1D1D6;
-                    border-radius: 4px;
+
+
                     padding: 2px 8px;
                     font-size: 12px;
                 }
                 QComboBox::drop-down {
-                    border: none;
+
                 }
                 QComboBox:hover {
-                    border: 1px solid #007AFF;
+
                 }
             """)
             channel_combo.setProperty('cycle_index', row_idx)
@@ -6804,13 +6253,13 @@ class AffilabsMainWindow(QMainWindow):
             shift_spinbox.setStyleSheet("""
                 QDoubleSpinBox {
                     background: white;
-                    border: 1px solid #D1D1D6;
-                    border-radius: 4px;
+
+
                     padding: 2px 4px;
                     font-size: 12px;
                 }
                 QDoubleSpinBox:hover {
-                    border: 1px solid #007AFF;
+
                 }
             """)
             shift_spinbox.setProperty('cycle_index', row_idx)
@@ -6827,7 +6276,7 @@ class AffilabsMainWindow(QMainWindow):
                 self._loaded_cycles_data = []
             self._loaded_cycles_data.append(cycle_data)
 
-            logger.info(f"✓ Added cycle to table: {type_with_number} at row {row_idx}")
+            logger.info(f"âœ“ Added cycle to table: {type_with_number} at row {row_idx}")
 
         except Exception as e:
             logger.exception(f"Error adding cycle to table: {e}")
@@ -6938,7 +6387,7 @@ class AffilabsMainWindow(QMainWindow):
 
                 # Column 7: Injection flag indicator
                 flags_list = cycle.get('flags', [])
-                has_injection = '✓' if 'injection' in flags_list else ''
+                has_injection = 'âœ“' if 'injection' in flags_list else ''
                 self.cycle_data_table.setItem(row_idx, 7, QTableWidgetItem(has_injection))
 
                 # Column 8: Other flags (wash, spike)
@@ -6954,16 +6403,16 @@ class AffilabsMainWindow(QMainWindow):
                 channel_combo.setStyleSheet("""
                     QComboBox {
                         background: white;
-                        border: 1px solid #D1D1D6;
-                        border-radius: 4px;
+
+
                         padding: 2px 8px;
                         font-size: 12px;
                     }
                     QComboBox::drop-down {
-                        border: none;
+
                     }
                     QComboBox:hover {
-                        border: 1px solid #007AFF;
+
                     }
                 """)
                 # Store cycle index in widget
@@ -6982,13 +6431,13 @@ class AffilabsMainWindow(QMainWindow):
                 shift_spinbox.setStyleSheet("""
                     QDoubleSpinBox {
                         background: white;
-                        border: 1px solid #D1D1D6;
-                        border-radius: 4px;
+
+
                         padding: 2px 4px;
                         font-size: 12px;
                     }
                     QDoubleSpinBox:hover {
-                        border: 1px solid #007AFF;
+
                     }
                 """)
                 # Store cycle index in widget
@@ -7005,7 +6454,7 @@ class AffilabsMainWindow(QMainWindow):
             for idx in range(len(cycles_data)):
                 self._cycle_alignment[idx] = {'channel': 'All', 'shift': 0.0}
 
-            logger.info(f"✓ Populated cycle table with {len(cycles_data)} cycles")
+            logger.info(f"âœ“ Populated cycle table with {len(cycles_data)} cycles")
 
         except Exception as e:
             logger.exception(f"Error populating cycle table: {e}")
@@ -7070,7 +6519,7 @@ class AffilabsMainWindow(QMainWindow):
                     # Trigger selection view update
                     self._update_edits_selection_view()
 
-            logger.info(f"✓ Populated timeline graph with data from {len(raw_data)} rows")
+            logger.info(f"âœ“ Populated timeline graph with data from {len(raw_data)} rows")
 
         except Exception as e:
             logger.exception(f"Error populating timeline graph: {e}")
@@ -7146,17 +6595,17 @@ class AffilabsMainWindow(QMainWindow):
         menu = QMenu()
 
         # Create flag type actions
-        injection_action = QAction("▲ Injection", menu)
+        injection_action = QAction("â–² Injection", menu)
         injection_action.triggered.connect(
             lambda: self._add_edits_flag(channel, time_val, spr_val, "injection")
         )
 
-        wash_action = QAction("■ Wash", menu)
+        wash_action = QAction("â–  Wash", menu)
         wash_action.triggered.connect(
             lambda: self._add_edits_flag(channel, time_val, spr_val, "wash")
         )
 
-        spike_action = QAction("★ Spike", menu)
+        spike_action = QAction("â˜… Spike", menu)
         spike_action.triggered.connect(
             lambda: self._add_edits_flag(channel, time_val, spr_val, "spike")
         )
@@ -7183,14 +6632,14 @@ class AffilabsMainWindow(QMainWindow):
                 spr=spr_val,
             )
 
-            # Create visual marker
+            # Create visual marker with improved visibility
             marker = pg.ScatterPlotItem(
                 [flag.time],
                 [flag.spr],
                 symbol=flag.marker_symbol,
                 size=flag.marker_size,
                 brush=pg.mkBrush(flag.marker_color),
-                pen=pg.mkPen('w', width=2),
+                pen=pg.mkPen('#FFFFFF', width=3),  # Thicker white outline
             )
             marker.setZValue(100)  # Draw on top
 
@@ -7202,7 +6651,7 @@ class AffilabsMainWindow(QMainWindow):
             if hasattr(self, 'edits_tab'):
                 self.edits_tab._edits_flags.append(flag)
 
-            logger.info(f"🚩 Added {flag_type} flag in Edits at t={time_val:.2f}s")
+            logger.info(f"ðŸš© Added {flag_type} flag in Edits at t={time_val:.2f}s")
 
         except Exception as e:
             logger.error(f"Failed to add flag in Edits: {e}")
@@ -7273,7 +6722,9 @@ class AffilabsMainWindow(QMainWindow):
                         """)
 
                 # Populate alignment controls from stored data
-                alignment_data = self.edits_tab._cycle_alignment.get(row_idx, {'channel': 'All', 'shift': 0.0, 'ref': 'Global'})
+                if not hasattr(self, '_cycle_alignment'):
+                    self._cycle_alignment = {}
+                alignment_data = self._cycle_alignment.get(row_idx, {'channel': 'All', 'shift': 0.0, 'ref': 'Global'})
 
                 # Update channel combo
                 self.edits_tab.alignment_channel_combo.blockSignals(True)
@@ -7580,7 +7031,7 @@ class AffilabsMainWindow(QMainWindow):
             self.edits_primary_graph.setLabel('left', 'Response (RU)')
             logger.info("[GRAPH] Auto-scaled graph to fit data")
 
-            logger.info(f"✓ Loaded {valid_cycles_loaded} cycle(s) to edits graph")
+            logger.info(f"âœ“ Loaded {valid_cycles_loaded} cycle(s) to edits graph")
 
             # Handle baseline cursors (only for single selection)
             if len(selected_rows) == 1:
@@ -7804,7 +7255,7 @@ class AffilabsMainWindow(QMainWindow):
                 f"Time range: {min_start:.1f}s - {max_end:.1f}s"
             )
 
-            logger.info(f"✓ Created segment '{segment_name}' from {len(source_cycles)} cycles")
+            logger.info(f"âœ“ Created segment '{segment_name}' from {len(source_cycles)} cycles")
 
         except Exception as e:
             logger.exception(f"Error creating segment: {e}")
@@ -7841,7 +7292,7 @@ class AffilabsMainWindow(QMainWindow):
                 # Reset stored data
                 self.edits_reference_cycle_data[i] = None
 
-            logger.info("✓ Cleared all reference graphs")
+            logger.info("âœ“ Cleared all reference graphs")
 
         except Exception as e:
             logger.exception(f"Error clearing reference graphs: {e}")
@@ -7942,7 +7393,7 @@ class AffilabsMainWindow(QMainWindow):
             # Store cycle data
             self.edits_reference_cycle_data[ref_index] = cycle_row
 
-            logger.info(f"✓ Loaded {cycle_type} cycle {cycle_row + 1} to reference {ref_index + 1}")
+            logger.info(f"âœ“ Loaded {cycle_type} cycle {cycle_row + 1} to reference {ref_index + 1}")
 
         except Exception as e:
             logger.exception(f"Error loading cycle to reference: {e}")
@@ -7995,7 +7446,7 @@ class AffilabsMainWindow(QMainWindow):
                 f"Exported segment '{segment_name}' to:\n{file_path}"
             )
 
-            logger.info(f"✓ Exported segment '{segment_name}' to TraceDrawer CSV")
+            logger.info(f"âœ“ Exported segment '{segment_name}' to TraceDrawer CSV")
 
         except Exception as e:
             logger.exception(f"Error exporting segment: {e}")
@@ -8043,7 +7494,7 @@ class AffilabsMainWindow(QMainWindow):
                 f"Exported segment '{segment_name}' to:\n{file_path}"
             )
 
-            logger.info(f"✓ Exported segment '{segment_name}' to JSON")
+            logger.info(f"âœ“ Exported segment '{segment_name}' to JSON")
 
         except Exception as e:
             logger.exception(f"Error exporting segment to JSON: {e}")
@@ -8142,7 +7593,7 @@ class AffilabsMainWindow(QMainWindow):
                     f"Deleted segment '{segment_name}'."
                 )
 
-                logger.info(f"✓ Deleted segment '{segment_name}'")
+                logger.info(f"âœ“ Deleted segment '{segment_name}'")
 
         except Exception as e:
             logger.exception(f"Error deleting segment: {e}")
@@ -8224,7 +7675,7 @@ class AffilabsMainWindow(QMainWindow):
 
             # Check if app instance is available (it should be set by main_simplified)
             if not hasattr(self, "app") or self.app is None:
-                print("⚠️  Demo data: No app instance available")
+                print("âš ï¸  Demo data: No app instance available")
                 print(
                     "   Demo data can only be loaded when running through main_simplified.py",
                 )
@@ -8285,7 +7736,7 @@ class AffilabsMainWindow(QMainWindow):
                 self.app._update_cycle_of_interest_graph()
 
             print(
-                f"✅ Demo data loaded: {len(time_array)} points, {len(cycle_boundaries)} cycles",
+                f"âœ… Demo data loaded: {len(time_array)} points, {len(cycle_boundaries)} cycles",
             )
             print("   Use this view for promotional screenshots")
 
@@ -8303,7 +7754,7 @@ class AffilabsMainWindow(QMainWindow):
             )
 
         except ImportError as e:
-            print(f"❌ Error importing demo data generator: {e}")
+            print(f"âŒ Error importing demo data generator: {e}")
             from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.critical(
@@ -8312,7 +7763,7 @@ class AffilabsMainWindow(QMainWindow):
                 f"Could not import demo data generator:\n{e}",
             )
         except Exception as e:
-            print(f"❌ Error loading demo data: {e}")
+            print(f"âŒ Error loading demo data: {e}")
             import traceback
 
             try:

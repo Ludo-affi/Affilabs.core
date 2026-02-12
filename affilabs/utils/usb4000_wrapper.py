@@ -426,7 +426,7 @@ class USB4000:
 
     def close(self, silent: bool = False) -> None:
         """Close the USB4000 device connection.
-        
+
         Args:
             silent: If True, suppress logging (used during Python shutdown)
         """
@@ -464,14 +464,23 @@ class USB4000:
             logger.error(f"set_integration FAILED: device={self._device is not None}, opened={self.opened}")
             return False
         try:
-            # FLOOR: Enforce 3ms minimum to prevent convergence from going too low
-            # Ocean Optics hardware becomes unstable below 3ms
-            time_ms = max(3.0, time_ms)
-            
+            # FLOOR: Enforce 4.5ms minimum for stable USB communication
+            # Ocean Optics USB4000/Flame-T hardware limit is 3.5ms, but requires
+            # safety margin. Testing shows 3.8ms still causes timeouts in iteration 2.
+            # 4.5ms provides 1ms safety margin for reliable operation.
+            time_ms = max(4.5, time_ms)
+
             time_us = int(time_ms * 1000)  # SeaBreeze API requires microseconds
             with _usb_device_lock:
                 self._device.integration_time_micros(time_us)
             self._integration_time = time_ms / 1000.0  # Store in seconds
+
+            # CRITICAL: Add settling delay after integration time change
+            # Python 3.12 is faster and may trigger USB timeouts if we read too quickly
+            # after changing integration time. Give device time to reconfigure.
+            import time
+            time.sleep(0.15)  # 150ms settling delay
+
             return True
         except Exception as e:
             logger.error(f"set_integration error for {time_ms:.1f}ms ({time_us}us, {time_ms/1000:.4f}s): {e}")

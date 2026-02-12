@@ -167,11 +167,11 @@ class InjectionFlag(Flag):
 
     @property
     def marker_color(self) -> str:
-        return "#FF6B6B"  # Red for injection
+        return "#FF3B30"  # Vibrant red for injection (Apple System Red)
 
     @property
     def marker_size(self) -> int:
-        return 15  # Larger for injection (important event)
+        return 14  # Consistent moderate size
 
     def to_export_dict(self) -> dict:
         """Include is_reference in export."""
@@ -199,15 +199,15 @@ class WashFlag(Flag):
 
     @property
     def marker_symbol(self) -> str:
-        return "s"  # Square
+        return "d"  # Diamond (more distinctive than square)
 
     @property
     def marker_color(self) -> str:
-        return "#00D9FF"  # Bright cyan for wash (more visible)
+        return "#007AFF"  # Vibrant blue for wash (Apple System Blue)
 
     @property
     def marker_size(self) -> int:
-        return 16  # Increased from 12 for better visibility
+        return 14  # Consistent moderate size
 
 
 @dataclass
@@ -233,11 +233,11 @@ class SpikeFlag(Flag):
 
     @property
     def marker_color(self) -> str:
-        return "#FF9500"  # Bright orange for spike/warning (more visible)
+        return "#FF9500"  # Vibrant orange for spike/warning (Apple System Orange)
 
     @property
     def marker_size(self) -> int:
-        return 18  # Increased from 14 for better visibility
+        return 14  # Consistent moderate size
 
 
 def create_flag(flag_type: str, channel: str, time: float, spr: float, **kwargs) -> Flag:

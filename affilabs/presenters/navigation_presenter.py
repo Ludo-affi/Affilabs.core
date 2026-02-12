@@ -64,7 +64,7 @@ class NavigationPresenter:
                 "  background: rgba(46, 48, 227, 0.1);"
                 "  color: rgb(46, 48, 227);"
                 "  border: none;"
-                "  border-radius: 20px;"
+                "  "
                 "  padding: 8px 24px;"
                 "  font-size: 13px;"
                 "  font-weight: 500;"
@@ -85,15 +85,6 @@ class NavigationPresenter:
             nav_layout.addWidget(btn)
 
         nav_layout.addStretch()
-
-        # Recording timer (hidden by default, shows when recording)
-        timer_label = QLabel("00:00:00")
-        timer_label.setStyleSheet(
-            label_style(12, color=Colors.ERROR, weight=600, font_family=Fonts.MONOSPACE)
-            + "background: rgba(255, 59, 48, 0.1);border:none;border-radius:4px;padding:4px 8px;",
-        )
-        timer_label.setVisible(False)  # Hidden until recording starts
-        nav_layout.addWidget(timer_label)
 
         # Add 16px separation before control buttons
         nav_layout.addSpacing(16)
@@ -119,7 +110,7 @@ class NavigationPresenter:
         indicator_layout.addStretch()
 
         self.main_window.recording_indicator.setStyleSheet(
-            "QFrame {  background: rgba(0, 0, 0, 0.04);  border-radius: 6px;}",
+            "QFrame {  background: rgba(0, 0, 0, 0.04);  }",
         )
         # Hide recording indicator box (keep for internal use but don't display)
         self.main_window.recording_indicator.setVisible(False)
@@ -151,7 +142,7 @@ class NavigationPresenter:
             "  font-weight: 600;"
             "  padding: 16px 32px;"
             "  border: 2px solid #E6B800;"
-            "  border-radius: 8px;"
+            "  "
             "}",
         )
         # Don't add to nav_layout - will be positioned as overlay in show_connecting_indicator
@@ -176,20 +167,20 @@ class NavigationPresenter:
         )
         self.main_window.pause_btn.setStyleSheet(
             "QPushButton {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #F5F5F7);"
+            "  background: #F5F5F7;"
             "  border: 1px solid rgba(46, 48, 227, 0.3);"
-            "  border-radius: 8px;"
+            "  border-radius: 4px;"
             "}"
             "QPushButton:hover:!checked {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.1), stop:1 rgba(46, 48, 227, 0.15));"
+            "  background: rgba(46, 48, 227, 0.15);"
             "  border: 1px solid rgba(46, 48, 227, 0.4);"
             "}"
             "QPushButton:checked {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF9500, stop:1 #E68500);"
+            "  background: #FF9500;"
             "  border: 1px solid rgba(255, 149, 0, 0.3);"
             "}"
             "QPushButton:hover:checked {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E68500, stop:1 #CC7700);"
+            "  background: #E68500;"
             "  border: 1px solid rgba(230, 133, 0, 0.3);"
             "}"
             "QPushButton:disabled {"
@@ -266,24 +257,24 @@ class NavigationPresenter:
         )
         self.main_window.record_btn.setStyleSheet(
             "QPushButton {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FFFFFF, stop:1 #F5F5F7);"
+            "  background: #F5F5F7;"
             "  color: rgb(46, 48, 227);"
             "  border: 1px solid rgba(46, 48, 227, 0.3);"
-            "  border-radius: 8px;"
+            "  border-radius: 4px;"
             "  font-size: 20px;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QPushButton:hover:!checked {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.1), stop:1 rgba(46, 48, 227, 0.15));"
+            "  background: rgba(46, 48, 227, 0.15);"
             "  border: 1px solid rgba(46, 48, 227, 0.4);"
             "}"
             "QPushButton:checked {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #FF3B30, stop:1 #E6342A);"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1;"
             "  color: white;"
             "  border: 1px solid rgba(255, 59, 48, 0.3);"
             "}"
             "QPushButton:hover:checked {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #E6342A, stop:1 #D02E24);"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1;"
             "  border: 1px solid rgba(230, 52, 42, 0.3);"
             "}"
             "QPushButton:disabled {"
@@ -307,7 +298,7 @@ class NavigationPresenter:
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.4), stop:1 rgba(46, 48, 227, 0.5));"
             "  color: white;"
             "  border: 1px solid rgba(46, 48, 227, 0.2);"
-            "  border-radius: 8px;"
+            "  "
             "  font-size: 20px;"
             "  font-weight: 400;"
             "  font-family: 'Segoe UI Symbol', 'Segoe UI Emoji', 'Apple Color Emoji', 'Arial Unicode MS', sans-serif;"

@@ -348,7 +348,7 @@ class CalibrationService(QObject):
 
     def _show_progress_dialog(self) -> None:
         """Show calibration progress dialog."""
-        from affilabs_core_ui import StartupCalibProgressDialog
+        from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
 
         # Check if pump is detected
         hw = self.app.hardware_mgr
@@ -1093,47 +1093,107 @@ class CalibrationService(QObject):
                             "🔬 Starting optical calibration (parallel with pump priming)..."
                         )
 
-                        # USB buffer clear
+                        # USB buffer clear with device reset if needed
                         logger.info("🔄 Clearing USB buffer with dummy reads...")
-                        try:
-                            # Wake up device by re-setting integration time (triggers fresh USB command)
-                            current_int = (
-                                usb._integration_time * 1000
-                                if hasattr(usb, "_integration_time")
-                                else 100
-                            )
-                            logger.info(
-                                f"   Waking up device with integration time re-set ({current_int:.1f}ms)..."
-                            )
-                            usb.set_integration(current_int)
-                            time.sleep(0.1)  # Let device stabilize
 
-                            # Add timeout handling to prevent infinite blocking
-                            import threading
+                        def try_dummy_reads(attempt_num=1):
+                            """Attempt dummy reads to clear USB buffer.
+                            Returns True if at least one read succeeded, False otherwise.
+                            """
+                            try:
+                                # Wake up device by re-setting integration time (triggers fresh USB command)
+                                current_int = (
+                                    usb._integration_time * 1000
+                                    if hasattr(usb, "_integration_time")
+                                    else 100
+                                )
+                                logger.info(
+                                    f"   Waking up device with integration time re-set ({current_int:.1f}ms)..."
+                                )
+                                usb.set_integration(current_int)
+                                time.sleep(0.5)  # Increased stabilization time from 100ms to 500ms
 
-                            for i in range(3):
-                                result = [None]  # Mutable container for thread result
+                                # Track success
+                                any_success = False
 
-                                def read_with_timeout():
-                                    try:
-                                        result[0] = usb.read_intensity()
-                                    except Exception as e:
-                                        logger.warning(f"   Dummy read {i + 1}/3 error: {e}")
+                                # Add timeout handling to prevent infinite blocking
+                                import threading
 
-                                read_thread = threading.Thread(target=read_with_timeout, daemon=True)
-                                read_thread.start()
-                                read_thread.join(timeout=5.0)  # 5 second timeout
+                                for i in range(3):
+                                    result = [None]  # Mutable container for thread result
 
-                                if read_thread.is_alive():
-                                    logger.warning(f"   Dummy read {i + 1}/3: TIMEOUT (continuing...)")
-                                elif result[0] is not None:
-                                    logger.info(f"   Dummy read {i + 1}/3: Success")
-                                else:
-                                    logger.warning(f"   Dummy read {i + 1}/3: No data (continuing...)")
-                                time.sleep(0.05)
+                                    def read_with_timeout():
+                                        try:
+                                            result[0] = usb.read_intensity()
+                                        except Exception as e:
+                                            logger.warning(f"   Dummy read {i + 1}/3 error: {e}")
+
+                                    read_thread = threading.Thread(
+                                        target=read_with_timeout, daemon=True
+                                    )
+                                    read_thread.start()
+                                    read_thread.join(timeout=5.0)  # 5 second timeout
+
+                                    if read_thread.is_alive():
+                                        logger.warning(
+                                            f"   Dummy read {i + 1}/3: TIMEOUT (continuing...)"
+                                        )
+                                    elif result[0] is not None and len(result[0]) > 0:
+                                        logger.info(
+                                            f"   Dummy read {i + 1}/3: Success ({len(result[0])} pixels)"
+                                        )
+                                        any_success = True
+                                    else:
+                                        logger.warning(
+                                            f"   Dummy read {i + 1}/3: No data (continuing...)"
+                                        )
+                                    time.sleep(0.05)
+
+                                return any_success
+
+                            except Exception as e:
+                                logger.warning(
+                                    f"USB buffer clear issues (attempt {attempt_num}): {e}"
+                                )
+                                return False
+
+                        # Try dummy reads
+                        if not try_dummy_reads(attempt_num=1):
+                            logger.warning("⚠️  All dummy reads failed - attempting device reset...")
+
+                            # Close and reopen device
+                            try:
+                                logger.info("   Closing USB device...")
+                                if hasattr(usb, "close") and callable(usb.close):
+                                    usb.close()
+                                    time.sleep(1.0)  # Wait for device to release
+
+                                logger.info("   Reopening USB device...")
+                                if hasattr(usb, "open") and callable(usb.open):
+                                    if usb.open():
+                                        logger.info("   [OK] Device reopened successfully")
+                                        time.sleep(0.5)
+
+                                        # Try dummy reads again after reset
+                                        if try_dummy_reads(attempt_num=2):
+                                            logger.info(
+                                                "[OK] USB buffer cleared after device reset"
+                                            )
+                                        else:
+                                            logger.error(
+                                                "❌ Dummy reads still failing after reset - device may need power cycle"
+                                            )
+                                            raise RuntimeError(
+                                                "USB device not responding to read commands"
+                                            )
+                                    else:
+                                        logger.error("❌ Failed to reopen USB device")
+                                        raise RuntimeError("Failed to reopen USB device")
+                            except Exception as e:
+                                logger.error(f"❌ Device reset failed: {e}")
+                                raise RuntimeError(f"USB device reset failed: {e}")
+                        else:
                             logger.info("[OK] USB buffer cleared")
-                        except Exception as e:
-                            logger.warning(f"USB buffer clear issues: {e}")
 
                         # Load configuration
                         from affilabs.utils.device_configuration import DeviceConfiguration
@@ -1369,43 +1429,95 @@ class CalibrationService(QObject):
                 else:
                     logger.info("No pump detected - running optical calibration only...")
 
-                # CRITICAL FIX: Clear USB device buffer with dummy reads
+                # CRITICAL FIX: Clear USB device buffer with dummy reads and device reset if needed
                 logger.info("🔄 Clearing USB buffer with dummy reads...")
-                try:
-                    # Wake up device by re-setting integration time (triggers fresh USB command)
-                    current_int = (
-                        usb._integration_time * 1000 if hasattr(usb, "_integration_time") else 100
-                    )
-                    logger.info(f"   Waking up device with integration time re-set ({current_int:.1f}ms)...")
-                    usb.set_integration(current_int)
-                    time.sleep(0.1)  # Let device stabilize
 
-                    # Add timeout handling to prevent infinite blocking
-                    import threading
+                def try_dummy_reads_nopump(attempt_num=1):
+                    """Attempt dummy reads to clear USB buffer.
+                    Returns True if at least one read succeeded, False otherwise.
+                    """
+                    try:
+                        # Wake up device by re-setting integration time (triggers fresh USB command)
+                        current_int = (
+                            usb._integration_time * 1000
+                            if hasattr(usb, "_integration_time")
+                            else 100
+                        )
+                        logger.info(
+                            f"   Waking up device with integration time re-set ({current_int:.1f}ms)..."
+                        )
+                        usb.set_integration(current_int)
+                        time.sleep(0.5)  # Increased stabilization time from 100ms to 500ms
 
-                    for i in range(3):
-                        result = [None]  # Mutable container for thread result
+                        # Track success
+                        any_success = False
 
-                        def read_with_timeout():
-                            try:
-                                result[0] = usb.read_intensity()
-                            except Exception as e:
-                                logger.warning(f"   Dummy read {i + 1}/3 error: {e}")
+                        # Add timeout handling to prevent infinite blocking
+                        import threading
 
-                        read_thread = threading.Thread(target=read_with_timeout, daemon=True)
-                        read_thread.start()
-                        read_thread.join(timeout=5.0)  # 5 second timeout
+                        for i in range(3):
+                            result = [None]  # Mutable container for thread result
 
-                        if read_thread.is_alive():
-                            logger.warning(f"   Dummy read {i + 1}/3: TIMEOUT (continuing...)")
-                        elif result[0] is not None:
-                            logger.info(f"   Dummy read {i + 1}/3: Success ({len(result[0])} pixels)")
-                        else:
-                            logger.warning(f"   Dummy read {i + 1}/3: No data (continuing...)")
-                        time.sleep(0.05)
+                            def read_with_timeout():
+                                try:
+                                    result[0] = usb.read_intensity()
+                                except Exception as e:
+                                    logger.warning(f"   Dummy read {i + 1}/3 error: {e}")
+
+                            read_thread = threading.Thread(target=read_with_timeout, daemon=True)
+                            read_thread.start()
+                            read_thread.join(timeout=5.0)  # 5 second timeout
+
+                            if read_thread.is_alive():
+                                logger.warning(f"   Dummy read {i + 1}/3: TIMEOUT (continuing...)")
+                            elif result[0] is not None and len(result[0]) > 0:
+                                logger.info(
+                                    f"   Dummy read {i + 1}/3: Success ({len(result[0])} pixels)"
+                                )
+                                any_success = True
+                            else:
+                                logger.warning(f"   Dummy read {i + 1}/3: No data (continuing...)")
+                            time.sleep(0.05)
+
+                        return any_success
+
+                    except Exception as e:
+                        logger.warning(f"USB buffer clear issues (attempt {attempt_num}): {e}")
+                        return False
+
+                # Try dummy reads
+                if not try_dummy_reads_nopump(attempt_num=1):
+                    logger.warning("⚠️  All dummy reads failed - attempting device reset...")
+
+                    # Close and reopen device
+                    try:
+                        logger.info("   Closing USB device...")
+                        if hasattr(usb, "close") and callable(usb.close):
+                            usb.close()
+                            time.sleep(1.0)  # Wait for device to release
+
+                        logger.info("   Reopening USB device...")
+                        if hasattr(usb, "open") and callable(usb.open):
+                            if usb.open():
+                                logger.info("   [OK] Device reopened successfully")
+                                time.sleep(0.5)
+
+                                # Try dummy reads again after reset
+                                if try_dummy_reads_nopump(attempt_num=2):
+                                    logger.info("[OK] USB buffer cleared after device reset")
+                                else:
+                                    logger.error(
+                                        "❌ Dummy reads still failing after reset - device may need power cycle"
+                                    )
+                                    raise RuntimeError("USB device not responding to read commands")
+                            else:
+                                logger.error("❌ Failed to reopen USB device")
+                                raise RuntimeError("Failed to reopen USB device")
+                    except Exception as e:
+                        logger.error(f"❌ Device reset failed: {e}")
+                        raise RuntimeError(f"USB device reset failed: {e}")
+                else:
                     logger.info("[OK] USB buffer cleared")
-                except Exception as e:
-                    logger.warning(f"[WARN] USB buffer clear had issues (continuing anyway): {e}")
 
                 logger.info("[OK] Hardware ready")
 
