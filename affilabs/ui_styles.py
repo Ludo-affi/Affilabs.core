@@ -24,6 +24,11 @@ class Colors:
     BACKGROUND_LIGHT = "#F5F5F7"
     TRANSPARENT = "transparent"
 
+    # Surface colors (compatibility with ui/styles.py)
+    SURFACE = "#FFFFFF"  # Pure white backgrounds
+    ON_SURFACE = "#1D1D1F"  # Text on surface
+    ON_SURFACE_VARIANT = "#86868B"  # Secondary text on surface
+
     # Semantic colors
     SUCCESS = "#34C759"
     WARNING = "#FF9500"
@@ -98,6 +103,52 @@ class Dimensions:
     HEIGHT_BUTTON_LG = 36
     HEIGHT_BUTTON_XL = 40
     HEIGHT_INPUT = 36
+
+
+# ============================================================================
+# SPACING & RADIUS (Compatibility with ui/styles.py)
+# ============================================================================
+
+
+class Spacing:
+    """Consistent spacing system (8px base unit - Apple standard)."""
+
+    XS = 4  # Extra small
+    SM = 8  # Small
+    MD = 12  # Medium
+    LG = 16  # Large
+    XL = 20  # Extra large
+    XXL = 24  # Extra extra large
+
+
+class Radius:
+    """Border radius values (Apple-inspired rounded corners)."""
+
+    NONE = 0
+    SM = 4  # Small elements
+    MD = 8  # Standard containers (primary radius)
+    LG = 12  # Large containers
+    XL = 20  # Pill-shaped buttons
+    FULL = 9999  # Circular
+
+
+# ============================================================================
+# COLOR UTILITIES
+# ============================================================================
+
+
+def hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """Convert hex color string to RGB tuple.
+
+    Args:
+        hex_color: Hex color string (e.g., "#FF5733" or "FF5733")
+
+    Returns:
+        RGB tuple (e.g., (255, 87, 51))
+
+    """
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
 
 
 # ============================================================================
@@ -656,3 +707,482 @@ def text_edit_log_style() -> str:
         "  line-height: 1.4;"
         "}"
     )
+
+
+# ============================================================================
+# MIGRATED FUNCTIONS (from ui/styles.py and utils/ui_styles.py)
+# ============================================================================
+
+
+def get_button_style(variant: str = "standard") -> str:
+    """Modern button styles for various button types.
+
+    Args:
+        variant: 'standard', 'primary', 'success', 'error', 'text'
+
+    Returns:
+        Complete stylesheet string for QPushButton
+
+    """
+    variants = {
+        "standard": {
+            "bg": Colors.OVERLAY_LIGHT_6,
+            "hover_bg": Colors.OVERLAY_LIGHT_10,
+            "pressed_bg": "rgba(0, 0, 0, 0.14)",
+            "text": Colors.PRIMARY_TEXT,
+            "border_radius": "8px",
+        },
+        "primary": {
+            "bg": Colors.BUTTON_PRIMARY,
+            "hover_bg": Colors.BUTTON_PRIMARY_HOVER,
+            "pressed_bg": Colors.BUTTON_PRIMARY_PRESSED,
+            "text": "white",
+            "border_radius": "8px",
+        },
+        "success": {
+            "bg": Colors.SUCCESS,
+            "hover_bg": "#2FB350",
+            "pressed_bg": "#28A745",
+            "text": "white",
+            "border_radius": "8px",
+        },
+        "error": {
+            "bg": Colors.ERROR,
+            "hover_bg": "#E6342A",
+            "pressed_bg": "#CC2E24",
+            "text": "white",
+            "border_radius": "8px",
+        },
+        "text": {
+            "bg": "transparent",
+            "hover_bg": Colors.OVERLAY_LIGHT_6,
+            "pressed_bg": Colors.OVERLAY_LIGHT_10,
+            "text": Colors.PRIMARY_TEXT,
+            "border_radius": "8px",
+        },
+    }
+
+    style = variants.get(variant, variants["standard"])
+
+    return f"""
+    QPushButton {{
+        background: {style['bg']};
+        border: none;
+        border-radius: {style['border_radius']};
+        color: {style['text']};
+        padding: 10px 16px;
+        font-family: {Fonts.SYSTEM};
+        font-size: 13px;
+        font-weight: 600;
+    }}
+
+    QPushButton:hover {{
+        background: {style['hover_bg']};
+    }}
+
+    QPushButton:pressed {{
+        background: {style['pressed_bg']};
+    }}
+
+    QPushButton:disabled {{
+        background: rgba(0, 0, 0, 0.03);
+        color: {Colors.SECONDARY_TEXT};
+        opacity: 0.5;
+    }}
+    """
+
+
+def get_container_style(elevated: bool = True) -> str:
+    """Modern container/surface style with subtle elevation.
+
+    Args:
+        elevated: Whether to show elevation with border (Qt doesn't support box-shadow)
+
+    Returns:
+        Stylesheet for QFrame/QGroupBox containers
+
+    """
+    border = (
+        f"border: 2px solid {Colors.OVERLAY_LIGHT_6};"
+        if elevated
+        else f"border: 1px solid {Colors.OVERLAY_LIGHT_10};"
+    )
+
+    return f"""
+    QFrame {{
+        background-color: {Colors.SURFACE};
+        {border}
+        border-radius: {Radius.MD}px;
+    }}
+    """
+
+
+def get_standard_checkbox_style() -> str:
+    """Standard checkbox style with Apple-inspired design.
+
+    Returns:
+        Stylesheet for QCheckBox
+
+    """
+    return f"""
+    QCheckBox {{
+        spacing: {Spacing.SM}px;
+        font-family: {Fonts.SYSTEM};
+        font-size: 9pt;
+        color: {Colors.ON_SURFACE};
+    }}
+
+    QCheckBox::indicator {{
+        width: 18px;
+        height: 18px;
+        border-radius: {Radius.SM}px;
+        border: 2px solid {Colors.OVERLAY_LIGHT_10};
+        background-color: {Colors.SURFACE};
+    }}
+
+    QCheckBox::indicator:hover {{
+        border-color: {Colors.INFO};
+        background-color: {Colors.OVERLAY_LIGHT_6};
+    }}
+
+    QCheckBox::indicator:checked {{
+        background-color: {Colors.INFO};
+        border-color: {Colors.INFO};
+    }}
+
+    QCheckBox::indicator:checked:hover {{
+        background-color: #0056CC;
+    }}
+
+    QCheckBox::indicator:disabled {{
+        background-color: {Colors.BACKGROUND_LIGHT};
+        border-color: {Colors.OVERLAY_LIGHT_8};
+    }}
+    """
+
+
+def get_standard_radiobutton_style() -> str:
+    """Standard radio button style with Apple-inspired design.
+
+    Returns:
+        Stylesheet for QRadioButton
+
+    """
+    return f"""
+    QRadioButton {{
+        spacing: {Spacing.SM}px;
+        font-family: {Fonts.SYSTEM};
+        font-size: 9pt;
+        color: {Colors.ON_SURFACE};
+    }}
+
+    QRadioButton::indicator {{
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        border: 2px solid {Colors.OVERLAY_LIGHT_10};
+        background-color: {Colors.SURFACE};
+    }}
+
+    QRadioButton::indicator:hover {{
+        border-color: {Colors.INFO};
+        background-color: {Colors.OVERLAY_LIGHT_6};
+    }}
+
+    QRadioButton::indicator:checked {{
+        background-color: {Colors.INFO};
+        border-color: {Colors.INFO};
+    }}
+
+    QRadioButton::indicator:checked:hover {{
+        background-color: #0056CC;
+    }}
+
+    QRadioButton::indicator:disabled {{
+        background-color: {Colors.BACKGROUND_LIGHT};
+        border-color: {Colors.OVERLAY_LIGHT_8};
+    }}
+    """
+
+
+def get_channel_button_style(active_color: str) -> str:
+    """Return stylesheet for a checkable channel button with active color.
+
+    Args:
+        active_color: Hex color for the checked state background
+
+    Returns:
+        Stylesheet for channel toggle button (checked=colored border, unchecked=gray)
+
+    """
+    return (
+        f"QPushButton {{"
+        "  background: white;"
+        f"  color: {active_color};"
+        f"  border: 2px solid {active_color};"
+        "  border-radius: 6px;"
+        "  font-size: 12px;"
+        "  font-weight: 900;"
+        f"  font-family: {Fonts.SYSTEM};"
+        "}"
+        f"QPushButton:!checked {{"
+        "  background: #E5E5E5;"
+        "  color: #808080;"
+        "  border: 2px solid #808080;"
+        "}"
+        "QPushButton:hover:!checked {"
+        "  border: 2px solid #808080;"
+        "}"
+    )
+
+
+def get_active_cycle_channel_button_style(active_color: str) -> str:
+    """Return stylesheet for active cycle graph channel buttons (less curved, more grey).
+
+    Args:
+        active_color: Hex color for the checked state background
+
+    Returns:
+        Stylesheet for active cycle channel button
+
+    """
+    return (
+        f"QPushButton {{"
+        f"  background: {active_color};"
+        "  color: white;"
+        "  border: none;"
+        "  border-radius: 3px;"
+        "  font-size: 12px;"
+        "  font-weight: 600;"
+        f"  font-family: {Fonts.SYSTEM};"
+        "}"
+        f"QPushButton:!checked {{"
+        f"  background: #E5E5EA;"
+        f"  color: {Colors.SECONDARY_TEXT};"
+        "}"
+        "QPushButton:hover:!checked {"
+        f"  background: #D1D1D6;"
+        "}"
+    )
+
+
+def get_live_checkbox_style() -> str:
+    """Style for the 'Live Data' checkbox in the graphs header.
+
+    Returns:
+        Stylesheet for live data checkbox
+
+    """
+    return (
+        "QCheckBox {"
+        "  font-size: 13px;"
+        f"  color: {Colors.PRIMARY_TEXT};"
+        "  background: transparent;"
+        f"  font-family: {Fonts.SYSTEM};"
+        "  font-weight: 500;"
+        "  spacing: 6px;"
+        "}"
+        "QCheckBox::indicator {"
+        "  width: 18px;"
+        "  height: 18px;"
+        f"  border: 2px solid {Colors.SECONDARY_TEXT};"
+        "  border-radius: 4px;"
+        "  background: white;"
+        "}"
+        "QCheckBox::indicator:checked {"
+        f"  background: {Colors.INFO};"
+        f"  border-color: {Colors.INFO};"
+        "  image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOSIgdmlld0JveD0iMCAwIDEyIDkiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEwLjUgMS41TDQgOEwxLjUgNS41IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==);"
+        "}"
+        "QCheckBox::indicator:hover {"
+        f"  border-color: {Colors.INFO};"
+        "}"
+    )
+
+
+def get_clear_button_style(variant: str = "neutral") -> str:
+    """Style for Clear Graph/Flags buttons.
+
+    Args:
+        variant: 'neutral' for Clear Graph, 'danger' for Clear Flags
+
+    Returns:
+        Stylesheet for clear button
+
+    """
+    if variant == "danger":
+        return (
+            "QPushButton {"
+            "  background: rgba(255, 59, 48, 0.1);"
+            f"  color: {Colors.ERROR};"
+            "  border: 1px solid rgba(255, 59, 48, 0.3);"
+            "  border-radius: 6px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            f"  font-family: {Fonts.SYSTEM};"
+            "  padding: 0 16px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(255, 59, 48, 0.15);"
+            "  border: 1px solid rgba(255, 59, 48, 0.5);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(255, 59, 48, 0.2);"
+            "}"
+            "QPushButton:disabled {"
+            f"  background: {Colors.OVERLAY_LIGHT_3};"
+            f"  color: {Colors.SECONDARY_TEXT};"
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "}"
+            ")"
+        )
+    else:  # neutral
+        return (
+            "QPushButton {"
+            f"  background: {Colors.OVERLAY_LIGHT_6};"
+            f"  color: {Colors.PRIMARY_TEXT};"
+            f"  border: 1px solid {Colors.OVERLAY_LIGHT_10};"
+            "  border-radius: 6px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            f"  font-family: {Fonts.SYSTEM};"
+            "  padding: 0 16px;"
+            "}"
+            "QPushButton:hover {"
+            f"  background: {Colors.OVERLAY_LIGHT_10};"
+            "  border: 1px solid {Colors.OVERLAY_LIGHT_20};"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(0, 0, 0, 0.14);"
+            "}"
+            "QPushButton:disabled {"
+            f"  background: {Colors.OVERLAY_LIGHT_3};"
+            f"  color: {Colors.SECONDARY_TEXT};"
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "}"
+            ")"
+        )
+
+
+# ============================================================================
+# CHANNEL COLORS & CHECKBOX STYLES (for sensorgram UI)
+# ============================================================================
+
+# Channel visualization colors
+CHANNEL_A = "rgb(0, 0, 0)"  # Black
+CHANNEL_B = "rgb(255, 0, 81)"  # Red/Pink
+CHANNEL_C = "rgb(0, 174, 255)"  # Blue
+CHANNEL_D = "rgb(0, 150, 80)"  # Green
+
+
+def get_font(
+    size: int = 9,
+    bold: bool = False,
+    weight: int = -1,
+) -> "QFont":
+    """Create a font with specified parameters.
+
+    Args:
+        size: Font size in points (default: 9)
+        bold: Whether font should be bold
+        weight: Explicit font weight (overrides bold if set)
+
+    Returns:
+        Configured QFont object
+
+    """
+    from PySide6.QtGui import QFont
+
+    font = QFont()
+    font.setFamily("Segoe UI")
+    font.setPointSize(size)
+
+    if weight != -1:
+        font.setWeight(QFont.Weight(weight))
+    elif bold:
+        font.setBold(True)
+
+    return font
+
+
+def get_segment_checkbox_font() -> "QFont":
+    """Font for segment/channel checkboxes (9pt bold).
+
+    Returns:
+        QFont configured for channel checkboxes
+
+    """
+    return get_font(size=9, bold=True)
+
+
+def get_channel_checkbox_style(channel: str, inverted: bool = False) -> str:
+    """Channel-specific checkbox style with color coding.
+
+    Args:
+        channel: 'A', 'B', 'C', or 'D'
+        inverted: If True, use white background with colored text (unchecked)
+                 and colored background with white text (checked)
+
+    Returns:
+        Stylesheet for channel checkbox
+
+    """
+    color_map = {
+        "A": CHANNEL_A,
+        "B": CHANNEL_B,
+        "C": CHANNEL_C,
+        "D": CHANNEL_D,
+    }
+
+    color = color_map.get(channel.upper(), CHANNEL_A)
+
+    if inverted:
+        # Inverted style: white background with channel-colored text normally,
+        # colored background with white text when checked
+        return f"""
+        QCheckBox {{
+            color: {color};
+            background-color: #FFFFFF;
+            border: 2px solid {color};
+            border-radius: 6px;
+            padding: {Spacing.XS}px;
+            font-family: {Fonts.SYSTEM};
+            font-size: 9pt;
+            font-weight: 900;
+        }}
+        QCheckBox:checked {{
+            background-color: {color};
+            color: #FFFFFF;
+            border: 2px solid {color};
+        }}
+        QCheckBox:hover {{
+            border: 2px solid {color};
+        }}
+        """
+    else:
+        # Original style: colored text on surface background
+        return f"""
+        QCheckBox {{
+            color: {color};
+            background-color: {Colors.SURFACE};
+            border: 1px solid {Colors.OVERLAY_LIGHT_10};
+            border-radius: {Radius.SM}px;
+            padding: {Spacing.XS}px;
+            font-family: {Fonts.SYSTEM};
+            font-size: 9pt;
+            font-weight: bold;
+        }}
+        """
+
+
+def apply_channel_checkbox_style(checkbox, channel: str, inverted: bool = False) -> None:
+    """Apply standard style to a channel checkbox.
+
+    Args:
+        checkbox: QCheckBox widget
+        channel: 'A', 'B', 'C', or 'D'
+        inverted: If True, use inverted style (white bg + colored text)
+
+    """
+    checkbox.setFont(get_segment_checkbox_font())
+    checkbox.setStyleSheet(get_channel_checkbox_style(channel, inverted=inverted))

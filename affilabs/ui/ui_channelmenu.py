@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from affilabs.ui.styles import (
+from affilabs.ui_styles import (
     get_standard_checkbox_style,
     get_standard_radiobutton_style,
 )

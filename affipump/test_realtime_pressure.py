@@ -75,15 +75,15 @@ start_time = time.time()
 # Monitor for 12 seconds (300µL at 30µL/s = 10 seconds expected)
 for i in range(60):  # 60 iterations x 0.2s = 12 seconds
     elapsed = time.time() - start_time
-
+    
     # Query pressure
     pressure = get_pressure()
     pressure_str = f"{pressure:8d}" if pressure is not None else "    N/A "
-
+    
     # Query position
     position = get_position()
     position_str = f"{position:13.1f}" if position is not None else "         N/A "
-
+    
     # Query status
     status_resp = send_cmd("/1?", 0.05)
     if b'@' in status_resp:
@@ -92,11 +92,11 @@ for i in range(60):  # 60 iterations x 0.2s = 12 seconds
         status = "IDLE"
     else:
         status = "UNKNOWN"
-
+    
     print(f"   {elapsed:7.1f}  | {pressure_str} | {position_str} | {status}")
-
+    
     time.sleep(0.2)
-
+    
     # Stop if pump is idle
     if status == "IDLE":
         break

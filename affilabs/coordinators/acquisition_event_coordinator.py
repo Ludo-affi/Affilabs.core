@@ -116,9 +116,9 @@ class AcquisitionEventCoordinator:
         # Update spectroscopy status to "Running"
         self._update_spectroscopy_status("Running", "#34C759")
 
-        # Reset experiment start time
-        self._app.experiment_start_time = None
-        logger.debug("Reset experiment_start_time for new acquisition")
+        # Reset experiment clock
+        self._app.clock.reset()
+        logger.debug("Reset experiment clock for new acquisition")
 
         # Clear data buffers
         self._app.buffer_mgr.clear_all()

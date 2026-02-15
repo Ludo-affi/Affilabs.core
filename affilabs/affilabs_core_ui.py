@@ -110,6 +110,7 @@ Last Updated: November 22, 2025
 from __future__ import annotations
 
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -344,13 +345,6 @@ class AffilabsMainWindow(QMainWindow):
         self.splitter.setCollapsible(0, False)  # Prevent sidebar from collapsing
 
         # Forward sidebar control references to main window for easy access
-        # Graphic display controls hidden per user request:
-        # self.grid_check = self.sidebar.grid_check
-        # self.autoscale_check = self.sidebar.autoscale_check
-        # self.min_input = self.sidebar.min_input
-        # self.max_input = self.sidebar.max_input
-        # self.x_axis_btn = self.sidebar.x_axis_btn
-        # self.y_axis_btn = self.sidebar.y_axis_btn
         self.colorblind_check = self.sidebar.colorblind_check
         self.ref_combo = self.sidebar.ref_combo
         self.export_data_btn = self.sidebar.export_data_btn
@@ -449,56 +443,8 @@ class AffilabsMainWindow(QMainWindow):
         # Set initial sizes: 520px for sidebar (more space due to wide Static section), rest for main content
         self.splitter.setSizes([520, 880])
 
-        # Create vertical layout for main content + status bar
-        content_with_status_layout = QVBoxLayout()
-        content_with_status_layout.setContentsMargins(0, 0, 0, 0)
-        content_with_status_layout.setSpacing(0)
-        content_with_status_layout.addWidget(self.splitter)
-
-        # Add operation status bar at bottom (matches navigation bar style)
-        self.operation_status_bar = QFrame()
-        self.operation_status_bar.setFixedHeight(50)  # Increased from 36px for better visibility
-        self.operation_status_bar.setStyleSheet(f"""
-            QFrame {{
-                background: {Colors.BACKGROUND_WHITE};
-            }}
-        """)
-
-        status_layout = QHBoxLayout(self.operation_status_bar)
-        status_layout.setContentsMargins(20, 0, 20, 0)
-        status_layout.setSpacing(16)
-
-        # System intelligence status (left side)
-        self.bottom_intel_status_label = QLabel("â—")
-        self.bottom_intel_status_label.setStyleSheet(
-            label_style(14, color=Colors.SECONDARY_TEXT, weight=int(Fonts.WEIGHT_BOLD))
-        )
-        status_layout.addWidget(self.bottom_intel_status_label)
-
-        # Intelligence message (system state info)
-        self.bottom_intel_message_label = QLabel("Initializing...")
-        self.bottom_intel_message_label.setStyleSheet(
-            label_style(13, color=Colors.SECONDARY_TEXT, weight=int(Fonts.WEIGHT_SEMIBOLD))
-        )
-        status_layout.addWidget(self.bottom_intel_message_label)
-
-        status_layout.addStretch()
-
-        # Cycle notes label (secondary information) - right side
-        self.cycle_notes_label = QLabel("")
-        self.cycle_notes_label.setStyleSheet(
-            label_style(13, color=Colors.SECONDARY_TEXT, weight=int(Fonts.WEIGHT_NORMAL))
-        )
-        self.cycle_notes_label.setWordWrap(False)  # Keep on one line
-        status_layout.addWidget(self.cycle_notes_label)
-
-        content_with_status_layout.addWidget(self.operation_status_bar)
-
-        # Wrap in container widget
-        content_with_status_widget = QWidget()
-        content_with_status_widget.setLayout(content_with_status_layout)
-
-        main_layout.addWidget(content_with_status_widget)
+        # Add splitter directly to main layout
+        main_layout.addWidget(self.splitter)
 
         # Ensure Sensorgram page (index 0) is shown by default
         self.content_stack.setCurrentIndex(0)
@@ -514,10 +460,6 @@ class AffilabsMainWindow(QMainWindow):
         content_layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
         content_layout.setSpacing(Dimensions.SPACING_SM)
 
-        # Graph header with controls
-        header = self._create_graph_header()
-        content_layout.addWidget(header)
-
         # Create QSplitter for resizable graph panels (30/70 split)
         from PySide6.QtWidgets import QSplitter
 
@@ -525,11 +467,12 @@ class AffilabsMainWindow(QMainWindow):
         splitter.setHandleWidth(8)
         splitter.setChildrenCollapsible(False)
 
-        # Top graph (Navigation/Overview) - 30%
+        # Top graph (Navigation/Overview) - 30% - with integrated controls
         self.full_timeline_graph, top_graph = self._create_graph_container(
             "Live Sensorgram",
             height=200,
             show_delta_spr=False,
+            include_controls=True,
         )
 
         # Bottom graph (Detail/Cycle of Interest) - 70%
@@ -587,8 +530,7 @@ class AffilabsMainWindow(QMainWindow):
             "}"
             "QSplitter::handle {"
             "  background: rgba(0, 0, 0, 0.1);"
-            "  "
-            "  "
+            "  border-radius: 2px;"
             "  margin: 0px 16px;"
             "}"
             "QSplitter::handle:hover {"
@@ -828,13 +770,8 @@ class AffilabsMainWindow(QMainWindow):
                 )
 
     def _create_graph_header(self):
-        """Create header with channel toggle controls and cursor range inputs in two rows."""
-        header = QWidget()
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(8)
-
-        # ===== First Row: Channel toggles, Live Data, Clear Graph =====
+        """Create channel toggle controls, Live Data, and Clear Graph buttons."""
+        # ===== Controls Row: Channel toggles, Timer, Live Data, Clear Graph =====
         first_row = QWidget()
         first_row.setFixedHeight(Dimensions.HEIGHT_BUTTON_XL)
         first_row_layout = QHBoxLayout(first_row)
@@ -842,9 +779,13 @@ class AffilabsMainWindow(QMainWindow):
         first_row_layout.setSpacing(8)
 
         # Channel selection label
-        from affilabs.utils.ui_styles import UIStyleManager
+        from affilabs.ui_styles import (
+            get_channel_button_style,
+            get_live_checkbox_style,
+            get_clear_button_style,
+        )
 
-        channels_label = QLabel("Display Channels:")
+        channels_label = QLabel("Display:")
         channels_label.setStyleSheet(
             "QLabel {"
             "  font-size: 12px;"
@@ -854,24 +795,24 @@ class AffilabsMainWindow(QMainWindow):
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
             "}"
         )
-        channels_label.setToolTip("Toggle channel visibility on graphs")
+        channels_label.setToolTip("Toggle channels")
         first_row_layout.addWidget(channels_label)
 
         # Channel toggles - show/hide channels on graphs
         self.channel_toggles = {}
         channel_names = {
-            "A": ("#1D1D1F", "Channel A (Black) - Toggle visibility"),
-            "B": ("#FF3B30", "Channel B (Red) - Toggle visibility"),
-            "C": ("#007AFF", "Channel C (Blue) - Toggle visibility"),
-            "D": ("#34C759", "Channel D (Green) - Toggle visibility"),
+            "A": ("#1D1D1F", "Channel A (Black)"),
+            "B": ("#FF3B30", "Channel B (Red)"),
+            "C": ("#007AFF", "Channel C (Blue)"),
+            "D": ("#34C759", "Channel D (Green)"),
         }
         for ch, (color, tooltip) in channel_names.items():
             ch_btn = QPushButton(ch)
             ch_btn.setCheckable(True)
             ch_btn.setChecked(True)  # All visible by default
-            ch_btn.setFixedSize(36, 32)
+            ch_btn.setFixedSize(32, 28)
             ch_btn.setToolTip(tooltip)
-            ch_btn.setStyleSheet(UIStyleManager.get_channel_button_style(color))
+            ch_btn.setStyleSheet(get_channel_button_style(color))
 
             # Store reference and connect to visibility toggle
             self.channel_toggles[ch] = ch_btn
@@ -884,55 +825,87 @@ class AffilabsMainWindow(QMainWindow):
 
             first_row_layout.addWidget(ch_btn)
 
-        # User Timer button - ONLY for manual user-set timers (NOT cycle countdowns)
-        from affilabs.widgets.timer_button import TimerButton
-        self.timer_button = TimerButton(parent=self)
-        self.timer_button.setFixedSize(70, 32)  # Wider to fit timer display (MM:SS)
-        self.timer_button.set_compact_mode(True)  # Icon-only mode
-        self.timer_button.clicked.connect(self._on_timer_button_clicked)
-        self.timer_button.clear_requested.connect(self._on_clear_manual_timer)
-        self.timer_button.restart_requested.connect(self._on_restart_manual_timer)
-        first_row_layout.addWidget(self.timer_button)
-
         first_row_layout.addStretch()
 
-        # Live Data checkbox
-        self.live_data_checkbox = QCheckBox("Live Data")
-        self.live_data_checkbox.setChecked(True)
-        self.live_data_checkbox.setToolTip(
-            "Enable/disable live cursor auto-follow\n"
-            "â€¢ Checked: Stop cursor follows latest data point\n"
-            "â€¢ Unchecked: Stop cursor freezes, data keeps recording\n"
-            "â€¢ Cycle of Interest graph always updates between cursors",
+        # Live Data toggle button
+        self.live_data_btn = QPushButton("Live Data")
+        self.live_data_btn.setCheckable(True)
+        self.live_data_btn.setChecked(True)
+        self.live_data_btn.setMinimumHeight(32)
+        self.live_data_btn.setToolTip(
+            "Enabled: cursor follows latest data\n"
+            "Disabled: cursor freezes"
         )
-        self.live_data_checkbox.setStyleSheet(UIStyleManager.get_live_checkbox_style())
-        self.live_data_checkbox.toggled.connect(
+        self.live_data_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(0, 0, 0, 0.06);"
+            "  color: #86868B;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  padding: 0px 12px;"
+            "  border-radius: 6px;"
+            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:checked {"
+            "  background: rgba(0, 122, 255, 0.15);"
+            "  color: #007AFF;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(0, 0, 0, 0.1);"
+            "}"
+            "QPushButton:hover:checked {"
+            "  background: rgba(0, 122, 255, 0.25);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(0, 122, 255, 0.3);"
+            "}"
+        )
+        self.live_data_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.live_data_btn.toggled.connect(
             self.sensogram_presenter.set_live_data_enabled,
         )
-        first_row_layout.addWidget(self.live_data_checkbox)
+        first_row_layout.addWidget(self.live_data_btn)
 
         # Add spacing
-        first_row_layout.addSpacing(16)
+        first_row_layout.addSpacing(8)
 
-        # Clear Graph button
-        self.clear_graph_btn = QPushButton("Clear Graph")
-        self.clear_graph_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_STD)
+        # Clear Graph button (uses trash icon)
+        self.clear_graph_btn = QPushButton()
+        self.clear_graph_btn.setFixedHeight(32)
+        self.clear_graph_btn.setFixedWidth(32)
         self.clear_graph_btn.setToolTip(
-            "Clear all timeline data and reset graphs\n"
-            "â€¢ Clears all channel data (A, B, C, D)\n"
-            "â€¢ Resets baseline wavelengths\n"
-            "â€¢ Does not stop acquisition",
+            "Clear all graph data"
         )
+        # Load trash icon from project resources
+        import os
+        from PySide6.QtCore import QSize as _QSize
+        from PySide6.QtGui import QIcon as _QIcon
+        _trash_icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui", "img", "trash_icon.svg")
+        if os.path.exists(_trash_icon_path):
+            self.clear_graph_btn.setIcon(_QIcon(_trash_icon_path))
+            self.clear_graph_btn.setIconSize(_QSize(18, 18))
+        else:
+            self.clear_graph_btn.setText("🗑")  # Fallback to emoji
         self.clear_graph_btn.setStyleSheet(
-            UIStyleManager.get_clear_button_style("neutral"),
+            "QPushButton {"
+            "  background: rgba(255, 59, 48, 0.1);"
+            "  border-radius: 6px;"
+            "  padding: 0px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(255, 59, 48, 0.18);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(255, 59, 48, 0.3);"
+            "}"
         )
+        self.clear_graph_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         # Connect to DataWindow's reset_graphs() method (triggers proper clear chain)
         self.clear_graph_btn.clicked.connect(self._on_clear_graph_clicked)
         first_row_layout.addWidget(self.clear_graph_btn)
 
-        header_layout.addWidget(first_row)
-
-        return header
+        # Return just the first row (controls)
+        return first_row
 
     def _show_transmission_spectrum(self):
         """Show the transmission spectrum dialog."""
@@ -964,8 +937,7 @@ class AffilabsMainWindow(QMainWindow):
         panel.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 10px;"
             "  padding: 6px;"
             "}",
         )
@@ -1004,8 +976,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: #F8F9FA;"
                 "  color: {Colors.PRIMARY_TEXT};"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 14px;"
                 "  font-size: 11px;"
                 "  font-weight: 500;"
                 "  font-family: {Fonts.SYSTEM};"
@@ -1037,8 +1009,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: #007AFF;"
             "  color: white;"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 14px;"
             "  font-size: 11px;"
             "  font-weight: 600;"
             "  font-family: {Fonts.SYSTEM};"
@@ -1227,7 +1199,7 @@ class AffilabsMainWindow(QMainWindow):
         try:
             import numpy as np
 
-            # Get cursor position
+            # Get cursor position (in DISPLAY coordinates)
             cursor_time = cursor.value()
 
             # Find nearest timestamp from any channel with data
@@ -1235,12 +1207,14 @@ class AffilabsMainWindow(QMainWindow):
             min_distance = float("inf")
 
             for ch in ["a", "b", "c", "d"]:
-                time_data = self.app.buffer_mgr.timeline_data[ch].time
+                time_data = self.app.buffer_mgr.timeline_data[ch].time  # RAW_ELAPSED coordinates
                 if len(time_data) > 0:
                     timestamps = np.array(time_data)
-                    idx = np.argmin(np.abs(timestamps - cursor_time))
-                    if idx < len(timestamps):
-                        candidate = timestamps[idx]
+                    # Convert RAW_ELAPSED to DISPLAY coordinates for proper comparison
+                    timestamps_display = timestamps - self.app.clock.display_offset
+                    idx = np.argmin(np.abs(timestamps_display - cursor_time))
+                    if idx < len(timestamps_display):
+                        candidate = timestamps_display[idx]
                         distance = abs(candidate - cursor_time)
                         if distance < min_distance:
                             min_distance = distance
@@ -1296,6 +1270,53 @@ class AffilabsMainWindow(QMainWindow):
             # Call the main clear handler directly (same as DataWindow signal does)
             if hasattr(self.app, '_on_clear_graphs_requested'):
                 self.app._on_clear_graphs_requested()
+
+    def _hex_to_rgb(self, hex_color: str) -> tuple:
+        """Convert hex color string to RGB tuple.
+
+        Args:
+            hex_color: Hex color string (e.g., "#FF0000")
+
+        Returns:
+            tuple: RGB values (0-255) as (r, g, b)
+        """
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+    def _get_delta_spr_display_text(self, delta_values: dict = None) -> str:
+        """Generate color-coded delta SPR display text.
+
+        Args:
+            delta_values: Dict with keys 'a', 'b', 'c', 'd' containing RU values
+                         If None, uses 0.0 for all channels
+
+        Returns:
+            HTML-formatted string with color-coded channel labels (no units in values)
+        """
+        from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+
+        # Use default values if not provided
+        if delta_values is None:
+            delta_values = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
+
+        # Get colors based on colorblind mode
+        colorblind_enabled = False
+        if hasattr(self, 'colorblind_check') and self.colorblind_check:
+            colorblind_enabled = self.colorblind_check.isChecked()
+
+        colors = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
+
+        # Build channel displays
+        separator = " <span style='color: rgba(0,0,0,0.3);'>•</span> "
+        channel_parts = []
+        for i, ch in enumerate(['a', 'b', 'c', 'd']):
+            ch_upper = ch.upper()
+            channel_parts.append(
+                f"<b style='color: {colors[i]};'>{ch_upper}:</b> "
+                f"<span style='color: {colors[i]}; font-size: 14px; font-weight: 700;'>{delta_values[ch]:.1f}</span>"
+            )
+
+        return f"<b>Δ SPR (RU):</b>  {separator.join(channel_parts)}"
 
     def _clear_cycle_markers(self):
         """Clear all flags from the Active Cycle graph and markers from Full Sensorgram timeline."""
@@ -1437,36 +1458,33 @@ class AffilabsMainWindow(QMainWindow):
 
     def _on_colorblind_mode_changed(self, enabled: bool):
         """Update button colors and curve colors when colorblind mode is toggled."""
-        from affilabs.utils.ui_styles import UIStyleManager
+        from affilabs.ui_styles import get_channel_button_style
         from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
         import pyqtgraph as pg
 
         # Select color palette based on mode
         colors = CHANNEL_COLORS_COLORBLIND if enabled else CHANNEL_COLORS
+        channel_colors_rgb = [self._hex_to_rgb(c) for c in colors]
 
         # Update channel visibility toggle buttons
         if hasattr(self, 'channel_toggles'):
             for i, (ch, btn) in enumerate(self.channel_toggles.items()):
-                btn.setStyleSheet(UIStyleManager.get_channel_button_style(colors[i]))
+                btn.setStyleSheet(get_channel_button_style(colors[i]))
 
         # Update flag selection buttons
         if hasattr(self, 'channel_selection_buttons'):
             for i, (ch, btn) in enumerate(self.channel_selection_buttons.items()):
-                btn.setStyleSheet(UIStyleManager.get_channel_button_style(colors[i]))
+                btn.setStyleSheet(get_channel_button_style(colors[i]))
 
-        # Update Active Cycle graph curve colors
+        # Update Full Timeline graph curve colors (Live Sensorgram - top graph)
+        if hasattr(self, 'full_timeline_graph') and hasattr(self.full_timeline_graph, 'curves'):
+            for i, curve in enumerate(self.full_timeline_graph.curves):
+                curve.setPen(pg.mkPen(color=channel_colors_rgb[i], width=2))
+
+        # Update Active Cycle graph curve colors (bottom graph)
         if hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'curves'):
-            # Convert hex colors to RGB tuples for pyqtgraph
-            def hex_to_rgb(hex_color):
-                hex_color = hex_color.lstrip('#')
-                return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-
-            channel_colors_rgb = [hex_to_rgb(c) for c in colors]
-
-            # Update each curve with new colors
             selected_channel = getattr(self, 'selected_channel_for_flagging', None)
             for i, curve in enumerate(self.cycle_of_interest_graph.curves):
-                # Maintain current width (thicker for selected, normal for others)
                 width = 4 if selected_channel == i else 2
                 curve.setPen(pg.mkPen(color=channel_colors_rgb[i], width=width))
 
@@ -1474,11 +1492,25 @@ class AffilabsMainWindow(QMainWindow):
         if hasattr(self, 'edits_tab') and hasattr(self.edits_tab, 'update_barchart_colors'):
             self.edits_tab.update_barchart_colors(enabled)
 
+        # Update Delta SPR display colors
+        if hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'delta_display'):
+            import re
+            delta_display = self.cycle_of_interest_graph.delta_display
+            delta_values = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
+
+            # Extract current values from display text
+            matches = re.findall(r'([ABCD]):</b>.*?(\d+\.\d+)', delta_display.text())
+            for ch_letter, value in matches:
+                delta_values[ch_letter.lower()] = float(value)
+
+            delta_display.setText(self._get_delta_spr_display_text(delta_values))
+
     def _create_graph_container(
         self,
         title: str,
         height: int,
         show_delta_spr: bool = False,
+        include_controls: bool = False,
     ) -> QFrame:
         """Create a graph container with title and controls."""
         import pyqtgraph as pg
@@ -1488,16 +1520,15 @@ class AffilabsMainWindow(QMainWindow):
         container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         # Add shadow
         container.setGraphicsEffect(create_card_shadow())
 
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
-        layout.setSpacing(Dimensions.SPACING_MD)
+        layout.setContentsMargins(Dimensions.MARGIN_MD, 8, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        layout.setSpacing(8)
 
         # Title row with controls
         title_row = QHBoxLayout()
@@ -1506,41 +1537,26 @@ class AffilabsMainWindow(QMainWindow):
         title_label = QLabel(title)
         title_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            "  font-size: 20px;"
             "  font-weight: 600;"
-            "  color: {Colors.PRIMARY_TEXT};"
+            "  color: #1D1D1F;"
             "  background: {Colors.TRANSPARENT};"
-            "  font-family: {Fonts.SYSTEM};"
+            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "  letter-spacing: -0.2px;"
             "}",
         )
         title_row.addWidget(title_label)
-
         title_row.addStretch()
 
-        # Delta SPR signal display (only for Cycle of Interest graph)
-        delta_display = None
-        if show_delta_spr:
-            delta_display = QLabel(
-                "Î” SPR: Ch A: 0.0 RU  |  Ch B: 0.0 RU  |  Ch C: 0.0 RU  |  Ch D: 0.0 RU",
-            )
-            delta_display.setStyleSheet(
-                "QLabel {"
-                "  background: rgba(0, 0, 0, 0.08);"
-                "  "
-                "  "
-                "  padding: 8px 14px;"
-                "  font-size: 12px;"
-                "  color: {Colors.PRIMARY_TEXT};"
-                f"  font-family: {Fonts.MONOSPACE};"
-                "  font-weight: 600;"
-                "}",
-            )
-            delta_display.setToolTip(
-                "Real-time change in Surface Plasmon Resonance signal (relative to cycle start)",
-            )
-            title_row.addWidget(delta_display)
-
         layout.addLayout(title_row)
+
+        # Add channel controls row (only for Live Sensorgram)
+        if include_controls:
+            controls_row = self._create_graph_header()
+            layout.addWidget(controls_row)
+
+        # Initialize delta_display as None (only created if show_delta_spr is True)
+        delta_display = None
 
         # Add Flag controls row (only for Active Cycle graph)
         if show_delta_spr:
@@ -1551,10 +1567,10 @@ class AffilabsMainWindow(QMainWindow):
             flag_label = QLabel("Flag Controls:")
             flag_label.setStyleSheet(
                 "QLabel {"
-                "  font-size: 13px;"
-                "  font-weight: 700;"
+                "  font-size: 12px;"
+                "  font-weight: 600;"
                 "  color: #1D1D1F;"
-                "  padding-right: 6px;"
+                "  padding-right: 4px;"
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
             )
@@ -1572,39 +1588,35 @@ class AffilabsMainWindow(QMainWindow):
                 "Select Channel D for flagging",
             ]
 
-            # Improved monochrome style for flag selection buttons
-            flag_button_style = (
-                "QPushButton {"
-                "  background: #007AFF;"
-                "  color: #FFFFFF;"
-                "  "
-                "  "
-                "  font-size: 12px;"
-                "  font-weight: 700;"
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                "}"
-                "QPushButton:!checked {"
-                "  background: rgba(0, 0, 0, 0.05);"
-                "  color: #86868B;"
-                "  "
-                "}"
-                "QPushButton:hover:!checked {"
-                "  background: rgba(0, 0, 0, 0.08);"
-                "  "
-                "}"
-                "QPushButton:hover:checked {"
-                "  background: #0051D5;"
-                "}"
-            )
-
             for i, ch in enumerate(flag_channel_names):
                 tooltip = flag_tooltips[i]
                 ch_btn = QPushButton(ch)
                 ch_btn.setCheckable(True)
                 ch_btn.setChecked(ch == "A")  # Channel A selected by default
-                ch_btn.setFixedSize(40, 34)  # Slightly larger for better touch target
+                ch_btn.setFixedSize(32, 28)  # Matches display button sizing
                 ch_btn.setToolTip(tooltip)
-                ch_btn.setStyleSheet(flag_button_style)
+
+                # Monochrome radio-style button with softer selected state
+                standard_style = (
+                    "QPushButton {"
+                    "  background: #F5F5F5;"
+                    "  color: #666666;"
+                    "  border: 1px solid #D0D0D0;"
+                    "  border-radius: 4px;"
+                    "  font-size: 12px;"
+                    "  font-weight: 600;"
+                    "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "}"
+                    "QPushButton:checked {"
+                    "  background: #6B6B6B;"
+                    "  color: #FFFFFF;"
+                    "  border: 1px solid #6B6B6B;"
+                    "}"
+                    "QPushButton:hover {"
+                    "  border: 1px solid #999999;"
+                    "}"
+                )
+                ch_btn.setStyleSheet(standard_style)
                 ch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
                 # Store reference and connect to channel selection for flagging
@@ -1619,29 +1631,13 @@ class AffilabsMainWindow(QMainWindow):
             # Spacing between channel buttons and controls
             flag_row.addSpacing(12)
 
-            # Flag counter display with improved styling
-            self.flag_counter_label = QLabel("Flags: 0")
-            self.flag_counter_label.setStyleSheet(
-                "QLabel { "
-                "  font-size: 12px; "
-                "  font-weight: 600; "
-                "  color: #1D1D1F; "
-                "  padding: 5px 10px; "
-                "  background: rgba(0, 0, 0, 0.03); "
-                "   "
-                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; "
-                "}"
-            )
-            self.flag_counter_label.setToolTip("Number of flags on Live Sensorgram")
-            flag_row.addWidget(self.flag_counter_label)
-
             # Spacing before action buttons
             flag_row.addSpacing(8)
 
-            # Clear Flags button with improved styling
-            self.clear_flags_btn = QPushButton("✕")
-            self.clear_flags_btn.setFixedHeight(34)
-            self.clear_flags_btn.setFixedWidth(34)
+            # Clear Flags button with SVG icon
+            self.clear_flags_btn = QPushButton()
+            self.clear_flags_btn.setFixedHeight(28)
+            self.clear_flags_btn.setFixedWidth(28)
             self.clear_flags_btn.setToolTip(
                 "Clear All Flags\n"
                 "Remove all flags from Live Sensorgram\n"
@@ -1650,56 +1646,57 @@ class AffilabsMainWindow(QMainWindow):
                 "• Resets channel timing to default\n"
                 "• Does not affect recorded data"
             )
+            import os as _os
+            from PySide6.QtGui import QIcon as _QIcon2
+            from PySide6.QtCore import QSize as _QSize2
+            _clear_svg = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "ui", "img", "clear_icon.svg")
+            if _os.path.exists(_clear_svg):
+                self.clear_flags_btn.setIcon(_QIcon2(_clear_svg))
+                self.clear_flags_btn.setIconSize(_QSize2(16, 16))
+            else:
+                self.clear_flags_btn.setText("✖")
             self.clear_flags_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: rgba(255, 59, 48, 0.1);"
-                "  color: #FF3B30;"
-                "  "
-                "  "
-                "  font-size: 14px;"
-                "  font-weight: 700;"
-                "  padding: 0px 12px;"
-                "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "  border-radius: 6px;"
+                "  padding: 0px;"
                 "}"
                 "QPushButton:hover {"
                 "  background: rgba(255, 59, 48, 0.18);"
-                "  color: #FF3B30;"
-                "  "
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(255, 59, 48, 0.3);"
-                "  "
                 "}"
             )
             self.clear_flags_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.clear_flags_btn.clicked.connect(self._clear_cycle_markers)
             flag_row.addWidget(self.clear_flags_btn)
 
-            # Reset Timing button
-            self.reset_timing_btn = QPushButton("R")
-            self.reset_timing_btn.setFixedHeight(32)
-            self.reset_timing_btn.setFixedWidth(32)
+            # Reset Timing button with SVG icon
+            self.reset_timing_btn = QPushButton()
+            self.reset_timing_btn.setFixedHeight(28)
+            self.reset_timing_btn.setFixedWidth(28)
             self.reset_timing_btn.setToolTip(
                 "Reset Timing\n"
                 "Reset all channel time shifts to default\n"
-                "â€¢ Removes injection alignment offsets\n"
-                "â€¢ Restores original timing"
+                "• Removes injection alignment offsets\n"
+                "• Restores original timing"
             )
+            _reset_svg = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "ui", "img", "reset_icon.svg")
+            if _os.path.exists(_reset_svg):
+                self.reset_timing_btn.setIcon(_QIcon2(_reset_svg))
+                self.reset_timing_btn.setIconSize(_QSize2(16, 16))
+            else:
+                self.reset_timing_btn.setText("R")
             self.reset_timing_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
-                "  color: #8E8E93;"
-                "  "
-                "  "
-                "  font-size: 11px;"
-                "  font-weight: 500;"
-                "  padding: 0px 12px;"
-                "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  padding: 0px;"
                 "}"
                 "QPushButton:hover {"
                 "  background: rgba(255, 149, 0, 0.15);"
-                "  color: #FF9500;"
-                "  "
                 "}"
                 "QPushButton:pressed {"
                 "  background: rgba(255, 149, 0, 0.25);"
@@ -1709,13 +1706,38 @@ class AffilabsMainWindow(QMainWindow):
             self.reset_timing_btn.clicked.connect(self._reset_channel_timing)
             flag_row.addWidget(self.reset_timing_btn)
 
+            # Add spacing before delta SPR display
+            flag_row.addSpacing(16)
+
+            # Delta SPR display on the right side (where users' eyes naturally look)
+            delta_display = QLabel(self._get_delta_spr_display_text())
+            delta_display.setStyleSheet(
+                "QLabel {"
+                "  background: transparent;"
+                "  border: 1px solid #D0D0D0;"
+                "  border-radius: 6px;"
+                "  padding: 5px 10px;"
+                "  font-size: 13px;"
+                f"  color: {Colors.PRIMARY_TEXT};"
+                f"  font-family: {Fonts.MONOSPACE};"
+                "  font-weight: 600;"
+                "}",
+            )
+            delta_display.setTextFormat(Qt.TextFormat.RichText)
+            delta_display.setToolTip(
+                "Real-time change in SPR signal in Response Units (RU)\nMeasured relative to cycle start",
+            )
+            flag_row.addWidget(delta_display)
+
             flag_row.addStretch()
 
             layout.addLayout(flag_row)
 
         # Create standardized time-series plot
-        left_label = "Î” SPR (RU)" if show_delta_spr else "Î» (nm)"
-        plot_widget = create_time_plot(left_label)
+        left_label = "Δ SPR (RU)" if show_delta_spr else "Δλ (nm)"
+        # Use larger fonts for Active Cycle graph
+        axis_size = "13pt" if show_delta_spr else "11pt"
+        plot_widget = create_time_plot(left_label, size=axis_size)
 
         # Create plot curves for 4 channels with distinct colors
         # Ch A: Black, Ch B: Red, Ch C: Blue, Ch D: Green
@@ -1882,11 +1904,7 @@ class AffilabsMainWindow(QMainWindow):
         color_palette = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
 
         # Convert hex colors to RGB tuples for pyqtgraph
-        def hex_to_rgb(hex_color):
-            hex_color = hex_color.lstrip('#')
-            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-
-        channel_colors = [hex_to_rgb(c) for c in color_palette]
+        channel_colors = [self._hex_to_rgb(c) for c in color_palette]
 
         for i, curve in enumerate(self.cycle_of_interest_graph.curves):
             if i == channel_idx:
@@ -2152,49 +2170,6 @@ class AffilabsMainWindow(QMainWindow):
             print(f"Flags summary: {flag_summary}")
             # In full implementation: update specific table cell in Flags column
 
-    def _on_cursor_dragged(self):
-        """Handle cursor dragging - update label format dynamically."""
-        if not hasattr(self, "full_timeline_graph"):
-            return
-
-        start_cursor = self.full_timeline_graph.start_cursor
-        stop_cursor = self.full_timeline_graph.stop_cursor
-
-        if start_cursor and stop_cursor:
-            # Update labels with current positions
-            start_pos = start_cursor.value()
-            stop_pos = stop_cursor.value()
-
-            # Ensure start is always less than stop
-            if start_pos > stop_pos:
-                start_pos, stop_pos = stop_pos, start_pos
-
-            # Update label text dynamically (labels only visible on hover)
-            start_cursor.label.setFormat(f"Start: {start_pos:.1f}s")
-            stop_cursor.label.setFormat(f"Stop: {stop_pos:.1f}s")
-
-    def _on_cursor_moved(self):
-        """Handle cursor movement finished - update selected region."""
-        if not hasattr(self, "full_timeline_graph"):
-            return
-
-        start_cursor = self.full_timeline_graph.start_cursor
-        stop_cursor = self.full_timeline_graph.stop_cursor
-
-        if start_cursor and stop_cursor:
-            start_time = start_cursor.value()
-            stop_time = stop_cursor.value()
-
-            # Ensure start is always before stop
-            if start_time > stop_time:
-                start_time, stop_time = stop_time, start_time
-                # Swap cursor positions
-                start_cursor.setValue(start_time)
-                stop_cursor.setValue(stop_time)
-
-            print(f"Cursor region selected: {start_time:.2f}s to {stop_time:.2f}s")
-            # TODO: Update cycle of interest graph to show selected region
-
     def _create_blank_content(self, tab_name):
         """Create a blank page for tabs that don't have content yet."""
         # Special handling for different tabs
@@ -2389,11 +2364,19 @@ class AffilabsMainWindow(QMainWindow):
                     if idx == 0:
                         logger.info(f"First cycle row data: {dict(row)}")
 
+                    # Start with ALL Excel columns to preserve cycle_id, delta_spr, etc.
+                    cycle_dict = {}
+                    for col in df_cycles.columns:
+                        val = row[col]
+                        if pd.notna(val):
+                            cycle_dict[col] = val
+
                     # Parse time range from ACh1 or start_time_sensorgram/end_time_sensorgram
                     if 'start_time_sensorgram' in df_cycles.columns and pd.notna(row['start_time_sensorgram']):
                         # Real software export format
                         start_time = float(row['start_time_sensorgram'])
-                        end_time = float(row.get('end_time_sensorgram', start_time + 300))
+                        end_time_raw = row.get('end_time_sensorgram', None)
+                        end_time = float(end_time_raw) if pd.notna(end_time_raw) else start_time + 300
                     elif 'ACh1' in df_cycles.columns:
                         # Custom format with time range
                         time_range = str(row.get('ACh1', '0-0'))
@@ -2424,9 +2407,6 @@ class AffilabsMainWindow(QMainWindow):
                         concentration = ''
 
                     if pd.notna(concentration):
-                        conc_units = row.get('concentration_units', '') if 'concentration_units' in df_cycles.columns else ''
-                        if conc_units and pd.notna(conc_units):
-                            concentration = f"{concentration} {conc_units}"
                         concentration = str(concentration)
                     else:
                         concentration = ''
@@ -2434,7 +2414,8 @@ class AffilabsMainWindow(QMainWindow):
                     # Get notes
                     notes = row.get('note') if 'note' in df_cycles.columns else row.get('Notes', '')
 
-                    cycles_data.append({
+                    # Override with properly parsed values (preserving all other Excel columns)
+                    cycle_dict.update({
                         'type': str(cycle_type) if pd.notna(cycle_type) else 'Unknown',
                         'duration_minutes': duration_min,
                         'start_time_sensorgram': start_time,
@@ -2443,8 +2424,38 @@ class AffilabsMainWindow(QMainWindow):
                         'note': str(notes) if pd.notna(notes) else '',
                         'channel': str(row.get('Channel', 'All')),
                         'shift': 0.0,
-                        'flags': str(row.get('flags', '')) if 'flags' in df_cycles.columns else '',
                     })
+
+                    # Parse delta_spr_by_channel from string representation if present
+                    dspr = cycle_dict.get('delta_spr_by_channel')
+                    if isinstance(dspr, str):
+                        import ast
+                        try:
+                            cycle_dict['delta_spr_by_channel'] = ast.literal_eval(dspr)
+                        except Exception:
+                            cycle_dict['delta_spr_by_channel'] = {}
+
+                    # Parse concentrations dict from string representation if present
+                    concs = cycle_dict.get('concentrations')
+                    if isinstance(concs, str):
+                        import ast
+                        try:
+                            cycle_dict['concentrations'] = ast.literal_eval(concs)
+                        except Exception:
+                            cycle_dict['concentrations'] = {}
+
+                    # Parse flags from string list representation if present
+                    flags_val = cycle_dict.get('flags', '')
+                    if isinstance(flags_val, str) and flags_val.startswith('['):
+                        import ast
+                        try:
+                            cycle_dict['flags'] = ast.literal_eval(flags_val)
+                        except Exception:
+                            cycle_dict['flags'] = flags_val
+                    elif not flags_val or (isinstance(flags_val, float) and pd.isna(flags_val)):
+                        cycle_dict['flags'] = ''
+
+                    cycles_data.append(cycle_dict)
 
                     # Debug log for first cycle
                     if idx == 0:
@@ -2528,8 +2539,7 @@ class AffilabsMainWindow(QMainWindow):
         primary_graph.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         primary_graph.setGraphicsEffect(create_card_shadow())
@@ -2568,8 +2578,8 @@ class AffilabsMainWindow(QMainWindow):
                 f"QPushButton {{"
                 f"  background: {color};"
                 "  color: white;"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 12px;"
                 "  font-size: 11px;"
                 "  font-weight: 600;"
                 "  font-family: {Fonts.SYSTEM};"
@@ -2660,8 +2670,7 @@ class AffilabsMainWindow(QMainWindow):
         references_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         references_container.setGraphicsEffect(create_card_shadow())
@@ -2691,8 +2700,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 14px;"
             "  font-size: 11px;"
             "  font-weight: 500;"
             "  padding: 0px 8px;"
@@ -2721,8 +2730,7 @@ class AffilabsMainWindow(QMainWindow):
             ref_frame.setStyleSheet(
                 "QFrame {"
                 "  background: rgba(0, 0, 0, 0.02);"
-                "  "
-                "  "
+                "  border-radius: 8px;"
                 "}",
             )
             ref_frame.setAcceptDrops(True)
@@ -2819,8 +2827,7 @@ class AffilabsMainWindow(QMainWindow):
         main_graph.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         main_graph.setGraphicsEffect(create_card_shadow())
@@ -2856,8 +2863,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: {Colors.SECONDARY_TEXT};"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 14px;"
                 "  font-size: 12px;"
                 "  font-weight: 500;"
                 "  font-family: {Fonts.SYSTEM};"
@@ -2880,8 +2887,7 @@ class AffilabsMainWindow(QMainWindow):
         graph_canvas.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 8px;"
             "}",
         )
         canvas_layout = QVBoxLayout(graph_canvas)
@@ -2909,8 +2915,7 @@ class AffilabsMainWindow(QMainWindow):
         stats_graph.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         stats_graph.setGraphicsEffect(create_card_shadow())
@@ -2940,8 +2945,7 @@ class AffilabsMainWindow(QMainWindow):
             "QLabel {"
             "  background: rgba(52, 199, 89, 0.1);"
             "  color: #34C759;"
-            "  "
-            "  "
+            "  border-radius: 8px;"
             "  padding: 6px 12px;"
             "  font-size: 12px;"
             "  font-weight: 600;"
@@ -2957,8 +2961,7 @@ class AffilabsMainWindow(QMainWindow):
         stats_canvas.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 8px;"
             "}",
         )
         stats_canvas_layout = QVBoxLayout(stats_canvas)
@@ -2999,8 +3002,7 @@ class AffilabsMainWindow(QMainWindow):
         model_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         model_container.setGraphicsEffect(create_card_shadow())
@@ -3041,8 +3043,8 @@ class AffilabsMainWindow(QMainWindow):
             "QComboBox {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  "
-            "  "
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "  border-radius: 8px;"
             "  padding: 8px 12px;"
             "  font-size: 13px;"
             "  font-weight: 500;"
@@ -3052,12 +3054,11 @@ class AffilabsMainWindow(QMainWindow):
             "  background: rgba(0, 0, 0, 0.08);"
             "}"
             "QComboBox::drop-down {"
-            "  "
+            "  border: none;"
             "  width: 20px;"
             "}"
             "QComboBox::down-arrow {"
             "  image: none;"
-            "  "
             "}",
         )
         model_layout.addWidget(model_dropdown)
@@ -3069,8 +3070,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: #1D1D1F;"
             "  color: white;"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 14px;"
             "  font-size: 13px;"
             "  font-weight: 600;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3122,8 +3123,7 @@ class AffilabsMainWindow(QMainWindow):
         data_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         data_container.setGraphicsEffect(create_card_shadow())
@@ -3154,8 +3154,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: rgba(0, 0, 0, 0.06);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 14px;"
             "  font-size: 12px;"
             "  font-weight: 500;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3184,8 +3184,8 @@ class AffilabsMainWindow(QMainWindow):
         data_table.setStyleSheet(
             "QTableWidget {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 8px;"
             "  gridline-color: rgba(0, 0, 0, 0.06);"
             "  font-size: 12px;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3198,7 +3198,7 @@ class AffilabsMainWindow(QMainWindow):
             "  background: rgba(0, 0, 0, 0.03);"
             "  color: {Colors.SECONDARY_TEXT};"
             "  padding: 8px;"
-            "  "
+            "  border: none;"
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 600;"
             "  font-size: 11px;"
@@ -3212,7 +3212,7 @@ class AffilabsMainWindow(QMainWindow):
             ("ka (Mâ»Â¹sâ»Â¹)", "1.23e5 Â± 0.04e5"),
             ("kd (sâ»Â¹)", "3.45e-4 Â± 0.12e-4"),
             ("KD (M)", "2.80e-9 Â± 0.15e-9"),
-            ("Î” SPR (nm)", "0.45 Â± 0.02"),
+            ("Δ SPR (nm)", "0.45 Â± 0.02"),
         ]
 
         for row, (param, value) in enumerate(results):
@@ -3228,8 +3228,7 @@ class AffilabsMainWindow(QMainWindow):
         export_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         export_container.setGraphicsEffect(create_card_shadow())
@@ -3260,8 +3259,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 14px;"
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3286,8 +3285,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: rgba(0, 122, 255, 0.1);"
             "  color: #007AFF;"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 14px;"
             "  font-size: 13px;"
             "  font-weight: 500;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3364,8 +3363,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: #FF3B30;"
             "  color: white;"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 14px;"
             "  font-size: 13px;"
             "  font-weight: 600;"
             "  padding: 0px 20px;"
@@ -3387,8 +3386,7 @@ class AffilabsMainWindow(QMainWindow):
         canvas.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         shadow = QGraphicsDropShadowEffect()
@@ -3448,8 +3446,7 @@ class AffilabsMainWindow(QMainWindow):
         graph_placeholder.setStyleSheet(
             "QFrame {"
             "  background: rgba(0, 122, 255, 0.05);"
-            "  "
-            "  "
+            "  border-radius: 8px;"
             "}",
         )
         graph_label = QLabel("[Graph Element]\n\nClick to insert graph")
@@ -3459,7 +3456,6 @@ class AffilabsMainWindow(QMainWindow):
             "  font-size: 13px;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
-            "  "
             "  font-family: {Fonts.SYSTEM};"
             "}",
         )
@@ -3489,8 +3485,8 @@ class AffilabsMainWindow(QMainWindow):
         notes_edit.setStyleSheet(
             "QTextEdit {"
             "  background: rgba(0, 0, 0, 0.03);"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 8px;"
             "  padding: 12px;"
             "  font-size: 13px;"
             "  color: {Colors.PRIMARY_TEXT};"
@@ -3505,8 +3501,7 @@ class AffilabsMainWindow(QMainWindow):
         table_placeholder.setStyleSheet(
             "QFrame {"
             "  background: rgba(52, 199, 89, 0.05);"
-            "  "
-            "  "
+            "  border-radius: 8px;"
             "}",
         )
         table_label = QLabel("[Table Element]\n\nClick to insert data table")
@@ -3516,7 +3511,6 @@ class AffilabsMainWindow(QMainWindow):
             "  font-size: 13px;"
             "  color: #34C759;"
             "  background: {Colors.TRANSPARENT};"
-            "  "
             "  font-family: {Fonts.SYSTEM};"
             "}",
         )
@@ -3549,8 +3543,7 @@ class AffilabsMainWindow(QMainWindow):
         elements_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         elements_container.setGraphicsEffect(create_card_shadow())
@@ -3588,8 +3581,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.04);"
                 "  color: {Colors.PRIMARY_TEXT};"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 14px;"
                 "  font-size: 13px;"
                 "  font-weight: 500;"
                 "  text-align: left;"
@@ -3612,8 +3605,7 @@ class AffilabsMainWindow(QMainWindow):
         chart_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         chart_container.setGraphicsEffect(create_card_shadow())
@@ -3647,8 +3639,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: {Colors.SECONDARY_TEXT};"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 14px;"
                 "  font-size: 12px;"
                 "  font-weight: 500;"
                 "  font-family: {Fonts.SYSTEM};"
@@ -3690,8 +3682,8 @@ class AffilabsMainWindow(QMainWindow):
             "QComboBox {"
             "  background: rgba(0, 0, 0, 0.04);"
             "  color: {Colors.PRIMARY_TEXT};"
-            "  "
-            "  "
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "  border-radius: 8px;"
             "  padding: 6px 10px;"
             "  font-size: 12px;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3706,8 +3698,8 @@ class AffilabsMainWindow(QMainWindow):
             "QPushButton {"
             "  background: #1D1D1F;"
             "  color: white;"
-            "  "
-            "  "
+            "  border: none;"
+            "  border-radius: 14px;"
             "  font-size: 13px;"
             "  font-weight: 600;"
             "  font-family: {Fonts.SYSTEM};"
@@ -3725,8 +3717,7 @@ class AffilabsMainWindow(QMainWindow):
         library_container.setStyleSheet(
             "QFrame {"
             "  background: {Colors.BACKGROUND_WHITE};"
-            "  "
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         library_container.setGraphicsEffect(create_card_shadow())
@@ -3761,8 +3752,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.03);"
                 "  color: {Colors.PRIMARY_TEXT};"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 14px;"
                 "  font-size: 12px;"
                 "  font-weight: 400;"
                 "  text-align: left;"
@@ -3786,22 +3777,20 @@ class AffilabsMainWindow(QMainWindow):
         state = self.power_btn.property("powerState")
 
         if state == "disconnected":
-            # Gray - No device connected
+            # Blue - Idle, ready to connect
             self.power_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: rgba(46, 48, 227, 0.2);"
+                "  background: #007AFF;"
                 "  color: white;"
-                "  border: 1px solid rgba(46, 48, 227, 0.2);"
-                "  font-size: 18px;"
-                "  font-weight: 400;"
-                "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "  border: 1px solid #0062CC;"
+                "  border-radius: 20px;"
                 "}"
                 "QPushButton:hover {"
-                "  background: rgba(46, 48, 227, 0.3);"
-                "  border: 1px solid rgba(46, 48, 227, 0.3);"
+                "  background: #0062CC;"
+                "  border: 1px solid #004999;"
                 "}",
             )
-            self.power_btn.setToolTip("Power On Device (Ctrl+P)\nGray = Disconnected")
+            self.power_btn.setToolTip("Power On Device (Ctrl+P)\nBlue = Idle, Click to Connect")
         elif state == "searching":
             # Yellow - Searching for device
             self.power_btn.setStyleSheet(
@@ -3809,9 +3798,7 @@ class AffilabsMainWindow(QMainWindow):
                 "  background: #FFCC00;"
                 "  color: white;"
                 "  border: 1px solid #FFB800;"
-                "  font-size: 18px;"
-                "  font-weight: 400;"
-                "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "  border-radius: 20px;"
                 "}"
                 "QPushButton:hover {"
                 "  background: #FFD700;"
@@ -3826,9 +3813,7 @@ class AffilabsMainWindow(QMainWindow):
                 "  background: #34C759;"
                 "  color: white;"
                 "  border: 1px solid #2FB350;"
-                "  font-size: 18px;"
-                "  font-weight: 400;"
-                "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                "  border-radius: 20px;"
                 "}"
                 "QPushButton:hover {"
                 "  background: #30B54A;"
@@ -3910,8 +3895,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: rgba(0, 0, 0, 0.06);"
                 "  color: {Colors.PRIMARY_TEXT};"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 10px;"
                 "  padding: 6px 16px;"
                 "  font-size: 13px;"
                 "  min-width: 60px;"
@@ -4431,8 +4416,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: #1D1D1F;"
                 "  color: white;"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 10px;"
                 "  padding: 6px 16px;"
                 "  font-size: 13px;"
                 "  font-weight: 600;"
@@ -4468,8 +4453,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: #FF3B30;"
                 "  color: white;"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 10px;"
                 "  padding: 6px 16px;"
                 "}",
             )
@@ -4566,8 +4551,7 @@ class AffilabsMainWindow(QMainWindow):
                 self.recording_indicator.setStyleSheet(
                     "QFrame {"
                     "  background: rgba(255, 59, 48, 0.1);"
-                    "  "
-                    "  "
+                    "  border-radius: 16px;"
                     "}",
                 )
         else:
@@ -4590,7 +4574,7 @@ class AffilabsMainWindow(QMainWindow):
                 self.recording_indicator.setStyleSheet(
                     "QFrame {"
                 "  background: rgba(0, 0, 0, 0.04);"
-                "  "
+                "  border-radius: 16px;"
                 "}",
             )
 
@@ -4864,15 +4848,6 @@ class AffilabsMainWindow(QMainWindow):
 
     def add_cycle_to_queue(self):
         """Add current cycle form values to the queue."""
-        # DISABLED: Queue size limit removed - no longer needed
-        # if len(self.cycle_queue) >= self.max_queue_size:
-        #     QMessageBox.warning(
-        #         self,
-        #         "Queue Full",
-        #         f"Maximum queue size ({self.max_queue_size}) reached. Start a cycle to free up space.",
-        #     )
-        #     return
-
         # Extract values from cycle settings form widgets
         cycle_type = self.sidebar.cycle_type_combo.currentText()
         cycle_length_text = self.sidebar.cycle_length_combo.currentText()
@@ -4922,8 +4897,7 @@ class AffilabsMainWindow(QMainWindow):
 
             logger.info(f"ðŸƒ Cycle started: {cycle_data['type']} ({cycle_data.get('length_minutes', 0)} min) - {cycle_data.get('notes', 'No notes')}")
         else:
-            # No queue items - use current form values
-            # TODO: Extract form values and create cycle
+            # No queue items - quick start mode (form-based cycle creation not yet implemented)
             logger.debug("Starting immediate cycle from form values")
 
     def complete_cycle(self):
@@ -5257,36 +5231,169 @@ class AffilabsMainWindow(QMainWindow):
             self.timer_button.clear()
 
     def _on_timer_button_clicked(self):
-        """Handle Timer button click - show manual timer dialog.
+        """Handle Timer button click - open PopOutTimerWindow or stop alarm.
 
-        Opens a dialog allowing user to set a custom countdown timer for
-        manual experiment tracking (e.g., incubation times, wait periods).
+        If wash alert is active (alarm ringing), clicking stops the alarm.
+        If no timer is running, opens in configurable mode.
+        If a timer is already running/paused, syncs window state and brings to focus.
         """
-        from affilabs.dialogs.manual_timer_dialog import ManualTimerDialog
         from affilabs.utils.logger import logger
 
-        dialog = ManualTimerDialog(parent=self)
-        if dialog.exec() == ManualTimerDialog.DialogCode.Accepted:
-            minutes, seconds = dialog.get_duration()
-            label = dialog.get_label() or "Custom Timer"
-            font_size = dialog.get_font_size()
-            sound_enabled = dialog.get_sound_enabled()
+        # If wash alert is active, clicking stops the alarm
+        if hasattr(self, 'timer_button') and self.timer_button.wash_alert_active:
+            logger.info("Wash acknowledged via timer button click")
+            self._on_wash_acknowledged()
+            return
 
-            total_seconds = minutes * 60 + seconds
+        # Create pop-out timer window if it doesn't exist
+        if not hasattr(self, '_popout_timer') or self._popout_timer is None:
+            from affilabs.widgets.popout_timer_window import PopOutTimerWindow
+            self._popout_timer = PopOutTimerWindow(parent=None)
+            # Connect timer_ready signal to start the countdown
+            self._popout_timer.timer_ready.connect(self._on_popout_timer_ready)
+            # Connect control signals
+            self._popout_timer.clear_requested.connect(self._on_clear_manual_timer)
+            self._popout_timer.restart_requested.connect(self._on_restart_manual_timer)
+            self._popout_timer.pause_requested.connect(self._on_pause_manual_timer)
+            self._popout_timer.resume_requested.connect(self._on_resume_manual_timer)
+            self._popout_timer.closed.connect(self._on_popout_closed)
+            self._popout_timer.alarm_stopped.connect(self._stop_alarm_loop)
+            self._popout_timer.time_edited_while_paused.connect(self._on_timer_time_edited)
 
-            if total_seconds > 0:
-                # Set font size for timer button
-                if hasattr(self, 'timer_button'):
-                    self.timer_button.set_font_size(font_size)
+        # Check current timer state
+        timer_active = (
+            hasattr(self, '_manual_timer')
+            and self._manual_timer
+            and (self._manual_timer.isActive()
+                 or (hasattr(self, '_manual_timer_remaining')
+                     and self._manual_timer_remaining > 0))
+        )
+        alarm_active = (
+            hasattr(self, '_popout_timer')
+            and self._popout_timer
+            and self._popout_timer._alarm_active
+        )
 
-                # Update timer button with custom timer
-                self.update_timer_button(label, total_seconds, is_manual=True)
-                logger.info(f"â± Manual timer set: {label} ({minutes}:{seconds:02d}) - Font: {font_size}, Sound: {sound_enabled}")
+        if alarm_active:
+            # Alarm is ringing - just show the window with stop button
+            logger.info("Showing alarm window (alarm active)")
+            self._popout_timer.timer_finished(self._manual_timer_label)
+        elif timer_active:
+            # Timer is running/paused - sync the window state
+            is_paused = (
+                hasattr(self, '_manual_timer')
+                and self._manual_timer
+                and not self._manual_timer.isActive()
+                and self._manual_timer_remaining > 0
+            )
 
-                # Start countdown for manual timer
-                self._start_manual_timer_countdown(label, total_seconds, sound_enabled)
-            else:
-                logger.warning("Manual timer duration must be greater than 0")
+            logger.info(f"Syncing timer window (running={'paused' if is_paused else 'active'})")
+
+            # Update window with current timer state
+            self._popout_timer.update_countdown(
+                self._manual_timer_label,
+                self._manual_timer_remaining
+            )
+            self._popout_timer.set_paused(is_paused)
+        else:
+            # No timer running — open in configurable mode
+            last_minutes = getattr(self, '_last_timer_minutes', 5)
+            last_seconds = getattr(self, '_last_timer_seconds', 0)
+            last_label = getattr(self, '_last_timer_label', "Timer")
+
+            self._popout_timer.set_configurable(
+                minutes=last_minutes,
+                seconds=last_seconds,
+                label=last_label,
+                sound_enabled=True,
+                rolling_numbers=False,
+            )
+            logger.info("Timer window opened in config mode")
+
+        # Show and focus the window
+        self._popout_timer.show()
+        self._popout_timer.raise_()
+        self._popout_timer.activateWindow()
+
+    def _on_popout_timer_ready(self, total_seconds: int, label: str):
+        """Handle timer ready signal from PopOutTimerWindow.
+
+        Called when user confirms timer settings and starts countdown.
+        """
+        from affilabs.utils.logger import logger
+
+        logger.info(f"Timer started: {label} ({total_seconds//60}:{total_seconds%60:02d})")
+
+        # Save last used settings for next open
+        self._last_timer_minutes = total_seconds // 60
+        self._last_timer_seconds = total_seconds % 60
+        self._last_timer_label = label
+
+        # Update timer button
+        self.update_timer_button(label, total_seconds, is_manual=True)
+
+        # Clear next_action for generic manual timers (not auto-started from injection)
+        self._manual_timer_next_action = ""
+
+        # Start countdown for manual timer
+        self._start_manual_timer_countdown(label, total_seconds, sound_enabled=True)
+
+    # ------------------------------------------------------------------
+    #  Pop-out timer window helpers
+    # ------------------------------------------------------------------
+    def _show_popout_timer(self, label: str, total_seconds: int):
+        """Update the pop-out countdown window with new values.
+
+        Args:
+            label: Timer label text
+            total_seconds: Starting countdown in seconds
+        """
+        if hasattr(self, '_popout_timer') and self._popout_timer:
+            self._popout_timer.update_countdown(label, total_seconds)
+
+    def _on_popout_closed(self):
+        """Handle pop-out window closed by user (don't stop the timer)."""
+        pass  # Timer keeps running; user can reopen via timer button
+
+    def _on_pause_manual_timer(self):
+        """Pause the manual countdown timer."""
+        from affilabs.utils.logger import logger
+
+        if hasattr(self, '_manual_timer') and self._manual_timer:
+            if self._manual_timer.isActive():
+                self._manual_timer.stop()
+                logger.info("⏸ Timer paused")
+
+            # Always update window state to ensure sync
+            if hasattr(self, '_popout_timer') and self._popout_timer:
+                self._popout_timer.set_paused(True)
+
+    def _on_resume_manual_timer(self):
+        """Resume the manual countdown timer."""
+        from affilabs.utils.logger import logger
+
+        if hasattr(self, '_manual_timer') and self._manual_timer:
+            if not self._manual_timer.isActive():
+                if hasattr(self, '_manual_timer_remaining') and self._manual_timer_remaining > 0:
+                    self._manual_timer.start(1000)
+                    logger.info("▶ Timer resumed")
+
+            # Always update window state to ensure sync
+            if hasattr(self, '_popout_timer') and self._popout_timer:
+                self._popout_timer.set_paused(False)
+
+    def _on_timer_time_edited(self, new_remaining_seconds: int):
+        """Handle timer time being edited while paused.
+
+        When user edits the time in the popout timer while paused, sync the new
+        value back to the main timer state so resume uses the edited value.
+        """
+        from affilabs.utils.logger import logger
+
+        if hasattr(self, '_manual_timer_remaining'):
+            old_value = self._manual_timer_remaining
+            self._manual_timer_remaining = new_remaining_seconds
+            logger.info(f"Timer adjusted while paused: {old_value}s → {new_remaining_seconds}s")
 
     def _start_manual_timer_countdown(self, label: str, total_seconds: int, sound_enabled: bool):
         """Start countdown timer for manual timers.
@@ -5321,44 +5428,91 @@ class AffilabsMainWindow(QMainWindow):
         self._manual_timer_remaining -= 1
 
         if self._manual_timer_remaining > 0:
-            # Update timer display
+            # Update timer button in navigation bar
             self.update_timer_button(self._manual_timer_label, self._manual_timer_remaining, is_manual=True)
+
+            # Update pop-out window if open
+            if hasattr(self, '_popout_timer') and self._popout_timer and self._popout_timer.isVisible():
+                self._popout_timer.update_countdown(self._manual_timer_label, self._manual_timer_remaining)
         else:
             # Timer completed
             self._manual_timer.stop()
-            logger.info(f"â± Manual timer '{self._manual_timer_label}' completed!")
+            logger.info(f"Manual timer '{self._manual_timer_label}' completed!")
 
-            # Play sound if enabled
+            # Show WASH NOW alert on timer button (click to stop alarm)
+            if hasattr(self, 'timer_button'):
+                self.timer_button.show_wash_alert()
+
+            # Update pop-out window with finished state
+            next_action = getattr(self, '_manual_timer_next_action', "")
+            if hasattr(self, '_popout_timer') and self._popout_timer and self._popout_timer.isVisible():
+                self._popout_timer.timer_finished(self._manual_timer_label, next_action)
+
+            # Start looping alarm sound if enabled
             if self._manual_timer_sound:
-                self._play_timer_sound()
+                self._start_alarm_loop()
 
-            # Clear timer button
-            self.clear_timer_button()
+    def _on_wash_acknowledged(self):
+        """Handle wash acknowledged — stop alarm."""
+        from affilabs.utils.logger import logger
 
-            # Show completion notification
-            from PySide6.QtWidgets import QMessageBox
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Timer Complete")
-            msg.setText(f"⏱ {self._manual_timer_label}")
-            msg.setInformativeText("Timer has finished!")
-            msg.setIcon(QMessageBox.Icon.Information)
-            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg.exec()
+        logger.info("Wash acknowledged — stopping alarm")
+        self._stop_alarm_loop()
 
     def _play_timer_sound(self):
-        """Play notification sound when timer completes."""
+        """Play professional synthesized alarm tone (ascending alert)."""
+        from affilabs.utils.alarm_sound import get_alarm_player
+
         try:
-            import sys
-            # Use system beep
-            if sys.platform == "win32":
-                import winsound
-                winsound.MessageBeep(winsound.MB_ICONASTERISK)
-            else:
-                # Try to beep on other platforms
-                print('\a')  # Terminal bell
+            alarm = get_alarm_player()
+            # Play ascending alert (professional 3-tone notification sound)
+            success = alarm.play_alarm(style="ascending", repeats=1)
+            if not success:
+                logger.debug("Alarm playback failed, no sound output available")
         except Exception as e:
-            from affilabs.utils.logger import logger
             logger.debug(f"Could not play timer sound: {e}")
+
+    def _start_alarm_loop(self):
+        """Start looping alarm sound (ascending tone) until user stops it."""
+        # Create alarm loop timer if it doesn't exist
+        if not hasattr(self, '_alarm_loop_timer'):
+            self._alarm_loop_timer = QTimer(self)
+            self._alarm_loop_timer.timeout.connect(self._play_timer_sound)
+
+        # Play immediately
+        self._play_timer_sound()
+
+        # Loop every 1.5 seconds (quick repeating alert)
+        self._alarm_loop_timer.start(1500)
+        logger.debug("Alarm loop started (ascending tone every 1.5s)")
+
+    def _stop_alarm_loop(self):
+        """Stop the looping alarm sound and clean up timer state."""
+        from affilabs.utils.alarm_sound import get_alarm_player
+
+        # Stop alarm loop timer
+        if hasattr(self, '_alarm_loop_timer') and self._alarm_loop_timer.isActive():
+            self._alarm_loop_timer.stop()
+
+        # Stop pygame alarm playback
+        try:
+            alarm = get_alarm_player()
+            alarm.stop_alarm()
+        except Exception as e:
+            logger.debug(f"Could not stop pygame alarm: {e}")
+
+        # Stop the countdown timer if still active
+        if hasattr(self, '_manual_timer') and self._manual_timer:
+            self._manual_timer.stop()
+
+        # Clear timer state so re-click opens config mode
+        if hasattr(self, '_manual_timer_remaining'):
+            self._manual_timer_remaining = 0
+
+        # Clear timer button display
+        self.clear_timer_button()
+
+        logger.info("🔇 Alarm stopped and timer cleared")
 
     def _on_clear_manual_timer(self):
         """Handle request to clear manual timer (from context menu)."""
@@ -5371,6 +5525,10 @@ class AffilabsMainWindow(QMainWindow):
 
         # Clear the timer button display
         self.clear_timer_button()
+
+        # Hide pop-out window
+        if hasattr(self, '_popout_timer') and self._popout_timer:
+            self._popout_timer.hide()
 
     def _on_restart_manual_timer(self):
         """Handle request to restart manual timer (from context menu)."""
@@ -5386,7 +5544,10 @@ class AffilabsMainWindow(QMainWindow):
         label = self._manual_timer_label
         sound_enabled = self._manual_timer_sound
 
-        logger.info(f"ðŸ”„ Restarting manual timer '{label}' ({initial_duration}s)")
+        logger.info(f"⏪ Restarting manual timer '{label}' ({initial_duration}s)")
+
+        # Stop any alarm that might be playing
+        self._stop_alarm_loop()
 
         # Restart timer with original settings
         self._start_manual_timer_countdown(label, initial_duration, sound_enabled)
@@ -5394,12 +5555,25 @@ class AffilabsMainWindow(QMainWindow):
         # Update display immediately
         self.update_timer_button(label, initial_duration, is_manual=True)
 
+        # Update pop-out window and ensure it's in running state (not paused or alarm)
+        if hasattr(self, '_popout_timer') and self._popout_timer:
+            # Reset alarm state flag
+            self._popout_timer._alarm_active = False
+            self._popout_timer._stop_alarm_btn.setVisible(False)
+            # Set to running state
+            self._popout_timer.set_paused(False)
+            self._popout_timer.update_countdown(label, initial_duration)
+            # Show control buttons (pause/restart visible, start hidden)
+            self._popout_timer._pause_btn.setVisible(True)
+            self._popout_timer._restart_btn.setVisible(True)
+            self._popout_timer._start_btn.setVisible(False)
+            logger.debug(f"Timer window state reset: alarm=False, paused=False")
+
     def _refresh_intelligence_bar(self):
         """Refresh the Intelligence Bar display with current system diagnostics.
 
         NOTE: If a cycle is currently running, this method will ONLY update the status
-        indicator (âœ“/âš /âŒ) but NOT the message, to avoid overriding the cycle countdown
-        display that's updated every second via set_intel_message().
+        indicator (✓/⚠/❌) but NOT the message, to avoid overriding the cycle countdown
         """
         try:
             # Get system intelligence instance and run diagnosis
@@ -5416,7 +5590,7 @@ class AffilabsMainWindow(QMainWindow):
 
             # Update status based on system state
             if system_state == SystemState.HEALTHY:
-                status_text = "âœ“"
+                status_text = "✓"
                 status_color = "#34C759"  # Green
 
                 # Provide contextual messaging based on what's happening - use icons for brevity
@@ -5486,44 +5660,18 @@ class AffilabsMainWindow(QMainWindow):
                     f"font-family: {Fonts.SYSTEM};",
                 )
 
-            # Update the bottom status bar intelligence labels
-            if hasattr(self, 'bottom_intel_status_label'):
-                # Update status indicator (always)
-                self.bottom_intel_status_label.setText(status_text)
-                self.bottom_intel_status_label.setStyleSheet(
-                    f"font-size: 14px;"
-                    f"color: {status_color};"
-                    f"background: {Colors.TRANSPARENT};"
-                    f"font-weight: {Fonts.WEIGHT_BOLD};"
-                    f"font-family: {Fonts.SYSTEM};",
-                )
-
-            if hasattr(self, 'bottom_intel_message_label') and not is_cycle_running:
-                # Update message ONLY if no cycle is running (to avoid overriding cycle countdown)
-                self.bottom_intel_message_label.setText(message_text)
-                self.bottom_intel_message_label.setStyleSheet(
-                    f"font-size: 13px;"
-                    f"color: {message_color};"
-                    f"background: {Colors.TRANSPARENT};"
-                    f"font-weight: {Fonts.WEIGHT_SEMIBOLD};"
-                    f"font-family: {Fonts.SYSTEM};",
-                )
-
         except Exception as e:
             logger.error(f"Error refreshing intelligence bar: {e}")
 
     def set_intel_message(self, message: str, color: str = "#007AFF") -> None:
-        """Set a custom message in BOTH intelligence bars (sidebar and bottom).
-
-        This method synchronizes the intelligence message across both locations
-        to ensure consistent information display during cycle execution.
+        """Set a custom message in the sidebar intelligence bar.
 
         Args:
             message: Message text to display
             color: Hex color code for the message (default: blue #007AFF)
         """
         try:
-            # Update sidebar intelligence bar
+            # Update sidebar intelligence bar only
             if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'intel_message_label'):
                 self.sidebar.intel_message_label.setText(message)
                 self.sidebar.intel_message_label.setStyleSheet(
@@ -5531,17 +5679,6 @@ class AffilabsMainWindow(QMainWindow):
                     f"color: {color};"
                     f"background: {Colors.TRANSPARENT};"
                     f"font-weight: 600;"
-                    f"font-family: {Fonts.SYSTEM};",
-                )
-
-            # Update bottom status bar intelligence label (synchronized)
-            if hasattr(self, 'bottom_intel_message_label'):
-                self.bottom_intel_message_label.setText(message)
-                self.bottom_intel_message_label.setStyleSheet(
-                    f"font-size: 13px;"
-                    f"color: {color};"
-                    f"background: {Colors.TRANSPARENT};"
-                    f"font-weight: {Fonts.WEIGHT_SEMIBOLD};"
                     f"font-family: {Fonts.SYSTEM};",
                 )
         except Exception as e:
@@ -5955,8 +6092,8 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton {"
                 "  background: #FF3B30;"
                 "  color: white;"
-                "  "
-                "  "
+                "  border: none;"
+                "  border-radius: 14px;"
                 "  padding: 8px 16px;"
                 "  font-size: 13px;"
                 "  font-weight: 600;"
@@ -6102,362 +6239,9 @@ class AffilabsMainWindow(QMainWindow):
             pass
         super().closeEvent(event)
 
-    def add_cycle_to_table(self, cycle_data: dict):
-        """Add a single completed cycle to the cycle data table during live acquisition.
-
-        CRITICAL: This method should ONLY be called when a cycle COMPLETES,
-        NOT when cycles are added to the queue. The Cycle Data Table shows
-        COMPLETED cycles only, not queued/pending cycles.
-
-        Args:
-            cycle_data: Dictionary containing cycle information from Cycle.to_export_dict()
-        """
-        from PySide6.QtWidgets import QTableWidgetItem, QComboBox, QDoubleSpinBox
-        from affilabs.utils.logger import logger
-
-        logger.info(f"ðŸ“ Adding COMPLETED cycle to table: {cycle_data.get('type', 'Unknown')}")
-
-        try:
-            # Verify edits_tab exists
-            if not hasattr(self, 'edits_tab'):
-                logger.error("âŒ CRITICAL: edits_tab does NOT exist on main_window! Cannot add cycle to table.")
-                logger.error(f"   main_window attributes: {dir(self)}")
-                return
-
-            # Verify cycle_data_table exists
-            if not hasattr(self.edits_tab, 'cycle_data_table'):
-                logger.error("âŒ CRITICAL: cycle_data_table does NOT exist on edits_tab! Cannot add cycle.")
-                logger.error(f"   edits_tab attributes: {dir(self.edits_tab)}")
-                return
-
-            cycle_table = self.edits_tab.cycle_data_table
-
-            logger.debug(f"âœ“ Cycle table found, current rows: {cycle_table.rowCount()}")
-
-            # Initialize type counter if it doesn't exist
-            if not hasattr(self, '_cycle_type_counts'):
-                self._cycle_type_counts = {}
-
-            # Get current row count (where we'll add the new row)
-            row_idx = cycle_table.rowCount()
-            cycle_table.insertRow(row_idx)
-
-            # Get cycle type and format with numbering
-            cycle_type = cycle_data.get('type', 'Unknown')
-
-            # Use centralized abbreviation method if available from app
-            from PySide6.QtWidgets import QApplication
-            app_instance = QApplication.instance()
-            if app_instance and hasattr(app_instance, '_abbreviate_cycle_type'):
-                cycle_type = app_instance._abbreviate_cycle_type(cycle_type)
-            else:
-                # Fallback: inline abbreviation
-                if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
-                    cycle_type = 'Conc.'
-
-            # Count this type occurrence
-            if cycle_type not in self._cycle_type_counts:
-                self._cycle_type_counts[cycle_type] = 0
-            self._cycle_type_counts[cycle_type] += 1
-
-            # Format type with number
-            type_with_number = f"{cycle_type} {self._cycle_type_counts[cycle_type]}"
-
-            # Column 0: Type
-            cycle_table.setItem(row_idx, 0, QTableWidgetItem(type_with_number))
-
-            # Column 1: Duration (minutes)
-            duration = cycle_data.get('duration_minutes', cycle_data.get('length_minutes', ''))
-            if isinstance(duration, (int, float)):
-                duration = f"{duration:.2f}"
-            cycle_table.setItem(row_idx, 1, QTableWidgetItem(str(duration)))
-
-            # Column 2: Start time (seconds)
-            start_time = cycle_data.get('start_time_sensorgram', cycle_data.get('sensorgram_time', ''))
-            if isinstance(start_time, (int, float)):
-                start_time = f"{start_time:.2f}"
-            cycle_table.setItem(row_idx, 2, QTableWidgetItem(str(start_time)))
-
-            # Column 3: Concentration value
-            # Handle both single concentration_value and multi-channel concentrations dict
-            if cycle_data.get('concentrations'):
-                # Multi-channel concentrations - format as "A:100, B:50"
-                conc_dict = cycle_data['concentrations']
-                if isinstance(conc_dict, dict):
-                    conc_parts = [f"{ch}:{val}" for ch, val in sorted(conc_dict.items())]
-                    conc_value = ', '.join(conc_parts)
-                else:
-                    conc_value = str(conc_dict)
-            else:
-                # Single concentration value
-                conc_value = cycle_data.get('concentration_value', '')
-                if isinstance(conc_value, (int, float)):
-                    conc_value = f"{conc_value:.2f}"
-            cycle_table.setItem(row_idx, 3, QTableWidgetItem(str(conc_value)))
-
-            # Column 4: Notes (include cycle_id for tracking)
-            notes = cycle_data.get('note', cycle_data.get('notes', ''))
-            cycle_id = cycle_data.get('cycle_id', '')
-            if cycle_id:
-                notes_display = f"[ID:{cycle_id}] {notes}" if notes else f"[ID:{cycle_id}]"
-            else:
-                notes_display = notes
-            cycle_table.setItem(row_idx, 4, QTableWidgetItem(str(notes_display)))
-
-            # Columns 5-8: Delta SPR for channels A, B, C, D (Î”Ch1, Î”Ch2, Î”Ch3, Î”Ch4)
-            delta_spr_by_channel = cycle_data.get('delta_spr_by_channel', {})
-            for idx, ch in enumerate(['A', 'B', 'C', 'D']):
-                col_idx = 5 + idx  # Columns 5, 6, 7, 8
-                delta_value = delta_spr_by_channel.get(ch, '')
-                if isinstance(delta_value, (int, float)):
-                    delta_text = f"{delta_value:.1f}"
-                else:
-                    delta_text = ''
-                cycle_table.setItem(row_idx, col_idx, QTableWidgetItem(delta_text))
-
-            # Column 9: Flags (combined)
-            flags_list = cycle_data.get('flags', [])
-            flags_text = ', '.join(flags_list) if flags_list else ''
-            cycle_table.setItem(row_idx, 9, QTableWidgetItem(flags_text))
-
-            # Column 10: Channel selector
-            channel_combo = QComboBox()
-            channel_combo.addItems(["All", "A", "B", "C", "D"])
-            channel_combo.setCurrentText("All")
-            channel_combo.setStyleSheet("""
-                QComboBox {
-                    background: white;
-
-
-                    padding: 2px 8px;
-                    font-size: 12px;
-                }
-                QComboBox::drop-down {
-
-                }
-                QComboBox:hover {
-
-                }
-            """)
-            channel_combo.setProperty('cycle_index', row_idx)
-            channel_combo.currentTextChanged.connect(self._on_cycle_channel_changed)
-            cycle_table.setCellWidget(row_idx, 10, channel_combo)
-
-            # Column 11: Time shift
-            shift_spinbox = QDoubleSpinBox()
-            shift_spinbox.setRange(-1000.0, 1000.0)
-            shift_spinbox.setValue(0.0)
-            shift_spinbox.setSuffix(" s")
-            shift_spinbox.setDecimals(2)
-            shift_spinbox.setSingleStep(0.1)
-            shift_spinbox.setStyleSheet("""
-                QDoubleSpinBox {
-                    background: white;
-
-
-                    padding: 2px 4px;
-                    font-size: 12px;
-                }
-                QDoubleSpinBox:hover {
-
-                }
-            """)
-            shift_spinbox.setProperty('cycle_index', row_idx)
-            shift_spinbox.valueChanged.connect(self._on_cycle_shift_changed)
-            cycle_table.setCellWidget(row_idx, 11, shift_spinbox)
-
-            # Initialize alignment settings for this cycle
-            if not hasattr(self, '_cycle_alignment'):
-                self._cycle_alignment = {}
-            self._cycle_alignment[row_idx] = {'channel': 'All', 'shift': 0.0}
-
-            # Update loaded cycles data list
-            if not hasattr(self, '_loaded_cycles_data'):
-                self._loaded_cycles_data = []
-            self._loaded_cycles_data.append(cycle_data)
-
-            logger.info(f"âœ“ Added cycle to table: {type_with_number} at row {row_idx}")
-
-        except Exception as e:
-            logger.exception(f"Error adding cycle to table: {e}")
-
-    def _populate_cycle_table_from_loaded_data(self, cycles_data: list):
-        """Populate the cycle data table with loaded cycle information.
-
-        Args:
-            cycles_data: List of cycle dictionaries from loaded Excel data
-        """
-        from PySide6.QtWidgets import QTableWidgetItem
-        from affilabs.utils.logger import logger
-
-        try:
-            if not hasattr(self, 'cycle_data_table'):
-                logger.warning("Cycle data table not found - cannot populate")
-                return
-
-            # Clear existing table data and reset type counter
-            self.cycle_data_table.setRowCount(0)
-            self._cycle_type_counts = {}  # Reset numbering for loaded data
-
-            if not cycles_data:
-                logger.info("No cycles to display in table")
-                return
-
-            # Set row count to match number of cycles
-            self.cycle_data_table.setRowCount(len(cycles_data))
-
-            # Count occurrences of each type for numbering
-            type_counts = {}
-
-            # Populate each row with cycle data
-            for row_idx, cycle in enumerate(cycles_data):
-                # Get cycle type and format with numbering
-                cycle_type = cycle.get('type', 'Unknown')
-
-                # Use centralized abbreviation method if available from app
-                from PySide6.QtWidgets import QApplication
-                app_instance = QApplication.instance()
-                if app_instance and hasattr(app_instance, '_abbreviate_cycle_type'):
-                    cycle_type = app_instance._abbreviate_cycle_type(cycle_type)
-                else:
-                    # Fallback: inline abbreviation
-                    if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
-                        cycle_type = 'Conc.'
-
-                # Count this type occurrence
-                if cycle_type not in type_counts:
-                    type_counts[cycle_type] = 0
-                type_counts[cycle_type] += 1
-
-                # Format type with number (e.g., "Baseline 1", "Conc. 2")
-                type_with_number = f"{cycle_type} {type_counts[cycle_type]}"
-
-                # Column 0: Type (with automatic numbering)
-                self.cycle_data_table.setItem(row_idx, 0, QTableWidgetItem(type_with_number))
-
-                # Column 1: Duration (minutes)
-                duration = cycle.get('duration_minutes', cycle.get('length_minutes', ''))
-                if isinstance(duration, (int, float)):
-                    duration = f"{duration:.2f}"
-                self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(str(duration)))
-
-                # Column 2: Start time (seconds)
-                start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time', ''))
-                if isinstance(start_time, (int, float)):
-                    start_time = f"{start_time:.2f}"
-                self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(start_time)))
-
-                # Column 3: Concentration value
-                # Handle both single concentration_value and multi-channel concentrations dict
-                if cycle.get('concentrations'):
-                    # Multi-channel concentrations - format as "A:100, B:50"
-                    conc_dict = cycle['concentrations']
-                    if isinstance(conc_dict, dict):
-                        conc_parts = [f"{ch}:{val}" for ch, val in sorted(conc_dict.items())]
-                        conc_value = ', '.join(conc_parts)
-                    else:
-                        conc_value = str(conc_dict)
-                else:
-                    # Single concentration value
-                    conc_value = cycle.get('concentration_value', '')
-                    if isinstance(conc_value, (int, float)):
-                        conc_value = f"{conc_value:.2f}"
-                self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(str(conc_value)))
-
-                # Column 4: Concentration units (use 'units' field if available)
-                conc_units = cycle.get('units', cycle.get('concentration_units', ''))
-                self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(str(conc_units)))
-
-                # Column 5: Notes (include cycle_id for tracking)
-                notes = cycle.get('note', cycle.get('notes', ''))
-                cycle_id = cycle.get('cycle_id', '')
-                if cycle_id:
-                    notes_display = f"[ID:{cycle_id}] {notes}" if notes else f"[ID:{cycle_id}]"
-                else:
-                    notes_display = notes
-                self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(str(notes_display)))
-
-                # Column 6: Delta SPR
-                delta_spr = cycle.get('delta_spr', '')
-                if isinstance(delta_spr, (int, float)):
-                    delta_spr_text = f"{delta_spr:.1f}"
-                else:
-                    delta_spr_text = str(delta_spr) if delta_spr else ''
-                self.cycle_data_table.setItem(row_idx, 6, QTableWidgetItem(delta_spr_text))
-
-                # Column 7: Injection flag indicator
-                flags_list = cycle.get('flags', [])
-                has_injection = 'âœ“' if 'injection' in flags_list else ''
-                self.cycle_data_table.setItem(row_idx, 7, QTableWidgetItem(has_injection))
-
-                # Column 8: Other flags (wash, spike)
-                other_flags = [f for f in flags_list if f != 'injection']
-                flags_text = ', '.join(other_flags) if other_flags else ''
-                self.cycle_data_table.setItem(row_idx, 8, QTableWidgetItem(flags_text))
-
-                # Column 9: Channel selector (dropdown)
-                from PySide6.QtWidgets import QComboBox
-                channel_combo = QComboBox()
-                channel_combo.addItems(["All", "A", "B", "C", "D"])
-                channel_combo.setCurrentText("All")
-                channel_combo.setStyleSheet("""
-                    QComboBox {
-                        background: white;
-
-
-                        padding: 2px 8px;
-                        font-size: 12px;
-                    }
-                    QComboBox::drop-down {
-
-                    }
-                    QComboBox:hover {
-
-                    }
-                """)
-                # Store cycle index in widget
-                channel_combo.setProperty('cycle_index', row_idx)
-                channel_combo.currentTextChanged.connect(self._on_cycle_channel_changed)
-                self.cycle_data_table.setCellWidget(row_idx, 9, channel_combo)
-
-                # Column 10: Time shift (spinbox in seconds)
-                from PySide6.QtWidgets import QDoubleSpinBox
-                shift_spinbox = QDoubleSpinBox()
-                shift_spinbox.setRange(-1000.0, 1000.0)
-                shift_spinbox.setValue(0.0)
-                shift_spinbox.setSuffix(" s")
-                shift_spinbox.setDecimals(2)
-                shift_spinbox.setSingleStep(0.1)
-                shift_spinbox.setStyleSheet("""
-                    QDoubleSpinBox {
-                        background: white;
-
-
-                        padding: 2px 4px;
-                        font-size: 12px;
-                    }
-                    QDoubleSpinBox:hover {
-
-                    }
-                """)
-                # Store cycle index in widget
-                shift_spinbox.setProperty('cycle_index', row_idx)
-                shift_spinbox.valueChanged.connect(self._on_cycle_shift_changed)
-                self.cycle_data_table.setCellWidget(row_idx, 10, shift_spinbox)
-
-            # Store cycles data for graph loading
-            self._loaded_cycles_data = cycles_data
-
-            # Initialize cycle alignment settings (channel and shift per cycle)
-            if not hasattr(self, '_cycle_alignment'):
-                self._cycle_alignment = {}
-            for idx in range(len(cycles_data)):
-                self._cycle_alignment[idx] = {'channel': 'All', 'shift': 0.0}
-
-            logger.info(f"âœ“ Populated cycle table with {len(cycles_data)} cycles")
-
-        except Exception as e:
-            logger.exception(f"Error populating cycle table: {e}")
+    # REMOVED: add_cycle_to_table() - DEPRECATED 12-column method (365 lines)
+    # REMOVED: _populate_cycle_table_from_loaded_data() - DEPRECATED 11-column method
+    # Use EditsTab.add_cycle() for live acquisition instead (6-column table)
 
     def _populate_edits_timeline_from_loaded_data(self, raw_data: list):
         """Populate the timeline navigator graph with loaded raw data.

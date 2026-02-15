@@ -1318,7 +1318,7 @@ class FlowTabBuilder:
 
         # KC1 Loop segmented control (Load | Sensor)
         kc1_loop_container = QWidget()
-        kc1_loop_container.setFixedSize(110, 28)
+        kc1_loop_container.setFixedSize(100, 32)
         kc1_loop_layout = QHBoxLayout(kc1_loop_container)
         kc1_loop_layout.setContentsMargins(0, 0, 0, 0)
         kc1_loop_layout.setSpacing(0)
@@ -1346,7 +1346,7 @@ class FlowTabBuilder:
 
         # KC2 Loop segmented control (Load | Sensor)
         kc2_loop_container = QWidget()
-        kc2_loop_container.setFixedSize(110, 28)
+        kc2_loop_container.setFixedSize(100, 32)
         kc2_loop_layout = QHBoxLayout(kc2_loop_container)
         kc2_loop_layout.setContentsMargins(0, 0, 0, 0)
         kc2_loop_layout.setSpacing(0)
@@ -1391,7 +1391,7 @@ class FlowTabBuilder:
 
         # KC1 Channel segmented control (A | B)
         kc1_channel_container = QWidget()
-        kc1_channel_container.setFixedSize(80, 28)
+        kc1_channel_container.setFixedSize(76, 32)
         kc1_channel_layout = QHBoxLayout(kc1_channel_container)
         kc1_channel_layout.setContentsMargins(0, 0, 0, 0)
         kc1_channel_layout.setSpacing(0)
@@ -1419,7 +1419,7 @@ class FlowTabBuilder:
 
         # KC2 Channel segmented control (C | D)
         kc2_channel_container = QWidget()
-        kc2_channel_container.setFixedSize(80, 28)
+        kc2_channel_container.setFixedSize(76, 32)
         kc2_channel_layout = QHBoxLayout(kc2_channel_container)
         kc2_channel_layout.setContentsMargins(0, 0, 0, 0)
         kc2_channel_layout.setSpacing(0)
@@ -1774,11 +1774,11 @@ class FlowTabBuilder:
         Checked state is green; unchecked is gray.
         """
         if left:
-            radius = "14px 0px 0px 14px"
+            radius = "4px 0px 0px 4px"
         elif right:
-            radius = "0px 14px 14px 0px"
+            radius = "0px 4px 4px 0px"
         else:
-            radius = "14px"
+            radius = "4px"
 
         return (
             "QPushButton {"
@@ -1789,10 +1789,14 @@ class FlowTabBuilder:
             f"  font-size: {font_size}px;"
             "  font-weight: 600;"
             f"  font-family: {self.FONT_FAMILY_SYSTEM};"
+            "  padding: 4px 8px;"
             "}"
             "QPushButton:!checked {"
             "  background: #E5E5EA;"
             "  color: #86868B;"
+            "}"
+            "QPushButton:hover:!checked {"
+            "  background: #D1D1D6;"
             "}"
         )
 

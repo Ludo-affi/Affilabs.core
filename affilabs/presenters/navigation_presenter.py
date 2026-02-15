@@ -6,9 +6,9 @@ Extracted from affilabs_core_ui.py for better modularity.
 
 from pathlib import Path
 
-from affilabs.utils.resource_path import get_affilabs_resource
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from affilabs.utils.resource_path import get_affilabs_resource, get_resource_path
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 from ui_styles import Colors, Fonts, label_style
 
@@ -34,7 +34,7 @@ class NavigationPresenter:
 
         """
         nav_widget = QWidget()
-        nav_widget.setStyleSheet("background: #FFFFFF;")
+        nav_widget.setStyleSheet("QWidget { background: #FFFFFF; }")
         nav_widget.setFixedHeight(60)
 
         nav_layout = QHBoxLayout(nav_widget)
@@ -64,7 +64,7 @@ class NavigationPresenter:
                 "  background: rgba(46, 48, 227, 0.1);"
                 "  color: rgb(46, 48, 227);"
                 "  border: none;"
-                "  "
+                "  border-radius: 20px;"
                 "  padding: 8px 24px;"
                 "  font-size: 13px;"
                 "  font-weight: 500;"
@@ -110,12 +110,17 @@ class NavigationPresenter:
         indicator_layout.addStretch()
 
         self.main_window.recording_indicator.setStyleSheet(
-            "QFrame {  background: rgba(0, 0, 0, 0.04);  }",
+            "QFrame {  background: rgba(0, 0, 0, 0.04);  border-radius: 16px;  }",
         )
         # Hide recording indicator box (keep for internal use but don't display)
         self.main_window.recording_indicator.setVisible(False)
 
         nav_layout.addSpacing(8)
+
+        # Timer button
+        self._create_timer_button(nav_layout)
+
+        nav_layout.addSpacing(4)
 
         # Pause button
         self._create_pause_button(nav_layout)
@@ -142,7 +147,7 @@ class NavigationPresenter:
             "  font-weight: 600;"
             "  padding: 16px 32px;"
             "  border: 2px solid #E6B800;"
-            "  "
+            "  border-radius: 12px;"
             "}",
         )
         # Don't add to nav_layout - will be positioned as overlay in show_connecting_indicator
@@ -154,11 +159,48 @@ class NavigationPresenter:
 
         return nav_widget
 
+    def _create_timer_button(self, layout):
+        """Create timer button with matching styling to pause/record buttons."""
+        from affilabs.widgets.timer_button import TimerButton
+
+        self.main_window.timer_button = TimerButton(parent=self.main_window)
+        self.main_window.timer_button.setFixedSize(36, 36)
+        self.main_window.timer_button.set_compact_mode(True)  # Icon-only mode
+        self.main_window.timer_button.setToolTip(
+            "Manual Timer\n"
+            "Set a manual countdown timer for experimental protocols\n"
+            "(Click to open timer popup)",
+        )
+
+        # Style to match pause/record buttons
+        self.main_window.timer_button.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(46, 48, 227, 0.1);"
+            "  border: 1px solid rgba(46, 48, 227, 0.3);"
+            "  border-radius: 8px;"
+            "  font-size: 16px;"
+            "  text-align: center;"
+            "  padding: 0px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(46, 48, 227, 0.15);"
+            "  border: 1px solid rgba(46, 48, 227, 0.4);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(46, 48, 227, 0.25);"
+            "}"
+        )
+
+        self.main_window.timer_button.clicked.connect(self.main_window._on_timer_button_clicked)
+        self.main_window.timer_button.clear_requested.connect(self.main_window._on_clear_manual_timer)
+        self.main_window.timer_button.restart_requested.connect(self.main_window._on_restart_manual_timer)
+        layout.addWidget(self.main_window.timer_button)
+
     def _create_pause_button(self, layout):
-        """Create pause button with custom drawn lines."""
+        """Create pause button with SVG icon."""
         self.main_window.pause_btn = QPushButton()
         self.main_window.pause_btn.setCheckable(True)
-        self.main_window.pause_btn.setFixedSize(40, 40)
+        self.main_window.pause_btn.setFixedSize(36, 36)
         self.main_window.pause_btn.setEnabled(
             False,
         )  # Disabled until acquisition starts
@@ -167,9 +209,9 @@ class NavigationPresenter:
         )
         self.main_window.pause_btn.setStyleSheet(
             "QPushButton {"
-            "  background: #F5F5F7;"
+            "  background: rgba(46, 48, 227, 0.1);"
             "  border: 1px solid rgba(46, 48, 227, 0.3);"
-            "  border-radius: 4px;"
+            "  border-radius: 8px;"
             "}"
             "QPushButton:hover:!checked {"
             "  background: rgba(46, 48, 227, 0.15);"
@@ -189,66 +231,27 @@ class NavigationPresenter:
             "}",
         )
 
-        # Override paintEvent to draw custom pause lines
-        def paint_pause_lines(event):
-            """Draw two vertical lines for pause button."""
-            # Call default painting first
-            QPushButton.paintEvent(self.main_window.pause_btn, event)
+        # Use SVG icon — load directly like timer/power buttons
+        pause_svg = get_resource_path("ui/img/pause_icon.svg")
+        pause_white_svg = get_resource_path("ui/img/pause_icon_white.svg")
+        if pause_svg.exists():
+            icon = QIcon(str(pause_svg))
+            # Add white variant for checked (On) state
+            if pause_white_svg.exists():
+                icon.addFile(str(pause_white_svg), QSize(), QIcon.Mode.Normal, QIcon.State.On)
+            # Also register for disabled state so Qt doesn't blank it
+            icon.addFile(str(pause_svg), QSize(), QIcon.Mode.Disabled, QIcon.State.Off)
+            self.main_window.pause_btn.setIcon(icon)
+            self.main_window.pause_btn.setIconSize(QSize(20, 20))
 
-            painter = QPainter(self.main_window.pause_btn)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-            # Determine color based on state
-            if not self.main_window.pause_btn.isEnabled():
-                color = QColor(46, 48, 227, 77)  # 30% opacity
-            elif self.main_window.pause_btn.isChecked():
-                color = QColor(255, 255, 255)  # White when checked
-            else:
-                color = QColor(46, 48, 227)  # Blue when unchecked
-
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(color)
-
-            # Draw two vertical rectangles (pause lines)
-            line_width = 3
-            line_height = 14
-            gap = 4
-            center_x = self.main_window.pause_btn.width() // 2
-            center_y = self.main_window.pause_btn.height() // 2
-
-            # Left line
-            left_x = center_x - line_width - gap // 2
-            painter.drawRoundedRect(
-                left_x,
-                center_y - line_height // 2,
-                line_width,
-                line_height,
-                1.5,
-                1.5,
-            )
-
-            # Right line
-            right_x = center_x + gap // 2
-            painter.drawRoundedRect(
-                right_x,
-                center_y - line_height // 2,
-                line_width,
-                line_height,
-                1.5,
-                1.5,
-            )
-
-            painter.end()
-
-        self.main_window.pause_btn.paintEvent = paint_pause_lines
         self.main_window.pause_btn.clicked.connect(self.main_window._toggle_pause)
         layout.addWidget(self.main_window.pause_btn)
 
     def _create_record_button(self, layout):
         """Create record button."""
-        self.main_window.record_btn = QPushButton("●")
+        self.main_window.record_btn = QPushButton()
         self.main_window.record_btn.setCheckable(True)
-        self.main_window.record_btn.setFixedSize(40, 40)
+        self.main_window.record_btn.setFixedSize(36, 36)
         self.main_window.record_btn.setEnabled(
             False,
         )  # Disabled until acquisition starts
@@ -257,12 +260,10 @@ class NavigationPresenter:
         )
         self.main_window.record_btn.setStyleSheet(
             "QPushButton {"
-            "  background: #F5F5F7;"
-            "  color: rgb(46, 48, 227);"
+            "  background: rgba(46, 48, 227, 0.1);"
             "  border: 1px solid rgba(46, 48, 227, 0.3);"
-            "  border-radius: 4px;"
-            "  font-size: 20px;"
-            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "  border-radius: 8px;"
+            "  padding: 0px;"
             "}"
             "QPushButton:hover:!checked {"
             "  background: rgba(46, 48, 227, 0.15);"
@@ -270,7 +271,6 @@ class NavigationPresenter:
             "}"
             "QPushButton:checked {"
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1;"
-            "  color: white;"
             "  border: 1px solid rgba(255, 59, 48, 0.3);"
             "}"
             "QPushButton:hover:checked {"
@@ -279,33 +279,51 @@ class NavigationPresenter:
             "}"
             "QPushButton:disabled {"
             "  background: rgba(46, 48, 227, 0.1);"
-            "  color: rgba(46, 48, 227, 0.3);"
             "  border: 1px solid rgba(46, 48, 227, 0.1);"
             "}",
         )
+
+        # Use SVG icon — load directly like timer/power buttons
+        record_svg = get_resource_path("ui/img/record_icon.svg")
+        record_white_svg = get_resource_path("ui/img/record_icon_white.svg")
+        if record_svg.exists():
+            icon = QIcon(str(record_svg))
+            # Add white variant for checked (On) state
+            if record_white_svg.exists():
+                icon.addFile(str(record_white_svg), QSize(), QIcon.Mode.Normal, QIcon.State.On)
+            # Also register for disabled state so Qt doesn't blank it
+            icon.addFile(str(record_svg), QSize(), QIcon.Mode.Disabled, QIcon.State.Off)
+            self.main_window.record_btn.setIcon(icon)
+            self.main_window.record_btn.setIconSize(QSize(20, 20))
+
         self.main_window.record_btn.clicked.connect(self.main_window._toggle_recording)
         layout.addWidget(self.main_window.record_btn)
 
     def _create_power_button(self, layout):
         """Create power button with state management."""
-        self.main_window.power_btn = QPushButton("⏻")
-        self.main_window.power_btn.setFixedSize(40, 40)
+        self.main_window.power_btn = QPushButton()
+        self.main_window.power_btn.setFixedSize(36, 36)
         self.main_window.power_btn.setProperty("powerState", "disconnected")
+
+        # Use SVG icon instead of emoji text
+        power_svg = get_resource_path("ui/img/power_icon.svg")
+        if power_svg.exists():
+            self.main_window.power_btn.setIcon(QIcon(str(power_svg)))
+            self.main_window.power_btn.setIconSize(QSize(24, 24))
+        else:
+            self.main_window.power_btn.setText("⏻")  # Emoji fallback
 
         # Apply original stylesheet with state-based coloring
         self.main_window.power_btn.setStyleSheet(
             "QPushButton {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.4), stop:1 rgba(46, 48, 227, 0.5));"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(29, 29, 31, 0.4), stop:1 rgba(29, 29, 31, 0.5));"
             "  color: white;"
-            "  border: 1px solid rgba(46, 48, 227, 0.2);"
-            "  "
-            "  font-size: 20px;"
-            "  font-weight: 400;"
-            "  font-family: 'Segoe UI Symbol', 'Segoe UI Emoji', 'Apple Color Emoji', 'Arial Unicode MS', sans-serif;"
+            "  border: 1px solid rgba(29, 29, 31, 0.2);"
+            "  border-radius: 18px;"
             "}"
             "QPushButton:hover {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(46, 48, 227, 0.5), stop:1 rgba(46, 48, 227, 0.6));"
-            "  border: 1px solid rgba(46, 48, 227, 0.3);"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(29, 29, 31, 0.5), stop:1 rgba(29, 29, 31, 0.6));"
+            "  border: 1px solid rgba(29, 29, 31, 0.3);"
             "}",
         )
 

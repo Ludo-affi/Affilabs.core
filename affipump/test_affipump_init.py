@@ -63,11 +63,11 @@ for pump_num, addr in [(1, PumpAddress.PUMP_1), (2, PumpAddress.PUMP_2)]:
         print(f"  Valve Port:   {diag['valve_port']}")
         print(f"  Busy:         {diag['is_busy']}")
         print(f"  Error:        {diag['last_error']}")
-
+        
         if diag['last_error'] == 'NO_ERROR':
-            print("  Status:       ✅ Ready")
+            print(f"  Status:       ✅ Ready")
         else:
-            print("  Status:       ⚠️  Error detected")
+            print(f"  Status:       ⚠️  Error detected")
     except Exception as e:
         print(f"  Status:       ❌ Communication error: {e}")
 

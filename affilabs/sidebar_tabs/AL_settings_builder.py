@@ -261,18 +261,28 @@ class SettingsTabBuilder:
         """Update the progression banner for the current user."""
         # Check if user_manager is available (may not be set during initial UI construction)
         if not self.user_manager:
+            # Hide progression frame when no user manager
+            if hasattr(self.sidebar, 'user_progression_frame'):
+                self.sidebar.user_progression_frame.setVisible(False)
             return
 
         current = self.user_manager.get_current_user()
         if not current:
+            # Hide progression frame when no current user
+            if hasattr(self.sidebar, 'user_progression_frame'):
+                self.sidebar.user_progression_frame.setVisible(False)
             return
+
+        # Show progression frame when we have user data
+        if hasattr(self.sidebar, 'user_progression_frame'):
+            self.sidebar.user_progression_frame.setVisible(True)
 
         summary = self.user_manager.get_progression_summary(current)
 
         # Title line
         title = summary['title']
         self.sidebar.user_title_label.setText(
-            f"\ud83d\udc64 {current}  \u2022  {title}"
+            f"👤 {current}  •  {title}"
         )
 
         # XP & next title
@@ -281,11 +291,11 @@ class SettingsTabBuilder:
         remaining = summary['experiments_to_next_title']
         if next_title:
             self.sidebar.user_xp_label.setText(
-                f"XP: {xp}  \u2022  {remaining} experiments to {next_title}"
+                f"XP: {xp}  •  {remaining} experiments to {next_title}"
             )
         else:
             self.sidebar.user_xp_label.setText(
-                f"XP: {xp}  \u2022  Maximum rank achieved!"
+                f"XP: {xp}  •  Maximum rank achieved!"
             )
 
         # Training status — no longer required per user
@@ -294,6 +304,13 @@ class SettingsTabBuilder:
 
     def _on_add_user_settings(self):
         """Handle adding a new user from settings."""
+        # Lazy-resolve user manager if not yet set
+        if not self.user_manager and hasattr(self.sidebar, 'user_profile_manager'):
+            self.user_manager = self.sidebar.user_profile_manager
+        if not self.user_manager:
+            QMessageBox.warning(self.sidebar, "Not Ready", "User manager is not available yet. Please wait for the application to fully load.")
+            return
+
         username, ok = QInputDialog.getText(
             self.sidebar,
             "Add User",
@@ -340,6 +357,13 @@ class SettingsTabBuilder:
 
     def _on_delete_user_settings(self):
         """Handle deleting selected user from settings."""
+        # Lazy-resolve user manager if not yet set
+        if not self.user_manager and hasattr(self.sidebar, 'user_profile_manager'):
+            self.user_manager = self.sidebar.user_profile_manager
+        if not self.user_manager:
+            QMessageBox.warning(self.sidebar, "Not Ready", "User manager is not available yet. Please wait for the application to fully load.")
+            return
+
         selected_items = self.sidebar.user_list_widget.selectedItems()
         if not selected_items:
             QMessageBox.information(

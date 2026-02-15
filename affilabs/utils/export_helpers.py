@@ -38,7 +38,7 @@ class ExportHelpers:
         from PySide6.QtWidgets import QFileDialog  # type: ignore[import-untyped]
 
         try:
-            # Get cursor positions
+            # Get cursor positions (display coords — used for CSV metadata header only)
             start_time = app.main_window.full_timeline_graph.start_cursor.value()
             stop_time = app.main_window.full_timeline_graph.stop_cursor.value()
 
@@ -61,11 +61,19 @@ class ExportHelpers:
             timestamp = for_filename().replace(".", "_")
             default_filename = f"Cycle_Export_{timestamp}.csv"
 
+            # Build user-specific default path
+            default_dir = Path.home() / "Documents" / "Affilabs Data"
+            if hasattr(app, 'user_profile_manager') and app.user_profile_manager:
+                current_user = app.user_profile_manager.get_current_user()
+                if current_user:
+                    default_dir = default_dir / current_user / "SPR_data"
+            default_dir.mkdir(parents=True, exist_ok=True)
+
             # Show save dialog
             file_path, _ = QFileDialog.getSaveFileName(
                 app.main_window,
                 "Export Cycle Data",
-                default_filename,
+                str(default_dir / default_filename),
                 "CSV Files (*.csv);;All Files (*.*)",
             )
 
@@ -104,8 +112,8 @@ class ExportHelpers:
                 from affilabs.utils.time_utils import now_utc_iso
 
                 f.write(f"# Export Date,{now_utc_iso()}\n")
-                f.write(f"# Start Time (s),{start_time:.2f}\n")
-                f.write(f"# Stop Time (s),{stop_time:.2f}\n")
+                f.write(f"# Start Time (display s),{start_time:.2f}\n")
+                f.write(f"# Stop Time (display s),{stop_time:.2f}\n")
                 f.write(f"# Duration (s),{stop_time - start_time:.2f}\n")
                 f.write("\n")
 
@@ -242,8 +250,14 @@ class ExportHelpers:
                 df.to_csv(f, index=False, float_format="%.4f")
 
             # Save flag metadata to JSON
+            # Get current user for metadata
+            current_user = "Unknown"
+            if hasattr(app, 'user_profile_manager') and app.user_profile_manager:
+                current_user = app.user_profile_manager.get_current_user() or "Unknown"
+
             metadata = {
                 "timestamp": now_utc_iso(),
+                "operator": current_user,
                 "cycle_start": start_time,
                 "cycle_stop": stop_time,
                 "duration": stop_time - start_time,
@@ -375,7 +389,14 @@ class ExportHelpers:
 
                 destination = config.get("destination", "")
                 if not destination:
-                    destination = str(Path.home() / "Documents" / "Affilabs Data")
+                    # Use user-specific directory if user available
+                    current_user = None
+                    if hasattr(app, 'user_profile_manager') and app.user_profile_manager:
+                        current_user = app.user_profile_manager.get_current_user()
+                    if current_user:
+                        destination = str(Path.home() / "Documents" / "Affilabs Data" / current_user / "SPR_data")
+                    else:
+                        destination = str(Path.home() / "Documents" / "Affilabs Data")
 
                 # Ensure extension is on filename
                 if not filename.endswith(extension):

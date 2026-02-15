@@ -376,7 +376,7 @@ class DataWindow(QWidget):
             graph_layout.setSpacing(8)
 
             # Styled container for Clear Graph button
-            from affilabs.ui.styles import get_button_style, get_container_style
+            from affilabs.ui_styles import get_button_style, get_container_style
 
             clear_container = QFrame(graph_controls)
             clear_container.setObjectName("clear_graph_container")
@@ -456,7 +456,7 @@ class DataWindow(QWidget):
             from PySide6.QtCore import QSize
             from PySide6.QtWidgets import QFrame
 
-            from ui.styles import Colors, Radius
+            from affilabs.ui_styles import Colors, Radius
 
             self.bg_rect_widget = QFrame(self)
             self.bg_rect_widget.setStyleSheet(

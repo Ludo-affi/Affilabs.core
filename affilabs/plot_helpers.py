@@ -20,12 +20,20 @@ def create_time_plot(
     left_label: str,
     bottom_label: str = "Time (seconds)",
     left_size: str = "11pt",
+    size: str = None,
 ) -> pg.PlotWidget:
     """Create a standardized time-series plot widget."""
+    # Allow overriding both axes size with 'size' parameter
+    if size is not None:
+        left_size = size
+        bottom_size = size
+    else:
+        bottom_size = left_size
+
     w = pg.PlotWidget()
     w.setBackground(Colors.BACKGROUND_WHITE)
     w.setLabel("left", left_label, color=AXIS_COLOR, size=left_size)
-    w.setLabel("bottom", bottom_label, color=AXIS_COLOR, size=left_size)
+    w.setLabel("bottom", bottom_label, color=AXIS_COLOR, size=bottom_size)
     w.showGrid(x=False, y=False, alpha=GRID_ALPHA)  # Grid OFF by default
     w.getPlotItem().getAxis("left").setPen(color=AXIS_PEN_COLOR, width=1)
     w.getPlotItem().getAxis("bottom").setPen(color=AXIS_PEN_COLOR, width=1)

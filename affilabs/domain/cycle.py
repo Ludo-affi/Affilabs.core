@@ -44,7 +44,15 @@ from pydantic import BaseModel, Field, field_validator
 
 CycleStatus = Literal["pending", "running", "completed", "cancelled"]
 CycleType = Literal[
-    "Baseline", "Immobilization", "Blocking", "Wash", "Concentration", "Regeneration", "Custom"
+    "Baseline",
+    "Immobilization",
+    "Blocking",
+    "Wash",
+    "Concentration",
+    "Regeneration",
+    "Other",
+    "Auto-read",
+    "Custom",
 ]
 
 
@@ -112,6 +120,23 @@ class Cycle(BaseModel):
     flags: List[str] = Field(
         default_factory=list,
         description="Flags that occurred during this cycle (injection, wash, spike)",
+    )
+
+    # Per-channel injection detection data (set during injection phase)
+    injection_time_by_channel: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-channel injection times in RAW_ELAPSED seconds "
+        "{'A': 123.5, 'B': 124.1, 'C': 123.9, 'D': 124.3}",
+    )
+    injection_confidence_by_channel: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Detection confidence per channel (0-1) "
+        "{'A': 0.85, 'B': 0.72, 'C': 0.45, 'D': 0.91}",
+    )
+    injection_mislabel_flags: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Mislabel warnings per channel "
+        "{'C': 'inactive_channel'} — channel detected injection but may not be active",
     )
 
     # Pump control fields (for automated flow during cycles)
@@ -187,8 +212,13 @@ class Cycle(BaseModel):
         """
         return self.model_dump()
 
-    def to_export_dict(self) -> dict:
+    def to_export_dict(self, clock=None) -> dict:
         """Convert to export format for recording manager.
+
+        Args:
+            clock: Optional ExperimentClock instance. When provided, cycle times are
+                   converted from RAW_ELAPSED to RECORDING-relative coords so they
+                   match the raw_data_rows time column in the Excel file.
 
         Returns:
             Dictionary suitable for Excel export
@@ -196,16 +226,29 @@ class Cycle(BaseModel):
         # Calculate actual duration if both start and end times are available
         # Otherwise use planned duration (length_minutes)
         actual_duration = self.length_minutes
-        if self.sensorgram_time is not None and self.end_time_sensorgram is not None:
-            actual_duration = (self.end_time_sensorgram - self.sensorgram_time) / 60.0
+
+        start_export = self.sensorgram_time
+        end_export = self.end_time_sensorgram
+
+        # Convert from RAW_ELAPSED → RECORDING if clock provided
+        if clock is not None:
+            from affilabs.core.experiment_clock import TimeBase
+
+            if start_export is not None:
+                start_export = clock.convert(start_export, TimeBase.RAW_ELAPSED, TimeBase.RECORDING)
+            if end_export is not None:
+                end_export = clock.convert(end_export, TimeBase.RAW_ELAPSED, TimeBase.RECORDING)
+
+        if start_export is not None and end_export is not None:
+            actual_duration = (end_export - start_export) / 60.0
 
         return {
             "cycle_id": self.cycle_id,
             "cycle_num": self.cycle_num,
             "type": self.type,
             "name": self.name,
-            "start_time_sensorgram": self.sensorgram_time,
-            "end_time_sensorgram": self.end_time_sensorgram,
+            "start_time_sensorgram": start_export,
+            "end_time_sensorgram": end_export,
             "duration_minutes": actual_duration,
             "length_minutes": self.length_minutes,  # Keep planned duration for reference
             "concentration_value": self.concentration_value,
@@ -225,6 +268,9 @@ class Cycle(BaseModel):
             "manual_injection_mode": self.manual_injection_mode,
             "planned_concentrations": self.planned_concentrations,
             "injection_count": self.injection_count,
+            "injection_time_by_channel": self.injection_time_by_channel,
+            "injection_confidence_by_channel": self.injection_confidence_by_channel,
+            "injection_mislabel_flags": self.injection_mislabel_flags,
         }
 
     @classmethod

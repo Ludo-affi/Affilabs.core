@@ -180,6 +180,7 @@ os.environ["QT_NO_GLIB"] = "1"
 from PySide6.QtCore import Qt, QTimer, QtMsgType, Signal, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication
 
+from affilabs.core.experiment_clock import ExperimentClock, TimeBase
 from affilabs.ui.ui_message import error as ui_error
 from affilabs.ui.ui_message import info as ui_info
 from affilabs.ui_styles import Colors
@@ -229,6 +230,14 @@ from affilabs.core.hardware_manager import HardwareManager
 from affilabs.core.kinetic_manager import KineticManager
 from affilabs.core.recording_manager import RecordingManager
 
+# --- Feature Flag System ---
+# Centralized configuration for optional/conditional features
+_FEATURES = {
+    'HAL': {'available': False, 'error': None},
+    'COORDINATORS': {'available': False, 'error': None},
+    'SPECTRUM_PROCESSING': {'available': False, 'error': None},
+}
+
 # --- Optional: Phase 1.4 Hardware Abstraction Layer (HAL) ---
 try:
     from affilabs.hardware import (
@@ -239,8 +248,10 @@ try:
         spectrometer_adapter,
     )
 
+    _FEATURES['HAL']['available'] = True
     HAL_AVAILABLE = True
 except ImportError as e:
+    _FEATURES['HAL']['error'] = str(e)
     HAL_AVAILABLE = False
     _hal_import_error = str(e)
 
@@ -249,8 +260,10 @@ try:
     from affilabs.coordinators.dialog_manager import DialogManager
     from affilabs.coordinators.ui_update_coordinator import AL_UIUpdateCoordinator
 
+    _FEATURES['COORDINATORS']['available'] = True
     COORDINATORS_AVAILABLE = True
 except ImportError as e:
+    _FEATURES['COORDINATORS']['error'] = str(e)
     COORDINATORS_AVAILABLE = False
     _coordinators_import_error = str(e)
     # Log the import error for debugging
@@ -361,18 +374,7 @@ except Exception:
 # ============================================================================
 
 
-def _safe_get_global(name: str, default: str = "") -> str:
-    """Safely retrieve a global variable value, returning default if not found.
 
-    Args:
-        name: Global variable name to retrieve
-        default: Default value if variable doesn't exist
-
-    Returns:
-        Variable value as string, or default if not found
-
-    """
-    return str(globals().get(name, default))
 
 
 # ============================================================================
@@ -431,6 +433,20 @@ class Application(QApplication):
 
         # Install Qt message handler to suppress harmless warnings
         qInstallMessageHandler(qt_message_handler)
+
+        # Set global tooltip stylesheet (must be done early for all widgets)
+        self.setStyleSheet("""
+            QToolTip {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #555555;
+                border-radius: 6px;
+                padding: 10px 14px;
+                font-size: 13px;
+                font-weight: 500;
+                font-family: 'Segoe UI', system-ui, sans-serif;
+            }
+        """)
 
         # ============================================================
         # PHASE 2: Validation - Fail Fast on Critical Import Failures
@@ -532,7 +548,7 @@ class Application(QApplication):
 
         failures = []
 
-        # Validate controller classes (ArduinoController deleted - obsolete)
+        # Validate controller classes
         try:
             from affilabs.utils.controller import (
                 PicoEZSPR,
@@ -567,8 +583,7 @@ class Application(QApplication):
         if COORDINATORS_AVAILABLE:
             logger.debug("✓ UI Coordinators")
         else:
-            error_msg = _safe_get_global("_coordinators_import_error", "unknown error")
-            logger.warning(f"⚠ UI Coordinators not available: {error_msg}")
+            logger.warning(f"⚠ UI Coordinators not available: {globals().get('_coordinators_import_error', 'unknown error')}")
 
         # Fail fast if critical imports missing
         if failures:
@@ -632,9 +647,8 @@ class Application(QApplication):
         self._deferred_connections_pending = True
         self._intentional_disconnect = False  # Track user-initiated disconnect
 
-        # Experiment tracking
-        self.experiment_start_time = None
-        self._display_time_offset = 0.0  # Offset between real time and displayed time (graph skips first point)
+        # Experiment tracking — ExperimentClock is the single source of truth for time
+        self.clock = ExperimentClock()
         self._last_cycle_bounds = None
         self._session_cycles_dir = None
         self._session_epoch = 0  # Increments on clear to invalidate old data
@@ -654,10 +668,7 @@ class Application(QApplication):
         self._ref_channel = None
         self._selected_flag_channel = 'a'  # Default channel for flag placement (used by UI)
 
-        # Flag system - legacy storage (for backward compatibility)
-        # NOTE: Flag logic now delegated to FlagManager
-
-        # Channel time shifts for injection alignment (Phase 2)
+        # Channel time shifts for injection alignment
         self._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
 
         # Data filtering
@@ -665,16 +676,13 @@ class Application(QApplication):
         self._filter_strength = DEFAULT_FILTER_STRENGTH
         self._filter_method = DEFAULT_FILTER_METHOD
         self._kalman_filters = {}
-        self._flag_data = []
 
         # EMA live display filtering
         self._ema_state = {"a": None, "b": None, "c": None, "d": None}
         self._display_filter_method = "none"  # 'none', 'ema_light', 'ema_smooth'
         self._display_filter_alpha = 0.0  # Will be set based on selection
 
-        # [Timeframe Mode state variables removed - feature permanently disabled]
 
-        # LED monitoring - now handled by HardwareEventCoordinator
 
         # Performance optimization (pre-computed lookups)
         self._channel_to_idx = CHANNEL_INDICES
@@ -713,8 +721,6 @@ class Application(QApplication):
         # Contact time marker for manual injection cycles
         self._contact_time_marker = None  # Vertical line showing when to wash/regen
         self._injection_completion_time = None  # Sensorgram time when injection completed
-        self._contact_timer_update_timer = QTimer()  # Timer to update contact time display every second
-        self._contact_timer_update_timer.timeout.connect(self._update_contact_timer_display)
 
         # Internal pump state tracking (P4PROPLUS)
         self._pump1_running = False
@@ -779,10 +785,8 @@ class Application(QApplication):
 
         # Pump operations manager
         from affilabs.managers import PumpManager
-        from affilabs.managers.pump_manager import PumpOperation
 
         self.pump_mgr = PumpManager(self.hardware_mgr)
-        self.PumpOperation = PumpOperation  # Store for handler access
         if self.pump_mgr is None:
             raise RuntimeError("PumpManager initialization failed")
 
@@ -895,9 +899,9 @@ class Application(QApplication):
 
         # Wire up elapsed time getter for pause markers
         def get_elapsed_time():
-            if self.experiment_start_time is None:
+            if not self.clock.experiment_started:
                 return None
-            return monotonic() - self.experiment_start_time
+            return self.clock.raw_elapsed_now()
 
         self.main_window._get_elapsed_time = get_elapsed_time
 
@@ -905,9 +909,17 @@ class Application(QApplication):
         self.main_window.app = self
         # All UI→App communication happens through Qt signals
 
-        # Set default export path in sidebar
+        # Set default export path in sidebar (user-specific)
         if hasattr(self.main_window, 'sidebar') and (w := self._sidebar_widget('export_dest_input')):
-            default_path = str(self.recording_mgr.output_directory)
+            # Use user-specific directory: Documents/Affilabs Data/<username>/SPR_data/
+            current_user = None
+            if hasattr(self, 'user_profile_manager') and self.user_profile_manager:
+                current_user = self.user_profile_manager.get_current_user()
+            if current_user:
+                default_path = str(Path.home() / "Documents" / "Affilabs Data" / current_user / "SPR_data")
+            else:
+                default_path = str(self.recording_mgr.output_directory)
+            Path(default_path).mkdir(parents=True, exist_ok=True)
             w.setText(default_path)
             w.setPlaceholderText(default_path)
             logger.debug(f"✓ Export path initialized: {default_path}")
@@ -1025,7 +1037,7 @@ class Application(QApplication):
 
         # SpectrumViewModel for each channel
         try:
-            from services import SpectrumProcessor
+            from affilabs.services import SpectrumProcessor
 
             spectrum_processor = SpectrumProcessor()
 
@@ -1056,7 +1068,7 @@ class Application(QApplication):
 
         # CalibrationViewModel
         try:
-            from services import CalibrationValidator
+            from affilabs.services import CalibrationValidator
 
             self.calibration_viewmodel = CalibrationViewModel()
             calibration_validator = CalibrationValidator()
@@ -1239,6 +1251,9 @@ class Application(QApplication):
             # Theme not available or failed; continue with default styling
             pass
 
+        # Note: Tooltip styling is applied at QApplication level during __init__
+        logger.debug("✓ Theme applied (tooltip styling applied at app level)")
+
         # Register emergency cleanup handler for unexpected exits
         atexit.register(self._emergency_cleanup)
 
@@ -1361,17 +1376,8 @@ class Application(QApplication):
             self.graph.clear_plot()
             logger.info("   Graph cleared")
 
-        # Resume live acquisition if hardware is ready
-        if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
-            try:
-                # Use data_mgr to start live data
-                if hasattr(self, 'data_mgr') and self.data_mgr:
-                    self.data_mgr.start_acquisition()
-                    logger.info("   Live acquisition started")
-                else:
-                    logger.warning("   Data acquisition manager not available")
-            except Exception as e:
-                logger.warning(f"   Could not start live acquisition: {e}")
+        # NOTE: Live acquisition will be started only after user reviews QC and clicks "Start"
+        # See: _on_qc_start_requested() handler and _show_qc_dialog()
 
         logger.info("✓ Post-calibration cleanup complete")
 
@@ -1390,11 +1396,18 @@ class Application(QApplication):
 
             logger.info("Showing QC report dialog (modal)...")
 
-            # Use static method to show QC dialog (ensures proper modal behavior and pre-export)
-            self._qc_dialog = CalibrationQCDialog.show_qc_report(
+            # Create dialog instance
+            dialog = CalibrationQCDialog(
                 parent=self.main_window,
                 calibration_data=qc_data,
             )
+            
+            # Store reference and show modal dialog
+            self._qc_dialog = dialog
+            dialog.setModal(True)
+            from PySide6.QtCore import Qt
+            dialog.setWindowModality(Qt.ApplicationModal)
+            dialog.exec()
 
             logger.info("QC report displayed and closed (modal)")
 
@@ -1406,7 +1419,7 @@ class Application(QApplication):
                 except Exception as led_error:
                     logger.warning(f"Failed to turn off LEDs: {led_error}")
 
-            logger.info("System ready - Click START button to begin live acquisition")
+            logger.info("System ready - Live data acquisition controlled by user")
 
         except Exception as e:
             logger.error(f"[X] Failed to show QC report: {e}", exc_info=True)
@@ -1621,8 +1634,6 @@ class Application(QApplication):
         # === DEBUG SHORTCUTS ===
         from PySide6.QtGui import QKeySequence, QShortcut
 
-        logger.debug("Registering debug shortcuts...")
-
         # Ctrl+Shift+C: Bypass calibration - DISABLED (missing debug_helpers module)
         # bypass_calibration_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self.main_window)
         # bypass_calibration_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
@@ -1633,9 +1644,6 @@ class Application(QApplication):
         simulation_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self.main_window)
         simulation_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         simulation_shortcut.activated.connect(self.debug.start_simulation)
-        logger.debug(f"[DEBUG] Ctrl+Shift+S: {simulation_shortcut}")
-        logger.debug(f"   Context: {simulation_shortcut.context()}")
-        logger.debug(f"   Key: {simulation_shortcut.key().toString()}")
 
         # Ctrl+Shift+1: Single data point test (minimal test)
         single_point_shortcut = QShortcut(
@@ -1644,24 +1652,14 @@ class Application(QApplication):
         )
         single_point_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         single_point_shortcut.activated.connect(self.debug.send_single_data_point)
-        logger.debug(f"[DEBUG] Ctrl+Shift+1: {single_point_shortcut}")
-        logger.debug(f"   Context: {single_point_shortcut.context()}")
-        logger.debug(f"   Key: {single_point_shortcut.key().toString()}")
-
-        logger.debug("Ctrl+Shift+S: spectrum simulation")
 
         self.main_window.acquisition_pause_requested.connect(
             self._on_acquisition_pause_requested,
         )
         self.main_window.export_requested.connect(self._on_export_requested)
 
-        # === TIMEFRAME MODE SIGNALS (Phase 2 - Cursor Replacement) ===
-        logger.debug("[Timeframe Mode removed]")
-
         # === UI CONTROL SIGNALS (direct connections - not through event bus) ===
         self._connect_ui_control_signals()
-
-        logger.debug("[DEBUG] All shortcuts registered")
 
     def _connect_ui_control_signals(self):
         """Register UI control element signal connections.
@@ -1735,24 +1733,14 @@ class Application(QApplication):
 
         # Baseline Capture button (REBUILT - direct connection, no lambda)
         if hasattr(ui, "baseline_capture_btn"):
-            logger.debug(f"[DEBUG] Found baseline_capture_btn: {ui.baseline_capture_btn}")
-            logger.debug(f"[DEBUG] Button object name: {ui.baseline_capture_btn.objectName()}")
-            logger.debug(f"[DEBUG] Button is enabled: {ui.baseline_capture_btn.isEnabled()}")
-            logger.debug(f"[DEBUG] Button is visible: {ui.baseline_capture_btn.isVisible()}")
-
             # Disconnect any existing connections first
             try:
                 ui.baseline_capture_btn.clicked.disconnect()
-                logger.debug("[DEBUG] Disconnected existing button connections")
             except:
-                logger.debug("[DEBUG] No existing connections to disconnect")
+                pass
 
             # Connect to handler
             ui.baseline_capture_btn.clicked.connect(self._on_record_baseline_clicked)
-            logger.info("[OK] ✓ Connected Baseline Capture button to handler")
-
-            # Test connection
-            logger.debug(f"[DEBUG] Button has {ui.baseline_capture_btn.receivers('clicked()')} receivers")
         else:
             logger.warning("[WARN] baseline_capture_btn NOT found in UI")
 
@@ -2005,12 +1993,6 @@ class Application(QApplication):
         else:
             logger.error("✗ main_window.edits_tab DOES NOT EXIST!")
 
-        # Check 3: Main window has add_cycle_to_table method
-        if hasattr(self.main_window, 'add_cycle_to_table'):
-            logger.info("✓ main_window.add_cycle_to_table METHOD EXISTS")
-        else:
-            logger.error("✗ main_window.add_cycle_to_table METHOD DOES NOT EXIST!")
-
         # Check 4: Sidebar has method_tab_builder
         if hasattr(self.main_window, 'sidebar'):
             if builder := self._sidebar_widget('method_tab_builder'):
@@ -2123,7 +2105,15 @@ class Application(QApplication):
         # === INJECTION COORDINATOR SIGNALS ===
         if hasattr(self, 'injection_coordinator') and self.injection_coordinator:
             self.injection_coordinator.injection_completed.connect(self._show_contact_time_marker)
-            self.injection_coordinator.auto_detect_injection_requested.connect(self._on_manual_injection_auto_detect)
+            self.injection_coordinator.injection_flag_requested.connect(self._place_injection_flag)
+
+            # Non-blocking manual injection signals
+            self.injection_coordinator.injection_ui_requested.connect(self._on_injection_ui_requested)
+            self.injection_coordinator.injection_detection_tick.connect(self._on_injection_detection_tick)
+            self.injection_coordinator.injection_auto_detected.connect(self._on_injection_auto_detected)
+            self.injection_coordinator.injection_window_expired.connect(self._on_injection_window_expired)
+            self.injection_coordinator.injection_cancelled.connect(self._on_injection_cancelled)
+
             logger.debug("✓ InjectionCoordinator signals connected")
 
         # Manager signals are connected in _connect_signals() (called from __init__)
@@ -2224,12 +2214,14 @@ class Application(QApplication):
         # Save incomplete cycle data before clearing
         had_cycle = self._current_cycle is not None
         if had_cycle and self._current_cycle is not None:
-            # Get current sensorgram time as early end time
+            # Get current sensorgram time as early end time (convert display → RAW_ELAPSED)
             end_sensorgram_time = None
             if hasattr(self.main_window, 'full_timeline_graph'):
                 timeline = self.main_window.full_timeline_graph
                 if hasattr(timeline, 'stop_cursor'):
-                    end_sensorgram_time = timeline.stop_cursor.value()
+                    end_sensorgram_time = self.clock.convert(
+                        timeline.stop_cursor.value(), TimeBase.DISPLAY, TimeBase.RAW_ELAPSED
+                    )
             
             # Set end time on cycle (even if incomplete)
             if end_sensorgram_time is not None:
@@ -2238,11 +2230,11 @@ class Application(QApplication):
             
             # Export and save to table and recording
             try:
-                cycle_export_data = self._current_cycle.to_export_dict()
+                cycle_export_data = self._current_cycle.to_export_dict(clock=self.clock)
                 
                 # Save to Edits table
-                if hasattr(self.main_window, 'add_cycle_to_table'):
-                    self.main_window.add_cycle_to_table(cycle_export_data)
+                if hasattr(self.main_window, 'edits_tab'):
+                    self.main_window.edits_tab.add_cycle(cycle_export_data)
                     logger.info(f"✓ Incomplete {cycle_export_data.get('type', 'cycle')} saved to Edits table")
                 
                 # Save to recording if active
@@ -2412,7 +2404,7 @@ class Application(QApplication):
         self._current_cycle.start(
             cycle_num=cycle_num,
             total_cycles=total_cycles,
-            sensorgram_time=0.0  # Will be updated when first data arrives
+            sensorgram_time=self.clock.raw_elapsed_now()  # RAW_ELAPSED; corrected in _add_cycle_marker
         )
         self._cycle_end_time = time.time() + (duration_min * 60)
         logger.info(f"✓ Cycle initialized: {cycle_type}, end_time set to {self._cycle_end_time}")
@@ -2617,7 +2609,7 @@ class Application(QApplication):
         """Execute injection for cycle - delegates to InjectionCoordinator.
 
         InjectionCoordinator handles both manual and automated modes:
-        - Manual mode: Shows dialog, blocks until user completes
+        - Manual mode: NON-BLOCKING — updates unified bar, runs detection in background
         - Automated mode: Runs pump injection in background thread
 
         Args:
@@ -2651,15 +2643,13 @@ class Application(QApplication):
                 assay_rate = float(spin.value())
             logger.info(f"Using UI assay rate: {assay_rate} µL/min (no cycle flow_rate set)")
 
-        # Delegate to injection coordinator
+        # Delegate to injection coordinator (non-blocking for manual mode)
         success = self.injection_coordinator.execute_injection(
             cycle, assay_rate, parent_widget=self.main_window
         )
 
         if not success:
-            logger.warning("Injection was cancelled or failed")
-            # Note: Cycle continues even if injection cancelled
-            # User can still complete the cycle manually
+            logger.warning("Injection was cancelled at schedule stage")
 
         # Log event to sensorgram
         if hasattr(self, "recording_mgr"):
@@ -2759,12 +2749,14 @@ class Application(QApplication):
                 units = next_cycle.units
                 next_type = f"{next_type} {conc_value}{units}"
 
-            next_cycle_warning = f" → Next: {next_type} in {int(remaining_sec)}s"
+            next_cycle_warning = f"→ Next: {next_type} in {int(remaining_sec)}s"
 
-        # Update intelligence bar with countdown and next cycle warning
-        message_text = f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) - {time_format}{next_cycle_warning}"
+        # Update unified cycle bar with RUNNING state
+        # Update sidebar intelligence bar
+        message_text = f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) — {time_format}"
+        if next_cycle_warning:
+            message_text += f" {next_cycle_warning}"
         color = Colors.WARNING if next_cycle_warning else Colors.INFO
-        logger.debug(f"Setting intelligence message: {message_text}")
         self.main_window.set_intel_message(message_text, color)
 
         # Show/hide warning line on active cycle graph when <10s to next cycle
@@ -2891,13 +2883,14 @@ class Application(QApplication):
         # Clear contact time marker from previous injection
         self._clear_contact_time_marker()
 
-        # Calculate end time in sensorgram time (not Unix timestamp!)
+        # Calculate end time in RAW_ELAPSED coords (convert from display cursor)
         end_sensorgram_time = None
         if hasattr(self.main_window, 'full_timeline_graph'):
             timeline = self.main_window.full_timeline_graph
             if hasattr(timeline, 'stop_cursor'):
-                # End time is current stop cursor position (sensorgram seconds)
-                end_sensorgram_time = timeline.stop_cursor.value()
+                end_sensorgram_time = self.clock.convert(
+                    timeline.stop_cursor.value(), TimeBase.DISPLAY, TimeBase.RAW_ELAPSED
+                )
 
         # CRITICAL: Set end time on cycle object before export
         if end_sensorgram_time is not None:
@@ -2918,16 +2911,16 @@ class Application(QApplication):
         self.segment_queue = self.queue_presenter.get_queue_snapshot()
 
         # Get cycle export data for table and recording
-        cycle_export_data = self._current_cycle.to_export_dict()
+        cycle_export_data = self._current_cycle.to_export_dict(clock=self.clock)
 
         # Always add cycle to the live cycle data table (regardless of recording state)
         logger.debug(f"🔄 Adding cycle to table: {cycle_export_data.get('type', 'Unknown')}")
-        if hasattr(self.main_window, 'add_cycle_to_table'):
-            logger.debug("   ✓ add_cycle_to_table method exists on main_window")
-            self.main_window.add_cycle_to_table(cycle_export_data)
-            logger.debug("   ✓ add_cycle_to_table() called successfully")
+        if hasattr(self.main_window, 'edits_tab'):
+            logger.debug("   ✓ edits_tab exists on main_window")
+            self.main_window.edits_tab.add_cycle(cycle_export_data)
+            logger.debug("   ✓ edits_tab.add_cycle() called successfully")
         else:
-            logger.error("   ✗ add_cycle_to_table method NOT FOUND on main_window!")
+            logger.error("   ✗ edits_tab NOT FOUND on main_window!")
 
         # Export cycle to recording manager only if recording
         if self.recording_mgr.is_recording:
@@ -3050,20 +3043,17 @@ class Application(QApplication):
             wash_time = injection_time + self._current_cycle.contact_time
             contact_duration = self._current_cycle.contact_time
 
-            # Use FlagManager to create auto-marker
-            self.flag_mgr.create_auto_marker(
-                marker_type='wash_deadline',
-                time=wash_time,
-                label='⏱ Wash Due',
-                color='#FF9500'
-            )
+            # (Marker display disabled - skipping visual marker creation)
+            # Use FlagManager to create wash deadline marker on graph
+            # self.flag_mgr.create_auto_marker(
+            #     marker_type='wash_deadline',
+            #     time=wash_time,
+            #     label='⏱ Wash Due',
+            #     color='#FF9500'
+            # )
 
-            # Create draggable contact time timer overlay
-            self.flag_mgr.create_contact_timer_overlay(contact_duration)
-            self.flag_mgr.make_timer_draggable()
-
-            # Start timer update loop (update every second)
-            self._contact_timer_update_timer.start(1000)  # 1000ms = 1 second
+            # Transition unified bar to CONTACT state
+            self._start_contact_countdown(contact_duration)
 
             # Calculate time relative to start cursor for display
             start_time = timeline.start_cursor.value()
@@ -3077,104 +3067,169 @@ class Application(QApplication):
         except Exception as e:
             logger.debug(f"Could not show contact time marker: {e}")
 
-    def _on_manual_injection_auto_detect(self, channels: str):
-        """Automatically detect and flag injection point after manual injection.
+    def _auto_start_contact_popout_timer(self, contact_duration: float):
+        """DEPRECATED: Use _start_contact_countdown() instead.
 
-        Called when user completes manual injection. Waits 3 seconds for the
-        injection spike to form, then analyzes recent sensorgram data to find
-        the injection point and places a flag.
+        Kept for backward compatibility. Redirects to the new method.
+        """
+        self._start_contact_countdown(contact_duration)
+
+    def _start_contact_countdown(self, contact_duration: float):
+        """Start contact time countdown in unified bar + timer infrastructure.
+
+        Called when manual injection completes. Transitions the unified bar to
+        CONTACT state and starts the countdown timer. User can click the bar
+        to open the PopOutTimerWindow for a larger display. When timer expires,
+        bar transitions to WASH_DUE state with alarm.
 
         Args:
-            channels: Target channels for injection (e.g., "AC", "BD")
+            contact_duration: Contact time in seconds from the current cycle.
         """
-        from PySide6.QtCore import QTimer
+        try:
+            # Build descriptive label from current cycle info
+            cycle = self._current_cycle
+            injection_num = getattr(cycle, 'injection_count', 0)
+            planned = getattr(cycle, 'planned_concentrations', [])
+            total_injections = len(planned) if planned else 0
 
-        # Delay 3 seconds to let injection spike form in the data
-        logger.info("⏱ Waiting 3 seconds for injection spike to form...")
-        QTimer.singleShot(3000, lambda: self._perform_injection_detection(channels))
+            # Build label: e.g. "Contact Time — 50 nM (2/5)" or "Contact Time"
+            label_parts = ["Contact Time"]
+            if planned and injection_num > 0 and injection_num <= len(planned):
+                conc = planned[injection_num - 1]
+                label_parts.append(f"— {conc}")
+            if total_injections > 0:
+                label_parts.append(f"({injection_num}/{total_injections})")
+            label = " ".join(label_parts)
 
-    def _perform_injection_detection(self, channels: str):
-        """Perform the actual injection detection (called after delay).
+            total_seconds = int(contact_duration)
+            mw = self.main_window
+
+            # ── 1. Update timer button in the navigation bar ──
+            mw.update_timer_button(label, total_seconds, is_manual=True)
+
+            # ── 2. Tell the timer infrastructure to display "WASH NOW" when done ──
+            mw._manual_timer_next_action = "🧪 WASH NOW"
+
+            # ── 3. Start the internal countdown (creates QTimer, handles tick/alarm) ──
+            mw._start_manual_timer_countdown(label, total_seconds, sound_enabled=False)
+
+            # Save last settings so manual re-open uses same values
+            mw._last_timer_minutes = total_seconds // 60
+            mw._last_timer_seconds = total_seconds % 60
+            mw._last_timer_label = label
+
+            # ── 4. Schedule auto delta SPR measurement at contact end ──
+            # Fires right when contact time expires — uses stored per-channel
+            # injection times to compute ΔSPR with 3-point averaging
+            QTimer.singleShot(
+                total_seconds * 1000,
+                self._measure_auto_delta_spr,
+            )
+
+            logger.info(
+                f"⏱ Contact countdown started: {label} "
+                f"({total_seconds // 60}:{total_seconds % 60:02d})"
+            )
+
+        except Exception as e:
+            logger.debug(f"Could not start contact countdown: {e}")
+
+    # ------------------------------------------------------------------
+    # Non-blocking injection UI handlers (unified bar)
+    # ------------------------------------------------------------------
+
+    def _on_injection_ui_requested(self, sample_info, injection_num, total_injections):
+        """Handle injection_ui_requested signal — silent mode (no UI update).
 
         Args:
-            channels: Target channels for injection (e.g., "AC", "BD")
+            sample_info: Sample info dict from coordinator
+            injection_num: Current injection number (or None)
+            total_injections: Total planned injections (or None)
         """
-        from affilabs.utils.spr_signal_processing import auto_detect_injection_point
+        pass  # Silent mode - no unified_bar display
+
+    def _on_injection_detection_tick(self, remaining_seconds: int):
+        """Handle detection countdown tick — silent mode (no UI update).
+
+        Args:
+            remaining_seconds: Seconds remaining in 60-second detection window
+        """
+        pass  # Silent mode
+
+    def _on_injection_auto_detected(self, channel: str, injection_time: float, confidence: float):
+        """Handle injection auto-detected — log success.
+
+        Args:
+            channel: Channel where injection was detected
+            injection_time: Injection time
+            confidence: Detection confidence
+        """
+        logger.info(
+            f"✓ Injection auto-detected: channel {channel.upper()} at t={injection_time:.1f}s "
+            f"(confidence: {confidence:.0%})"
+        )
+
+    def _on_injection_window_expired(self):
+        """Handle 60-second detection window expiry — log warning."""
+        logger.warning("⚠ Injection detection window expired (60s) - manual flag in Edits tab")
+
+    def _on_injection_cancelled(self):
+        """Handle user cancellation of injection — log cancellation."""
+        logger.info("❌ Injection cancelled by user")
+
+    def _place_injection_flag(self, channel: str, injection_time: float, confidence: float):
+        """Place injection flag directly from dialog's pre-detected result.
+
+        Called when the ManualInjectionDialog's real-time detection found the
+        injection point. Places a flag marker without re-running detection.
+
+        Args:
+            channel: Channel letter where injection was detected (e.g., "a")
+            injection_time: Injection time in raw elapsed seconds
+            confidence: Detection confidence (0.0 - 1.0)
+        """
         import numpy as np
 
         try:
-            # Get the primary channel for detection (use first channel)
-            channel_letter = channels[0].lower()  # "AC" -> "a"
+            ch = channel.lower()
+            logger.info(
+                f"📍 Placing injection flag from dialog detection: "
+                f"Channel {ch.upper()} at t={injection_time:.2f}s (confidence: {confidence:.0%})"
+            )
 
-            # Get current sensorgram data from buffer manager
-            if not hasattr(self, 'buffer_mgr') or not self.buffer_mgr.timeline_data:
-                logger.warning("⚠️ No sensorgram data available for injection detection")
+            if not hasattr(self, 'flag_mgr'):
+                logger.warning("⚠️ FlagManager not available, could not place flag")
                 return
 
-            timeline_data = self.buffer_mgr.timeline_data
+            # Convert raw timeline time → Active Cycle display coordinates
+            from affilabs.core.experiment_clock import TimeBase
+            start_cursor_display = self.main_window.full_timeline_graph.start_cursor.value()
+            start_time_raw = self.clock.convert(start_cursor_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
+            injection_display_time = injection_time - start_time_raw
 
-            # Check if channel data exists
-            if channel_letter not in timeline_data or len(timeline_data[channel_letter].time) == 0:
-                logger.warning(f"⚠️ No data for channel {channel_letter.upper()}")
-                return
+            # Get SPR value from cycle_data (matches what's displayed on graph)
+            spr_val = 0
+            if (ch in self.buffer_mgr.cycle_data and
+                    len(self.buffer_mgr.cycle_data[ch].time) > 0):
+                cycle_time = self.buffer_mgr.cycle_data[ch].time
+                cycle_spr = self.buffer_mgr.cycle_data[ch].spr
+                if len(cycle_spr) > 0:
+                    inj_idx = np.argmin(np.abs(cycle_time - injection_time))
+                    spr_val = cycle_spr[inj_idx]
 
-            # Get time and wavelength data for the channel
-            channel_data = timeline_data[channel_letter]
-            all_times = np.array(channel_data.time)
-            all_wavelengths = np.array(channel_data.wavelength)
-
-            if len(all_times) < 10:
-                logger.warning("⚠️ Insufficient data points for injection detection")
-                return
-
-            # Filter to last 60 seconds only (recent data where injection likely occurred)
-            current_time = all_times[-1] if len(all_times) > 0 else 0
-            lookback_start = current_time - 60.0  # 60 seconds ago
-            recent_mask = all_times >= lookback_start
-
-            times = all_times[recent_mask]
-            wavelengths = all_wavelengths[recent_mask]
-
-            if len(times) < 10:
-                logger.warning(f"⚠️ Insufficient recent data (only {len(times)} points in last 60s)")
-                return
-
-            logger.info(f"🔍 Analyzing last {len(times)} data points ({current_time - times[0]:.1f}s window)")
-
-            # Convert to RU (baseline-corrected using first point in recent window)
-            baseline = wavelengths[0] if len(wavelengths) > 0 else 0
-            values_ru = (wavelengths - baseline) * 355.0
-
-            # Run auto-detection with lowered threshold (0.2 instead of 0.3)
-            result = auto_detect_injection_point(times, values_ru)
-
-            if result['injection_time'] is not None and result['confidence'] > 0.2:
-                injection_time = result['injection_time']
-                confidence = result['confidence']
-
-                logger.info(
-                    f"✓ Auto-detected manual injection at t={injection_time:.2f}s "
-                    f"(Channel {channel_letter.upper()}, confidence: {confidence:.1%})"
-                )
-
-                # Place flag at injection point using FlagManager
-                if hasattr(self, 'flag_mgr'):
-                    flag_text = f"Injection (Manual)"
-                    self.flag_mgr.add_flag(injection_time, flag_text, channel=channel_letter.upper())
-                    logger.info(f"📍 Placed injection flag at t={injection_time:.2f}s")
-                else:
-                    logger.warning("⚠️ FlagManager not available, could not place flag")
-
-            else:
-                confidence_pct = result.get('confidence', 0) * 100 if result.get('confidence') else 0
-                logger.warning(
-                    f"⚠️ Could not reliably detect injection point "
-                    f"(confidence: {confidence_pct:.0f}% < 20% threshold)"
-                )
-                logger.info(f"💡 Tip: You can manually place a flag at the injection time in the Live tab")
+            self.flag_mgr.add_flag_marker(
+                channel=ch,
+                time_val=injection_display_time,
+                spr_val=spr_val,
+                flag_type='injection'
+            )
+            logger.info(
+                f"✓ Injection flag placed on Channel {ch.upper()} "
+                f"at display t={injection_display_time:.2f}s (SPR={spr_val:.1f} RU)"
+            )
 
         except Exception as e:
-            logger.error(f"❌ Error during auto-detection of manual injection: {e}")
+            logger.error(f"❌ Error placing injection flag: {e}")
             logger.exception(e)
 
     def _clear_contact_time_marker(self):
@@ -3184,95 +3239,180 @@ class Application(QApplication):
         Delegates to FlagManager for unified marker cleanup.
         """
         try:
-            # Stop timer updates
-            self._contact_timer_update_timer.stop()
-
             # Clear all auto-markers (including wash deadline)
             self.flag_mgr.clear_auto_markers()
             self._injection_completion_time = None
         except Exception as e:
             logger.debug(f"Could not clear contact time marker: {e}")
 
-    def _update_contact_timer_display(self):
-        """Update contact timer overlay every second during contact time.
-
-        Called by _contact_timer_update_timer every 1000ms.
-        """
-        try:
-            self.flag_mgr.update_contact_timer_display()
-        except Exception as e:
-            logger.debug(f"Could not update contact timer display: {e}")
-
     def _calculate_cycle_analysis(self, cycle):
         """Calculate delta SPR and detect flags for a completed cycle.
 
+        Uses buffer_mgr.timeline_data (RAW_ELAPSED coords) to compute ΔSPR
+        for each channel within the cycle's time window.
+
         Args:
-            cycle: Cycle object to analyze
+            cycle: Cycle object to analyze (times in RAW_ELAPSED coords)
         """
         try:
             # Calculate delta SPR (change in SPR during cycle) for all channels
             if cycle.sensorgram_time is not None and cycle.end_time_sensorgram is not None:
-                # Get data from data collector
-                if hasattr(self, 'data_collector') and self.data_collector:
-                    start_time = cycle.sensorgram_time
-                    end_time = cycle.end_time_sensorgram
+                start_time = cycle.sensorgram_time      # RAW_ELAPSED
+                end_time = cycle.end_time_sensorgram    # RAW_ELAPSED
 
-                    # Get time data
-                    time_data = self.data_collector.time_data
+                cycle.delta_spr_by_channel = {}
+                for ch in ['a', 'b', 'c', 'd']:
+                    time_data = self.buffer_mgr.timeline_data[ch].time
+                    spr_data = self.buffer_mgr.timeline_data[ch].spr
 
-                    if len(time_data) > 0:
-                        import numpy as np
+                    if len(time_data) > 0 and len(spr_data) > 0:
+                        start_idx = np.argmin(np.abs(time_data - start_time))
+                        end_idx = np.argmin(np.abs(time_data - end_time))
 
-                        # Find closest indices to start and end times
-                        start_idx = np.argmin(np.abs(np.array(time_data) - start_time))
-                        end_idx = np.argmin(np.abs(np.array(time_data) - end_time))
+                        if max(start_idx, end_idx) < len(spr_data):
+                            start_spr = spr_data[start_idx]
+                            end_spr = spr_data[end_idx]
+                            cycle.delta_spr_by_channel[ch.upper()] = float(end_spr - start_spr)
 
-                        # Calculate delta SPR for all 4 channels
-                        cycle.delta_spr_by_channel = {}
-                        for ch in ['A', 'B', 'C', 'D']:
-                            spr_data = self.data_collector.get_channel_data(ch)
-                            if len(spr_data) > max(start_idx, end_idx):
-                                start_spr = spr_data[start_idx]
-                                end_spr = spr_data[end_idx]
-                                cycle.delta_spr_by_channel[ch] = end_spr - start_spr
-
-                        # Set legacy delta_spr to channel A for backward compatibility
-                        if 'A' in cycle.delta_spr_by_channel:
-                            cycle.delta_spr = cycle.delta_spr_by_channel['A']
+                # Set legacy delta_spr to channel A for backward compatibility
+                if 'A' in cycle.delta_spr_by_channel:
+                    cycle.delta_spr = cycle.delta_spr_by_channel['A']
 
             # Detect flags within cycle time range
-            # CRITICAL: Flags use REBASED time (starting at 0 for Active Cycle)
-            # We need to convert flag times to ABSOLUTE sensorgram time by adding cycle start time
             if cycle.sensorgram_time is not None and cycle.end_time_sensorgram is not None:
                 if hasattr(self, 'flag_mgr') and self.flag_mgr:
                     cycle_flags = []
                     cycle_flag_data = []
                     cycle_duration = cycle.end_time_sensorgram - cycle.sensorgram_time
 
-                    # Check all flags to see if they fall within this cycle's duration
-                    # FlagManager stores flags in _flag_markers attribute
                     if hasattr(self.flag_mgr, '_flag_markers'):
                         for flag in self.flag_mgr._flag_markers:
-                            # Flag time is rebased (0-based), so just check if it's within cycle duration
+                            # Flag time is rebased (0-based for Active Cycle)
                             if 0 <= flag.time <= cycle_duration:
                                 cycle_flags.append(flag.flag_type)
                                 cycle_flag_data.append(flag.to_export_dict())
-                                logger.debug(f"   Found {flag.flag_type} flag at t={flag.time:.2f}s ch={flag.channel} (within cycle)")
 
-                        # Remove duplicates from type list and sort
                         cycle.flags = sorted(list(set(cycle_flags)))
-                        # Save full flag data (preserves times, channels, SPR values)
                         cycle.flag_data = cycle_flag_data
                         if cycle.flags:
                             logger.info(f"✓ Cycle flags detected: {cycle.flags} ({len(cycle_flag_data)} flag markers saved)")
 
         except Exception as e:
             logger.warning(f"Failed to calculate cycle analysis: {e}")
-            # Set defaults on error
             if cycle.delta_spr is None:
                 cycle.delta_spr = 0.0
             if cycle.flags is None:
                 cycle.flags = []
+
+    def _measure_auto_delta_spr(self):
+        """Auto-measure delta SPR when contact time expires.
+
+        Computes ΔSPR per channel using:
+          - START: 3-point average at (injection_time − 10 seconds)
+          - END:   3-point average at (injection_time + contact_time)
+
+        Each channel uses its own independently detected injection time,
+        since flow arrival differs between channels. Results are stored
+        in cycle.delta_spr_by_channel and logged.
+
+        Called automatically via QTimer.singleShot from _start_contact_countdown().
+        """
+        import numpy as np
+
+        cycle = self._current_cycle
+        if not cycle:
+            logger.debug("No current cycle — skipping auto delta SPR measurement")
+            return
+
+        contact_time = cycle.contact_time
+        if contact_time is None:
+            logger.debug("No contact time set — skipping auto delta SPR measurement")
+            return
+
+        inj_times = cycle.injection_time_by_channel
+        if not inj_times:
+            logger.info(
+                "No per-channel injection times available — "
+                "skipping auto delta SPR (injection may not have been detected)"
+            )
+            return
+
+        try:
+            from affilabs.utils.spr_signal_processing import measure_delta_spr
+
+            logger.info(
+                f"📊 Auto delta SPR measurement — contact_time={contact_time:.0f}s, "
+                f"channels with injection: {list(inj_times.keys())}"
+            )
+
+            delta_results = {}
+            mislabels = cycle.injection_mislabel_flags or {}
+
+            for ch_upper, inj_time in inj_times.items():
+                ch = ch_upper.lower()
+
+                # Skip channels flagged as mislabeled (but still measure — just warn)
+                is_mislabel = ch_upper in mislabels
+
+                # Get timeline data for this channel
+                if ch not in self.buffer_mgr.timeline_data:
+                    continue
+
+                channel_data = self.buffer_mgr.timeline_data[ch]
+                if not channel_data or len(channel_data.time) < 10:
+                    continue
+
+                times = np.array(channel_data.time)
+                spr_values = np.array(channel_data.spr)
+
+                if len(times) < 10 or len(spr_values) < 10:
+                    continue
+
+                result = measure_delta_spr(
+                    times=times,
+                    spr_values=spr_values,
+                    injection_time=inj_time,
+                    contact_time=contact_time,
+                    avg_points=3,
+                    pre_offset=10.0,
+                )
+
+                if result['delta_spr'] is not None:
+                    delta_results[ch_upper] = result['delta_spr']
+
+                    mislabel_note = " ⚠ MISLABEL" if is_mislabel else ""
+                    logger.info(
+                        f"  Channel {ch_upper}: ΔSPR = {result['delta_spr']:+.2f} RU "
+                        f"(start={result['start_spr']:.2f}, end={result['end_spr']:.2f}, "
+                        f"quality={result['quality']}){mislabel_note}"
+                    )
+                else:
+                    logger.warning(
+                        f"  Channel {ch_upper}: delta SPR measurement failed "
+                        f"(injection_time={inj_time:.1f}s)"
+                    )
+
+            # Store results on cycle
+            if delta_results:
+                cycle.delta_spr_by_channel = delta_results
+
+                # Set legacy delta_spr to channel A for backward compatibility
+                if 'A' in delta_results:
+                    cycle.delta_spr = delta_results['A']
+                elif delta_results:
+                    # Use first available channel
+                    cycle.delta_spr = next(iter(delta_results.values()))
+
+                logger.info(
+                    f"✓ Auto delta SPR stored: {delta_results} "
+                    f"(legacy delta_spr={cycle.delta_spr:.2f} RU)"
+                )
+            else:
+                logger.warning("Auto delta SPR: no channels produced valid measurements")
+
+        except Exception as e:
+            logger.warning(f"Auto delta SPR measurement failed: {e}")
+            logger.exception(e)
 
     def _on_next_cycle(self):
         """Complete the current cycle early and move to the next cycle in queue.
@@ -3306,12 +3446,14 @@ class Application(QApplication):
             if hasattr(self.main_window, 'intelligence_refresh_timer'):
                 self.main_window.intelligence_refresh_timer.start(5000)
 
-            # Get current end time for this cycle
+            # Get current end time for this cycle (convert display → RAW_ELAPSED)
             end_sensorgram_time = None
             if hasattr(self.main_window, 'full_timeline_graph'):
                 timeline = self.main_window.full_timeline_graph
                 if hasattr(timeline, 'stop_cursor'):
-                    end_sensorgram_time = timeline.stop_cursor.value()
+                    end_sensorgram_time = self.clock.convert(
+                        timeline.stop_cursor.value(), TimeBase.DISPLAY, TimeBase.RAW_ELAPSED
+                    )
 
             # CRITICAL: Set end time on cycle object before export
             if end_sensorgram_time is not None:
@@ -3337,11 +3479,11 @@ class Application(QApplication):
             self.segment_queue = self.queue_presenter.get_queue_snapshot()
 
             # Get cycle export data for table and recording
-            cycle_export_data = self._current_cycle.to_export_dict()
+            cycle_export_data = self._current_cycle.to_export_dict(clock=self.clock)
 
             # Always add cycle to the live cycle data table (regardless of recording state)
-            if hasattr(self.main_window, 'add_cycle_to_table'):
-                self.main_window.add_cycle_to_table(cycle_export_data)
+            if hasattr(self.main_window, 'edits_tab'):
+                self.main_window.edits_tab.add_cycle(cycle_export_data)
 
             # Export cycle to recording manager only if recording
             if self.recording_mgr.is_recording:
@@ -3473,8 +3615,11 @@ class Application(QApplication):
                     if conc_list:
                         label_text = f"{cycle_type} {','.join(conc_list)}{units}"
 
-            # Store sensorgram time in cycle data for table display
-            self._current_cycle.sensorgram_time = current_time
+            # Store sensorgram time in cycle data (RAW_ELAPSED coords for canonical storage)
+            # current_time is in display coords (from stop_cursor.value()), convert to raw
+            self._current_cycle.sensorgram_time = self.clock.convert(
+                current_time, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED
+            )
 
             # Create vertical line marker (blue, solid)
             marker = InfiniteLine(
@@ -3536,17 +3681,18 @@ class Application(QApplication):
         self._method_builder_dialog.raise_()  # Bring to front
         self._method_builder_dialog.activateWindow()
 
-    def _on_method_ready(self, action: str, cycles: list):
+    def _on_method_ready(self, action: str, method_name: str, cycles: list):
         """Handle method push from Method Builder dialog.
 
         Args:
             action: "queue" (only action now - start is in sidebar)
+            method_name: Name of the method from the builder
             cycles: List of Cycle objects
         """
         if not cycles:
             return
 
-        logger.info(f"🔵 Method ready: {len(cycles)} cycles")
+        logger.info(f"🔵 Method ready: '{method_name}' with {len(cycles)} cycles")
 
         # Add all cycles to queue
         for cycle in cycles:
@@ -3556,9 +3702,9 @@ class Application(QApplication):
         logger.info(f"✓ Method pushed to queue - {len(cycles)} cycles added")
         logger.info(f"   Queue now has {self.queue_presenter.get_queue_size()} cycles")
 
-        # Update method name in sidebar
+        # Update method name in sidebar using the name from the builder
         if method_label := self._sidebar_widget('method_name_label'):
-            method_label.setText(f"Method ({len(cycles)} cycles)")
+            method_label.setText(method_name)
 
         # Force refresh the summary table
         if tbl := self._sidebar_widget('summary_table'):
@@ -4418,12 +4564,12 @@ class Application(QApplication):
             self._acquisition_counter += 1
 
             # Initialize experiment start time on first data point
-            if self.experiment_start_time is None:
-                self.experiment_start_time = data["timestamp"]
+            if not self.clock.experiment_started:
+                self.clock.start_experiment(data["timestamp"])
 
             # Calculate elapsed time (minimal work in acquisition thread)
             # Subtract total paused time to prevent time jumps when resuming
-            wall_clock_time = data["timestamp"] - self.experiment_start_time
+            wall_clock_time = data["timestamp"] - self.clock.experiment_start_unix
             total_paused = getattr(self.data_mgr, '_total_paused_time', 0.0)
             data["elapsed_time"] = wall_clock_time - total_paused
 
@@ -4621,9 +4767,16 @@ class Application(QApplication):
 
         # numpy imported at module scope as np
 
-        # Get Start and Stop cursor positions from full timeline graph
-        start_time = self.main_window.full_timeline_graph.start_cursor.value()
-        stop_time = self.main_window.full_timeline_graph.stop_cursor.value()
+        # Get Start and Stop cursor positions from full timeline graph (display coords)
+        # Convert to raw buffer coordinates via ExperimentClock
+        start_time = self.clock.convert(
+            self.main_window.full_timeline_graph.start_cursor.value(),
+            TimeBase.DISPLAY, TimeBase.RAW_ELAPSED
+        )
+        stop_time = self.clock.convert(
+            self.main_window.full_timeline_graph.stop_cursor.value(),
+            TimeBase.DISPLAY, TimeBase.RAW_ELAPSED
+        )
 
         # Calculate Δ SPR between start and stop cursors for each channel
         delta_values = {}
@@ -4652,10 +4805,9 @@ class Application(QApplication):
             else:
                 delta_values[ch] = 0.0
 
-        # Update label with bold text for better visibility
+        # Update label with color-coded text using helper method
         self.main_window.cycle_of_interest_graph.delta_display.setText(
-            f"<b>Δ SPR: Ch A: {delta_values['a']:.1f} RU  |  Ch B: {delta_values['b']:.1f} RU  |  "
-            f"Ch C: {delta_values['c']:.1f} RU  |  Ch D: {delta_values['d']:.1f} RU</b>",
+            self.main_window._get_delta_spr_display_text(delta_values)
         )
 
     def _on_acquisition_error(self, error: str):
@@ -4694,13 +4846,18 @@ class Application(QApplication):
 
         # Export initial metadata
         if self.recording_mgr.is_recording:
-            # Add user profile information
+            # Add user profile information (prefer profile manager over combo)
             try:
-                if combo := self._sidebar_widget('user_combo'):
-                    current_user = combo.currentText()
-                    if current_user:
-                        self.recording_mgr.update_metadata('User', current_user)
-                        logger.info(f"👤 Recording user: {current_user}")
+                current_user = None
+                if hasattr(self, 'user_profile_manager') and self.user_profile_manager:
+                    current_user = self.user_profile_manager.get_current_user()
+                if not current_user:
+                    if combo := self._sidebar_widget('user_combo'):
+                        current_user = combo.currentText()
+                if current_user:
+                    self.recording_mgr.update_metadata('User', current_user)
+                    self.recording_mgr.update_metadata('operator', current_user)
+                    logger.info(f"👤 Recording user: {current_user}")
             except Exception as e:
                 logger.debug(f"Could not add user metadata: {e}")
 
@@ -4724,7 +4881,7 @@ class Application(QApplication):
 
             # Export any existing completed cycles
             for cycle in self._completed_cycles:
-                cycle_export_data = cycle.to_export_dict()
+                cycle_export_data = cycle.to_export_dict(clock=self.clock)
                 # Note: Cycle.to_export_dict() uses 'start_time_sensorgram', but this code expects 'start_time'
                 # Creating compatible format for legacy code
                 legacy_export_data = {
@@ -4800,8 +4957,8 @@ class Application(QApplication):
             try:
                 # Calculate elapsed time from acquisition start
                 elapsed_time = None
-                if hasattr(self, 'get_elapsed_time'):
-                    elapsed_time = self.get_elapsed_time()
+                if hasattr(self, 'clock') and self.clock.experiment_started:
+                    elapsed_time = self.clock.raw_elapsed_now()
 
                 # Only add marker if we have a valid elapsed time
                 if elapsed_time is None:
@@ -4861,8 +5018,8 @@ class Application(QApplication):
             )
 
         # Reset experiment start time for new acquisition
-        self.experiment_start_time = None
-        logger.debug("Reset experiment_start_time for new acquisition")
+        self.clock.reset()
+        logger.debug("Reset experiment clock for new acquisition")
 
         # Clear data buffers for fresh start
         self.buffer_mgr.clear_all()
@@ -4898,18 +5055,6 @@ class Application(QApplication):
     def _on_acquisition_stopped(self):
         """Live data acquisition has stopped - disable record and pause buttons."""
         self.acquisition_events.on_acquisition_stopped()
-        self.main_window.record_btn.setToolTip(
-            "Start Recording\n(Enabled after calibration)",
-        )
-        self.main_window.pause_btn.setToolTip(
-            "Pause Live Acquisition\n(Enabled after calibration)",
-        )
-
-        # Uncheck buttons if they were active
-        if self.main_window.record_btn.isChecked():
-            self.main_window.record_btn.setChecked(False)
-        if self.main_window.pause_btn.isChecked():
-            self.main_window.pause_btn.setChecked(False)
 
         # Update spectroscopy status to "Stopped"
         if hasattr(self.main_window, "sidebar") and hasattr(
@@ -5306,7 +5451,8 @@ class Application(QApplication):
             return
 
         # If buffer is currently running, stop it
-        if self.pump_mgr.current_operation == self.PumpOperation.RUNNING_BUFFER:
+        from affilabs.managers.pump_manager import PumpOperation
+        if self.pump_mgr.current_operation == PumpOperation.RUNNING_BUFFER:
             logger.info("⏸️ Stopping buffer flow...")
 
             # Request stop
@@ -5646,42 +5792,6 @@ class Application(QApplication):
 
                 task = self._PumpStopTask(ctrl, 1, on_stop_complete)
                 task.start()
-
-    def _on_synced_flowrate_changed(self):
-        """Update status display when synced flowrate combo changes while pumps are running."""
-        # Only update if pumps are currently running
-        if not hasattr(self, '_synced_pumps_running') or not self._synced_pumps_running:
-            return
-
-        if not (combo := self._sidebar_widget('synced_flowrate_combo')):
-            return
-
-        # Get current flowrate setting
-        flowrate_map = {0: 25, 1: 50, 2: 100, 3: 200, 4: 220}
-        idx = combo.currentIndex()
-        flow_rate = flowrate_map.get(idx, 50)
-
-        # Get pump corrections
-        correction_p1 = 1.0
-        correction_p2 = 1.0
-        ctrl = self.hardware_mgr._ctrl_raw
-        if ctrl and hasattr(ctrl, 'get_pump_corrections'):
-            try:
-                corrections = ctrl.get_pump_corrections()
-                if corrections and isinstance(corrections, dict):
-                    correction_p1 = corrections.get(1, 1.0)
-                    correction_p2 = corrections.get(2, 1.0)
-                elif corrections and isinstance(corrections, tuple) and len(corrections) == 2:
-                    correction_p1, correction_p2 = corrections
-            except Exception:
-                pass
-
-        rpm_p1 = flow_rate * correction_p1
-        rpm_p2 = flow_rate * correction_p2
-
-        # Update status display with new flowrate
-        self._update_internal_pump_status(f"Both Pumps: P1={rpm_p1:.0f} P2={rpm_p2:.0f} µL/min", running=True)
-        logger.debug(f"Status updated: flowrate changed to {flow_rate} µL/min (P1={rpm_p1:.0f}, P2={rpm_p2:.0f})")
 
     def _on_synced_pump_toggle(self, checked: bool):
         """Toggle synced pumps (both pumps) on/off.
@@ -7398,20 +7508,20 @@ class Application(QApplication):
             # Default to 'a' if not yet initialized (defensive)
             selected_channel = getattr(self, '_selected_flag_channel', 'a')
 
-            # CRITICAL: Get DISPLAY data (time rebased to 0, skipping first point)
-            # The cycle_of_interest_graph shows rebased time: cycle_time[1:] - cycle_time[1]
-            # So we need to work with the displayed/rebased data to match what's shown
+            # CRITICAL: Get DISPLAY data matching Active Cycle graph coordinates
+            # Active Cycle uses: display_time = raw_time - start_cursor_raw
             cycle_time_raw = self.buffer_mgr.cycle_data[selected_channel].time
             cycle_spr_raw = self.buffer_mgr.cycle_data[selected_channel].spr
 
-            if len(cycle_time_raw) < 2 or len(cycle_spr_raw) < 2:
-                logger.warning(f"Not enough data for Channel {selected_channel.upper()} (need at least 2 points)")
+            if len(cycle_time_raw) == 0 or len(cycle_spr_raw) == 0:
+                logger.warning(f"Not enough data for Channel {selected_channel.upper()}")
                 return
 
-            # Match ui_update_helpers.py logic: skip first point and rebase
-            first_time = cycle_time_raw[1]
-            cycle_time_display = cycle_time_raw[1:] - first_time  # Rebased to 0
-            cycle_spr_display = cycle_spr_raw[1:]
+            # Match ui_update_helpers.py: rebase to start cursor position (raw coords)
+            start_cursor_display = self.main_window.full_timeline_graph.start_cursor.value()
+            start_time_raw = self.clock.convert(start_cursor_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
+            cycle_time_display = cycle_time_raw - start_time_raw
+            cycle_spr_display = cycle_spr_raw
 
             # Find NEAREST DATA POINT in DISPLAY coordinates
             time_idx = np.argmin(np.abs(cycle_time_display - time_clicked))
@@ -7508,18 +7618,19 @@ class Application(QApplication):
 
         # Check all 4 channels
         for ch in ['a', 'b', 'c', 'd']:
-            # Get RAW cycle data
+            # Get cycle data and compute display time matching Active Cycle graph
             cycle_time_raw = self.buffer_mgr.cycle_data[ch].time
             cycle_spr_raw = self.buffer_mgr.cycle_data[ch].spr
 
-            if len(cycle_time_raw) < 2 or len(cycle_spr_raw) < 2:
-                logger.debug(f"Channel {ch.upper()}: Insufficient data (need at least 2 points)")
+            if len(cycle_time_raw) == 0 or len(cycle_spr_raw) == 0:
+                logger.debug(f"Channel {ch.upper()}: No data")
                 continue
 
-            # Match ui_update_helpers.py: skip first point and rebase to 0
-            first_time = cycle_time_raw[1]
-            cycle_time_display = cycle_time_raw[1:] - first_time
-            cycle_spr_display = cycle_spr_raw[1:]
+            # Match ui_update_helpers.py: rebase to start cursor position (raw coords)
+            start_cursor_display = self.main_window.full_timeline_graph.start_cursor.value()
+            start_time_raw = self.clock.convert(start_cursor_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
+            cycle_time_display = cycle_time_raw - start_time_raw
+            cycle_spr_display = cycle_spr_raw
 
             # Find the data point closest to clicked time IN DISPLAY COORDINATES
             time_idx = np.argmin(np.abs(cycle_time_display - time_clicked))
@@ -8817,7 +8928,7 @@ class Application(QApplication):
                     logger.debug("  ✓ Data manager calibration flag reset")
 
                 # Reset experiment timing
-                self.experiment_start_time = None
+                self.clock.reset()
                 logger.debug("  ✓ Experiment timing reset")
 
                 logger.info("[OK] Application state reset complete")
@@ -8880,11 +8991,17 @@ class Application(QApplication):
                 logger.debug(f"Got current user from combo box: {current_user}")
 
         if current_user and current_user != "":
-            # Create: output/Username/SPR_data/
-            destination_path = Path(destination) / current_user / "SPR_data"
-            destination_path.mkdir(parents=True, exist_ok=True)
-            destination = str(destination_path)
-            logger.info(f"✅ Using user-specific directory for {current_user}: {destination}")
+            # Only add user path if not already present (prevents duplication)
+            if current_user not in destination or "SPR_data" not in destination:
+                # Create: output/Username/SPR_data/
+                destination_path = Path(destination) / current_user / "SPR_data"
+                destination_path.mkdir(parents=True, exist_ok=True)
+                destination = str(destination_path)
+                logger.info(f"✅ Using user-specific directory for {current_user}: {destination}")
+            else:
+                # Path already contains user directory structure - use as-is
+                Path(destination).mkdir(parents=True, exist_ok=True)
+                logger.info(f"✅ Using existing user-specific directory: {destination}")
         else:
             logger.warning("⚠️ No current user found - saving to default directory!")
 
@@ -8933,13 +9050,10 @@ class Application(QApplication):
 
         # Store current elapsed time as recording start marker
         # This allows us to: (1) draw vertical line on graph, (2) save data with t=0 at recording start
-        current_time = time.time()
-        if self.experiment_start_time is not None:
-            recording_start_elapsed = current_time - self.experiment_start_time
-        else:
-            recording_start_elapsed = 0.0
+        recording_start_elapsed = self.clock.raw_elapsed_now()
 
-        # Start recording and pass the elapsed time offset
+        # Tell the clock where recording t=0 is, then pass to recording manager
+        self.clock.start_recording_at(recording_start_elapsed)
         self.recording_mgr.start_recording(filename=str(full_path), time_offset=recording_start_elapsed)
 
         # Add visual marker on Live Sensorgram showing recording started
@@ -8948,12 +9062,10 @@ class Application(QApplication):
                 import pyqtgraph as pg
                 from PySide6.QtGui import QColor
 
-                # CRITICAL: Adjust marker position to account for display offset
-                # The graph skips the first point and rebases time to start at 0
-                # So we need to subtract the display offset to align with what's shown
-                marker_position = recording_start_elapsed - self._display_time_offset
+                # Convert raw elapsed to display coords for marker placement
+                marker_position = self.clock.convert(recording_start_elapsed, TimeBase.RAW_ELAPSED, TimeBase.DISPLAY)
 
-                logger.info(f"Recording marker: raw_time={recording_start_elapsed:.3f}s, offset={self._display_time_offset:.3f}s, display_pos={marker_position:.3f}s")
+                logger.info(f"Recording marker: raw_time={recording_start_elapsed:.3f}s, offset={self.clock.display_offset:.3f}s, display_pos={marker_position:.3f}s")
 
                 # Create vertical green dashed line at recording start time
                 marker = pg.InfiniteLine(
@@ -9005,8 +9117,7 @@ class Application(QApplication):
             self._session_epoch += 1
 
             # Reset experiment start time and display offset
-            self.experiment_start_time = None
-            self._display_time_offset = 0.0
+            self.clock.reset()
 
             # Clear processing queue to remove old data with old timestamps
             if hasattr(self, "_spectrum_queue") and self._spectrum_queue:
@@ -9071,9 +9182,7 @@ class Application(QApplication):
             # Delegate to FlagManager
             self.flag_mgr.clear_all_flags()
 
-            # Also clear legacy _flag_data for backward compatibility
-            if hasattr(self, "_flag_data"):
-                self._flag_data.clear()
+
         except Exception as e:
             logger.error(f"[ERROR] Error clearing flag data: {e}", exc_info=True)
 

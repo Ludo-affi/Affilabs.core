@@ -98,8 +98,8 @@ def test_multiple_injections():
 
     # Simulate scan algorithm: find first, then search for more
     detected_injections = []
-    search_interval = 5.0  # Look every 5 seconds
-    search_window = 60.0   # Search within 60 seconds of each injection
+    skip_distance = 60.0    # Skip 60s after each detection to avoid false positives
+    window_size = 60.0      # Analyze 60s windows
 
     # Find first injection across full range
     result = auto_detect_injection_point(times, values)
@@ -111,16 +111,16 @@ def test_multiple_injections():
         })
         print(f"\n1st injection: t={first_inj:.1f}s (confidence: {result['confidence']:.2%})")
 
-        # Now search for additional injections
-        search_start = first_inj + search_interval
-        search_end = first_inj + search_window
-        current_pos = search_start
+        # Now search for additional injections through entire remaining dataset
+        # Start searching 60s after the first injection (skip association/dissociation phase)
+        current_pos = first_inj + skip_distance
+        max_time = times[-1]  # Search until end of data
 
-        while current_pos < search_end:
+        while current_pos < max_time - 10.0:  # Need at least 10s of data
             # Get window of data
-            mask = (times >= current_pos) & (times < current_pos + 30.0)
+            mask = (times >= current_pos) & (times < current_pos + window_size)
             if np.sum(mask) < 50:
-                current_pos += search_interval
+                current_pos += skip_distance
                 continue
 
             window_times = times[mask]
@@ -129,11 +129,11 @@ def test_multiple_injections():
             # Detect in this window
             result = auto_detect_injection_point(window_times, window_values)
 
-            if result['injection_time'] is not None and result['confidence'] > 0.3:
+            if result['injection_time'] is not None and result['confidence'] > 0.5:  # Higher threshold
                 inj_time = result['injection_time']
 
-                # Check it's not too close to previous injections
-                is_new = all(abs(inj_time - d['time']) > 3.0 for d in detected_injections)
+                # Check it's not too close to previous injections (at least 30s apart)
+                is_new = all(abs(inj_time - d['time']) > 30.0 for d in detected_injections)
 
                 if is_new:
                     detected_injections.append({
@@ -141,11 +141,12 @@ def test_multiple_injections():
                         'confidence': result['confidence']
                     })
                     print(f"{len(detected_injections)}th injection: t={inj_time:.1f}s (confidence: {result['confidence']:.2%})")
-                    current_pos = inj_time + search_interval
+                    # Jump past this injection + skip distance to search for next one
+                    current_pos = inj_time + skip_distance
                 else:
-                    current_pos += search_interval
+                    current_pos += skip_distance
             else:
-                current_pos += search_interval
+                current_pos += skip_distance
 
     # Expected injections at 60, 180, 300 seconds
     expected_times = [60.0, 180.0, 300.0]

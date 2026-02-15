@@ -5,10 +5,10 @@ experiment phases, wait times, or other time-based operations that aren't
 part of the automated cycle queue.
 
 FEATURES:
+- Single MM:SS duration input
 - Preset times (5 min, 15 min, custom)
 - Save custom presets
-- Font size toggle (normal/large)
-- Sound notification on completion
+- Sound notification with real alarm bell on completion
 
 USAGE:
     from affilabs.dialogs.manual_timer_dialog import ManualTimerDialog
@@ -17,7 +17,6 @@ USAGE:
     if dialog.exec() == ManualTimerDialog.DialogCode.Accepted:
         minutes, seconds = dialog.get_duration()
         label = dialog.get_label()
-        font_size = dialog.get_font_size()
         sound_enabled = dialog.get_sound_enabled()
         # Start custom timer with settings
 """
@@ -28,7 +27,8 @@ import json
 from pathlib import Path
 from typing import Optional, Tuple
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QRegularExpression
+from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -37,19 +37,18 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
 )
 
 from affilabs.ui_styles import Colors, Fonts
 
+
 class ManualTimerDialog(QDialog):
     """Modal dialog for setting manual countdown timers.
 
     Allows user to specify:
-    - Timer duration (minutes and seconds)
+    - Timer duration (single MM:SS field)
     - Optional label/description
-    - Font size (normal/large)
     - Sound notification
     - Preset times and custom presets
     """
@@ -71,8 +70,8 @@ class ManualTimerDialog(QDialog):
 
         self.setWindowTitle("Set Manual Timer")
         self.setModal(True)
-        self.setMinimumWidth(480)
-        self.setMinimumHeight(400)
+        self.setMinimumWidth(380)
+        self.setMaximumWidth(420)
 
         # Remove close button (force user to click Set or Cancel)
         self.setWindowFlags(
@@ -94,14 +93,13 @@ class ManualTimerDialog(QDialog):
         main_layout.setSpacing(0)
 
         # Set dialog background
-        self.setStyleSheet(f"""
-            QDialog {{
+        self.setStyleSheet("""
+            QDialog {
                 background: #FFFFFF;
-
-            }}
+            }
         """)
 
-        # Header section
+        # Header section with flat blue background
         header = QFrame()
         header.setStyleSheet("""
             QFrame {
@@ -109,23 +107,24 @@ class ManualTimerDialog(QDialog):
             }
         """)
         header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(24, 20, 24, 20)
-        header_layout.setSpacing(6)
+        header_layout.setContentsMargins(20, 14, 20, 14)
+        header_layout.setSpacing(4)
 
-        title = QLabel("⏱ Set Manual Timer")
+        title = QLabel("\u23f1 Set Manual Timer")
         title.setStyleSheet(f"""
-            font-size: 20px;
-            font-weight: 600;
+            font-size: 24px;
+            font-weight: 800;
             color: white;
-            font-family: {Fonts.SYSTEM};
+            font-family: {Fonts.DISPLAY};
+            letter-spacing: 0.5px;
         """)
         header_layout.addWidget(title)
 
         subtitle = QLabel("Set a custom countdown timer for your experiment")
         subtitle.setStyleSheet(f"""
-            font-size: 13px;
-            font-weight: 400;
-            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.95);
             font-family: {Fonts.SYSTEM};
         """)
         header_layout.addWidget(subtitle)
@@ -136,115 +135,80 @@ class ManualTimerDialog(QDialog):
         content = QFrame()
         content.setStyleSheet("""
             QFrame {
-                background: #F8F9FA;
+                background: #F5F5F7;
             }
         """)
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(24, 24, 24, 24)
-        content_layout.setSpacing(16)
+        content_layout.setContentsMargins(18, 18, 18, 18)
+        content_layout.setSpacing(12)
 
-        # Timer duration inputs
+        # ── Duration card ──
         duration_card = QFrame()
         duration_card.setStyleSheet("""
             QFrame {
                 background: white;
-
+                border-radius: 8px;
             }
         """)
         duration_layout = QVBoxLayout(duration_card)
-        duration_layout.setContentsMargins(16, 16, 16, 16)
-        duration_layout.setSpacing(12)
+        duration_layout.setContentsMargins(14, 12, 14, 12)
+        duration_layout.setSpacing(10)
 
         # Duration label
-        duration_label = QLabel("Duration")
+        duration_label = QLabel("\u23f1 Duration")
         duration_label.setStyleSheet(f"""
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 16px;
+            font-weight: 700;
             color: {Colors.PRIMARY_TEXT};
-            font-family: {Fonts.SYSTEM};
+            font-family: {Fonts.DISPLAY};
+            letter-spacing: 0.3px;
         """)
         duration_layout.addWidget(duration_label)
 
-        # Minutes and seconds inputs
-        time_input_layout = QHBoxLayout()
-        time_input_layout.setSpacing(12)
+        # Single MM:SS input field
+        time_row = QHBoxLayout()
+        time_row.setSpacing(8)
 
-        # Minutes
-        minutes_container = QVBoxLayout()
-        minutes_container.setSpacing(4)
+        self.duration_input = QLineEdit()
+        self.duration_input.setPlaceholderText("MM:SS")
+        self.duration_input.setText("05:00")
+        self.duration_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.duration_input.setFixedHeight(48)
+        self.duration_input.setMaxLength(6)  # up to 999:59
 
-        minutes_label = QLabel("Minutes")
-        minutes_label.setStyleSheet(f"""
-            font-size: 12px;
-            color: {Colors.SECONDARY_TEXT};
-            font-family: {Fonts.SYSTEM};
-        """)
-        minutes_container.addWidget(minutes_label)
+        # Allow digits and colon
+        rx = QRegularExpression(r"^\d{1,3}:\d{0,2}$")
+        self.duration_input.setValidator(QRegularExpressionValidator(rx))
 
-        self.minutes_input = QSpinBox()
-        self.minutes_input.setRange(0, 999)
-        self.minutes_input.setValue(5)
-        self.minutes_input.setFixedHeight(36)
-        self.minutes_input.setStyleSheet(f"""
-            QSpinBox {{
+        self.duration_input.setStyleSheet(f"""
+            QLineEdit {{
                 background: #F8F9FA;
-
-                padding: 6px 12px;
-                font-size: 14px;
+                border: 1px solid #E5E5EA;
+                border-radius: 8px;
+                padding: 8px 16px;
+                font-size: 28px;
+                font-weight: 700;
                 color: {Colors.PRIMARY_TEXT};
-                font-family: {Fonts.SYSTEM};
+                font-family: {Fonts.MONOSPACE};
+                letter-spacing: 4px;
             }}
-            QSpinBox:focus {{
-
+            QLineEdit:focus {{
+                border: 2px solid #007AFF;
                 background: white;
             }}
         """)
-        minutes_container.addWidget(self.minutes_input)
-        time_input_layout.addLayout(minutes_container)
+        time_row.addWidget(self.duration_input)
+        duration_layout.addLayout(time_row)
 
-        # Seconds
-        seconds_container = QVBoxLayout()
-        seconds_container.setSpacing(4)
-
-        seconds_label = QLabel("Seconds")
-        seconds_label.setStyleSheet(f"""
-            font-size: 12px;
-            color: {Colors.SECONDARY_TEXT};
-            font-family: {Fonts.SYSTEM};
-        """)
-        seconds_container.addWidget(seconds_label)
-
-        self.seconds_input = QSpinBox()
-        self.seconds_input.setRange(0, 59)
-        self.seconds_input.setValue(0)
-        self.seconds_input.setFixedHeight(36)
-        self.seconds_input.setStyleSheet(f"""
-            QSpinBox {{
-                background: #F8F9FA;
-
-                padding: 6px 12px;
-                font-size: 14px;
-                color: {Colors.PRIMARY_TEXT};
-                font-family: {Fonts.SYSTEM};
-            }}
-            QSpinBox:focus {{
-
-                background: white;
-            }}
-        """)
-        seconds_container.addWidget(self.seconds_input)
-        time_input_layout.addLayout(seconds_container)
-
-        duration_layout.addLayout(time_input_layout)
-
-        # Preset buttons
+        # Preset buttons row
         presets_row = QHBoxLayout()
         presets_row.setSpacing(8)
 
         preset_label = QLabel("Quick:")
         preset_label.setStyleSheet(f"""
-            font-size: 12px;
-            color: {Colors.SECONDARY_TEXT};
+            font-size: 13px;
+            font-weight: 600;
+            color: {Colors.PRIMARY_TEXT};
             font-family: {Fonts.SYSTEM};
         """)
         presets_row.addWidget(preset_label)
@@ -256,10 +220,10 @@ class ManualTimerDialog(QDialog):
             btn.setStyleSheet("""
                 QPushButton {
                     background: #E8E8EA;
-
+                    border-radius: 6px;
                     padding: 4px 12px;
-                    font-size: 12px;
-                    font-weight: 500;
+                    font-size: 13px;
+                    font-weight: 700;
                     color: #1D1D1F;
                 }
                 QPushButton:hover {
@@ -280,7 +244,7 @@ class ManualTimerDialog(QDialog):
             btn.setStyleSheet("""
                 QPushButton {
                     background: #007AFF;
-
+                    border-radius: 6px;
                     padding: 4px 12px;
                     font-size: 12px;
                     font-weight: 500;
@@ -305,7 +269,7 @@ class ManualTimerDialog(QDialog):
         save_preset_btn.setStyleSheet("""
             QPushButton {
                 background: #34C759;
-
+                border-radius: 6px;
                 padding: 4px 12px;
                 font-size: 12px;
                 font-weight: 500;
@@ -324,90 +288,34 @@ class ManualTimerDialog(QDialog):
         presets_row.addWidget(save_preset_btn)
 
         duration_layout.addLayout(presets_row)
-
         content_layout.addWidget(duration_card)
 
-        # Timer options (font size and sound)
+        # ── Timer Options card ──
         options_card = QFrame()
         options_card.setStyleSheet("""
             QFrame {
                 background: white;
-
+                border-radius: 8px;
             }
         """)
         options_layout = QVBoxLayout(options_card)
         options_layout.setContentsMargins(16, 16, 16, 16)
         options_layout.setSpacing(12)
 
-        # Options label
-        options_label = QLabel("Timer Options")
+        options_label = QLabel("\u2699 Timer Options")
         options_label.setStyleSheet(f"""
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 16px;
+            font-weight: 700;
             color: {Colors.PRIMARY_TEXT};
-            font-family: {Fonts.SYSTEM};
+            font-family: {Fonts.DISPLAY};
+            letter-spacing: 0.3px;
         """)
         options_layout.addWidget(options_label)
 
-        # Font size selection
-        font_size_row = QHBoxLayout()
-        font_size_row.setSpacing(12)
-
-        font_size_label = QLabel("Font Size:")
-        font_size_label.setStyleSheet(f"""
-            font-size: 13px;
-            color: {Colors.PRIMARY_TEXT};
-            font-family: {Fonts.SYSTEM};
-        """)
-        font_size_row.addWidget(font_size_label)
-
-        # Font size buttons (toggle group)
-        self.font_normal_btn = QPushButton("Normal")
-        self.font_normal_btn.setCheckable(True)
-        self.font_normal_btn.setChecked(True)
-        self.font_normal_btn.setFixedHeight(32)
-        self.font_normal_btn.clicked.connect(lambda: self._set_font_size("normal"))
-
-        self.font_large_btn = QPushButton("Large")
-        self.font_large_btn.setCheckable(True)
-        self.font_large_btn.setChecked(False)
-        self.font_large_btn.setFixedHeight(32)
-        self.font_large_btn.clicked.connect(lambda: self._set_font_size("large"))
-
-        font_btn_style = """
-            QPushButton {
-                background: #E8E8EA;
-
-                padding: 6px 16px;
-                font-size: 13px;
-                font-weight: 500;
-                color: #1D1D1F;
-            }
-            QPushButton:hover {
-                background: #D1D1D6;
-            }
-            QPushButton:checked {
-                background: #007AFF;
-                color: white;
-            }
-        """
-        self.font_normal_btn.setStyleSheet(font_btn_style)
-        self.font_large_btn.setStyleSheet(font_btn_style)
-        self.font_normal_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.font_large_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        font_size_row.addWidget(self.font_normal_btn)
-        font_size_row.addWidget(self.font_large_btn)
-        font_size_row.addStretch()
-
-        options_layout.addLayout(font_size_row)
-
-        # Sound notification checkbox
-        self.sound_checkbox = QCheckBox("🔔 Play sound when timer completes")
-        self.sound_checkbox.setChecked(True)
-        self.sound_checkbox.setStyleSheet(f"""
+        checkbox_style = f"""
             QCheckBox {{
-                font-size: 13px;
+                font-size: 14px;
+                font-weight: 600;
                 color: {Colors.PRIMARY_TEXT};
                 font-family: {Fonts.SYSTEM};
                 spacing: 8px;
@@ -415,36 +323,46 @@ class ManualTimerDialog(QDialog):
             QCheckBox::indicator {{
                 width: 18px;
                 height: 18px;
-
+                border: 1px solid #C7C7CC;
+                border-radius: 4px;
                 background: white;
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: #007AFF;
             }}
             QCheckBox::indicator:checked {{
                 background: #007AFF;
                 border-color: #007AFF;
             }}
-        """)
+        """
+
+        # Sound notification checkbox
+        self.sound_checkbox = QCheckBox("\U0001f514 Play alarm sound when timer completes")
+        self.sound_checkbox.setChecked(True)
+        self.sound_checkbox.setStyleSheet(checkbox_style)
         options_layout.addWidget(self.sound_checkbox)
 
         content_layout.addWidget(options_card)
 
-        # Label input (optional)
+        # ── Label card ──
         label_card = QFrame()
         label_card.setStyleSheet("""
             QFrame {
                 background: white;
-
+                border-radius: 8px;
             }
         """)
         label_layout = QVBoxLayout(label_card)
-        label_layout.setContentsMargins(16, 16, 16, 16)
-        label_layout.setSpacing(8)
+        label_layout.setContentsMargins(14, 12, 14, 12)
+        label_layout.setSpacing(6)
 
-        label_label = QLabel("Label (Optional)")
+        label_label = QLabel("\U0001f3f7 Label (Optional)")
         label_label.setStyleSheet(f"""
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 16px;
+            font-weight: 700;
             color: {Colors.PRIMARY_TEXT};
-            font-family: {Fonts.SYSTEM};
+            font-family: {Fonts.DISPLAY};
+            letter-spacing: 0.3px;
         """)
         label_layout.addWidget(label_label)
 
@@ -454,14 +372,16 @@ class ManualTimerDialog(QDialog):
         self.label_input.setStyleSheet(f"""
             QLineEdit {{
                 background: #F8F9FA;
-
+                border: 1px solid #E5E5EA;
+                border-radius: 6px;
                 padding: 6px 12px;
-                font-size: 14px;
+                font-size: 15px;
+                font-weight: 600;
                 color: {Colors.PRIMARY_TEXT};
                 font-family: {Fonts.SYSTEM};
             }}
             QLineEdit:focus {{
-
+                border: 1px solid #007AFF;
                 background: white;
             }}
         """)
@@ -469,18 +389,16 @@ class ManualTimerDialog(QDialog):
 
         content_layout.addWidget(label_card)
 
-        # Button row
+        # ── Button row ──
         button_row = QHBoxLayout()
         button_row.setSpacing(12)
         button_row.setContentsMargins(0, 8, 0, 0)
 
-        # Cancel button
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFixedHeight(38)
         cancel_btn.setStyleSheet("""
             QPushButton {
                 background: #F5F5F7;
-
                 padding: 0px 24px;
                 font-size: 14px;
                 font-weight: 500;
@@ -488,7 +406,6 @@ class ManualTimerDialog(QDialog):
             }
             QPushButton:hover {
                 background: #E5E5EA;
-                border-color: #C7C7CC;
             }
             QPushButton:pressed {
                 background: #D1D1D6;
@@ -500,13 +417,11 @@ class ManualTimerDialog(QDialog):
 
         button_row.addStretch()
 
-        # Set Timer button
-        set_btn = QPushButton("⏱ Set Timer")
+        set_btn = QPushButton("\u23f1 Set Timer")
         set_btn.setFixedHeight(38)
         set_btn.setStyleSheet("""
             QPushButton {
                 background: #007AFF;
-
                 padding: 0px 32px;
                 font-size: 14px;
                 font-weight: 600;
@@ -528,13 +443,28 @@ class ManualTimerDialog(QDialog):
 
         main_layout.addWidget(content)
 
+    # ------------------------------------------------------------------
+    #  Public getters
+    # ------------------------------------------------------------------
+
     def get_duration(self) -> Tuple[int, int]:
         """Get the timer duration selected by user.
 
         Returns:
             Tuple of (minutes, seconds)
         """
-        return (self.minutes_input.value(), self.seconds_input.value())
+        text = self.duration_input.text().strip()
+        try:
+            parts = text.split(":")
+            minutes = int(parts[0]) if parts[0] else 0
+            seconds = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+            # Clamp seconds to 0-59 and carry over
+            if seconds >= 60:
+                minutes += seconds // 60
+                seconds = seconds % 60
+            return (minutes, seconds)
+        except (ValueError, IndexError):
+            return (0, 0)
 
     def get_label(self) -> Optional[str]:
         """Get the optional label text.
@@ -546,12 +476,12 @@ class ManualTimerDialog(QDialog):
         return label if label else None
 
     def get_font_size(self) -> str:
-        """Get the selected font size.
+        """Get the selected font size (always 'normal' - legacy compat).
 
         Returns:
-            "normal" or "large"
+            "normal"
         """
-        return "large" if self.font_large_btn.isChecked() else "normal"
+        return "normal"
 
     def get_sound_enabled(self) -> bool:
         """Get whether sound notification is enabled.
@@ -561,34 +491,41 @@ class ManualTimerDialog(QDialog):
         """
         return self.sound_checkbox.isChecked()
 
+    def get_popout_enabled(self) -> bool:
+        """Get whether the pop-out timer window should be shown.
+
+        Returns:
+            True if pop-out window should appear
+        """
+        return True  # Always enabled (option removed from UI)
+
+    def get_rolling_numbers_enabled(self) -> bool:
+        """Get whether rolling number animation should be enabled.
+
+        Returns:
+            True if rolling number animation should be used
+        """
+        return False  # Disabled (option removed from UI)
+
+    # ------------------------------------------------------------------
+    #  Internal helpers
+    # ------------------------------------------------------------------
+
     def _apply_preset(self, preset: dict):
-        """Apply a preset time to the inputs.
+        """Apply a preset time to the input field.
 
         Args:
             preset: Dictionary with 'minutes' and 'seconds' keys
         """
-        self.minutes_input.setValue(preset["minutes"])
-        self.seconds_input.setValue(preset["seconds"])
-
-    def _set_font_size(self, size: str):
-        """Set font size toggle state.
-
-        Args:
-            size: "normal" or "large"
-        """
-        if size == "normal":
-            self.font_normal_btn.setChecked(True)
-            self.font_large_btn.setChecked(False)
-        else:
-            self.font_normal_btn.setChecked(False)
-            self.font_large_btn.setChecked(True)
+        m = preset["minutes"]
+        s = preset.get("seconds", 0)
+        self.duration_input.setText(f"{m:02d}:{s:02d}")
 
     def _save_custom_preset(self):
         """Save current timer duration as a custom preset."""
         from PySide6.QtWidgets import QInputDialog
 
-        minutes = self.minutes_input.value()
-        seconds = self.seconds_input.value()
+        minutes, seconds = self.get_duration()
 
         if minutes == 0 and seconds == 0:
             return
@@ -598,23 +535,21 @@ class ManualTimerDialog(QDialog):
             self,
             "Save Preset",
             "Enter preset name:",
-            text=f"{minutes}:{seconds:02d}"
+            text=f"{minutes}:{seconds:02d}",
         )
 
         if ok and name:
-            # Add to custom presets
             preset = {
                 "name": name.strip(),
                 "minutes": minutes,
-                "seconds": seconds
+                "seconds": seconds,
             }
             self.custom_presets.append(preset)
             self._save_custom_presets_to_file()
 
-            # Recreate UI to show new preset button
-            # For simplicity, just inform user to reopen dialog
             from affilabs.utils.logger import logger
-            logger.info(f"✓ Preset '{name}' saved. Reopen dialog to see it.")
+
+            logger.info(f"\u2713 Preset '{name}' saved. Reopen dialog to see it.")
 
     def _load_custom_presets(self) -> list:
         """Load custom presets from settings file.
@@ -625,7 +560,7 @@ class ManualTimerDialog(QDialog):
         try:
             presets_file = Path.home() / ".claude" / "timer_presets.json"
             if presets_file.exists():
-                with open(presets_file, 'r') as f:
+                with open(presets_file, "r") as f:
                     return json.load(f)
         except Exception:
             pass
@@ -636,8 +571,9 @@ class ManualTimerDialog(QDialog):
         try:
             presets_file = Path.home() / ".claude" / "timer_presets.json"
             presets_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(presets_file, 'w') as f:
+            with open(presets_file, "w") as f:
                 json.dump(self.custom_presets, f, indent=2)
         except Exception as e:
             from affilabs.utils.logger import logger
+
             logger.error(f"Failed to save timer presets: {e}")

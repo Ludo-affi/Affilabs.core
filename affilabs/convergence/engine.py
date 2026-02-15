@@ -2101,7 +2101,7 @@ class ConvergenceEngine:
                 final_signals,  # Use per-channel best (if same integration) or final iteration
                 converged_best_effort,  # True if within strict criteria
                 qc_warnings=qc_warnings if qc_warnings else [],
-                best_iteration=iteration,
+                best_iteration=iteration + 1,  # 1-based for human-friendly display
                 max_signal_achieved_pct=max_signal_pct,
             )
         else:

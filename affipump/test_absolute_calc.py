@@ -41,7 +41,7 @@ send_cmd("/1?")
 # Move to absolute position 0µL
 # Formula: target_steps = 1600 + (0 * 181.49) = 1600
 print("\n=== Move to 1600 steps (should be 0µL absolute) ===")
-send_cmd("/1A1600R", 4)
+send_cmd(f"/1A1600R", 4)
 send_cmd("/1?")
 
 ser.close()

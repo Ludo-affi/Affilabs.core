@@ -28,6 +28,7 @@ class CycleTypeStyle:
         "Dissociation": ("DS", "#5856D6"),
         "Wash": ("WS", "#00C7BE"),
         "Equilibration": ("EQ", "#86868B"),
+        "Other": ("OT", "#636366"),
         "Custom": ("CU", "#8E8E93"),
         "Flow": ("FL", "#007AFF"),
         "Static": ("ST", "#AF52DE"),

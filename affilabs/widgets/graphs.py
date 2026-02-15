@@ -119,8 +119,12 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.plot.setLabel("bottom", text="Time (s)")
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
-        self.plot.enableAutoRange()
-        self.plot.setAutoVisible()
+        self.plot.enableAutoRange(axis='x')
+        self.plot.setAutoVisible(x=True)
+
+        # Y-axis: we manage auto-fit manually for a tighter range
+        self.plot.disableAutoRange(axis='y')
+        self._y_autofit = True  # our custom Y auto-fit flag
 
         # Set default Y-axis range for detector (580-660 nm)
         self.plot.setYRange(580, 660, padding=0)
@@ -449,6 +453,11 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
             self.wait_for_reset = False
             self.updating = False
+
+            # Auto-fit Y-axis to visible channel data
+            if self._y_autofit:
+                self._fit_y_to_visible_data()
+
         except Exception as e:
             logger.debug(f"Error during sensorgram update: {e}")
 
@@ -456,6 +465,50 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.static_index = 0
         self.latest_time = 0
         self.wait_for_reset = True
+
+    def _fit_y_to_visible_data(self):
+        """Rescale Y-axis to tightly fit the visible channel data.
+
+        Examines all visible (non-hidden) channels, computes the
+        min/max of their current plot data, and applies a Y-range
+        with a small padding so the traces are nicely centered.
+        """
+        import numpy as np
+
+        y_min = None
+        y_max = None
+
+        for ch in CH_LIST:
+            curve = self.plots[ch]
+            if not curve.isVisible():
+                continue
+            _, y = curve.getData()
+            if y is None or len(y) == 0:
+                continue
+            # Use finite values only (skip NaN / inf from gaps)
+            finite = y[np.isfinite(y)]
+            if len(finite) == 0:
+                continue
+            lo = float(np.min(finite))
+            hi = float(np.max(finite))
+            if y_min is None or lo < y_min:
+                y_min = lo
+            if y_max is None or hi > y_max:
+                y_max = hi
+
+        if y_min is None or y_max is None:
+            return  # No visible data yet
+
+        span = y_max - y_min
+        if span < 2.0:
+            # Very flat data — ensure at least 2 nm of visible range
+            mid = (y_min + y_max) / 2.0
+            y_min = mid - 1.0
+            y_max = mid + 1.0
+            span = 2.0
+
+        pad = span * 0.10  # 10 % padding above and below
+        self.plot.setYRange(y_min - pad, y_max + pad, padding=0)
 
     def left_cursor_moved(self):
         # Show cursor and label when user interacts
@@ -563,6 +616,9 @@ class SensorgramGraph(GraphicsLayoutWidget):
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
         self.static[ch].setVisible(bool(flag))
+        # Re-fit Y-axis when channel visibility changes
+        if self._y_autofit:
+            self._fit_y_to_visible_data()
 
     def show_cycle_time_region(self, cycle_time_minutes):
         """Show cycle time markers - either as vertical lines or a shaded bar.

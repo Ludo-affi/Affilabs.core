@@ -46,7 +46,7 @@ class CalibrationViewModel(QObject):
 
     def set_validator(self, validator):
         """Inject CalibrationValidator service dependency."""
-        from services import CalibrationValidator
+        from affilabs.services.calibration_validator import CalibrationValidator
 
         if not isinstance(validator, CalibrationValidator):
             raise TypeError(f"Expected CalibrationValidator, got {type(validator)}")

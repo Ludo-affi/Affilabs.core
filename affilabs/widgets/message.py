@@ -105,14 +105,35 @@ def show_message(
     yes_no=False,
     q=(False, "", ""),
     title=None,
+    styled=True,  # Use styled dialog for errors/warnings
 ):
     """:param q:
     :param yes_no:
     :param auto_close_time:
     :param msg:
     :param msg_type: Information/Warning/Critical/Question
+    :param styled: Use styled dialog for errors/warnings (default True)
     :return:
     """
+    # Use styled dialog for errors and warnings (hardware connection messages)
+    if styled and not yes_no and not q[0] and auto_close_time is None:
+        if msg_type in ("Warning", "Critical"):
+            from affilabs.widgets.styled_message_dialog import show_styled_warning, show_styled_error
+
+            # Get parent window if available
+            from PySide6.QtWidgets import QApplication
+            parent = QApplication.activeWindow()
+
+            # Clean up message text
+            clean_msg = _sanitize_ascii(msg)
+
+            if msg_type == "Warning":
+                show_styled_warning(parent, title or "Warning", clean_msg)
+            else:  # Critical
+                show_styled_error(parent, title or "Error", clean_msg)
+            return
+
+    # Fallback to original TimerMessageBox for other cases
     m = TimerMessageBox(timeout=auto_close_time, yn=yes_no, q=q, title=title)
     m.setIcon(getattr(m.Icon, msg_type) if hasattr(m.Icon, msg_type) else m.Icon.NoIcon)
     m.setText(_sanitize_ascii(msg))

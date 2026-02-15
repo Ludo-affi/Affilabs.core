@@ -9,7 +9,7 @@ ${StrContains}  ; Declare StrContains function
 
 ; Installer Information
 !define PRODUCT_NAME "Affilabs-Core"
-!define PRODUCT_VERSION "2.0.2"
+!define PRODUCT_VERSION "2.0.3"
 !define PRODUCT_PUBLISHER "Affilabs"
 !define PRODUCT_WEB_SITE "https://affinitelabs.com"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"

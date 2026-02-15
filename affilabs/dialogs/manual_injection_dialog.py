@@ -14,39 +14,42 @@ MODES:
 
 ARCHITECTURE:
 - Modal dialog (blocks execution via .exec())
-- Real-time background detection of injection peak
-- Auto-closes when injection detected (Option A: Background Real-Time Detection)
+- Auto-starts injection detection when dialog appears
+- User has 60 SECONDS TOTAL to inject and confirm
+- User clicks "Done Injecting" when finished
+- Auto-closes when injection detected OR at 60-second mark
 - Apple HIG design matching existing dialogs
 - Displays sample info parsed from cycle name/notes
 
-REAL-TIME DETECTION:
-- Starts monitoring sensorgram data when dialog opens
-- Automatically flags injection when peak detected
-- Shows "⏳ Detecting injection..." → "✓ Injection detected!" status
-- User just injects, no button clicking needed
-- Detection runs indefinitely, user can cancel anytime
+60-SECOND INJECTION WINDOW:
+- Dialog appears → Timer starts (60 seconds total)
+- User injects sample anytime during this window
+- User clicks "Done Injecting" to finish (can be before 60s)
+- System continues monitoring for injection peak
+- Auto-closes at 60-second mark regardless
+- All injection detection must occur within this 60s window
 
 USAGE:
     from affilabs.dialogs.manual_injection_dialog import ManualInjectionDialog
     from affilabs.utils.sample_parser import parse_sample_info
 
-    # With real-time detection (recommended)
+    # 60-second injection window
     sample_info = parse_sample_info(cycle)
     dialog = ManualInjectionDialog(
         sample_info,
         injection_number=1,
         total_injections=3,
-        buffer_mgr=buffer_manager,  # For real-time detection
+        buffer_mgr=buffer_manager,  # For continuous monitoring
         channels="ABCD",             # Channels to monitor
         parent=main_window
     )
 
-    result = dialog.exec()  # Blocks until detection completes or user cancels
+    result = dialog.exec()  # Blocks for 60 seconds or until detection
     if result == ManualInjectionDialog.DialogCode.Accepted:
-        # Injection detected automatically
+        # Injection detected within 60s window
         continue_cycle()
     else:
-        # User cancelled
+        # User cancelled or 60s window expired without detection
         stop_cycle()
 """
 
@@ -71,9 +74,9 @@ if TYPE_CHECKING:
 class ManualInjectionDialog(QDialog):
     """Modal dialog prompting user to perform manual injection.
 
-    Performs real-time background detection of injection peak.
-    Automatically closes when injection detected, or user can manually cancel.
-    Displays sample information extracted from cycle metadata.
+    Auto-starts injection detection when dialog appears.
+    User has 60 SECONDS TOTAL to inject and confirm with "Done Injecting" button.
+    Auto-closes when injection detected within 60-second window OR at time expiration.
 
     Supports both single injections and multi-injection concentration cycles.
 
@@ -83,12 +86,13 @@ class ManualInjectionDialog(QDialog):
         total_injections: Total number of injections planned
         buffer_mgr: DataAcquisitionManager for real-time sensorgram monitoring
         channels: Channels to monitor for injection detection (e.g., "ABCD")
-        detection_active: Whether background detection is running
+        detection_active: Whether injection monitoring is running
+        window_start_time: Time when monitoring started
 
     Signals:
-        injection_complete: Emitted when injection detected or user confirms
-        injection_cancelled: Emitted when user clicks "Cancel Cycle"
-        injection_detected: Emitted when real-time detection finds peak
+        injection_complete: Emitted when injection detected or window expires
+        injection_cancelled: Emitted when user clicks "Cancel"
+        injection_detected: Emitted when injection peak is found
     """
 
     injection_complete = Signal()
@@ -105,6 +109,10 @@ class ManualInjectionDialog(QDialog):
         channels: Optional[str] = None,
     ):
         """Initialize manual injection dialog.
+
+        Dialog auto-starts injection monitoring when shown.
+        User has 60 seconds total to inject and click "Done Injecting".
+        Dialog auto-closes at 60-second mark or when injection is detected.
 
         Args:
             sample_info: Dictionary with keys:
@@ -126,12 +134,20 @@ class ManualInjectionDialog(QDialog):
         self.buffer_mgr = buffer_mgr
         self.detection_channels = channels or "ABCD"
         self.detection_active = False
+        self.window_start_time = None  # Time when "Set Injection Flag" clicked
         self.last_detection_time = None
+        # Detection result (stored for coordinator to use for flag placement)
+        self.detected_injection_time: Optional[float] = None
+        self.detected_channel: Optional[str] = None
+        self.detected_confidence: Optional[float] = None
         self._status_label = None
+        self._set_flag_btn = None
         self._detection_timer = None
         self._update_timer = None
         self._detection_start_time = None
-        self._data_points_at_start = 0
+        self._window_elapsed = 0
+        self._user_done_injecting = False  # Flag for when user clicks "Done"
+        self._done_timestamp = None  # When user clicked "Done"
 
         # Set window title based on mode
         if injection_number and total_injections:
@@ -140,8 +156,10 @@ class ManualInjectionDialog(QDialog):
             self.setWindowTitle("Manual Injection Required")
 
         self.setModal(True)  # Block execution
-        self.setMinimumWidth(480)
-        self.setMinimumHeight(320)
+        self.setMinimumWidth(360)
+        self.setMinimumHeight(180)
+        self.setMaximumWidth(420)
+        self.setMaximumHeight(220)
 
         # Remove close button (force user to click Complete/Cancel)
         self.setWindowFlags(
@@ -153,177 +171,71 @@ class ManualInjectionDialog(QDialog):
         self._setup_ui()
 
     def _setup_ui(self):
-        """Build dialog UI with modern, clean design matching calibration dialogs."""
-        # Main container with white background
+        """Build minimal, semi-transparent dialog UI for injection monitoring."""
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(8)
 
-        # Set dialog background
+        # Semi-transparent background (rgba allows seeing graph below)
         self.setStyleSheet("""
             QDialog {
-                background: #FFFFFF;
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 8px;
             }
         """)
 
-        # Header section with flat blue background
-        header = QFrame()
-        header.setStyleSheet("""
-            QFrame {
-                background: #007AFF;
-            }
-        """)
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(32, 24, 32, 24)
-        header_layout.setSpacing(8)
+        # Compact title + sample info on one line
+        sample_id = self.sample_info.get("sample_id", "Unknown")
+        conc = self.sample_info.get("concentration")
+        units = self.sample_info.get("units", "nM")
 
-        # Title with injection number
         if self.injection_number and self.total_injections:
-            title_text = f"Manual Injection {self.injection_number} of {self.total_injections}"
+            title = f"💉 Injection {self.injection_number}/{self.total_injections}"
         else:
-            title_text = "Manual Injection Required"
+            title = "💉 Manual Injection"
 
-        title = QLabel(title_text)
-        title.setStyleSheet("""
-            font-size: 24px;
-            font-weight: 700;
-            color: white;
-            font-family: -apple-system, 'SF Pro Display', sans-serif;
-        """)
-        header_layout.addWidget(title)
+        if conc is not None:
+            header_text = f"{title}  •  {sample_id}  ({conc} {units})"
+        else:
+            header_text = f"{title}  •  {sample_id}"
 
-        # Subtitle instruction
-        subtitle = QLabel("Inject sample via syringe, then confirm completion below")
-        subtitle.setStyleSheet("""
-            font-size: 14px;
-            font-weight: 400;
-            color: rgba(255, 255, 255, 0.9);
-            font-family: -apple-system, 'SF Pro Text', sans-serif;
-        """)
-        header_layout.addWidget(subtitle)
-
-        main_layout.addWidget(header)
-
-        # Content section
-        content = QFrame()
-        content.setStyleSheet("""
-            QFrame {
-                background: #F8F9FA;
-            }
-        """)
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(32, 32, 32, 32)
-        content_layout.setSpacing(20)
-
-        # Sample information card
-        info_card = QFrame()
-        info_card.setStyleSheet("""
-            QFrame {
-                background: white;
-            }
-        """)
-        info_layout = QVBoxLayout(info_card)
-        info_layout.setContentsMargins(20, 20, 20, 20)
-        info_layout.setSpacing(16)
-
-        # Card title
-        card_title = QLabel("💉 Injection Details")
-        card_title.setStyleSheet("""
-            font-size: 15px;
+        header = QLabel(header_text)
+        header.setStyleSheet("""
+            font-size: 13px;
             font-weight: 600;
             color: #1D1D1F;
             font-family: -apple-system, 'SF Pro Text', sans-serif;
         """)
-        info_layout.addWidget(card_title)
+        main_layout.addWidget(header)
 
-        # Separator line
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setStyleSheet("background: #E5E5EA; max-height: 1px; border: none;")
-        info_layout.addWidget(separator)
-
-        # Sample details with better formatting
-        sample_id = self.sample_info.get("sample_id", "Unknown Sample")
-        conc = self.sample_info.get("concentration")
-        units = self.sample_info.get("units", "nM")
-        channels = self.sample_info.get("channels")
-
-        # Sample name - largest text
-        sample_label = QLabel(f"<span style='color: #86868B; font-size: 12px;'>SAMPLE</span><br>"
-                              f"<span style='font-size: 18px; font-weight: 600; color: #007AFF;'>{sample_id}</span>")
-        info_layout.addWidget(sample_label)
-
-        # Two-column layout for concentration and channels (if applicable)
-        details_layout = QHBoxLayout()
-        details_layout.setSpacing(24)
-
-        # Concentration column
-        if conc is not None:
-            conc_widget = QFrame()
-            conc_layout = QVBoxLayout(conc_widget)
-            conc_layout.setContentsMargins(0, 0, 0, 0)
-            conc_layout.setSpacing(4)
-
-            conc_header = QLabel("CONCENTRATION")
-            conc_header.setStyleSheet("font-size: 11px; color: #86868B; font-weight: 600;")
-            conc_layout.addWidget(conc_header)
-
-            conc_value = QLabel(f"{conc} {units}")
-            conc_value.setStyleSheet("font-size: 20px; color: #1D1D1F; font-weight: 700;")
-            conc_layout.addWidget(conc_value)
-
-            details_layout.addWidget(conc_widget)
-
-        # Channels column (only show for systems with valve routing, not P4SPR)
-        if channels is not None:
-            channel_widget = QFrame()
-            channel_layout = QVBoxLayout(channel_widget)
-            channel_layout.setContentsMargins(0, 0, 0, 0)
-            channel_layout.setSpacing(4)
-
-            channel_header = QLabel("TARGET CHANNELS")
-            channel_header.setStyleSheet("font-size: 11px; color: #86868B; font-weight: 600;")
-            channel_layout.addWidget(channel_header)
-
-            channel_value = QLabel(channels)
-            channel_value.setStyleSheet("font-size: 20px; color: #1D1D1F; font-weight: 700;")
-            channel_layout.addWidget(channel_value)
-
-            details_layout.addWidget(channel_widget)
-
-        details_layout.addStretch()
-
-        info_layout.addLayout(details_layout)
-
-        content_layout.addWidget(info_card)
-
-        # Real-time detection status label - BIG and visible
-        self._status_label = QLabel("⏳ Detecting injection...")
+        # Status label (countdown/detection status)
+        self._status_label = QLabel("🔍 Monitoring for injection...")
         self._status_label.setStyleSheet("""
-            font-size: 18px;
+            font-size: 14px;
             color: #FF9500;
-            font-weight: 600;
+            font-weight: 500;
             text-align: center;
-            padding: 20px 0px;
+            padding: 6px 0px;
         """)
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        content_layout.addWidget(self._status_label)
+        main_layout.addWidget(self._status_label)
 
-        # Button row with proper spacing
+        # Compact button row
         button_row = QHBoxLayout()
-        button_row.setSpacing(12)
-        button_row.setContentsMargins(0, 8, 0, 0)
+        button_row.setSpacing(8)
+        button_row.setContentsMargins(0, 4, 0, 0)
 
-        # Cancel button only
+        # Cancel button
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFixedHeight(50)
+        cancel_btn.setFixedHeight(32)
         cancel_btn.setStyleSheet("""
             QPushButton {
                 background: #F5F5F7;
-                padding: 0px 24px;
-                font-size: 16px;
+                padding: 0px 16px;
+                font-size: 13px;
                 font-weight: 500;
                 color: #1D1D1F;
+                border-radius: 6px;
                 font-family: -apple-system, 'SF Pro Text', sans-serif;
             }
             QPushButton:hover {
@@ -339,33 +251,99 @@ class ManualInjectionDialog(QDialog):
 
         button_row.addStretch()
 
-        content_layout.addLayout(button_row)
+        # Done button (primary)
+        self._set_flag_btn = QPushButton("✓ Done Injecting")
+        self._set_flag_btn.setFixedHeight(32)
+        self._set_flag_btn.setStyleSheet("""
+            QPushButton {
+                background: #34C759;
+                padding: 0px 20px;
+                font-size: 13px;
+                font-weight: 600;
+                color: white;
+                border-radius: 6px;
+                font-family: -apple-system, 'SF Pro Text', sans-serif;
+            }
+            QPushButton:hover {
+                background: #2DA84C;
+            }
+            QPushButton:pressed {
+                background: #248A3D;
+            }
+            QPushButton:disabled {
+                background: #E5E5EA;
+                color: #86868B;
+            }
+        """)
+        self._set_flag_btn.clicked.connect(self._on_done_injecting)
+        self._set_flag_btn.setDefault(True)
+        self._set_flag_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        button_row.addWidget(self._set_flag_btn)
 
-        main_layout.addWidget(content)
+        main_layout.addLayout(button_row)
 
     def showEvent(self, event):
-        """Start real-time injection detection when dialog is shown."""
+        """Dialog shown - auto-start detection monitoring immediately."""
         super().showEvent(event)
-        if self.buffer_mgr:
-            self._start_real_time_detection()
+        # Auto-start detection when dialog appears
+        self._start_detection()
 
-    def _start_real_time_detection(self):
-        """Start background monitoring for injection peak."""
+    def _start_detection(self):
+        """Auto-start detection monitoring when dialog appears."""
+        if not self.buffer_mgr or not self.buffer_mgr.timeline_data:
+            from affilabs.utils.logger import logger
+            logger.warning("Cannot start detection - no data available")
+            self._status_label.setText("⚠ No data available. Ensure acquisition is running.")
+            self._status_label.setStyleSheet("""
+                font-size: 18px;
+                color: #FF3B30;
+                font-weight: 600;
+                text-align: center;
+                padding: 20px 0px;
+            """)
+            return
+
+        # Get current time as window start
+        first_channel = self.detection_channels[0].lower()
+        if first_channel in self.buffer_mgr.timeline_data:
+            channel_data = self.buffer_mgr.timeline_data[first_channel]
+            if channel_data and len(channel_data.time) > 0:
+                import numpy as np
+                times = np.array(channel_data.time)
+                self.window_start_time = times[-1]  # Current time = window start
+            else:
+                from affilabs.utils.logger import logger
+                logger.warning("No time data available in channel")
+                return
+        else:
+            from affilabs.utils.logger import logger
+            logger.warning(f"Channel {first_channel} not found in timeline data")
+            return
+
+        # Start detection
         self.detection_active = True
-
-        # Record when detection started for timer display
+        self._user_done_injecting = False
+        self._done_timestamp = None
+        self._window_elapsed = 0
         import time
         self._detection_start_time = time.time()
 
-        # Record initial data point count
-        if self.buffer_mgr and self.buffer_mgr.timeline_data:
-            first_channel = self.detection_channels[0].lower()
-            if first_channel in self.buffer_mgr.timeline_data:
-                self._data_points_at_start = len(self.buffer_mgr.timeline_data[first_channel].time)
+        # Update status
+        self._status_label.setText("🔍 Monitoring for injection...")
+        self._status_label.setStyleSheet("""
+            font-size: 18px;
+            color: #FF9500;
+            font-weight: 600;
+            text-align: center;
+            padding: 20px 0px;
+        """)
+
+        from affilabs.utils.logger import logger
+        logger.info(f"Auto-detection started - monitoring for injection")
 
         # Start detection timer (check every 200ms)
         self._detection_timer = QTimer(self)
-        self._detection_timer.timeout.connect(self._check_for_injection)
+        self._detection_timer.timeout.connect(self._check_for_injection_in_window)
         self._detection_timer.start(200)
 
         # Start update timer to show elapsed time (update every 1 second)
@@ -373,14 +351,52 @@ class ManualInjectionDialog(QDialog):
         self._update_timer.timeout.connect(self._update_detection_status)
         self._update_timer.start(1000)
 
-    def _check_for_injection(self):
-        """Check if injection peak has been detected in real-time data."""
-        if not self.detection_active or not self.buffer_mgr:
+    def _on_done_injecting(self):
+        """User clicked 'Done Injecting' - mark as done but continue monitoring for 10 more seconds."""
+        self._user_done_injecting = True
+        import time
+        self._done_timestamp = time.time()
+
+        from affilabs.utils.logger import logger
+        logger.info("User marked injection as done - continuing to monitor for 10 more seconds")
+
+        # Disable button and update status
+        self._set_flag_btn.setEnabled(False)
+        self._set_flag_btn.setText("✓ Monitoring (10s)")
+
+        self._status_label.setText("✓ Injection complete. Finalizing measurement...")
+        self._status_label.setStyleSheet("""
+            font-size: 18px;
+            color: #34C759;
+            font-weight: 600;
+            text-align: center;
+            padding: 20px 0px;
+        """)
+
+    def _on_set_flag(self):
+        """Legacy method - now redirects to _start_detection."""
+        self._start_detection()
+
+    def _check_for_injection_in_window(self):
+        """Check for injection continuously while monitoring.
+
+        Hard timeout: 60 seconds total from dialog appearance.
+        User must complete injection within this window.
+        """
+        if not self.detection_active or not self.buffer_mgr or self.window_start_time is None:
             return
 
         try:
             from affilabs.utils.spr_signal_processing import auto_detect_injection_point
             import numpy as np
+            import time
+
+            # Hard 60-second limit from dialog start
+            time_since_start = time.time() - self._detection_start_time
+            if time_since_start >= 60.0:
+                # Total 60 seconds elapsed - close dialog
+                self._on_detection_timeout()
+                return
 
             # Try each channel in priority order (A, B, C, D)
             for channel_letter in self.detection_channels.lower():
@@ -391,37 +407,41 @@ class ManualInjectionDialog(QDialog):
                 if not channel_data or len(channel_data.time) < 10:
                     continue
 
-                # Need at least 20 new data points (showing injection is happening)
-                current_points = len(channel_data.time)
-                if current_points < self._data_points_at_start + 20:
-                    continue
-
-                # Analyze recent data (last 120 seconds)
                 times = np.array(channel_data.time)
-                spr_values = np.array(channel_data.spr)  # FIX: Use SPR signal, not wavelength!
+                wavelengths = np.array(channel_data.wavelength)
 
-                if len(times) < 10:
+                if len(times) < 10 or len(wavelengths) < 10:
                     continue
 
-                # Filter to recent data
+                # Get current time in data
                 current_time = times[-1]
-                lookback_start = current_time - 120.0
-                recent_mask = times >= lookback_start
 
-                recent_times = times[recent_mask]
-                recent_spr = spr_values[recent_mask]  # FIX: Use SPR values
+                # Define search window: from start until now (continuous monitoring)
+                window_start = self.window_start_time
+                window_end = current_time
 
-                if len(recent_times) < 10:
+                # Extract data within window
+                window_mask = (times >= window_start) & (times <= window_end)
+                window_times = times[window_mask]
+                window_wl = wavelengths[window_mask]
+
+                # Need minimum data points
+                if len(window_times) < 10:
+                    # Not enough data yet, keep waiting
                     continue
 
-                # Use auto_detect_injection_point
-                result = auto_detect_injection_point(  # FIX: Returns dict, not tuple
-                    recent_times,
-                    recent_spr  # FIX: Pass SPR signal (RU), not wavelength
+                # Convert wavelength to RU (baseline-corrected)
+                baseline = window_wl[0] if len(window_wl) > 0 else 0
+                window_ru = (window_wl - baseline) * 355.0
+
+                # Run detection on windowed data
+                result = auto_detect_injection_point(
+                    window_times,
+                    window_ru
                 )
 
-                # Accept detection if confidence > 15%
-                if result['injection_time'] is not None and result['confidence'] > 0.15:
+                # Accept detection if confidence > 30%
+                if result['injection_time'] is not None and result['confidence'] > 0.30:
                     injection_time = result['injection_time']
                     confidence = result['confidence']
                     self._on_injection_detected(injection_time, confidence, channel_letter)
@@ -432,21 +452,31 @@ class ManualInjectionDialog(QDialog):
             logger.debug(f"Detection check error: {e}")
 
     def _update_detection_status(self):
-        """Update status label to show elapsed detection time."""
+        """Update status label to show elapsed time and remaining injection window."""
         if not self.detection_active or not self._detection_start_time:
             return
 
         import time
         elapsed = time.time() - self._detection_start_time
-        seconds = int(elapsed)
+        self._window_elapsed = int(elapsed)
+        remaining = max(0, 60 - self._window_elapsed)
 
-        # Emit signal for main window to update intelligence bar
-        # Status label stays simple
+        if self._user_done_injecting and self._done_timestamp:
+            # User clicked Done - show final measurement phase with countdown
+            self._status_label.setText(
+                f"✓ Finalizing measurement ({remaining}s remaining)..."
+            )
+        else:
+            # Still waiting for injection - show injection window countdown
+            self._status_label.setText(
+                f"🔍 Inject within {remaining}s ({self._window_elapsed}s used)..."
+            )
+
         from affilabs.utils.logger import logger
-        logger.debug(f"Detection elapsed: {seconds}s")
+        logger.debug(f"Injection window: {self._window_elapsed}s / 60s")
 
     def _on_injection_detected(self, injection_time: float, confidence: float, channel: str):
-        """Auto-detection found injection peak - close dialog."""
+        """Windowed detection found injection peak - close dialog."""
         if not self.detection_active:
             return
 
@@ -456,11 +486,16 @@ class ManualInjectionDialog(QDialog):
         if self._update_timer:
             self._update_timer.stop()
 
+        # Store detection result for coordinator to use for flag placement
+        self.detected_injection_time = injection_time
+        self.detected_channel = channel
+        self.detected_confidence = confidence
+
         from affilabs.utils.logger import logger
         logger.info(f"✓ Injection detected at {injection_time:.2f}s (confidence: {confidence*100:.0f}%) on channel {channel}")
 
         # Update UI before closing
-        self._status_label.setText(f"✓ Injection detected!\n(confidence: {confidence*100:.0f}%)")
+        self._status_label.setText(f"✓ Injection detected at {injection_time:.1f}s!\n(confidence: {confidence*100:.0f}%)")
         self._status_label.setStyleSheet("""
             font-size: 18px;
             color: #34C759;
@@ -473,6 +508,36 @@ class ManualInjectionDialog(QDialog):
         self.injection_detected.emit()
         self.injection_complete.emit()
         self.accept()
+
+    def _on_detection_timeout(self):
+        """60-second injection window expired."""
+        if not self.detection_active:
+            return
+
+        self.detection_active = False
+        if self._detection_timer:
+            self._detection_timer.stop()
+        if self._update_timer:
+            self._update_timer.stop()
+
+        from affilabs.utils.logger import logger
+        logger.warning("⚠ 60-second injection window expired - no clear injection peak detected")
+
+        # Update UI to show timeout
+        self._status_label.setText("⚠ 60-second window expired\nNo injection peak detected\nManual adjustment available in Edits tab")
+        self._status_label.setStyleSheet("""
+            font-size: 16px;
+            color: #FF9500;
+            font-weight: 600;
+            text-align: center;
+            padding: 20px 0px;
+        """)
+
+        # Auto-close dialog after 2 seconds
+        close_timer = QTimer(self)
+        close_timer.setSingleShot(True)
+        close_timer.timeout.connect(lambda: (self.injection_complete.emit(), self.accept()))
+        close_timer.start(2000)  # 2 second delay
 
     def _on_cancel(self):
         """User cancelled injection."""

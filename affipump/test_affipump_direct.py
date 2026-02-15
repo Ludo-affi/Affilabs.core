@@ -40,7 +40,7 @@ print(f"  Response: {response}")
 
 time.sleep(2)
 
-# Initialize Pump 2
+# Initialize Pump 2  
 print("  Sending /2ZR (Initialize Pump 2)...")
 response = controller.send_command(0x32, b"ZR")
 print(f"  Response: {response}")

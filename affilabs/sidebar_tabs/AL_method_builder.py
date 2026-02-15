@@ -11,132 +11,22 @@ The Method sidebar is the main interface for building and managing SPR assays.
 Extracted from sidebar.py to improve modularity.
 """
 
-from PySide6.QtCore import Qt, QRegularExpression
-from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat, QCursor
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QTableWidget,
     QVBoxLayout,
 )
 
 from affilabs.sections import CollapsibleSection
 from affilabs.ui_styles import card_style, section_header_style, Colors, Fonts
 from affilabs.widgets.queue_summary_widget import QueueSummaryWidget
+from affilabs.widgets.scrolling_label import ScrollingLabel
 from affilabs.widgets.ui_constants import CycleTypeStyle
 from affilabs.services.user_profile_manager import UserProfileManager
-
-
-class ResizableTableWidget(QTableWidget):
-    """Table widget with resize handle at bottom for expanding/collapsing."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._min_height = 200
-        self._max_height = 600
-        self._is_resizing = False
-        self._resize_start_pos = None
-        self._resize_start_height = None
-
-    def mousePressEvent(self, event):
-        """Handle mouse press to start resize if near bottom edge."""
-        # Only intercept left-clicks near bottom edge for resizing
-        if event.button() == Qt.MouseButton.LeftButton:
-            # Check if click is near bottom edge (within 10 pixels)
-            if abs(event.pos().y() - self.height()) <= 10:
-                self._is_resizing = True
-                self._resize_start_pos = event.globalPosition().toPoint()
-                self._resize_start_height = self.height()
-                self.setCursor(QCursor(Qt.CursorShape.SizeVerCursor))
-                event.accept()
-                return
-
-        # Pass all other events (including right-clicks) to parent
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        """Handle mouse move for resizing or cursor change."""
-        if self._is_resizing:
-            # Calculate new height
-            delta = event.globalPosition().toPoint().y() - self._resize_start_pos.y()
-            new_height = max(self._min_height, min(self._max_height, self._resize_start_height + delta))
-            self.setMaximumHeight(new_height)
-            self.setMinimumHeight(new_height)
-            event.accept()
-            return
-        else:
-            # Change cursor when hovering near bottom edge
-            if abs(event.pos().y() - self.height()) <= 10:
-                self.setCursor(QCursor(Qt.CursorShape.SizeVerCursor))
-            else:
-                self.unsetCursor()
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        """Handle mouse release to stop resizing."""
-        if self._is_resizing:
-            self._is_resizing = False
-            self.unsetCursor()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-
-
-class ChannelTagHighlighter(QSyntaxHighlighter):
-    """Syntax highlighter for channel concentration tags and cycle type keywords."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.tag_format = QTextCharFormat()
-        self.tag_format.setForeground(QColor("#1D1D1F"))
-        self.tag_format.setFontWeight(700)
-
-        self.conc_format = QTextCharFormat()
-        self.conc_format.setForeground(QColor("#34C759"))
-        self.conc_format.setFontWeight(700)
-
-        # Build cycle type formats from the shared constant
-        self._type_formats: dict[str, QTextCharFormat] = {}
-        for type_name, (_, color) in CycleTypeStyle.MAP.items():
-            fmt = QTextCharFormat()
-            fmt.setForeground(QColor(color))
-            fmt.setFontWeight(700)
-            self._type_formats[type_name.lower()] = fmt
-
-    def highlightBlock(self, text):
-        # Highlight cycle type keywords at the start of lines (e.g. "Baseline 5min")
-        for type_name, fmt in self._type_formats.items():
-            pattern = QRegularExpression(
-                rf"(?i)\b{type_name}\b"
-            )
-            iterator = pattern.globalMatch(text)
-            while iterator.hasNext():
-                match = iterator.next()
-                self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
-
-        # Highlight [A:10], [B:50], [ALL:20] concentration tags (green)
-        conc_pattern = QRegularExpression(r"\[(A|B|C|D|ALL):(\d+\.?\d*)\]")
-        iterator = conc_pattern.globalMatch(text)
-        while iterator.hasNext():
-            match = iterator.next()
-            self.setFormat(
-                match.capturedStart(),
-                match.capturedLength(),
-                self.conc_format,
-            )
-
-        # Highlight [A], [B], [C], [D], [ALL] tags without concentration (dark)
-        tag_pattern = QRegularExpression(r"\[(A|B|C|D|ALL)\]")
-        iterator = tag_pattern.globalMatch(text)
-        while iterator.hasNext():
-            match = iterator.next()
-            # Only highlight if not already highlighted as concentration
-            start = match.capturedStart()
-            if self.format(start).foreground().color() != QColor("#34C759"):
-                self.setFormat(start, match.capturedLength(), self.tag_format)
 
 
 class MethodTabBuilder:
@@ -235,14 +125,14 @@ class MethodTabBuilder:
         method_container = QFrame()
         method_container.setStyleSheet(
             "QFrame {"
-            "  background: #F5F5F7;"
-            "  border-radius: 8px;"
-            "  padding: 12px;"
+            "  background: transparent;"
+            "  border: none;"
+            "  padding: 0px;"
             "}"
         )
         method_layout = QVBoxLayout(method_container)
-        method_layout.setContentsMargins(12, 12, 12, 12)
-        method_layout.setSpacing(8)
+        method_layout.setContentsMargins(0, 0, 0, 0)
+        method_layout.setSpacing(0)
 
         # Build Method button
         self.sidebar.build_method_btn = QPushButton("➕ Build Method")
@@ -271,18 +161,6 @@ class MethodTabBuilder:
         # Add container to main layout
         tab_layout.addWidget(method_container)
         tab_layout.addSpacing(12)
-
-    def _build_note_input(self, parent_layout: QVBoxLayout):
-        """Deprecated - note input now in Method Builder dialog."""
-        pass
-
-    def _build_units_row(self, parent_layout: QVBoxLayout):
-        """Deprecated - units selector now in Method Builder dialog."""
-        pass
-
-    def _build_execution_section(self, parent_layout: QVBoxLayout):
-        """Deprecated - execution buttons now in Method Builder dialog."""
-        pass
 
     def _build_cycle_history_queue(self, tab_layout: QVBoxLayout):
         """Build cycle queue management section."""
@@ -341,7 +219,7 @@ class MethodTabBuilder:
         queue_status_row = QHBoxLayout()
         queue_status_row.setSpacing(12)
 
-        self.sidebar.queue_status_label = QLabel(
+        self.sidebar.queue_status_label = ScrollingLabel(
             "Queue: 0 cycles | Click 'Build Method' to plan batch runs",
         )
         self.sidebar.queue_status_label.setStyleSheet(
@@ -350,6 +228,9 @@ class MethodTabBuilder:
             "background: transparent;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
+        # Configure scroll speed (adjust these values to make it faster/slower)
+        self.sidebar.queue_status_label.setScrollSpeed(30)  # milliseconds between updates
+        self.sidebar.queue_status_label.setScrollStep(2)  # pixels per update
         queue_status_row.addWidget(self.sidebar.queue_status_label)
 
         # Clear Queue button
@@ -490,7 +371,7 @@ class MethodTabBuilder:
 
         summary_card_layout.addWidget(self.sidebar.summary_table)
 
-        # Queue control buttons (Start, Pause, Next)
+        # Queue control buttons (Start, Pause, Next, Duplicate)
         controls_row = QHBoxLayout()
         controls_row.setSpacing(8)
 
@@ -514,6 +395,28 @@ class MethodTabBuilder:
             "QPushButton:disabled { background: #C7C7CC; }"
         )
         controls_row.addWidget(self.sidebar.start_queue_btn)
+
+        self.sidebar.duplicate_last_btn = QPushButton("+ Duplicate")
+        self.sidebar.duplicate_last_btn.setFixedHeight(32)
+        self.sidebar.duplicate_last_btn.setToolTip("Quickly duplicate the last cycle (useful for repetitive testing)")
+        self.sidebar.duplicate_last_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #FF9500;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 6px 16px;"
+            "  font-size: 12px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover { background: #E68A00; }"
+            "QPushButton:pressed { background: #CC7700; }"
+            "QPushButton:disabled { background: #C7C7CC; }"
+        )
+        # Connect to the main window's duplicate_last_cycle method
+        self.sidebar.duplicate_last_btn.clicked.connect(self._on_duplicate_last)
+        controls_row.addWidget(self.sidebar.duplicate_last_btn)
 
         self.sidebar.next_cycle_btn = QPushButton("⏭ Next Cycle")
         self.sidebar.next_cycle_btn.setFixedHeight(32)
@@ -615,6 +518,59 @@ class MethodTabBuilder:
         else:
             logger.warning("Cannot open cycle table - main_window missing content_stack")
 
+    def _on_duplicate_last(self):
+        """Duplicate the last cycle in the queue via queue_presenter."""
+        from affilabs.utils.logger import logger
+        import time as _time
+
+        if not hasattr(self, '_app_reference') or self._app_reference is None:
+            logger.warning("Cannot duplicate cycle - no app reference")
+            return
+
+        app = self._app_reference
+        if not hasattr(app, 'queue_presenter'):
+            logger.warning("Cannot duplicate cycle - no queue_presenter")
+            return
+
+        # Get current queue snapshot
+        queue = app.queue_presenter.get_queue_snapshot()
+        if not queue:
+            logger.warning("No cycles in queue to duplicate")
+            return
+
+        last_cycle = queue[-1]
+
+        # Create a fresh Cycle with the same config fields, reset runtime state
+        from affilabs.domain.cycle import Cycle
+        new_cycle = Cycle(
+            type=last_cycle.type,
+            length_minutes=last_cycle.length_minutes,
+            name=last_cycle.name,
+            note=last_cycle.note,
+            concentration_value=last_cycle.concentration_value,
+            concentration_units=last_cycle.concentration_units,
+            units=last_cycle.units,
+            concentrations=dict(last_cycle.concentrations) if last_cycle.concentrations else {},
+            flow_rate=last_cycle.flow_rate,
+            pump_type=last_cycle.pump_type,
+            channels=last_cycle.channels,
+            injection_method=last_cycle.injection_method,
+            injection_delay=last_cycle.injection_delay,
+            contact_time=last_cycle.contact_time,
+            manual_injection_mode=last_cycle.manual_injection_mode,
+            planned_concentrations=list(last_cycle.planned_concentrations),
+            status="pending",
+            timestamp=_time.time(),
+        )
+
+        success = app.queue_presenter.add_cycle(new_cycle)
+        if success:
+            # Sync backward compatibility list
+            app.segment_queue = app.queue_presenter.get_queue_snapshot()
+            logger.info(f"✓ Duplicated last cycle: {new_cycle.type} ({new_cycle.length_minutes} min)")
+        else:
+            logger.warning("Failed to duplicate cycle (queue may be locked)")
+
     def _combo_style(self):
         """Return consistent combobox style."""
         return (
@@ -655,3 +611,10 @@ class MethodTabBuilder:
             # Use shared instance instead of creating new one
             if self.user_manager:
                 self.user_manager.set_current_user(user_name)
+
+            # Update export destination to user-specific folder
+            from pathlib import Path
+            if hasattr(self.sidebar, 'export_dest_input'):
+                user_path = str(Path.home() / "Documents" / "Affilabs Data" / user_name / "SPR_data")
+                Path(user_path).mkdir(parents=True, exist_ok=True)
+                self.sidebar.export_dest_input.setText(user_path)

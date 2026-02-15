@@ -22,6 +22,7 @@ import numpy as np
 
 from affilabs.utils.logger import logger
 from affilabs.widgets.ui_constants import CycleTypeStyle
+from affilabs.ui_styles import Colors, Fonts
 
 
 class EditsTab:
@@ -66,6 +67,30 @@ class EditsTab:
         self.edits_cycle_labels = []
         self.edits_smooth_slider = None
         self.edits_smooth_label = None
+
+    def _get_user_export_dir(self, subfolder: str = "SPR_data") -> "Path":
+        """Get user-specific default export directory.
+
+        Creates: Documents/Affilabs Data/<username>/<subfolder>/
+
+        Args:
+            subfolder: Subfolder within user directory (default: 'SPR_data')
+
+        Returns:
+            Path to user-specific export directory
+        """
+        from pathlib import Path
+
+        username = "Default"
+        if self.user_manager:
+            username = self.user_manager.get_current_user() or "Default"
+        elif hasattr(self.main_window, 'app') and hasattr(self.main_window.app, 'user_profile_manager'):
+            self.user_manager = self.main_window.app.user_profile_manager
+            username = self.user_manager.get_current_user() or "Default"
+
+        user_dir = Path.home() / "Documents" / "Affilabs Data" / username / subfolder
+        user_dir.mkdir(parents=True, exist_ok=True)
+        return user_dir
 
     def _ensure_experiment_folder(self):
         """Ensure an experiment folder exists, creating one if needed.
@@ -377,13 +402,19 @@ class EditsTab:
         # Header
         header = QHBoxLayout()
         title = QLabel("Cycles Recorded")
-        title.setStyleSheet("font-size: 15px; font-weight: 600; color: #1D1D1F;")
+        title.setStyleSheet(
+            f"font-size: 15px; font-weight: 600; color: {Colors.PRIMARY_TEXT}; "
+            f"font-family: {Fonts.DISPLAY};"
+        )
         header.addWidget(title)
         header.addStretch()
 
         # Units reference
         units_label = QLabel("ΔSPR in RU")
-        units_label.setStyleSheet("font-size: 10px; color: #86868B; font-weight: 500;")
+        units_label.setStyleSheet(
+            f"font-size: 10px; color: {Colors.SECONDARY_TEXT}; font-weight: 500; "
+            f"font-family: {Fonts.SYSTEM};"
+        )
         header.addWidget(units_label)
 
         layout.addLayout(header)
@@ -396,9 +427,10 @@ class EditsTab:
         load_btn = QPushButton("📂 Load")
         load_btn.setFixedHeight(28)
         load_btn.setStyleSheet(
-            "QPushButton { background: #F5F5F7; color: #1D1D1F; border: 1px solid #D1D1D6; "
-            "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 4px 10px; }"
-            "QPushButton:hover { background: #E5E5EA; border-color: #007AFF; }"
+            f"QPushButton {{ background: {Colors.BACKGROUND_LIGHT}; color: {Colors.PRIMARY_TEXT}; "
+            f"border: 1px solid {Colors.OVERLAY_LIGHT_20}; border-radius: 6px; "
+            f"font-size: 11px; font-weight: 500; padding: 4px 10px; font-family: {Fonts.SYSTEM}; }}"
+            f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_10}; border-color: {Colors.INFO}; }}"
         )
         load_btn.clicked.connect(self.main_window._load_data_from_excel)
         controls_layout.addWidget(load_btn)
@@ -409,10 +441,11 @@ class EditsTab:
         self.export_toggle_btn.setCheckable(True)
         self.export_toggle_btn.setChecked(True)  # Sidebar visible by default
         self.export_toggle_btn.setStyleSheet(
-            "QPushButton { background: #34C759; color: white; border: 1px solid #34C759; "
-            "border-radius: 6px; font-size: 11px; font-weight: 500; padding: 4px 10px; }"
-            "QPushButton:hover { background: #2FB350; }"
-            "QPushButton:checked { background: #007AFF; border-color: #007AFF; }"
+            f"QPushButton {{ background: {Colors.SUCCESS}; color: white; border: none; "
+            f"border-radius: 6px; font-size: 11px; font-weight: 500; padding: 4px 10px; "
+            f"font-family: {Fonts.SYSTEM}; }}"
+            f"QPushButton:hover {{ background: #2FB350; }}"
+            f"QPushButton:checked {{ background: {Colors.INFO}; }}"
         )
         self.export_toggle_btn.setToolTip("Toggle export sidebar")
         self.export_toggle_btn.clicked.connect(self._toggle_export_sidebar)
@@ -420,7 +453,9 @@ class EditsTab:
 
         # Filter dropdown
         filter_label = QLabel("Show:")
-        filter_label.setStyleSheet("font-size: 11px; color: #86868B;")
+        filter_label.setStyleSheet(
+            f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; font-family: {Fonts.SYSTEM};"
+        )
         controls_layout.addWidget(filter_label)
 
         self.filter_combo = QComboBox()
@@ -428,10 +463,11 @@ class EditsTab:
         self.filter_combo.setCurrentText("Binding (High)")  # Default: binding cycles
         self.filter_combo.setFixedHeight(28)
         self.filter_combo.setStyleSheet(
-            "QComboBox { background: white; border: 1px solid #D1D1D6; border-radius: 6px; "
-            "font-size: 11px; padding: 4px 8px; min-width: 120px; }"
-            "QComboBox:hover { border: 1px solid #007AFF; }"
-            "QComboBox::drop-down { border: none; }"
+            f"QComboBox {{ background: white; border: 1px solid {Colors.OVERLAY_LIGHT_20}; "
+            f"border-radius: 6px; font-size: 11px; padding: 4px 8px; min-width: 120px; "
+            f"font-family: {Fonts.SYSTEM}; }}"
+            f"QComboBox:hover {{ border: 1px solid {Colors.INFO}; }}"
+            f"QComboBox::drop-down {{ border: none; }}"
         )
         self.filter_combo.currentTextChanged.connect(self._apply_cycle_filter)
         controls_layout.addWidget(self.filter_combo)
@@ -439,7 +475,7 @@ class EditsTab:
         # Search box
         from PySide6.QtWidgets import QLineEdit
         search_label = QLabel("🔍")
-        search_label.setStyleSheet("font-size: 12px; color: #86868B;")
+        search_label.setStyleSheet(f"font-size: 12px; color: {Colors.SECONDARY_TEXT};")
         controls_layout.addWidget(search_label)
 
         self.search_box = QLineEdit()
@@ -447,9 +483,9 @@ class EditsTab:
         self.search_box.setFixedHeight(28)
         self.search_box.setFixedWidth(150)
         self.search_box.setStyleSheet(
-            "QLineEdit { background: white; border: 1px solid #D1D1D6; border-radius: 6px; "
-            "font-size: 11px; padding: 4px 8px; }"
-            "QLineEdit:focus { border: 1px solid #007AFF; }"
+            f"QLineEdit {{ background: white; border: 1px solid {Colors.OVERLAY_LIGHT_20}; "
+            f"border-radius: 6px; font-size: 11px; padding: 4px 8px; font-family: {Fonts.SYSTEM}; }}"
+            f"QLineEdit:focus {{ border: 1px solid {Colors.INFO}; }}"
         )
         self.search_box.setToolTip("Search across all columns")
         self.search_box.textChanged.connect(self._apply_search_filter)
@@ -461,9 +497,10 @@ class EditsTab:
         self.columns_btn = QPushButton("☰")
         self.columns_btn.setFixedSize(28, 28)
         self.columns_btn.setStyleSheet(
-            "QPushButton { background: #F5F5F7; color: #1D1D1F; border: 1px solid #D1D1D6; "
-            "border-radius: 6px; font-size: 14px; font-weight: bold; }"
-            "QPushButton:hover { background: #E5E5EA; border-color: #007AFF; }"
+            f"QPushButton {{ background: {Colors.BACKGROUND_LIGHT}; color: {Colors.PRIMARY_TEXT}; "
+            f"border: 1px solid {Colors.OVERLAY_LIGHT_20}; border-radius: 6px; "
+            f"font-size: 14px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_10}; border-color: {Colors.INFO}; }}"
         )
         self.columns_btn.setToolTip("Show/hide table columns")
         self.columns_btn.clicked.connect(self._show_columns_menu)
@@ -482,11 +519,17 @@ class EditsTab:
         empty_icon.setAlignment(Qt.AlignCenter)
         empty_layout.addWidget(empty_icon)
         empty_text = QLabel("No cycles to display")
-        empty_text.setStyleSheet("font-size: 16px; font-weight: 600; color: #86868B; margin-top: 12px;")
+        empty_text.setStyleSheet(
+            f"font-size: 16px; font-weight: 600; color: {Colors.SECONDARY_TEXT}; "
+            f"margin-top: 12px; font-family: {Fonts.DISPLAY};"
+        )
         empty_text.setAlignment(Qt.AlignCenter)
         empty_layout.addWidget(empty_text)
         empty_subtext = QLabel("Start a recording or load data to begin")
-        empty_subtext.setStyleSheet("font-size: 13px; color: #AEAEB2; margin-top: 4px;")
+        empty_subtext.setStyleSheet(
+            f"font-size: 13px; color: {Colors.SECONDARY_TEXT}; margin-top: 4px; "
+            f"font-family: {Fonts.SYSTEM}; opacity: 0.7;"
+        )
         empty_subtext.setAlignment(Qt.AlignCenter)
         empty_layout.addWidget(empty_subtext)
         self.empty_state_widget.hide()  # Hidden by default
@@ -1457,34 +1500,32 @@ class EditsTab:
             self.edits_graph_curves[ch_idx].setVisible(visible)
 
     def _calculate_actual_duration(self, cycle_idx, cycle, all_cycles):
-        """Calculate ACTUAL cycle duration (not planned duration).
+        """Get actual cycle duration from export data or calculate if missing.
 
-        Strategy:
-        1. If end_time_sensorgram exists: use (end - start) / 60
-        2. Else if next cycle exists: use (next_start - current_start) / 60
-        3. Else: fall back to duration_minutes field (planned duration)
+        Strategy (optimized to avoid redundant calculation):
+        1. Use pre-calculated duration_minutes from Cycle.to_export_dict() (always provided for completed cycles)
+        2. Else if next cycle exists: calculate from spacing (next_start - current_start) / 60
+        3. Else: fall back to planned duration (length_minutes)
 
         Args:
             cycle_idx: Index of current cycle in all_cycles list
-            cycle: Current cycle dict
+            cycle: Current cycle dict from Cycle.to_export_dict()
             all_cycles: Complete list of all cycles
 
         Returns:
             float: Actual duration in minutes
         """
-        start_time = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time'))
-        end_time = cycle.get('end_time_sensorgram')
+        # Strategy 1: Use pre-calculated duration_minutes (already computed in Cycle.to_export_dict())
+        duration_minutes = cycle.get('duration_minutes')
+        if pd.notna(duration_minutes) and duration_minutes > 0:
+            logger.debug(f"Cycle {cycle_idx + 1}: Using pre-calculated duration → {duration_minutes:.2f} min")
+            return duration_minutes
 
-        # Strategy 1: Use recorded end time if available
-        if pd.notna(end_time) and pd.notna(start_time):
-            actual_duration = (end_time - start_time) / 60.0
-            logger.debug(f"Cycle {cycle_idx + 1}: Using recorded end time → {actual_duration:.2f} min")
-            return actual_duration
-
-        # Strategy 2: Calculate from spacing to next cycle
+        # Strategy 2: Calculate from spacing to next cycle (for old imports without duration_minutes)
+        start_time = cycle.get('start_time_sensorgram')
         if cycle_idx < len(all_cycles) - 1:
             next_cycle = all_cycles[cycle_idx + 1]
-            next_start = next_cycle.get('start_time_sensorgram', next_cycle.get('sensorgram_time'))
+            next_start = next_cycle.get('start_time_sensorgram')
 
             if pd.notna(next_start) and pd.notna(start_time):
                 actual_duration = (next_start - start_time) / 60.0
@@ -1492,7 +1533,7 @@ class EditsTab:
                 return actual_duration
 
         # Strategy 3: Fall back to planned duration
-        planned_duration = cycle.get('duration_minutes', cycle.get('length_minutes', 0))
+        planned_duration = cycle.get('length_minutes', 0)
         logger.debug(f"Cycle {cycle_idx + 1}: Using planned duration → {planned_duration:.2f} min")
         return planned_duration
 
@@ -1521,11 +1562,17 @@ class EditsTab:
             actual_duration_min = self._calculate_actual_duration(cycle_idx, cycle, cycles_data)
             start_time = cycle.get('start_time_sensorgram', 0)
 
-            # Handle NaN values
-            if pd.notna(actual_duration_min) and pd.notna(start_time) and isinstance(actual_duration_min, (int, float)) and isinstance(start_time, (int, float)):
+            # Handle NaN values robustly
+            dur_valid = pd.notna(actual_duration_min) and isinstance(actual_duration_min, (int, float))
+            st_valid = pd.notna(start_time) and isinstance(start_time, (int, float))
+            if dur_valid and st_valid:
                 time_str = f"{actual_duration_min:.1f}m @ {start_time:.0f}s"
+            elif dur_valid:
+                time_str = f"{actual_duration_min:.1f}m"
+            elif st_valid and start_time != 0:
+                time_str = f"@ {start_time:.0f}s"
             else:
-                time_str = f"{actual_duration_min}m @ {start_time}s" if actual_duration_min != 0 or start_time != 0 else "—"
+                time_str = "—"
             self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(time_str))
 
             # --- Col 2: Concentration ---
@@ -1569,21 +1616,23 @@ class EditsTab:
                 flags_display = " ".join(parts)
             else:
                 raw_flags = cycle.get('flags', '')
+                # Handle list type (already parsed or from live acquisition)
+                if isinstance(raw_flags, list):
+                    flags_display = ', '.join(str(f) for f in raw_flags) if raw_flags else ''
                 # Handle string representation of list
-                if isinstance(raw_flags, str) and raw_flags.startswith('['):
+                elif isinstance(raw_flags, str) and raw_flags.startswith('['):
                     import ast
                     try:
-                        raw_flags = ast.literal_eval(raw_flags)
-                    except:
-                        pass
-                if isinstance(raw_flags, list) and raw_flags:
-                    flags_display = ', '.join(raw_flags)
+                        parsed = ast.literal_eval(raw_flags)
+                        flags_display = ', '.join(str(f) for f in parsed) if isinstance(parsed, list) and parsed else ''
+                    except Exception:
+                        flags_display = raw_flags if raw_flags else ''
                 else:
                     flags_display = str(raw_flags) if raw_flags and pd.notna(raw_flags) else ''
             self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(flags_display))
 
             # --- Col 5: Notes ---
-            notes = cycle.get('note', cycle.get('notes', ''))
+            notes = cycle.get('note', '')
             cycle_id = cycle.get('cycle_id', '')
             if cycle_id:
                 notes_display = f"[{cycle_id}] {notes}" if notes else f"[{cycle_id}]"
@@ -2048,12 +2097,13 @@ class EditsTab:
                 )
                 return
 
-            # Get filename from user
+            # Get filename from user with user-specific default folder
             default_name = f"Edits_Data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            default_dir = self._get_user_export_dir()
             file_path, _ = QFileDialog.getSaveFileName(
                 self.main_window,
                 "Export Data",
-                default_name,
+                str(default_dir / default_name),
                 "Excel Files (*.xlsx);;All Files (*)"
             )
 
@@ -2167,12 +2217,13 @@ class EditsTab:
                 )
                 return
 
-            # Get filename from user
+            # Get filename from user with user-specific default folder
             default_name = f"Live_Data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            default_dir = self._get_user_export_dir()
             file_path, _ = QFileDialog.getSaveFileName(
                 self.main_window,
                 "Export Live Data",
-                default_name,
+                str(default_dir / default_name),
                 "Excel Files (*.xlsx);;All Files (*)"
             )
 
@@ -2414,7 +2465,7 @@ class EditsTab:
             # Fallback if no loaded cycles (shouldn't happen in normal operation)
             actual_duration = cycle.get('duration_minutes', '')
 
-        start = cycle.get('start_time_sensorgram', cycle.get('sensorgram_time', 0))
+        start = cycle.get('start_time_sensorgram', 0)
         if isinstance(actual_duration, (int, float)) and isinstance(start, (int, float)):
             self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(f"{actual_duration:.1f}m @ {start:.0f}s"))
         else:
@@ -2425,15 +2476,167 @@ class EditsTab:
 
         # Col 3: ΔSPR (combined)
         delta_by_ch = cycle.get('delta_spr_by_channel', {})
+        if isinstance(delta_by_ch, str):
+            import ast
+            try:
+                delta_by_ch = ast.literal_eval(delta_by_ch)
+            except Exception:
+                delta_by_ch = {}
         parts = []
-        for ch in ['A', 'B', 'C', 'D']:
-            val = delta_by_ch.get(ch, '')
-            if isinstance(val, (int, float)):
-                parts.append(f"{ch}:{val:.0f}")
+        if delta_by_ch and isinstance(delta_by_ch, dict):
+            for ch in ['A', 'B', 'C', 'D']:
+                val = delta_by_ch.get(ch, '')
+                if isinstance(val, (int, float)):
+                    parts.append(f"{ch}:{val:.0f}")
+        if not parts:
+            # Fallback: check delta_ch1-delta_ch4 keys
+            for ch_key, ch_label in [('delta_ch1', 'A'), ('delta_ch2', 'B'), ('delta_ch3', 'C'), ('delta_ch4', 'D')]:
+                val = cycle.get(ch_key, '')
+                if isinstance(val, (int, float)):
+                    parts.append(f"{ch_label}:{val:.0f}")
         self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(" ".join(parts)))
 
+        # Col 4: Flags
+        flag_data = cycle.get('flag_data', [])
+        if flag_data:
+            _ICONS = {'injection': '▲', 'wash': '■', 'spike': '◆'}
+            flag_parts = []
+            for f in flag_data:
+                icon = _ICONS.get(f.get('type', ''), '●')
+                flag_parts.append(f"{icon}{f.get('time', 0):.0f}s")
+            flags_display = " ".join(flag_parts)
+        else:
+            raw_flags = cycle.get('flags', '')
+            if isinstance(raw_flags, list) and raw_flags:
+                flags_display = ', '.join(str(f) for f in raw_flags)
+            elif isinstance(raw_flags, str) and raw_flags.startswith('['):
+                import ast
+                try:
+                    parsed = ast.literal_eval(raw_flags)
+                    flags_display = ', '.join(str(f) for f in parsed) if isinstance(parsed, list) and parsed else ''
+                except Exception:
+                    flags_display = raw_flags if raw_flags else ''
+            else:
+                flags_display = str(raw_flags) if raw_flags and pd.notna(raw_flags) else ''
+        self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(flags_display))
+
         # Col 5: Notes
-        self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(cycle.get('notes', cycle.get('note', ''))))
+        notes = cycle.get('note', '')
+        cycle_id = cycle.get('cycle_id', '')
+        if cycle_id:
+            notes_display = f"[{cycle_id}] {notes}" if notes else f"[{cycle_id}]"
+        else:
+            notes_display = str(notes) if notes else ''
+        self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(notes_display))
+
+    def add_cycle(self, cycle_dict):
+        """Add a completed cycle to the table during live acquisition.
+
+        This method adds a single cycle to the 6-column table. It should be called
+        when a cycle completes, not when cycles are queued.
+
+        Args:
+            cycle_dict: Dictionary from Cycle.to_export_dict() containing cycle data
+        """
+        from PySide6.QtWidgets import QTableWidgetItem
+        from PySide6.QtGui import QColor
+        from affilabs.utils.logger import logger
+
+        # Get current row count (where we'll add the new row)
+        row_idx = self.cycle_data_table.rowCount()
+        self.cycle_data_table.insertRow(row_idx)
+
+        # Initialize or get loaded cycles data list
+        if not hasattr(self.main_window, '_loaded_cycles_data'):
+            self.main_window._loaded_cycles_data = []
+        self.main_window._loaded_cycles_data.append(cycle_dict)
+
+        # Count cycle type for numbering
+        if not hasattr(self, '_cycle_type_counts'):
+            self._cycle_type_counts = {}
+
+        cycle_type = cycle_dict.get('type', 'Custom')
+        if cycle_type not in self._cycle_type_counts:
+            self._cycle_type_counts[cycle_type] = 0
+        self._cycle_type_counts[cycle_type] += 1
+        cycle_num = self._cycle_type_counts[cycle_type]
+
+        # Col 0: Type icon + number
+        abbr, color = CycleTypeStyle.get(cycle_type)
+        type_item = QTableWidgetItem(f"{abbr} {cycle_num}")
+        type_item.setForeground(QColor(color))
+        type_item.setToolTip(f"{cycle_type} {cycle_num}")
+        self.cycle_data_table.setItem(row_idx, 0, type_item)
+
+        # Col 1: Time (duration @ start)
+        duration = cycle_dict.get('duration_minutes', '')
+        start = cycle_dict.get('start_time_sensorgram', 0)
+        if isinstance(duration, (int, float)) and isinstance(start, (int, float)):
+            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(f"{duration:.1f}m @ {start:.0f}s"))
+        else:
+            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(f"{duration}m @ {start}s"))
+
+        # Col 2: Concentration
+        conc_value = cycle_dict.get('concentration_value', '')
+        self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(str(conc_value)))
+
+        # Col 3: ΔSPR (combined 4 channels)
+        # Priority 1: delta_spr_by_channel dict (live acquisition format)
+        delta_by_ch = cycle_dict.get('delta_spr_by_channel', {})
+        if isinstance(delta_by_ch, str):
+            import ast
+            try:
+                delta_by_ch = ast.literal_eval(delta_by_ch)
+            except Exception:
+                delta_by_ch = {}
+        parts = []
+        if delta_by_ch and isinstance(delta_by_ch, dict):
+            for ch in ['A', 'B', 'C', 'D']:
+                val = delta_by_ch.get(ch, '')
+                if isinstance(val, (int, float)):
+                    parts.append(f"{ch}:{val:.0f}")
+        # Priority 2: delta_ch1-4 keys (Excel import fallback)
+        if not parts:
+            for ch_key, ch_label in [('delta_ch1', 'A'), ('delta_ch2', 'B'), ('delta_ch3', 'C'), ('delta_ch4', 'D')]:
+                val = cycle_dict.get(ch_key, '')
+                if isinstance(val, (int, float)):
+                    parts.append(f"{ch_label}:{val:.0f}")
+        self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(" ".join(parts)))
+
+        # Col 4: Flags
+        flag_data = cycle_dict.get('flag_data', [])
+        if flag_data:
+            _ICONS = {'injection': '▲', 'wash': '■', 'spike': '◆'}
+            flag_parts = []
+            for f in flag_data:
+                icon = _ICONS.get(f.get('type', ''), '●')
+                flag_parts.append(f"{icon}{f.get('time', 0):.0f}s")
+            flags_display = " ".join(flag_parts)
+        else:
+            raw_flags = cycle_dict.get('flags', '')
+            if isinstance(raw_flags, list) and raw_flags:
+                flags_display = ', '.join(str(f) for f in raw_flags)
+            elif isinstance(raw_flags, str) and raw_flags.startswith('['):
+                import ast
+                try:
+                    parsed = ast.literal_eval(raw_flags)
+                    flags_display = ', '.join(str(f) for f in parsed) if isinstance(parsed, list) and parsed else ''
+                except Exception:
+                    flags_display = raw_flags if raw_flags else ''
+            else:
+                flags_display = str(raw_flags) if raw_flags and pd.notna(raw_flags) else ''
+        self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(flags_display))
+
+        # Col 5: Notes
+        notes = cycle_dict.get('note', '')
+        cycle_id = cycle_dict.get('cycle_id', '')
+        if cycle_id:
+            notes_display = f"[{cycle_id}] {notes}" if notes else f"[{cycle_id}]"
+        else:
+            notes_display = str(notes) if notes else ''
+        self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(notes_display))
+
+        logger.info(f"✓ Added {cycle_type} {cycle_num} to cycle table (row {row_idx + 1})")
 
     def _select_cycle_by_index(self, cycle_idx):
         """Select a cycle by index and move cursors to its bounds.
@@ -4257,12 +4460,13 @@ class EditsTab:
             )
             return
 
-        # File dialog
+        # File dialog with user-specific default folder
         default_name = f"SPR_external_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        default_dir = self._get_user_export_dir()
         file_path, _ = QFileDialog.getSaveFileName(
             self.main_window,
             "Export for External Software",
-            default_name,
+            str(default_dir / default_name),
             "CSV Files (*.csv);;All Files (*.*)"
         )
 

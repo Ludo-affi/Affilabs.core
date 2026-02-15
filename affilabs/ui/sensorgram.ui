@@ -379,21 +379,28 @@
             <family>Segoe UI</family>
             <pointsize>9</pointsize>
             <bold>true</bold>
+            <weight>87</weight>
            </font>
           </property>
           <property name="styleSheet">
            <string notr="true">QCheckBox{
-	color: black;
+	color: rgb(0, 0, 0);
 	background: white;
-	border: 1px solid rgb(171, 171, 171);
-	border-radius: 3px;
+	border: 2px solid rgb(0, 0, 0);
+	border-radius: 6px;
+	font-weight: 900;
+}
+QCheckBox:checked{
+	background: rgb(0, 0, 0);
+	color: white;
+	border: 2px solid rgb(0, 0, 0);
 }</string>
           </property>
           <property name="text">
            <string>A</string>
           </property>
           <property name="checked">
-           <bool>true</bool>
+           <bool>false</bool>
           </property>
          </widget>
         </item>
@@ -404,21 +411,28 @@
             <family>Segoe UI</family>
             <pointsize>9</pointsize>
             <bold>true</bold>
+            <weight>87</weight>
            </font>
           </property>
           <property name="styleSheet">
            <string notr="true">QCheckBox{
 	color: rgb(255, 0, 81);
 	background: white;
-	border: 1px solid rgb(171, 171, 171);
-	border-radius: 3px;
+	border: 2px solid rgb(255, 0, 81);
+	border-radius: 6px;
+	font-weight: 900;
+}
+QCheckBox:checked{
+	background: rgb(255, 0, 81);
+	color: white;
+	border: 2px solid rgb(255, 0, 81);
 }</string>
           </property>
           <property name="text">
            <string>B</string>
           </property>
           <property name="checked">
-           <bool>true</bool>
+           <bool>false</bool>
           </property>
          </widget>
         </item>
@@ -429,21 +443,28 @@
             <family>Segoe UI</family>
             <pointsize>9</pointsize>
             <bold>true</bold>
+            <weight>87</weight>
            </font>
           </property>
           <property name="styleSheet">
            <string notr="true">QCheckBox{
 	color: rgb(0, 174, 255);
 	background: white;
-	border: 1px solid rgb(171, 171, 171);
-	border-radius: 3px;
+	border: 2px solid rgb(0, 174, 255);
+	border-radius: 6px;
+	font-weight: 900;
+}
+QCheckBox:checked{
+	background: rgb(0, 174, 255);
+	color: white;
+	border: 2px solid rgb(0, 174, 255);
 }</string>
           </property>
           <property name="text">
            <string>C</string>
           </property>
           <property name="checked">
-           <bool>true</bool>
+           <bool>false</bool>
           </property>
          </widget>
         </item>
@@ -454,21 +475,28 @@
             <family>Segoe UI</family>
             <pointsize>9</pointsize>
             <bold>true</bold>
+            <weight>87</weight>
            </font>
           </property>
           <property name="styleSheet">
            <string notr="true">QCheckBox{
 	color: rgb(0, 230, 65);
 	background: white;
-	border: 1px solid rgb(171, 171, 171);
-	border-radius: 3px;
+	border: 2px solid rgb(0, 230, 65);
+	border-radius: 6px;
+	font-weight: 900;
+}
+QCheckBox:checked{
+	background: rgb(0, 230, 65);
+	color: white;
+	border: 2px solid rgb(0, 230, 65);
 }</string>
           </property>
           <property name="text">
            <string>D</string>
           </property>
           <property name="checked">
-           <bool>true</bool>
+           <bool>false</bool>
           </property>
          </widget>
         </item>

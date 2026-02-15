@@ -373,9 +373,9 @@ class DataBufferManager:
         if len(buffer.time) == 0:
             return np.array([]), np.array([]), np.array([])
 
-        # Use > (not >=) so Active Cycle starts AFTER the cursor, not AT the cursor
-        # This prevents the spike from appearing if cursor is placed after it
-        mask = (buffer.time > start_time) & (buffer.time <= stop_time)
+        # Include data points at or after start cursor up to and including stop cursor
+        # This ensures cycle starts at t=0 when cursor is placed at a data point
+        mask = (buffer.time >= start_time) & (buffer.time <= stop_time)
         timestamps = buffer.timestamp[mask] if len(buffer.timestamp) > 0 else np.array([])
         return buffer.time[mask], buffer.wavelength[mask], timestamps
 

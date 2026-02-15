@@ -21,7 +21,7 @@ def decode_status(status_byte):
     print(f"  Bit 5 (Idle/Ready):  {'YES' if status_byte & 0x20 else 'NO'}")
     print(f"  Bit 4 (Error):       {'YES' if status_byte & 0x10 else 'NO'}")
     print(f"  Bit 3 (Reserved):    {status_byte & 0x08}")
-
+    
     if status_byte == 0x60:
         print("  > Status: Ready (Initialized + Idle)")
     elif status_byte == 0x40:
@@ -55,7 +55,7 @@ if b'`' in resp:
     if end > start:
         error_code = resp[start:end].decode('ascii')
         print(f"  Last Error Code: {error_code}")
-
+        
         # Common error codes
         errors = {
             '0': 'No error',
@@ -86,7 +86,7 @@ for cmd, desc in queries.items():
     ser.write(f'/1{cmd}\r'.encode())
     time.sleep(0.2)
     resp = ser.read(200)
-
+    
     if b'`' in resp:
         start = resp.find(b'`') + 1
         end = resp.find(b'\x03')

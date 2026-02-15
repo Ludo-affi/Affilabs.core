@@ -434,11 +434,11 @@ class MethodBuilderDialog(QDialog):
     User builds cycles locally in this dialog, then pushes entire method to main queue.
 
     Signals:
-        method_ready: Emitted when user wants to push method (action, cycles)
+        method_ready: Emitted when user wants to push method (action, method_name, cycles)
             action is either "queue" or "start"
     """
 
-    method_ready = Signal(str, list)  # (action, list of cycles)
+    method_ready = Signal(str, str, list)  # (action, method_name, list of cycles)
 
     def __init__(self, parent=None, user_manager=None):
         super().__init__(parent)
@@ -497,12 +497,6 @@ class MethodBuilderDialog(QDialog):
         text = self.notes_input.toPlainText().strip()
         text_lower = text.lower()
 
-        print("\n=== DEBUG: _detect_and_respond_to_question ===")
-        print(f"Input text: '{text}'")
-        print(f"Input text_lower: '{text_lower}'")
-        print(f"_waiting_for_response: {self._waiting_for_response}")
-        print(f"_pending_command: {self._pending_command}")
-
         if not text:
             # Show message if empty
             from PySide6.QtWidgets import QMessageBox
@@ -516,12 +510,10 @@ class MethodBuilderDialog(QDialog):
             return
 
         if self._helper_active:
-            print("DEBUG: Helper is active, returning early")
             return
 
         # Check if we're waiting for a response to a question
         if self._waiting_for_response:
-            print("DEBUG: Waiting for response - calling _process_user_answer")
             self._process_user_answer(text)
             return
 
@@ -629,16 +621,12 @@ class MethodBuilderDialog(QDialog):
             question: The question to show in placeholder
             command: The command this question is for (e.g., "amine_coupling", "build")
         """
-        print(f"DEBUG: _ask_question called with question='{question}', command='{command}'")
         self._waiting_for_response = True
         self._pending_command = command
 
         # Clear input and show question as placeholder
         self.notes_input.clear()
         self.notes_input.setPlaceholderText(f"⚡ {question}")
-        print(f"DEBUG: Placeholder set to: '⚡ {question}'")
-        print(f"DEBUG: _waiting_for_response = {self._waiting_for_response}")
-        print(f"DEBUG: _pending_command = {self._pending_command}")
 
         # Show tooltip
         from PySide6.QtWidgets import QToolTip
@@ -659,9 +647,6 @@ class MethodBuilderDialog(QDialog):
         """
         import re
 
-        print(f"DEBUG: _process_user_answer called with: '{answer}'")
-        print(f"DEBUG: _pending_command = '{self._pending_command}'")
-
         # Reset state
         self._waiting_for_response = False
         command = self._pending_command
@@ -679,7 +664,6 @@ class MethodBuilderDialog(QDialog):
             return
 
         num_concentrations = int(number_match.group(1))
-        print(f"DEBUG: Extracted number: {num_concentrations}")
 
         # Generate response based on command
         if command == "amine_coupling":
@@ -711,13 +695,9 @@ class MethodBuilderDialog(QDialog):
                 cycles.append("Regeneration 2min [ALL]")
                 cycles.append("Baseline 2min [ALL]")
             response = "\n".join(cycles)
-            print(f"DEBUG: Build command generated {len(cycles)} lines for {num_concentrations} concentrations")
-            print(f"DEBUG: Response preview: {response[:100]}...")
         else:
             response = "Error: Unknown command"
-            print(f"DEBUG: Unknown command '{command}'")
 
-        print(f"DEBUG: Calling _show_suggestion with {len(response)} characters")
         self._show_suggestion(response)
 
     def _show_suggestion(self, text):
@@ -1470,7 +1450,8 @@ Baseline 2min
             # contact_time from parsing (required by user)
         elif cycle_type == "Concentration":
             injection_method = "partial" if is_partial else "simple"  # Allow override
-            # contact_time from parsing (required by user)
+            if contact_time is None:
+                contact_time = 300.0  # Fixed 300s default for Concentration (5 minutes)
         elif cycle_type == "Regeneration":
             injection_method = "simple"
             if contact_time is None:
@@ -1648,7 +1629,8 @@ Baseline 2min
         """Push all cycles to main queue."""
         if not self._local_cycles:
             return
-        self.method_ready.emit("queue", self._local_cycles.copy())
+        method_name = self.method_name_input.text().strip() or "Untitled Method"
+        self.method_ready.emit("queue", method_name, self._local_cycles.copy())
         self._local_cycles.clear()
         self._refresh_method_table()
         # Close dialog after pushing to queue
@@ -1684,10 +1666,13 @@ Baseline 2min
         default_dir = Path.home() / "Documents" / "Affilabs Methods" / username
         default_dir.mkdir(parents=True, exist_ok=True)
 
+        # Use the method name input as default filename
+        method_name = self.method_name_input.text().strip() or "Untitled Method"
+        safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in method_name)
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Method",
-            str(default_dir / "method.json"),
+            str(default_dir / f"{safe_name}.json"),
             "JSON Files (*.json);;All Files (*)"
         )
 
@@ -1696,8 +1681,10 @@ Baseline 2min
 
         try:
             # Convert cycles to JSON-serializable format using Cycle.to_dict()
+            method_name = self.method_name_input.text().strip() or "Untitled Method"
             method_data = {
                 "version": "1.0",
+                "name": method_name,
                 "cycles": []
             }
 
@@ -1784,15 +1771,6 @@ Baseline 2min
 
         except Exception as e:
             QMessageBox.critical(self, "Load Error", f"Failed to load method:\n{e}")
-        else:
-            QMessageBox.warning(
-                self,
-                "Preset Not Found",
-                f"No preset named '{preset_name}' exists.\n\n"
-                f"Available presets:\n" + "\n".join(f"  • {name}" for name in self._preset_storage.list_presets())
-                if self._preset_storage.list_presets()
-                else f"No preset named '{preset_name}' exists."
-            )
 
     def _save_preset(self, preset_name: str):
         """Save current local cycles as a preset."""

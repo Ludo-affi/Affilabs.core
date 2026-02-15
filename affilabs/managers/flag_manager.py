@@ -41,7 +41,7 @@ from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import QMenu
 
 from affilabs.domain.flag import Flag, InjectionFlag, create_flag
-
+from affilabs.ui_styles import hex_to_rgb
 from affilabs.utils.logger import logger
 
 if TYPE_CHECKING:
@@ -274,7 +274,8 @@ class FlagManager:
             pen=pg.mkPen("#FFFFFF", width=3),  # Thicker white outline
         )
 
-        # Add marker to graph
+        # Add marker to cycle_of_interest_graph only (cycle-specific feature)
+        # Do NOT display on full_timeline_graph (live sensogram) - flags are for cycle analysis
         self.app.main_window.cycle_of_interest_graph.addItem(marker)
 
         # Store marker reference in Flag instance
@@ -331,7 +332,7 @@ class FlagManager:
         if closest_flag_idx is not None and min_distance < 0.02:
             flag = self._flag_markers[closest_flag_idx]
 
-            # Remove from graph
+            # Remove from cycle graph only
             self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
 
             # If this was the selected flag, remove the highlight ring
@@ -513,17 +514,23 @@ class FlagManager:
         flag = self._flag_markers[self._selected_marker_idx]
         channel = flag.channel
 
-        # Get DISPLAY data (rebased time)
+        # Get cycle data and compute display time matching Active Cycle graph
+        # Active Cycle uses: display_time = raw_time - start_cursor_raw
         cycle_time_raw = self.app.buffer_mgr.cycle_data[channel].time
         cycle_spr_raw = self.app.buffer_mgr.cycle_data[channel].spr
 
-        if len(cycle_time_raw) < 2:
+        if len(cycle_time_raw) == 0:
             return
 
-        # Match display logic: skip first point and rebase
-        first_time = cycle_time_raw[1]
-        cycle_time_display = cycle_time_raw[1:] - first_time
-        cycle_spr_display = cycle_spr_raw[1:]
+        # Match ui_update_helpers.py: rebase to start cursor position (raw coords)
+        from affilabs.core.experiment_clock import TimeBase
+
+        start_cursor_display = self.app.main_window.full_timeline_graph.start_cursor.value()
+        start_time_raw = self.app.clock.convert(
+            start_cursor_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED
+        )
+        cycle_time_display = cycle_time_raw - start_time_raw
+        cycle_spr_display = cycle_spr_raw
 
         # Find current flag position in data array
         current_idx = np.argmin(np.abs(cycle_time_display - flag.time))
@@ -536,7 +543,7 @@ class FlagManager:
         new_time = cycle_time_display[new_idx]
         new_spr = cycle_spr_display[new_idx]
 
-        # Remove old marker
+        # Remove old marker from cycle graph
         self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
 
         # Create new marker at new position using flag's appearance properties
@@ -549,6 +556,7 @@ class FlagManager:
             brush=pg.mkBrush(flag.marker_color),
             pen=pg.mkPen("#FFFFFF", width=3),  # Thicker white outline
         )
+
         self.app.main_window.cycle_of_interest_graph.addItem(new_marker)
 
         # Update flag instance (mutable dataclass)
@@ -620,10 +628,10 @@ class FlagManager:
                 pos=time,
                 angle=90,  # Vertical line
                 pen=pg.mkPen(color=color, width=2, style=Qt.PenStyle.DashLine),
-                label={
-                    "text": label,
+                label=label,
+                labelOpts={
                     "color": color,
-                    "fill": (*self._hex_to_rgb(color), 100),
+                    "fill": (*hex_to_rgb(color), 100),
                     "movable": False,
                 },
             )
@@ -695,16 +703,7 @@ class FlagManager:
             self._contact_timer_overlay.setDefault()
 
             # Position at saved location (top-left by default)
-            vb = self.app.main_window.cycle_of_interest_graph.plotItem.vb
-            view_rect = vb.viewRect()
-
-            # Convert pixel coordinates to data coordinates
             pixel_pos = self._contact_timer_position
-            scene_pos = vb.mapViewToScene(
-                view_rect.topLeft()
-            ) + self.app.main_window.cycle_of_interest_graph.mapFromScene(
-                vb.mapViewToScene(view_rect.topLeft())
-            )
 
             self._contact_timer_overlay.setPos(pixel_pos[0], pixel_pos[1])
 
@@ -798,24 +797,17 @@ class FlagManager:
 
         # Attach custom mouse handler
         try:
-            original_mouseDrag = self._contact_timer_overlay.mouseDragEvent
             handler = DraggableTimerHandler(self._contact_timer_overlay)
             self._contact_timer_overlay.mouseDragEvent = handler.mouseDragEvent
             logger.debug("✓ Timer made draggable")
         except Exception as e:
             logger.debug(f"Could not make timer draggable: {e}")
 
-    @staticmethod
-    def _hex_to_rgb(hex_color: str) -> tuple:
-        """Convert hex color to RGB tuple."""
-        hex_color = hex_color.lstrip("#")
-        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
-
     def clear_all_flags(self):
         """Clear all flags and auto-markers when user clicks Clear Flags button."""
         logger.info("[FlagManager] Clearing all flags and markers")
         try:
-            # Remove all visual markers from graph
+            # Remove all visual markers from cycle graph
             for flag in self._flag_markers:
                 if flag.marker is not None:
                     self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
@@ -858,7 +850,7 @@ class FlagManager:
         Flags are cycle-specific, so timing adjustments should not carry over.
         """
         try:
-            # Remove all flag markers from graph
+            # Remove all flag markers from cycle graph
             for flag in self._flag_markers:
                 if flag.marker is not None:
                     self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)

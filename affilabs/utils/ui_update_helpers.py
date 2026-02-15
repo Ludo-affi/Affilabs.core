@@ -72,9 +72,15 @@ class UIUpdateHelpers:
             return
 
         try:
-            # Get cursor positions from full timeline graph
-            start_time = app.main_window.full_timeline_graph.start_cursor.value()
-            stop_time = app.main_window.full_timeline_graph.stop_cursor.value()
+            # Get cursor positions from full timeline graph (in DISPLAY coordinates)
+            start_time_display = app.main_window.full_timeline_graph.start_cursor.value()
+            stop_time_display = app.main_window.full_timeline_graph.stop_cursor.value()
+
+            # CRITICAL: Convert display coordinates → raw buffer coordinates
+            # Cursors live on the display plot; buffer.time stores raw elapsed.
+            from affilabs.core.experiment_clock import TimeBase
+            start_time_raw = app.clock.convert(start_time_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
+            stop_time_raw = app.clock.convert(stop_time_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
 
             # Check if this is a new cycle region (for autosave)
             cycle_changed = False
@@ -82,26 +88,26 @@ class UIUpdateHelpers:
                 not hasattr(app, "_last_cycle_bounds")
                 or app._last_cycle_bounds is None
             ):
-                app._last_cycle_bounds = (start_time, stop_time)
+                app._last_cycle_bounds = (start_time_display, stop_time_display)
                 cycle_changed = True
             else:
                 last_start, last_stop = app._last_cycle_bounds
                 # Consider it a new cycle if boundaries moved significantly (>5% of duration)
-                duration = stop_time - start_time
+                duration = stop_time_display - start_time_display
                 if (
-                    abs(start_time - last_start) > duration * 0.05
-                    or abs(stop_time - last_stop) > duration * 0.05
+                    abs(start_time_display - last_start) > duration * 0.05
+                    or abs(stop_time_display - last_stop) > duration * 0.05
                 ):
                     cycle_changed = True
-                    app._last_cycle_bounds = (start_time, stop_time)
+                    app._last_cycle_bounds = (start_time_display, stop_time_display)
 
             # Extract data within cursor range for each channel
             for ch_letter, ch_idx in app._channel_pairs:
                 cycle_time, cycle_wavelength, cycle_timestamp = (
                     app.buffer_mgr.extract_cycle_region(
                         ch_letter,
-                        start_time,
-                        stop_time,
+                        start_time_raw,
+                        stop_time_raw,
                     )
                 )
 
@@ -149,8 +155,13 @@ class UIUpdateHelpers:
 
                 # Use all data points - time relative to START CURSOR position (not first data point)
                 # This ensures Active Cycle time=0 aligns with Start cursor position in Live Sensorgram
+                # CRITICAL: Convert raw cycle times to DISPLAY coordinates to match Live Sensorgram exactly
                 if len(cycle_time) > 0:
-                    display_cycle_time = cycle_time - start_time  # Use cursor position, not first data point
+                    # Convert cycle times from RAW_ELAPSED to DISPLAY: display = raw - display_offset
+                    # Then rebase to start cursor position for Active Cycle graph (time=0 at cursor)
+                    display_offset = app.clock.display_offset
+                    cycle_time_display = cycle_time - display_offset
+                    display_cycle_time = cycle_time_display - start_time_display
                     display_delta_spr = delta_spr
 
                     # Apply injection alignment time shift if set (Phase 2)
@@ -248,36 +259,15 @@ class UIUpdateHelpers:
 
                     # Display buffered data (already has EMA filtering applied if enabled)
                     display_wavelength = raw_wavelength
-
-                    # DISABLED: Online smoothing (for peak tracking validation)
-                    # if app._filter_enabled and len(raw_wavelength) > 2:
-                    #     with measure('filtering.online_smoothing'):
-                    #         display_wavelength = app._apply_online_smoothing(
-                    #             raw_wavelength,
-                    #             app._filter_strength,
-                    #             channel
-                    #         )
-                    # else:
-                    #     display_wavelength = raw_wavelength
-
-                    # Simple downsampling DISABLED - show full-resolution data for troubleshooting
-                    # MAX_PLOT_POINTS = 2000  # Sufficient for smooth rendering at 1 Hz
-                    # if len(raw_time) > MAX_PLOT_POINTS:
-                    #     step = len(raw_time) // MAX_PLOT_POINTS
-                    #     display_time = raw_time[::step]
-                    #     display_wavelength = display_wavelength[::step]
-                    # else:
-                    #     display_time = raw_time
                     display_time = raw_time
-                    # Keep any filtering applied above; do not overwrite
 
                     # Skip first point and shift time axis so displayed data starts at t=0
                     if len(display_time) > 1:
                         first_time = display_time[1]
-                        # Store offset for cursor synchronization and recording markers
-                        # (Removed verbose debug logging - offset updates every frame)
-                        app._display_time_offset = first_time
-                        display_time = display_time[1:] - first_time
+                        # Lock display offset on first valid frame (frozen after this)
+                        app.clock.lock_display_offset(first_time)
+                        offset = app.clock.display_offset
+                        display_time = display_time[1:] - offset
                         display_wavelength = display_wavelength[1:]
 
                     # Update graph

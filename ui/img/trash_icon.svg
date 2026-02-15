@@ -1,0 +1,11 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Lid -->
+  <path d="M4 6H20" stroke="#8E8E93" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Handle on lid -->
+  <path d="M9 6V4.5C9 3.67 9.67 3 10.5 3H13.5C14.33 3 15 3.67 15 4.5V6" stroke="#8E8E93" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Body -->
+  <path d="M6 6V19C6 20.1 6.9 21 8 21H16C17.1 21 18 20.1 18 19V6" stroke="#8E8E93" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Inner lines -->
+  <path d="M10 10V17" stroke="#8E8E93" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M14 10V17" stroke="#8E8E93" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

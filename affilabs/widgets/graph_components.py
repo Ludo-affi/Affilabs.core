@@ -42,12 +42,12 @@ class GraphHeader(QWidget):
         )
         layout.addWidget(channels_label)
 
-        # Channel toggles - consistent colors (Black, Red, Black, Green) from prototype
+        # Channel toggles - consistent colors (Black, Red, Blue, Green)
         channel_colors = [
-            ("A", "#1D1D1F"),
-            ("B", "#FF3B30"),
-            ("C", "#1D1D1F"),
-            ("D", "#34C759"),
+            ("A", "#1D1D1F"),      # Channel A: Black
+            ("B", "#FF3B30"),      # Channel B: Red
+            ("C", "#007AFF"),      # Channel C: Blue (FIXED - was incorrectly black)
+            ("D", "#34C759"),      # Channel D: Green
         ]
 
         for ch, color in channel_colors:

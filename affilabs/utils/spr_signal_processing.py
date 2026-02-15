@@ -518,14 +518,14 @@ def auto_detect_injection_point(
 ) -> dict:
     """Automatically detect injection point in SPR sensorgram data.
 
-    Detects the injection as the point of maximum positive slope (steepest rise)
-    in the SPR signal. This corresponds to the analyte binding event.
+    Finds where the signal FIRST breaks from baseline trend (injection start point).
+    Handles both upward shifts (binding events) and downward shifts.
 
     Algorithm:
-    1. Calculate first derivative (slope) using np.diff
-    2. Apply Savitzky-Golay smoothing to remove noise spikes
-    3. Find maximum slope index
-    4. Validate: Check that signal rises significantly after injection
+    1. Fit linear trend to baseline (first N points)
+    2. Calculate deviation from baseline trend for each point
+    3. Find sustained deviation crossing (signal breaks trend)
+    4. This gives injection START, not steepest slope
     5. Return injection time and confidence score
 
     Args:
@@ -533,15 +533,17 @@ def auto_detect_injection_point(
         values: SPR signal array (RU or raw units)
         smoothing_window: Savitzky-Golay window for slope smoothing (default: 11, must be odd)
         baseline_points: Number of initial points to use for baseline mean (default: 50)
-        min_rise_threshold: Minimum signal rise (RU) to confirm injection (default: 2.0)
+        min_rise_threshold: Minimum absolute signal change (RU) to confirm injection (default: 2.0)
 
     Returns:
         dict: {
             'injection_time': float - Detected injection time (seconds), or None if not found
             'injection_index': int - Array index of injection point, or None
             'confidence': float - Detection confidence 0-1 (1=high confidence)
-            'max_slope': float - Maximum slope value at injection (RU/s)
-            'signal_rise': float - Total signal rise after injection (RU)
+            'max_slope': float - Maximum slope value at injection (RU/s, signed)
+            'signal_rise': float - Total signal change after injection (RU, signed)
+            'snr': float - Signal-to-noise ratio (absolute)
+            'baseline_noise': float - Baseline noise level (RU std dev)
         }
 
     Example:
@@ -558,75 +560,139 @@ def auto_detect_injection_point(
                 'confidence': 0.0,
                 'max_slope': 0.0,
                 'signal_rise': 0.0,
+                'snr': 0.0,
+                'baseline_noise': 0.0,
             }
 
-        # Calculate derivative (rate of change)
-        dt = np.diff(times)
-        dy = np.diff(values)
+        # Calculate baseline statistics (from first N points)
+        baseline_end = min(baseline_points, int(len(values) * 0.33))  # Use up to 33% of data for baseline
+        if baseline_end < 10:
+            baseline_end = min(10, len(values) // 2)
 
-        # Avoid division by zero
-        with np.errstate(divide='ignore', invalid='ignore'):
-            slope = np.where(dt > 0, dy / dt, 0)
+        baseline_values = values[:baseline_end]
+        baseline_mean = np.mean(baseline_values)
+        baseline_noise = np.std(baseline_values)
+        baseline_noise = max(baseline_noise, 0.1)  # Minimum noise floor
 
-        # Apply Savitzky-Golay smoothing to slope if enough points
-        if len(slope) >= smoothing_window and smoothing_window >= 3:
-            # Ensure window is odd
-            if smoothing_window % 2 == 0:
-                smoothing_window += 1
-            try:
-                slope_smooth = savgol_filter(slope, window_length=smoothing_window, polyorder=2)
-            except Exception:
-                slope_smooth = slope  # Fallback if SG filter fails
-        else:
-            slope_smooth = slope
+        # Fit linear trend to baseline to account for drift
+        baseline_times = times[:baseline_end]
+        try:
+            baseline_coeffs = np.polyfit(baseline_times, baseline_values, 1)
+            baseline_trend = np.poly1d(baseline_coeffs)
+            baseline_slope = baseline_coeffs[0]  # Drift rate
+        except:
+            baseline_trend = lambda t: baseline_mean
+            baseline_slope = 0.0
 
-        # Find maximum positive slope
-        max_slope_idx = np.argmax(slope_smooth)
-        max_slope_value = slope_smooth[max_slope_idx]
+        # Calculate expected trend for all times
+        expected_trend = baseline_trend(times)
 
-        # Injection time is at the max slope index (shifted by +1 due to np.diff)
-        injection_idx = max_slope_idx
+        # Calculate deviation from baseline trend for each point
+        deviation = values - expected_trend
+        abs_deviation = np.abs(deviation)
+
+        # Threshold for "breaking from baseline" = 2.5 standard deviations
+        # This is more sensitive than the original 3.0 threshold
+        threshold = 2.5 * baseline_noise
+
+        # Find FIRST point where signal deviates from baseline AND is sustained
+        injection_idx = None
+        sustain_window = min(5, max(2, len(values) // 50))  # Adaptive window for sustained check
+
+        for i in range(baseline_end, len(values) - sustain_window):
+            # Check if deviation exceeds threshold at this point
+            if abs_deviation[i] > threshold:
+                # Verify sustained deviation over next few points (signal doesn't drop back)
+                next_deviations = abs_deviation[i:i + sustain_window]
+                if np.mean(next_deviations) > threshold * 0.8:  # Allow some wiggle
+                    injection_idx = i
+                    logger.debug(
+                        f"Auto-detect: Found injection breakpoint at index {i}, "
+                        f"deviation {abs_deviation[i]:.2f} RU (threshold {threshold:.2f})"
+                    )
+                    break
+
+        # Fallback: If no sustained crossing found, use highest deviation point
+        if injection_idx is None:
+            candidate_idx = np.argmax(abs_deviation[baseline_end:]) + baseline_end
+            if abs_deviation[candidate_idx] > threshold * 0.5:  # At least 50% of threshold
+                injection_idx = candidate_idx
+                logger.debug(
+                    f"Auto-detect: Using highest deviation fallback at index {injection_idx}, "
+                    f"deviation {abs_deviation[candidate_idx]:.2f} RU"
+                )
+
+        if injection_idx is None:
+            return {
+                'injection_time': None,
+                'injection_index': None,
+                'confidence': 0.0,
+                'max_slope': 0.0,
+                'signal_rise': 0.0,
+                'snr': 0.0,
+                'baseline_noise': float(baseline_noise),
+            }
+
         injection_time = times[injection_idx]
 
-        # Calculate baseline and signal rise for validation
-        baseline_end = min(baseline_points, injection_idx)
-        if baseline_end > 0:
-            baseline_mean = np.mean(values[:baseline_end])
+        # Calculate slope at injection point for reporting
+        if injection_idx > 0 and injection_idx < len(values) - 1:
+            dt = times[injection_idx + 1] - times[injection_idx - 1]
+            dy = values[injection_idx + 1] - values[injection_idx - 1]
+            max_slope_value = dy / dt if dt > 0 else 0.0
         else:
-            baseline_mean = values[0]
+            dt = times[1] - times[0]
+            dy = values[injection_idx + 1] - values[injection_idx]
+            max_slope_value = dy / dt if dt > 0 else 0.0
 
-        # Signal rise = max value after injection - baseline
+        # Determine injection direction
+        injection_direction = 1 if max_slope_value >= 0 else -1
+
+        # Signal change after injection
         post_injection_values = values[injection_idx:]
-        if len(post_injection_values) > 0:
-            signal_peak = np.max(post_injection_values)
-            signal_rise = signal_peak - baseline_mean
+        if len(post_injection_values) > 5:
+            if injection_direction > 0:
+                signal_extreme = np.max(post_injection_values)
+            else:
+                signal_extreme = np.min(post_injection_values)
+            signal_rise = signal_extreme - baseline_mean
         else:
-            signal_rise = 0.0
+            signal_rise = deviation[injection_idx]
 
-        # Calculate confidence score (0-1)
-        # Factors: slope magnitude, signal rise, position not at edges
-        slope_confidence = min(max_slope_value / 10.0, 1.0)  # Normalize to 0-1 (10 RU/s = max)
-        rise_confidence = min(signal_rise / 20.0, 1.0)  # Normalize (20 RU rise = max)
+        # Signal-to-noise ratio
+        abs_signal_rise = abs(signal_rise)
+        snr = abs_signal_rise / baseline_noise
 
-        # Penalize edge detections (likely false positives)
-        edge_margin = int(len(times) * 0.05)  # 5% from edges
+        # Calculate confidence score
+        # Primary: Deviation from baseline (should be >2.5 sigma)
+        deviation_confidence = min(abs_deviation[injection_idx] / threshold, 1.0)
+
+        # Secondary: Signal sustains after injection (no drop-off)
+        if len(post_injection_values) > 5:
+            post_mean_deviation = np.mean(abs_deviation[injection_idx:injection_idx+10])
+            sustain_confidence = min(post_mean_deviation / threshold, 1.0)
+        else:
+            sustain_confidence = 0.7
+
+        # Penalize edge detections
+        edge_margin = int(len(times) * 0.05)
         if injection_idx < edge_margin or injection_idx > len(times) - edge_margin:
             edge_confidence = 0.3
         else:
             edge_confidence = 1.0
 
-        confidence = (slope_confidence + rise_confidence + edge_confidence) / 3.0
+        # Weighted confidence: Deviation + sustain + edge position
+        confidence = (deviation_confidence * 0.5 + sustain_confidence * 0.3 + edge_confidence * 0.2)
 
-        # Validate: signal must rise above threshold
-        if signal_rise < min_rise_threshold:
-            logger.debug(
-                f"Auto-detection: Weak signal rise ({signal_rise:.2f} < {min_rise_threshold} RU)"
-            )
-            confidence *= 0.5  # Reduce confidence but don't reject
+        # Penalize if signal change is weak
+        if abs_signal_rise < min_rise_threshold:
+            confidence *= 0.5
 
+        direction_label = "rise" if injection_direction > 0 else "fall"
         logger.debug(
             f"Auto-detected injection at t={injection_time:.2f}s "
-            f"(slope: {max_slope_value:.2f} RU/s, rise: {signal_rise:.1f} RU, conf: {confidence:.2f})"
+            f"({direction_label}, deviation: {abs_deviation[injection_idx]:.2f} RU, "
+            f"SNR: {snr:.1f}, change: {signal_rise:.1f} RU, conf: {confidence:.2%})"
         )
 
         return {
@@ -635,6 +701,8 @@ def auto_detect_injection_point(
             'confidence': float(confidence),
             'max_slope': float(max_slope_value),
             'signal_rise': float(signal_rise),
+            'snr': float(snr),
+            'baseline_noise': float(baseline_noise),
         }
 
     except Exception as e:
@@ -645,4 +713,202 @@ def auto_detect_injection_point(
             'confidence': 0.0,
             'max_slope': 0.0,
             'signal_rise': 0.0,
+            'snr': 0.0,
+            'baseline_noise': 0.0,
         }
+
+
+def measure_delta_spr(
+    times: np.ndarray,
+    spr_values: np.ndarray,
+    injection_time: float,
+    contact_time: float,
+    avg_points: int = 3,
+    pre_offset: float = 10.0,
+) -> dict:
+    """Measure delta SPR between pre-injection baseline and contact time endpoint.
+
+    Computes the SPR shift caused by analyte binding during the contact phase.
+    Uses N-point averaging at both measurement points for noise reduction.
+
+    Measurement points:
+      - START: avg_points centered at (injection_time - pre_offset)
+      - END:   avg_points centered at (injection_time + contact_time)
+
+    Args:
+        times: Time array in seconds (RAW_ELAPSED coordinates)
+        spr_values: SPR signal array in RU (resonance units)
+        injection_time: Detected injection time in seconds (RAW_ELAPSED)
+        contact_time: Contact duration in seconds
+        avg_points: Number of points to average at each measurement site (default: 3)
+        pre_offset: Seconds before injection to measure baseline (default: 10.0)
+
+    Returns:
+        dict: {
+            'delta_spr': float or None - SPR shift in RU (end - start), None if measurement failed
+            'start_spr': float - Averaged SPR at pre-injection point (RU)
+            'end_spr': float - Averaged SPR at contact time endpoint (RU)
+            'start_time': float - Actual time of start measurement
+            'end_time': float - Actual time of end measurement
+            'start_indices': list[int] - Indices used for start average
+            'end_indices': list[int] - Indices used for end average
+            'quality': str - 'good', 'extrapolated', or 'failed'
+        }
+
+    Example:
+        >>> result = measure_delta_spr(time_array, spr_array,
+        ...                            injection_time=120.0, contact_time=300.0)
+        >>> print(f"Delta SPR: {result['delta_spr']:.2f} RU")
+    """
+    result = {
+        'delta_spr': None,
+        'start_spr': 0.0,
+        'end_spr': 0.0,
+        'start_time': 0.0,
+        'end_time': 0.0,
+        'start_indices': [],
+        'end_indices': [],
+        'quality': 'failed',
+    }
+
+    try:
+        if len(times) < avg_points or len(spr_values) < avg_points:
+            logger.warning("Insufficient data for delta SPR measurement")
+            return result
+
+        # --- Start measurement: injection_time - pre_offset ---
+        start_target = injection_time - pre_offset
+        start_center_idx = int(np.argmin(np.abs(times - start_target)))
+
+        # Gather avg_points centered on the closest index
+        half = avg_points // 2
+        start_lo = max(0, start_center_idx - half)
+        start_hi = min(len(spr_values), start_lo + avg_points)
+        start_lo = max(0, start_hi - avg_points)  # re-clamp if near end
+
+        start_indices = list(range(start_lo, start_hi))
+        start_spr = float(np.mean(spr_values[start_lo:start_hi]))
+        start_time = float(times[start_center_idx])
+
+        # --- End measurement: injection_time + contact_time ---
+        end_target = injection_time + contact_time
+        end_center_idx = int(np.argmin(np.abs(times - end_target)))
+
+        end_lo = max(0, end_center_idx - half)
+        end_hi = min(len(spr_values), end_lo + avg_points)
+        end_lo = max(0, end_hi - avg_points)
+
+        end_indices = list(range(end_lo, end_hi))
+        end_spr = float(np.mean(spr_values[end_lo:end_hi]))
+        end_time = float(times[end_center_idx])
+
+        # Quality check: how close are actual times to targets?
+        start_gap = abs(start_time - start_target)
+        end_gap = abs(end_time - end_target)
+        # Allow up to 2 seconds of gap (data rate ~4 Hz → 0.25s spacing typical)
+        if start_gap > 2.0 or end_gap > 2.0:
+            quality = 'extrapolated'
+            logger.debug(
+                f"Delta SPR measurement gaps: start={start_gap:.1f}s, end={end_gap:.1f}s"
+            )
+        else:
+            quality = 'good'
+
+        delta = end_spr - start_spr
+
+        result.update({
+            'delta_spr': float(delta),
+            'start_spr': start_spr,
+            'end_spr': end_spr,
+            'start_time': start_time,
+            'end_time': end_time,
+            'start_indices': start_indices,
+            'end_indices': end_indices,
+            'quality': quality,
+        })
+
+        logger.debug(
+            f"Delta SPR measured: {delta:.2f} RU "
+            f"(start={start_spr:.2f} @ t={start_time:.1f}s, "
+            f"end={end_spr:.2f} @ t={end_time:.1f}s, quality={quality})"
+        )
+
+    except Exception as e:
+        logger.warning(f"Delta SPR measurement failed: {e}")
+
+    return result
+
+
+def detect_injection_all_channels(
+    timeline_data: dict,
+    window_start_time: float,
+    window_end_time: float,
+    min_confidence: float = 0.30,
+) -> dict:
+    """Detect injection points on ALL channels within a time window.
+
+    Runs auto_detect_injection_point on each channel independently.
+    Returns per-channel injection times and confidences.
+
+    Args:
+        timeline_data: Dict of channel → ChannelBuffer (from buffer_mgr.timeline_data)
+        window_start_time: Start of detection window (RAW_ELAPSED seconds)
+        window_end_time: End of detection window (RAW_ELAPSED seconds)
+        min_confidence: Minimum confidence threshold (default: 0.30)
+
+    Returns:
+        dict: {
+            'times': {'A': 123.5, 'B': 124.1, ...}  - injection times per channel (only detected)
+            'confidences': {'A': 0.85, 'B': 0.72, ...}  - confidence per channel
+            'all_results': {'A': {...}, 'B': {...}, ...}  - full detection results per channel
+        }
+    """
+    detected_times = {}
+    detected_confidences = {}
+    all_results = {}
+
+    for ch in ['a', 'b', 'c', 'd']:
+        if ch not in timeline_data:
+            continue
+
+        channel_data = timeline_data[ch]
+        if not channel_data or len(channel_data.time) < 10:
+            continue
+
+        times = np.array(channel_data.time)
+        wavelengths = np.array(channel_data.wavelength)
+
+        if len(times) < 10 or len(wavelengths) < 10:
+            continue
+
+        # Mask to detection window
+        window_mask = (times >= window_start_time) & (times <= window_end_time)
+        window_times = times[window_mask]
+        window_wl = wavelengths[window_mask]
+
+        if len(window_times) < 10:
+            continue
+
+        # Convert wavelength to RU for detection
+        baseline = window_wl[0] if len(window_wl) > 0 else 0
+        window_ru = (window_wl - baseline) * 355.0
+
+        result = auto_detect_injection_point(window_times, window_ru)
+        all_results[ch.upper()] = result
+
+        if result['injection_time'] is not None and result['confidence'] >= min_confidence:
+            detected_times[ch.upper()] = result['injection_time']
+            detected_confidences[ch.upper()] = result['confidence']
+            logger.debug(
+                f"Channel {ch.upper()}: injection at {result['injection_time']:.2f}s "
+                f"(confidence: {result['confidence']:.0%})"
+            )
+        else:
+            conf = result.get('confidence', 0)
+            logger.debug(f"Channel {ch.upper()}: no injection detected (confidence: {conf:.0%})")
+
+    return {
+        'times': detected_times,
+        'confidences': detected_confidences,
+        'all_results': all_results,
+    }

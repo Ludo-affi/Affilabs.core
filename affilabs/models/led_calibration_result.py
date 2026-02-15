@@ -126,6 +126,10 @@ class LEDCalibrationResult:
     # Diagnostic data
     ch_error_list: list = field(default_factory=list)  # List of channels that failed QC
 
+    # Convergence iteration counts
+    s_iterations: int = 0  # S-mode convergence iterations
+    p_iterations: int = 0  # P-mode convergence iterations
+
     def validate(self) -> bool:
         """Validate that calibration data is complete.
 
@@ -222,8 +226,10 @@ class LEDCalibrationResult:
             "led_intensities": self.p_mode_intensity,
             "spr_fwhm": getattr(self, "spr_fwhm", {}),
             "num_scans": self.num_scans,
-            "timing_sync": self.timing_sync,  # Step 6 timing synchronization metrics
+            "timing_sync": getattr(self, "timing_sync", {}),  # Legacy timing data (may not exist)
             "detector_serial": self.detector_serial,  # Device serial number for QC history
+            "s_iterations": self.s_iterations,  # Convergence iteration counts
+            "p_iterations": self.p_iterations,
         }
 
     def get_channels(self) -> list:

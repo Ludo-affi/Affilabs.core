@@ -85,9 +85,10 @@ class SpectrumHelpers:
                     logger.error(f"[QUEUE] Ch {channel}: FAILED to queue update: {e}", exc_info=True)
 
             # Update cursor position (via signal to main thread)
-            # Apply display offset to match graph shift (graph skips first point)
+            # Convert raw elapsed → display coords for cursor position on Live Sensorgram
             try:
-                display_elapsed = elapsed_time - app._display_time_offset
+                from affilabs.core.experiment_clock import TimeBase
+                display_elapsed = app.clock.convert(elapsed_time, TimeBase.RAW_ELAPSED, TimeBase.DISPLAY)
                 app.cursor_update_signal.emit(display_elapsed)
             except Exception:
                 pass
@@ -124,8 +125,9 @@ class SpectrumHelpers:
         # Record data point if recording is active
         try:
             if app.recording_mgr.is_recording:
-                # Adjust time to be relative to recording start (t=0 when recording started)
-                relative_time = elapsed_time - app.recording_mgr.recording_start_offset
+                # Convert raw elapsed → recording-relative (t=0 at record start)
+                from affilabs.core.experiment_clock import TimeBase
+                relative_time = app.clock.convert(elapsed_time, TimeBase.RAW_ELAPSED, TimeBase.RECORDING)
 
                 # Record this channel's measurement immediately (simple sequential format)
                 app.recording_mgr.record_data_point({

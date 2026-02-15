@@ -32,7 +32,7 @@ def main():
         ctrl.initialize_pump(PUMP_NUM)
         time.sleep(10.0)
 
-        print("\nSetting MAXIMUM speed profile:", flush=True)
+        print(f"\nSetting MAXIMUM speed profile:", flush=True)
         print(f"  Start:  {START_SPEED} pps")
         print(f"  Top:    {MAX_TOP_SPEED} pps")
         print(f"  Cutoff: {CUTOFF_SPEED} pps")
@@ -48,7 +48,7 @@ def main():
         top_actual = ctrl.get_top_speed(PUMP_NUM)
         start_actual = ctrl.get_start_speed(PUMP_NUM)
         cutoff_actual = ctrl.get_cutoff_speed(PUMP_NUM)
-        print("\nSpeed config read back:")
+        print(f"\nSpeed config read back:")
         print(f"  Start:  {start_actual}")
         print(f"  Top:    {top_actual}")
         print(f"  Cutoff: {cutoff_actual}")
@@ -63,7 +63,7 @@ def main():
 
         t0 = time.perf_counter()
         ctrl.send_command(f"/{PUMP_NUM}P{BIG_MOVE_STEPS}R")
-
+        
         # Wait for idle WITHOUT polling every 0.1s (reduces overhead)
         time.sleep(2.0)  # Let it get going
         while True:
@@ -71,20 +71,20 @@ def main():
             if st and st.get('idle'):
                 break
             time.sleep(1.0)  # Poll less frequently
-
+        
         t1 = time.perf_counter()
 
         pos1 = ctrl.get_plunger_position_raw(PUMP_NUM)
-
+        
         moved = pos1 - pos0
         elapsed = t1 - t0
         pps = abs(moved) / elapsed
 
-        print("\nRESULTS:")
+        print(f"\nRESULTS:")
         print(f"  Moved:   {moved} steps")
         print(f"  Time:    {elapsed:.3f} s")
         print(f"  Speed:   {pps:.0f} pulses/sec")
-        print("\n  For 1 mL syringe (181.49 steps/µL):")
+        print(f"\n  For 1 mL syringe (181.49 steps/µL):")
         print(f"    {pps/181.49:.1f} µL/s = {pps/181.49*60:.0f} µL/min")
 
     finally:
