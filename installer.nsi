@@ -3,9 +3,6 @@
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
-!include "StrFunc.nsh"
-
-${StrContains}  ; Declare StrContains function
 
 ; Installer Information
 !define PRODUCT_NAME "Affilabs-Core"
@@ -82,78 +79,23 @@ Section "Ocean Optics Spectrometer Driver" SecDriver
 
   ; Check if Zadig exists (required for driver installation)
   ${If} ${FileExists} "$INSTDIR\zadig.exe"
-    ; Check if Ocean Optics device is connected using Zadig's list command
-    nsExec::ExecToStack '"$INSTDIR\zadig.exe" --list-devices'
-    Pop $0 ; Return code
-    Pop $1 ; Output
-
-    ; Check if Ocean Optics device (Flame-T, USB4000, etc.) is in the device list
-    ${If} $1 != ""
-      StrCpy $3 0  ; Flag for device found
+    DetailPrint "Zadig driver tool available"
+    MessageBox MB_YESNO "Would you like to install the WinUSB driver for Ocean Optics spectrometer now?$\n$\n(Connect your spectrometer first if possible)" IDYES LaunchZadig IDNO SkipDriver
+    
+    LaunchZadig:
+      DetailPrint "Launching Zadig..."
+      MessageBox MB_OK "Zadig will now open.$\n$\nSteps to install WinUSB driver:$\n1. Connect your Ocean Optics spectrometer$\n2. Click the refresh icon if device doesn't appear$\n3. Select your device (USB4000, Flame-T, etc.)$\n4. Select 'WinUSB' from the driver dropdown$\n5. Click 'Install Driver'$\n$\nClose Zadig when done."
+      ExecWait '"$INSTDIR\zadig.exe"'
       
-      ; Check for Flame-T
-      ${StrContains} $2 "Flame" $1
-      ${If} $2 != ""
-        StrCpy $3 1
-        StrCpy $4 "Flame-T"
-      ${EndIf}
-      
-      ; Check for USB4000
-      ${StrContains} $2 "USB4000" $1
-      ${If} $2 != ""
-        StrCpy $3 1
-        StrCpy $4 "USB4000"
-      ${EndIf}
-      
-      ${If} $3 == 1
-        DetailPrint "$4 detected! Installing WinUSB driver..."
-        MessageBox MB_YESNO "Ocean Optics $4 detected!$\n$\nInstall WinUSB driver automatically?" IDYES InstallAuto IDNO InstallManual
-        
-        InstallAuto:
-          nsExec::ExecToLog '"$INSTDIR\zadig.exe" --device "$4" --driver winusb --install --timeout 60'
-          Pop $0
-          ${If} $0 == 0
-            DetailPrint "$4 driver installed successfully!"
-            MessageBox MB_OK "$4 WinUSB driver installed!$\n$\nYour spectrometer is ready to use."
-          ${Else}
-            DetailPrint "Automatic driver installation failed (code: $0)"
-            MessageBox MB_OK "Automatic installation failed.$\n$\nZadig will open for manual installation."
-            Goto InstallManual
-          ${EndIf}
-          Goto DriverDone
-          
-        InstallManual:
-          DetailPrint "Launching Zadig for manual driver installation..."
-          MessageBox MB_OK "Zadig will now open.$\n$\nSteps:$\n1. Select '$4' from the device list$\n2. Ensure 'WinUSB' is selected as driver$\n3. Click 'Install Driver'$\n4. Wait for completion"
-          ExecWait '"$INSTDIR\zadig.exe"'
-          
-        DriverDone:
-      ${Else}
-        DetailPrint "Ocean Optics device not currently connected"
-        MessageBox MB_YESNO "Ocean Optics spectrometer not detected.$\n$\nZadig has been installed for future use.$\n$\nLaunch Zadig now to prepare?" IDYES RunZadig IDNO SkipZadig
-        
-        RunZadig:
-          MessageBox MB_OK "Zadig will open.$\n$\nConnect your spectrometer, then:$\n1. Select it from the device list$\n2. Choose 'WinUSB' driver$\n3. Click 'Install Driver'"
-          ExecWait '"$INSTDIR\zadig.exe"'
-          
-        SkipZadig:
-          DetailPrint "Zadig available at: $INSTDIR\zadig.exe"
-      ${EndIf}
-    ${Else}
-      DetailPrint "Could not query devices"
-      MessageBox MB_YESNO "Cannot auto-detect devices.$\n$\nOpen Zadig to manually install driver?" IDYES OpenZadig IDNO SkipDriverInstall
-      
-      OpenZadig:
-        ExecWait '"$INSTDIR\zadig.exe"'
-        
-      SkipDriverInstall:
-    ${EndIf}
+    SkipDriver:
+      DetailPrint "Zadig available at: $INSTDIR\zadig.exe"
   ${Else}
-    DetailPrint "WARNING: zadig.exe not found in installer!"
-    MessageBox MB_OK "WARNING: Zadig driver installer is missing!$\n$\nYou will need to manually install WinUSB driver for your spectrometer.$\n$\nDownload Zadig from: https://zadig.akeo.ie/"
+    DetailPrint "WARNING: zadig.exe not found"
+    MessageBox MB_OK "WARNING: Zadig driver tool is missing!$\n$\nYou can download it from: https://zadig.akeo.ie/$\n$\nTo install WinUSB driver for your spectrometer, run Zadig manually."
   ${EndIf}
 
 SectionEnd
+
 
 ; Uninstaller Section
 Section "Uninstall"

@@ -100,7 +100,7 @@ def parse_sample_info(cycle: Cycle) -> dict[str, Any]:
             # Filter out common cycle type keywords
             if sample_id_candidate.lower() not in ["association", "dissociation", "wash",
                                                      "baseline", "blocking", "regeneration",
-                                                     "concentration", "custom"]:
+                                                     "binding", "kinetic", "concentration", "custom"]:
                 info["sample_id"] = sample_id_candidate
                 break
 

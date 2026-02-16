@@ -32,7 +32,7 @@ class RecordingManager(QObject):
     recording_error = Signal(str)  # Error message
     event_logged = Signal(str, float)  # Event description, timestamp
 
-    def __init__(self, data_mgr, buffer_mgr=None) -> None:
+    def __init__(self, data_mgr, buffer_mgr=None, user_manager=None) -> None:
         super().__init__()
 
         # Reference to data acquisition manager
@@ -40,6 +40,9 @@ class RecordingManager(QObject):
 
         # Reference to buffer manager (for Channels XY export)
         self.buffer_mgr = buffer_mgr
+
+        # User profile manager (for experiment count tracking)
+        self.user_manager = user_manager
 
         # Delegate services (Separation of Concerns)
         self.data_collector = DataCollector()  # Handles in-memory data accumulation
@@ -110,20 +113,9 @@ class RecordingManager(QObject):
 
                 # Increment experiment count for current user
                 try:
-                    # Try to get user_profile_manager from various possible locations
-                    user_mgr = None
-                    if hasattr(self, "user_profile_manager"):
-                        user_mgr = self.user_profile_manager
-                    elif hasattr(self.data_mgr, "user_profile_manager"):
-                        user_mgr = self.data_mgr.user_profile_manager
-                    elif hasattr(self.data_mgr, "app") and hasattr(
-                        self.data_mgr.app, "user_profile_manager"
-                    ):
-                        user_mgr = self.data_mgr.app.user_profile_manager
-
-                    if user_mgr:
-                        new_count = user_mgr.increment_experiment_count()
-                        logger.info(f"✅ Experiment count incremented: {new_count}")
+                    if self.user_manager:
+                        new_count = self.user_manager.increment_experiment_count()
+                        logger.info(f"Experiment count incremented: {new_count}")
                 except Exception as e:
                     logger.warning(f"Could not increment experiment count: {e}")
             else:
@@ -165,100 +157,30 @@ class RecordingManager(QObject):
             filepath = Path(self.current_file)
 
             if filepath.suffix == ".xlsx":
-                # Create Excel with multiple sheets
-                with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
-                    # Raw data sheet
-                    df_raw.to_excel(writer, sheet_name="Raw Data", index=False)
-
-                    # Cycles sheet if available
-                    if self.data_collector.cycles:
-                        df_cycles = pd.DataFrame(self.data_collector.cycles)
-
-                        # Deduplicate cycles to prevent duplicate rows in Excel
-                        if "cycle_id" in df_cycles.columns:
-                            original_count = len(df_cycles)
-                            df_cycles = df_cycles.drop_duplicates(subset=["cycle_id"], keep="first")
-                            if len(df_cycles) < original_count:
-                                logger.warning(
-                                    f"Removed {original_count - len(df_cycles)} duplicate cycle rows during export"
-                                )
-                        elif "cycle_num" in df_cycles.columns:
-                            original_count = len(df_cycles)
-                            df_cycles = df_cycles.drop_duplicates(
-                                subset=["cycle_num"], keep="first"
-                            )
-                            if len(df_cycles) < original_count:
-                                logger.warning(
-                                    f"Removed {original_count - len(df_cycles)} duplicate cycle rows during export"
-                                )
-
-                        df_cycles.to_excel(writer, sheet_name="Cycles", index=False)
-
-                    # Flags sheet if available
-                    if self.data_collector.flags:
-                        df_flags = pd.DataFrame(self.data_collector.flags)
-                        df_flags.to_excel(writer, sheet_name="Flags", index=False)
-
-                    # Events sheet if available
-                    if self.data_collector.events:
-                        df_events = pd.DataFrame(self.data_collector.events)
-                        df_events.to_excel(writer, sheet_name="Events", index=False)
-
-                    # Metadata sheet
-                    if self.data_collector.metadata:
-                        df_meta = pd.DataFrame([self.data_collector.metadata])
-                        df_meta.to_excel(writer, sheet_name="Metadata", index=False)
-
-                    # Channels XY sheet (wide format: Time_A, SPR_A, Time_B, SPR_B, etc.)
-                    # This matches the Export button format for consistency
-                    if self.buffer_mgr is not None:
-                        try:
-                            import numpy as np
-
-                            channels = ["a", "b", "c", "d"]
-                            max_len = 0
-
-                            # Find max length across all channels
-                            for ch in channels:
-                                if hasattr(self.buffer_mgr.cycle_data[ch], "time"):
-                                    max_len = max(max_len, len(self.buffer_mgr.cycle_data[ch].time))
-
-                            if max_len > 0:
-                                sheet_data = {}
-                                for ch in channels:
-                                    ch_upper = ch.upper()
-
-                                    # Get time and SPR data for this channel
-                                    if hasattr(self.buffer_mgr.cycle_data[ch], "time"):
-                                        ch_time = np.array(self.buffer_mgr.cycle_data[ch].time)
-                                        ch_spr = np.array(self.buffer_mgr.cycle_data[ch].spr)
-
-                                        # Pad to max length if needed
-                                        if len(ch_time) < max_len:
-                                            ch_time = np.pad(
-                                                ch_time,
-                                                (0, max_len - len(ch_time)),
-                                                constant_values=np.nan,
-                                            )
-                                        if len(ch_spr) < max_len:
-                                            ch_spr = np.pad(
-                                                ch_spr,
-                                                (0, max_len - len(ch_spr)),
-                                                constant_values=np.nan,
-                                            )
-                                    else:
-                                        # Channel has no data - fill with NaN
-                                        ch_time = np.full((max_len,), np.nan)
-                                        ch_spr = np.full((max_len,), np.nan)
-
-                                    sheet_data[f"Time_{ch_upper}"] = ch_time
-                                    sheet_data[f"SPR_{ch_upper}"] = ch_spr
-
-                                df_xy = pd.DataFrame(sheet_data)
-                                df_xy.to_excel(writer, sheet_name="Channels XY", index=False)
-                                logger.debug(f"Created Channels XY sheet with {max_len} rows")
-                        except Exception as e:
-                            logger.warning(f"Could not create Channels XY sheet: {e}")
+                # Use dedicated Excel exporter service for consistency across all export paths
+                # Build Channels XY sheet for export
+                try:
+                    from affilabs.utils.export_helpers import ExportHelpers
+                    df_xy = ExportHelpers.build_channels_xy_dataframe(
+                        self.buffer_mgr,
+                        channels=["a", "b", "c", "d"]
+                    ) if self.buffer_mgr else None
+                except Exception as e:
+                    logger.warning(f"Could not build Channels XY sheet: {e}")
+                    df_xy = None
+                
+                self.excel_exporter.export_to_excel(
+                    filepath=filepath,
+                    raw_data_rows=self.data_collector.raw_data_rows,
+                    cycles=self.data_collector.cycles,
+                    flags=self.data_collector.flags,
+                    events=self.data_collector.events,
+                    analysis_results=[],  # Not used in recording flow
+                    metadata=self.data_collector.metadata,
+                    recording_start_time=self.data_collector.recording_start_time,
+                    alignment_data=None,  # Not used in recording flow
+                    channels_xy_dataframe=df_xy
+                )
 
             elif filepath.suffix == ".csv":
                 # CSV only saves raw data
@@ -358,32 +280,6 @@ class RecordingManager(QObject):
 
         except Exception as e:
             logger.error(f"Failed to log event: {e}")
-
-    def export_to_excel(self, csv_path: Path, excel_path: Path | None = None) -> None:
-        """Export CSV data to Excel format (legacy method for compatibility).
-
-        Args:
-            csv_path: Path to CSV file
-            excel_path: Optional output path for Excel file
-
-        """
-        try:
-            import pandas as pd
-
-            if excel_path is None:
-                excel_path = csv_path.with_suffix(".xlsx")
-
-            # Read CSV
-            df = pd.read_csv(csv_path)
-
-            # Write to Excel
-            df.to_excel(excel_path, index=False, engine="openpyxl")
-
-            logger.info(f"Data exported to Excel: {excel_path}")
-
-        except Exception as e:
-            logger.exception(f"Failed to export to Excel: {e}")
-            self.recording_error.emit(f"Failed to export to Excel: {e}")
 
     def add_cycle(self, cycle_data: dict) -> None:
         """Add cycle information to recording.

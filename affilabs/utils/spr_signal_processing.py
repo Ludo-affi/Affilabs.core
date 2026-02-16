@@ -513,8 +513,9 @@ def auto_detect_injection_point(
     times: np.ndarray,
     values: np.ndarray,
     smoothing_window: int = 11,
-    baseline_points: int = 50,
+    baseline_points: int = 5,
     min_rise_threshold: float = 2.0,
+    sensitivity_factor: float = 1.0,
 ) -> dict:
     """Automatically detect injection point in SPR sensorgram data.
 
@@ -534,6 +535,9 @@ def auto_detect_injection_point(
         smoothing_window: Savitzky-Golay window for slope smoothing (default: 11, must be odd)
         baseline_points: Number of initial points to use for baseline mean (default: 50)
         min_rise_threshold: Minimum absolute signal change (RU) to confirm injection (default: 2.0)
+        sensitivity_factor: Scales detection sensitivity. <1.0 = more sensitive
+            (lower thresholds, fewer sustain points needed), >1.0 = less sensitive.
+            Used by method mode: manual→0.6, semi-automated→1.0, priority→0.5.
 
     Returns:
         dict: {
@@ -593,11 +597,17 @@ def auto_detect_injection_point(
 
         # Threshold for "breaking from baseline" = 2.5 standard deviations
         # This is more sensitive than the original 3.0 threshold
-        threshold = 2.5 * baseline_noise
+        # sensitivity_factor scales: <1.0 lowers threshold (more sensitive), >1.0 raises it
+        threshold = 2.5 * baseline_noise * sensitivity_factor
+
+        # Scale min_rise_threshold by sensitivity_factor too
+        effective_rise_threshold = min_rise_threshold * sensitivity_factor
 
         # Find FIRST point where signal deviates from baseline AND is sustained
         injection_idx = None
-        sustain_window = min(5, max(2, len(values) // 50))  # Adaptive window for sustained check
+        # Fewer sustain points needed when sensitivity_factor < 1.0
+        base_sustain = min(5, max(2, len(values) // 50))
+        sustain_window = max(2, int(base_sustain * sensitivity_factor))
 
         for i in range(baseline_end, len(values) - sustain_window):
             # Check if deviation exceeds threshold at this point
@@ -685,7 +695,7 @@ def auto_detect_injection_point(
         confidence = (deviation_confidence * 0.5 + sustain_confidence * 0.3 + edge_confidence * 0.2)
 
         # Penalize if signal change is weak
-        if abs_signal_rise < min_rise_threshold:
+        if abs_signal_rise < effective_rise_threshold:
             confidence *= 0.5
 
         direction_label = "rise" if injection_direction > 0 else "fall"
@@ -843,7 +853,7 @@ def detect_injection_all_channels(
     timeline_data: dict,
     window_start_time: float,
     window_end_time: float,
-    min_confidence: float = 0.30,
+    min_confidence: float = 0.70,
 ) -> dict:
     """Detect injection points on ALL channels within a time window.
 

@@ -20,7 +20,7 @@ class CycleConfigViewModel:
     independent of how they're displayed in the UI.
 
     Attributes:
-        cycle_type: Type of experiment (Auto-read, Baseline, Immobilization, Concentration)
+        cycle_type: Type of experiment (Auto-read, Baseline, Immobilization, Binding, Kinetic)
         cycle_length_min: Duration in minutes (2, 5, 15, 30, 60)
         note: User notes with optional channel tags (max 250 chars)
         units: Concentration units (M, mM, µM, nM, pM, mg/mL, µg/mL, ng/mL)
@@ -54,7 +54,7 @@ class CycleConfigViewModel:
         errors = []
 
         # Validate cycle type
-        valid_types = ["Auto-read", "Baseline", "Immobilization", "Concentration"]
+        valid_types = ["Auto-read", "Baseline", "Immobilization", "Binding", "Kinetic"]
         if self.cycle_type not in valid_types:
             errors.append(
                 f"Invalid cycle type: {self.cycle_type}. Must be one of {valid_types}",

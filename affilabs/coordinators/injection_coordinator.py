@@ -170,15 +170,15 @@ class InjectionCoordinator(QObject):
         # Determine injection mode: explicit setting takes precedence
         is_manual_mode = self._determine_injection_mode(cycle)
 
-        # For concentration cycles in manual mode, show schedule upfront
+        # For binding/kinetic cycles in manual mode, show schedule upfront
         if (is_manual_mode and
-            cycle.type == "Concentration" and
+            cycle.type in ("Binding", "Kinetic", "Concentration") and
             cycle.planned_concentrations and
             cycle.injection_count == 0):  # Only show at cycle start
 
             schedule_dialog = ConcentrationScheduleDialog(cycle, parent_widget)
             if schedule_dialog.exec() != ConcentrationScheduleDialog.DialogCode.Accepted:
-                logger.info("User cancelled concentration cycle")
+                logger.info("User cancelled binding/kinetic cycle")
                 return False
 
         # Execute appropriate injection mode
@@ -252,23 +252,41 @@ class InjectionCoordinator(QObject):
         if not self._is_p4spr:
             self._open_valves_for_manual_injection(sample_info["channels"])
 
-        # For concentration cycles, show injection number
+        # For binding/kinetic cycles, show injection number
         injection_num = None
         total_injections = None
-        if cycle.type == "Concentration" and cycle.planned_concentrations:
+        if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
             injection_num = cycle.injection_count + 1
             total_injections = len(cycle.planned_concentrations)
-            logger.info(f"  Concentration Cycle: Injection {injection_num}/{total_injections}")
+            logger.info(f"  {cycle.type} Cycle: Injection {injection_num}/{total_injections}")
 
         # Prepare channels for real-time detection
-        self._detection_channels = "ABCD" if self._is_p4spr else (sample_info.get("channels") or "AC")
+        # Use cycle's target_channels if explicitly set, otherwise derive from concentrations or fall back to hardware default
+        if getattr(cycle, 'target_channels', None):
+            self._detection_channels = cycle.target_channels
+        elif getattr(cycle, 'concentrations', None):
+            # Auto-derive from concentrations dict (e.g., {"A": 50, "C": 40} → "AC")
+            self._detection_channels = "".join(sorted(cycle.concentrations.keys()))
+        else:
+            self._detection_channels = "ABCD" if self._is_p4spr else (sample_info.get("channels") or "AC")
 
         # Save current cycle for detection completion
         self._current_cycle = cycle
 
         self.injection_started.emit("manual")
 
-        # ── Show BLOCKING dialog ──
+        # Check method mode - only show dialog for manual injections
+        method_mode = getattr(cycle, 'method_mode', None)
+        
+        # Skip dialog for pump/semi-automated modes (injection is automatic)
+        if method_mode in ['pump', 'semi-automated']:
+            logger.info(f"Pump mode ({method_mode}) - skipping manual injection dialog")
+            # Auto-complete for pump modes (detection happens in background)
+            self._close_valves_after_manual_injection()
+            self.injection_completed.emit()
+            return True
+
+        # ── Show BLOCKING dialog for manual injections ──
         # ManualInjectionDialog.exec() blocks but still processes Qt events
         # (acquisition, graph updates continue). Dialog handles its own 60s
         # detection window.
@@ -281,13 +299,15 @@ class InjectionCoordinator(QObject):
             total_injections=total_injections,
             buffer_mgr=self.buffer_mgr,
             channels=self._detection_channels,
+            detection_priority=getattr(cycle, 'detection_priority', 'auto'),
+            method_mode=method_mode,
         )
 
         result = dialog.exec()  # Blocks until user acts or 60s expires
 
         if result == ManualInjectionDialog.DialogCode.Accepted:
             if dialog.detected_injection_time is not None:
-                # Dialog auto-detected injection — place flag & scan channels
+                # Dialog auto-detected injection — place flag for primary channel
                 logger.info(
                     f"✓ Injection auto-detected: channel {dialog.detected_channel.upper()} "
                     f"at t={dialog.detected_injection_time:.1f}s "
@@ -298,11 +318,27 @@ class InjectionCoordinator(QObject):
                     dialog.detected_injection_time,
                     dialog.detected_confidence,
                 )
-                self._window_start_time = dialog.window_start_time
-                self._scan_all_channels_for_injection()
 
-                # Track injection count for concentration cycles
-                if cycle.type == "Concentration" and cycle.planned_concentrations:
+                # Use dialog's per-channel results (already scanned during grace period)
+                if dialog._detected_channels_results:
+                    cycle.injection_time_by_channel = {
+                        ch: r['time'] for ch, r in dialog._detected_channels_results.items()
+                    }
+                    cycle.injection_confidence_by_channel = {
+                        ch: r['confidence'] for ch, r in dialog._detected_channels_results.items()
+                    }
+                    logger.info(
+                        f"Per-channel injection times from dialog: "
+                        f"{list(cycle.injection_time_by_channel.keys())} "
+                        f"(confidences: {cycle.injection_confidence_by_channel})"
+                    )
+                else:
+                    # Fallback: retroactive scan if dialog didn't capture per-channel
+                    self._window_start_time = dialog.window_start_time
+                    self._scan_all_channels_for_injection()
+
+                # Track injection count for binding/kinetic cycles
+                if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
                     cycle.injection_count += 1
                     logger.info(
                         f"  Injection count: {cycle.injection_count}/"
@@ -311,7 +347,7 @@ class InjectionCoordinator(QObject):
             else:
                 # Timeout — no injection detected, still count
                 logger.warning("60s window expired — no injection peak detected")
-                if cycle.type == "Concentration" and cycle.planned_concentrations:
+                if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
                     cycle.injection_count += 1
 
             # Close valves and emit completed (triggers contact countdown)
@@ -433,8 +469,8 @@ class InjectionCoordinator(QObject):
 
                 result = auto_detect_injection_point(window_times, window_ru)
 
-                # Accept detection if confidence > 30%
-                if result['injection_time'] is not None and result['confidence'] > 0.30:
+                # Accept detection if confidence > 70%
+                if result['injection_time'] is not None and result['confidence'] > 0.70:
                     self._on_injection_detected(
                         result['injection_time'],
                         result['confidence'],
@@ -479,9 +515,9 @@ class InjectionCoordinator(QObject):
         # --- Per-channel injection scan ---
         self._scan_all_channels_for_injection()
 
-        # Track injection count for concentration cycles
+        # Track injection count for binding/kinetic cycles
         cycle = self._current_cycle
-        if cycle and cycle.type == "Concentration" and cycle.planned_concentrations:
+        if cycle and cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
             cycle.injection_count += 1
             logger.info(f"  Injection count: {cycle.injection_count}/{len(cycle.planned_concentrations)}")
 
@@ -520,7 +556,7 @@ class InjectionCoordinator(QObject):
                 self.buffer_mgr.timeline_data,
                 self._window_start_time,
                 window_end,
-                min_confidence=0.30,
+                min_confidence=0.70,
             )
 
             # Store per-channel injection times on cycle
@@ -572,7 +608,7 @@ class InjectionCoordinator(QObject):
         cycle = self._current_cycle
         if cycle and not detected:
             # Track injection count even without detection
-            if cycle.type == "Concentration" and cycle.planned_concentrations:
+            if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
                 cycle.injection_count += 1
                 logger.info(f"  Injection count: {cycle.injection_count}/{len(cycle.planned_concentrations)}")
 

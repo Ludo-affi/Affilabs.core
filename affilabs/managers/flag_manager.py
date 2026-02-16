@@ -1,31 +1,42 @@
-"""Flag Manager - Handles flag marker management.
+"""Flag Manager - Unified flag marker management for all contexts.
 
 ARCHITECTURE LAYER: Manager (Business Logic)
 
+This manager is the SINGLE SOURCE OF TRUTH for all flags in the application.
+Flags have a 'context' field: 'live' (acquisition) or 'edits' (post-hoc).
+
+DESIGN PRINCIPLE:
+- During LIVE acquisition, flags are placed by SOFTWARE only (injection detection,
+  cycle events). Users cannot manually add flags on the live graph — the focus
+  should remain on acquisition, not annotation.
+- In the EDITS tab, users CAN add, adjust (arrow-key nudge with data snap),
+  and delete flags. This is where precise flag placement happens.
+- Both contexts share the same Flag domain model, visual appearance, and
+  selection/movement behavior (yellow ring highlight, data-point snapping).
+
 This manager encapsulates all flag-related logic:
-- Adding/removing flag markers on cycle graph
+- Adding/removing flag markers on cycle graph (live) and edits graph
 - Flag type management (injection, wash, spike)
-- Injection alignment and channel time shifts
-- Flag selection and keyboard movement
+- Injection alignment and channel time shifts (live context)
+- Flag selection and keyboard movement (both contexts)
 - Auto-calculated markers (wash deadline, etc.)
-- Exporting flags to recording manager
+- Exporting flags to recording manager / Excel
 - Clearing flags for new cycles
 
-UNIFIED MARKER SYSTEM:
-- User-placed flags: InjectionFlag, WashFlag, SpikeFlag (domain models)
-- Auto-markers: Wash deadline, injection deadline (AutoMarker, calculated by system)
-- Both stored in unified marker list for selection/movement
-
 DEPENDENCIES:
-- main_window.cycle_of_interest_graph (UI component)
+- main_window.cycle_of_interest_graph (live UI component)
+- main_window.edits_primary_graph (edits UI component)
 - recording_mgr (for export)
 - buffer_mgr (for cycle data)
 
 USAGE:
     flag_mgr = FlagManager(app_instance)
-    flag_mgr.show_flag_type_menu(event, channel, time, spr)
-    flag_mgr.create_auto_marker(marker_type, time, contact_time)
-    flag_mgr.clear_all_flags()
+    # Software places live flags:
+    flag_mgr.add_flag_marker(channel, time, spr, 'injection')
+    # User places edits flags:
+    flag_mgr.add_edits_flag(channel, time, spr, 'injection')
+    flag_mgr.clear_all_flags()  # Only clears live flags
+    flag_mgr.clear_edits_flags()  # Only clears edits flags
 """
 
 from __future__ import annotations
@@ -117,6 +128,10 @@ class FlagManager:
         self._contact_timer_dragging = False
         self._contact_timer_drag_offset = (0, 0)
 
+        # Edits-context state
+        self._edits_highlight_ring = None
+        self._edits_keyboard_filter = None
+
         # Install keyboard event filter for flag movement
         self._setup_keyboard_event_filter()
 
@@ -198,7 +213,11 @@ class FlagManager:
         self.app.main_window._on_flag_channel_selected(channel)
 
     def add_flag_marker(self, channel: str, time_val: float, spr_val: float, flag_type: str):
-        """Add a visual flag marker to the cycle graph.
+        """Add a visual flag marker to the cycle graph (software-placed, live context).
+
+        This is called by the software during acquisition (e.g., injection detection,
+        wash events). Users cannot manually add flags on the live graph — they can
+        adjust flags in the Edits tab.
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
@@ -804,15 +823,18 @@ class FlagManager:
             logger.debug(f"Could not make timer draggable: {e}")
 
     def clear_all_flags(self):
-        """Clear all flags and auto-markers when user clicks Clear Flags button."""
-        logger.info("[FlagManager] Clearing all flags and markers")
+        """Clear all live flags and auto-markers when user clicks Clear Flags button.
+
+        Preserves edits-context flags — those are managed separately.
+        """
+        logger.info("[FlagManager] Clearing all live flags and markers")
         try:
-            # Remove all visual markers from cycle graph
-            for flag in self._flag_markers:
+            # Remove only LIVE visual markers from cycle graph
+            live_flags = [f for f in self._flag_markers if f.context == "live"]
+            for flag in live_flags:
                 if flag.marker is not None:
                     self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
-
-            self._flag_markers.clear()
+                self._flag_markers.remove(flag)
 
             # Remove highlight ring if present
             if self._flag_highlight_ring is not None:
@@ -844,17 +866,17 @@ class FlagManager:
             logger.error(f"[ERROR] Error clearing flags: {e}", exc_info=True)
 
     def clear_flags_for_new_cycle(self):
-        """Clear all flags and auto-markers when a cycle ends to start fresh for the next cycle.
+        """Clear all live flags and auto-markers when a cycle ends to start fresh.
 
-        This also resets channel time shifts to default (live sensorgram timing).
-        Flags are cycle-specific, so timing adjustments should not carry over.
+        Preserves edits-context flags. Resets channel time shifts.
         """
         try:
-            # Remove all flag markers from cycle graph
-            for flag in self._flag_markers:
+            # Remove only LIVE flag markers from cycle graph
+            live_flags = [f for f in self._flag_markers if f.context == "live"]
+            for flag in live_flags:
                 if flag.marker is not None:
                     self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
-            self._flag_markers.clear()
+                self._flag_markers.remove(flag)
 
             # Remove flag highlight ring if present
             if self._flag_highlight_ring is not None:
@@ -889,10 +911,380 @@ class FlagManager:
         except Exception as e:
             logger.debug(f"Error clearing flags for new cycle: {e}")
 
-    def get_flag_data_for_export(self) -> list[dict]:
+    def get_flag_data_for_export(self, context: str | None = None) -> list[dict]:
         """Get all flag data in format suitable for export.
 
+        Args:
+            context: If provided, only return flags with this context ('live' or 'edits').
+                     If None, return all flags.
+
         Returns:
-            List of flag dicts with channel, time, spr, type
+            List of flag dicts with channel, time, spr, type, context
         """
-        return [flag.to_export_dict() for flag in self._flag_markers]
+        flags = self._flag_markers
+        if context:
+            flags = [f for f in flags if f.context == context]
+        return [flag.to_export_dict() for flag in flags]
+
+    # ── Edits-context flag management ──────────────────────────────────
+
+    def get_edits_flags(self) -> list[Flag]:
+        """Return only flags belonging to the edits context."""
+        return [f for f in self._flag_markers if f.context == "edits"]
+
+    def get_live_flags(self) -> list[Flag]:
+        """Return only flags belonging to the live context."""
+        return [f for f in self._flag_markers if f.context == "live"]
+
+    def add_edits_flag(self, channel: str, time_val: float, spr_val: float, flag_type: str):
+        """Add a flag in the Edits context (user-placed during post-hoc analysis).
+
+        Args:
+            channel: Channel identifier ('A', 'B', 'C', 'D')
+            time_val: Time position for flag
+            spr_val: SPR value at flag position
+            flag_type: Type of flag ('injection', 'wash', 'spike')
+        """
+        try:
+            # Create Flag instance in edits context
+            flag = create_flag(
+                flag_type=flag_type,
+                channel=channel.upper(),
+                time=time_val,
+                spr=spr_val,
+                context="edits",
+            )
+
+            # Create visual marker with same appearance as live flags
+            marker = pg.ScatterPlotItem(
+                [flag.time],
+                [flag.spr],
+                symbol=flag.marker_symbol,
+                size=flag.marker_size,
+                brush=pg.mkBrush(flag.marker_color),
+                pen=pg.mkPen("#FFFFFF", width=3),
+            )
+            marker.setZValue(100)  # Draw on top of data
+
+            # Add to Edits graph
+            edits_graph = self._get_edits_graph()
+            if edits_graph is not None:
+                edits_graph.addItem(marker)
+
+            flag.marker = marker
+            self._flag_markers.append(flag)
+
+            logger.info(
+                f"🚩 {flag_type.capitalize()} flag added in Edits: "
+                f"Channel {channel.upper()} at t={time_val:.2f}s"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to add edits flag: {e}")
+
+    def remove_edits_flag(self, flag_idx_in_edits: int):
+        """Remove a flag from the Edits context by its index within edits flags.
+
+        Args:
+            flag_idx_in_edits: Index within the edits-only flag list
+        """
+        edits_flags = self.get_edits_flags()
+        if flag_idx_in_edits < 0 or flag_idx_in_edits >= len(edits_flags):
+            return
+
+        flag = edits_flags[flag_idx_in_edits]
+
+        # Remove visual marker from Edits graph
+        edits_graph = self._get_edits_graph()
+        if edits_graph is not None and flag.marker is not None:
+            edits_graph.removeItem(flag.marker)
+
+        # Remove highlight if this was selected
+        if self._selected_marker_idx is not None:
+            selected_edits = [
+                i for i, f in enumerate(self._flag_markers) if f.context == "edits"
+            ]
+            if (
+                flag_idx_in_edits < len(selected_edits)
+                and selected_edits[flag_idx_in_edits] == self._selected_marker_idx
+            ):
+                self._remove_edits_highlight()
+                self._selected_marker_idx = None
+                self._selected_marker_type = None
+
+        # Remove from unified storage
+        self._flag_markers.remove(flag)
+        logger.info(f"🚩 Removed {flag.flag_type} flag from Edits")
+
+    def select_edits_flag(self, flag_idx_in_edits: int):
+        """Select an edits-context flag for keyboard movement/deletion.
+
+        Args:
+            flag_idx_in_edits: Index within the edits-only flag list
+        """
+        edits_flags = self.get_edits_flags()
+        if flag_idx_in_edits < 0 or flag_idx_in_edits >= len(edits_flags):
+            return
+
+        # Deselect any previously selected edits flag
+        self.deselect_edits_flag()
+
+        flag = edits_flags[flag_idx_in_edits]
+
+        # Find the global index in _flag_markers
+        global_idx = self._flag_markers.index(flag)
+        self._selected_marker_type = "edits_flag"
+        self._selected_marker_idx = global_idx
+
+        # Highlight with yellow ring (same as live)
+        self._highlight_edits_flag(flag)
+
+        logger.debug(f"Selected {flag.flag_type} flag at t={flag.time:.2f}s in Edits")
+
+    def deselect_edits_flag(self):
+        """Deselect currently selected edits flag."""
+        if self._selected_marker_type == "edits_flag":
+            self._remove_edits_highlight()
+            self._selected_marker_type = None
+            self._selected_marker_idx = None
+
+    def move_edits_flag(self, direction: int):
+        """Move the selected edits flag left (-1) or right (+1).
+
+        Snaps to nearest data point in the edits graph data for accuracy.
+        Falls back to ±1 second if no data is available for snapping.
+
+        Args:
+            direction: -1 for left, +1 for right
+        """
+        if self._selected_marker_type != "edits_flag":
+            return
+        if self._selected_marker_idx is None or self._selected_marker_idx >= len(self._flag_markers):
+            return
+
+        flag = self._flag_markers[self._selected_marker_idx]
+
+        # Try to snap to data points in the edits graph
+        new_time, new_spr = self._snap_edits_flag_to_data(flag, direction)
+
+        # Remove old marker
+        edits_graph = self._get_edits_graph()
+        if edits_graph is not None and flag.marker is not None:
+            edits_graph.removeItem(flag.marker)
+
+        # Create new marker at new position
+        new_marker = pg.ScatterPlotItem(
+            [new_time],
+            [new_spr],
+            symbol=flag.marker_symbol,
+            size=flag.marker_size,
+            brush=pg.mkBrush(flag.marker_color),
+            pen=pg.mkPen("#FFFFFF", width=3),
+        )
+        new_marker.setZValue(100)
+
+        if edits_graph is not None:
+            edits_graph.addItem(new_marker)
+
+        # Update flag
+        flag.time = new_time
+        flag.spr = new_spr
+        flag.marker = new_marker
+
+        # Update highlight
+        self._remove_edits_highlight()
+        self._highlight_edits_flag(flag)
+
+        logger.debug(f"→ Moved edits flag to t={new_time:.2f}s")
+
+    def try_select_edits_flag_near_click(self, time_clicked: float, spr_clicked: float) -> bool:
+        """Check if click is near an edits flag and select it.
+
+        Args:
+            time_clicked: Time coordinate of click
+            spr_clicked: SPR coordinate of click
+
+        Returns:
+            True if a flag was selected, False otherwise
+        """
+        edits_flags = self.get_edits_flags()
+        if not edits_flags:
+            return False
+
+        edits_graph = self._get_edits_graph()
+        if edits_graph is None:
+            return False
+
+        # Get view range for normalization
+        view_range = edits_graph.viewRange()
+        time_range = view_range[0][1] - view_range[0][0]
+        spr_range = view_range[1][1] - view_range[1][0]
+
+        if time_range == 0 or spr_range == 0:
+            return False
+
+        min_distance = float("inf")
+        closest_idx = None
+
+        for idx, flag in enumerate(edits_flags):
+            time_dist = abs(flag.time - time_clicked) / time_range
+            spr_dist = abs(flag.spr - spr_clicked) / spr_range
+            distance = np.sqrt(time_dist**2 + spr_dist**2)
+
+            if distance < min_distance:
+                min_distance = distance
+                closest_idx = idx
+
+        # Select if within 3% of screen diagonal (same tolerance as live)
+        if closest_idx is not None and min_distance < 0.03:
+            self.select_edits_flag(closest_idx)
+            return True
+
+        # Clicked empty space — deselect
+        self.deselect_edits_flag()
+        return False
+
+    def clear_edits_flags(self):
+        """Remove all edits-context flags."""
+        edits_graph = self._get_edits_graph()
+        edits_flags = self.get_edits_flags()
+
+        for flag in edits_flags:
+            if edits_graph is not None and flag.marker is not None:
+                edits_graph.removeItem(flag.marker)
+            self._flag_markers.remove(flag)
+
+        self._remove_edits_highlight()
+        if self._selected_marker_type == "edits_flag":
+            self._selected_marker_type = None
+            self._selected_marker_idx = None
+
+        logger.debug("✓ Edits flags cleared")
+
+    # ── Edits-context private helpers ──────────────────────────────────
+
+    def _get_edits_graph(self):
+        """Get the edits primary graph widget, or None if not available."""
+        if hasattr(self.app, "main_window") and hasattr(self.app.main_window, "edits_primary_graph"):
+            return self.app.main_window.edits_primary_graph
+        return None
+
+    def _highlight_edits_flag(self, flag: Flag):
+        """Highlight an edits flag with a yellow ring (consistent with live)."""
+        edits_graph = self._get_edits_graph()
+        if edits_graph is None:
+            return
+
+        self._remove_edits_highlight()
+
+        self._edits_highlight_ring = pg.ScatterPlotItem(
+            [flag.time],
+            [flag.spr],
+            symbol="o",
+            size=25,
+            pen=pg.mkPen("y", width=3),  # Yellow ring — same as live
+            brush=None,
+        )
+        self._edits_highlight_ring.setZValue(101)
+        edits_graph.addItem(self._edits_highlight_ring)
+
+    def _remove_edits_highlight(self):
+        """Remove the edits highlight ring if present."""
+        if hasattr(self, "_edits_highlight_ring") and self._edits_highlight_ring is not None:
+            edits_graph = self._get_edits_graph()
+            if edits_graph is not None:
+                try:
+                    edits_graph.removeItem(self._edits_highlight_ring)
+                except Exception:
+                    pass
+            self._edits_highlight_ring = None
+
+    def _snap_edits_flag_to_data(self, flag: Flag, direction: int) -> tuple[float, float]:
+        """Snap an edits flag to the nearest data point in the given direction.
+
+        Tries to find actual graph data to snap to. Falls back to ±1 second.
+
+        Args:
+            flag: The flag to snap
+            direction: -1 for left, +1 for right
+
+        Returns:
+            Tuple of (new_time, new_spr)
+        """
+        try:
+            edits_graph = self._get_edits_graph()
+            if edits_graph is None:
+                return flag.time + direction, flag.spr
+
+            # Try to get data from edits graph curves
+            edits_tab = getattr(self.app.main_window, "edits_tab", None)
+            if edits_tab and hasattr(edits_tab, "edits_graph_curves"):
+                # Find the curve for the flag's channel
+                channel_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+                ch_idx = channel_map.get(flag.channel.upper(), 0)
+
+                if ch_idx < len(edits_tab.edits_graph_curves):
+                    curve = edits_tab.edits_graph_curves[ch_idx]
+                    x_data, y_data = curve.getData()
+
+                    if x_data is not None and len(x_data) > 0:
+                        # Find current index
+                        current_idx = np.argmin(np.abs(x_data - flag.time))
+
+                        # Move to adjacent data point
+                        new_idx = current_idx + direction
+                        new_idx = max(0, min(len(x_data) - 1, new_idx))
+
+                        return float(x_data[new_idx]), float(y_data[new_idx])
+
+        except Exception as e:
+            logger.debug(f"Could not snap edits flag to data: {e}")
+
+        # Fallback: move ±1 second
+        return flag.time + direction, flag.spr
+
+    def setup_edits_keyboard_filter(self):
+        """Install keyboard event filter on the edits graph for flag movement.
+
+        Should be called once when the Edits tab is set up.
+        """
+
+        class EditsKeyboardFilter(QObject):
+            def __init__(self, flag_mgr):
+                super().__init__()
+                self.flag_mgr = flag_mgr
+
+            def eventFilter(self, obj, event):
+                if event.type() == QEvent.Type.KeyPress:
+                    # Only handle if an edits flag is selected
+                    if self.flag_mgr._selected_marker_type != "edits_flag":
+                        return False
+
+                    key = event.key()
+
+                    if key == Qt.Key.Key_Left:
+                        self.flag_mgr.move_edits_flag(-1)
+                        return True
+                    elif key == Qt.Key.Key_Right:
+                        self.flag_mgr.move_edits_flag(1)
+                        return True
+                    elif key == Qt.Key.Key_Escape:
+                        self.flag_mgr.deselect_edits_flag()
+                        return True
+                    elif key == Qt.Key.Key_Delete:
+                        # Find the flag's edits-local index and remove it
+                        if self.flag_mgr._selected_marker_idx is not None:
+                            flag = self.flag_mgr._flag_markers[self.flag_mgr._selected_marker_idx]
+                            edits_flags = self.flag_mgr.get_edits_flags()
+                            if flag in edits_flags:
+                                edits_idx = edits_flags.index(flag)
+                                self.flag_mgr.remove_edits_flag(edits_idx)
+                        return True
+
+                return False
+
+        edits_graph = self._get_edits_graph()
+        if edits_graph is not None:
+            self._edits_keyboard_filter = EditsKeyboardFilter(self)
+            edits_graph.installEventFilter(self._edits_keyboard_filter)
+            logger.debug("✓ FlagManager: Edits keyboard event filter installed")

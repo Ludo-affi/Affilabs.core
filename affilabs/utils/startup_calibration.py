@@ -499,6 +499,7 @@ def _jsonify(obj):
 def save_calibration_result_json(
     result: LEDCalibrationResult,
     base_dir: str = "calibration_results",
+    device_serial: str | None = None,
 ) -> Path | None:
     """Save calibration result to JSON file for future reference.
 
@@ -507,6 +508,8 @@ def save_calibration_result_json(
     Args:
         result: LEDCalibrationResult to save
         base_dir: Directory to save results in (created if doesn't exist)
+        device_serial: Device serial number (e.g. 'FLMT09792'). Falls back to
+                       result.detector_serial if not provided.
 
     Returns:
         Path to saved file, or None if save failed
@@ -520,6 +523,13 @@ def save_calibration_result_json(
         # Generate timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+        # Resolve device serial: explicit arg > result attribute > 'UNKNOWN'
+        resolved_serial = (
+            device_serial
+            or getattr(result, "detector_serial", None)
+            or "UNKNOWN"
+        )
+
         # Prepare data for JSON serialization
         data = {
             "calibration_metadata": {
@@ -528,7 +538,8 @@ def save_calibration_result_json(
                 "calibration_method": "alternative"
                 if USE_ALTERNATIVE_CALIBRATION
                 else "standard",
-                "detector_serial": result.detector_max_counts,  # Using as identifier
+                "device_serial": resolved_serial,
+                "detector_max_counts": result.detector_max_counts,
             },
             "detector_parameters": {
                 "max_counts": result.detector_max_counts,

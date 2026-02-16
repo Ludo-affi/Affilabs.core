@@ -127,62 +127,118 @@ class TimerButton(QPushButton):
 
     def _update_styling(self):
         """Update button styling based on font size setting and compact mode."""
-        if self.compact_mode:
-            # Compact mode - icon only, fixed size
-            font_size = "16px"
-            self.setStyleSheet(f"""
-                QPushButton {{
-                    background: #F5F5F7;
-                    border: 1.5px solid #D1D1D6;
-                    border-radius: 6px;
-                    padding: 0px;
-                    font-size: {font_size};
-                    font-weight: 600;
-                    color: #1D1D1F;
-                    font-family: {Fonts.MONOSPACE};
-                    text-align: center;
-                }}
-                QPushButton:hover {{
-                    background: #E5E5EA;
-                    border: 1.5px solid #B8B8BD;
-                }}
-                QPushButton:pressed {{
-                    background: #D1D1D6;
-                    border: 1.5px solid #A0A0A5;
-                }}
-            """)
-            # Don't change size in compact mode - let parent set it
-        else:
-            # Normal mode - full text display
-            font_size = "18px" if self.font_size == "large" else "13px"
-            height = 40 if self.font_size == "large" else 32
+        # Store brightness state for use in styling updates
+        is_bright = getattr(self, '_is_bright', False)
 
-            self.setFixedHeight(height)
-            self.setMinimumWidth(200)
-            self.setStyleSheet(f"""
-                QPushButton {{
-                    background: #F5F5F7;
-                    border: 1.5px solid #D1D1D6;
-                    border-radius: 6px;
-                    padding: 6px 14px;
-                    font-size: {font_size};
-                    font-weight: 700;
-                    color: #000000;
-                    font-family: {Fonts.MONOSPACE};
-                    text-align: left;
-                }}
-                QPushButton:hover {{
-                    background: #E5E5EA;
-                    border: 1.5px solid #B8B8BD;
-                }}
-                QPushButton:pressed {{
-                    background: #D1D1D6;
-                    border: 1.5px solid #A0A0A5;
-                }}
-            """)
+        if is_bright:
+            # Bright styling when popup is visible
+            if self.compact_mode:
+                font_size = "16px"
+                self.setStyleSheet(f"""
+                    QPushButton {{
+                        background: #FFD700;
+                        border: 2px solid #FFA500;
+                        border-radius: 6px;
+                        padding: 0px;
+                        font-size: {font_size};
+                        font-weight: 600;
+                        color: #1D1D1F;
+                        font-family: {Fonts.MONOSPACE};
+                        text-align: center;
+                    }}
+                    QPushButton:hover {{
+                        background: #FFC700;
+                        border: 2px solid #FF8C00;
+                    }}
+                    QPushButton:pressed {{
+                        background: #FFB700;
+                        border: 2px solid #FF7700;
+                    }}
+                """)
+            else:
+                font_size = "18px" if self.font_size == "large" else "13px"
+                height = 40 if self.font_size == "large" else 32
+                self.setFixedHeight(height)
+                self.setMinimumWidth(200)
+                self.setStyleSheet(f"""
+                    QPushButton {{
+                        background: #FFD700;
+                        border: 2px solid #FFA500;
+                        border-radius: 6px;
+                        padding: 6px 14px;
+                        font-size: {font_size};
+                        font-weight: 700;
+                        color: #000000;
+                        font-family: {Fonts.MONOSPACE};
+                        text-align: left;
+                    }}
+                    QPushButton:hover {{
+                        background: #FFC700;
+                        border: 2px solid #FF8C00;
+                    }}
+                    QPushButton:pressed {{
+                        background: #FFB700;
+                        border: 2px solid #FF7700;
+                    }}
+                """)
+        else:
+            # Normal styling
+            if self.compact_mode:
+                # Compact mode - icon only, fixed size
+                font_size = "16px"
+                self.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(46, 48, 227, 0.1);
+                        border: 1px solid rgba(46, 48, 227, 0.3);
+                        border-radius: 8px;
+                        padding: 0px;
+                        font-size: {font_size};
+                        font-weight: 600;
+                        color: #1D1D1F;
+                        font-family: {Fonts.MONOSPACE};
+                        text-align: center;
+                    }}
+                    QPushButton:hover {{
+                        background: rgba(46, 48, 227, 0.15);
+                        border: 1px solid rgba(46, 48, 227, 0.4);
+                    }}
+                    QPushButton:pressed {{
+                        background: rgba(46, 48, 227, 0.25);
+                        border: 1px solid rgba(46, 48, 227, 0.5);
+                    }}
+                """)
+                # Don't change size in compact mode - let parent set it
+            else:
+                # Normal mode - full text display
+                font_size = "18px" if self.font_size == "large" else "13px"
+                height = 40 if self.font_size == "large" else 32
+
+                self.setFixedHeight(height)
+                self.setMinimumWidth(200)
+                self.setStyleSheet(f"""
+                    QPushButton {{
+                        background: rgba(46, 48, 227, 0.1);
+                        border: 1px solid rgba(46, 48, 227, 0.3);
+                        border-radius: 8px;
+                        padding: 6px 14px;
+                        font-size: {font_size};
+                        font-weight: 700;
+                        color: #000000;
+                        font-family: {Fonts.MONOSPACE};
+                        text-align: left;
+                    }}
+                    QPushButton:hover {{
+                        background: rgba(46, 48, 227, 0.15);
+                        border: 1px solid rgba(46, 48, 227, 0.4);
+                    }}
+                    QPushButton:pressed {{
+                        background: rgba(46, 48, 227, 0.25);
+                        border: 1px solid rgba(46, 48, 227, 0.5);
+                    }}
+                """)
 
     def update_countdown(self, cycle_type: str, remaining_seconds: float, is_manual: bool = False):
-        """Update displayed countdown timer and cycle information.
+        """Update timer button - only shows color changes, no text or number updates.
 
         Args:
             cycle_type: Type of running cycle (e.g., "Association", "Baseline")
@@ -193,42 +249,25 @@ class TimerButton(QPushButton):
         self.remaining_seconds = int(remaining_seconds)
         self.is_manual_timer = is_manual
 
-        # Format time as MM:SS
+        # Only update tooltip with detailed info - button text stays static
         minutes = self.remaining_seconds // 60
         seconds = self.remaining_seconds % 60
         time_str = f"{minutes:02d}:{seconds:02d}"
 
-        # Update display based on rolling numbers setting
-        if self.use_rolling_numbers and not self.compact_mode:
-            # Use animated rolling numbers display
-            self.setText("")  # Clear button text
-            self.animated_display_container.show()
-            self.animated_display_container.setGeometry(0, 0, self.width(), self.height())
-            self.animated_timer.update_time(minutes, seconds)
-            self.cycle_type_label.setText(f"• {cycle_type}")
+        # Hide animated display - no countdown shown on button
+        self.animated_display_container.hide()
 
-            tooltip_text = "Click to set manual timer or view cycle details"
-            if is_manual:
-                tooltip_text = f"{cycle_type} - {time_str} remaining\nRight-click: Restart or Clear timer"
-            self.setToolTip(tooltip_text)
+        # Keep static text - no updates
+        if self.compact_mode:
+            self.setText("")  # Icon only
         else:
-            # Use standard text display
-            self.animated_display_container.hide()
+            self._set_icon_text("Timer")  # Static "Timer" text
 
-            if self.compact_mode:
-                # Compact mode - just show time (no icon when timer is running)
-                self.setText(time_str)
-                tooltip_text = f"{cycle_type} - {time_str} remaining\nClick to set manual timer"
-                if is_manual:
-                    tooltip_text += "\nRight-click: Restart or Clear timer"
-                self.setToolTip(tooltip_text)
-            else:
-                # Normal mode - full display
-                self._set_icon_text(f"{time_str} • {cycle_type}")
-                tooltip_text = "Click to set manual timer or view cycle details"
-                if is_manual:
-                    tooltip_text = f"{cycle_type} - {time_str} remaining\nRight-click: Restart or Clear timer"
-                self.setToolTip(tooltip_text)
+        # Only update tooltip with live information
+        tooltip_text = f"{cycle_type} - {time_str} remaining (see popup for details)"
+        if is_manual:
+            tooltip_text += "\nRight-click: Restart or Clear timer"
+        self.setToolTip(tooltip_text)
 
     def set_compact_mode(self, enabled: bool):
         """Enable or disable compact icon-only mode.
@@ -289,7 +328,7 @@ class TimerButton(QPushButton):
             self.clear()
 
     def show_wash_alert(self):
-        """Show pulsing WASH NOW alert — click to acknowledge and stop alarm."""
+        """Show alert by changing button color when timer finishes."""
         self.is_manual_timer = True
         self.remaining_seconds = 0
         self.current_cycle_type = "WASH"
@@ -298,14 +337,10 @@ class TimerButton(QPushButton):
         # Hide animated display
         self.animated_display_container.hide()
 
-        if self.compact_mode:
-            self.setText("🔔")
-            self.setToolTip("⚠ WASH NOW — click to acknowledge")
-        else:
-            self.setText("🔔 WASH NOW — click to stop")
-            self.setToolTip("Timer expired — click to stop alarm")
+        # Keep button text/icon unchanged — only change color for alert
+        self.setToolTip("Timer finished — click to stop alarm")
 
-        # Orange alert styling
+        # Orange alert styling (only color change, no text)
         self.setStyleSheet(f"""
             QPushButton {{
                 background: #FF9500;
@@ -337,12 +372,10 @@ class TimerButton(QPushButton):
         self.remaining_seconds = 0
         self.is_manual_timer = False
         self._wash_alert_active = False
+        self._is_bright = False  # Reset highlight so button returns to inactive color
 
         # Hide animated display
         self.animated_display_container.hide()
-
-        # Restore normal styling
-        self._update_styling()
 
         # Clear text - format depends on compact mode
         if self.compact_mode:
@@ -351,6 +384,10 @@ class TimerButton(QPushButton):
         else:
             self._set_icon_text("Timer")
             self.setToolTip("Click to set manual timer or view cycle details")
+
+        # IMPORTANT: Do NOT call _update_styling() here - it will override the parent's
+        # idle state stylesheet. The parent (navigation_presenter) sets the proper blue
+        # idle styling, so we just reset the content and let parent styling take effect.
 
     def _show_context_menu(self, position):
         """Show context menu for manual timer actions.
@@ -399,3 +436,12 @@ class TimerButton(QPushButton):
     def request_restart(self):
         """Emit signal to request timer restart."""
         self.restart_requested.emit()
+
+    def set_bright_style(self, bright: bool):
+        """Set button to bright color when popup is visible.
+
+        Args:
+            bright: True for bright (yellow/gold) styling, False for normal
+        """
+        self._is_bright = bright
+        self._update_styling()

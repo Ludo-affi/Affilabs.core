@@ -1,4 +1,4 @@
-# Method & Cycle System Documentation
+﻿# Method & Cycle System Documentation
 
 ## Overview
 
@@ -130,7 +130,7 @@ baseline = Cycle(
     note="Stabilization before titration"
 )
 
-# Create multi-channel concentration cycle
+# Create multi-channel binding cycle
 assoc = Cycle(
     type="Association",
     length_minutes=3.0,
@@ -306,11 +306,11 @@ Modal popup dialog for building cycle sequences with Spark AI integration.
 
 | Question Pattern | Example | Generated Output |
 |-----------------|---------|------------------|
-| Titration | `@spark how do I run a titration?` | Baseline + multiple Concentration cycles |
-| Kinetics | `@spark show me kinetics` | Concentration + Dissociation + Regeneration |
-| Amine coupling | `@spark build amine coupling` | Asks "How many concentrations?" → Full protocol |
+| Titration | `@spark how do I run a titration?` | Baseline + multiple Binding cycles |
+| Kinetics | `@spark show me kinetics` | Kinetic + Dissociation + Regeneration |
+| Amine coupling | `@spark build amine coupling` | Asks "How many binding cycles?" → Full protocol |
 | Regeneration | `@spark how do I regenerate?` | Regeneration cycle |
-| Full cycle | `@spark complete cycle?` | Baseline + Concentration + Regeneration |
+| Full cycle | `@spark complete cycle?` | Baseline + Binding + Regeneration |
 
 #### Multi-Turn Conversation Example
 
@@ -625,7 +625,7 @@ cycles = templates.apply_template(
    - Establishes zero reference for binding
 
 2. **Include Regeneration Cycles**
-   - After each concentration cycle
+   - After each binding cycle
    - Prevents surface saturation
    - Typical: 30 sec - 2 min with 50mM NaOH or glycine-HCl
 
@@ -700,7 +700,7 @@ Regeneration 1min [ALL:50mM]  # Glycine-HCl pH 2.5
 
 **Solutions:**
 1. Check syntax: `<Type> <Duration> [<Channels>]`
-2. Valid types: Baseline, Concentration, Association, Dissociation, Regeneration, Custom
+2. Valid types: Baseline, Binding, Kinetic, Regeneration, Immobilization, Custom
 3. Valid durations: `5min`, `30sec`, `2.5min`
 4. Valid channels: `[A]`, `[A:100nM]`, `[ALL]`
 
@@ -914,4 +914,5 @@ storage.search_presets(query: str) -> List[str]
 
 **Document Version:** 1.0
 **Last Updated:** 2024
-**Maintained By:** Affinity Instruments Development Team
+**Maintained By:** Affinité Instruments Development Team
+

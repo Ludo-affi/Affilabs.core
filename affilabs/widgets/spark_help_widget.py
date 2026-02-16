@@ -28,6 +28,23 @@ except ImportError:
     TTS_AVAILABLE = False
 
 
+def _format_spark_text(text: str) -> str:
+    """Convert Spark markdown-like answer text to HTML for rich QLabel display."""
+    import re as _re
+    # Bold: **text** -> <b>text</b>
+    text = _re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # Inline code: `text` -> styled <code>
+    text = _re.sub(
+        r'`([^`]+)`',
+        r'<code style="background:#E8E8ED;padding:1px 3px;border-radius:3px;font-size:12px;">\1</code>',
+        text,
+    )
+    # Double newline -> paragraph spacing, single newline -> line break
+    text = text.replace('\n\n', '<br><br>')
+    text = text.replace('\n', '<br>')
+    return text
+
+
 class QuestionInput(QTextEdit):
     """Text input that submits on Ctrl+Enter."""
 
@@ -42,7 +59,7 @@ class QuestionInput(QTextEdit):
                 background: white;
                 border: 2px solid #E5E5EA;
                 border-radius: 10px;
-                padding: 12px;
+                padding: 10px;
                 font-size: 14px;
                 font-family: -apple-system, 'Segoe UI', sans-serif;
             }
@@ -85,17 +102,21 @@ class MessageBubble(QFrame):
         self.setStyleSheet(f"""
             QFrame {{
                 background: {bg_color};
-                border-radius: 16px;
+                border-radius: 12px;
                 margin: 0px;
             }}
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setContentsMargins(14, 10, 14, 10)
         layout.setSpacing(6)
 
-        # Message text with more height for longer answers
-        self.label = QLabel(text)
+        # Message text — AI responses rendered as rich HTML for bold, code, etc.
+        if not is_user and not is_thinking:
+            self.label = QLabel(_format_spark_text(text))
+            self.label.setTextFormat(Qt.TextFormat.RichText)
+        else:
+            self.label = QLabel(text)
         self.label.setWordWrap(True)
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         if is_user:
@@ -141,16 +162,33 @@ class MessageBubble(QFrame):
         if not is_user and not is_thinking:
             bottom_layout.addStretch()
 
-            # Thumbs up button
-            self.thumbs_up_btn = QPushButton("👍")
-            self.thumbs_up_btn.setFixedSize(28, 28)
+            # Thumbs up button with thin-line SVG
+            self.thumbs_up_btn = QPushButton()
+            self.thumbs_up_btn.setFixedSize(24, 24)
             self.thumbs_up_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+            # Create thumbs up SVG icon
+            thumbs_up_svg = """
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M7 10v12l8-1V10l-4-6c-1 0-1.5.5-1.5 1.5S8.5 8 7 10Z" stroke="currentColor" stroke-width="1" fill="none"/>
+                <path d="M7 10H4a1 1 0 00-1 1v8a1 1 0 001 1h3" stroke="currentColor" stroke-width="1" fill="none"/>
+            </svg>
+            """
+            from PySide6.QtSvg import QSvgRenderer
+            from PySide6.QtGui import QPainter, QPixmap, QIcon
+            svg_renderer = QSvgRenderer(thumbs_up_svg.encode())
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            svg_renderer.render(painter)
+            painter.end()
+            self.thumbs_up_btn.setIcon(QIcon(pixmap))
+
             self.thumbs_up_btn.setStyleSheet("""
                 QPushButton {
                     background: transparent;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 14px;
-                    font-size: 14px;
+                    border: 1px solid #E5E5E7;
+                    border-radius: 12px;
                     padding: 0px;
                 }
                 QPushButton:hover {
@@ -164,16 +202,31 @@ class MessageBubble(QFrame):
             self.thumbs_up_btn.clicked.connect(lambda: self._on_feedback("helpful"))
             bottom_layout.addWidget(self.thumbs_up_btn)
 
-            # Thumbs down button
-            self.thumbs_down_btn = QPushButton("👎")
-            self.thumbs_down_btn.setFixedSize(28, 28)
+            # Thumbs down button with thin-line SVG
+            self.thumbs_down_btn = QPushButton()
+            self.thumbs_down_btn.setFixedSize(24, 24)
             self.thumbs_down_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+            # Create thumbs down SVG icon
+            thumbs_down_svg = """
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M17 14V2l-8 1v11l4 6c1 0 1.5-.5 1.5-1.5S15.5 16 17 14Z" stroke="currentColor" stroke-width="1" fill="none"/>
+                <path d="M17 14h3a1 1 0 001-1V5a1 1 0 00-1-1h-3" stroke="currentColor" stroke-width="1" fill="none"/>
+            </svg>
+            """
+            svg_renderer = QSvgRenderer(thumbs_down_svg.encode())
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            svg_renderer.render(painter)
+            painter.end()
+            self.thumbs_down_btn.setIcon(QIcon(pixmap))
+
             self.thumbs_down_btn.setStyleSheet("""
                 QPushButton {
                     background: transparent;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 14px;
-                    font-size: 14px;
+                    border: 1px solid #E5E5E7;
+                    border-radius: 12px;
                     padding: 0px;
                 }
                 QPushButton:hover {
@@ -189,11 +242,13 @@ class MessageBubble(QFrame):
 
         layout.addLayout(bottom_layout)
 
-        # Size policies: user bubbles shrink-to-fit, AI bubbles expand
+        # Size policies: user bubbles shrink-to-fit with max width, AI bubbles constrained too
         if is_user:
             self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+            self.setMaximumWidth(290)  # Give user bubbles more room to expand before wrapping
         else:
             self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+            self.setMaximumWidth(310)  # Give AI bubbles more breathing room for text
         self.setMinimumHeight(40)
 
     def update_text(self, text: str):
@@ -229,15 +284,16 @@ class SparkHelpWidget(QWidget):
         if TTS_AVAILABLE:
             try:
                 # Piper will be installed as a standalone executable
-                import os
+                from affilabs.utils.resource_path import get_resource_path
                 from pathlib import Path
-                # Check if piper is in the same directory
-                piper_exe = os.path.join(os.path.dirname(__file__), '..', '..', 'piper', 'piper.exe')
-                piper_dir = Path(piper_exe).parent
+
+                # Use resource_path for PyInstaller compatibility
+                piper_exe = get_resource_path("piper/piper.exe")
+                piper_dir = piper_exe.parent
                 voice_file = piper_dir / "selected_voice.txt"
 
-                if os.path.exists(piper_exe):
-                    self.piper_path = piper_exe
+                if piper_exe.exists():
+                    self.piper_path = str(piper_exe)
                     # Load selected voice (or use default)
                     if voice_file.exists():
                         self.voice_model = voice_file.read_text().strip()
@@ -258,54 +314,7 @@ class SparkHelpWidget(QWidget):
         """Create the UI layout."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
-
-        # Header with TTS toggle
-        header_container = QFrame()
-        header_container.setStyleSheet("""
-            QFrame {
-                background: white;
-                border-bottom: 1px solid #E5E5EA;
-            }
-        """)
-        header_layout = QHBoxLayout(header_container)
-        header_layout.setContentsMargins(16, 16, 16, 16)
-        header_layout.setSpacing(12)
-
-        header = QLabel("⚡ Spark AI Assistant")
-        header.setStyleSheet("""
-            QLabel {
-                font-size: 20px;
-                font-weight: 700;
-                color: #1D1D1F;
-                background: transparent;
-                border: none;
-            }
-        """)
-        header_layout.addWidget(header)
-        header_layout.addStretch()
-
-        # TTS toggle button (speaker icon)
-        if TTS_AVAILABLE and self.piper_path:
-            self.tts_button = QPushButton("🔊")
-            self.tts_button.setFixedSize(32, 32)
-            self.tts_button.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.tts_button.setToolTip("Mute Spark voice")
-            self.tts_button.setStyleSheet("""
-                QPushButton {
-                    background: #F5F5F5;
-                    border: none;
-                    border-radius: 16px;
-                    font-size: 16px;
-                }
-                QPushButton:hover {
-                    background: #E5E5EA;
-                }
-            """)
-            self.tts_button.clicked.connect(self._toggle_tts)
-            header_layout.addWidget(self.tts_button)
-
-        layout.addWidget(header_container)
+        layout.setSpacing(8)
 
         # Chat history scroll area
         scroll = QScrollArea()
@@ -313,7 +322,7 @@ class SparkHelpWidget(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setStyleSheet("""
             QScrollArea {
-                background: white;
+                background: transparent;
                 border: none;
             }
             QScrollBar:vertical {
@@ -335,10 +344,11 @@ class SparkHelpWidget(QWidget):
         """)
 
         self.chat_container = QWidget()
+        self.chat_container.setStyleSheet("background: transparent;")
         self.chat_layout = QVBoxLayout(self.chat_container)
         self.chat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.chat_layout.setSpacing(12)
-        self.chat_layout.setContentsMargins(8, 8, 8, 8)
+        self.chat_layout.setSpacing(10)
+        self.chat_layout.setContentsMargins(4, 8, 4, 8)
 
         # Ensure content stays at top, not centered
         from PySide6.QtWidgets import QSizePolicy
@@ -350,39 +360,42 @@ class SparkHelpWidget(QWidget):
         # Store scroll area reference for scrolling
         self.scroll_area = scroll
 
-        # Input area
+        # Input area - optimized for narrow sidebar
         input_container = QFrame()
         input_container.setStyleSheet("""
             QFrame {
-                background: #FAFAFA;
-                border-radius: 12px;
-                border: 1px solid #E5E5EA;
+                background: transparent;
+                border-radius: 10px;
+                border: none;
             }
         """)
         input_layout = QVBoxLayout(input_container)
-        input_layout.setContentsMargins(12, 12, 12, 12)
-        input_layout.setSpacing(10)
+        input_layout.setContentsMargins(8, 4, 8, 4)
+        input_layout.setSpacing(8)
 
         self.question_input = QuestionInput()
         self.question_input.submit_requested.connect(self._handle_question)
         input_layout.addWidget(self.question_input)
 
-        # Buttons
+        # Buttons - responsive for narrow sidebar
         button_layout = QHBoxLayout()
         button_layout.setSpacing(8)
 
-        # Clear chat button
-        clear_btn = QPushButton("Clear Chat")
-        clear_btn.setFixedSize(100, 36)
+        # Clear chat button - flexible sizing
+        clear_btn = QPushButton("Clear")
+        clear_btn.setMinimumWidth(70)
+        clear_btn.setMinimumHeight(36)
+        clear_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         clear_btn.setStyleSheet("""
             QPushButton {
                 background: #F2F2F7;
                 color: #8E8E93;
                 border: none;
-                border-radius: 6px;
+                border-radius: 8px;
                 font-size: 13px;
                 font-weight: 600;
+                padding: 0px;
             }
             QPushButton:hover {
                 background: #E5E5EA;
@@ -395,31 +408,59 @@ class SparkHelpWidget(QWidget):
         clear_btn.clicked.connect(self._clear_chat)
         button_layout.addWidget(clear_btn)
 
-        button_layout.addStretch()
-
+        # Send button (primary action) - flexible sizing
         self.send_btn = QPushButton("Send")
-        self.send_btn.setFixedSize(100, 36)
+        self.send_btn.setMinimumWidth(70)
+        self.send_btn.setMinimumHeight(36)
+        self.send_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_btn.setStyleSheet("""
             QPushButton {
-                background: #007AFF;
-                color: white;
+                background-color: #4A90D9;
+                color: #FFFFFF;
                 border: none;
-                border-radius: 6px;
+                border-radius: 8px;
                 font-size: 13px;
                 font-weight: 600;
+                padding: 0px;
             }
             QPushButton:hover {
-                background: #0051D5;
+                background-color: #3A7BC8;
             }
             QPushButton:pressed {
-                background: #004DB8;
+                background-color: #2E6BAF;
             }
         """)
         self.send_btn.clicked.connect(self._handle_question)
         button_layout.addWidget(self.send_btn)
 
         input_layout.addLayout(button_layout)
+
+        # TTS toggle button (if available) - below buttons
+        if TTS_AVAILABLE and self.piper_path:
+            tts_row = QHBoxLayout()
+            tts_row.setSpacing(6)
+            self.tts_button = QPushButton("\U0001f50a Voice On")
+            self.tts_button.setMinimumHeight(28)
+            self.tts_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.tts_button.setToolTip("Toggle Spark voice")
+            self.tts_button.setStyleSheet("""
+                QPushButton {
+                    background: #EEEEF0;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    color: #636366;
+                    padding: 4px 8px;
+                }
+                QPushButton:hover {
+                    background: #E0E0E2;
+                }
+            """)
+            self.tts_button.clicked.connect(self._toggle_tts)
+            tts_row.addWidget(self.tts_button)
+            input_layout.addLayout(tts_row)
+
         layout.addWidget(input_container)
 
         # Welcome message
@@ -439,15 +480,8 @@ class SparkHelpWidget(QWidget):
     def _add_welcome_message(self):
         """Add welcome message to chat."""
         welcome = MessageBubble(
-            "👋 Hi! I'm Spark, your Affilabs.core assistant. Ask me anything about:\n\n"
-            "• Power on and startup procedures\n"
-            "• Starting and stopping acquisitions\n"
-            "• Recording and exporting data\n"
-            "• Detector troubleshooting\n"
-            "• Pump and flow control\n"
-            "• Creating cycles and methods\n"
-            "• Baseline corrections\n\n"
-            "What would you like to know?",
+            "\U0001f44b Hi! I'm Spark, your Affilabs assistant.\n\n"
+            "Ask me about setup, calibration, methods, pumps, data export, or troubleshooting.",
             is_user=False
         )
         self.chat_layout.addWidget(welcome, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -464,7 +498,7 @@ class SparkHelpWidget(QWidget):
         self._add_welcome_message()
 
     def _handle_question(self):
-        """Process user question and generate response."""
+        """Process user question and generate response (never crashes)."""
         try:
             question = self.question_input.toPlainText().strip()
 
@@ -475,27 +509,50 @@ class SparkHelpWidget(QWidget):
             self.question_input.clear()
 
             # Add user question bubble (right-aligned like modern chat apps)
-            user_bubble = MessageBubble(question, is_user=True)
-            self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignRight)
+            try:
+                user_bubble = MessageBubble(question, is_user=True)
+                self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignRight)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Spark user bubble failed: {e}")
+                return
 
             # Add "thinking" indicator with animated dots
-            thinking_bubble = MessageBubble("💭 Thinking...", is_user=False, is_thinking=True)
-            self.chat_layout.addWidget(thinking_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
-            self._thinking_bubble = thinking_bubble  # Store reference
+            try:
+                thinking_bubble = MessageBubble("💭 Thinking...", is_user=False, is_thinking=True)
+                self.chat_layout.addWidget(thinking_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+                self._thinking_bubble = thinking_bubble  # Store reference
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Spark thinking bubble failed: {e}")
+                return
 
-            # Start thinking animation timer
-            import time
-            self._thinking_start_time = time.time()
-            self._thinking_dots = 0
-            self._thinking_timer = QTimer()
-            self._thinking_timer.timeout.connect(self._update_thinking_indicator)
-            self._thinking_timer.start(500)  # Update every 500ms
+            # Start thinking animation timer (safely)
+            try:
+                import time
+                self._thinking_start_time = time.time()
+                self._thinking_dots = 0
+                if not hasattr(self, '_thinking_timer') or self._thinking_timer is None:
+                    self._thinking_timer = QTimer()
+                    self._thinking_timer.timeout.connect(self._update_thinking_indicator)
+                self._thinking_timer.start(500)  # Update every 500ms
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Spark thinking timer failed: {e}")
 
             # Scroll to show thinking bubble
-            QTimer.singleShot(50, self._scroll_to_bottom)
+            try:
+                QTimer.singleShot(50, self._scroll_to_bottom)
+            except Exception:
+                pass
 
             # Generate answer after short delay (to show thinking bubble)
-            QTimer.singleShot(150, lambda: self._add_answer(question))
+            try:
+                QTimer.singleShot(150, lambda: self._add_answer(question))
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Spark answer timer failed: {e}")
+
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Spark _handle_question crashed: {e}")
@@ -560,10 +617,10 @@ class SparkHelpWidget(QWidget):
         self.tts_enabled = not self.tts_enabled
         if hasattr(self, 'tts_button'):
             if self.tts_enabled:
-                self.tts_button.setText("🔊")
+                self.tts_button.setText("\U0001f50a Voice On")
                 self.tts_button.setToolTip("Mute Spark voice")
             else:
-                self.tts_button.setText("🔇")
+                self.tts_button.setText("\U0001f507 Voice Off")
                 self.tts_button.setToolTip("Unmute Spark voice")
 
     # Maximum characters to send to Piper in one call (prevents buffer overruns)
@@ -651,25 +708,52 @@ class SparkHelpWidget(QWidget):
         thread.start()
 
     def _update_thinking_indicator(self):
-        """Update thinking bubble with animated dots and elapsed time."""
-        if not hasattr(self, '_thinking_bubble') or not self._thinking_bubble:
-            if self._thinking_timer:
-                self._thinking_timer.stop()
+        """Update thinking bubble with animated dots and elapsed time (safe)."""
+        try:
+            if not hasattr(self, '_thinking_bubble') or not self._thinking_bubble:
+                if self._thinking_timer:
+                    self._thinking_timer.stop()
+                return
+
+            # Calculate elapsed time
+            import time
+            elapsed = int(time.time() - self._thinking_start_time)
+
+            # Cycle through dot animations: . .. ...
+            self._thinking_dots = (self._thinking_dots + 1) % 4
+            dots = '.' * (self._thinking_dots if self._thinking_dots > 0 else 3)
+
+            # Update bubble text with animation and timer
+            thinking_text = f"💭 Thinking{dots} ({elapsed}s)"
+            self._thinking_bubble.update_text(thinking_text)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"Thinking indicator update error: {e}")
+            # Don't propagate - never crash on animation update
             return
-
-        # Calculate elapsed time
-        import time
-        elapsed = int(time.time() - self._thinking_start_time)
-
-        # Cycle through dot animations: . .. ...
-        self._thinking_dots = (self._thinking_dots + 1) % 4
-        dots = '.' * (self._thinking_dots if self._thinking_dots > 0 else 3)
-
-        # Update bubble text with animation and timer
-        thinking_text = f"💭 Thinking{dots} ({elapsed}s)"
-        self._thinking_bubble.update_text(thinking_text)
 
     def _scroll_to_bottom(self):
         """Scroll chat to bottom."""
         scrollbar = self.scroll_area.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
+    def closeEvent(self, event):
+        """Clean up resources on widget close (never crash on shutdown)."""
+        try:
+            # Stop thinking timer
+            if hasattr(self, '_thinking_timer') and self._thinking_timer:
+                self._thinking_timer.stop()
+                self._thinking_timer = None
+        except Exception:
+            pass
+
+        super().closeEvent(event)
+
+    def destroyEvent(self):
+        """Clean up resources on widget destruction."""
+        try:
+            # Stop thinking timer
+            if hasattr(self, '_thinking_timer') and self._thinking_timer:
+                self._thinking_timer.stop()
+                self._thinking_timer = None
+        except Exception:
+            pass

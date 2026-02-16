@@ -1214,7 +1214,7 @@ logging.getLogger('affilabs').setLevel(logging.WARNING)  # Reduce logging
 
 ## Summary
 
-The ezControl data processing pipeline is a production-ready, detector-agnostic system that:
+The Affilabs.core data processing pipeline is a production-ready, detector-agnostic system that:
 
 ✅ **Separates acquisition from processing** (Phase 3 threading) for zero timing jitter
 ✅ **Implements pluggable algorithms** via pipeline registry for flexibility

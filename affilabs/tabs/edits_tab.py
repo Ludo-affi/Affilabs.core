@@ -43,6 +43,7 @@ class EditsTab:
 
         # Loaded metadata from Excel file (populated when loading file)
         self._loaded_metadata = {}
+        self._loaded_file_path = None  # Path to the currently loaded Excel file (for saving)
 
         # Per-cycle editing state
         self._cycle_alignment = {}  # {row_idx: {'channel': str, 'shift': float}}
@@ -53,8 +54,16 @@ class EditsTab:
         self._auto_detect_enabled = True  # Auto-detection enabled by default
 
         # Flags system for marking/annotating graph points
-        self._edits_flags = []
+        # NOTE: _edits_flags and _selected_flag_idx are now managed by FlagManager.
+        # These properties delegate to FlagManager for backward compatibility.
+        # Direct list is kept as fallback if FlagManager is not available.
+        self._edits_flags_fallback = []
         self._selected_flag_idx = None
+
+        # Delta SPR cursor locking state
+        self._delta_spr_cursor_locked = False  # Whether cursors are locked to contact_time
+        self._delta_spr_lock_distance = 0.0  # Locked distance between cursors (contact_time + 10%)
+        self._suppressing_position_change = False  # Flag to prevent recursive cursor updates
 
         # UI elements (will be created in create_content)
         self.cycle_data_table = None
@@ -67,6 +76,23 @@ class EditsTab:
         self.edits_cycle_labels = []
         self.edits_smooth_slider = None
         self.edits_smooth_label = None
+        self.delta_spr_lock_btn = None  # Lock/unlock button
+
+    @property
+    def _edits_flags(self):
+        """Backward-compatible property: delegates to FlagManager if available."""
+        try:
+            app = self.main_window.app
+            if hasattr(app, 'flag_mgr') and app.flag_mgr:
+                return app.flag_mgr.get_edits_flags()
+        except (AttributeError, RuntimeError):
+            pass
+        return self._edits_flags_fallback
+
+    @_edits_flags.setter
+    def _edits_flags(self, value):
+        """Setter for backward compatibility (legacy code may assign directly)."""
+        self._edits_flags_fallback = value
 
     def _get_user_export_dir(self, subfolder: str = "SPR_data") -> "Path":
         """Get user-specific default export directory.
@@ -178,24 +204,27 @@ class EditsTab:
 
         # Table view state
         self.compact_view = False  # Start in expanded view (default)
-        self.cycle_filter = "Binding (High)"  # Default: show only concentration/binding cycles
+        self.cycle_filter = "All"  # Default: show all cycle types
+        self._cycle_export_selection = {}  # Track checkbox state: {cycle_idx: True/False}
 
-        # Initialize table widget — compact 6-column layout
+        # Initialize table widget — 7-column layout with export selection checkboxes
         # STARTS EMPTY - will be populated ONLY when cycles complete during live acquisition
-        self.cycle_data_table = QTableWidget(0, 6)
+        self.cycle_data_table = QTableWidget(0, 7)
         self.cycle_data_table.setHorizontalHeaderLabels(
-            ["Type", "Time", "Conc.", "ΔSPR", "Flags", "Notes"]
+            ["Export", "Type", "Time", "Conc.", "ΔSPR", "Flags", "Notes"]
         )
         # Set column widths: stretch to fill available space
         header = self.cycle_data_table.horizontalHeader()
         header.setStretchLastSection(True)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)       # Type icon
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)     # Time
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)     # Conc
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)     # ΔSPR
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)     # Flags
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)     # Notes
-        self.cycle_data_table.setColumnWidth(0, 55)    # Type icon (fixed minimum)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)       # Export checkbox
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)       # Type icon
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)     # Time
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)     # Conc
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)     # ΔSPR
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)     # Flags
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)     # Notes
+        self.cycle_data_table.setColumnWidth(0, 50)    # Export checkbox (fixed)
+        self.cycle_data_table.setColumnWidth(1, 55)    # Type icon (fixed minimum)
 
         # Set compact font for better space utilization
         table_font = QFont("-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif")
@@ -214,6 +243,7 @@ class EditsTab:
 
         # Set column tooltips for better understanding
         tooltips = [
+            "Check to include this cycle's chart in export",
             "Cycle type: BL=Baseline, IM=Immobilization, WS=Wash, CN=Concentration, RG=Regeneration, CU=Custom",
             "Duration (minutes) @ Start time (seconds)",
             "Analyte concentration (if applicable)",
@@ -231,6 +261,7 @@ class EditsTab:
         self.cycle_data_table.itemSelectionChanged.connect(self.main_window._on_cycle_selected_in_table)
         self.cycle_data_table.itemSelectionChanged.connect(self._update_export_sidebar_stats)
         self.cycle_data_table.itemSelectionChanged.connect(self._run_injection_detection)  # Auto-detect on selection
+        self.cycle_data_table.itemSelectionChanged.connect(self._reset_delta_spr_lock)  # Reset lock on cycle selection
 
         # Enhanced styling: zebra striping, hover, and selection highlight
         self.cycle_data_table.setAlternatingRowColors(True)
@@ -432,7 +463,7 @@ class EditsTab:
             f"font-size: 11px; font-weight: 500; padding: 4px 10px; font-family: {Fonts.SYSTEM}; }}"
             f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_10}; border-color: {Colors.INFO}; }}"
         )
-        load_btn.clicked.connect(self.main_window._load_data_from_excel)
+        load_btn.clicked.connect(self._load_data_from_excel_with_path_tracking)
         controls_layout.addWidget(load_btn)
 
         # Export sidebar toggle button
@@ -459,8 +490,8 @@ class EditsTab:
         controls_layout.addWidget(filter_label)
 
         self.filter_combo = QComboBox()
-        self.filter_combo.addItems(["All", "Binding (High)", "Baseline (Low)", "Regeneration (Med)"])
-        self.filter_combo.setCurrentText("Binding (High)")  # Default: binding cycles
+        self.filter_combo.addItem("All")  # Initial placeholder - will be updated when data loads
+        self.filter_combo.setCurrentText("All")
         self.filter_combo.setFixedHeight(28)
         self.filter_combo.setStyleSheet(
             f"QComboBox {{ background: white; border: 1px solid {Colors.OVERLAY_LIGHT_20}; "
@@ -542,22 +573,22 @@ class EditsTab:
     def _create_metadata_panel(self):
         """Create metadata info panel showing experiment statistics."""
         panel = QFrame()
-        panel.setStyleSheet("""
-            QFrame {
-                background: white;
-                border-radius: 8px;
-                border: 1px solid #E5E5EA;
-            }
-        """)
+        panel.setStyleSheet("QFrame { background: white; border-radius: 12px; }")
+
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(8)
+        shadow.setColor(QColor(0, 0, 0, 20))
+        shadow.setOffset(0, 2)
+        panel.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
 
         # Title
         title = QLabel("Experiment Metadata")
         title.setStyleSheet("""
-            font-size: 13px;
+            font-size: 15px;
             font-weight: 600;
             color: #1D1D1F;
             border: none;
@@ -574,53 +605,61 @@ class EditsTab:
         grid.setVerticalSpacing(8)
         grid.setColumnStretch(1, 1)
 
+        # Method
+        method_lbl = QLabel("Method:")
+        method_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        self.meta_method = QLabel("-")
+        self.meta_method.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+        grid.addWidget(method_lbl, 0, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_method, 0, 1, Qt.AlignLeft)
+
         # Cycles
         cycles_lbl = QLabel("Cycles:")
         cycles_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
         self.meta_total_cycles = QLabel("0")
         self.meta_total_cycles.setStyleSheet("font-size: 12px; color: #007AFF; background: transparent; border: none;")
-        grid.addWidget(cycles_lbl, 0, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_total_cycles, 0, 1, Qt.AlignLeft)
+        grid.addWidget(cycles_lbl, 1, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_total_cycles, 1, 1, Qt.AlignLeft)
 
         # Types
         types_lbl = QLabel("Types:")
         types_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
         self.meta_cycle_types = QLabel("-")
         self.meta_cycle_types.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
-        grid.addWidget(types_lbl, 1, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_cycle_types, 1, 1, Qt.AlignLeft)
+        grid.addWidget(types_lbl, 2, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_cycle_types, 2, 1, Qt.AlignLeft)
 
         # Concentration
         conc_lbl = QLabel("Conc. Range:")
         conc_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
         self.meta_conc_range = QLabel("-")
         self.meta_conc_range.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
-        grid.addWidget(conc_lbl, 2, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_conc_range, 2, 1, Qt.AlignLeft)
+        grid.addWidget(conc_lbl, 3, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_conc_range, 3, 1, Qt.AlignLeft)
 
         # Date
         date_lbl = QLabel("Date:")
         date_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
         self.meta_date = QLabel("-")
         self.meta_date.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
-        grid.addWidget(date_lbl, 3, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_date, 3, 1, Qt.AlignLeft)
+        grid.addWidget(date_lbl, 4, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_date, 4, 1, Qt.AlignLeft)
 
-        # User
-        user_lbl = QLabel("User:")
-        user_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
-        self.meta_user = QLabel("-")
-        self.meta_user.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
-        grid.addWidget(user_lbl, 4, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_user, 4, 1, Qt.AlignLeft)
+        # Operator (matches Method Builder terminology)
+        operator_lbl = QLabel("Operator:")
+        operator_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        self.meta_operator = QLabel("-")
+        self.meta_operator.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+        grid.addWidget(operator_lbl, 5, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_operator, 5, 1, Qt.AlignLeft)
 
         # Device
         device_lbl = QLabel("Device:")
         device_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
         self.meta_device = QLabel("-")
         self.meta_device.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
-        grid.addWidget(device_lbl, 5, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_device, 5, 1, Qt.AlignLeft)
+        grid.addWidget(device_lbl, 6, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_device, 6, 1, Qt.AlignLeft)
 
         layout.addWidget(stats_widget)
 
@@ -746,11 +785,23 @@ class EditsTab:
 
         self.meta_date.setText(date_str)
 
-        # USER: Prefer loaded metadata, fall back to current user
-        user_str = None
+        # METHOD: Prefer loaded metadata
+        method_str = None
 
-        if loaded_metadata and 'User' in loaded_metadata:
-            user_str = loaded_metadata['User']
+        if loaded_metadata and 'method_name' in loaded_metadata:
+            method_str = loaded_metadata['method_name']
+        elif loaded_metadata and 'Method' in loaded_metadata:
+            method_str = loaded_metadata['Method']
+
+        self.meta_method.setText(method_str if method_str else "-")
+
+        # OPERATOR: Prefer loaded metadata, fall back to current user
+        operator_str = None
+
+        if loaded_metadata and 'operator' in loaded_metadata:
+            operator_str = loaded_metadata['operator']
+        elif loaded_metadata and 'User' in loaded_metadata:
+            operator_str = loaded_metadata['User']
         else:
             try:
                 if self.user_manager:
@@ -760,11 +811,11 @@ class EditsTab:
                     from affilabs.services.user_profile_manager import UserProfileManager
                     user_mgr = UserProfileManager()
                     user = user_mgr.get_current_user()
-                user_str = user if user else None
+                operator_str = user if user else None
             except Exception:
                 pass
 
-        self.meta_user.setText(user_str if user_str else "-")
+        self.meta_operator.setText(operator_str if operator_str else "-")
 
         # DEVICE: Prefer loaded metadata, fall back to current device
         device_str = None
@@ -1234,9 +1285,36 @@ class EditsTab:
         # Header
         header = QHBoxLayout()
         title = QLabel("ΔSPR (RU) - Response Between Cursors")
-        title.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F;")
+        title.setStyleSheet("font-size: 15px; font-weight: 600; color: #1D1D1F;")
         header.addWidget(title)
         header.addStretch()
+
+        # Lock/Unlock cursor button
+        self.delta_spr_lock_btn = QPushButton("🔓 Unlock")
+        self.delta_spr_lock_btn.setFixedSize(80, 24)
+        self.delta_spr_lock_btn.setCheckable(True)
+        self.delta_spr_lock_btn.setToolTip("Lock cursors to contact_time + 10% for consistent delta SPR measurement")
+        self.delta_spr_lock_btn.setStyleSheet("""
+            QPushButton {
+                background: #F8F9FA;
+                color: #1D1D1F;
+                border: 1px solid #D1D1D6;
+                border-radius: 5px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background: #E5E5EA;
+                border: 1px solid #007AFF;
+            }
+            QPushButton:checked {
+                background: #34C759;
+                color: white;
+                border: 1px solid #2DB04E;
+            }
+        """)
+        self.delta_spr_lock_btn.toggled.connect(self._toggle_delta_spr_lock)
+        header.addWidget(self.delta_spr_lock_btn)
 
         # Reset bar chart button
         reset_bar_btn = QPushButton("⟲")
@@ -1537,27 +1615,69 @@ class EditsTab:
         logger.debug(f"Cycle {cycle_idx + 1}: Using planned duration → {planned_duration:.2f} min")
         return planned_duration
 
+    def _update_cycle_type_filter(self, cycles_data):
+        """Update filter dropdown to show actual cycle types from loaded data."""
+        # Extract unique cycle types
+        unique_types = set()
+        for cycle in cycles_data:
+            cycle_type = cycle.get('type', 'Custom')
+            unique_types.add(cycle_type)
+
+        # Convert set to sorted list
+        sorted_types = sorted(list(unique_types))
+
+        # Disconnect signal temporarily to avoid triggering filter while updating
+        self.filter_combo.currentTextChanged.disconnect(self._apply_cycle_filter)
+        
+        # Clear and repopulate dropdown
+        self.filter_combo.clear()
+        self.filter_combo.addItem("All")  # Always include "All"
+        for cycle_type in sorted_types:
+            self.filter_combo.addItem(cycle_type)
+        
+        # Set default to first cycle type (or "All" if none)
+        if sorted_types:
+            self.filter_combo.setCurrentText(sorted_types[0])
+        else:
+            self.filter_combo.setCurrentText("All")
+        
+        # Reconnect signal
+        self.filter_combo.currentTextChanged.connect(self._apply_cycle_filter)
+
     def _populate_cycles_table(self, cycles_data):
-        """Populate the cycles table with loaded cycle data."""
+        """Populate the cycles table with loaded cycle data with export selection checkboxes."""
         from PySide6.QtGui import QColor
         self.cycle_data_table.setRowCount(0)  # Clear existing rows
+        self._cycle_export_selection = {}  # Reset selection tracking
 
         type_counts = {}  # Track numbering per type
+
+        # Update filter dropdown with actual cycle types from loaded data
+        self._update_cycle_type_filter(cycles_data)
 
         for cycle_idx, cycle in enumerate(cycles_data):
             row_idx = self.cycle_data_table.rowCount()
             self.cycle_data_table.insertRow(row_idx)
 
-            # --- Col 0: Type icon (color-coded abbreviation) ---
+            # --- Col 0: Export checkbox (for selective chart export) ---
+            checkbox_item = QTableWidgetItem()
+            checkbox_item.setFlags(checkbox_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            checkbox_item.setCheckState(Qt.CheckState.Checked)  # Default: all checked
+            checkbox_item.setData(Qt.ItemDataRole.UserRole, cycle_idx)  # Store cycle index
+            self.cycle_data_table.setItem(row_idx, 0, checkbox_item)
+            self._cycle_export_selection[cycle_idx] = True  # Track as selected
+            self.cycle_data_table.itemChanged.connect(self._on_cycle_export_checkbox_changed)
+
+            # --- Col 1: Type icon (color-coded abbreviation) ---
             cycle_type = str(cycle.get('type', 'Custom'))
             type_counts[cycle_type] = type_counts.get(cycle_type, 0) + 1
             abbr, color = CycleTypeStyle.get(cycle_type)
             type_item = QTableWidgetItem(f"{abbr} {type_counts[cycle_type]}")
             type_item.setForeground(QColor(color))
             type_item.setToolTip(f"{cycle_type} {type_counts[cycle_type]}")
-            self.cycle_data_table.setItem(row_idx, 0, type_item)
+            self.cycle_data_table.setItem(row_idx, 1, type_item)
 
-            # --- Col 1: Time (ACTUAL duration @ start) ---
+            # --- Col 2: Time (ACTUAL duration @ start) ---
             # Calculate ACTUAL duration (not planned)
             actual_duration_min = self._calculate_actual_duration(cycle_idx, cycle, cycles_data)
             start_time = cycle.get('start_time_sensorgram', 0)
@@ -1573,14 +1693,14 @@ class EditsTab:
                 time_str = f"@ {start_time:.0f}s"
             else:
                 time_str = "—"
-            self.cycle_data_table.setItem(row_idx, 1, QTableWidgetItem(time_str))
+            self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(time_str))
 
-            # --- Col 2: Concentration ---
+            # --- Col 3: Concentration ---
             conc_val = cycle.get('concentration_value', '')
             conc_str = str(conc_val) if pd.notna(conc_val) and conc_val != '' else ''
-            self.cycle_data_table.setItem(row_idx, 2, QTableWidgetItem(conc_str))
+            self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(conc_str))
 
-            # --- Col 3: ΔSPR (combined 4 channels) ---
+            # --- Col 4: ΔSPR (combined 4 channels) ---
             delta_parts = []
             for ch_key, ch_label in [('delta_ch1', 'A'), ('delta_ch2', 'B'), ('delta_ch3', 'C'), ('delta_ch4', 'D')]:
                 val = cycle.get(ch_key, '')
@@ -1603,9 +1723,9 @@ class EditsTab:
                     if pd.notna(val) and isinstance(val, (int, float)):
                         delta_parts.append(f"{ch}:{val:.0f}")
             delta_str = " ".join(delta_parts) if delta_parts else ''
-            self.cycle_data_table.setItem(row_idx, 3, QTableWidgetItem(delta_str))
+            self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(delta_str))
 
-            # --- Col 4: Flags ---
+            # --- Col 5: Flags ---
             flag_data = cycle.get('flag_data', [])
             if flag_data:
                 _ICONS = {'injection': '▲', 'wash': '■', 'spike': '◆'}
@@ -1629,16 +1749,16 @@ class EditsTab:
                         flags_display = raw_flags if raw_flags else ''
                 else:
                     flags_display = str(raw_flags) if raw_flags and pd.notna(raw_flags) else ''
-            self.cycle_data_table.setItem(row_idx, 4, QTableWidgetItem(flags_display))
+            self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(flags_display))
 
-            # --- Col 5: Notes ---
+            # --- Col 6: Notes ---
             notes = cycle.get('note', '')
             cycle_id = cycle.get('cycle_id', '')
             if cycle_id:
                 notes_display = f"[{cycle_id}] {notes}" if notes else f"[{cycle_id}]"
             else:
                 notes_display = str(notes) if notes else ''
-            self.cycle_data_table.setItem(row_idx, 5, QTableWidgetItem(notes_display))
+            self.cycle_data_table.setItem(row_idx, 6, QTableWidgetItem(notes_display))
 
         # Update empty state visibility
         self._update_empty_state()
@@ -1646,6 +1766,13 @@ class EditsTab:
         # Update metadata stats
         if hasattr(self, '_update_metadata_stats'):
             self._update_metadata_stats()
+
+    def _on_cycle_export_checkbox_changed(self, item):
+        """Track changes to export selection checkboxes."""
+        if item.column() == 0:  # Only track checkbox column
+            cycle_idx = item.data(Qt.ItemDataRole.UserRole)
+            if cycle_idx is not None:
+                self._cycle_export_selection[cycle_idx] = (item.checkState() == Qt.CheckState.Checked)
 
     def _export_selection(self):
         """Export data from Edits tab to Excel.
@@ -1821,45 +1948,25 @@ class EditsTab:
                 df_data_long.to_excel(writer, sheet_name='Combined Data (Long)', index=False)
 
                 # Sheet 2: Per-channel format (Time_A, A, Time_B, B, Time_C, C, Time_D, D)
-                # Convert long format to wide per-channel format
-                per_channel_data = {}
-                for item in export_data:
-                    ch = item['Channel']
-                    time = item['Time_s']
-                    ru = item['Response_RU']
-
-                    if ch not in per_channel_data:
-                        per_channel_data[ch] = {'times': [], 'values': []}
-
-                    per_channel_data[ch]['times'].append(time)
-                    per_channel_data[ch]['values'].append(ru)
-
-                # Find max length for padding
-                max_len = max((len(per_channel_data[ch]['times']) for ch in ['A', 'B', 'C', 'D'] if ch in per_channel_data), default=0)
-
-                # Build per-channel DataFrame
-                per_channel_dict = {}
-                for ch in ['A', 'B', 'C', 'D']:
-                    if ch in per_channel_data:
-                        times = per_channel_data[ch]['times']
-                        values = per_channel_data[ch]['values']
-                        # Pad to max length with NaN
-                        times += [None] * (max_len - len(times))
-                        values += [None] * (max_len - len(values))
-                        per_channel_dict[f'Time_{ch}'] = times
-                        per_channel_dict[ch] = values
-                    else:
-                        per_channel_dict[f'Time_{ch}'] = [None] * max_len
-                        per_channel_dict[ch] = [None] * max_len
-
-                # Create DataFrame with column order: Time_A, A, Time_B, B, Time_C, C, Time_D, D
-                column_order = []
-                for ch in ['A', 'B', 'C', 'D']:
-                    column_order.append(f'Time_{ch}')
-                    column_order.append(ch)
-
-                df_per_channel = pd.DataFrame(per_channel_dict)[column_order]
-                df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+                # Convert long format to wide per-channel format using shared utility
+                from affilabs.utils.export_helpers import ExportHelpers
+                
+                # Build wide DataFrame from long format
+                df_wide = df_data_long.pivot_table(
+                    index='Time_s',
+                    columns='Channel',
+                    values='Response_RU',
+                    aggfunc='first'
+                ).reset_index()
+                df_wide.rename(columns={'Time_s': 'Time'}, inplace=True)
+                
+                # Use shared utility to build per-channel format
+                df_per_channel = ExportHelpers.build_channels_xy_from_wide_dataframe(df_wide, channels=['A', 'B', 'C', 'D'])
+                if not df_per_channel.empty:
+                    # Reorder columns: Time_A, A, Time_B, B, Time_C, C, Time_D, D
+                    column_order = [col for ch in ['A', 'B', 'C', 'D'] for col in [f'Time_{ch}', ch] if col in df_per_channel.columns]
+                    df_per_channel = df_per_channel[column_order]
+                    df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
 
                 # Sheet 3: Metadata
                 df_meta = pd.DataFrame(metadata)
@@ -2018,27 +2125,11 @@ class EditsTab:
             df_long.to_excel(writer, sheet_name='Raw Data', index=False)
 
             # Sheet 2: Per-channel format (Time_A, A, Time_B, B, Time_C, C, Time_D, D)
-            per_channel_dict = {}
-            for ch in ['A', 'B', 'C', 'D']:
-                if ch in df_wide.columns:
-                    # Get non-null values and their corresponding times
-                    valid_mask = df_wide[ch].notna()
-                    times = df_wide.loc[valid_mask, 'Time'].values
-                    values = df_wide.loc[valid_mask, ch].values
-                    per_channel_dict[f'Time_{ch}'] = list(times)
-                    per_channel_dict[ch] = list(values)
-                else:
-                    per_channel_dict[f'Time_{ch}'] = []
-                    per_channel_dict[ch] = []
-
-            # Pad all lists to the same length
-            max_len = max(len(v) for v in per_channel_dict.values()) if per_channel_dict else 0
-            for key in per_channel_dict:
-                while len(per_channel_dict[key]) < max_len:
-                    per_channel_dict[key].append(None)
-
-            df_per_channel = pd.DataFrame(per_channel_dict)
-            df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+            # Use shared utility from ExportHelpers to avoid duplication
+            from affilabs.utils.export_helpers import ExportHelpers
+            df_per_channel = ExportHelpers.build_channels_xy_from_wide_dataframe(df_wide, channels=['A', 'B', 'C', 'D'])
+            if not df_per_channel.empty:
+                df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
 
             # Sheet 3: Cycle Table
             if cycles_table:
@@ -3094,11 +3185,13 @@ class EditsTab:
                 f"🗑️ Deleted {len(row_indices)} cycle{'s' if len(row_indices) > 1 else ''} from data table"
             )
             self.main_window.sidebar.intel_message_label.setStyleSheet(
-                "font-size: 12px;"
-                "color: #FF9500;"  # Orange for deletion
-                "background: transparent;"
-                "font-weight: 600;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "QLabel {"
+                "  font-size: 12px;"
+                "  color: #FF9500;"
+                "  background: transparent;"
+                "  font-weight: 600;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "}"
             )
 
     def _edit_cycle_timing(self, row_index):
@@ -3271,7 +3364,7 @@ class EditsTab:
                     f"✏️ Updated Cycle {row_index + 1} timing"
                 )
                 self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px; color: #34C759; background: transparent; font-weight: 600;"
+                    "QLabel { font-size: 12px; color: #34C759; background: transparent; font-weight: 600; }"
                 )
 
             dialog.accept()
@@ -3284,10 +3377,113 @@ class EditsTab:
         # Show dialog
         dialog.exec()
 
+    def _toggle_delta_spr_lock(self, checked):
+        """Toggle Delta SPR cursor locking based on contact_time.
+        
+        When locked, cursor distance is maintained at contact_time + 10%.
+        """
+        if checked:
+            # Enable locking - get current cycle's contact_time
+            row_idx = self.cycle_data_table.currentRow()
+            if row_idx < 0:
+                # No cycle selected, disable lock
+                self.delta_spr_lock_btn.setChecked(False)
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self.main_window,
+                    "No Cycle Selected",
+                    "Please select a cycle to lock cursors to its contact time."
+                )
+                return
+            
+            # Get contact_time from current cycle
+            if (hasattr(self.main_window, '_loaded_cycles_data') and 
+                row_idx < len(self.main_window._loaded_cycles_data)):
+                cycle = self.main_window._loaded_cycles_data[row_idx]
+                contact_time = cycle.get('contact_time')
+                
+                if contact_time is None or contact_time <= 0:
+                    # No valid contact_time, disable lock
+                    self.delta_spr_lock_btn.setChecked(False)
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.warning(
+                        self.main_window,
+                        "No Contact Time",
+                        "Selected cycle has no valid contact time.\n"
+                        "Please ensure contact_time is set in the cycle data."
+                    )
+                    return
+                
+                # Calculate locked distance: contact_time + 10%
+                self._delta_spr_lock_distance = float(contact_time) * 1.1
+                self._delta_spr_cursor_locked = True
+                
+                # Update button appearance
+                self.delta_spr_lock_btn.setText("🔒 Locked")
+                self.delta_spr_lock_btn.setToolTip(
+                    f"Cursors locked at contact_time × 1.1 = {self._delta_spr_lock_distance:.1f}s"
+                )
+                
+                logger.info(f"✓ Delta SPR cursors locked to {self._delta_spr_lock_distance:.1f}s "
+                           f"(contact_time={contact_time:.1f}s + 10%)")
+        else:
+            # Disable locking
+            self._delta_spr_cursor_locked = False
+            self.delta_spr_lock_btn.setText("🔓 Unlock")
+            self.delta_spr_lock_btn.setToolTip(
+                "Lock cursors to contact_time + 10% for consistent delta SPR measurement"
+            )
+            logger.info("✓ Delta SPR cursors unlocked - free movement enabled")
+
+    def _reset_delta_spr_lock(self):
+        """Reset Delta SPR lock when a new cycle is selected.
+        
+        Unsets the lock button and clears lock state when switching cycles.
+        """
+        if self._delta_spr_cursor_locked:
+            # Uncheck the lock button (will trigger _toggle_delta_spr_lock with checked=False)
+            self.delta_spr_lock_btn.blockSignals(True)
+            self.delta_spr_lock_btn.setChecked(False)
+            self.delta_spr_lock_btn.blockSignals(False)
+            
+            # Call the toggle handler to update state and button text
+            self._toggle_delta_spr_lock(False)
+
+    def _enforce_delta_spr_lock(self):
+        """Enforce cursor distance constraint when locked to contact_time + 10%.
+        
+        If cursors are locked, maintains the distance between them.
+        Uses the start cursor as anchor and adjusts the stop cursor.
+        """
+        if not self._delta_spr_cursor_locked or self._suppressing_position_change:
+            return
+        
+        # Get current positions
+        start_time = self.delta_spr_start_cursor.value()
+        stop_time = self.delta_spr_stop_cursor.value()
+        current_distance = abs(stop_time - start_time)
+        
+        # Check which cursor moved more recently (heuristic: stop cursor is usually adjusted last)
+        # If the actual distance doesn't match the locked distance, enforce it
+        target_distance = self._delta_spr_lock_distance
+        
+        if abs(current_distance - target_distance) > 0.1:  # Allow small tolerance
+            # Mark that we're adjusting position to prevent recursive updates
+            self._suppressing_position_change = True
+            try:
+                # Adjust stop cursor to maintain locked distance
+                new_stop = start_time + target_distance
+                self.delta_spr_stop_cursor.setValue(new_stop)
+            finally:
+                self._suppressing_position_change = False
+
     def _update_delta_spr_barchart(self):
         """Update Delta SPR bar chart based on cursor positions."""
         if not hasattr(self, 'delta_spr_bars'):
             return
+
+        # Enforce lock constraint if enabled
+        self._enforce_delta_spr_lock()
 
         start_time = self.delta_spr_start_cursor.value()
         stop_time = self.delta_spr_stop_cursor.value()
@@ -3969,6 +4165,14 @@ class EditsTab:
         export_analysis_btn.clicked.connect(self._export_table_data)
         layout.addWidget(export_analysis_btn)
 
+        # ── Export Analysis + Charts ──
+        export_charts_btn = self._export_sidebar_button(
+            "📊", "Export with Charts",
+            "Complete analysis workbook with interactive Excel charts"
+        )
+        export_charts_btn.clicked.connect(self._export_post_edit_analysis_with_charts)
+        layout.addWidget(export_charts_btn)
+
         # ── Save Cycles as Method ──
         save_method_btn = self._export_sidebar_button(
             "📋", "Save as Method",
@@ -4604,7 +4808,7 @@ class EditsTab:
                     f"✅ Exported {len(rows_data)-1} cycles to {file_path.split('/')[-1]}"
                 )
                 self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px; color: #34C759; background: transparent; font-weight: 600;"
+                    "QLabel { font-size: 12px; color: #34C759; background: transparent; font-weight: 600; }"
                 )
 
         except Exception as e:
@@ -4640,27 +4844,23 @@ class EditsTab:
                 self.cycle_data_table.setColumnHidden(col, False)
 
     def _apply_cycle_filter(self, filter_text):
-        """Filter cycles by type based on priority (concentration is key, baseline less important)."""
+        """Filter cycles by type based on dropdown selection."""
         self.cycle_filter = filter_text
-
-        # Priority mapping
-        priority_map = {
-            "All": ["Binding", "Association", "Dissociation", "Baseline", "Regeneration", "Wash", "Prime"],
-            "Binding (High)": ["Binding", "Association", "Dissociation"],
-            "Baseline (Low)": ["Baseline"],
-            "Regeneration (Med)": ["Regeneration", "Wash"]
-        }
-
-        allowed_types = priority_map.get(filter_text, priority_map["All"])
 
         # Show/hide rows based on filter
         for row in range(self.cycle_data_table.rowCount()):
             cycle_type_item = self.cycle_data_table.item(row, 0)
             if cycle_type_item:
-                # Use tooltip which stores full type name (e.g. 'Baseline 1')
+                # Get full cycle type from tooltip (e.g., "Baseline", "Association")
                 cycle_type = cycle_type_item.toolTip() or cycle_type_item.text()
+                
                 # Check if cycle type matches filter
-                show_row = any(allowed in cycle_type for allowed in allowed_types)
+                if filter_text == "All":
+                    show_row = True
+                else:
+                    # Show row if its type matches the selected filter
+                    show_row = filter_text in cycle_type
+                
                 self.cycle_data_table.setRowHidden(row, not show_row)
 
         # Re-apply search filter if active
@@ -4684,14 +4884,11 @@ class EditsTab:
             cycle_type_item = self.cycle_data_table.item(row, 0)
             if cycle_type_item:
                 cycle_type = cycle_type_item.toolTip() or cycle_type_item.text()
-                priority_map = {
-                    "All": ["Binding", "Association", "Dissociation", "Baseline", "Regeneration", "Wash", "Prime"],
-                    "Binding (High)": ["Binding", "Association", "Dissociation"],
-                    "Baseline (Low)": ["Baseline"],
-                    "Regeneration (Med)": ["Regeneration", "Wash"]
-                }
-                allowed_types = priority_map.get(self.cycle_filter, priority_map["All"])
-                show_by_filter = any(allowed in cycle_type for allowed in allowed_types)
+                # Check if cycle type matches current filter
+                if self.cycle_filter == "All":
+                    show_by_filter = True
+                else:
+                    show_by_filter = self.cycle_filter in cycle_type
             else:
                 show_by_filter = True
 
@@ -4816,8 +5013,8 @@ class EditsTab:
                     "💉 Injection marker enabled - Detecting injection point..."
                 )
                 self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 14px; color: #007AFF; background: transparent; font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "QLabel { font-size: 14px; color: #007AFF; background: transparent; font-weight: 600;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; }"
                 )
 
             # Re-run detection on currently selected cycle
@@ -4831,8 +5028,8 @@ class EditsTab:
                     "Injection marker hidden"
                 )
                 self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 14px; color: #8E8E93; background: transparent; font-weight: 500;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "QLabel { font-size: 14px; color: #8E8E93; background: transparent; font-weight: 500;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; }"
                 )
 
         logger.info(f"Injection marker: {'shown' if self._auto_detect_enabled else 'hidden'}")
@@ -4972,8 +5169,8 @@ class EditsTab:
                 f"Injection detected at t={injection_time:.2f}s ({confidence_pct}% confidence) - Drag line to adjust"
             )
             self.main_window.sidebar.intel_message_label.setStyleSheet(
-                "font-size: 14px; color: #007AFF; background: transparent; font-weight: 600;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "QLabel { font-size: 14px; color: #007AFF; background: transparent; font-weight: 600;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; }"
             )
 
     def _hide_injection_marker(self):
@@ -5007,6 +5204,393 @@ class EditsTab:
                     f"✓ Injection corrected to t={new_time:.2f}s (manual)"
                 )
                 self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 14px; color: #34C759; background: transparent; font-weight: 600;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    "QLabel { font-size: 14px; color: #34C759; background: transparent; font-weight: 600;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; }"
                 )
+
+    def _load_data_from_excel_with_path_tracking(self):
+        """Load Excel file and track the path for later saving."""
+        from PySide6.QtWidgets import QFileDialog
+        
+        # Open file dialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.main_window,
+            "Load Excel File",
+            "",
+            "Excel Files (*.xlsx);All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        # Store the file path for saving later
+        self._loaded_file_path = file_path
+        
+        # Call the main window's load function
+        self.main_window._load_data_from_excel_internal(file_path)
+    
+    def _save_cycles_to_excel(self):
+        """Save the modified cycle data back to the loaded Excel file."""
+        from PySide6.QtWidgets import QMessageBox
+        from affilabs.utils.logger import logger
+        import pandas as pd
+        from pathlib import Path
+        
+        if not self._loaded_file_path:
+            QMessageBox.warning(
+                self.main_window,
+                "No File Loaded",
+                "Please load an Excel file first using the Load button."
+            )
+            return
+        
+        try:
+            file_path = Path(self._loaded_file_path)
+            
+            if not file_path.exists():
+                QMessageBox.critical(
+                    self.main_window,
+                    "File Not Found",
+                    f"The file no longer exists:\n{file_path}"
+                )
+                self._loaded_file_path = None
+                return
+            
+            logger.info(f"Saving cycles to Excel: {file_path}")
+            
+            # Collect current cycle data from table and _loaded_cycles_data
+            updated_cycles = []
+            if hasattr(self.main_window, '_loaded_cycles_data'):
+                for cycle in self.main_window._loaded_cycles_data:
+                    cycle_copy = cycle.copy()
+                    updated_cycles.append(cycle_copy)
+            
+            if not updated_cycles:
+                QMessageBox.warning(
+                    self.main_window,
+                    "No Cycles",
+                    "No cycles to save."
+                )
+                return
+            
+            # Read existing Excel file to preserve other sheets
+            excel_sheets = pd.read_excel(file_path, sheet_name=None, engine='openpyxl')
+            
+            # Update the Cycles sheet with modified data
+            df_cycles = pd.DataFrame(updated_cycles)
+            
+            # Write back to Excel, preserving all other sheets
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                # Write Cycles sheet (updated)
+                df_cycles.to_excel(writer, sheet_name='Cycles', index=False)
+                logger.info(f"✓ Updated Cycles sheet with {len(updated_cycles)} cycles")
+                
+                # Write all other sheets unchanged
+                for sheet_name, df_sheet in excel_sheets.items():
+                    if sheet_name != 'Cycles':  # Skip Cycles as we just wrote it
+                        df_sheet.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            logger.info(f"✓ Saved {len(updated_cycles)} cycles back to Excel")
+            
+            QMessageBox.information(
+                self.main_window,
+                "Save Successful",
+                f"Saved {len(updated_cycles)} cycles back to Excel file.\n\nFile: {file_path.name}"
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to save cycles to Excel: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.main_window,
+                "Save Error",
+                f"Failed to save cycles to Excel:\n{str(e)}"
+            )
+
+    def _export_post_edit_analysis_with_charts(self):
+        """Export comprehensive post-edit analysis workbook with interactive Excel charts.
+        
+        Creates a complete analysis workbook containing:
+        - Raw data (untouched)
+        - Processed data (with current UI settings applied)
+        - Analysis results (delta SPR measurements, cursor positions)
+        - Flag positions (updated marker data)
+        - Enhanced cycle metadata
+        - Interactive Excel charts (bar charts, timelines, overview)
+        """
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from affilabs.utils.logger import logger
+        from datetime import datetime
+        import pandas as pd
+        from pathlib import Path
+        
+        try:
+            # Check if we have data to export
+            if not hasattr(self.main_window, '_loaded_cycles_data') or not self.main_window._loaded_cycles_data:
+                QMessageBox.warning(
+                    self.main_window,
+                    "No Data",
+                    "No cycles data available for export. Please load data first."
+                )
+                return
+            
+            # Get save location
+            default_name = f"SPR_Analysis_with_Charts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            default_dir = self._get_user_export_dir()
+            
+            file_path, _ = QFileDialog.getSaveFileName(
+                self.main_window,
+                "Export Analysis with Charts",
+                str(default_dir / default_name),
+                "Excel files (*.xlsx)"
+            )
+            
+            if not file_path:
+                return  # User cancelled
+                
+            logger.info(f"Starting post-edit analysis export with charts: {file_path}")
+            
+            # Get selected cycle indices from checkboxes
+            selected_cycle_indices = [idx for idx, is_selected in self._cycle_export_selection.items() if is_selected]
+            if not selected_cycle_indices:
+                QMessageBox.warning(
+                    self.main_window,
+                    "No Cycles Selected",
+                    "Please check at least one cycle in the Export column to include in the export."
+                )
+                return
+            
+            logger.info(f"Exporting {len(selected_cycle_indices)} selected cycles: {selected_cycle_indices}")
+            
+            # 1. Get raw data (untouched)
+            raw_data = self._get_raw_data_untouched()
+            
+            # 2. Generate processed data with current UI settings
+            processed_data = self._get_processed_data_with_edits()
+            
+            # 3. Capture current analysis results - FILTERED by selected cycles
+            analysis_results = self._get_current_analysis_results()
+            if not analysis_results.empty and 'Cycle_ID' in analysis_results.columns:
+                # Filter to only selected cycles
+                analysis_results = analysis_results[analysis_results.index.isin(selected_cycle_indices)]
+            
+            # 4. Get updated flag positions - FILTERED by selected cycles
+            flag_data = self._get_updated_flag_positions()
+            if not flag_data.empty and 'Cycle_ID' in flag_data.columns:
+                # Keep only flags from selected cycles
+                selected_cycle_ids = [self.main_window._loaded_cycles_data[i].get('cycle_id', f'Cycle_{i+1}') 
+                                    for i in selected_cycle_indices if i < len(self.main_window._loaded_cycles_data)]
+                flag_data = flag_data[flag_data['Cycle_ID'].isin(selected_cycle_ids)]
+            
+            # 5. Get enhanced cycles metadata - FILTERED by selected cycles
+            cycles_data = self._get_enriched_cycles_metadata()
+            if not cycles_data.empty:
+                cycles_data = cycles_data.iloc[selected_cycle_indices]
+            
+            # 6. Document export settings
+            export_settings = {
+                'export_timestamp': datetime.now().isoformat(),
+                'user': self.user_manager.get_current_user() if self.user_manager else 'Unknown',
+                'smoothing_level': self.edits_smooth_slider.value() if hasattr(self, 'edits_smooth_slider') else 0,
+                'baseline_corrected': True,
+                'cursor_lock_active': getattr(self, '_delta_spr_cursor_locked', False),
+                'locked_distance': getattr(self, '_delta_spr_lock_distance', None),
+                'software_version': 'Affilabs Core v2.0',
+                'processing_version': '1.0',
+                'selected_cycles': len(selected_cycle_indices),
+                'total_cycles': len(self.main_window._loaded_cycles_data) if hasattr(self.main_window, '_loaded_cycles_data') else 0
+            }
+            
+            # 7. Create analysis workbook with charts
+            from affilabs.utils.excel_chart_builder import create_analysis_workbook_with_charts
+            
+            create_analysis_workbook_with_charts(
+                raw_data=raw_data,
+                processed_data=processed_data,
+                analysis_results=analysis_results,
+                flag_data=flag_data,
+                cycles_data=cycles_data,
+                export_settings=export_settings,
+                output_path=Path(file_path),
+                selected_cycles=selected_cycle_indices
+            )
+            
+            logger.info(f"✓ Created analysis workbook with charts: {Path(file_path).name}")
+            
+            QMessageBox.information(
+                self.main_window,
+                "Export Successful",
+                f"Analysis workbook with interactive charts saved successfully!\n\n"
+                f"File: {Path(file_path).name}\n"
+                f"Sheets: Raw Data, Processed Data, Analysis Results, Flag Positions, "
+                f"Cycles Metadata, Export Settings\n"
+                f"Charts: Delta SPR bars, Timeline graphs, Flag positions, Overview"
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to export analysis with charts: {e}", exc_info=True)
+            QMessageBox.critical(
+                self.main_window,
+                "Export Error",
+                f"Failed to create analysis workbook with charts:\n{str(e)}\n\n"
+                "Note: This feature requires openpyxl For full chart support."
+            )
+
+    def _get_raw_data_untouched(self) -> pd.DataFrame:
+        """Get original XY data without any processing applied."""
+        # Option 1: From "Send to Edits" - wide format DataFrame
+        if hasattr(self.main_window, '_edits_raw_data') and self.main_window._edits_raw_data is not None:
+            return self.main_window._edits_raw_data.copy()
+        
+        # Option 2: From loaded Excel file - preserve raw data sheet
+        elif hasattr(self.main_window, '_loaded_raw_data_sheets'):
+            if 'Raw_Data' in self.main_window._loaded_raw_data_sheets:
+                return self.main_window._loaded_raw_data_sheets['Raw_Data'].copy()
+            elif 'Channels XY' in self.main_window._loaded_raw_data_sheets:
+                return self.main_window._loaded_raw_data_sheets['Channels XY'].copy()
+        
+        # Option 3: Construct from buffer_mgr (live data)
+        elif hasattr(self.main_window, 'app') and hasattr(self.main_window.app, 'buffer_mgr'):
+            return self._extract_raw_from_buffer()
+        
+        # Fallback: empty DataFrame
+        logger.warning("No raw data source available for untouched export")
+        return pd.DataFrame()
+
+    def _extract_raw_from_buffer(self) -> pd.DataFrame:
+        """Extract raw XY data from buffer manager in wide format."""
+        try:
+            buffer_mgr = self.main_window.app.buffer_mgr
+            channels = ['A', 'B', 'C', 'D']
+            
+            raw_data = {}
+            for ch in channels:
+                if hasattr(buffer_mgr.cycle_data[ch], 'time') and hasattr(buffer_mgr.cycle_data[ch], 'wavelength'):
+                    raw_data[f'Time_{ch}'] = buffer_mgr.cycle_data[ch].time
+                    raw_data[f'SPR_{ch}'] = buffer_mgr.cycle_data[ch].wavelength
+            
+            return pd.DataFrame(raw_data) if raw_data else pd.DataFrame()
+            
+        except Exception as e:
+            logger.error(f"Failed to extract raw data from buffer: {e}")
+            return pd.DataFrame()
+
+    def _get_processed_data_with_edits(self) -> pd.DataFrame:
+        """Generate processed curves with current UI settings applied."""
+        raw_df = self._get_raw_data_untouched()
+        
+        if raw_df.empty:
+            return pd.DataFrame()
+            
+        processed_df = raw_df.copy()
+        
+        # Apply current smoothing if enabled
+        if hasattr(self, 'edits_smooth_slider') and self.edits_smooth_slider.value() > 0:
+            processed_df = self._apply_smoothing_to_dataframe(processed_df, level=self.edits_smooth_slider.value())
+        
+        # Apply baseline correction (uses first wavelength value as reference)
+        processed_df = self._apply_baseline_correction_to_dataframe(processed_df)
+        
+        # Apply time shifts and channel alignments would go here if implemented
+        # processed_df = self._apply_time_alignments(processed_df)
+        # processed_df = self._apply_channel_alignments(processed_df)
+        
+        return processed_df
+
+    def _apply_smoothing_to_dataframe(self, df: pd.DataFrame, level: int) -> pd.DataFrame:
+        """Apply smoothing to SPR columns in DataFrame."""
+        processed_df = df.copy()
+        
+        # Apply smoothing to SPR columns
+        for col in df.columns:
+            if col.startswith('SPR_'):
+                if level > 0:
+                    # Simple rolling mean smoothing
+                    window_size = min(level + 1, len(df))
+                    processed_df[col] = df[col].rolling(window=window_size, center=True).mean()
+                    # Fill NaN values at edges
+                    processed_df[col].fillna(method='bfill', inplace=True)
+                    processed_df[col].fillna(method='ffill', inplace=True)
+        
+        return processed_df
+
+    def _apply_baseline_correction_to_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply baseline correction to SPR columns."""
+        processed_df = df.copy()
+        
+        # Apply baseline correction to SPR columns
+        for col in df.columns:
+            if col.startswith('SPR_') and not df[col].empty:
+                # Use first value as baseline
+                baseline = df[col].iloc[0] if len(df[col]) > 0 else 0
+                processed_df[col] = df[col] - baseline
+        
+        return processed_df
+
+    def _get_current_analysis_results(self) -> pd.DataFrame:
+        """Capture current delta SPR measurements and cursor states."""
+        results = []
+        
+        if not hasattr(self.main_window, '_loaded_cycles_data'):
+            return pd.DataFrame()
+            
+        for row_idx, cycle in enumerate(self.main_window._loaded_cycles_data):
+            # Current delta measurements (from _update_delta_spr_barchart)
+            delta_data = {
+                'Cycle_ID': cycle.get('cycle_id', f'Cycle_{row_idx+1}'),
+                'Contact_Time': cycle.get('contact_time'),
+                'Delta_SPR_A': getattr(self, 'current_delta_values', [None, None, None, None])[0],
+                'Delta_SPR_B': getattr(self, 'current_delta_values', [None, None, None, None])[1], 
+                'Delta_SPR_C': getattr(self, 'current_delta_values', [None, None, None, None])[2],
+                'Delta_SPR_D': getattr(self, 'current_delta_values', [None, None, None, None])[3],
+                'Cursor_Start': getattr(self.delta_spr_start_cursor, 'value', lambda: None)() if hasattr(self, 'delta_spr_start_cursor') else None,
+                'Cursor_Stop': getattr(self.delta_spr_stop_cursor, 'value', lambda: None)() if hasattr(self, 'delta_spr_stop_cursor') else None,
+                'Locked_Distance': getattr(self, '_delta_spr_lock_distance', None) if getattr(self, '_delta_spr_cursor_locked', False) else None,
+                'Lock_Active': getattr(self, '_delta_spr_cursor_locked', False)
+            }
+            results.append(delta_data)
+        
+        return pd.DataFrame(results)
+
+    def _get_updated_flag_positions(self) -> pd.DataFrame:
+        """Get updated flag marker positions with metadata."""
+        flag_results = []
+        
+        if not hasattr(self.main_window, '_loaded_cycles_data'):
+            return pd.DataFrame()
+            
+        for cycle in self.main_window._loaded_cycles_data:
+            cycle_id = cycle.get('cycle_id', 'Unknown')
+            flag_data = cycle.get('flag_data', [])
+            
+            for flag in flag_data:
+                flag_entry = {
+                    'Cycle_ID': cycle_id,
+                    'Flag_Type': flag.get('type', 'unknown'),
+                    'Channel': flag.get('channel', 'unknown'),
+                    'Time_Position': flag.get('time', 0),
+                    'SPR_Value': flag.get('spr', 0),
+                    'Confidence': flag.get('confidence', 1.0),
+                    'Is_Reference': flag.get('is_reference', False)
+                }
+                flag_results.append(flag_entry)
+        
+        return pd.DataFrame(flag_results)
+
+    def _get_enriched_cycles_metadata(self) -> pd.DataFrame:
+        """Get cycle data with processing settings documentation."""
+        from datetime import datetime
+        
+        if not hasattr(self.main_window, '_loaded_cycles_data'):
+            return pd.DataFrame()
+            
+        cycles = [cycle.copy() for cycle in self.main_window._loaded_cycles_data]
+        
+        # Add processing context to each cycle
+        for cycle in cycles:
+            cycle['smoothing_applied'] = getattr(self.edits_smooth_slider, 'value', lambda: 0)() if hasattr(self, 'edits_smooth_slider') else 0
+            cycle['baseline_corrected'] = True  # Always applied in processed data
+            cycle['export_timestamp'] = datetime.now().isoformat()
+            cycle['processing_user'] = self.user_manager.get_current_user() if self.user_manager else 'Unknown'
+            cycle['cursor_lock_used'] = getattr(self, '_delta_spr_cursor_locked', False)
+        
+        return pd.DataFrame(cycles)

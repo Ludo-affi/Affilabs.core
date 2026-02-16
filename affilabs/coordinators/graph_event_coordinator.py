@@ -84,25 +84,10 @@ class GraphEventCoordinator:
             self.select_nearest_channel(click_time, click_value)
 
         elif event.button() == Qt.MouseButton.RightButton:
-            # Right click: Add flag for selected channel
-            if self.app._selected_channel is None:
-                logger.warning(
-                    "No channel selected. Left-click a channel first to select it.",
-                )
-                return
-
-            # Prompt user for flag type
-            flag_type, ok = QInputDialog.getItem(
-                self.app.main_window,
-                "Add Flag",
-                f"Select flag type for Channel {chr(65 + self.app._selected_channel)} at {click_time:.2f}s:",
-                ["Inject", "Wash", "Spike"],
-                0,
-                False,
-            )
-
-            if ok:
-                self.add_flag(self.app._selected_channel, click_time, flag_type)
+            # UNIFIED FLAG SYSTEM: Manual flag placement on the live graph is
+            # disabled. Flags are now placed by software only during acquisition.
+            # Users can add/adjust flags in the Edits tab.
+            pass
 
     def select_nearest_channel(self, click_time: float, click_value: float):
         """Select the channel whose curve is nearest to the click position.
@@ -184,84 +169,68 @@ class GraphEventCoordinator:
             logger.debug(f"Error selecting channel: {e}")
 
     def add_flag(self, channel: int, time: float, annotation: str):
-        """Add a flag marker to the graph and save to table.
+        """Add a flag marker — delegates to FlagManager (unified flag system).
+
+        DEPRECATED: This legacy method now routes to FlagManager.add_flag_marker().
+        Flags during acquisition are placed by software, not by user interaction.
 
         Args:
             channel: Channel index (0-3)
             time: Time position for flag
-            annotation: Flag annotation text
-
+            annotation: Flag annotation text (mapped to flag_type)
         """
-        import pyqtgraph as pg
-
-        # Store flag data
-        flag_entry = {
-            "channel": channel,
-            "time": time,
-            "annotation": annotation,
+        # Map annotation to flag_type
+        annotation_to_type = {
+            "Inject": "injection",
+            "injection": "injection",
+            "Wash": "wash",
+            "wash": "wash",
+            "Spike": "spike",
+            "spike": "spike",
         }
-        self.app._flag_data.append(flag_entry)
+        flag_type = annotation_to_type.get(annotation, "injection")
 
-        # Get channel color
-        curve = self.app.main_window.full_timeline_graph.curves[channel]
-        color = curve.opts["pen"].color()
+        # Map channel index to letter
+        channel_letter = chr(97 + channel)  # 0->a, 1->b, etc.
 
-        # Create flag marker for Navigation graph (prominent)
-        flag_line = pg.InfiniteLine(
-            pos=time,
-            angle=90,
-            pen=pg.mkPen(color=color, width=2, style=pg.QtCore.Qt.PenStyle.DashLine),
-            movable=False,
-        )
-
-        # Add flag symbol at top
-        flag_symbol = pg.ScatterPlotItem(
-            [time],
-            [self.app.main_window.full_timeline_graph.getPlotItem().viewRange()[1][1]],
-            symbol="t",  # Triangle down (flag shape)
-            size=15,
-            brush=pg.mkBrush(color),
-            pen=pg.mkPen(color=color, width=2),
-        )
-
-        # Add to Navigation graph (full_timeline_graph)
-        self.app.main_window.full_timeline_graph.addItem(flag_line)
-        self.app.main_window.full_timeline_graph.addItem(flag_symbol)
-
-        # Store references on Navigation graph
-        if not hasattr(self.app.main_window.full_timeline_graph, "flag_markers"):
-            self.app.main_window.full_timeline_graph.flag_markers = []
-
-        self.app.main_window.full_timeline_graph.flag_markers.append(
-            {
-                "line": flag_line,
-                "symbol": flag_symbol,
-                "data": flag_entry,
-            },
-        )
-
-        # Update cycle data table
-        self.update_cycle_data_table()
+        # Delegate to FlagManager
+        if hasattr(self.app, "flag_mgr") and self.app.flag_mgr:
+            self.app.flag_mgr.add_flag_marker(
+                channel=channel_letter,
+                time_val=time,
+                spr_val=0.0,  # Legacy path doesn't provide SPR
+                flag_type=flag_type,
+            )
+        else:
+            logger.warning("FlagManager not available — flag not added")
 
         logger.info(
             f"Added flag for Channel {chr(65 + channel)} at {time:.2f}s: '{annotation}'",
         )
 
     def update_cycle_data_table(self):
-        """Update the Flags column in cycle data table with flag information."""
+        """Update the Flags column in cycle data table with flag information.
+
+        Reads from FlagManager (unified flag system) when available.
+        """
         from PySide6.QtWidgets import QTableWidgetItem
 
-        # Build flag summary string for each row (currently just showing all flags)
-        # In a real implementation, this would map flags to specific cycles
-        flag_summary = "\n".join(
-            [
+        # Build flag summary from FlagManager
+        if hasattr(self.app, "flag_mgr") and self.app.flag_mgr:
+            live_flags = self.app.flag_mgr.get_live_flags()
+            flag_summary = "\n".join(
+                f"Ch {f.channel.upper()} @ {f.time:.1f}s: {f.flag_type}"
+                for f in live_flags
+            )
+        else:
+            # Legacy fallback via CycleCoordinator
+            flag_data = getattr(self.app.cycles, "_flag_data", [])
+            flag_summary = "\n".join(
                 f"Ch {chr(65 + f['channel'])} @ {f['time']:.1f}s: {f['annotation']}"
-                for f in self.app._flag_data
-            ],
-        )
+                for f in flag_data
+            )
 
         # Update first row's Flags column with all flags
-        # (In production, you'd map each flag to its corresponding cycle row)
         if self.app.main_window.cycle_data_table.rowCount() > 0:
             flags_item = QTableWidgetItem(flag_summary)
             self.app.main_window.cycle_data_table.setItem(0, 4, flags_item)

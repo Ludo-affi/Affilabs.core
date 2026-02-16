@@ -221,15 +221,13 @@ class SettingsHelpers:
                 app.main_window.channel_c_input.setText(str(led_c))
                 app.main_window.channel_d_input.setText(str(led_d))
 
-                # Apply to hardware for fast startup
+                # DON'T apply to hardware on initial connection - let calibration workflow control LED state
+                # This prevents all LEDs from turning on when hardware is first detected
                 if led_a > 0 or led_b > 0 or led_c > 0 or led_d > 0:
-                    app.hardware_mgr.ctrl.set_intensity("a", led_a)
-                    app.hardware_mgr.ctrl.set_intensity("b", led_b)
-                    app.hardware_mgr.ctrl.set_intensity("c", led_c)
-                    app.hardware_mgr.ctrl.set_intensity("d", led_d)
                     print(
-                        f"  [OK] LED intensities applied to hardware: A={led_a}, B={led_b}, C={led_c}, D={led_d}"
+                        f"  [OK] LED intensities loaded from config: A={led_a}, B={led_b}, C={led_c}, D={led_d}"
                     )
+                    print("  ℹ️  LEDs will be applied during calibration workflow")
                 else:
                     print(
                         "  ⚠️  No calibrated LED intensities - will calibrate on startup"

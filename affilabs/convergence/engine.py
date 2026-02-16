@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple, List
-import numpy as np
 
 from .config import ConvergenceRecipe, DetectorParams
 from .interfaces import Spectrometer, LEDActuator, ROIExtractor, Logger, Scheduler
@@ -75,11 +74,15 @@ class EngineState:
     ml_sensitivity_detected: bool = field(default=False)
     ml_target_signal: float = field(default=0.0)
 
-    def clear_for_integration_change(self) -> None:
+    def clear_for_integration_change(self, old_time_ms: float = 0.0, new_time_ms: float = 0.0) -> None:
         self.bounds.clear()
         # DON'T clear sticky_locked - preserve converged LED values across integration changes
         # self.sticky_locked.clear()
-        self.slope_est.clear()
+        # Scale slope history instead of clearing (physics: signal ∝ integration time)
+        if old_time_ms > 0 and new_time_ms > 0 and old_time_ms != new_time_ms:
+            self.slope_est.scale_for_integration_change(old_time_ms, new_time_ms)
+        else:
+            self.slope_est.clear()
 
     def get_bounds(self, ch: str) -> ChannelBounds:
         b = self.bounds.get(ch)
@@ -93,8 +96,8 @@ class ConvergenceEngine:
     # Constants for convergence thresholds
     SATURATION_THRESHOLD_RATIO = 0.85  # Trigger at 85% of max_counts (below 90% saturation)
     CONSERVATIVE_LED_FACTOR = 0.75  # Start at 75% of predicted LED for safety
-    MIN_ITERATIONS_FOR_EARLY_STOP = 5  # Minimum iterations before allowing early stop
-    EARLY_STOP_ERROR_THRESHOLD = 10.0  # Maximum average error % for early stopping
+    MIN_ITERATIONS_FOR_EARLY_STOP = 3  # Allow early stop at iter 3 (stricter threshold compensates)
+    EARLY_STOP_ERROR_THRESHOLD = 5.0  # Stricter threshold (was 10%) to compensate for earlier early-stop
     FINE_TUNE_ERROR_THRESHOLD = 0.05  # Lock channels within 5% of target
     UNLOCK_DRIFT_THRESHOLD = 0.10  # Unlock if drifted >10% from target
     BLOCKED_SIGNAL_THRESHOLD = 0.03  # Below 3% of max counts = polarizer blocking
@@ -238,7 +241,6 @@ class ConvergenceEngine:
         use_ml_led_predictor: bool = True,
         progress_callback: Optional[callable] = None,
         detector_serial: Optional[int] = None,
-        _ml_fallback_retry: bool = False,
     ) -> ConvergenceResult:
         # Log device serial for ML training correlation
         if detector_serial:
@@ -515,7 +517,7 @@ class ConvergenceEngine:
                 if model_slopes_at_10ms:
                     vals = [v for v in model_slopes_at_10ms.values() if v > 0]
                     if vals:
-                        avg_slope_10ms = float(np.mean(vals))
+                        avg_slope_10ms = sum(vals) / len(vals)
 
                 # Calculate enhanced features for both ML and fallback
                 signal_fractions = [signals[ch] / target_signal for ch in recipe.channels] if target_signal > 0 else [0.0] * len(recipe.channels)
@@ -534,8 +536,8 @@ class ConvergenceEngine:
                     # Enhanced features from ML
                     max_signal_fraction=max(signal_fractions) if signal_fractions else 0.0,
                     min_signal_fraction=min(signal_fractions) if signal_fractions else 0.0,
-                    signal_imbalance=float(np.std(signal_fractions)) if signal_fractions else 0.0,
-                    avg_led=float(np.mean(led_values)) if led_values else 0.0,
+                    signal_imbalance=float((sum((x - sum(signal_fractions) / len(signal_fractions)) ** 2 for x in signal_fractions) / len(signal_fractions)) ** 0.5) if signal_fractions else 0.0,
+                    avg_led=float(sum(led_values) / len(led_values)) if led_values else 0.0,
                     max_led=max(led_values) if led_values else 0,
                     min_led=min(led_values) if led_values else 0,
                 )
@@ -585,8 +587,9 @@ class ConvergenceEngine:
                         reduction_factor = 1.0 / (1.0 + over_target_pct * 0.5)  # Smoother reduction
                         new_time = max(params.min_integration_time, state.integration_ms * reduction_factor)
 
+                        old_int = state.integration_ms
                         state.integration_ms = new_time
-                        state.clear_for_integration_change()
+                        state.clear_for_integration_change(old_int, new_time)
                         self._log("info", f"     → Reduced integration to {new_time:.1f}ms (HIGH sens, {over_target_pct*100:.1f}% over target)")
                         # Update hardware integration time
                         self.spectrometer.set_integration(state.integration_ms)
@@ -608,14 +611,14 @@ class ConvergenceEngine:
                     X_conv = [
                         state.integration_ms,  # initial_integration_ms
                         recipe.target_percent * 100,  # target_percent
-                        float(np.mean(initial_leds)),  # avg_initial_led
+                        sum(initial_leds) / len(initial_leds),  # avg_initial_led
                         max(initial_leds),  # max_initial_led
                         min(initial_leds),  # min_initial_led
-                        float(np.std(initial_leds)) if len(initial_leds) > 1 else 0.0,  # led_imbalance
-                        float(np.mean(signal_fractions)),  # avg_signal_fraction
+                        float((sum((x - sum(initial_leds) / len(initial_leds)) ** 2 for x in initial_leds) / len(initial_leds)) ** 0.5) if len(initial_leds) > 1 else 0.0,  # led_imbalance
+                        sum(signal_fractions) / len(signal_fractions),  # avg_signal_fraction
                         min(signal_fractions),  # min_signal_fraction
                         max(signal_fractions),  # max_signal_fraction
-                        float(np.var(signal_fractions)) if len(signal_fractions) > 1 else 0.0,  # signal_variance
+                        float(sum((x - sum(signal_fractions) / len(signal_fractions)) ** 2 for x in signal_fractions) / len(signal_fractions)) if len(signal_fractions) > 1 else 0.0,  # signal_variance
                         1 if sum(saturation.values()) > 0 else 0,  # early_saturation
                         sum(saturation.values()),  # total_sat_pixels
                         len(recipe.channels),  # num_channels
@@ -650,28 +653,12 @@ class ConvergenceEngine:
 
                     if conv_prediction == 0 or conv_prediction == False:  # 0 = won't converge
                         self._log("warning", "[ML] ⚠️  Convergence predictor: Target likely UNACHIEVABLE with current parameters")
-
-                        # Only trigger fallback on first attempt (not during retry)
-                        if not _ml_fallback_retry:
-                            self._log("warning", "🔄 [ML FALLBACK] ML predicts failure - switching to ALGORITHM-ONLY mode")
-                            self._log("info", "    💡 Restarting convergence with ML disabled for full 12 iterations...")
-
-                            # Retry with ML completely disabled
-                            return self.run(
-                                recipe=recipe,
-                                params=params,
-                                wave_min_index=wave_min_index,
-                                wave_max_index=wave_max_index,
-                                model_slopes_at_10ms=model_slopes_at_10ms,
-                                use_ml_sensitivity=False,  # Disable ML sensitivity
-                                use_ml_led_predictor=False,  # Disable ML LED predictor
-                                progress_callback=progress_callback,
-                                detector_serial=detector_serial,
-                                _ml_fallback_retry=True,  # Mark as retry to prevent infinite loop
-                            )
-                        else:
-                            # Already in fallback mode, just log warning
-                            self._log("warning", "    ⚠️  Algorithm-only mode also predicting difficulty")
+                        # Disable ML predictions for remaining iterations but keep current state
+                        # (avoids wasting iteration 1 data by restarting from scratch)
+                        self._log("warning", "🔄 [ML FALLBACK] Disabling ML predictions - continuing with algorithm-only mode")
+                        self._log("info", "    💡 Keeping measured data from iteration 1 (no restart)")
+                        use_ml_led_predictor = False
+                        use_ml_sensitivity = False
                     else:
                         self._log("info", "[ML] ✓ Convergence predictor: Target appears ACHIEVABLE")
                 except Exception as e:
@@ -1003,8 +990,9 @@ class ConvergenceEngine:
                         "info",
                         f"  ⏱️ Reducing integration time: {state.integration_ms:.1f}ms → {new_time:.1f}ms",
                     )
+                    old_int = state.integration_ms
                     state.integration_ms = new_time
-                    state.clear_for_integration_change()
+                    state.clear_for_integration_change(old_int, new_time)
                     continue
 
             # SPEED OPTIMIZATION: Prefer high LEDs over low integration time
@@ -1040,8 +1028,9 @@ class ConvergenceEngine:
                                     state.leds[ch] = new_led
                                     self._log("info", f"     {ch.upper()}: LED {old_led}→{new_led}")
 
+                            old_int = state.integration_ms
                             state.integration_ms = new_int
-                            state.clear_for_integration_change()
+                            state.clear_for_integration_change(old_int, new_int)
                             continue
 
             # Check for LED saturation limits (max or min) preventing convergence
@@ -1057,8 +1046,9 @@ class ConvergenceEngine:
                         new_time = min(state.integration_ms * 1.4, 20.0)  # 40% increase, capped at 20ms
                         self._log("info", f"  ⚠️  HIGH-SENS: All channels < 80% of target at {state.integration_ms:.1f}ms")
                         self._log("info", f"  📈 Increasing integration: {state.integration_ms:.1f}ms → {new_time:.1f}ms")
+                        old_int = state.integration_ms
                         state.integration_ms = new_time
-                        state.clear_for_integration_change()
+                        state.clear_for_integration_change(old_int, new_time)
                         continue
 
                 # Channels at MAXIMUM LED (255) but below acceptance
@@ -1096,7 +1086,7 @@ class ConvergenceEngine:
                         factor = target_mid / sig
                         factors.append(factor)
 
-                    needed_scale = float(np.median(factors)) if factors else 2.0
+                    needed_scale = float(sorted(factors)[len(factors) // 2]) if factors else 2.0
 
                     # SMART AGGRESSIVE: Cap based on saturation risk and distance to target
                     # If current max signal is close to target, use moderate scaling
@@ -1153,8 +1143,9 @@ class ConvergenceEngine:
                             "info",
                             f"  📈 Increasing integration: {state.integration_ms:.1f}ms → {new_time:.1f}ms ({reason} need more signal)",
                         )
+                        old_int = state.integration_ms
                         state.integration_ms = new_time
-                        state.clear_for_integration_change()
+                        state.clear_for_integration_change(old_int, new_time)
                         continue
 
             # REMOVED: Adaptive integration logic that was reducing integration time
@@ -1269,8 +1260,10 @@ class ConvergenceEngine:
             # ============================================================================
             optimization_applied = False
 
-            # Apply smart optimization after 2-3 iterations once we have reliable slopes
-            if averaged_normalized_slopes and iteration >= 3 and iteration <= 6 and not any(saturation.values()):
+            # Apply smart optimization once we have reliable slopes
+            # Trigger at iter 2 when model slopes are available (reliable from first measurement)
+            smart_opt_min_iter = 2 if model_slopes_at_10ms else 3
+            if averaged_normalized_slopes and iteration >= smart_opt_min_iter and iteration <= 6 and not any(saturation.values()):
                 # Find weakest channel (needs highest LED×ms product to hit target)
                 weakest_channel = None
                 max_product_needed = 0
@@ -1336,11 +1329,12 @@ class ConvergenceEngine:
                                 self._log("info", f"         {ch.upper()}: LED {old_led}→{new_led}")
 
                         # Apply the optimization
+                        old_int = state.integration_ms
                         state.integration_ms = optimal_integration
                         for ch in optimal_leds:
                             state.leds[ch] = optimal_leds[ch]
 
-                        state.clear_for_integration_change()
+                        state.clear_for_integration_change(old_int, optimal_integration)
                         optimization_applied = True
                         continue  # Skip to next iteration with optimized settings
 
@@ -1458,17 +1452,19 @@ class ConvergenceEngine:
 
                     elif chosen_option == "option2":
                         self._log("info", f"  🎯 Optimization: Adjust integration {state.integration_ms:.1f}ms → {option2_integration:.1f}ms")
+                        old_int = state.integration_ms
                         state.integration_ms = option2_integration
-                        state.clear_for_integration_change()
+                        state.clear_for_integration_change(old_int, option2_integration)
                         optimization_applied = True
                         continue  # Skip to next iteration with new integration time
 
                     elif chosen_option == "option3":
                         self._log("info", "  🎯 Optimization: Balance both (LED & integration)")
                         self._log("info", f"      Integration: {state.integration_ms:.1f}ms → {option3_integration:.1f}ms")
+                        old_int = state.integration_ms
                         state.integration_ms = option3_integration
                         self._apply_led_updates(option3_leds, locked, state, log_prefix="     ")
-                        state.clear_for_integration_change()
+                        state.clear_for_integration_change(old_int, option3_integration)
                         optimization_applied = True
                         continue  # Skip to next iteration with new settings
 
@@ -1882,9 +1878,10 @@ class ConvergenceEngine:
                 self._log("info", f"   LEDs: {best_config['leds']}")
 
                 # Apply the optimal configuration
+                old_int = state.integration_ms
                 state.integration_ms = best_config['integration_ms']
                 state.leds = best_config['leds']
-                state.clear_for_integration_change()
+                state.clear_for_integration_change(old_int, best_config['integration_ms'])
 
                 # Run fine-tuning iterations
                 for fine_iter in range(1, recipe.analysis_iterations + 1):

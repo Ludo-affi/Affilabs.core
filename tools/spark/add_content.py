@@ -7,12 +7,12 @@ USAGE:
     python add_spark_content.py
 """
 
-from affilabs.widgets.spark_knowledge_base import SparkKnowledgeBase
+from affilabs.services.spark import SparkKnowledgeBase
 
 def add_sample_content():
     """Add sample content - replace with real website content."""
     kb = SparkKnowledgeBase()
-    
+
     # Example: Add a detailed calibration guide
     kb.add_article(
         title="SPR Detector Calibration Guide",
@@ -40,7 +40,7 @@ def add_sample_content():
         keywords=["calibrate", "calibration", "baseline", "detector", "OEM", "LED", "stability"],
         url="https://www.affiniteinstruments.com/"
     )
-    
+
     # Example: Add a troubleshooting FAQ
     kb.add_faq(
         question="Why is my baseline noisy or unstable?",
@@ -62,7 +62,7 @@ def add_sample_content():
         category="troubleshooting",
         url="https://www.affiniteinstruments.com/"
     )
-    
+
     # Example: Add product information
     kb.add_article(
         title="Multi-Channel SPR Detection",
@@ -78,7 +78,7 @@ def add_sample_content():
             "• Reference-subtracted measurements\n"
             "• Concentration series screening\n"
             "• Multiplexed assays\n\n"
-            "**Channel Selection in ezControl:**\n"
+            "**Channel Selection in Affilabs.core:**\n"
             "Use the Flow tab to route samples to specific channels. "
             "The valve selector (A/B/C/D) controls which channel receives flow. "
             "All active channels are displayed simultaneously on the sensorgram."
@@ -87,7 +87,7 @@ def add_sample_content():
         keywords=["multi-channel", "channels", "parallel", "multiplexed", "valve", "flow"],
         url="https://www.affiniteinstruments.com/"
     )
-    
+
     print("✓ Added sample content to knowledge base")
     print("\nKnowledge Base Stats:")
     stats = kb.get_stats()
@@ -100,10 +100,10 @@ def add_sample_content():
 def view_knowledge_base():
     """View current knowledge base contents."""
     kb = SparkKnowledgeBase()
-    
+
     print("\n📚 CURRENT KNOWLEDGE BASE CONTENTS\n")
     print("=" * 60)
-    
+
     print("\nARTICLES:")
     print("-" * 60)
     for article in kb.articles.all():
@@ -112,7 +112,7 @@ def view_knowledge_base():
         print(f"Keywords: {', '.join(article.get('keywords', []))}")
         print(f"URL: {article.get('url', 'N/A')}")
         print(f"Preview: {article['content'][:150]}...")
-    
+
     print("\n\nFAQs:")
     print("-" * 60)
     for faq in kb.faqs.all():
@@ -124,21 +124,21 @@ def view_knowledge_base():
 def test_search():
     """Test knowledge base search."""
     kb = SparkKnowledgeBase()
-    
+
     test_queries = [
         "how to calibrate",
         "noisy baseline",
         "multi-channel detection",
         "troubleshooting"
     ]
-    
+
     print("\n🔍 TESTING KNOWLEDGE BASE SEARCH\n")
     print("=" * 60)
-    
+
     for query in test_queries:
         print(f"\nQuery: '{query}'")
         results = kb.search(query, max_results=2)
-        
+
         if results:
             for i, result in enumerate(results, 1):
                 print(f"\n  Result {i} (score: {result['score']:.1f}):")
@@ -151,14 +151,14 @@ def test_search():
 
 if __name__ == "__main__":
     import sys
-    
+
     print("="*60)
     print("  SPARK KNOWLEDGE BASE CONTENT MANAGER")
     print("="*60)
-    
+
     if len(sys.argv) > 1:
         command = sys.argv[1].lower()
-        
+
         if command == "add":
             add_sample_content()
         elif command == "view":
@@ -177,9 +177,9 @@ if __name__ == "__main__":
         print("2. View knowledge base")
         print("3. Test search")
         print("4. Exit")
-        
+
         choice = input("\nChoose an option (1-4): ").strip()
-        
+
         if choice == "1":
             add_sample_content()
         elif choice == "2":

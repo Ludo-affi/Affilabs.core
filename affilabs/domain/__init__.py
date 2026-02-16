@@ -28,7 +28,7 @@ from .calibration_data import CalibrationData, CalibrationMetrics
 from .cycle import Cycle
 from .device_status import ConnectionState, DeviceStatus, DeviceType, SystemStatus
 from .editable_segment import EditableSegment
-from .flag import Flag, InjectionFlag, WashFlag, SpikeFlag, create_flag, flag_from_dict
+from .flag import Flag, FlagContext, InjectionFlag, WashFlag, SpikeFlag, create_flag, flag_from_dict
 from .spectrum_data import (
     ProcessedSpectrumData,
     RawSpectrumData,
@@ -51,6 +51,7 @@ __all__ = [
     "SpikeFlag",
     "create_flag",
     "flag_from_dict",
+    "FlagContext",
     "EditableSegment",
     "AcquisitionConfig",
     "LEDConfig",

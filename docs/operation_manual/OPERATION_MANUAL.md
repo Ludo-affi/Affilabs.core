@@ -159,7 +159,7 @@ Before starting, ensure your system is properly powered:
 
 4. **Create Your First Method**
    - Go to **Live tab** → Method Builder (sidebar)
-   - Add baseline cycle → concentration cycles → regeneration
+   - Add baseline cycle → binding cycles → regeneration
    - Click **Save Method**
 
 5. **Start Recording**
@@ -404,17 +404,17 @@ Temperature:    25°C
 - Adjust duration if needed
 - Baseline stabilizes sensor before experiment
 
-#### 2. Add Concentration Cycles
+#### 2. Add Binding Cycles
 
 ```
-Cycle Type:        Concentration
+Cycle Type:        Binding
 Concentration:     100 nM (or custom)
 Units:            nM / µM / mg/mL / %
 Duration (min):    10
 Volume (µL):       200
 ```
 
-- Click **Add Concentration**
+- Click **Add Binding**
 - Enter analyte concentration value
 - Select units (nM, µM, mg/mL, %)
 - **Duration**: Fixed incubation time (typically 5-10 minutes)
@@ -451,7 +451,7 @@ Buffer:         Running Buffer
 ```
 
 - Stabilizes sensor after regeneration
-- Before next concentration cycle
+- Before next binding cycle
 
 ### Complete Method Example - Affinity Measurement
 
@@ -460,13 +460,13 @@ This example measures binding affinity across a concentration range using fixed 
 | Cycle # | Type | Duration | Concentration | Volume | Notes |
 |---------|------|----------|---|---|---|
 | 1 | Baseline | 5 min | — | — | Initial sensor stabilization |
-| 2 | Concentration | 10 min | 1 nM | 200 µL | Low affinity point |
+| 2 | Binding | 10 min | 1 nM | 200 µL | Low affinity point |
 | 3 | Regeneration | 3 min | — | 500 µL | Surface cleaning |
 | 4 | Wash | 2 min | — | — | Buffer stabilization |
-| 5 | Concentration | 10 min | 10 nM | 200 µL | Mid-range affinity |
+| 5 | Binding | 10 min | 10 nM | 200 µL | Mid-range affinity |
 | 6 | Regeneration | 3 min | — | 500 µL | Surface cleaning |
 | 7 | Wash | 2 min | — | — | Buffer stabilization |
-| 8 | Concentration | 10 min | 100 nM | 200 µL | Higher affinity |
+| 8 | Binding | 10 min | 100 nM | 200 µL | Higher affinity |
 | 9 | Regeneration | 3 min | — | 500 µL | Surface cleaning |
 
 **Result**: Three Δ-SPR measurements at same incubation time (10 min) across 3 concentrations → Kd estimation
@@ -599,7 +599,7 @@ The **Edit Tab** is where you measure, validate, and prepare final results.
 
 #### Manual Measurement with Cursors
 
-1. **Select a concentration cycle** in the table
+1. **Select a binding cycle** in the table
 2. **Place cursors** on sensorgram:
    - **Left cursor** (green): Start of incubation (injection point)
    - **Right cursor** (red): End of incubation (at fixed timepoint, typically 10 min)
@@ -612,7 +612,7 @@ The **Edit Tab** is where you measure, validate, and prepare final results.
 #### Cursor Tips for Affinity Measurement
 
 - Position left cursor at injection start (baseline level)
-- Position right cursor at **same time offset for all concentration cycles** (e.g., always at 10 min)
+- Position right cursor at **same time offset for all binding cycles** (e.g., always at 10 min)
 - This ensures fair comparison across concentrations
 - Bar chart shows delta for all 4 channels simultaneously
 - Use consistent timepoint for all cycles → build affinity curve

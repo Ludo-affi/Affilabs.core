@@ -153,6 +153,8 @@ from affilabs.affilabs_sidebar import AffilabsSidebar
 from affilabs.core.system_intelligence import SystemState, get_system_intelligence
 from affilabs.dialogs.advanced_settings_dialog import AdvancedSettingsDialog
 from affilabs.plot_helpers import add_channel_curves, create_time_plot
+from affilabs.widgets.cycle_intelligence_footer import CycleIntelligenceFooter
+from affilabs.widgets.spark_sidebar import SparkSidebar
 # EditsTab lazy loaded when needed to speed up startup
 from affilabs.ui_styles import (
     Colors,
@@ -217,10 +219,10 @@ class AffilabsMainWindow(QMainWindow):
         # Import version information
         from version import __version__
         self.setWindowTitle(f"AffiLabs.core v{__version__}")
-        # Set window icon using relative path from affilabs module
-        from pathlib import Path
+        # Set window icon using resource path helper (works in both dev and frozen exe)
+        from affilabs.utils.resource_path import get_affilabs_resource
 
-        icon_path = Path(__file__).parent / "ui" / "img" / "affinite2.ico"
+        icon_path = get_affilabs_resource("ui/img/affinite2.ico")
         if icon_path.exists():
             icon = QIcon(str(icon_path))
             if not icon.isNull():
@@ -230,7 +232,7 @@ class AffilabsMainWindow(QMainWindow):
                 logger.warning(f"Failed to create icon from file: {icon_path}")
         else:
             logger.warning(f"Icon file not found: {icon_path}")
-        self.setGeometry(100, 100, 1400, 900)
+        self.setGeometry(50, 50, 1800, 950)
         self.is_recording = False
         self.recording_indicator = None
         self.record_button = None
@@ -341,8 +343,6 @@ class AffilabsMainWindow(QMainWindow):
         # Give sidebar reference to app for accessing _completed_cycles
         # Note: Will be set by Application.__init__ after main_window creation
         self.sidebar.app = None
-        self.splitter.addWidget(self.sidebar)
-        self.splitter.setCollapsible(0, False)  # Prevent sidebar from collapsing
 
         # Forward sidebar control references to main window for easy access
         self.colorblind_check = self.sidebar.colorblind_check
@@ -438,10 +438,25 @@ class AffilabsMainWindow(QMainWindow):
         # Analysis and Report tabs disabled - not used in this software version
 
         right_layout.addWidget(self.content_stack, 1)
-        self.splitter.addWidget(right_widget)
 
-        # Set initial sizes: 520px for sidebar (more space due to wide Static section), rest for main content
-        self.splitter.setSizes([520, 880])
+        # Create Spark sidebar on the left (narrow, collapsible)
+        self.spark_sidebar = SparkSidebar()
+        self.spark_sidebar.setMinimumWidth(250)  # Narrow sidebar
+        self.spark_sidebar.setMaximumWidth(400)
+
+        # Add widgets to splitter: Spark sidebar (left) | Content (center) | Right sidebar (right)
+        self.splitter.addWidget(self.spark_sidebar)
+        self.splitter.addWidget(right_widget)
+        self.splitter.addWidget(self.sidebar)
+        self.splitter.setCollapsible(0, True)  # Allow Spark sidebar to collapse
+        self.splitter.setCollapsible(1, False)  # Prevent content from collapsing
+        self.splitter.setCollapsible(2, False)  # Prevent right sidebar from collapsing
+
+        # Set initial sizes: 320px Spark sidebar, 775px content, 405px right sidebar
+        self.splitter.setSizes([320, 775, 405])
+
+        # Lazy load Spark widget when sidebar is first shown
+        self.spark_sidebar.load_spark_widget()
 
         # Add splitter directly to main layout
         main_layout.addWidget(self.splitter)
@@ -1424,15 +1439,15 @@ class AffilabsMainWindow(QMainWindow):
             print(f"âŒ Error resetting timing: {e}")
 
     def _update_flag_counter(self):
-        """Update the flag counter label with current number of flags."""
+        """Update the flag counter label with current number of flags from FlagManager."""
         try:
             if not hasattr(self, 'flag_counter_label'):
                 return
 
-            # Count flags from full_timeline_graph
+            # Count live flags from FlagManager (unified source of truth)
             flag_count = 0
-            if hasattr(self, 'full_timeline_graph') and hasattr(self.full_timeline_graph, 'flag_markers'):
-                flag_count = len(self.full_timeline_graph.flag_markers)
+            if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
+                flag_count = len(self.app.flag_mgr.get_live_flags())
 
             # Update label text
             self.flag_counter_label.setText(f"Flags: {flag_count}")
@@ -1504,6 +1519,34 @@ class AffilabsMainWindow(QMainWindow):
                 delta_values[ch_letter.lower()] = float(value)
 
             delta_display.setText(self._get_delta_spr_display_text(delta_values))
+
+    def _on_spark_toggle(self, checked: bool):
+        """Handle Spark toggle button in nav bar — show/hide the spark sidebar."""
+        if not hasattr(self, 'spark_sidebar'):
+            return  # Sidebar not yet created during init
+        if checked:
+            # Show Spark sidebar
+            self.spark_sidebar.setVisible(True)
+            self.spark_sidebar.setMinimumWidth(250)
+            self.spark_sidebar.setMaximumWidth(400)
+            sizes = self.splitter.sizes()
+            if len(sizes) == 3:
+                expanded_width = 320
+                needed_space = expanded_width - sizes[0]
+                sizes[1] -= needed_space
+                sizes[0] = expanded_width
+                self.splitter.setSizes(sizes)
+                logger.debug(f"Spark sidebar shown: {sizes}")
+        else:
+            # Hide Spark sidebar completely
+            sizes = self.splitter.sizes()
+            if len(sizes) == 3:
+                freed_space = sizes[0]
+                sizes[1] += freed_space
+                sizes[0] = 0
+                self.splitter.setSizes(sizes)
+            self.spark_sidebar.setVisible(False)
+            logger.debug("Spark sidebar hidden")
 
     def _create_graph_container(
         self,
@@ -1734,14 +1777,14 @@ class AffilabsMainWindow(QMainWindow):
             layout.addLayout(flag_row)
 
         # Create standardized time-series plot
-        left_label = "Δ SPR (RU)" if show_delta_spr else "Δλ (nm)"
+        left_label = "Δ SPR (RU)" if show_delta_spr else "λ (nm)"
         # Use larger fonts for Active Cycle graph
-        axis_size = "13pt" if show_delta_spr else "11pt"
+        axis_size = "14pt" if show_delta_spr else "11pt"
         plot_widget = create_time_plot(left_label, size=axis_size)
 
         # Create plot curves for 4 channels with distinct colors
         # Ch A: Black, Ch B: Red, Ch C: Blue, Ch D: Green
-        curves = add_channel_curves(plot_widget, clickable=False, width=2)
+        curves = add_channel_curves(plot_widget, clickable=False, width=3)
 
         # Add Start/Stop cursors for Full Experiment Timeline (top graph)
         # Navigation concept: Live Sensorgram is the navigation space, cursors define cycle of interest region
@@ -1841,13 +1884,10 @@ class AffilabsMainWindow(QMainWindow):
         plot_widget.delta_display = delta_display
         plot_widget.start_cursor = start_cursor
         plot_widget.stop_cursor = stop_cursor
-        plot_widget.flag_markers = []  # Store flag marker items
-        plot_widget.channel_flags = {
-            0: [],
-            1: [],
-            2: [],
-            3: [],
-        }  # Store flags per channel (index: list of (x, y, note))
+        # DEPRECATED: Legacy flag attrs kept for backward compat only.
+        # All flag logic now routes through FlagManager (unified flag system).
+        plot_widget.flag_markers = []
+        plot_widget.channel_flags = {0: [], 1: [], 2: [], 3: []}
 
         # Connect plot click event for flagging (ONLY for Live Sensorgram - top graph)
         # Bottom graph (Cycle of Interest) has default PyQtGraph interactions
@@ -1862,6 +1902,21 @@ class AffilabsMainWindow(QMainWindow):
         plot_widget.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
 
         layout.addWidget(plot_widget, 1)
+
+        # Add Cycle Intelligence Footer to bottom graph (Active Cycle)
+        if show_delta_spr:
+            footer = CycleIntelligenceFooter()
+            # Initialize with empty cycle data (will be updated by main app)
+            footer.update_cycle_info(None)
+            footer.update_status({
+                'build': '⚪ Not built',
+                'detection': '⚪ Idle',
+                'flags': 0,
+                'injection': '⚪ Ready',
+            })
+            layout.addWidget(footer)
+            # Store reference for updates from main app
+            plot_widget.intelligence_footer = footer
 
         return plot_widget, container
 
@@ -1922,170 +1977,43 @@ class AffilabsMainWindow(QMainWindow):
     def _enable_flagging_mode(self, channel_idx, channel_letter, graph_name="Active Cycle"):
         """Enable flagging mode for the selected channel.
 
+        NOTE: In the unified flag system, live flags are software-placed only.
+        This method now just stores the selected channel for the FlagManager.
+
         Args:
             channel_idx: Index of the channel (0-3)
             channel_letter: Letter of the channel (A-D)
-            graph_name: Name of the graph where flagging is enabled ("Active Cycle" or "Live Sensorgram")
+            graph_name: Name of the graph where flagging is enabled
         """
-        if not hasattr(self, "full_timeline_graph"):
-            return
-
-        # Store current flagging mode state
+        # Store selected channel for software-driven flag placement
         if not hasattr(self, "flagging_enabled"):
             self.flagging_enabled = False
 
-        # Only show messages for Active Cycle graph (when selecting channel for flagging)
         if graph_name == "Active Cycle":
-            print(f"Flagging mode ready for Channel {channel_letter}")
-            print("Right-click on the LIVE SENSORGRAM graph (top) to add a flag at absolute time")
-            print("Ctrl+Right-click to remove a flag near that position")
+            print(f"Channel {channel_letter} selected for flag alignment")
 
     def _on_plot_clicked(self, event, plot_widget):
-        """Handle clicks on the Live Sensorgram (top graph) for adding/removing flags.
-        Bottom graph (Cycle of Interest) does not have this handler - uses default PyQtGraph interactions.
+        """Handle clicks on the Live Sensorgram (top graph).
 
-        Right-click: Add flag at position on selected channel
-        Ctrl+Right-click: Remove flag near position on selected channel
+        UNIFIED FLAG SYSTEM: Manual flag placement on the live sensorgram is
+        disabled. Flags during acquisition are placed by the software only
+        (injection detection, wash events). Users can adjust flags in the
+        Edits tab after acquisition.
         """
-        # Only process right-clicks for flagging
-        if event.button() != 2:  # 2 = right mouse button
-            return
-
-        # Check if a channel is selected for flagging
-        if not hasattr(self, "selected_channel_for_flagging"):
-            print("Please select a channel first from the sidebar")
-            return
-
-        # Get click position in data coordinates
-        pos = event.scenePos()
-        mouse_point = plot_widget.getPlotItem().vb.mapSceneToView(pos)
-        x_pos = mouse_point.x()
-        y_pos = mouse_point.y()
-
-        # Check for Ctrl modifier to remove flags
-        from PySide6.QtCore import Qt
-
-        modifiers = event.modifiers()
-
-        if modifiers == Qt.KeyboardModifier.ControlModifier:
-            # Remove flag near this position
-            self._remove_flag_at_position(self.selected_channel_for_flagging, x_pos)
-        else:
-            # Add flag at this position
-            self._add_flag_to_point(self.selected_channel_for_flagging, x_pos, y_pos)
-
-        event.accept()
+        # No-op: live sensorgram flag placement removed in unified flag system
+        pass
 
     def _add_flag_to_point(self, channel_idx, x_pos, y_pos, note=""):
-        """Add a flag marker at the specified position on the selected channel."""
-        if not hasattr(self, "full_timeline_graph"):
-            return
+        """Legacy stub — live sensorgram flag placement removed in unified flag system.
 
-        import pyqtgraph as pg
-
-        # Get channel letter
-        channel_letter = chr(65 + channel_idx)
-
-        # Channel colors matching the cycle curves
-        channel_colors = [
-            (0, 0, 0),        # A: Black
-            (255, 0, 0),      # B: Red
-            (0, 0, 255),      # C: Blue
-            (0, 170, 0),      # D: Green
-        ]
-        color = channel_colors[channel_idx] if channel_idx < len(channel_colors) else (255, 0, 0)
-
-        # Create flag marker (vertical line with text)
-        flag_line = pg.InfiniteLine(
-            pos=x_pos,
-            angle=90,
-            pen=pg.mkPen(
-                color=color,
-                width=2,
-                style=pg.QtCore.Qt.PenStyle.DashLine,
-            ),
-            movable=False,
-        )
-
-        # Add text label at the top
-        flag_text = pg.TextItem(
-            text=f"ðŸš© Ch{channel_letter}",
-            color=color,
-            anchor=(0.5, 1),  # Center, bottom
-        )
-        # Position text fixed to timeline (data coordinates), not window
-        # Get the y-axis data range and position at top of range
-        y_range = self.full_timeline_graph.viewRange()[1]  # [ymin, ymax]
-        y_pos_fixed = y_range[1] * 0.95  # Position at 95% of max to keep it visible
-        flag_text.setPos(x_pos, y_pos_fixed)
-
-        # Add to Live Sensorgram (top graph)
-        self.full_timeline_graph.addItem(flag_line)
-        self.full_timeline_graph.addItem(flag_text)
-
-        # Store references
-        flag_marker = {
-            "channel": channel_idx,
-            "x": x_pos,
-            "y": y_pos,
-            "note": note,
-            "line": flag_line,
-            "text": flag_text,
-        }
-
-        self.full_timeline_graph.flag_markers.append(flag_marker)
-        self.full_timeline_graph.channel_flags[channel_idx].append((x_pos, y_pos, note))
-
-        # Update the table Flags column
-        self._update_flags_table()
-
-        # Update flag counter
-        self._update_flag_counter()
-
-        print(f"Flag added to Channel {channel_letter} at x={x_pos:.2f}, y={y_pos:.2f}")
+        Flags during acquisition are now placed by software only via FlagManager.
+        Users can add/edit flags in the Edits tab.
+        """
+        logger.debug("_add_flag_to_point is deprecated — flags are software-placed during acquisition")
 
     def _remove_flag_at_position(self, channel_idx, x_pos, tolerance=5.0):
-        """Remove a flag marker near the specified x position on the selected channel."""
-        if not hasattr(self, "full_timeline_graph"):
-            return
-
-        # Find and remove flags within tolerance
-        removed_count = 0
-        markers_to_remove = []
-
-        for marker in self.full_timeline_graph.flag_markers:
-            if (
-                marker["channel"] == channel_idx
-                and abs(marker["x"] - x_pos) <= tolerance
-            ):
-                # Remove visual elements
-                self.full_timeline_graph.removeItem(marker["line"])
-                self.full_timeline_graph.removeItem(marker["text"])
-                markers_to_remove.append(marker)
-                removed_count += 1
-
-        # Remove from list
-        for marker in markers_to_remove:
-            self.full_timeline_graph.flag_markers.remove(marker)
-
-        # Update channel flags
-        self.full_timeline_graph.channel_flags[channel_idx] = [
-            (x, y, note)
-            for x, y, note in self.full_timeline_graph.channel_flags[channel_idx]
-            if abs(x - x_pos) > tolerance
-        ]
-
-        # Update table
-        self._update_flags_table()
-
-        # Update flag counter
-        self._update_flag_counter()
-
-        if removed_count > 0:
-            channel_letter = chr(65 + channel_idx)
-            print(
-                f"Removed {removed_count} flag(s) from Channel {channel_letter} near x={x_pos:.2f}",
-            )
+        """Legacy stub — live sensorgram flag removal removed in unified flag system."""
+        logger.debug("_remove_flag_at_position is deprecated — use Edits tab for flag management")
 
     def add_event_marker(self, time_pos: float, event_name: str, color: str = "#00C853"):
         """Add a visual event marker to the full timeline graph.
@@ -2145,30 +2073,22 @@ class AffilabsMainWindow(QMainWindow):
         logger.info(f"Event marker added at t={time_pos:.2f}s: {event_name}")
 
     def _update_flags_table(self):
-        """Update the Flags column in the cycle data table with current flags."""
-        if not hasattr(self, "cycle_data_table") or not hasattr(
-            self,
-            "full_timeline_graph",
-        ):
+        """Update the Flags column in the cycle data table with current flags from FlagManager."""
+        if not hasattr(self, "cycle_data_table"):
             return
 
-        # Count flags per channel
+        # Count live flags per channel from FlagManager
         flag_counts = {}
-        for ch_idx in range(4):
-            channel_letter = chr(65 + ch_idx)
-            count = len(self.full_timeline_graph.channel_flags.get(ch_idx, []))
-            if count > 0:
-                flag_counts[channel_letter] = count
+        if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
+            for flag in self.app.flag_mgr.get_live_flags():
+                ch = flag.channel.upper()
+                flag_counts[ch] = flag_counts.get(ch, 0) + 1
 
-        # Update table - show flag summary
-        # Note: This is a simplified version. In a full implementation, you'd have
-        # one row per data segment/cycle and show flags for that specific segment
         if flag_counts:
             flag_summary = ", ".join(
                 [f"Ch{ch}: {count}" for ch, count in flag_counts.items()],
             )
             print(f"Flags summary: {flag_summary}")
-            # In full implementation: update specific table cell in Flags column
 
     def _create_blank_content(self, tab_name):
         """Create a blank page for tabs that don't have content yet."""
@@ -2252,9 +2172,8 @@ class AffilabsMainWindow(QMainWindow):
 
     def _load_data_from_excel(self):
         """Load previous acquisition data from Excel file for editing."""
-        from PySide6.QtWidgets import QFileDialog, QMessageBox
-        import pandas as pd
-
+        from PySide6.QtWidgets import QFileDialog
+        
         # Open file dialog
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -2262,14 +2181,20 @@ class AffilabsMainWindow(QMainWindow):
             "",
             "Excel Files (*.xlsx);All Files (*)"
         )
-
+        
         if not file_path:
             return
+        
+        # Call internal load function
+        self._load_data_from_excel_internal(file_path)
+    
+    def _load_data_from_excel_internal(self, file_path: str):
+        """Internal function to load Excel data (used by both dialog and direct calls)."""
+        from PySide6.QtWidgets import QMessageBox
+        import pandas as pd
 
         try:
-            logger.info(f"Loading Excel file: {file_path}")
-
-            # Read all sheets
+            logger.info(f"Loading Excel file: {file_path}")            # Read all sheets
             excel_data = pd.read_excel(file_path, sheet_name=None, engine='openpyxl')
 
             # Load metadata from Metadata sheet
@@ -2605,53 +2530,10 @@ class AffilabsMainWindow(QMainWindow):
         # Enable right-click menu for adding flags
         self.edits_primary_graph.scene().sigMouseClicked.connect(self._on_edits_graph_clicked)
 
-        # Install keyboard event filter for flag movement
-        from PySide6.QtCore import QObject, QEvent, Qt
-
-        class EditsKeyboardFilter(QObject):
-            def __init__(self, main_window):
-                super().__init__()
-                self.main_window = main_window
-
-            def eventFilter(self, obj, event):
-                if event.type() == QEvent.Type.KeyPress:
-                    key = event.key()
-
-                    # Check if we have a selected flag
-                    if not hasattr(self.main_window, 'edits_tab'):
-                        return False
-
-                    selected_idx = self.main_window.edits_tab._selected_flag_idx
-                    if selected_idx is None or selected_idx >= len(self.main_window.edits_tab._edits_flags):
-                        return False
-
-                    flag = self.main_window.edits_tab._edits_flags[selected_idx]
-
-                    # Move flag left/right with arrow keys
-                    if key == Qt.Key.Key_Left:
-                        flag.time -= 1.0  # Move 1 second left
-                        flag.marker.setData([flag.time], [flag.spr])
-                        return True
-                    elif key == Qt.Key.Key_Right:
-                        flag.time += 1.0  # Move 1 second right
-                        flag.marker.setData([flag.time], [flag.spr])
-                        return True
-                    elif key == Qt.Key.Key_Escape:
-                        # Deselect flag
-                        flag.marker.setPen(pg.mkPen('w', width=2))
-                        self.main_window.edits_tab._selected_flag_idx = None
-                        return True
-                    elif key == Qt.Key.Key_Delete:
-                        # Delete flag
-                        self.main_window.edits_primary_graph.removeItem(flag.marker)
-                        self.main_window.edits_tab._edits_flags.pop(selected_idx)
-                        self.main_window.edits_tab._selected_flag_idx = None
-                        return True
-
-                return False
-
-        self._edits_keyboard_filter = EditsKeyboardFilter(self)
-        self.edits_primary_graph.installEventFilter(self._edits_keyboard_filter)
+        # Install keyboard event filter for flag movement via FlagManager
+        # (FlagManager provides unified keyboard handling for both live and edits contexts)
+        if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
+            self.app.flag_mgr.setup_edits_keyboard_filter()
 
         # Create curves for each channel (matching main window colors)
         self.edits_graph_curves = [
@@ -3777,20 +3659,20 @@ class AffilabsMainWindow(QMainWindow):
         state = self.power_btn.property("powerState")
 
         if state == "disconnected":
-            # Blue - Idle, ready to connect
+            # Red - Idle, ready to connect
             self.power_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: #007AFF;"
+                "  background: #FF3B30;"
                 "  color: white;"
-                "  border: 1px solid #0062CC;"
-                "  border-radius: 20px;"
+                "  border: 1px solid #E62817;"
+                "  border-radius: 18px;"
                 "}"
                 "QPushButton:hover {"
-                "  background: #0062CC;"
-                "  border: 1px solid #004999;"
+                "  background: #E62817;"
+                "  border: 1px solid #CC1F12;"
                 "}",
             )
-            self.power_btn.setToolTip("Power On Device (Ctrl+P)\nBlue = Idle, Click to Connect")
+            self.power_btn.setToolTip("Power On Device (Ctrl+P)\nRed = Idle, Click to Connect")
         elif state == "searching":
             # Yellow - Searching for device
             self.power_btn.setStyleSheet(
@@ -3798,7 +3680,7 @@ class AffilabsMainWindow(QMainWindow):
                 "  background: #FFCC00;"
                 "  color: white;"
                 "  border: 1px solid #FFB800;"
-                "  border-radius: 20px;"
+                "  border-radius: 18px;"
                 "}"
                 "QPushButton:hover {"
                 "  background: #FFD700;"
@@ -3813,7 +3695,7 @@ class AffilabsMainWindow(QMainWindow):
                 "  background: #34C759;"
                 "  color: white;"
                 "  border: 1px solid #2FB350;"
-                "  border-radius: 20px;"
+                "  border-radius: 18px;"
                 "}"
                 "QPushButton:hover {"
                 "  background: #30B54A;"
@@ -3959,7 +3841,7 @@ class AffilabsMainWindow(QMainWindow):
     def enable_controls(self) -> None:
         """Enable record and pause buttons after calibration completes."""
         try:
-            logger.info("ðŸŽ® Enabling recording controls (calibration complete)")
+            logger.info("🎙 Enabling recording controls (calibration complete)")
             self.record_btn.setEnabled(True)
             self.pause_btn.setEnabled(True)
             self.record_btn.setToolTip("Start Recording\n(Click to begin saving data)")
@@ -3970,6 +3852,35 @@ class AffilabsMainWindow(QMainWindow):
             # Suppress Qt threading warnings that are false positives
             if "QTextDocument" not in str(e) and "different thread" not in str(e):
                 raise
+
+    def update_cycle_intelligence_footer(self, cycle_data: dict | None = None, status_data: dict | None = None) -> None:
+        """Update the Cycle Intelligence Footer beneath Active Cycle graph.
+
+        Args:
+            cycle_data: Current cycle dictionary with keys:
+                - name, type, duration_minutes, sample_id, concentration, units, note, channels
+            status_data: Status dictionary with keys:
+                - build: Build status message (str)
+                - detection: Detection status (str)
+                - flags: Flag count (int)
+                - injection: Injection readiness (str)
+        """
+        try:
+            if not hasattr(self, 'cycle_of_interest_graph'):
+                return
+
+            footer = getattr(self.cycle_of_interest_graph, 'intelligence_footer', None)
+            if not footer:
+                return
+
+            if cycle_data is not None:
+                footer.update_cycle_info(cycle_data)
+
+            if status_data is not None:
+                footer.update_status(status_data)
+
+        except Exception as e:
+            logger.debug(f"Could not update cycle intelligence footer: {e}")
 
     def _reset_subunit_status(self) -> None:
         """Reset all subunit status indicators to 'Not Ready' state."""
@@ -4388,7 +4299,7 @@ class AffilabsMainWindow(QMainWindow):
             else:
                 # If source log doesn't exist, create a minimal log
                 with open(dest_path, "w", encoding="utf-8") as f:
-                    f.write(f"ezControl Debug Log\n")
+                    f.write(f"Affilabs.core Debug Log\n")
                     f.write(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                     f.write(f"Note: Main log file not found at {source_log}\n")
                 logger.warning(f"Source log not found, created minimal log at: {dest_path}")
@@ -4642,11 +4553,22 @@ class AffilabsMainWindow(QMainWindow):
 
     def _update_maintenance_display(self):
         """Update the maintenance section with current values from device config."""
+        # Update user count (doesn't depend on device config)
+        try:
+            sidebar = getattr(self, 'sidebar', None)
+            user_mgr = getattr(sidebar, 'user_profile_manager', None) if sidebar else None
+            if user_mgr and hasattr(sidebar, 'users_count_value'):
+                user_count = len(user_mgr.get_profiles())
+                sidebar.users_count_value.setText(f"👤 {user_count}")
+        except Exception as e:
+            logger.debug(f"Could not update user count: {e}")
+
         if self.device_config is None:
             return
 
         # Check if maintenance widgets exist yet (UI might not be fully initialized)
-        if not hasattr(self, "hours_value"):
+        sidebar = getattr(self, 'sidebar', None)
+        if sidebar is None or not hasattr(sidebar, 'hours_value'):
             return
 
         try:
@@ -4654,46 +4576,69 @@ class AffilabsMainWindow(QMainWindow):
 
             # Update operation hours
             led_hours = self.device_config.config["maintenance"]["led_on_hours"]
-            self.hours_value.setText(f"{led_hours:,.1f} hrs")
+            sidebar.hours_value.setText(f"⏱ {led_hours:,.1f} hrs")
+
+            # Update experiment count (total measurement cycles)
+            total_cycles = self.device_config.config["maintenance"].get("total_measurement_cycles", 0)
+            sidebar.experiments_value.setText(f"🧪 {total_cycles:,}")
 
             # Update last operation date
             if self.last_powered_on:
                 last_op_str = self.last_powered_on.strftime("%b %d, %Y")
-                self.last_op_value.setText(last_op_str)
+                sidebar.last_op_value.setText(f"📅 {last_op_str}")
             else:
-                self.last_op_value.setText("Never")
+                sidebar.last_op_value.setText("📅 Never")
 
-            # Calculate next maintenance (November of current or next year)
+            # Calculate next maintenance based on actual usage
+            # Service recommended every 500 LED hours or 12 months, whichever first
+            SERVICE_INTERVAL_HOURS = 500.0
             now = datetime.datetime.now()
-            current_year = now.year
-            current_month = now.month
 
-            # If we're past November, schedule for next year
-            if current_month >= 11:
-                next_maintenance_year = current_year + 1
+            # Try reading last maintenance date from config
+            last_maint_str = self.device_config.config["maintenance"].get("last_maintenance_date")
+            next_due_str = self.device_config.config["maintenance"].get("next_maintenance_due")
+
+            maintenance_overdue = False
+            if next_due_str:
+                # Use the stored date (set after each service)
+                try:
+                    next_due = datetime.datetime.fromisoformat(next_due_str[:10])
+                    days_left = (next_due - now).days
+                    if days_left < 0:
+                        sidebar.next_maintenance_value.setText(f"⚠ OVERDUE ({-days_left}d)")
+                        maintenance_overdue = True
+                    elif days_left < 30:
+                        sidebar.next_maintenance_value.setText(f"⚠ {next_due.strftime('%b %d, %Y')}")
+                        maintenance_overdue = True
+                    else:
+                        sidebar.next_maintenance_value.setText(f"⚠ {next_due.strftime('%b %Y')}")
+                except (ValueError, TypeError):
+                    sidebar.next_maintenance_value.setText("⚠ —")
+            elif led_hours >= SERVICE_INTERVAL_HOURS:
+                # No due date set, but hours exceeded threshold
+                sidebar.next_maintenance_value.setText(f"⚠ {led_hours:,.0f}/{SERVICE_INTERVAL_HOURS:,.0f} hrs")
+                maintenance_overdue = True
             else:
-                next_maintenance_year = current_year
+                # No due date, show hours remaining until service
+                hrs_remaining = SERVICE_INTERVAL_HOURS - led_hours
+                sidebar.next_maintenance_value.setText(f"⚠ in {hrs_remaining:,.0f} hrs")
 
-            self.next_maintenance_value.setText(f"November {next_maintenance_year}")
-
-            # Highlight if maintenance is due this month
-            if current_month == 11:
-                self.next_maintenance_value.setStyleSheet(
-                    "font-size: 13px;"
-                    "color: #FF3B30;"  # Red for urgent
-                    "background: {Colors.TRANSPARENT};"
-                    "font-weight: {Fonts.WEIGHT_BOLD};"
-                    "margin-top: 6px;"
-                    "font-family: {Fonts.SYSTEM};",
+            # Highlight based on urgency
+            if maintenance_overdue:
+                sidebar.next_maintenance_value.setStyleSheet(
+                    f"font-size: 13px;"
+                    f"color: #FF3B30;"
+                    f"background: transparent;"
+                    f"font-weight: 700;"
+                    f"font-family: {Fonts.SYSTEM};",
                 )
             else:
-                self.next_maintenance_value.setStyleSheet(
-                    "font-size: 13px;"
-                    "color: #FF9500;"  # Orange for scheduled
-                    "background: {Colors.TRANSPARENT};"
-                    "font-weight: 600;"
-                    "margin-top: 6px;"
-                    "font-family: {Fonts.SYSTEM};",
+                sidebar.next_maintenance_value.setStyleSheet(
+                    f"font-size: 13px;"
+                    f"color: #FF9500;"
+                    f"background: transparent;"
+                    f"font-weight: 600;"
+                    f"font-family: {Fonts.SYSTEM};",
                 )
         except Exception as e:
             logger.error(f"Failed to update maintenance display: {e}")
@@ -4845,33 +4790,6 @@ class AffilabsMainWindow(QMainWindow):
             if self.sidebar.tabs.tabText(i) == "Edits":
                 self.sidebar.tabs.setCurrentIndex(i)
                 break
-
-    def add_cycle_to_queue(self):
-        """Add current cycle form values to the queue."""
-        # Extract values from cycle settings form widgets
-        cycle_type = self.sidebar.cycle_type_combo.currentText()
-        cycle_length_text = self.sidebar.cycle_length_combo.currentText()
-        cycle_notes = self.sidebar.note_input.toPlainText()
-
-        # Parse cycle length (e.g., "5 min" -> 5)
-        cycle_minutes = int(cycle_length_text.split()[0])
-
-        cycle_data = {
-            "type": cycle_type,
-            "start": "00:00:00",  # Will be set when cycle actually starts
-            "end": f"00:{cycle_minutes:02d}:00",
-            "notes": cycle_notes if cycle_notes else "No notes",
-            "state": "queued",
-            "length_minutes": cycle_minutes,
-        }
-
-        self.cycle_queue.append(cycle_data)
-        self._update_queue_display()
-
-        # Disable Add to Queue if at capacity
-        if len(self.cycle_queue) >= self.max_queue_size:
-            if hasattr(self, 'add_to_queue_btn'):
-                self.add_to_queue_btn.setEnabled(False)
 
     def start_cycle(self):
         """Start next cycle from queue or use current form values."""
@@ -5177,7 +5095,7 @@ class AffilabsMainWindow(QMainWindow):
         """Update the bottom operation status bar.
 
         Args:
-            message: Status message to display (e.g., "Running: Concentration (01:52)", "Idle")
+            message: Status message to display (e.g., "Running: Binding (01:52)", "Idle")
             notes: Optional cycle notes to display alongside status
         """
         if hasattr(self, 'operation_status_label'):
@@ -5230,6 +5148,47 @@ class AffilabsMainWindow(QMainWindow):
         if hasattr(self, 'timer_button'):
             self.timer_button.clear()
 
+    def _auto_show_timer_window(self, label: str, total_seconds: int):
+        """Auto-show PopOutTimerWindow for contact timers.
+
+        Args:
+            label: Timer label
+            total_seconds: Timer duration in seconds
+        """
+        from affilabs.widgets.popout_timer_window import PopOutTimerWindow
+        from affilabs.utils.logger import logger
+
+        # Create window if needed
+        if not hasattr(self, '_popout_timer') or self._popout_timer is None:
+            self._popout_timer = PopOutTimerWindow(parent=None)
+            self._popout_timer.timer_ready.connect(self._on_popout_timer_ready)
+            self._popout_timer.clear_requested.connect(self._on_clear_manual_timer)
+            self._popout_timer.restart_requested.connect(self._on_restart_manual_timer)
+            self._popout_timer.pause_requested.connect(self._on_pause_manual_timer)
+            self._popout_timer.resume_requested.connect(self._on_resume_manual_timer)
+            self._popout_timer.closed.connect(self._on_popout_closed)
+            self._popout_timer.alarm_stopped.connect(self._stop_alarm_loop)
+            self._popout_timer.time_edited_while_paused.connect(self._on_timer_time_edited)
+            self._popout_timer.window_shown.connect(self._on_popout_shown)
+            self._popout_timer.window_hidden.connect(self._on_popout_hidden)
+
+        # Set running state with current countdown
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
+        self._popout_timer.set_configurable(
+            minutes=minutes,
+            seconds=seconds,
+            label=label,
+            sound_enabled=self._manual_timer_sound
+        )
+        self._popout_timer.set_running()
+
+        # Show the window
+        self._popout_timer.show()
+        self._popout_timer.raise_()
+        self._popout_timer.activateWindow()
+        logger.info(f"Auto-opened timer window for: {label}")
+
     def _on_timer_button_clicked(self):
         """Handle Timer button click - open PopOutTimerWindow or stop alarm.
 
@@ -5259,6 +5218,9 @@ class AffilabsMainWindow(QMainWindow):
             self._popout_timer.closed.connect(self._on_popout_closed)
             self._popout_timer.alarm_stopped.connect(self._stop_alarm_loop)
             self._popout_timer.time_edited_while_paused.connect(self._on_timer_time_edited)
+            # Connect window visibility signals to highlight timer button
+            self._popout_timer.window_shown.connect(self._on_popout_shown)
+            self._popout_timer.window_hidden.connect(self._on_popout_hidden)
 
         # Check current timer state
         timer_active = (
@@ -5355,6 +5317,16 @@ class AffilabsMainWindow(QMainWindow):
         """Handle pop-out window closed by user (don't stop the timer)."""
         pass  # Timer keeps running; user can reopen via timer button
 
+    def _on_popout_shown(self):
+        """Handle popout timer window shown - highlight the timer button."""
+        if hasattr(self, 'timer_button'):
+            self.timer_button.set_bright_style(True)
+
+    def _on_popout_hidden(self):
+        """Handle popout timer window hidden - remove button highlight."""
+        if hasattr(self, 'timer_button'):
+            self.timer_button.set_bright_style(False)
+
     def _on_pause_manual_timer(self):
         """Pause the manual countdown timer."""
         from affilabs.utils.logger import logger
@@ -5421,6 +5393,10 @@ class AffilabsMainWindow(QMainWindow):
         self._manual_timer.timeout.connect(self._on_manual_timer_tick)
         self._manual_timer.start(1000)  # Update every second
 
+        # Auto-open PopOutTimerWindow for contact timers (helps user track critical timing)
+        if "Contact" in label:
+            self._auto_show_timer_window(label, total_seconds)
+
     def _on_manual_timer_tick(self):
         """Handle manual timer countdown tick."""
         from affilabs.utils.logger import logger
@@ -5434,6 +5410,10 @@ class AffilabsMainWindow(QMainWindow):
             # Update pop-out window if open
             if hasattr(self, '_popout_timer') and self._popout_timer and self._popout_timer.isVisible():
                 self._popout_timer.update_countdown(self._manual_timer_label, self._manual_timer_remaining)
+
+            # Update contact timer overlay on cycle graph if active
+            if hasattr(self, 'app') and hasattr(self.app, 'flag_manager'):
+                self.app.flag_manager.update_contact_timer_display()
         else:
             # Timer completed
             self._manual_timer.stop()
@@ -5447,6 +5427,13 @@ class AffilabsMainWindow(QMainWindow):
             next_action = getattr(self, '_manual_timer_next_action', "")
             if hasattr(self, '_popout_timer') and self._popout_timer and self._popout_timer.isVisible():
                 self._popout_timer.timer_finished(self._manual_timer_label, next_action)
+
+            # Clear contact timer overlay from cycle graph
+            if hasattr(self, 'app') and hasattr(self.app, 'flag_manager'):
+                self.app.flag_manager.clear_contact_timer_overlay()
+
+            # Automatically place wash flags for all channels with injection flags
+            self._place_automatic_wash_flags()
 
             # Start looping alarm sound if enabled
             if self._manual_timer_sound:
@@ -5486,6 +5473,70 @@ class AffilabsMainWindow(QMainWindow):
         self._alarm_loop_timer.start(1500)
         logger.debug("Alarm loop started (ascending tone every 1.5s)")
 
+    def _place_automatic_wash_flags(self):
+        """Automatically place wash flags when contact time expires.
+        
+        Places wash flags on all channels that have injection flags.
+        Wash time = current sensorgram time (when contact timer expired).
+        """
+        from affilabs.utils.logger import logger
+        
+        try:
+            # Get current sensorgram time
+            if not hasattr(self, 'full_timeline_graph'):
+                return
+            
+            timeline = self.full_timeline_graph
+            if not hasattr(timeline, 'stop_cursor'):
+                return
+            
+            wash_time = timeline.stop_cursor.value()
+            
+            # Get cycle coordinator to access flag data
+            if not hasattr(self, 'cycle_coordinator'):
+                return
+            
+            coordinator = self.cycle_coordinator
+            if not hasattr(coordinator, '_flag_markers'):
+                return
+            
+            # Find all channels with injection flags
+            injection_flags = {f['channel']: f for f in coordinator._flag_markers if f['type'] == 'injection'}
+            
+            if not injection_flags:
+                logger.debug("No injection flags found - skipping automatic wash flags")
+                return
+            
+            # Place wash flag on each channel that has an injection flag
+            for channel, inj_flag in injection_flags.items():
+                # Get SPR value at wash time for this channel
+                try:
+                    if channel not in self.buffer_mgr.cycle_data:
+                        continue
+                    
+                    channel_data = self.buffer_mgr.cycle_data[channel]
+                    if len(channel_data.time) == 0 or len(channel_data.spr) == 0:
+                        continue
+                    
+                    # Convert wash time from display to raw for lookup
+                    from affilabs.domain import TimeBase
+                    wash_time_raw = self.clock.convert(wash_time, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
+                    
+                    # Find SPR value at wash time
+                    import numpy as np
+                    time_idx = np.argmin(np.abs(channel_data.time - wash_time_raw))
+                    spr_val = channel_data.spr[time_idx]
+                    
+                    # Place wash flag
+                    coordinator._add_flag_marker(channel, wash_time, spr_val, 'wash')
+                    logger.info(f"✓ Automatic wash flag placed on channel {channel.upper()} at t={wash_time:.1f}s")
+                    
+                except Exception as e:
+                    logger.debug(f"Could not place wash flag on channel {channel}: {e}")
+            
+        except Exception as e:
+            logger.debug(f"Could not place automatic wash flags: {e}")
+    
     def _stop_alarm_loop(self):
         """Stop the looping alarm sound and clean up timer state."""
         from affilabs.utils.alarm_sound import get_alarm_player
@@ -5526,6 +5577,10 @@ class AffilabsMainWindow(QMainWindow):
         # Clear the timer button display
         self.clear_timer_button()
 
+        # Clear timer overlay from graph
+        if hasattr(self, 'app') and hasattr(self.app, 'flag_manager'):
+            self.app.flag_manager.clear_contact_timer_overlay()
+
         # Hide pop-out window
         if hasattr(self, '_popout_timer') and self._popout_timer:
             self._popout_timer.hide()
@@ -5551,6 +5606,10 @@ class AffilabsMainWindow(QMainWindow):
 
         # Restart timer with original settings
         self._start_manual_timer_countdown(label, initial_duration, sound_enabled)
+
+        # Recreate contact timer overlay on graph
+        if hasattr(self, 'app') and hasattr(self.app, 'flag_manager'):
+            self.app.flag_manager.create_contact_timer_overlay(initial_duration)
 
         # Update display immediately
         self.update_timer_button(label, initial_duration, is_manual=True)
@@ -5642,22 +5701,26 @@ class AffilabsMainWindow(QMainWindow):
             # Update the sidebar intelligence status indicator (always)
             self.sidebar.intel_status_label.setText(status_text)
             self.sidebar.intel_status_label.setStyleSheet(
-                f"font-size: 12px;"
-                f"color: {status_color};"
-                f"background: {Colors.TRANSPARENT};"
-                f"font-weight: {Fonts.WEIGHT_BOLD};"
-                f"font-family: {Fonts.SYSTEM};",
+                f"QLabel {{"
+                f"  font-size: 12px;"
+                f"  color: {status_color};"
+                f"  background: {Colors.TRANSPARENT};"
+                f"  font-weight: {Fonts.WEIGHT_BOLD};"
+                f"  font-family: {Fonts.SYSTEM};"
+                f"}}",
             )
 
             # Update sidebar message ONLY if no cycle is running (to avoid overriding cycle countdown)
             if not is_cycle_running:
                 self.sidebar.intel_message_label.setText(message_text)
                 self.sidebar.intel_message_label.setStyleSheet(
-                    f"font-size: 14px;"
-                    f"color: {message_color};"
-                    f"background: {Colors.TRANSPARENT};"
-                    f"font-weight: 600;"
-                    f"font-family: {Fonts.SYSTEM};",
+                    f"QLabel {{"
+                    f"  font-size: 14px;"
+                    f"  color: {message_color};"
+                    f"  background: {Colors.TRANSPARENT};"
+                    f"  font-weight: 600;"
+                    f"  font-family: {Fonts.SYSTEM};"
+                    f"}}",
                 )
 
         except Exception as e:
@@ -5675,11 +5738,13 @@ class AffilabsMainWindow(QMainWindow):
             if hasattr(self, 'sidebar') and hasattr(self.sidebar, 'intel_message_label'):
                 self.sidebar.intel_message_label.setText(message)
                 self.sidebar.intel_message_label.setStyleSheet(
-                    f"font-size: 12px;"
-                    f"color: {color};"
-                    f"background: {Colors.TRANSPARENT};"
-                    f"font-weight: 600;"
-                    f"font-family: {Fonts.SYSTEM};",
+                    f"QLabel {{"
+                    f"  font-size: 12px;"
+                    f"  color: {color};"
+                    f"  background: {Colors.TRANSPARENT};"
+                    f"  font-weight: 600;"
+                    f"  font-family: {Fonts.SYSTEM};"
+                    f"}}",
                 )
         except Exception as e:
             logger.error(f"Error setting intel message: {e}")
@@ -6141,7 +6206,6 @@ class AffilabsMainWindow(QMainWindow):
         # NOTE: start_cycle_btn, add_to_queue_btn, start_run_btn removed - now in Method Builder dialog
         # Queue management buttons are connected in sidebar itself via QueuePresenter
         # self.sidebar.start_cycle_btn.clicked.connect(self.start_cycle)  # DEPRECATED - moved to dialog
-        # self.sidebar.add_to_queue_btn.clicked.connect(self.add_cycle_to_queue)  # DEPRECATED - moved to dialog
         # self.sidebar.start_run_btn.clicked.connect(self._on_start_queued_run)  # DELETED - duplicate button removed
 
         # Connect remaining queue buttons (if they exist)
@@ -6309,10 +6373,14 @@ class AffilabsMainWindow(QMainWindow):
             logger.exception(f"Error populating timeline graph: {e}")
 
     def _on_edits_graph_clicked(self, event):
-        """Handle mouse clicks on Edits graph for flag management."""
+        """Handle mouse clicks on Edits graph for flag management.
+
+        Delegates to FlagManager for unified flag handling.
+        Left-click: Select/deselect flag
+        Right-click: Show add-flag context menu
+        """
         from PySide6.QtCore import Qt
         from affilabs.utils.logger import logger
-        import pyqtgraph as pg
 
         # Get click position in data coordinates
         view_box = self.edits_primary_graph.plotItem.vb
@@ -6320,47 +6388,18 @@ class AffilabsMainWindow(QMainWindow):
         time_val = mouse_point.x()
         spr_val = mouse_point.y()
 
-        # Handle left-click for flag selection
+        # Get FlagManager reference
+        flag_mgr = getattr(self.app, 'flag_mgr', None) if hasattr(self, 'app') else None
+        if flag_mgr is None:
+            logger.warning("FlagManager not available for edits flag handling")
+            return
+
+        # Handle left-click for flag selection (delegate to FlagManager)
         if event.button() == Qt.MouseButton.LeftButton:
-            if not hasattr(self, 'edits_tab'):
-                return
+            flag_mgr.try_select_edits_flag_near_click(time_val, spr_val)
+            return
 
-            # Check if we clicked near a flag (within 10 pixels)
-            min_dist = float('inf')
-            closest_idx = None
-
-            for idx, flag in enumerate(self.edits_tab._edits_flags):
-                # Calculate distance in pixel space
-                flag_pos = view_box.mapViewToScene(pg.Point(flag.time, flag.spr))
-                click_pos = event.scenePos()
-                dist = ((flag_pos.x() - click_pos.x())**2 + (flag_pos.y() - click_pos.y())**2)**0.5
-
-                if dist < min_dist:
-                    min_dist = dist
-                    closest_idx = idx
-
-            # If clicked within 15 pixels of a flag, select it
-            if closest_idx is not None and min_dist < 15:
-                # Deselect previous flag
-                if self.edits_tab._selected_flag_idx is not None:
-                    prev_flag = self.edits_tab._edits_flags[self.edits_tab._selected_flag_idx]
-                    prev_flag.marker.setPen(pg.mkPen('w', width=2))
-
-                # Select new flag
-                self.edits_tab._selected_flag_idx = closest_idx
-                flag = self.edits_tab._edits_flags[closest_idx]
-                flag.marker.setPen(pg.mkPen('cyan', width=3))  # Highlight selected
-                logger.debug(f"Selected {flag.flag_type} flag at t={flag.time:.2f}s")
-                return
-            else:
-                # Clicked empty space - deselect
-                if self.edits_tab._selected_flag_idx is not None:
-                    prev_flag = self.edits_tab._edits_flags[self.edits_tab._selected_flag_idx]
-                    prev_flag.marker.setPen(pg.mkPen('w', width=2))
-                    self.edits_tab._selected_flag_idx = None
-                return
-
-        # Handle right-click (context menu)
+        # Handle right-click (context menu to add flag)
         if event.button() != Qt.MouseButton.RightButton:
             return
 
@@ -6372,73 +6411,38 @@ class AffilabsMainWindow(QMainWindow):
         # Determine which channel to assign (use first visible channel or A)
         channel = 'A'
 
-        # Show flag type menu
+        # Show flag type menu — calls FlagManager.add_edits_flag()
         from PySide6.QtWidgets import QAction
         from PySide6.QtGui import QCursor
 
         menu = QMenu()
 
-        # Create flag type actions
-        injection_action = QAction("â–² Injection", menu)
+        injection_action = QAction("▲ Injection", menu)
         injection_action.triggered.connect(
-            lambda: self._add_edits_flag(channel, time_val, spr_val, "injection")
+            lambda: flag_mgr.add_edits_flag(channel, time_val, spr_val, "injection")
         )
 
-        wash_action = QAction("â–  Wash", menu)
+        wash_action = QAction("■ Wash", menu)
         wash_action.triggered.connect(
-            lambda: self._add_edits_flag(channel, time_val, spr_val, "wash")
+            lambda: flag_mgr.add_edits_flag(channel, time_val, spr_val, "wash")
         )
 
-        spike_action = QAction("â˜… Spike", menu)
+        spike_action = QAction("★ Spike", menu)
         spike_action.triggered.connect(
-            lambda: self._add_edits_flag(channel, time_val, spr_val, "spike")
+            lambda: flag_mgr.add_edits_flag(channel, time_val, spr_val, "spike")
         )
 
         menu.addAction(injection_action)
         menu.addAction(wash_action)
         menu.addAction(spike_action)
 
-        # Show menu at cursor position
         menu.exec(QCursor.pos())
 
     def _add_edits_flag(self, channel: str, time_val: float, spr_val: float, flag_type: str):
-        """Add a flag to the Edits graph."""
-        from affilabs.domain import create_flag
-        from affilabs.utils.logger import logger
-        import pyqtgraph as pg
-
-        try:
-            # Create Flag instance
-            flag = create_flag(
-                flag_type=flag_type,
-                channel=channel.upper(),
-                time=time_val,
-                spr=spr_val,
-            )
-
-            # Create visual marker with improved visibility
-            marker = pg.ScatterPlotItem(
-                [flag.time],
-                [flag.spr],
-                symbol=flag.marker_symbol,
-                size=flag.marker_size,
-                brush=pg.mkBrush(flag.marker_color),
-                pen=pg.mkPen('#FFFFFF', width=3),  # Thicker white outline
-            )
-            marker.setZValue(100)  # Draw on top
-
-            # Add to graph
-            self.edits_primary_graph.addItem(marker)
-            flag.marker = marker
-
-            # Store flag
-            if hasattr(self, 'edits_tab'):
-                self.edits_tab._edits_flags.append(flag)
-
-            logger.info(f"ðŸš© Added {flag_type} flag in Edits at t={time_val:.2f}s")
-
-        except Exception as e:
-            logger.error(f"Failed to add flag in Edits: {e}")
+        """Add a flag to the Edits graph — delegates to FlagManager."""
+        flag_mgr = getattr(self.app, 'flag_mgr', None) if hasattr(self, 'app') else None
+        if flag_mgr is not None:
+            flag_mgr.add_edits_flag(channel, time_val, spr_val, flag_type)
 
     def _on_cycle_selected_in_table(self):
         """Handle cycle selection in table - load cycle data on graph.

@@ -168,7 +168,7 @@ Time (s), Wavelength (nm)
 # Date: 2026-02-02 14:30:22
 # Chip ID: AU-001
 # Temperature: 25.0 C
-# Software: ezControl v2.0.1
+# Software: Affilabs.core v2.0.1
 X_RawDataA, Y_RawDataA, X_RawDataB, Y_RawDataB, ...
 0.0,        645.2,      0.0,        643.1,      ...
 ```
@@ -788,7 +788,7 @@ exporter._atomic_write(
 {
   "experiment_name": "Antibody Binding",
   "export_timestamp": "2026-02-02T14:30:22",
-  "software_version": "ezControl v2.0.1",
+  "software_version": "Affilabs.core v2.0.1",
   "exported_files": [
     {
       "filepath": "raw_data/JohnDoe_AntibodyBinding_20260202_143022.csv",
@@ -1339,7 +1339,7 @@ export_dir = Path("C:/Data")  # Instead of C:/Users/JohnDoe/Documents/Experiment
 
 ## Summary
 
-The ezControl data output system provides:
+The Affilabs.core data output system provides:
 
 ✅ **Multi-Format Export**: Excel (default), CSV, JSON with pluggable strategy pattern
 ✅ **Real-Time Recording**: Continuous logging during acquisition with auto-save

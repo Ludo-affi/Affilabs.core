@@ -18,8 +18,8 @@ import shutil
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from affilabs.widgets.spark_pattern_matcher import SparkPatternMatcher
-from affilabs.widgets.spark_answer_engine import SparkAnswerEngine
+from affilabs.services.spark import SparkPatternMatcher
+from affilabs.services.spark import SparkAnswerEngine
 
 
 class TestSparkPatternMatcher(unittest.TestCase):

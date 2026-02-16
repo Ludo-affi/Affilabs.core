@@ -16,7 +16,7 @@ print("   - Association cycles: Light blue background")
 print("   - Dissociation cycles: Light yellow background")
 print("   - Regeneration cycles: Light red background")
 print("   - Wash cycles: Light green background")
-print("   - Concentration cycles: Light cyan background")
+print("   - Binding cycles: Light cyan background")
 print()
 
 print("2. CYCLE LABELS")

@@ -1802,6 +1802,20 @@ class CalibrationService(QObject):
             self._current_calibration_data = calibration_data
             self._calibration_completed = True
 
+            # Persist calibration result to JSON for QC history tracking
+            try:
+                from affilabs.utils.startup_calibration import save_calibration_result_json
+                json_path = save_calibration_result_json(
+                    result=cal_result,
+                    device_serial=device_serial,
+                )
+                if json_path:
+                    logger.info(f"💾 Calibration result saved: {json_path}")
+                else:
+                    logger.warning("Failed to save calibration result JSON")
+            except Exception as save_err:
+                logger.warning(f"Could not save calibration result JSON: {save_err}")
+
             # Propagate wavelengths to data manager as a stable source-of-truth
             try:
                 if hasattr(self.app, "data_mgr") and self.app.data_mgr is not None:

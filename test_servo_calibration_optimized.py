@@ -11,7 +11,7 @@ Expected results:
 - ~10x faster than original (0.5s per position vs 5s)
 - Reliable measurements with 2 scans
 
-Author: ezControl-AI System
+Author: Affilabs.core System
 Date: January 3, 2026
 """
 

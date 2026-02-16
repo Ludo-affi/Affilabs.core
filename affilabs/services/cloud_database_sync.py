@@ -35,7 +35,7 @@ class CloudDatabaseSync:
 
     def __init__(self, local_db_path: str = "spark_qa_history.json"):
         """Initialize cloud sync.
-        
+
         Args:
             local_db_path: Path to local TinyDB database
         """
@@ -44,10 +44,10 @@ class CloudDatabaseSync:
 
     def sync_to_cloud(self, force: bool = False) -> tuple[bool, str]:
         """Sync local database to cloud storage.
-        
+
         Args:
             force: Force sync even if no changes detected
-            
+
         Returns:
             tuple: (success, message)
         """
@@ -70,12 +70,12 @@ class CloudDatabaseSync:
 
     def _sync_to_onedrive(self, force: bool = False) -> tuple[bool, str]:
         """Sync to OneDrive/SharePoint (local folder sync - simplest).
-        
+
         Saves files to local OneDrive folder which auto-syncs to SharePoint.
-        
+
         Args:
             force: Force upload even if unchanged
-            
+
         Returns:
             tuple: (success, message)
         """
@@ -105,12 +105,12 @@ class CloudDatabaseSync:
 
     def _upload_file_to_onedrive(self, file_path: Path, remote_filename: str, content: bytes = None) -> tuple[bool, str]:
         """Upload/copy a file to OneDrive folder (auto-syncs to SharePoint).
-        
+
         Args:
             file_path: Path to local file
             remote_filename: Name to use in OneDrive folder
             content: Optional pre-loaded content (otherwise reads from file_path)
-        
+
         Returns:
             tuple: (success, message)
         """
@@ -139,12 +139,12 @@ class CloudDatabaseSync:
 
     def _sync_to_cosmos(self, force: bool = False) -> tuple[bool, str]:
         """Sync to Azure Cosmos DB (enterprise solution).
-        
+
         Uploads each Q&A entry as a document.
-        
+
         Args:
             force: Force sync all records
-            
+
         Returns:
             tuple: (success, message)
         """
@@ -188,10 +188,10 @@ class CloudDatabaseSync:
 
     def _sync_to_firestore(self, force: bool = False) -> tuple[bool, str]:
         """Sync to Google Firestore.
-        
+
         Args:
             force: Force sync all records
-            
+
         Returns:
             tuple: (success, message)
         """
@@ -231,7 +231,7 @@ class CloudDatabaseSync:
 
     def auto_sync_on_new_entry(self):
         """Set up automatic sync whenever new Q&A is added.
-        
+
         Call this during app initialization to enable auto-sync.
         """
         # This would watch the database file for changes
@@ -240,7 +240,7 @@ class CloudDatabaseSync:
 
     def get_sync_status(self) -> dict:
         """Get current sync status.
-        
+
         Returns:
             dict: Sync status information
         """
@@ -266,7 +266,7 @@ class AutoSyncScheduler:
 
     def __init__(self, sync_interval_minutes: int = 60):
         """Initialize auto-sync scheduler.
-        
+
         Args:
             sync_interval_minutes: How often to sync (default: hourly)
         """
@@ -300,7 +300,7 @@ class AutoSyncScheduler:
 
     def sync_now(self) -> tuple[bool, str]:
         """Trigger immediate sync.
-        
+
         Returns:
             tuple: (success, message)
         """
@@ -308,14 +308,16 @@ class AutoSyncScheduler:
 
 def sync_all_databases() -> tuple[bool, str]:
     """Sync all ezControl databases to cloud.
-    
-    Uploads:
+
+    Uploads (PRIVACY-SAFE):
     - Spark AI Q&A history
     - Device history (ML training)
     - Latest QC reports
     - Methods database
-    - User profiles
-    
+
+    NEVER uploads (LOCAL ONLY):
+    - User profiles (user_profiles.json) - stays local for privacy
+
     Returns:
         tuple: (success, message with details)
     """
@@ -377,18 +379,18 @@ def sync_all_databases() -> tuple[bool, str]:
         except Exception as e:
             results.append(f"Methods DB: ❌ {e}")
 
-    # 5. User Profiles
-    user_profiles = Path("user_profiles.json")
-    if user_profiles.exists():
-        try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            success, msg = syncer._upload_file_to_onedrive(
-                user_profiles,
-                f"user_profiles_{timestamp}.json"
-            )
-            results.append(f"User Profiles: {'✅' if success else '❌'}")
-        except Exception as e:
-            results.append(f"User Profiles: ❌ {e}")
+    # ────────────────────────────────────────────────────────────────────
+    # 🔒 PRIVACY: User Profiles Are Never Uploaded
+    # ────────────────────────────────────────────────────────────────────
+    # user_profiles.json contains:
+    #   - User names
+    #   - Experiment counts
+    #   - Progression data
+    #   - Training completion status
+    #
+    # This data STAYS LOCAL ONLY for privacy protection.
+    # User names in exported Excel files are for data attribution only.
+    # ────────────────────────────────────────────────────────────────────
 
     # Summary
     success_count = sum(1 for r in results if '✅' in r)

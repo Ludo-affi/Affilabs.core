@@ -1,8 +1,8 @@
 """
 Spark Pattern Definitions - Single Source of Truth
 
-This module contains all pre-defined Q&A patterns for the Spark AI assistant.
-Patterns are organized by category for maintainability.
+All pre-defined Q&A patterns for the Spark AI assistant.
+Organized by category. Answers are concise and conversational.
 
 To add new patterns:
 1. Find the appropriate category or create a new one
@@ -13,7 +13,7 @@ To add new patterns:
 Pattern format:
 {
     r"regex_pattern": {
-        "answer": "Multi-line answer text with formatting...",
+        "answer": "Concise answer text...",
         "category": "category_name",
         "keywords": ["keyword1", "keyword2"],
         "priority": "high|medium|low"
@@ -23,26 +23,48 @@ Pattern format:
 
 PATTERNS = {
     "startup": {
+        r"getting.*started.*affilabs|start.*with.*affilabs|begin.*affilabs|how.*use.*affilabs|affilabs.*getting.*started": {
+            "answer": "Welcome to Affilabs! Here's the quick setup:\n\n"
+            "1. Connect your SPR instrument via USB\n"
+            "2. Launch Affilabs — it auto-detects your device\n"
+            "3. Complete startup calibration (1-2 min)\n"
+            "4. Head to the **Method** tab to build your experiment\n\n"
+            "You can also explore the interface without hardware connected.",
+            "category": "startup",
+            "keywords": ["getting", "started", "affilabs", "begin", "start", "how", "use"],
+            "priority": "high"
+        },
         r"power.*on|start.*system|startup.*procedure|turn.*on": {
-            "answer": "**Power On Procedure:**\n1. Press the 'Power On' button (top right corner)\n2. System will check for hardware connection\n3. If hardware not found, check USB connections\n4. Click 'Start' in the Startup Calibration popup\n5. Wait 1-2 minutes for calibration to complete\n6. Review the QC Report\n7. Close and press 'Start' to begin live acquisition\n\n💡 The system starts in Auto-Read mode. To record data, build a method and press 'Record'.",
+            "answer": "To power on:\n\n"
+            "1. Click **Power On** (top right)\n"
+            "2. Startup calibration runs automatically (1-2 min)\n"
+            "3. Review the QC Report, then click **Start**\n\n"
+            "The system begins in Auto-Read mode. Build a method and press **Record** to save data.",
             "category": "startup",
             "keywords": ["power", "on", "start", "system", "startup", "turn"],
             "priority": "high"
         },
         r"calibration.*fail|startup.*calibration|qc.*report": {
-            "answer": "**Startup Calibration:**\n• Takes 1-2 minutes to complete\n• Review QC Report for any warnings\n• If calibration fails:\n  - Ensure no flow path obstructions\n  - Check reagents are loaded properly\n  - Verify detector connection\n  - Try power cycling the device\n\nAfter successful calibration, you can start live acquisition.",
+            "answer": "Startup calibration takes 1-2 minutes. If it fails, check for flow path obstructions, "
+            "verify reagents are loaded, and confirm the detector connection. You can retry or power cycle the device.",
             "category": "startup",
             "keywords": ["calibration", "fail", "startup", "qc", "report"],
             "priority": "high"
         },
         r"auto.*read.*mode|how.*to.*record|save.*data.*live": {
-            "answer": "**Recording Data:**\nThe system starts in Auto-Read Mode (displays data but doesn't save).\n\nTo record data:\n1. Go to 'Method' tab in sidebar\n2. Build your experimental method\n3. Press 'Record' when ready\n4. Data will be saved according to your method\n\nYou can view live data without recording at any time.",
+            "answer": "The system starts in **Auto-Read mode** — it shows live data but doesn't save it.\n\n"
+            "To record: go to the **Method** tab, build your method, and press **Record**.",
             "category": "startup",
             "keywords": ["auto", "read", "mode", "record", "save", "data"],
             "priority": "medium"
         },
         r"hardware.*not.*found|cannot.*find.*hardware|device.*not.*connected": {
-            "answer": "**Hardware Connection Issues:**\n1. Check USB cable connections (both ends)\n2. Verify device power supply is on\n3. Try a different USB port (USB 3.0 preferred)\n4. Check Windows Device Manager for driver issues\n5. Restart the software\n6. Power cycle the device\n\nIf the problem persists, contact technical support.",
+            "answer": "Try these steps:\n\n"
+            "1. Check both ends of the USB cable\n"
+            "2. Try a different USB port (USB 3.0 preferred)\n"
+            "3. Check Windows Device Manager for driver issues\n"
+            "4. Restart the software and power cycle the device\n\n"
+            "Still not working? Contact support at info@affiniteinstruments.com.",
             "category": "startup",
             "keywords": ["hardware", "not", "found", "device", "connected"],
             "priority": "high"
@@ -51,13 +73,14 @@ PATTERNS = {
 
     "basic": {
         r"how.*start.*acquisition|begin.*recording": {
-            "answer": "To start acquisition:\n1. Click 'Live' tab in the main area\n2. Ensure detector is connected (check Device Status tab)\n3. Click the green 'Start' button\n4. Data will begin streaming in real-time",
+            "answer": "Click the **Live** tab, make sure your detector is connected (check **Device Status**), "
+            "and hit the green **Start** button. Data streams in real-time.",
             "category": "basic",
             "keywords": ["start", "acquisition", "begin", "recording"],
             "priority": "high"
         },
         r"how.*stop.*acquisition|end.*recording": {
-            "answer": "To stop acquisition, click the red 'Stop' button in the Live tab. You can also use the keyboard shortcut Ctrl+S.",
+            "answer": "Click the red **Stop** button in the Live tab, or press **Ctrl+S**.",
             "category": "basic",
             "keywords": ["stop", "acquisition", "end", "recording"],
             "priority": "high"
@@ -66,7 +89,8 @@ PATTERNS = {
 
     "export": {
         r"export.*data|save.*data|download.*data": {
-            "answer": "To export data:\n1. Go to the 'Export' tab in the sidebar\n2. Select your desired format (Excel, CSV, or AnIML)\n3. Choose cycles to export\n4. Click 'Export' button\n5. Choose save location",
+            "answer": "Go to the **Export** tab, pick your format (Excel, CSV, or AnIML), "
+            "select the cycles you want, and click **Export**.",
             "category": "export",
             "keywords": ["export", "save", "download", "data"],
             "priority": "high"
@@ -75,7 +99,9 @@ PATTERNS = {
 
     "hardware": {
         r"detector.*not.*found|can't.*find.*detector|no.*detector": {
-            "answer": "Detector connection troubleshooting:\n1. Check USB cable is firmly connected\n2. Open 'Device Status' tab to see connection status\n3. Try clicking 'Scan for Devices'\n4. Check Windows Device Manager for driver issues\n5. Try a different USB port (USB 3.0 preferred)",
+            "answer": "Check that your USB cable is firmly connected, then open **Device Status** and click "
+            "**Scan for Devices**. If it's still not showing, try a different USB port (USB 3.0 preferred) "
+            "or check Device Manager for driver issues.",
             "category": "hardware",
             "keywords": ["detector", "not", "found", "can't", "find"],
             "priority": "high"
@@ -84,262 +110,129 @@ PATTERNS = {
 
     "calibration": {
         r"what.*calibrations|calibration.*types|how.*many.*calibrations": {
-            "answer": "**ezControl has 5 calibration types:**\n\n"
-            "1. **Simple LED** (10-20 sec) - Quick sensor swap\n"
-            "2. **Full System** (3-5 min) - Complete calibration with QC\n"
-            "3. **Polarizer** (2-5 min) - Servo position optimization\n"
-            "4. **OEM LED** (10-15 min) - Factory-level calibration\n"
-            "5. **LED Model Training** (2-5 min) - Rebuild optical model\n\n"
-            "📍 All found in: Settings Tab → Calibration Controls\n\n"
-            "💡 For details, see CALIBRATION_GUIDE.md",
+            "answer": "There are 5 calibration types:\n\n"
+            "1. **Simple LED** — Quick sensor swap (10-20 sec)\n"
+            "2. **Full System** — Complete with QC report (3-5 min)\n"
+            "3. **Polarizer** — Servo position optimization (2-5 min)\n"
+            "4. **OEM LED** — Factory-level full calibration (10-15 min)\n"
+            "5. **LED Model Training** — Rebuild optical model (2-5 min)\n\n"
+            "All found in **Settings → Calibration Controls**.",
             "category": "calibration",
             "keywords": ["calibrations", "types", "how", "many"],
             "priority": "high"
         },
         r"simple.*calibration|simple.*led|quick.*calibration": {
-            "answer": "**Simple LED Calibration** (10-20 seconds)\n\n"
-            "**When to use:** Sensor swap (same type), quick LED adjustment\n\n"
-            "**Requirements:** LED model must already exist\n\n"
-            "**How to run:**\n"
-            "1. Settings tab → Calibration Controls\n"
-            "2. Click 'Run Simple Calibration'\n"
-            "3. Wait 10-20 seconds\n"
-            "4. Graphs clear, live data resumes\n\n"
-            "⚠️ If 'LED model not found' error → Run OEM Calibration first",
+            "answer": "**Simple LED Calibration** takes 10-20 seconds — perfect for same-type sensor swaps "
+            "when an LED model already exists.\n\n"
+            "Run it from **Settings → Run Simple Calibration**. "
+            "If you get a 'LED model not found' error, run **OEM Calibration** first.",
             "category": "calibration",
             "keywords": ["simple", "calibration", "led", "quick"],
             "priority": "high"
         },
         r"full.*calibration|complete.*calibration|6.*step": {
-            "answer": "**Full System Calibration** (3-5 minutes)\n\n"
-            "**6 Steps:**\n"
-            "1. Dark reference\n"
-            "2. S-mode convergence\n"
-            "3. S-mode reference\n"
-            "4. P-mode convergence\n"
-            "5. P-mode reference\n"
-            "6. QC validation\n\n"
-            "**How to run:**\n"
-            "1. Settings tab → Calibration Controls\n"
-            "2. Click 'Run Full Calibration'\n"
-            "3. Click 'Start' in dialog\n"
-            "4. Wait 3-5 minutes\n"
-            "5. Review QC Report\n"
-            "6. Click 'Start' to begin live data\n\n"
-            "✅ Use for: sensor swaps, monthly QC, after maintenance",
+            "answer": "**Full System Calibration** takes 3-5 minutes and runs 6 steps: dark reference, "
+            "S/P convergence, S/P reference, and QC validation.\n\n"
+            "Go to **Settings → Run Full Calibration**, then review the QC Report when done. "
+            "Great for sensor swaps, monthly QC, or after maintenance.",
             "category": "calibration",
             "keywords": ["full", "calibration", "complete", "6", "step"],
             "priority": "high"
         },
         r"polarizer.*calibration|servo.*calibration|calibrate.*polarizer": {
-            "answer": "**Polarizer Calibration** (2-5 minutes)\n\n"
-            "**Purpose:** Find optimal servo positions for S and P modes\n\n"
-            "**Process:**\n"
-            "• Sweeps servo across 180° range\n"
-            "• Finds positions ~90° apart with best signal\n"
-            "• Saves to device_config.json\n\n"
-            "**How to run:**\n"
-            "1. Settings tab → Calibration Controls\n"
-            "2. Click 'Calibrate Polarizer'\n"
-            "3. Wait 2-5 minutes\n"
-            "4. Positions saved, live data resumes\n\n"
-            "✅ Use when: signal drops, servo replaced, positions incorrect",
+            "answer": "**Polarizer Calibration** (2-5 min) finds optimal servo positions for S and P modes "
+            "by sweeping across 180°.\n\n"
+            "Run from **Settings → Calibrate Polarizer**. Use when signal drops or after replacing a servo.",
             "category": "calibration",
             "keywords": ["polarizer", "calibration", "servo"],
             "priority": "medium"
         },
         r"oem.*calibration|factory.*calibration|complete.*calibration": {
-            "answer": "**OEM LED Calibration** (10-15 minutes)\n\n"
-            "**Most complete calibration - 3 phases:**\n"
-            "1. Servo Polarizer Calibration (2-5 min)\n"
-            "2. LED Model Training (2-5 min)\n"
-            "3. Full 6-Step Calibration (3-5 min)\n\n"
-            "**How to run:**\n"
-            "1. Settings tab → Calibration Controls\n"
-            "2. Click 'Run OEM Calibration'\n"
-            "3. Click 'Start' in dialog\n"
-            "4. Wait 10-15 minutes (grab coffee ☕)\n"
-            "5. Review QC Report\n"
-            "6. Click 'Start' to begin live data\n\n"
-            "✅ Use for: first-time setup, LED model missing, complete reset\n"
-            "❌ Don't use for: quick sensor swaps (use Simple LED instead)",
+            "answer": "**OEM LED Calibration** is the most thorough option (10-15 min). It runs servo calibration "
+            "+ LED model training + full 6-step calibration.\n\n"
+            "Go to **Settings → Run OEM Calibration**. Use for first-time setup, missing LED model, or a complete "
+            "system reset. For quick sensor swaps, use **Simple LED** instead.",
             "category": "calibration",
             "keywords": ["oem", "calibration", "factory", "complete"],
             "priority": "high"
         },
         r"led.*model.*training|train.*led|optical.*model": {
-            "answer": "**LED Model Training** (2-5 minutes)\n\n"
-            "**Purpose:** Rebuild optical model only (no full calibration)\n\n"
-            "**Process:**\n"
-            "• Tests LED response at 10-60ms integration times\n"
-            "• Creates 3-stage linear model\n"
-            "• Saves optical_calibration.json\n\n"
-            "**How to run:**\n"
-            "1. Settings tab → Calibration Controls\n"
-            "2. Click 'Train LED Model'\n"
-            "3. Click 'Start'\n"
-            "4. Wait 2-5 minutes\n"
-            "5. Model saved, live data resumes\n\n"
-            "✅ Use when: LED model missing, model seems incorrect\n"
-            "💡 Faster than OEM if you only need model (not servo positions)",
+            "answer": "**LED Model Training** (2-5 min) rebuilds just the optical model without a full calibration.\n\n"
+            "Go to **Settings → Train LED Model**. Faster than OEM when you only need the model rebuilt.",
             "category": "calibration",
             "keywords": ["led", "model", "training", "train", "optical"],
             "priority": "medium"
         },
         r"startup.*calibration|daily.*calibration|power.*on.*calibration": {
-            "answer": "**Startup Calibration** (1-2 minutes)\n\n"
-            "**Runs automatically when you click 'Power On'**\n\n"
-            "**Process:**\n"
-            "1. Hardware connection check\n"
-            "2. Quick LED adjustment\n"
-            "3. Signal quality validation\n"
-            "4. QC Report shown\n\n"
-            "**If it fails:**\n"
-            "• Click 'Retry' (up to 3 attempts)\n"
-            "• OR click 'Continue Anyway' to troubleshoot manually\n\n"
-            "**Common fail causes:**\n"
-            "• Air bubbles in flow cell\n"
-            "• Hardware not warmed up\n"
-            "• Connection issues\n\n"
-            "💡 Allow 30-60 min warmup before first calibration of the day",
+            "answer": "Startup calibration runs automatically when you click **Power On** (1-2 min). "
+            "If it fails, click **Retry** (up to 3 times) or **Continue Anyway** to troubleshoot manually.\n\n"
+            "Common causes: air bubbles, cold hardware, or connection issues. "
+            "Allow 30-60 min warmup before the first calibration of the day.",
             "category": "calibration",
             "keywords": ["startup", "calibration", "daily", "power", "on"],
             "priority": "high"
         },
         r"calibration.*failed|retry.*calibration|calibration.*fail": {
-            "answer": "**Calibration Failed - Recovery Options:**\n\n"
-            "**During Startup Calibration:**\n"
-            "• Click **'Retry'** - Try again (up to 3 attempts)\n"
-            "• Click **'Continue Anyway'** - Skip and troubleshoot\n\n"
-            "**Common Causes:**\n"
-            "✅ Air bubbles → Purge system, retry\n"
-            "✅ Not warmed up → Wait 30-60 min, retry\n"
-            "✅ Hardware issue → Check Device Status tab\n"
-            "✅ LED model missing → Run OEM Calibration\n\n"
-            "**Manual Fix:**\n"
-            "1. Click 'Continue Anyway'\n"
-            "2. Go to Settings tab\n"
-            "3. Run Full System Calibration manually\n\n"
-            "If fails 3+ times → Check logs, contact support",
+            "answer": "Click **Retry** (up to 3 attempts) or **Continue Anyway** to troubleshoot.\n\n"
+            "Common causes: air bubbles, insufficient warmup, hardware issues, or missing LED model. "
+            "You can also run a **Full System Calibration** manually from the Settings tab.",
             "category": "calibration",
             "keywords": ["calibration", "failed", "retry", "fail"],
             "priority": "high"
         },
         r"when.*calibrate|which.*calibration|calibration.*use": {
-            "answer": "**Which Calibration to Use:**\n\n"
-            "**Sensor swap (same type):**\n→ Simple LED Calibration (10-20 sec)\n\n"
-            "**Sensor swap (different type):**\n→ Full System Calibration (3-5 min)\n\n"
-            "**First-time setup:**\n→ OEM LED Calibration (10-15 min)\n\n"
-            "**LED model missing:**\n→ LED Model Training (2-5 min)\n\n"
-            "**Polarizer positions wrong:**\n→ Polarizer Calibration (2-5 min)\n\n"
-            "**Daily startup:**\n→ Automatic (runs on Power On)\n\n"
-            "**Monthly QC:**\n→ OEM LED Calibration (10-15 min)\n\n"
-            "All calibrations: Settings tab → Calibration Controls",
+            "answer": "Quick guide:\n\n"
+            "• **Same-type sensor swap** → Simple LED (10-20 sec)\n"
+            "• **Different sensor type** → Full System (3-5 min)\n"
+            "• **First-time setup** → OEM LED (10-15 min)\n"
+            "• **LED model missing** → LED Model Training (2-5 min)\n"
+            "• **Servo positions wrong** → Polarizer (2-5 min)\n"
+            "• **Daily startup** → Automatic on Power On",
             "category": "calibration",
             "keywords": ["when", "calibrate", "which", "use"],
             "priority": "high"
         },
         r"led.*model.*not.*found|optical.*calibration.*missing": {
-            "answer": "**Error: 'LED model not found'**\n\n"
-            "**Cause:** optical_calibration.json is missing\n\n"
-            "**Solution - Two options:**\n\n"
-            "**Option 1: Quick (2-5 min)**\n"
-            "• Settings → Calibration Controls\n"
-            "• Click 'Train LED Model'\n"
-            "• Creates model only\n\n"
-            "**Option 2: Complete (10-15 min)**\n"
-            "• Settings → Calibration Controls\n"
-            "• Click 'Run OEM Calibration'\n"
-            "• Creates model + calibrates servo + full calibration\n\n"
-            "💡 First-time setup? → Use Option 2 (OEM)\n"
-            "💡 Just need model? → Use Option 1 (Training)",
+            "answer": "This error means `optical_calibration.json` is missing.\n\n"
+            "**Quick fix:** Settings → **Train LED Model** (2-5 min)\n"
+            "**Complete fix:** Settings → **Run OEM Calibration** (10-15 min)\n\n"
+            "First-time setup? Go with OEM.",
             "category": "calibration",
             "keywords": ["led", "model", "not", "found", "missing"],
             "priority": "high"
         },
         r"calibration.*freeze|calibration.*hang|calibration.*stuck": {
-            "answer": "**Calibration Freezing/Hanging:**\n\n"
-            "**Immediate action:**\n"
-            "• Wait 5 minutes first (some steps take time)\n"
-            "• If still frozen → Close software\n"
-            "• Restart ezControl\n"
-            "• Try calibration again\n\n"
-            "**Prevention:**\n"
-            "✅ Ensure stable hardware connection\n"
-            "✅ Allow 30-60 min warmup\n"
-            "✅ Check for air bubbles before starting\n"
-            "✅ Don't change settings during calibration\n\n"
-            "**If persists:**\n"
-            "• Check logs/ folder for errors\n"
-            "• Try different calibration type\n"
-            "• Contact support with log file",
+            "answer": "Wait 5 minutes first — some steps take time. If still frozen, close and restart the software, "
+            "then try again.\n\n"
+            "Prevent this by ensuring a stable connection, allowing warmup time, checking for air bubbles, "
+            "and not changing settings during calibration.",
             "category": "calibration",
             "keywords": ["calibration", "freeze", "hang", "stuck"],
             "priority": "medium"
         },
         r"qc.*report|quality.*control|calibration.*qc": {
-            "answer": "**QC Report (Quality Control)**\n\n"
-            "**Shown after Full/OEM calibrations**\n\n"
-            "**Validates:**\n"
-            "✅ Signal strength above minimum\n"
-            "✅ LED convergence successful\n"
-            "✅ Baseline stability good\n"
-            "✅ Reference spectra quality\n"
-            "✅ No detector saturation\n\n"
-            "**If warnings appear:**\n"
-            "⚠️ Signal low → Check prism, LEDs, detector\n"
-            "⚠️ Baseline drift → Allow more warmup\n"
-            "⚠️ Slow convergence → May need LED retraining\n\n"
-            "**Best practice:**\n"
-            "• Save QC reports to file\n"
-            "• Track trends over time\n"
-            "• Document any warnings",
+            "answer": "The **QC Report** appears after Full or OEM calibrations and validates signal strength, "
+            "LED convergence, baseline stability, and reference quality.\n\n"
+            "If you see warnings: check prism/LEDs (low signal), allow more warmup (drift), "
+            "or retrain the LED model (slow convergence).",
             "category": "calibration",
             "keywords": ["qc", "report", "quality", "control"],
             "priority": "medium"
         },
         r"sensor.*swap|replace.*sensor|change.*sensor": {
-            "answer": "**Sensor Swap Calibration Workflow:**\n\n"
-            "**Same sensor type (e.g., gold to gold):**\n"
-            "1. Install new sensor with buffer\n"
-            "2. Settings → 'Run Simple Calibration' (10-20 sec)\n"
-            "3. Start acquisition ✅\n\n"
-            "**Different sensor type (e.g., gold to graphene):**\n"
-            "1. Install new sensor with buffer\n"
-            "2. Settings → 'Run Full Calibration' (3-5 min)\n"
-            "3. Review QC Report\n"
-            "4. Start acquisition ✅\n\n"
-            "**Major sensor change:**\n"
-            "1. Install new sensor\n"
-            "2. Settings → 'Run OEM Calibration' (10-15 min)\n"
-            "3. Thoroughly review QC\n"
-            "4. Validate with test samples ✅\n\n"
-            "⚠️ Critical: No air bubbles!",
+            "answer": "**Same type** (e.g. gold→gold): Install sensor → **Simple Calibration** (10-20 sec)\n"
+            "**Different type**: Install sensor → **Full Calibration** (3-5 min)\n"
+            "**Major change**: Install sensor → **OEM Calibration** (10-15 min)\n\n"
+            "Make sure there are no air bubbles!",
             "category": "calibration",
             "keywords": ["sensor", "swap", "replace", "change"],
             "priority": "high"
         },
         r"calibration.*best.*practice|calibration.*tips": {
-            "answer": "**Calibration Best Practices:**\n\n"
-            "**Before calibration:**\n"
-            "✅ Clean prism/sensor\n"
-            "✅ Fresh buffer (no bubbles!)\n"
-            "✅ Allow warmup (30-60 min ideal)\n"
-            "✅ Check Device Status tab\n"
-            "✅ Stable baseline\n\n"
-            "**During calibration:**\n"
-            "❌ Don't disturb system\n"
-            "❌ Don't change settings\n"
-            "❌ Don't run other operations\n"
-            "✅ Monitor progress dialog\n\n"
-            "**After calibration:**\n"
-            "✅ Review QC Report\n"
-            "✅ Verify sensorgram looks good\n"
-            "✅ Document any issues\n\n"
-            "**Schedule:**\n"
-            "• Daily: Startup calibration (auto)\n"
-            "• Weekly: Full System Calibration\n"
-            "• Monthly: OEM LED Calibration",
+            "answer": "**Before:** Clean prism, use fresh bubble-free buffer, allow 30-60 min warmup.\n"
+            "**During:** Don't disturb the system or change settings.\n"
+            "**After:** Review QC Report, verify sensorgram looks good.\n\n"
+            "Schedule: daily startup (auto), weekly Full System, monthly OEM.",
             "category": "calibration",
             "keywords": ["calibration", "best", "practice", "tips"],
             "priority": "medium"
@@ -348,489 +241,337 @@ PATTERNS = {
 
     "pump": {
         r"pump.*types|which.*pump|pump.*configuration": {
-            "answer": "**ezControl supports 2 pump configurations:**\n\n"
-            "**1. AffiPump (External Syringe Pumps)**\n"
-            "• Hardware: 2× Tecan Cavro Centris syringe pumps\n"
-            "• Volume: 1000 µL per syringe (precision)\n"
-            "• Type: Volume-based (aspirate/dispense)\n"
-            "• Flow: 0.001 - 24,000 µL/min\n"
-            "• Use: Precise volume injections, titrations\n\n"
-            "**2. P4PROPLUS (Internal Peristaltic)**\n"
-            "• Hardware: 3 peristaltic pumps (integrated)\n"
-            "• Type: Continuous flow (RPM-based)\n"
-            "• RPM: 5 - 220 RPM\n"
-            "• Use: Continuous buffer flow, kinetics\n\n"
-            "📍 Location: Flow tab in sidebar",
+            "answer": "ezControl supports two pump types:\n\n"
+            "**AffiPump** — External syringe pumps (2× Tecan Cavro, 1000 µL, 0.001–24,000 µL/min) for precise injections.\n"
+            "**P4PROPLUS** — Internal peristaltic pumps (3 pumps, 5–220 RPM) for continuous flow.\n\n"
+            "Control both from the **Flow** tab.",
             "category": "pump",
             "keywords": ["pump", "types", "which", "configuration"],
             "priority": "high"
         },
         r"how.*pump|use.*pump|pump.*control|start.*pump": {
-            "answer": "**Pump Control - Flow Tab:**\n\n"
-            "**AffiPump (Syringe Pumps):**\n"
-            "1. Flow tab → Set flow rate (µL/min)\n"
-            "2. Choose pump: KC1, KC2, or Both\n"
-            "3. Click 'Run Buffer' for continuous flow\n"
-            "4. Click 'Stop' when done\n\n"
-            "**P4PROPLUS (Peristaltic):**\n"
-            "1. Flow tab → Set RPM (5-220)\n"
-            "2. Choose channel: Pump 1, Pump 2, or Both\n"
-            "3. Click 'Start' to begin flow\n"
-            "4. Adjust RPM while running (live updates)\n"
-            "5. Click 'Stop' when done\n\n"
-            "⚠️ Emergency Stop: Red button stops all pumps immediately",
+            "answer": "In the **Flow** tab:\n\n"
+            "**AffiPump:** Set flow rate → choose pump (KC1/KC2/Both) → click **Run Buffer** → **Stop** when done.\n"
+            "**P4PROPLUS:** Set RPM (5-220) → choose channel → click **Start**. You can adjust RPM live.\n\n"
+            "Red **Emergency Stop** button halts all pumps immediately.",
             "category": "pump",
             "keywords": ["how", "pump", "use", "control", "start"],
             "priority": "high"
         },
         r"prime.*pump|pump.*priming|how.*prime": {
-            "answer": "**Pump Priming (AffiPump):**\n\n"
-            "**Purpose:** Fill pumps and tubing with buffer\n\n"
-            "**Steps:**\n"
-            "1. Flow tab → Click 'Prime Pump'\n"
-            "2. Default: 6 cycles × 1000 µL\n"
-            "3. Takes ~2-3 minutes\n"
-            "4. Valves open progressively:\n"
-            "   - Cycles 1-2: Pump priming\n"
-            "   - Cycles 3-4: Sample loop priming\n"
-            "   - Cycles 5-6: Full path priming\n\n"
-            "✅ Removes air bubbles\n"
-            "✅ Establishes buffer flow\n"
-            "✅ Auto-detects blockages\n\n"
-            "⚠️ Always prime before first experiment of the day!",
+            "answer": "Go to **Flow** tab → click **Prime Pump**. It runs 6 cycles to fill tubing with buffer "
+            "and remove air bubbles (~2-3 min).\n\n"
+            "Always prime before your first experiment of the day!",
             "category": "pump",
             "keywords": ["prime", "pump", "priming"],
             "priority": "high"
         },
         r"cleanup.*pump|pump.*cleanup|remove.*bubbles": {
-            "answer": "**Pump Cleanup (AffiPump):**\n\n"
-            "**Purpose:** Remove air bubbles and contaminants\n\n"
-            "**Two-Phase Process:**\n"
-            "1. **Pulse Phase:** 10 rapid cycles (200 µL)\n"
-            "   - Dislodges stubborn bubbles\n"
-            "   - Fast aspirate/dispense\n\n"
-            "2. **Prime Phase:** 6 standard cycles (1000 µL)\n"
-            "   - Flushes entire system\n"
-            "   - Opens all valves progressively\n\n"
-            "**How to run:**\n"
-            "1. Flow tab → Click 'Cleanup'\n"
-            "2. Takes ~3-4 minutes\n"
-            "3. Check for bubbles in tubing\n\n"
-            "Use when: Air bubbles visible, after maintenance, baseline noisy",
+            "answer": "Click **Cleanup** in the Flow tab. It runs a pulse phase (10 rapid cycles to dislodge bubbles) "
+            "then a prime phase (6 cycles to flush) — takes ~3-4 minutes.\n\n"
+            "Use when you see air bubbles, after maintenance, or if the baseline is noisy.",
             "category": "pump",
             "keywords": ["cleanup", "pump", "remove", "bubbles"],
             "priority": "high"
         },
         r"pump.*flush|flush.*pump|flush.*system": {
-            "answer": "**Pump Flush:**\n\n"
-            "**Purpose:** Rapid system flush (faster than prime)\n\n"
-            "**Steps:**\n"
-            "1. Flow tab → Click 'Flush'\n"
-            "2. Homes pumps first (safety)\n"
-            "3. Runs 2-3 rapid cycles\n"
-            "4. Takes ~1 minute\n\n"
-            "**When to use:**\n"
-            "✅ Quick flush between samples\n"
-            "✅ Change buffer type\n"
-            "✅ Remove residual sample\n\n"
-            "**Not for:**\n"
-            "❌ Removing air bubbles (use Cleanup)\n"
-            "❌ First startup (use Prime)",
+            "answer": "Click **Flush** in the Flow tab for a quick 1-minute system rinse (2-3 rapid cycles). "
+            "Good for switching between samples or buffers.\n\n"
+            "For air bubble removal, use **Cleanup** instead.",
             "category": "pump",
             "keywords": ["pump", "flush", "system"],
             "priority": "medium"
         },
         r"pump.*home|home.*pump|initialize.*pump": {
-            "answer": "**Home Pumps (AffiPump):**\n\n"
-            "**Purpose:** Return syringe plungers to zero position\n\n"
-            "**Steps:**\n"
-            "1. Flow tab → Click 'Home Pumps'\n"
-            "2. Both KC1 and KC2 plungers retract\n"
-            "3. Takes ~10-20 seconds\n\n"
-            "**When to home:**\n"
-            "✅ Before pump operations (auto-done)\n"
-            "✅ After errors or blockages\n"
-            "✅ System initialization\n"
-            "✅ Before switching samples\n\n"
-            "**Safety:** Pumps auto-home if blockage detected",
+            "answer": "Click **Home Pumps** in the Flow tab to return syringe plungers to zero (~10-20 sec). "
+            "Do this after errors, blockages, or before switching samples.\n\n"
+            "Pumps also auto-home if a blockage is detected.",
             "category": "pump",
             "keywords": ["pump", "home", "initialize"],
             "priority": "medium"
         },
         r"pump.*blocked|blockage|pump.*error": {
-            "answer": "**Pump Blockage Detection:**\n\n"
-            "**How it works:**\n"
-            "• Monitors completion time for KC1 and KC2\n"
-            "• If time difference > 1.5 sec → blockage detected\n"
-            "• Reports which pump is blocked\n"
-            "• Auto-homes plungers and aborts\n\n"
-            "**If pump blocked:**\n"
-            "1. ⚠️ **Don't force it!**\n"
-            "2. Check tubing for kinks/clogs\n"
-            "3. Verify valve positions\n"
-            "4. Remove blockage source\n"
-            "5. Click 'Home Pumps'\n"
-            "6. Run 'Prime Pump' to test\n\n"
-            "**Common causes:**\n"
-            "• Kinked tubing\n"
-            "• Clogged filter\n"
-            "• Closed valve\n"
-            "• Empty reservoir",
+            "answer": "The system auto-detects blockages by comparing pump completion times. If blocked:\n\n"
+            "1. Check tubing for kinks or clogs\n"
+            "2. Verify valve positions\n"
+            "3. Remove the obstruction\n"
+            "4. Click **Home Pumps**, then run **Prime Pump** to test",
             "category": "pump",
             "keywords": ["pump", "blocked", "blockage", "error"],
             "priority": "high"
         },
         r"30.*second.*injection|contact.*time|timed.*injection": {
-            "answer": "**30-Second Contact Time Injection:**\n\n"
-            "**Purpose:** Precise timed sample delivery\n\n"
-            "**Workflow:**\n"
-            "1. Start pump at desired flow rate\n"
-            "2. Click '30s Inject' button\n"
-            "3. Valve opens (sample flows to sensor)\n"
-            "4. Wait 30 seconds (contact time)\n"
-            "5. Valve auto-closes (buffer continues)\n\n"
-            "**Valve Sync:**\n"
-            "• Sync OFF: Only KC1 valve opens\n"
-            "• Sync ON: Both KC1 & KC2 open\n\n"
-            "**Use for:**\n"
-            "✅ Kinetic binding measurements\n"
-            "✅ Association phase timing\n"
-            "✅ Reproducible sample delivery\n\n"
-            "📍 Location: Flow tab → Inject section",
+            "answer": "Click **30s Inject** in the Flow tab while pumps are running. The valve opens for "
+            "30 seconds of sample contact, then auto-closes.\n\n"
+            "Use **Valve Sync** to control whether one or both valves open.",
             "category": "pump",
             "keywords": ["30", "second", "injection", "contact", "time"],
             "priority": "medium"
         },
         r"valve.*control|6.*port.*valve|3.*way.*valve": {
-            "answer": "**Valve System:**\n\n"
-            "**1. 6-Port Valves (KC1 & KC2)**\n"
-            "• Function: Sample injection control\n"
-            "• Positions:\n"
-            "  - LOAD (0): Sample loop isolated\n"
-            "  - INJECT (1): Sample flows to sensor\n"
-            "• Use: Volume-based injections\n\n"
-            "**2. 3-Way Valves (KC1 & KC2)**\n"
-            "• Function: Channel routing\n"
-            "• Positions:\n"
-            "  - CLOSED (0): KC1→A, KC2→C\n"
-            "  - OPEN (1): KC1→B, KC2→D\n"
-            "• Use: Multi-channel experiments\n\n"
-            "**Auto-Control:**\n"
-            "• Valves open/close automatically during operations\n"
-            "• Manual control in Advanced mode\n"
-            "• Safety timeout prevents stuck-open valves",
+            "answer": "**6-Port Valves** (KC1/KC2): Switch between LOAD (loop isolated) and INJECT (sample to sensor).\n"
+            "**3-Way Valves** (KC1/KC2): Route flow between channels A/B (KC1) or C/D (KC2).\n\n"
+            "Valves operate automatically during most operations. Manual control is in Advanced mode.",
             "category": "pump",
             "keywords": ["valve", "control", "6", "port", "3", "way"],
             "priority": "medium"
         },
         r"channel.*routing|channel.*a.*b.*c.*d|sensor.*channels": {
-            "answer": "**Channel Routing with 3-Way Valves:**\n\n"
-            "**4 Sensor Channels Available:**\n\n"
-            "**KC1 (Pump 1):**\n"
-            "• 3-way CLOSED → Channel A (reference)\n"
-            "• 3-way OPEN → Channel B (sample)\n\n"
-            "**KC2 (Pump 2):**\n"
-            "• 3-way CLOSED → Channel C (reference)\n"
-            "• 3-way OPEN → Channel D (sample)\n\n"
-            "**Typical Setup:**\n"
-            "• Channel A: Buffer reference (KC1)\n"
-            "• Channel B: Sample 1 (KC1)\n"
-            "• Channel C: Buffer reference (KC2)\n"
-            "• Channel D: Sample 2 (KC2)\n\n"
-            "✅ Enables parallel experiments\n"
-            "✅ Reference-corrected measurements",
+            "answer": "KC1 routes to **Channel A** (3-way closed) or **B** (open). "
+            "KC2 routes to **Channel C** (closed) or **D** (open).\n\n"
+            "Typical setup: A & C for buffer reference, B & D for samples.",
             "category": "pump",
             "keywords": ["channel", "routing", "a", "b", "c", "d"],
             "priority": "medium"
         },
         r"flow.*rate|set.*flow|pump.*speed": {
-            "answer": "**Setting Flow Rate:**\n\n"
-            "**AffiPump (Syringe):**\n"
-            "• Range: 0.001 - 24,000 µL/min\n"
-            "• Typical: 50-200 µL/min for experiments\n"
-            "• Set in Flow tab → Flow rate spinbox\n"
-            "• Precision: ±1% accuracy\n\n"
-            "**P4PROPLUS (Peristaltic):**\n"
-            "• Range: 5 - 220 RPM\n"
-            "• Set in Flow tab → RPM spinbox\n"
-            "• Live updates: Change RPM while running\n"
-            "• Correction factor: Compensates for tubing wear\n\n"
-            "**Recommendations:**\n"
-            "• Binding studies: 50-100 µL/min\n"
-            "• Washing: 200-500 µL/min\n"
-            "• Priming: 1000-5000 µL/min",
+            "answer": "**AffiPump:** 0.001–24,000 µL/min (typical: 50-200 for experiments). "
+            "**P4PROPLUS:** 5–220 RPM with live adjustment. Set both in the **Flow** tab.\n\n"
+            "Recommendations: 50-100 µL/min for binding, 200-500 for washing, 1000+ for priming.",
             "category": "pump",
             "keywords": ["flow", "rate", "set", "speed"],
             "priority": "medium"
         },
         r"rpm.*correction|pump.*correction|correction.*factor": {
-            "answer": "**RPM Correction Factor (P4PROPLUS):**\n\n"
-            "**Purpose:** Compensate for tubing wear/calibration drift\n\n"
-            "**How it works:**\n"
-            "```\n"
-            "Actual RPM = Base RPM × Correction Factor\n"
-            "```\n\n"
-            "**Example:**\n"
-            "• Base RPM: 100\n"
-            "• Correction: 1.05\n"
-            "• Actual RPM sent: 105\n\n"
-            "**When to adjust:**\n"
-            "• Flow rate seems too slow → Increase factor (1.05)\n"
-            "• Flow rate seems too fast → Decrease factor (0.95)\n"
-            "• After tubing replacement → Reset to 1.00\n\n"
-            "**Default:** 1.00 (no correction)\n"
-            "**Range:** 0.50 - 2.00\n\n"
-            "📍 Location: Flow tab → Correction spinbox",
+            "answer": "The correction factor compensates for tubing wear on peristaltic pumps (default: 1.00). "
+            "Flow too slow? Increase it (e.g. 1.05). Too fast? Decrease (e.g. 0.95). "
+            "Reset to 1.00 after replacing tubing.\n\n"
+            "Set in **Flow** tab → Correction spinbox.",
             "category": "pump",
             "keywords": ["rpm", "correction", "factor"],
             "priority": "low"
         },
         r"pump.*emergency.*stop|emergency.*stop|stop.*pump": {
-            "answer": "**Emergency Pump Stop:**\n\n"
-            "**How to stop:**\n"
-            "1. Click red 'Emergency Stop' button\n"
-            "2. OR click regular 'Stop' button\n"
-            "3. All pumps halt immediately\n\n"
-            "**What happens:**\n"
-            "✅ All pumps stop\n"
-            "✅ Valves remain in current position\n"
-            "✅ Flow rate settings preserved\n"
-            "✅ Safe to restart after checking system\n\n"
-            "**When to use:**\n"
-            "• Leak detected\n"
-            "• Air bubble entering sensor\n"
-            "• Abnormal noise/vibration\n"
-            "• System malfunction\n\n"
-            "**After emergency stop:**\n"
-            "1. Check for issues (leaks, blockages)\n"
-            "2. Fix problem\n"
-            "3. Run 'Prime Pump' to resume",
+            "answer": "Click the red **Emergency Stop** button — all pumps halt immediately. "
+            "Your settings are preserved so you can restart after fixing the issue.",
             "category": "pump",
             "keywords": ["pump", "emergency", "stop"],
             "priority": "high"
         },
         r"pump.*troubleshoot|pump.*not.*working|pump.*issue": {
-            "answer": "**Pump Troubleshooting:**\n\n"
-            "**Pump won't start:**\n"
-            "• Check hardware connection (Device Status)\n"
-            "• Verify COM port (AffiPump: COM8)\n"
-            "• Try 'Home Pumps' first\n"
-            "• Restart software if needed\n\n"
-            "**No flow detected:**\n"
-            "• Check tubing connections\n"
-            "• Verify valves opening (check LED/status)\n"
-            "• Run 'Prime Pump' to establish flow\n"
-            "• Check for air bubbles (run 'Cleanup')\n\n"
-            "**Erratic flow:**\n"
-            "• Air bubbles → Run 'Cleanup'\n"
-            "• Kinked tubing → Straighten\n"
-            "• Empty reservoir → Refill\n"
-            "• Adjust correction factor (peristaltic)\n\n"
-            "**Blockage error:**\n"
-            "• Check tubing for kinks/clogs\n"
-            "• Verify valve positions\n"
-            "• Run 'Home Pumps'\n"
-            "• Clear blockage, then 'Prime Pump'",
+            "answer": "**Won't start:** Check connection in Device Status, verify COM port, try **Home Pumps**.\n"
+            "**No flow:** Check tubing, verify valves, run **Prime Pump**.\n"
+            "**Erratic flow:** Run **Cleanup** for air bubbles, check for kinked tubing.\n"
+            "**Blockage:** Check tubing/valves, **Home Pumps**, then **Prime Pump**.",
             "category": "pump",
             "keywords": ["pump", "troubleshoot", "not", "working", "issue"],
             "priority": "high"
         },
         r"pump.*best.*practice|pump.*maintenance": {
-            "answer": "**Pump Best Practices:**\n\n"
-            "**Daily Routine:**\n"
-            "✅ Prime pumps at start of day\n"
-            "✅ Check for air bubbles in tubing\n"
-            "✅ Verify flow is smooth and consistent\n"
-            "✅ Run cleanup if bubbles present\n\n"
-            "**After Each Experiment:**\n"
-            "✅ Flush with buffer (remove sample)\n"
-            "✅ Return valves to LOAD position\n"
-            "✅ Stop pumps when not in use\n\n"
-            "**Weekly Maintenance:**\n"
-            "✅ Check tubing for wear/cracks\n"
-            "✅ Clean pump heads (peristaltic)\n"
-            "✅ Verify valve operation\n"
-            "✅ Test with water (no samples)\n\n"
-            "**Storage:**\n"
-            "✅ Store in buffer or 20% ethanol\n"
-            "✅ Never leave empty (cavitation risk)\n"
-            "✅ Home pumps before shutdown",
+            "answer": "**Daily:** Prime at startup, check for air bubbles.\n"
+            "**After experiments:** Flush with buffer, stop pumps.\n"
+            "**Weekly:** Inspect tubing, clean pump heads, test with water.\n"
+            "**Storage:** Keep in buffer or 20% ethanol — never leave empty.",
             "category": "pump",
             "keywords": ["pump", "best", "practice", "maintenance"],
             "priority": "medium"
         },
     },
 
+    "manual_injection": {
+        r"manual.*injection.*workflow|how.*manual.*inject|manual.*syringe|perform.*manual.*injection": {
+            "answer": "**Manual Injection Workflow:**\n\n"
+            "1. Build a Concentration cycle in **Manual** mode\n"
+            "2. Start the run — system shows live sensorgram\n"
+            "3. Watch for baseline plateau, then **Ctrl+Click** on sensorgram to place injection flag\n"
+            "4. Manual injection dialog appears — inject sample via syringe\n"
+            "5. Click **Injection Complete** when done\n"
+            "6. Contact timer counts down — **wash flags appear automatically** when timer expires\n"
+            "7. Perform wash when 'WASH NOW' alert appears\n\n"
+            "💡 Pump/semi-automated modes skip the dialog and detect automatically.",
+            "category": "manual_injection",
+            "keywords": ["manual", "injection", "workflow", "syringe", "perform"],
+            "priority": "high"
+        },
+        r"injection.*flag|place.*injection.*flag|ctrl.*click.*flag": {
+            "answer": "**Ctrl+Click** on the live sensorgram to place an injection flag at the current time point. "
+            "This marks when you're ready to inject and triggers the manual injection dialog.\n\n"
+            "The dialog shows a 60-second detection window with channel LED indicators. "
+            "Click 'Injection Complete' after injecting to start the contact timer.",
+            "category": "manual_injection",
+            "keywords": ["injection", "flag", "place", "ctrl", "click"],
+            "priority": "high"
+        },
+        r"wash.*flag.*automatic|automatic.*wash|when.*wash.*flag|wash.*flag.*placed": {
+            "answer": "**Wash flags are now automatic!** They appear when the contact timer expires.\n\n"
+            "After you place an injection flag and complete the injection, the contact timer starts counting down. "
+            "When it reaches zero, the system:\n"
+            "• Shows 'WASH NOW' alert on timer button\n"
+            "• Plays alarm sound\n"
+            "• **Automatically places wash flags** on all channels\n\n"
+            "You no longer need to manually place wash flags — just perform the wash when alerted.",
+            "category": "manual_injection",
+            "keywords": ["wash", "flag", "automatic", "when", "placed"],
+            "priority": "high"
+        },
+        r"contact.*timer|contact.*time.*countdown|wash.*alert|wash.*now": {
+            "answer": "The **contact timer** starts after injection and counts down to zero. "
+            "When it expires:\n\n"
+            "• Timer button shows **yellow 'WASH NOW' alert**\n"
+            "• Alarm sound plays (if enabled)\n"
+            "• Wash flags automatically placed\n\n"
+            "Click the timer button to stop the alarm. Set contact time in your cycle note (e.g. `contact 180s`).",
+            "category": "manual_injection",
+            "keywords": ["contact", "timer", "countdown", "wash", "alert", "now"],
+            "priority": "high"
+        },
+        r"manual.*injection.*dialog|60.*second.*window|injection.*detection.*window": {
+            "answer": "The **manual injection dialog** appears only for manual syringe injections. It shows:\n\n"
+            "• 60-second timeout countdown\n"
+            "• Channel LED indicators (turn green when injection detected)\n"
+            "• 'Injection Complete' button\n\n"
+            "The dialog auto-closes when all channels detect injection or timeout expires. "
+            "Pump/semi-automated modes skip this dialog entirely and detect automatically.",
+            "category": "manual_injection",
+            "keywords": ["manual", "injection", "dialog", "60", "second", "window", "detection"],
+            "priority": "medium"
+        },
+        r"detection.*mode|detection.*priority|sensitivity.*factor|manual.*pump.*detection": {
+            "answer": "**Detection modes** control injection detection sensitivity:\n\n"
+            "• **Manual** (factor 2.0): Conservative, avoids false positives from syringe noise\n"
+            "• **Pump** (factor 0.75): Tight detection for clean pump injections\n"
+            "• **Priority** (factor 1.0): Medium sensitivity\n"
+            "• **Off** (factor 999): Disables auto-detection\n\n"
+            "Detection threshold = 2.5 × baseline_std × sensitivity_factor. "
+            "Set in Method Builder → Settings (⚙ cog button).",
+            "category": "manual_injection",
+            "keywords": ["detection", "mode", "priority", "sensitivity", "factor", "manual", "pump"],
+            "priority": "medium"
+        },
+        r"injection.*not.*detected|detection.*missed|false.*negative": {
+            "answer": "If injection isn't detected:\n\n"
+            "1. Check **Device Type** in Method Builder Settings (⚙ button) — use 'Manual' for syringes\n"
+            "2. Lower **Detection Priority** to Baseline for more sensitive detection\n"
+            "3. Verify you clicked 'Injection Complete' in the dialog\n"
+            "4. Make sure injection volume is sufficient (>10 µL)\n\n"
+            "Manual mode uses factor 2.0 to avoid syringe handling noise.",
+            "category": "manual_injection",
+            "keywords": ["injection", "not", "detected", "missed", "false", "negative"],
+            "priority": "medium"
+        },
+        r"false.*positive.*detection|noise.*trigger|detection.*too.*sensitive": {
+            "answer": "If detection triggers on noise:\n\n"
+            "1. Switch **Device Type** to 'Manual' (factor 2.0, more conservative)\n"
+            "2. Increase **Detection Priority** to Elevated for stricter detection\n"
+            "3. Turn off detection completely with 'Off' mode\n"
+            "4. Check for air bubbles causing baseline spikes\n\n"
+            "Settings are in Method Builder → ⚙ Settings panel (below table).",
+            "category": "manual_injection",
+            "keywords": ["false", "positive", "detection", "noise", "trigger", "sensitive"],
+            "priority": "medium"
+        },
+        r"injection.*deadline.*marker|orange.*line|wash.*deadline": {
+            "answer": "The **orange deadline marker** appears automatically after injection to show when contact time will expire. "
+            "It's a visual guide to help you plan the wash timing.\n\n"
+            "Position = injection_time + contact_time. When the live cursor reaches it, the wash alert triggers.",
+            "category": "manual_injection",
+            "keywords": ["injection", "deadline", "marker", "orange", "line", "wash"],
+            "priority": "low"
+        },
+    },
+
     "method": {
         r"create.*cycle|new.*cycle|build.*cycle": {
-            "answer": "**How to Build a Method:**\n\n"
-            "1. Click **+ Build Method** in the sidebar\n"
-            "2. Type cycle lines in the Note field (one per line)\n"
-            "3. Click **➕ Add to Method** — cycles appear in the table\n"
-            "4. Reorder with ↑/↓, delete with 🗑, undo/redo as needed\n"
-            "5. Click **📋 Push to Queue** — cycles move to the Cycle Queue\n"
-            "6. Press **▶ Start Run** — cycles execute automatically in order\n\n"
-            "**Cycle syntax:** `Type Duration [Channel:Concentration]`\n"
-            "Example: `Concentration 5min [A:100nM] contact 180s`\n\n"
-            "**Cycle types:** Baseline, Concentration, Regeneration, Immobilization, Wash, Other\n\n"
-            "💡 Type `build 5` for quick 5-concentration series, or `@spark amine coupling` for a full method template.",
+            "answer": "1. Click **+ Build Method** in the sidebar\n"
+            "2. Type cycles in the Note field (one per line)\n"
+            "3. Click **➕ Add to Method**\n"
+            "4. Reorder with ↑/↓ as needed\n"
+            "5. Click **📋 Push to Queue** → **▶ Start Run**\n\n"
+            "Example: `Concentration 5min A:100nM contact 180s`",
             "category": "method",
             "keywords": ["create", "cycle", "new", "build", "method", "how"],
             "priority": "high"
         },
         r"how.*build.*method|how.*make.*method|how.*create.*method|method.*builder|build.*method": {
-            "answer": "**Building a Method — Step by Step:**\n\n"
-            "1. Click **+ Build Method** in the sidebar to open the Method Builder\n"
-            "2. In the **Note** field, type your cycles (one per line):\n"
-            "   `Baseline 5min`\n"
-            "   `Concentration 5min [A:100nM] contact 180s`\n"
-            "   `Regeneration 30sec [ALL:50mM]`\n"
-            "3. Click **➕ Add to Method** to add them to the method table\n"
-            "4. Use ↑/↓ buttons to reorder, 🗑 to delete\n"
-            "5. Click **📋 Push to Queue** to send to the main Cycle Queue\n"
-            "6. Press **▶ Start Run** to execute\n\n"
-            "**Quick shortcuts:**\n"
-            "• `build 5` → generates 5 concentration cycles automatically\n"
-            "• `@spark amine coupling` → full coupling + titration method\n"
-            "• `!save my_method` → save method as preset for reuse\n"
-            "• `@my_method` → load a saved preset\n\n"
-            "After the last cycle, the system enters **Auto-Read** mode (2 hours of continuous monitoring).",
+            "answer": "Open **+ Build Method** from the sidebar and type cycles one per line:\n\n"
+            "`Baseline 5min`\n"
+            "`Concentration 5min A:100nM contact 180s`\n"
+            "`Regeneration 30sec ALL:50mM`\n\n"
+            "Click **➕ Add to Method** → **📋 Push to Queue** → **▶ Start Run**.\n\n"
+            "Shortcuts: `build 5` for auto-generated series, `@spark amine coupling` for templates.",
             "category": "method",
             "keywords": ["build", "method", "how", "create", "make"],
             "priority": "high"
         },
         r"cycle.*type|what.*types|available.*types|type.*cycle": {
-            "answer": "**6 Cycle Types:**\n\n"
-            "| Type | Injection | Contact Time | Purpose |\n"
-            "|------|-----------|-------------|--------|\n"
-            "| **Baseline** | None | — | Running buffer, establish stable signal |\n"
-            "| **Concentration** | Simple (or partial) | User-specified | Inject analyte, measure binding |\n"
-            "| **Regeneration** | Simple | 30s (auto) | Strip bound analyte, restore baseline |\n"
-            "| **Immobilization** | Simple | User-specified | Attach ligand to sensor surface |\n"
-            "| **Wash** | Simple | User-specified | Rinse flow path between steps |\n"
-            "| **Other** | None | — | Custom (activation, blocking, etc.) |\n\n"
-            "All injections start at **20 seconds** into the cycle.\n"
-            "Regeneration auto-sets 30s contact time. All others require `contact Ns` if injection is needed.",
+            "answer": "There are 6 cycle types:\n\n"
+            "• **Baseline** — Running buffer, stable signal\n"
+            "• **Concentration** — Inject analyte, measure binding\n"
+            "• **Regeneration** — Strip bound analyte (auto 30s contact)\n"
+            "• **Immobilization** — Attach ligand to sensor\n"
+            "• **Wash** — Rinse flow path\n"
+            "• **Other** — Custom (activation, blocking, etc.)\n\n"
+            "All injections start 20 seconds into the cycle.",
             "category": "method",
             "keywords": ["cycle", "types", "available", "what"],
             "priority": "high"
         },
         r"cycle.*syntax|how.*write.*cycle|note.*syntax|note.*format|how.*type.*cycle": {
-            "answer": "**Cycle Syntax:**\n"
-            "`Type Duration [Channel:ValueUnits] contact Ns partial injection`\n\n"
-            "**Parts:**\n"
-            "• **Type** (required): Baseline, Concentration, Regeneration, Immobilization, Wash, Other\n"
-            "• **Duration** (required): `5min`, `30sec`, `2m`, `30s`\n"
-            "• **[Tags]** (optional): `[A]`, `[ALL:100nM]`, `[B:50µM]`\n"
-            "• **contact Ns** (optional): injection contact time, e.g. `contact 180s` or `contact 3min`\n"
-            "• **partial injection** (optional): use 30µL partial loop injection for Concentration\n\n"
-            "**Units:** nM, µM, pM, mM, M, mg/mL, µg/mL, ng/mL\n"
-            "**Channels:** A, B, C, D, ALL\n\n"
-            "**Examples:**\n"
+            "answer": "Format: `Type Duration Channel:ValueUnits contact Ns`\n\n"
+            "Examples:\n"
             "• `Baseline 5min`\n"
-            "• `Concentration 5min [A:100nM] contact 180s`\n"
-            "• `Regeneration 30sec [ALL:50mM]`\n"
-            "• `Immobilization 4min [A:50µg/mL] contact 180s`\n"
-            "• `Concentration 5min [A:100nM] contact 120s partial injection`",
+            "• `Concentration 5min A:100nM contact 180s`\n"
+            "• `Regeneration 30sec ALL:50mM`\n"
+            "• `Concentration 5min A:100nM contact 120s partial injection`\n\n"
+            "Channels: A, B, C, D, ALL. Units: nM, µM, mM, mg/mL, etc.",
             "category": "method",
             "keywords": ["syntax", "write", "cycle", "note", "format", "type"],
             "priority": "high"
         },
         r"what.*contact.*time|contact.*time|injection.*time": {
-            "answer": "**Contact Time** is how long the sample stays in the flow cell after injection.\n\n"
-            "• Specified with `contact Ns` (e.g. `contact 180s` or `contact 3min`)\n"
-            "• **Baseline** and **Other**: No injection, no contact time\n"
-            "• **Concentration**: User must specify (e.g. `contact 120s` or `contact 180s`)\n"
-            "• **Immobilization**: User must specify (e.g. `contact 180s`)\n"
-            "• **Wash**: User must specify (e.g. `contact 30s`)\n"
-            "• **Regeneration**: Auto-set to **30 seconds** (no need to specify)\n\n"
-            "All injections begin at **20 seconds** into the cycle (fixed delay).\n\n"
-            "Example: `Concentration 5min [A:100nM] contact 180s`",
+            "answer": "**Contact time** is how long sample stays in the flow cell after injection. "
+            "Add `contact Ns` to your cycle line (e.g. `contact 180s`).\n\n"
+            "Regeneration auto-sets to 30 seconds. Baseline and Other types don't inject.",
             "category": "method",
             "keywords": ["contact", "time", "injection"],
             "priority": "medium"
         },
         r"what.*injection|injection.*method|simple.*inject|partial.*inject|how.*inject": {
-            "answer": "**Injection Methods:**\n\n"
-            "• **Simple injection** (default): Full sample loop injection via valve switching\n"
-            "• **Partial injection**: 30µL spike — add `partial injection` to the cycle line\n\n"
-            "**Which types auto-inject?**\n"
-            "• Concentration → simple (or partial if specified)\n"
-            "• Immobilization → simple\n"
-            "• Wash → simple\n"
-            "• Regeneration → simple (30s contact auto-set)\n"
-            "• Baseline → no injection\n"
-            "• Other → no injection\n\n"
-            "All injections start at **20 seconds** into the cycle.\n\n"
-            "Example: `Concentration 5min [A:100nM] contact 120s partial injection`",
+            "answer": "**Simple injection** (default): Full sample loop injection via valve switching.\n"
+            "**Partial injection**: 30 µL spike — add `partial injection` to the cycle line.\n\n"
+            "Concentration, Immobilization, Wash, and Regeneration auto-inject. "
+            "Baseline and Other don't. All injections start 20 seconds into the cycle.",
             "category": "method",
             "keywords": ["injection", "simple", "partial", "inject", "method"],
             "priority": "medium"
         },
         r"save.*method|save.*preset|preset|load.*preset|reuse.*method": {
-            "answer": "**Save & Load Method Presets:**\n\n"
-            "**Save:** Build your method in the table, then type:\n"
-            "`!save my_method_name`\n"
-            "and click Add to Method.\n\n"
-            "**Load:** Type `@my_method_name` and click ⚡ Spark.\n"
-            "The saved cycles will load directly into the method table.\n\n"
-            "This lets you reuse common protocols without retyping them.",
+            "answer": "**Save:** Type `!save my_method_name` and click Add to Method.\n"
+            "**Load:** Type `@my_method_name` and click ⚡ Spark.\n\n"
+            "Saved presets let you reuse protocols without retyping.",
             "category": "method",
             "keywords": ["save", "preset", "load", "reuse", "method"],
             "priority": "medium"
         },
         r"what.*auto.*read|auto.*read|after.*queue|after.*last.*cycle": {
-            "answer": "**Auto-Read Mode:**\n\n"
-            "After the last cycle in your queue finishes, the system automatically starts a **2-hour Auto-Read** cycle.\n\n"
-            "This provides continuous monitoring so you don't lose data if you step away. "
-            "The sensorgram keeps recording and you can observe dissociation or baseline recovery.\n\n"
-            "Auto-Read can be disabled in Settings if not needed.",
+            "answer": "After your last queued cycle finishes, the system starts a **2-hour Auto-Read** "
+            "for continuous monitoring. This keeps recording so you don't lose data if you step away.\n\n"
+            "You can disable Auto-Read in Settings.",
             "category": "method",
             "keywords": ["auto", "read", "after", "queue", "last", "cycle"],
             "priority": "medium"
         },
         r"next.*cycle|skip.*cycle|advance.*cycle": {
-            "answer": "**Next Cycle / Skip:**\n\n"
-            "Press the **⏭ Next Cycle** button to end the current cycle early and immediately start the next one.\n\n"
-            "• Data from the current cycle is **preserved** (even if the cycle was shortened)\n"
-            "• The next cycle in the queue starts after a brief 0.5s delay\n"
-            "• If no cycles remain, Auto-Read starts automatically\n\n"
-            "💡 The intelligence bar shows a countdown and previews the next cycle type in the last 10 seconds.",
+            "answer": "Press **⏭ Next Cycle** to end the current cycle early and start the next one. "
+            "Data from the shortened cycle is still saved.\n\n"
+            "If no cycles remain, Auto-Read begins automatically.",
             "category": "method",
             "keywords": ["next", "cycle", "skip", "advance"],
             "priority": "medium"
         },
         r"edit.*cycle|modify.*cycle": {
-            "answer": "To edit cycle data:\n1. Complete your run and stop acquisition\n2. Go to 'Edits' tab\n3. Load your saved Excel file\n4. Click on any cycle in the table\n5. Use the 'Cycle Details & Editing' panel to adjust boundaries and settings",
+            "answer": "After your run, go to the **Edits** tab, load your saved Excel file, "
+            "click on a cycle in the table, and use the **Cycle Details** panel to adjust boundaries and settings.",
             "category": "method",
             "keywords": ["edit", "cycle", "modify"],
             "priority": "medium"
         },
         r"method.*example|example.*method|show.*example|sample.*method": {
-            "answer": "**Example Methods:**\n\n"
-            "**Simple Binding:**\n"
-            "```\n"
-            "Baseline 5min\n"
-            "Concentration 5min [A:100nM] contact 180s\n"
-            "Regeneration 30sec [ALL:50mM]\n"
-            "```\n\n"
-            "**Kinetics (Association + Dissociation):**\n"
-            "```\n"
-            "Baseline 2min\n"
-            "Concentration 5min [A:100nM] contact 120s\n"
-            "Baseline 10min\n"
-            "Regeneration 30sec [ALL:50mM]\n"
-            "```\n\n"
-            "**Dose-Response Titration:**\n"
-            "```\n"
-            "Baseline 5min\n"
-            "Concentration 5min [A:10nM] contact 120s\n"
-            "Concentration 5min [A:50nM] contact 120s\n"
-            "Concentration 5min [A:100nM] contact 120s\n"
-            "Concentration 5min [A:500nM] contact 120s\n"
-            "Regeneration 30sec [ALL:50mM]\n"
-            "```\n\n"
-            "💡 Or type `build 5` for quick auto-generated series, or `@spark amine coupling` for full protocols.",
+            "answer": "**Simple Binding:**\n"
+            "`Baseline 5min` → `Concentration 5min A:100nM contact 180s` → `Regeneration 30sec ALL:50mM`\n\n"
+            "**Dose-Response:**\n"
+            "`Baseline 5min` → Concentration cycles at 10nM, 50nM, 100nM, 500nM → `Regeneration 30sec`\n\n"
+            "💡 Type `build 5` for an auto-generated concentration series.",
             "category": "method",
             "keywords": ["example", "method", "sample", "show"],
             "priority": "medium"
@@ -839,7 +580,9 @@ PATTERNS = {
 
     "analysis": {
         r"baseline.*drift|baseline.*unstable": {
-            "answer": "For baseline drift issues:\n1. Allow 30-60 min warmup time\n2. Ensure temperature is stable\n3. Check for bubbles in flow cell\n4. Verify flow rate is consistent\n5. Consider capturing a new baseline in Settings tab\n6. Use baseline correction in Analysis tab",
+            "answer": "Allow 30-60 minutes of warmup, check for bubbles in the flow cell, "
+            "and verify consistent flow rate and temperature.\n\n"
+            "You can capture a new baseline in **Settings** or apply baseline correction in the **Analysis** tab.",
             "category": "analysis",
             "keywords": ["baseline", "drift", "unstable"],
             "priority": "medium"
@@ -848,7 +591,8 @@ PATTERNS = {
 
     "general": {
         r"keyboard.*shortcuts|hotkeys": {
-            "answer": "Useful keyboard shortcuts:\n• Ctrl+S: Stop acquisition\n• Ctrl+E: Export data\n• Ctrl+Z: Undo (in Method builder)\n• Ctrl+Shift+Z: Redo\n• F5: Refresh detector connection",
+            "answer": "Useful shortcuts: **Ctrl+S** (stop), **Ctrl+E** (export), "
+            "**Ctrl+Z** (undo), **Ctrl+Shift+Z** (redo), **F5** (refresh detector).",
             "category": "general",
             "keywords": ["keyboard", "shortcuts", "hotkeys"],
             "priority": "low"
@@ -858,7 +602,7 @@ PATTERNS = {
 
 
 def get_all_patterns():
-    """Get flattened list of all pattern dicts."""
+    """Get flattened dict of all patterns across categories."""
     all_patterns = {}
     for category, patterns in PATTERNS.items():
         all_patterns.update(patterns)

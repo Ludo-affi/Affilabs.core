@@ -154,7 +154,7 @@ def generate_affilabs_core_export():
             'concentration_value': conc_nM,
             'concentration_units': 'nM',
             'concentrations_formatted': f'A:{conc_nM}',
-            'note': f'Concentration series cycle {cycle_idx + 1}',
+            'note': f'Kinetic series cycle {cycle_idx + 1}',
             'delta_spr': None,  # To be filled by analysis
             'flags': '',
             'timestamp': (start_time + timedelta(seconds=cycle_start)).isoformat(),

@@ -8,7 +8,8 @@ from pathlib import Path
 
 from affilabs.utils.resource_path import get_affilabs_resource, get_resource_path
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 from ui_styles import Colors, Fonts, label_style
 
@@ -117,6 +118,11 @@ class NavigationPresenter:
 
         nav_layout.addSpacing(8)
 
+        # Spark toggle button (left of timer)
+        self._create_spark_toggle_button(nav_layout)
+
+        nav_layout.addSpacing(4)
+
         # Timer button
         self._create_timer_button(nav_layout)
 
@@ -158,6 +164,63 @@ class NavigationPresenter:
         self._create_company_logo(nav_layout)
 
         return nav_widget
+
+    def _create_spark_toggle_button(self, layout):
+        """Create Spark AI toggle button with SVG robot icon."""
+        # SVG robot icon
+        robot_svg = '''<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/><path d="M9 14h6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/><path d="M3 10v4M21 10v4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>'''
+
+        self.main_window.spark_toggle_btn = QPushButton()
+        self.main_window.spark_toggle_btn.setFixedSize(36, 36)
+        self.main_window.spark_toggle_btn.setCheckable(True)
+        self.main_window.spark_toggle_btn.setToolTip("Toggle Spark AI assistant")
+
+        # Create icon: blue for normal (unchecked Off), white for checked (On)
+        icon = QIcon()
+        # Unchecked state (Off) — orange robot
+        svg_orange = robot_svg.replace('currentColor', '#FF9500')
+        renderer = QSvgRenderer(svg_orange.encode('utf-8'))
+        pixmap_off = QPixmap(QSize(20, 20))
+        pixmap_off.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap_off)
+        renderer.render(painter)
+        painter.end()
+        icon.addPixmap(pixmap_off, QIcon.Mode.Normal, QIcon.State.Off)
+
+        # Checked state (On) — blue robot (matches button tint)
+        svg_blue = robot_svg.replace('currentColor', '#2E30E3')
+        renderer2 = QSvgRenderer(svg_blue.encode('utf-8'))
+        pixmap_on = QPixmap(QSize(20, 20))
+        pixmap_on.fill(Qt.GlobalColor.transparent)
+        painter2 = QPainter(pixmap_on)
+        renderer2.render(painter2)
+        painter2.end()
+        icon.addPixmap(pixmap_on, QIcon.Mode.Normal, QIcon.State.On)
+
+        self.main_window.spark_toggle_btn.setIcon(icon)
+        self.main_window.spark_toggle_btn.setIconSize(QSize(20, 20))
+
+        # Style matching pause/record buttons exactly
+        self.main_window.spark_toggle_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(46, 48, 227, 0.1);"
+            "  border: 1px solid rgba(46, 48, 227, 0.3);"
+            "  border-radius: 8px;"
+            "  padding: 0px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(46, 48, 227, 0.15);"
+            "  border: 1px solid rgba(46, 48, 227, 0.4);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(46, 48, 227, 0.25);"
+            "}"
+        )
+
+        # Connect signal THEN set checked (so handler fires after button is fully configured)
+        self.main_window.spark_toggle_btn.toggled.connect(self.main_window._on_spark_toggle)
+        self.main_window.spark_toggle_btn.setChecked(True)  # Spark visible by default
+        layout.addWidget(self.main_window.spark_toggle_btn)
 
     def _create_timer_button(self, layout):
         """Create timer button with matching styling to pause/record buttons."""
@@ -320,6 +383,8 @@ class NavigationPresenter:
             "  color: white;"
             "  border: 1px solid rgba(29, 29, 31, 0.2);"
             "  border-radius: 18px;"
+            "  padding: 0px;"
+            "  margin: 0px;"
             "}"
             "QPushButton:hover {"
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(29, 29, 31, 0.5), stop:1 rgba(29, 29, 31, 0.6));"
@@ -330,7 +395,7 @@ class NavigationPresenter:
         self.main_window._update_power_button_style()
         self.main_window.power_btn.setToolTip(
             "Power On Device (Ctrl+P)\n"
-            "Gray = Disconnected | Yellow = Searching | Green = Connected",
+            "Red = Disconnected | Yellow = Searching | Green = Connected",
         )
         self.main_window.power_btn.clicked.connect(self.main_window._handle_power_click)
         layout.addWidget(self.main_window.power_btn)

@@ -14,7 +14,7 @@ logging.basicConfig(
 
 # Test imports
 try:
-    from affilabs.widgets.spark_tinylm import SparkTinyLM
+    from affilabs.services.spark import SparkTinyLM
     print("✓ SparkTinyLM imported successfully")
 except ImportError as e:
     print(f"✗ Failed to import SparkTinyLM: {e}")
@@ -69,7 +69,7 @@ print("\n🎯 HYBRID SPARK SUMMARY:")
 print("  • Fast path: Regex patterns for common questions (<1ms)")
 print("  • Conversational path: TinyLM for complex questions (1-3s)")
 print("  • Model size: 637 MB (loads on first use)")
-print("  • Focused context: SPR/ezControl operations only")
+print("  • Focused context: SPR/Affilabs.core operations only")
 print("\n💡 USAGE:")
 print("  • Users ask questions naturally in Spark chat")
 print("  • Common questions answered instantly (regex)")

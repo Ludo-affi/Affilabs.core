@@ -11,12 +11,14 @@ import sys
 # Common Python installation paths to check
 libusb_dll = None
 possible_paths = [
-    # Python 3.9 Roaming
+    # Python 3.12 (current target)
+    os.path.expanduser(r'~\AppData\Local\Programs\Python\Python312\Lib\site-packages\libusb_package\libusb-1.0.dll'),
+    # Python 3.11
+    os.path.expanduser(r'~\AppData\Local\Programs\Python\Python311\Lib\site-packages\libusb_package\libusb-1.0.dll'),
+    # Fallback: Python 3.9 Roaming
     os.path.expanduser(r'~\AppData\Roaming\Python\Python39\site-packages\libusb_package\libusb-1.0.dll'),
-    # Python 3.9 Program Files
+    # Fallback: Python 3.9 Program Files
     r'C:\Program Files\Python39\Lib\site-packages\libusb_package\libusb-1.0.dll',
-    # Python 3.12
-    r'C:\Users\lucia\AppData\Local\Programs\Python\Python312\Lib\site-packages\libusb_package\libusb-1.0.dll',
 ]
 
 for path in possible_paths:
@@ -39,6 +41,8 @@ a = Analysis(
         ('VERSION', '.'),
         ('affilabs/ui', 'affilabs/ui'),
         ('affilabs/config', 'affilabs/config'),
+        ('affilabs/data', 'affilabs/data'),  # Knowledge base, Spark AI data
+        ('affilabs/services', 'affilabs/services'),  # Include Spark services
         ('affilabs/convergence/models', 'affilabs/convergence/models'),
         ('affilabs/utils/Sensor64bit.dll', 'affilabs/utils'),
         ('detector_profiles', 'detector_profiles'),
@@ -46,6 +50,8 @@ a = Analysis(
         ('servo_polarizer_calibration', 'servo_polarizer_calibration'),
         ('settings', 'settings'),
         ('standalone_tools', 'standalone_tools'),
+        # Piper TTS (if exists) - optional for Spark voice
+        # ('piper', 'piper'),  # Uncomment if you have Piper TTS installed
     ],
     hiddenimports=[
         'PySide6',
@@ -53,6 +59,8 @@ a = Analysis(
         'scipy',
         'scipy.special._cdflib',
         'numpy',
+        'serial',
+        'serial.tools.list_ports',
         'seabreeze',
         'seabreeze.cseabreeze',
         'libusb_package',
@@ -62,9 +70,45 @@ a = Analysis(
         'standalone_tools.compression_trainer_ui',
         'standalone_tools.compression_labeller',
         'tinydb',
+        'tinydb.queries',
+        'tinydb.table',
+        'tinydb.storages',
         'pydantic',
         'pandas',
         'requests',
+        # Spark AI dependencies
+        'affilabs.services.spark',
+        'affilabs.services.spark.answer_engine',
+        'affilabs.services.spark.pattern_matcher',
+        'affilabs.services.spark.knowledge_base',
+        'affilabs.services.spark.tinylm',
+        'affilabs.services.spark.patterns',
+        # PyTorch/Transformers (TinyLM AI model) - optional but needed if AI enabled
+        'torch',
+        'torch.nn',
+        'torch.nn.functional',
+        'transformers',
+        'transformers.models',
+        'transformers.models.llama',
+        'transformers.models.llama.modeling_llama',
+        'transformers.models.llama.tokenization_llama',
+        'transformers.models.llama.tokenization_llama_fast',
+        'transformers.pipelines',
+        'transformers.pipelines.text_generation',
+        'tokenizers',
+        'tokenizers.implementations',
+        'tokenizers.models',
+        'tokenizers.pre_tokenizers',
+        'tokenizers.processors',
+        'datasets',
+        'huggingface_hub',
+        'safetensors',
+        # TTS dependencies (optional - for Spark voice)
+        'sounddevice',
+        'cffi',
+        'cffi.api',
+        'cffi.backend_ctypes',
+        '_cffi_backend',
     ],
     hookspath=[],
     hooksconfig={},

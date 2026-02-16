@@ -344,23 +344,22 @@ class DeviceStatusTabBuilder:
         layout.addWidget(section_label)
         layout.addSpacing(8)
 
-        # Three stat columns in one row
-        stats_row = QHBoxLayout()
-        stats_row.setSpacing(0)
-        stats_row.setContentsMargins(0, 0, 0, 0)
+        # Row 1: Hours, Experiments, Users
+        stats_row1 = QHBoxLayout()
+        stats_row1.setSpacing(0)
+        stats_row1.setContentsMargins(0, 0, 0, 0)
 
-        stats = [
-            ("⏱", "Hours", "hours_value", "1,247", Colors.PRIMARY_TEXT),
-            ("📅", "Last Run", "last_op_value", "Nov 19", Colors.PRIMARY_TEXT),
-            ("⚠", "Service", "next_maintenance_value", "Nov 25", _LED_AMBER),
+        row1_stats = [
+            ("⏱", "Hours", "hours_value", "0.0", Colors.PRIMARY_TEXT),
+            ("🧪", "Experiments", "experiments_value", "0", Colors.PRIMARY_TEXT),
+            ("👤", "Users", "users_count_value", "0", Colors.PRIMARY_TEXT),
         ]
 
-        for i, (icon, title, attr_name, value_text, value_color) in enumerate(stats):
+        for i, (icon, title, attr_name, value_text, value_color) in enumerate(row1_stats):
             stat_col = QVBoxLayout()
             stat_col.setSpacing(2)
             stat_col.setContentsMargins(0, 0, 0, 0)
 
-            # Value (large)
             val = QLabel(f"{icon} {value_text}")
             val.setStyleSheet(
                 f"font-size: 13px; color: {value_color}; font-weight: 600;"
@@ -369,7 +368,6 @@ class DeviceStatusTabBuilder:
             val.setAlignment(Qt.AlignmentFlag.AlignLeft)
             stat_col.addWidget(val)
 
-            # Label (small, dim)
             lbl = QLabel(title)
             lbl.setStyleSheet(
                 f"font-size: 10px; color: {Colors.SECONDARY_TEXT}; font-weight: 500;"
@@ -380,16 +378,59 @@ class DeviceStatusTabBuilder:
             stat_col.addWidget(lbl)
 
             setattr(self.sidebar, attr_name, val)
-            stats_row.addLayout(stat_col)
+            stats_row1.addLayout(stat_col)
 
-            # Vertical separator between stats
-            if i < len(stats) - 1:
+            if i < len(row1_stats) - 1:
                 sep = QFrame()
                 sep.setFixedWidth(1)
                 sep.setStyleSheet(f"background: rgba(0, 0, 0, 0.08); min-height: 24px;")
-                stats_row.addWidget(sep)
+                stats_row1.addWidget(sep)
 
-        layout.addLayout(stats_row)
+        layout.addLayout(stats_row1)
+        layout.addSpacing(8)
+
+        # Row 2: Last Run, Service
+        stats_row2 = QHBoxLayout()
+        stats_row2.setSpacing(0)
+        stats_row2.setContentsMargins(0, 0, 0, 0)
+
+        row2_stats = [
+            ("📅", "Last Run", "last_op_value", "Never", Colors.PRIMARY_TEXT),
+            ("⚠", "Service", "next_maintenance_value", "—", _LED_AMBER),
+        ]
+
+        for i, (icon, title, attr_name, value_text, value_color) in enumerate(row2_stats):
+            stat_col = QVBoxLayout()
+            stat_col.setSpacing(2)
+            stat_col.setContentsMargins(0, 0, 0, 0)
+
+            val = QLabel(f"{icon} {value_text}")
+            val.setStyleSheet(
+                f"font-size: 13px; color: {value_color}; font-weight: 600;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
+            )
+            val.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            stat_col.addWidget(val)
+
+            lbl = QLabel(title)
+            lbl.setStyleSheet(
+                f"font-size: 10px; color: {Colors.SECONDARY_TEXT}; font-weight: 500;"
+                f"background: transparent; font-family: {Fonts.SYSTEM};"
+                f"letter-spacing: 0.3px;"
+            )
+            lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            stat_col.addWidget(lbl)
+
+            setattr(self.sidebar, attr_name, val)
+            stats_row2.addLayout(stat_col)
+
+            if i < len(row2_stats) - 1:
+                sep = QFrame()
+                sep.setFixedWidth(1)
+                sep.setStyleSheet(f"background: rgba(0, 0, 0, 0.08); min-height: 24px;")
+                stats_row2.addWidget(sep)
+
+        layout.addLayout(stats_row2)
 
     # ── Actions + Version ─────────────────────────────────────────────
     def _build_actions_section(self, layout: QVBoxLayout):

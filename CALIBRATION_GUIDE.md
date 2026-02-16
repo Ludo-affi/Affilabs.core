@@ -1,7 +1,7 @@
-# ezControl Calibration Guide
+# Affilabs.core Calibration Guide
 
 **Last Updated:** February 4, 2026
-**Purpose:** Complete reference for all calibration types in ezControl 2.0 SPR system
+**Purpose:** Complete reference for all calibration types in Affilabs.core 2.0 SPR system
 
 ---
 

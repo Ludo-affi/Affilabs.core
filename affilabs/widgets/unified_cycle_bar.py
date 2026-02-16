@@ -298,7 +298,7 @@ class UnifiedCycleBar(QFrame):
         Args:
             sample_info: Sample information dict with keys:
                 sample_id, concentration, units, display_name
-            injection_num: Current injection number (for concentration cycles)
+            injection_num: Current injection number (for binding cycles)
             total_injections: Total injections planned
         """
         self._state = CycleBarState.INJECT

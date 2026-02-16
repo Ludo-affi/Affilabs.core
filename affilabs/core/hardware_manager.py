@@ -272,7 +272,7 @@ class HardwareManager(QObject):
     def is_p4spr_available(self) -> bool:
         """Check if P4SPR hardware is connected and available.
 
-        Used to enable concentration cycle manual injection mode UI.
+        Used to enable binding/kinetic cycle manual injection mode UI.
         Returns True if P4SPR controller is detected, regardless of pump status.
 
         Returns:

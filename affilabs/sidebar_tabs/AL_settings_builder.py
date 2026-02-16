@@ -59,7 +59,8 @@ class SettingsTabBuilder:
             tab_layout: QVBoxLayout to add settings tab widgets to
 
         """
-        self._build_intelligence_bar(tab_layout)
+        # Intelligence bar removed for cleaner UI
+        # self._build_intelligence_bar(tab_layout)
         self._build_hardware_configuration(tab_layout)
         self._build_calibration_controls(tab_layout)
 
@@ -499,29 +500,29 @@ class SettingsTabBuilder:
         # Add "Capture Baseline" button (REBUILT - cleaner architecture)
         baseline_btn = QPushButton("[REC] Capture 5-Min Baseline")
         baseline_btn.setObjectName("baseline_capture_btn")  # Explicit object name
-        baseline_btn.setFixedHeight(32)
+        baseline_btn.setFixedHeight(28)
         baseline_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         baseline_btn.setStyleSheet(
             "QPushButton#baseline_capture_btn {"
-            "  background-color: #FF3B30;"
-            "  color: white;"
-            "  border: 2px solid #E02020;"
+            "  background-color: #F2F2F7;"
+            "  color: #666666;"
+            "  border: 1px solid #E5E5EA;"
             "  border-radius: 6px;"
-            "  padding: 6px 12px;"
-            "  font-size: 12px;"
-            "  font-weight: bold;"
+            "  padding: 4px 10px;"
+            "  font-size: 11px;"
+            "  font-weight: normal;"
             "}"
             "QPushButton#baseline_capture_btn:hover {"
-            "  background-color: #FF4D42;"
-            "  border: 2px solid #FF3B30;"
+            "  background-color: #E8E8ED;"
+            "  border: 1px solid #D5D5DA;"
             "}"
             "QPushButton#baseline_capture_btn:pressed {"
-            "  background-color: #C01818;"
+            "  background-color: #DADADF;"
             "}"
             "QPushButton#baseline_capture_btn:disabled {"
-            "  background-color: #D1D1D6;"
-            "  color: #86868B;"
-            "  border: 2px solid #C7C7CC;"
+            "  background-color: #F5F5F7;"
+            "  color: #C7C7CC;"
+            "  border: 1px solid #E5E5EA;"
             "}",
         )
         baseline_btn.setToolTip(
@@ -596,29 +597,33 @@ class SettingsTabBuilder:
         # Status indicators
         self.sidebar.settings_intel_status_label = QLabel("✓ Good")
         self.sidebar.settings_intel_status_label.setStyleSheet(
-            "font-size: 12px;"
-            "color: #34C759;"
-            "background: transparent;"
-            "font-weight: 700;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+            "QLabel {"
+            "  font-size: 12px;"
+            "  color: #34C759;"
+            "  background: transparent;"
+            "  font-weight: 700;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}",
         )
         intel_bar_layout.addWidget(self.sidebar.settings_intel_status_label)
 
         # Separator bullet
         self.sidebar.settings_intel_separator = QLabel("•")
         self.sidebar.settings_intel_separator.setStyleSheet(
-            "font-size: 12px;color: #86868B;background: transparent;",
+            "QLabel { font-size: 12px; color: #86868B; background: transparent; }",
         )
         intel_bar_layout.addWidget(self.sidebar.settings_intel_separator)
 
         self.sidebar.settings_intel_message_label = QLabel("→ Hardware configured")
         self.sidebar.settings_intel_message_label.setFixedHeight(22)
         self.sidebar.settings_intel_message_label.setStyleSheet(
-            "font-size: 14px;"
-            "color: #007AFF;"
-            "background: transparent;"
-            "font-weight: 600;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+            "QLabel {"
+            "  font-size: 14px;"
+            "  color: #007AFF;"
+            "  background: transparent;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}",
         )
         intel_bar_layout.addWidget(self.sidebar.settings_intel_message_label)
 
@@ -757,11 +762,13 @@ class SettingsTabBuilder:
         """Build LED brightness settings for channels A, B, C, D."""
         led_brightness_label = QLabel("LED Brightness per Channel:")
         led_brightness_label.setStyleSheet(
-            "font-size: 13px;"
-            "color: #1D1D1F;"
-            "background: transparent;"
-            "font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+            "QLabel {"
+            "  font-size: 13px;"
+            "  color: #1D1D1F;"
+            "  background: transparent;"
+            "  font-weight: 500;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}",
         )
         layout.addWidget(led_brightness_label)
 
@@ -774,10 +781,12 @@ class SettingsTabBuilder:
             channel_label = QLabel(f"Channel {channel.upper()}:")
             channel_label.setFixedWidth(70)
             channel_label.setStyleSheet(
-                "font-size: 12px;"
-                "color: #1D1D1F;"
-                "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+                "QLabel {"
+                "  font-size: 12px;"
+                "  color: #1D1D1F;"
+                "  background: transparent;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                "}",
             )
             channel_row.addWidget(channel_label)
 
@@ -1367,10 +1376,12 @@ class SettingsTabBuilder:
     def _small_label_style(self) -> str:
         """Return consistent small label stylesheet."""
         return (
-            "font-size: 12px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "QLabel {"
+            "  font-size: 12px;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
         )
 
     def _lineedit_style(self) -> str:

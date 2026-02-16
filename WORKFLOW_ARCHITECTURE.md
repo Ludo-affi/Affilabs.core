@@ -17,7 +17,7 @@ Record raw experimental data with minimal processing. Focus on real-time acquisi
    - Apply reference channel subtraction (if configured)
 
 2. **Experimental metadata**
-   - Execute queued cycle method (baseline, concentration, regeneration, etc.)
+   - Execute queued cycle method (baseline, binding, kinetic, regeneration, etc.)
    - Track cycle boundaries (start/end times)
    - Record concentration values and units per cycle
    - Capture user flags (injection markers, wash events, spikes)
@@ -48,7 +48,7 @@ Record raw experimental data with minimal processing. Focus on real-time acquisi
 | Column | Description |
 |--------|-------------|
 | Cycle # | Cycle number |
-| Type | Baseline, Concentration, Regeneration, etc. |
+| Type | Baseline, Binding, Kinetic, Regeneration, etc. |
 | Duration (min) | Cycle length |
 | Start Time (s) | When cycle started |
 | Concentration | Analyte concentration |
@@ -353,7 +353,7 @@ C:/Users/<username>/Documents/Affilabs_Data/
 ```python
 {
     'cycle_number': int,
-    'type': str,  # 'Baseline', 'Concentration', etc.
+    'type': str,  # 'Baseline', 'Binding', 'Kinetic', etc.
     'duration_minutes': float,
     'start_time': float,
     'end_time': float,

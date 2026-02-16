@@ -40,7 +40,7 @@ class CycleCoordinator(QObject):
 
         # Flagging system
         self._selected_channel: int | None = None  # 0-3 for A-D
-        self._flag_data: list[dict[str, Any]] = []  # List of {channel, time, annotation} dicts
+        self._flag_data: list[dict[str, Any]] = []  # LEGACY — kept for backward compat; prefer FlagManager
 
     def check_cycle_changed(self, start_time: float, stop_time: float) -> bool:
         """Check if cycle region has changed significantly.
@@ -208,69 +208,86 @@ class CycleCoordinator(QObject):
         return None
 
     def add_flag(self, channel: int, time: float, annotation: str = "") -> None:
-        """Add a flag marker to cycle data.
+        """Add a flag — delegates to FlagManager (unified flag system).
+
+        DEPRECATED: Prefer using FlagManager.add_flag_marker() directly.
 
         Args:
             channel: Channel index (0-3)
             time: Time position for flag
             annotation: Optional annotation text
-
         """
-        flag = {
-            "channel": channel,
-            "time": time,
-            "annotation": annotation,
-        }
+        # Keep legacy storage for backward compat
+        flag = {"channel": channel, "time": time, "annotation": annotation}
         self._flag_data.append(flag)
 
-        ch_letter = self.app._idx_to_channel[channel]
-        logger.info(f"🚩 Added flag: Ch {ch_letter.upper()} at t={time:.2f}s")
-
-        # TODO: Visual representation of flag on graph
+        # Also delegate to FlagManager if available
+        if hasattr(self.app, "flag_mgr") and self.app.flag_mgr:
+            ch_letter = self.app._idx_to_channel[channel]
+            annotation_to_type = {
+                "Inject": "injection", "injection": "injection",
+                "Wash": "wash", "wash": "wash",
+                "Spike": "spike", "spike": "spike",
+            }
+            flag_type = annotation_to_type.get(annotation, "injection")
+            self.app.flag_mgr.add_flag_marker(
+                channel=ch_letter, time_val=time, spr_val=0.0, flag_type=flag_type,
+            )
+        else:
+            ch_letter = self.app._idx_to_channel[channel]
+            logger.info(f"🚩 Added flag: Ch {ch_letter.upper()} at t={time:.2f}s")
 
     def get_flags_for_channel(self, channel: int) -> list[dict[str, Any]]:
         """Get all flags for a specific channel.
+
+        Reads from FlagManager when available, falls back to legacy _flag_data.
 
         Args:
             channel: Channel index (0-3)
 
         Returns:
             List of flag dictionaries
-
         """
+        if hasattr(self.app, "flag_mgr") and self.app.flag_mgr:
+            ch_letter = self.app._idx_to_channel[channel]
+            return [
+                f.to_export_dict()
+                for f in self.app.flag_mgr.get_live_flags()
+                if f.channel == ch_letter
+            ]
         return [f for f in self._flag_data if f["channel"] == channel]
 
     def clear_flags(self) -> None:
         """Clear all flags."""
         self._flag_data.clear()
+        if hasattr(self.app, "flag_mgr") and self.app.flag_mgr:
+            self.app.flag_mgr.clear_all_flags()
         logger.info("🚩 Cleared all flags")
 
     def export_flags_to_csv(self, filename: Path) -> None:
         """Export flags to CSV file.
 
+        Uses FlagManager when available, falls back to legacy _flag_data.
+
         Args:
             filename: Output file path
-
         """
-        if len(self._flag_data) == 0:
+        # Prefer FlagManager data
+        if hasattr(self.app, "flag_mgr") and self.app.flag_mgr:
+            flag_dicts = self.app.flag_mgr.get_flag_data_for_export(context="live")
+        else:
+            flag_dicts = list(self._flag_data)
+
+        if len(flag_dicts) == 0:
             logger.warning("No flags to export")
             return
 
         try:
             import pandas as pd
 
-            # Convert to dataframe
-            df = pd.DataFrame(self._flag_data)
-            df["channel_letter"] = df["channel"].apply(
-                lambda x: self.app._idx_to_channel[x].upper(),
-            )
-
-            # Reorder columns
-            df = df[["channel_letter", "time", "annotation"]]
-
-            # Save to CSV
+            df = pd.DataFrame(flag_dicts)
             df.to_csv(filename, index=False)
-            logger.info(f"💾 Exported {len(self._flag_data)} flags to {filename}")
+            logger.info(f"💾 Exported {len(flag_dicts)} flags to {filename}")
 
         except Exception as e:
             logger.error(f"Failed to export flags: {e}")

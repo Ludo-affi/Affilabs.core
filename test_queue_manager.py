@@ -37,7 +37,7 @@ def test_add_cycle():
     assert cycle.name == "Cycle 1", "Cycle should be renumbered"
 
     # Add another
-    cycle2 = Cycle(type='Concentration', length_minutes=10.0, name='Test', note='', status='pending')
+    cycle2 = Cycle(type='Binding', length_minutes=10.0, name='Test', note='', status='pending')
     mgr.add_cycle(cycle2)
 
     assert mgr.get_queue_size() == 2, "Queue should have 2 cycles"
@@ -287,7 +287,7 @@ def test_utility_methods():
 
     # Add cycles with different durations
     c1 = Cycle(type='Baseline', length_minutes=5.0, name='C1', note='', status='pending')
-    c2 = Cycle(type='Concentration', length_minutes=10.0, name='C2', note='', status='pending')
+    c2 = Cycle(type='Binding', length_minutes=10.0, name='C2', note='', status='pending')
     c3 = Cycle(type='Wash', length_minutes=2.0, name='C3', note='', status='pending')
 
     mgr.add_cycle(c1)
@@ -301,7 +301,7 @@ def test_utility_methods():
     # Test find by ID
     found = mgr.find_cycle_by_id(2)
     assert found is not None, "Should find cycle with ID 2"
-    assert found.type == 'Concentration', "Found cycle should be Concentration type"
+    assert found.type == 'Binding', "Found cycle should be Binding type"
 
     # Test peek without removing
     peeked = mgr.peek_next_cycle()

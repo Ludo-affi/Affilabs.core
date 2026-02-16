@@ -88,3 +88,26 @@ class SlopeEstimator:
     def clear(self) -> None:
         """Clear all history (called when integration time changes)."""
         self._history.clear()
+
+    def scale_for_integration_change(self, old_time_ms: float, new_time_ms: float) -> None:
+        """Scale recorded signal values when integration time changes.
+
+        Physics basis: signal = slope_10ms × LED × (time_ms / 10)
+        Therefore at constant LED, signal scales linearly with integration time.
+        Scaling preserves slope history so we don't need 2+ new measurements
+        before slope-based LED calculations work again.
+
+        Falls back to clear() if times are invalid.
+        """
+        if old_time_ms <= 0 or new_time_ms <= 0 or old_time_ms == new_time_ms:
+            if old_time_ms != new_time_ms:
+                self._history.clear()
+            return
+        ratio = new_time_ms / old_time_ms
+        for ch in list(self._history.keys()):
+            dq = self._history[ch]
+            scaled = deque(
+                ((led, sig * ratio) for led, sig in dq),
+                maxlen=self.max_points,
+            )
+            self._history[ch] = scaled

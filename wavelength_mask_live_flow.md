@@ -237,16 +237,16 @@ self.main_window.transmission_curves[channel_idx].setData(
 def filter_valid_wavelength_data(wavelengths, data, detector_serial=None, detector_type=None):
     """
     Filter wavelength data to valid SPR region.
-    
+
     Phase Photonics: wavelengths >= 570.0 nm (noisy below this)
     Ocean Optics: wavelengths >= 560.0 nm
     """
     # Get valid wavelength range
     valid_min, valid_max = get_spr_wavelength_range(detector_serial, detector_type)
-    
+
     # Create boolean mask (Phase Photonics: wavelengths >= 570.0)
     valid_mask = wavelengths >= valid_min
-    
+
     # Return filtered arrays
     return wavelengths[valid_mask], data[valid_mask]
 ```
@@ -543,7 +543,7 @@ Acquisition (1 Hz) → Dark Sub → Transmission Calc → FILTER → Peak Findin
 
 ## END OF DOCUMENT
 
-**Author**: ezControl Team  
-**Date**: 2025-01-27  
-**Detector**: Phase Photonics ST00012  
-**Valid Wavelength Range**: 570.0 - 720.0 nm  
+**Author**: Affilabs.core Team
+**Date**: 2025-01-27
+**Detector**: Phase Photonics ST00012
+**Valid Wavelength Range**: 570.0 - 720.0 nm

@@ -43,6 +43,9 @@ class DataCollector:
         self.metadata: dict[str, Any] = {}  # General metadata
         self.analysis_results: list[dict] = []  # Analysis measurements
 
+        # Deduplication tracking for cycles (prevents duplicate entries)
+        self._cycle_ids_seen: set[str | int] = set()
+
         # Recording context
         self.recording_start_time: float | None = None
 
@@ -73,6 +76,7 @@ class DataCollector:
         self.flags.clear()
         self.analysis_results.clear()
         self.metadata.clear()
+        self._cycle_ids_seen.clear()
         self.recording_start_time = None
 
         logger.debug("All data collections cleared")
@@ -98,16 +102,41 @@ class DataCollector:
 
     def add_cycle(self, cycle_data: dict) -> None:
         """Add cycle information to collection.
+        
+        Prevents duplicate cycles from being added by checking cycle_id or cycle_num.
 
         Args:
             cycle_data: Dictionary with cycle information
                 (type, start_time, end_time, duration, etc.)
+                
+        Returns:
+            True if cycle was added, False if it was a duplicate
         """
+        # Extract cycle ID (try cycle_id first, fall back to cycle_num)
+        cycle_id = cycle_data.get('cycle_id') or cycle_data.get('cycle_num')
+        
+        if cycle_id is None:
+            # No ID available - add it anyway (will be kept even if duplicate)
+            self.cycles.append(cycle_data)
+            logger.debug(
+                f"Cycle added (no ID): {cycle_data.get('type', 'Unknown')} "
+                f"(Cycle {cycle_data.get('cycle_num', '?')})"
+            )
+            return True
+        
+        # Check if this cycle ID has already been added
+        if cycle_id in self._cycle_ids_seen:
+            logger.debug(f"Duplicate cycle skipped: ID {cycle_id}")
+            return False
+        
+        # New cycle - add it
+        self._cycle_ids_seen.add(cycle_id)
         self.cycles.append(cycle_data)
         logger.debug(
             f"Cycle added: {cycle_data.get('type', 'Unknown')} "
             f"(Cycle {cycle_data.get('cycle_num', '?')})"
         )
+        return True
 
     def add_flag(self, flag_data: dict) -> None:
         """Add flag marker to collection.

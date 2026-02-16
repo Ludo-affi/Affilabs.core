@@ -1,0 +1,27 @@
+# Spark AI Requirements for PyInstaller Build
+# Install with: pip install -r spark_requirements.txt
+
+# Core Spark dependencies
+tinydb>=4.7.0                    # Knowledge base storage
+tinydb-serialization>=1.0.4      # Enhanced TinyDB serialization
+
+# AI Model dependencies (optional but recommended)
+torch>=2.0.0                     # PyTorch for TinyLM AI model
+transformers>=4.35.0             # HuggingFace transformers for TinyLlama
+tokenizers>=0.14.0               # Fast tokenizers
+safetensors>=0.4.0               # Safe tensor loading
+datasets>=2.14.0                 # HuggingFace datasets
+huggingface-hub>=0.17.0          # Model hub access
+
+# TTS dependencies (optional - for voice features)
+sounddevice>=0.4.6               # Audio playback for TTS
+cffi>=1.15.0                     # C Foreign Function Interface (sounddevice dep)
+numpy>=1.21.0                    # Already included but needed for sound
+
+# PyInstaller-specific
+pyinstaller>=6.0.0               # Packaging tool
+pydantic>=1.10.0                 # Already included but used by transformers
+
+# Development/testing (optional)
+pytest>=7.0.0                    # Testing framework
+requests>=2.28.0                 # HTTP requests (already included)

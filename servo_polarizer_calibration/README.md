@@ -309,18 +309,18 @@ If using this calibration method in publications or other projects:
 
 ```
 Servo Polarizer Calibration Package v1.0
-ezControl-AI System, December 2025
+Affilabs.core System, December 2025
 Three-stage automatic calibration with type detection
 Validated on PicoP4SPR + USB4000 hardware
 ```
 
 ## License
 
-This calibration method is part of the ezControl-AI system.
+This calibration method is part of the Affilabs.core system.
 
 ## Contact
 
-For issues or questions about this calibration package, refer to the main ezControl-AI documentation.
+For issues or questions about this calibration package, refer to the main Affilabs.core documentation.
 
 ---
 

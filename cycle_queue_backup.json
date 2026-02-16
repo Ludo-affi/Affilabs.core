@@ -2,35 +2,35 @@
   "queue": [],
   "completed": [
     {
-      "type": "Concentration",
+      "type": "Binding",
       "length_minutes": 5.0,
       "name": "Cycle 1",
-      "note": "conc 5min contact 2min",
+      "note": "binding 5min contact 2 min A:5nM b:5nM",
       "concentration_value": null,
       "concentration_units": "nM",
       "units": "nM",
-      "concentrations": {},
+      "concentrations": {
+        "A": 5.0,
+        "B": 5.0
+      },
       "cycle_id": 1,
-      "timestamp": 1771110395.9762752,
+      "timestamp": 1771259847.8090441,
       "cycle_num": 1,
       "total_cycles": 1,
       "status": "running",
-      "sensorgram_time": 57.531755447387695,
-      "end_time_sensorgram": 357.76729440689087,
+      "sensorgram_time": 180.7457218170166,
+      "end_time_sensorgram": 479.5637991428375,
       "delta_spr": null,
       "delta_spr_by_channel": {},
       "flags": [],
+      "flag_data": [],
       "injection_time_by_channel": {
-        "A": 82.43614363670349,
-        "B": 82.67361903190613,
-        "C": 82.91706085205078,
-        "D": 83.15641021728516
+        "B": 219.4049801826477,
+        "A": 222.6280345916748
       },
       "injection_confidence_by_channel": {
-        "A": 0.9099999999999999,
         "B": 0.9099999999999999,
-        "C": 0.9099999999999999,
-        "D": 0.9099999999999999
+        "A": 0.9099999999999999
       },
       "injection_mislabel_flags": {},
       "flow_rate": null,
@@ -40,10 +40,17 @@
       "injection_delay": 20.0,
       "contact_time": 120.0,
       "manual_injection_mode": null,
-      "planned_concentrations": [],
-      "injection_count": 0
+      "planned_concentrations": [
+        "5.0 nM",
+        "5.0 nM"
+      ],
+      "injection_count": 1,
+      "method_mode": "manual",
+      "detection_priority": "auto",
+      "detection_sensitivity": null,
+      "target_channels": "AB"
     }
   ],
   "cycle_counter": 1,
-  "timestamp": 1771110708.4997668
+  "timestamp": 1771260243.9128363
 }

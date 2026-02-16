@@ -139,11 +139,12 @@ class SparkMethodPopup(QDialog):
         # Welcome bubble
         self._add_bubble(
             "Hi! I can help you build methods. Try asking:\n\n"
-            "• How do I run a titration?\n"
-            "• Show me kinetics\n"
-            "• Amine coupling with 5 concentrations\n"
-            "• Build 3 concentration cycles\n\n"
-            "Or ask any general question!",
+            "• @spark titration — dose-response series\n"
+            "• @spark kinetics — association + dissociation\n"
+            "• @spark amine coupling — full immobilization workflow\n"
+            "• build 5 — generate 5 binding cycles\n"
+            "• @spark regeneration / baseline / immobilization\n\n"
+            "I'll suggest cycles you can accept, edit, or reject.",
             is_user=False,
         )
 
@@ -303,37 +304,37 @@ class SparkMethodPopup(QDialog):
             n = int(m.group(1))
             lines = []
             for i in range(n):
-                lines.append(f"Concentration 15min [A]  # Concentration {i+1}")
+                lines.append(f"Binding 15min [A]  # Binding {i+1}")
                 lines.append("Regeneration 2min [ALL]")
                 lines.append("Baseline 2min [ALL]")
             return "\n".join(lines)
 
         if re.search(r'titration|dose.?response|concentration series|serial dilution', t):
-            return ("Baseline 5min [ALL]\n"
-                    "Concentration 2min [A:10nM] contact 120s\n"
-                    "Concentration 2min [A:50nM] contact 120s\n"
-                    "Concentration 2min [A:100nM] contact 120s\n"
-                    "Concentration 2min [A:500nM] contact 120s\n"
-                    "Regeneration 30sec [ALL:50mM]")
+            return ("Baseline 5min ALL\n"
+                    "Binding 2min A:10nM contact 120s\n"
+                    "Binding 2min A:50nM contact 120s\n"
+                    "Binding 2min A:100nM contact 120s\n"
+                    "Binding 2min A:500nM contact 120s\n"
+                    "Regeneration 30sec ALL:50mM")
 
         if re.search(r'kinetics|kinetic|dissociation|off.?rate', t):
-            return ("Baseline 2min [ALL]\n"
-                    "Concentration 2min [A:100nM] contact 120s\n"
-                    "Baseline 10min [ALL]  # Dissociation phase\n"
-                    "Regeneration 30sec [ALL:50mM]")
+            return ("Baseline 2min ALL\n"
+                    "Kinetic 2min A:100nM contact 120s\n"
+                    "Baseline 10min ALL  # Dissociation phase\n"
+                    "Regeneration 30sec ALL:50mM")
 
         if re.search(r'full cycle|complete cycle|entire run|whole method', t):
-            return ("Baseline 5min [ALL]\n"
-                    "Concentration 2min [A:100nM] contact 120s\n"
-                    "Regeneration 30sec [ALL:50mM]")
+            return ("Baseline 5min ALL\n"
+                    "Binding 2min A:100nM contact 120s\n"
+                    "Regeneration 30sec ALL:50mM")
 
         if re.search(r'regeneration|regen|clean|wash|remove', t):
-            return "Regeneration 30sec [ALL:50mM]"
+            return "Regeneration 30sec ALL:50mM"
 
         if re.search(r'binding|association|inject|sample|analyte', t):
-            return ("Concentration 2min [A:100nM] contact 120s [B:50nM] contact 120s\n"
-                    "Concentration 5min [A:200nM] contact 180s\n"
-                    "Concentration 10min [A:500nM] contact 300s")
+            return ("Binding 2min A:100nM B:50nM contact 120s\n"
+                    "Binding 5min A:200nM contact 180s\n"
+                    "Binding 10min A:500nM contact 300s")
 
         if re.search(r'amine coupling|amine|coupling', t):
             # Default to 5 concentrations; user can adjust
@@ -349,19 +350,19 @@ class SparkMethodPopup(QDialog):
                 "Other 30sec  # Wash",
                 "Baseline 15min [ALL]",
                 "",
-                "# Concentration series",
+                "# Binding series",
             ]
             for i in range(n):
-                lines.append(f"Concentration 15min [A]  # Concentration {i+1}")
+                lines.append(f"Binding 15min [A]  # Binding {i+1}")
                 lines.append("Regeneration 2min [ALL]")
                 lines.append("Baseline 2min [ALL]")
             return "\n".join(lines)
 
         if re.search(r'immobilization|immobilize|immob|attach', t):
-            return "Immobilization 10min [A:50µg/mL] contact 180s"
+            return "Immobilization 10min A:50µg/mL contact 180s"
 
         if re.search(r'baseline|start|begin|initial', t):
-            return "Baseline 5min [ALL]"
+            return "Baseline 5min ALL"
 
         return None  # No match — fall back to engine
 
@@ -398,7 +399,7 @@ class NotesTextEdit(QPlainTextEdit):
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             text_stripped = self.toPlainText().strip()
 
-            # If we're waiting for a response (like answering "5" to "How many concentrations?")
+            # If we're waiting for a response (like answering "5" to "How many binding cycles?")
             if self._parent_dialog._waiting_for_response:
                 # Trigger Spark AI processing to process the answer
                 self._parent_dialog._detect_and_respond_to_question()
@@ -535,12 +536,13 @@ class MethodBuilderDialog(QDialog):
             # Show message if empty
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(self, "Ask Spark",
-                "Type a question like:\n\n"
-                "• @spark how do I run a titration?\n"
-                "• @spark show me kinetics\n"
-                "• @spark what's a full cycle?\n"
-                "• @spark how do I regenerate?\n\n"
-                "Or just type the question and click Spark button!")
+                "Type a question or keyword. Examples:\n\n"
+                "• titration — dose-response concentration series\n"
+                "• kinetics — association + dissociation phases\n"
+                "• amine coupling — full immobilization workflow\n"
+                "• build 5 — create 5 binding cycles\n"
+                "• regeneration / baseline / immobilization\n\n"
+                "Type your query and press Enter or click ⚡ Send.")
             return
 
         if self._helper_active:
@@ -568,59 +570,59 @@ class MethodBuilderDialog(QDialog):
         # Check for "build" with number extraction
         build_match = re.search(r'build.*?(\d+)', text_lower)
         if build_match:
-            # Extract number of concentrations
-            num_concentrations = int(build_match.group(1))
-            # Generate the pattern: concentration 15min, regeneration 2min, baseline 2min (repeated)
+            # Extract number of binding cycles
+            num_cycles = int(build_match.group(1))
+            # Generate the pattern: binding 15min, regeneration 2min, baseline 2min (repeated)
             cycles = []
-            for i in range(num_concentrations):
-                cycles.append(f"Concentration 15min [A]  # Concentration {i+1}")
+            for i in range(num_cycles):
+                cycles.append(f"Binding 15min [A]  # Binding {i+1}")
                 cycles.append("Regeneration 2min [ALL]")
                 cycles.append("Baseline 2min [ALL]")
             response = "\n".join(cycles)
             matched = True
 
-        # If just "build" without number, ask for concentrations
+        # If just "build" without number, ask how many binding cycles
         elif re.search(r'\bbuild\b', text_lower):
-            self._ask_question("How many concentrations? (e.g., type '5' and press Enter)", "build")
+            self._ask_question("How many binding cycles? (e.g., type '5' and press Enter)", "build")
             return
 
         # Check each pattern
         elif re.search(r'titration|dose.?response|concentration series|serial dilution', text_lower):
-            response = ("Baseline 5min [ALL]\n"
-                       "Concentration 2min [A:10nM] contact 120s\n"
-                       "Concentration 2min [A:50nM] contact 120s\n"
-                       "Concentration 2min [A:100nM] contact 120s\n"
-                       "Concentration 2min [A:500nM] contact 120s\n"
-                       "Regeneration 30sec [ALL:50mM]")
+            response = ("Baseline 5min ALL\n"
+                       "Binding 2min A:10nM contact 120s\n"
+                       "Binding 2min A:50nM contact 120s\n"
+                       "Binding 2min A:100nM contact 120s\n"
+                       "Binding 2min A:500nM contact 120s\n"
+                       "Regeneration 30sec ALL:50mM")
             matched = True
 
         elif re.search(r'kinetics|kinetic|dissociation|off.?rate', text_lower):
-            response = ("Baseline 2min [ALL]\n"
-                       "Concentration 2min [A:100nM] contact 120s\n"
-                       "Baseline 10min [ALL]  # Dissociation phase\n"
-                       "Regeneration 30sec [ALL:50mM]")
+            response = ("Baseline 2min ALL\n"
+                       "Kinetic 2min A:100nM contact 120s\n"
+                       "Baseline 10min ALL  # Dissociation phase\n"
+                       "Regeneration 30sec ALL:50mM")
             matched = True
 
         elif re.search(r'full cycle|complete cycle|entire run|whole method', text_lower):
-            response = ("Baseline 5min [ALL]\n"
-                       "Concentration 2min [A:100nM] contact 120s\n"
-                       "Regeneration 30sec [ALL:50mM]")
+            response = ("Baseline 5min ALL\n"
+                       "Binding 2min A:100nM contact 120s\n"
+                       "Regeneration 30sec ALL:50mM")
             matched = True
 
         elif re.search(r'regeneration|regen|clean|wash|remove', text_lower):
-            response = "Regeneration 30sec [ALL:50mM]"
+            response = "Regeneration 30sec ALL:50mM"
             matched = True
 
         elif re.search(r'binding|association|inject|sample|analyte', text_lower):
-            response = ("Concentration 2min [A:100nM] contact 120s [B:50nM] contact 120s\n"
-                       "Concentration 5min [A:200nM] contact 180s\n"
-                       "Concentration 10min [A:500nM] contact 300s")
+            response = ("Binding 2min A:100nM B:50nM contact 120s\n"
+                       "Binding 5min A:200nM contact 180s\n"
+                       "Binding 10min A:500nM contact 300s")
             matched = True
 
         # IMPORTANT: Amine coupling BEFORE immobilization to catch "coupling" before "couple"
         elif re.search(r'amine coupling|amine|coupling|build.*coupling|main coupling', text_lower):
-            # Ask how many concentrations
-            self._ask_question("How many concentrations? (e.g., type '5' and press Enter)", "amine_coupling")
+            # Ask how many binding cycles
+            self._ask_question("How many binding cycles? (e.g., type '5' and press Enter)", "amine_coupling")
             return
 
         elif re.search(r'immobilization|immobilize|immob|attach', text_lower):
@@ -640,12 +642,14 @@ class MethodBuilderDialog(QDialog):
             preset_section = f"\n\nSaved Presets:\n{preset_list}" if preset_names else ""
 
             QMessageBox.information(self, "Spark Says...",
-                f"I didn't understand that question.\n\n"
-                f"Try asking Spark:\n"
-                f"• @spark how do I run a titration?\n"
-                f"• @spark show me kinetics\n"
-                f"• @spark what's a full cycle?\n"
-                f"• @spark how do I regenerate?"
+                f"I didn't match a built-in template.\n\n"
+                f"Try these keywords:\n"
+                f"• titration / dose response / serial dilution\n"
+                f"• kinetics / dissociation / off-rate\n"
+                f"• amine coupling\n"
+                f"• build N  (e.g. build 5)\n"
+                f"• regeneration / baseline / immobilization\n"
+                f"• binding / association / inject"
                 f"{preset_section}")
 
     def _ask_question(self, question, command):
@@ -697,11 +701,11 @@ class MethodBuilderDialog(QDialog):
             self.notes_input.clear()
             return
 
-        num_concentrations = int(number_match.group(1))
+        num_cycles = int(number_match.group(1))
 
         # Generate response based on command
         if command == "amine_coupling":
-            # Generate amine coupling method with N concentrations
+            # Generate amine coupling method with N binding cycles
             cycles = []
             # Immobilization setup
             cycles.append("Baseline 30sec [ALL]")
@@ -713,10 +717,10 @@ class MethodBuilderDialog(QDialog):
             cycles.append("Other 30sec  # Wash")
             cycles.append("Baseline 15min [ALL]")
             cycles.append("")
-            cycles.append("# Concentration series")
-            # Add concentration cycles
-            for i in range(num_concentrations):
-                cycles.append(f"Concentration 15min [A]  # Concentration {i+1}")
+            cycles.append("# Binding series")
+            # Add binding cycles
+            for i in range(num_cycles):
+                cycles.append(f"Binding 15min [A]  # Binding {i+1}")
                 cycles.append("Regeneration 2min [ALL]")
                 cycles.append("Baseline 2min [ALL]")
             response = "\n".join(cycles)
@@ -724,8 +728,8 @@ class MethodBuilderDialog(QDialog):
         elif command == "build":
             # Generate build pattern
             cycles = []
-            for i in range(num_concentrations):
-                cycles.append(f"Concentration 15min [A]  # Concentration {i+1}")
+            for i in range(num_cycles):
+                cycles.append(f"Binding 15min [A]  # Binding {i+1}")
                 cycles.append("Regeneration 2min [ALL]")
                 cycles.append("Baseline 2min [ALL]")
             response = "\n".join(cycles)
@@ -916,25 +920,30 @@ class MethodBuilderDialog(QDialog):
         self.notes_input = NotesTextEdit()
         self.notes_input._parent_dialog = self  # Set reference for history navigation
         self.notes_input.setPlaceholderText(
-            "Ask Spark or write cycles directly:\n\n"
-            "⚡ Ask Spark: @spark how do I run a titration?\n\n"
-            "Or write directly (one per line):\n"
-            "Baseline 5min [ALL]\n"
-            "Concentration 2min [A:100nM] [B:50µM]\n\n"
-            "📦 Load preset: @preset_name\n"
-            "💾 Save method: !save preset_name\n"
-            "↑/↓ arrows to recall previous notes"
+            "Write cycles (one per line) or ask Spark:\n\n"
+            "Baseline 5min\n"
+            "Binding 5min A:100nM B:50nM contact 120s\n"
+            "Regeneration 30sec ALL:50mM\n\n"
+            "⚡ Spark:  @spark titration  ·  @spark kinetics\n"
+            "           @spark amine coupling  ·  build 5\n\n"
+            "#3 contact 60s    — edit cycle 3 in-place\n"
+            "📦 @preset_name   💾 !save name   ↑/↓ history"
         )
         self.notes_input.setMinimumHeight(100)
-        layout.addWidget(self.notes_input)
 
-        # Character counter
-        self.char_count_label = QLabel("0/1500 characters")
-        self.char_count_label.setStyleSheet(
-            "font-size: 11px; color: #86868B;"
+        # Syntax guide — always visible reference for concentration and channel syntax
+        syntax_guide = QLabel(
+            "Syntax: A:100nM B:50nM ALL:25µM  |  [A:100nM] also works  |  #3 contact 60s"
         )
+        syntax_guide.setStyleSheet(
+            "font-size: 10px; color: #007AFF; "
+            "background: rgba(0, 122, 255, 0.05); padding: 3px 6px; border-radius: 3px;"
+        )
+        layout.addWidget(syntax_guide)
+        layout.addSpacing(2)
+        
+        layout.addWidget(self.notes_input)
         self.notes_input.textChanged.connect(self._update_char_count)
-        layout.addWidget(self.char_count_label)
         layout.addSpacing(12)
 
         # Method Queue section
@@ -1049,26 +1058,8 @@ class MethodBuilderDialog(QDialog):
 
         layout.addWidget(self.method_tabs)
 
-        # Settings row — cog button + collapsible panel (below table)
+        # SVG for settings cog (used in controls row below)
         _SVG_COG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="#86868B" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="#86868B" stroke-width="2"/></svg>'
-
-        settings_cog_row = QHBoxLayout()
-        settings_cog_row.setContentsMargins(0, 2, 0, 0)
-        settings_cog_row.addStretch()
-        self._settings_btn = QPushButton()
-        self._settings_btn.setIcon(_create_svg_icon(_SVG_COG, 14))
-        self._settings_btn.setIconSize(QSize(14, 14))
-        self._settings_btn.setFixedSize(24, 24)
-        self._settings_btn.setToolTip("Method settings")
-        self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._settings_btn.setStyleSheet(
-            "QPushButton { background: transparent; border: none; }"
-            "QPushButton:hover { background: rgba(0,0,0,0.05); border-radius: 4px; }"
-        )
-        self._settings_btn.setCheckable(True)
-        self._settings_btn.toggled.connect(self._toggle_advanced_settings)
-        settings_cog_row.addWidget(self._settings_btn)
-        layout.addLayout(settings_cog_row)
 
         # Collapsible settings panel
         self._adv_settings_frame = QFrame()
@@ -1251,6 +1242,22 @@ class MethodBuilderDialog(QDialog):
         self.method_count_label.setStyleSheet("font-size: 11px; color: #86868B;")
         queue_btn_row.addWidget(self.method_count_label)
         queue_btn_row.addStretch()
+
+        # Settings cog — right end of controls row
+        self._settings_btn = QPushButton()
+        self._settings_btn.setIcon(_create_svg_icon(_SVG_COG, 14))
+        self._settings_btn.setIconSize(QSize(14, 14))
+        self._settings_btn.setFixedSize(24, 24)
+        self._settings_btn.setToolTip("Method settings")
+        self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._settings_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+            "QPushButton:hover { background: rgba(0,0,0,0.05); border-radius: 4px; }"
+        )
+        self._settings_btn.setCheckable(True)
+        self._settings_btn.toggled.connect(self._toggle_advanced_settings)
+        queue_btn_row.addWidget(self._settings_btn)
+
         layout.addLayout(queue_btn_row)
 
         # Overnight Mode checkbox (below button row, left-aligned, subtle)
@@ -1416,14 +1423,13 @@ class MethodBuilderDialog(QDialog):
         layout.addLayout(button_row)
 
     def _update_char_count(self):
-        """Update character counter and enforce 1500 char limit."""
+        """Enforce 1500 character limit."""
         text = self.notes_input.toPlainText()
         if len(text) > 1500:
             self.notes_input.setPlainText(text[:1500])
             cursor = self.notes_input.textCursor()
             cursor.movePosition(cursor.MoveOperation.End)
             self.notes_input.setTextCursor(cursor)
-        self.char_count_label.setText(f"{len(self.notes_input.toPlainText())}/1500 characters")
 
     def _show_notes_help(self):
         """Show help dialog for notes syntax."""
@@ -1444,7 +1450,9 @@ Each cycle runs for its set duration and auto-advances to the next.</p>
 <li>Type one or more cycle lines in the Note field (one per line)</li>
 <li>Click <b>➕ Add to Method</b> — cycles appear in the table below</li>
 <li>Reorder with <b>↑ / ↓</b>, delete with <b>🗑 Delete</b>, undo/redo as needed</li>
+<li>Review the <b>Details</b> tab to inspect injection settings per cycle</li>
 <li>Click <b>📋 Push to Queue</b> — cycles move to the main Cycle Queue</li>
+<li>Use <b>📋 Copy Schedule</b> (next to Push) to print a trackable injection checklist</li>
 <li>Press <b>▶ Start Run</b> in the sidebar — cycles run automatically in order</li>
 <li>After the last cycle, the system enters <b>Auto-Read</b> (continuous 2-hour monitoring)</li>
 </ol>
@@ -1456,102 +1464,136 @@ Each cycle runs for its set duration and auto-advances to the next.</p>
 
 <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
 <tr style="background:#f0f0f0;"><th>Part</th><th>Required?</th><th>Description</th></tr>
-<tr><td><b>Type</b></td><td>Yes</td><td>One of: Baseline, Concentration, Regeneration, Immobilization, Wash, Other</td></tr>
-<tr><td><b>Duration</b></td><td>Yes</td><td>e.g. <code>5min</code>, <code>30sec</code>, <code>2h</code>, <code>overnight</code>. Supports hours (h/hr), minutes (min/m), seconds (sec/s). Default is 5 min if omitted.</td></tr>
-<tr><td><b>[Tags]</b></td><td>No</td><td>Channel + optional concentration: <code>[A]</code> <code>[ALL:100nM]</code> <code>[B:50µM]</code></td></tr>
+<tr><td><b>Type</b></td><td>Yes</td><td>Baseline, Binding, Kinetic, Regeneration, Immobilization, Blocking, Wash, Other</td></tr>
+<tr><td><b>Duration</b></td><td>Yes</td><td>e.g. <code>5min</code>, <code>30sec</code>, <code>2h</code>, <code>overnight</code> (= 8 h). Default 5 min if omitted.</td></tr>
+<tr><td><b>[Tags]</b></td><td>No</td><td>Channel + optional concentration: <code>A:100nM</code>  <code>ALL:100nM</code>  <code>B:50µM</code> (brackets optional)</td></tr>
 <tr><td><b>contact Ns</b></td><td>No</td><td>Injection contact time: <code>contact 180s</code> or <code>contact 3min</code></td></tr>
-<tr><td><b>partial injection</b></td><td>No</td><td>Use partial (30µL spike) instead of simple injection</td></tr>
+<tr><td><b>partial</b></td><td>No</td><td>Use partial injection (30 µL spike) instead of simple (full loop)</td></tr>
+<tr><td><b>manual / automated</b></td><td>No</td><td>Override injection mode for this cycle</td></tr>
+<tr><td><b>detection priority/off</b></td><td>No</td><td>Override injection-detection sensitivity for this cycle</td></tr>
+<tr><td><b>channels AC</b></td><td>No</td><td>Override target channels (e.g. <code>channels BD</code>)</td></tr>
 </table>
 
 <hr/>
 
 <h4>Cycle Types Explained</h4>
 <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
-<tr style="background:#f0f0f0;"><th>Type</th><th>Injection</th><th>Contact Time</th><th>Purpose</th></tr>
-<tr><td><b>Baseline</b></td><td>None</td><td>—</td><td>Running buffer flow, establish stable baseline signal</td></tr>
-<tr><td><b>Concentration</b></td><td>Simple (or partial)</td><td>User-specified</td><td>Inject analyte sample, measure binding (association)</td></tr>
-<tr><td><b>Regeneration</b></td><td>Simple</td><td>30s (auto-set)</td><td>Strip bound analyte from surface, restore baseline</td></tr>
-<tr><td><b>Immobilization</b></td><td>Simple</td><td>User-specified</td><td>Attach ligand to sensor surface (e.g. protein, antibody)</td></tr>
-<tr><td><b>Wash</b></td><td>Simple</td><td>User-specified</td><td>Rinse flow path between steps (activation, blocking, etc.)</td></tr>
-<tr><td><b>Other</b></td><td>None</td><td>—</td><td>Custom step (activation, blocking, equilibration, etc.)</td></tr>
+<tr style="background:#f0f0f0;"><th>Type</th><th>Injection</th><th>Default Contact</th><th>Purpose</th></tr>
+<tr><td><b>Baseline</b></td><td>None</td><td>—</td><td>Running buffer only — establish stable signal</td></tr>
+<tr><td><b>Binding</b></td><td>Simple (or partial)</td><td>300 s (5 min)</td><td>Manual injection — incubate analyte for a set contact time (no dissociation)</td></tr>
+<tr><td><b>Kinetic</b></td><td>Simple (or partial)</td><td>300 s (5 min)</td><td>Flow injection — association + dissociation phases (requires flowrate)</td></tr>
+<tr><td><b>Regeneration</b></td><td>Simple</td><td>30 s</td><td>Strip bound analyte, restore baseline</td></tr>
+<tr><td><b>Immobilization</b></td><td>Simple</td><td>User-specified</td><td>Attach ligand to sensor surface</td></tr>
+<tr><td><b>Blocking</b></td><td>Simple</td><td>User-specified</td><td>Block unreacted surface sites</td></tr>
+<tr><td><b>Wash</b></td><td>Simple</td><td>User-specified</td><td>Rinse flow path between steps</td></tr>
+<tr><td><b>Other</b></td><td>None</td><td>—</td><td>Custom step (activation, equilibration, etc.)</td></tr>
 </table>
-<p><b>All injections start at 20 seconds</b> into the cycle (fixed delay for baseline stabilization).</p>
+<p><b>All injections start at 20 s</b> into the cycle (fixed delay for baseline stabilization).<br/>
+When <b>contact time expires</b>, a wash flag is automatically placed to mark the transition.</p>
 
 <hr/>
 
 <h4>Concentration &amp; Unit Tags</h4>
-<p>Tag format: <code>[Channel:ValueUnits]</code></p>
+<p>Tag format: <code>Channel:ValueUnits</code> or <code>[Channel:ValueUnits]</code> (brackets optional)</p>
 <ul>
 <li>Channels: <code>A</code>, <code>B</code>, <code>C</code>, <code>D</code>, <code>ALL</code></li>
 <li>Units: <code>nM</code>, <code>µM</code>, <code>pM</code>, <code>mM</code>, <code>M</code>, <code>mg/mL</code>, <code>µg/mL</code>, <code>ng/mL</code></li>
-<li>Examples: <code>[A:100nM]</code>  <code>[B:50µM]</code>  <code>[ALL:25pM]</code></li>
-<li>Multiple tags per line: <code>[A:100nM] [B:50nM]</code></li>
+<li>Examples: <code>A:100nM</code>  <code>B:50µM</code>  <code>ALL:25pM</code></li>
+<li>Multiple tags per line: <code>A:100nM B:50nM</code> — different concentration per channel</li>
 </ul>
+
+<hr/>
+
+<h4>In-Place Modifiers — <code>#N</code> Commands</h4>
+<p>Edit cycles already in the method table without removing them:</p>
+<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
+<tr style="background:#f0f0f0;"><th>Command</th><th>Effect</th></tr>
+<tr><td><code>#3 contact 120s</code></td><td>Set contact time on cycle 3 to 120 s</td></tr>
+<tr><td><code>#3 channels BD</code></td><td>Restrict cycle 3 to channels B &amp; D</td></tr>
+<tr><td><code>#3 detection priority</code></td><td>Set high-sensitivity injection detection</td></tr>
+<tr><td><code>#3 injection partial</code></td><td>Switch to partial injection</td></tr>
+<tr><td><code>#3 flow 50</code></td><td>Set flow rate to 50 µL/min</td></tr>
+<tr><td><code>#3 conc A:100nM B:50nM</code></td><td>Set per-channel concentrations</td></tr>
+<tr><td><code>#3 duration 10min</code></td><td>Change cycle duration</td></tr>
+<tr><td><code>#all detection off</code></td><td>Disable injection detection on ALL cycles</td></tr>
+<tr><td><code>#2-5 channels AC</code></td><td>Apply to cycles 2 through 5</td></tr>
+</table>
+<p>Multiple modifiers in one line: <code>#3 contact 120s channels BD detection priority</code></p>
 
 <hr/>
 
 <h4>Examples — One Line per Cycle</h4>
 <pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
 Baseline 5min
-Concentration 5min [A:100nM] contact 180s
-Concentration 5min [A:500nM] contact 180s
-Regeneration 30sec [ALL:50mM]
+Binding 5min A:100nM contact 180s
+Binding 5min A:500nM contact 180s
+Regeneration 30sec ALL:50mM
 Baseline 2min
 </pre>
 
 <h4>Kinetics Example (Association + Dissociation)</h4>
 <pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
 Baseline 2min
-Concentration 5min [A:100nM] contact 120s
-Baseline 10min
-Regeneration 30sec [ALL:50mM]
+Kinetic 5min A:100nM contact 120s
+Baseline 10min                            # dissociation phase
+Regeneration 30sec ALL:50mM
 </pre>
 
-<h4>Overnight Test Example</h4>
+<h4>Overnight Stability Test</h4>
 <pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
-Baseline overnight  # 8 hours (auto)
-Baseline 12h        # 12 hours
-Baseline 24hr       # 24 hours
+Baseline overnight   # 8 hours (auto)
+Baseline 12h         # 12 hours
+Baseline 24hr        # 24 hours
 </pre>
 
 <h4>Amine Coupling + Titration</h4>
 <pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
 Baseline 30sec
-Other 4min
+Other 4min                                 # EDC/NHS activation
 Wash 30sec contact 30s
-Immobilization 4min [A:50µg/mL] contact 180s
+Immobilization 4min A:50µg/mL contact 180s
 Wash 30sec contact 30s
-Other 4min
+Other 4min                                 # ethanolamine blocking
 Wash 30sec contact 30s
 Baseline 15min
-Concentration 15min [A:10nM] contact 180s
-Regeneration 2min [ALL:50mM]
+Binding 15min A:10nM contact 180s
+Regeneration 2min ALL:50mM
 Baseline 2min
-Concentration 15min [A:50nM] contact 180s
-Regeneration 2min [ALL:50mM]
+Binding 15min A:50nM contact 180s
+Regeneration 2min ALL:50mM
 Baseline 2min
+</pre>
+
+<h4>Partial Injection Example</h4>
+<pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
+Binding 5min A:100nM contact 120s partial
 </pre>
 
 <hr/>
 
 <h4>⚡ Spark AI Shortcuts</h4>
 <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
-<tr style="background:#f0f0f0;"><th>Command</th><th>What it does</th></tr>
-<tr><td><code>@spark titration</code></td><td>Generate a dose-response titration template</td></tr>
-<tr><td><code>@spark kinetics</code></td><td>Generate an association/dissociation template</td></tr>
-<tr><td><code>@spark amine coupling</code></td><td>Full amine coupling method (asks how many concentrations)</td></tr>
-<tr><td><code>build 5</code></td><td>Generate 5 concentration cycles (15min + regen + baseline each)</td></tr>
-<tr><td><code>build 10</code></td><td>Generate 10 concentration cycles</td></tr>
-<tr><td><code>@spark regeneration</code></td><td>Regeneration cycle template</td></tr>
-<tr><td><code>@spark baseline</code></td><td>Baseline cycle template</td></tr>
+<tr style="background:#f0f0f0;"><th>Command</th><th>What it generates</th></tr>
+<tr><td><code>@spark titration</code></td><td>Dose-response series (5 concentrations + regen)</td></tr>
+<tr><td><code>@spark kinetics</code></td><td>Association → long dissociation → regeneration</td></tr>
+<tr><td><code>@spark amine coupling</code></td><td>Full amine coupling workflow (asks how many binding cycles)</td></tr>
+<tr><td><code>build 5</code></td><td>5 × (Binding 15 min + Regen + Baseline)</td></tr>
+<tr><td><code>build 10</code></td><td>10 × (Binding 15 min + Regen + Baseline)</td></tr>
+<tr><td><code>@spark binding</code></td><td>Multi-concentration binding template</td></tr>
+<tr><td><code>@spark regeneration</code></td><td>Single regeneration cycle</td></tr>
+<tr><td><code>@spark immobilization</code></td><td>Single immobilization cycle</td></tr>
+<tr><td><code>@spark baseline</code></td><td>Single baseline cycle</td></tr>
+<tr><td><code>@spark full cycle</code></td><td>Baseline + Binding + Regen</td></tr>
 </table>
+<p>Spark suggests cycles in the note field — click <b>✅ Accept</b> to add, <b>✏ Edit</b> to modify, or <b>❌ Reject</b> to discard.</p>
 
 <hr/>
 
 <h4>📦 Presets — Save &amp; Reuse Methods</h4>
 <ul>
 <li><b>Save:</b> Build your method, then type <code>!save my_method_name</code> and click Add to Method</li>
-<li><b>Load:</b> Type <code>@my_method_name</code> and click Spark to load a saved preset</li>
+<li><b>Load:</b> Type <code>@my_method_name</code> and click Add to Method to load a saved preset</li>
+<li>Presets are stored in <code>cycle_templates.json</code> in the application directory</li>
 </ul>
 
 <hr/>
@@ -1563,6 +1605,7 @@ Baseline 2min
 <li><b>Clear All</b> — Remove all cycles from the method</li>
 <li><b>↶ Undo / ↷ Redo</b> — Undo or redo changes (Ctrl+Z / Ctrl+Shift+Z)</li>
 <li><b>↑/↓ arrows</b> in the Note field — Recall previously typed notes</li>
+<li><b>📋 Copy Schedule</b> — Copy a print-friendly injection checklist to clipboard</li>
 </ul>
 
 <h4>Execution Behavior</h4>
@@ -1571,14 +1614,28 @@ Baseline 2min
 <li>Press <b>⏭ Next Cycle</b> to skip to the next cycle early (data is preserved)</li>
 <li>After the last cycle, the system enters <b>Auto-Read</b> mode (2 hours of continuous monitoring)</li>
 <li>The intelligence bar shows a countdown and previews the next cycle in the last 10 seconds</li>
+<li><b>Automatic wash flags</b> are placed when a contact timer expires during injection cycles</li>
+<li><b>Validation warnings</b> appear when adding cycles with potential timing conflicts</li>
+</ul>
+
+<hr/>
+
+<h4>Tips</h4>
+<ul>
+<li>In <b>manual mode</b> (no pump): use <b>Binding</b> cycles — incubation with a set contact time, no dissociation phase.</li>
+<li>In <b>flow mode</b> (with pump): use <b>Kinetic</b> cycles — full association + dissociation phases (requires flowrate).</li>
+<li>Binding and Kinetic cycles default to <b>300 s contact time</b> (5 min) if not specified.</li>
+<li>Regeneration cycles default to <b>30 s contact time</b>.</li>
+<li>Use <b>overnight</b> as a duration keyword for 8-hour baseline runs.</li>
+<li>Comments after <code>#</code> are ignored in cycle lines but shown in the method table.</li>
 </ul>
         """
 
         # Create modeless dialog
         dialog = QDialog(self)
-        dialog.setWindowTitle("Notes Syntax Help")
+        dialog.setWindowTitle("Method Builder Help")
         dialog.setModal(False)  # Non-blocking - user can still type in main window
-        dialog.resize(500, 600)
+        dialog.resize(560, 700)
 
         layout = QVBoxLayout(dialog)
 
@@ -1599,7 +1656,7 @@ Baseline 2min
         """Build Cycle object from a single line of text.
 
         Args:
-            text: Single line like "Baseline 5min [A:100nM] [B:50µM]"
+            text: Single line like "Baseline 5min A:100nM B:50µM" or "Baseline 5min [A:100nM] [B:50µM]"
         """
         import re
 
@@ -1610,7 +1667,8 @@ Baseline 2min
             ('Immobilization', r'immobilization|immobilize|immob'),
             ('Blocking', r'blocking|block'),
             ('Wash', r'\bwash\b'),  # Match 'wash' as standalone word
-            ('Concentration', r'concentration|conc|association|binding|inject'),
+            ('Kinetic', r'kinetic|kinetics'),
+            ('Binding', r'binding|concentration|conc|association|inject'),
             ('Regeneration', r'regeneration|regen|clean'),
             ('Other', r'other|custom'),
         ]
@@ -1639,15 +1697,19 @@ Baseline 2min
                 else:  # min or m
                     duration_minutes = value
 
-        # Parse concentration tags WITH units: [A:100nM], [B:50µM], [ALL:25pM], etc.
-        tags_with_units = re.findall(r"\[([A-D]|ALL):(\d+\.?\d*)([a-zA-Zµ/]+)?\]", text)
+        # Parse concentration tags WITH units: A:100nM, B:50µM, [A:100nM], [ALL:25pM], etc.
+        # Accepts both formats: simple (A:100nM) and bracketed ([A:100nM])
+        # Also accepts lowercase (a, b, c, d) and uppercase (A, B, C, D)
+        tags_with_units = re.findall(r"\[?([A-Da-d]|ALL|all):(\d+\.?\d*)([a-zA-Zµ/]+)?\]?", text, re.IGNORECASE)
 
         # Extract concentrations and detect units
         concentrations = {}
         detected_unit = "nM"  # default
 
         for ch, val, unit_str in tags_with_units:
-            concentrations[ch] = float(val)
+            # Normalize channel to uppercase
+            ch_upper = ch.upper()
+            concentrations[ch_upper] = float(val)
             if unit_str:  # If units specified in tag, use it
                 detected_unit = unit_str
 
@@ -1686,10 +1748,14 @@ Baseline 2min
         elif cycle_type == "Wash":
             injection_method = "simple"
             # contact_time from parsing (required by user)
-        elif cycle_type == "Concentration":
+        elif cycle_type == "Binding":
             injection_method = "partial" if is_partial else "simple"  # Allow override
             if contact_time is None:
-                contact_time = 300.0  # Fixed 300s default for Concentration (5 minutes)
+                contact_time = 300.0  # Fixed 300s default for Binding (5 minutes)
+        elif cycle_type == "Kinetic":
+            injection_method = "partial" if is_partial else "simple"  # Allow override
+            if contact_time is None:
+                contact_time = 300.0  # Fixed 300s default for Kinetic (5 minutes)
         elif cycle_type == "Regeneration":
             injection_method = "simple"
             if contact_time is None:
@@ -1699,7 +1765,7 @@ Baseline 2min
         # Build planned_concentrations list for concentration cycles
         # Format: ["100 nM", "50 nM", "10 nM"]
         planned_concentrations = []
-        if cycle_type == "Concentration" and concentrations:
+        if cycle_type in ("Binding", "Kinetic") and concentrations:
             # Sort concentrations by value (descending) for natural order
             sorted_conc = sorted(concentrations.items(), key=lambda x: x[1], reverse=True)
             for ch, val in sorted_conc:
@@ -1726,6 +1792,9 @@ Baseline 2min
         ch_match = re.search(r'channels?\s+([ABCD]+)', text, re.IGNORECASE)
         if ch_match:
             target_channels = ch_match.group(1).upper()
+        # Auto-derive channels from concentrations if not explicitly set
+        elif concentrations:
+            target_channels = "".join(sorted(concentrations.keys()))
 
         # Determine mode and detection from dialog selectors
         method_mode = self._get_method_mode()
@@ -1988,7 +2057,12 @@ Baseline 2min
             self.details_table.setItem(drow, 0, num_item)
 
             # Column 1: Channels
-            ch_text = cycle.target_channels or cycle.channels or "ALL"
+            if cycle.target_channels:
+                ch_text = cycle.target_channels
+            elif cycle.concentrations:
+                ch_text = "".join(sorted(cycle.concentrations.keys()))
+            else:
+                ch_text = "ALL"
             ch_item = QTableWidgetItem(ch_text)
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.details_table.setItem(drow, 1, ch_item)
@@ -2191,26 +2265,30 @@ Baseline 2min
             return
 
         try:
+            import time as _time
+
             # Convert cycles to JSON-serializable format using Cycle.to_dict()
             method_name = self.method_name_input.text().strip() or "Untitled Method"
-            method_data = {
-                "version": "1.0",
-                "name": method_name,
-                "cycles": []
-            }
-
+            cycles_data = []
             for cycle in self._local_cycles:
-                # Use the Cycle model's built-in serialization
                 if hasattr(cycle, 'to_dict'):
-                    cycle_dict = cycle.to_dict()
+                    cycles_data.append(cycle.to_dict())
                 else:
-                    # Fallback for legacy cycle objects
-                    cycle_dict = {
+                    cycles_data.append({
                         "type": cycle.type,
                         "length_minutes": cycle.length_minutes,
                         "note": cycle.note or "",
-                    }
-                method_data["cycles"].append(cycle_dict)
+                    })
+
+            method_data = {
+                "version": "1.0",
+                "name": method_name,
+                "author": self.operator_combo.currentText() if hasattr(self, 'operator_combo') else "",
+                "description": "",
+                "cycle_count": len(cycles_data),
+                "created": _time.time(),
+                "cycles": cycles_data,
+            }
 
             # Write to file
             with open(file_path, 'w') as f:
@@ -2272,6 +2350,11 @@ Baseline 2min
 
             # Update method
             self._local_cycles = loaded_cycles
+
+            # Restore method name from file
+            if method_data.get("name"):
+                self.method_name_input.setText(method_data["name"])
+
             self._refresh_method_table()
 
             QMessageBox.information(
@@ -2336,8 +2419,8 @@ Baseline 2min
                 "rushed\n   → Consider 3-5 min minimum for manual injection"
             )
 
-        # Check 3: Multi-injection concentration cycles
-        if cycle.type == "Concentration" and cycle.planned_concentrations:
+        # Check 3: Multi-injection binding/kinetic cycles
+        if cycle.type in ("Binding", "Kinetic") and cycle.planned_concentrations:
             n = len(cycle.planned_concentrations)
             secs = cycle.length_minutes * 60
             per = secs / n
@@ -2384,81 +2467,81 @@ Baseline 2min
         if not self._local_cycles:
             return
 
-        now = datetime.now().strftime("%Y-%m-%d")
-        total = len(self._local_cycles)
-
+        now = datetime.now().strftime("%B %d, %Y")
+        method_name = self.method_name_input.text().strip() or "Untitled Method"
+        
         lines = []
-        lines.append("┌─────────────────────────────────────────────────────────┐")
-        lines.append("│              EXPERIMENT INJECTION SCHEDULE              │")
-        lines.append("├─────────────────────────────────────────────────────────┤")
-        lines.append(f"│  Date: {now:<20s}  Cycles: {total:<18}│")
-        lines.append("└─────────────────────────────────────────────────────────┘")
+        lines.append("=" * 70)
+        lines.append(f"  SPR EXPERIMENT SCHEDULE — {method_name}")
+        lines.append("=" * 70)
+        lines.append(f"  Date: {now}")
+        lines.append(f"  Total Cycles: {len(self._local_cycles)}")
         lines.append("")
 
-        # Build schedule rows
+        # Build schedule with human-friendly formatting
         inj_num = 1
-        rows = []  # (step, type, conc, duration, contact, done_box)
-
         for i, cycle in enumerate(self._local_cycles, 1):
-            duration = f"{cycle.length_minutes:.1f} min" if cycle.length_minutes else "—"
-            ct = getattr(cycle, 'contact_time', None)
-            contact = f"{ct:.0f}s" if ct else "—"
+            duration = f"{cycle.length_minutes:.1f}min" if cycle.length_minutes else "—"
+            
+            # Cycle header
+            lines.append(f"{'─' * 70}")
+            lines.append(f"  Cycle {i}: {cycle.type} • {duration}")
+            lines.append("")
 
+            # Show injections if any
+            ct = getattr(cycle, 'contact_time', None)
+            contact = f" • {ct:.0f}s contact" if ct else ""
+            
             if cycle.planned_concentrations:
-                for j, conc in enumerate(cycle.planned_concentrations):
-                    label = f"{cycle.type}" if j == 0 else "  └─"
-                    rows.append((
-                        str(inj_num),
-                        label,
-                        conc,
-                        duration if j == 0 else "",
-                        contact if j == 0 else "",
-                    ))
+                # Multiple injections in this cycle
+                for conc in cycle.planned_concentrations:
+                    lines.append(f"    ☐  Injection {inj_num}: {conc}{contact}")
                     inj_num += 1
-            else:
+            elif cycle.injection_method:
+                # Single injection
                 conc_str = ""
                 if cycle.concentrations:
-                    conc_str = ", ".join(
-                        f"Ch{ch.upper()}:{v}" for ch, v in cycle.concentrations.items()
-                    )
+                    parts = [f"Channel {ch.upper()} at {v}" for ch, v in cycle.concentrations.items()]
+                    conc_str = " • ".join(parts)
                 elif cycle.concentration_value is not None:
                     conc_str = f"{cycle.concentration_value} {cycle.concentration_units or 'nM'}"
-                if cycle.injection_method:
-                    rows.append((str(inj_num), cycle.type, conc_str or "—", duration, contact))
-                    inj_num += 1
+                
+                if conc_str:
+                    lines.append(f"    ☐  Injection {inj_num}: {conc_str}{contact}")
                 else:
-                    rows.append(("—", cycle.type, conc_str or "—", duration, contact))
-
-        # Format table
-        hdr = ("  #", "Step", "Concentration", "Duration", "Contact", "Done")
-        col_w = [4, 16, 18, 10, 9, 6]
-
-        def pad(vals, widths):
-            return "│".join(f" {str(v):<{w}}" for v, w in zip(vals, widths)) + "│"
-
-        sep = "├" + "┼".join("─" * (w + 1) for w in col_w) + "┤"
-        top = "┌" + "┬".join("─" * (w + 1) for w in col_w) + "┐"
-        bot = "└" + "┴".join("─" * (w + 1) for w in col_w) + "┘"
-
-        lines.append(top)
-        lines.append(pad(hdr, col_w))
-        lines.append(sep)
-        for row in rows:
-            full_row = row + ("[ ]",)
-            lines.append(pad(full_row, col_w))
-        lines.append(bot)
+                    lines.append(f"    ☐  Injection {inj_num}{contact}")
+                inj_num += 1
+            else:
+                # Buffer-only cycle (no injection)
+                lines.append(f"       (Buffer only — no injection)")
+            
+            lines.append("")
 
         # Summary footer
+        lines.append("=" * 70)
         inj_total = inj_num - 1
         buffer_only = sum(1 for c in self._local_cycles if not c.injection_method)
         total_min = sum(c.length_minutes for c in self._local_cycles)
+        hours = total_min // 60
+        mins = total_min % 60
+        
+        if hours > 0:
+            runtime = f"{int(hours)}h {int(mins)}min"
+        else:
+            runtime = f"{int(mins)}min"
+        
         lines.append("")
-        lines.append(f"  Total injections: {inj_total}    "
-                      f"Buffer-only steps: {buffer_only}    "
-                      f"Est. runtime: {total_min:.0f} min")
+        lines.append(f"  SUMMARY:")
+        lines.append(f"    • Total manual injections: {inj_total}")
+        lines.append(f"    • Buffer-only cycles: {buffer_only}")
+        lines.append(f"    • Estimated runtime: {runtime}")
         lines.append("")
-        lines.append("  Notes: _______________________________________________")
+        lines.append("  NOTES:")
+        lines.append("  " + "_" * 66)
         lines.append("")
+        lines.append("  " + "_" * 66)
+        lines.append("")
+        lines.append("=" * 70)
 
         QApplication.clipboard().setText("\n".join(lines))
 

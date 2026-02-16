@@ -569,7 +569,7 @@ if __name__ == "__main__":
             "shift_b": 0.289,
             "shift_c": 0.234,
             "shift_d": 0.267,
-            "cycle_type": "Concentration",
+            "cycle_type": "Binding",
             "cycle_time": 5,
             "note": "[A:50] Analyte binding study",
             "flags": None,

@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 FlagType = Literal["injection", "wash", "spike"]
+FlagContext = Literal["live", "edits"]
 
 
 @dataclass
@@ -63,6 +64,7 @@ class Flag(ABC):
     channel: str
     time: float
     spr: float
+    context: str = "live"  # 'live' (acquisition) or 'edits' (post-hoc)
     marker: Any = None  # PyQtGraph ScatterPlotItem (set by FlagManager)
 
     def __post_init__(self):
@@ -123,6 +125,7 @@ class Flag(ABC):
             "channel": self.channel,
             "time": self.time,
             "spr": self.spr,
+            "context": self.context,
         }
 
     def __str__(self) -> str:
@@ -270,13 +273,16 @@ def create_flag(flag_type: str, channel: str, time: float, spr: float, **kwargs)
 
     # Filter kwargs to only include parameters accepted by the specific flag class
     # InjectionFlag accepts is_reference, others don't
+    # Extract context if provided, default to 'live'
+    context = kwargs.pop("context", "live")
+
     if flag_type.lower() == "injection":
         # Pass all kwargs to InjectionFlag (it accepts is_reference)
-        return flag_class(channel=channel, time=time, spr=spr, **kwargs)
+        return flag_class(channel=channel, time=time, spr=spr, context=context, **kwargs)
     else:
         # WashFlag and SpikeFlag don't accept extra kwargs beyond base Flag params
         # Filter out any kwargs like is_reference
-        return flag_class(channel=channel, time=time, spr=spr)
+        return flag_class(channel=channel, time=time, spr=spr, context=context)
 
 
 def flag_from_dict(data: dict) -> Flag:
@@ -292,9 +298,10 @@ def flag_from_dict(data: dict) -> Flag:
     channel = data.get("channel", "A")
     time = data.get("time", 0.0)
     spr = data.get("spr", 0.0)
+    context = data.get("context", "live")
 
     # Extract type-specific fields
-    kwargs = {}
+    kwargs = {"context": context}
     if flag_type == "injection":
         kwargs["is_reference"] = data.get("is_reference", False)
 

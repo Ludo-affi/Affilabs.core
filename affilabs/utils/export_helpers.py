@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from main_simplified import Application  # type: ignore[import-not-found]
 
+import time
+
 import numpy as np
 import pandas as pd  # type: ignore[import-untyped]
 
@@ -26,6 +28,142 @@ class ExportHelpers:
 
     Static methods for data export operations.
     """
+
+    @staticmethod
+    def deduplicate_cycles_dataframe(df_cycles: pd.DataFrame) -> pd.DataFrame:
+        """Deduplicate cycles DataFrame by cycle_id or cycle_num.
+        
+        This is a shared utility used during export to ensure no duplicate cycles
+        are written to output files. Should complement DataCollector.add_cycle() 
+        which prevents duplicates during accumulation.
+        
+        Args:
+            df_cycles: DataFrame with cycle data
+            
+        Returns:
+            Deduplicated DataFrame with duplicate rows removed
+        """
+        if df_cycles.empty:
+            return df_cycles
+            
+        original_count = len(df_cycles)
+        
+        # Try cycle_id first (primary key)
+        if 'cycle_id' in df_cycles.columns:
+            df_cycles = df_cycles.drop_duplicates(subset=['cycle_id'], keep='first')
+        # Fall back to cycle_num
+        elif 'cycle_num' in df_cycles.columns:
+            df_cycles = df_cycles.drop_duplicates(subset=['cycle_num'], keep='first')
+        
+        removed_count = original_count - len(df_cycles)
+        if removed_count > 0:
+            from affilabs.utils.logger import logger
+            logger.warning(
+                f"Removed {removed_count} duplicate cycle rows during export "
+                f"({original_count} → {len(df_cycles)})"
+            )
+        
+        return df_cycles
+
+    @staticmethod
+    def build_channels_xy_dataframe(buffer_mgr, channels: list[str] | None = None) -> pd.DataFrame:
+        """Build Channels XY DataFrame for Excel export.
+        
+        Creates wide-format DataFrame with Time_A, SPR_A, Time_B, SPR_B columns.
+        All arrays padded to same length with NaN for alignment.
+        
+        This is a shared utility to eliminate duplication across export paths.
+        Used by: recording_manager, export_helpers (2 places)
+        
+        Args:
+            buffer_mgr: DataBufferManager instance with cycle_data attribute
+            channels: List of channel letters (default: ['a', 'b', 'c', 'd'])
+            
+        Returns:
+            DataFrame with Channels XY data, or empty DataFrame if no data
+        """
+        if channels is None:
+            channels = ['a', 'b', 'c', 'd']
+        
+        # Find max length across all channels
+        max_len = 0
+        for ch in channels:
+            if hasattr(buffer_mgr.cycle_data[ch], 'time'):
+                max_len = max(max_len, len(buffer_mgr.cycle_data[ch].time))
+        
+        if max_len == 0:
+            return pd.DataFrame()  # Empty DataFrame - no channel data
+        
+        # Build sheet data with Time_X and SPR_X columns for each channel
+        sheet_data = {}
+        for ch in channels:
+            ch_upper = ch.upper()
+            
+            # Get time and SPR data for this channel
+            if hasattr(buffer_mgr.cycle_data[ch], 'time'):
+                ch_time = np.array(buffer_mgr.cycle_data[ch].time)
+                ch_spr = np.array(buffer_mgr.cycle_data[ch].spr)
+                
+                # Pad to max length if needed (ensures all columns same length)
+                if len(ch_time) < max_len:
+                    ch_time = np.pad(ch_time, (0, max_len - len(ch_time)), constant_values=np.nan)
+                if len(ch_spr) < max_len:
+                    ch_spr = np.pad(ch_spr, (0, max_len - len(ch_spr)), constant_values=np.nan)
+            else:
+                # Channel has no data - fill entire column with NaN
+                ch_time = np.full((max_len,), np.nan)
+                ch_spr = np.full((max_len,), np.nan)
+            
+            sheet_data[f"Time_{ch_upper}"] = ch_time
+            sheet_data[f"SPR_{ch_upper}"] = ch_spr
+        
+        return pd.DataFrame(sheet_data)
+
+    @staticmethod
+    def build_channels_xy_from_wide_dataframe(df_wide: pd.DataFrame, channels: list[str] | None = None) -> pd.DataFrame:
+        """Build Channels XY DataFrame from wide-format DataFrame.
+        
+        Converts wide-format DataFrame (with columns A, B, C, D representing values)
+        into per-channel format with Time_X and X columns for each channel.
+        Used by edits_tab exports to reuse per-channel padding logic.
+        
+        Args:
+            df_wide: Wide-format DataFrame with 'Time' column and channel columns (A, B, C, D)
+            channels: List of channel letters (default: ['A', 'B', 'C', 'D'])
+            
+        Returns:
+            DataFrame with Time_A, A, Time_B, B, Time_C, C, Time_D, D columns
+        """
+        if channels is None:
+            channels = ['A', 'B', 'C', 'D']
+        
+        if df_wide.empty or 'Time' not in df_wide.columns:
+            return pd.DataFrame()  # Empty if no data or no Time column
+        
+        # Build per-channel dict with time and value columns
+        per_channel_dict = {}
+        max_len = 0
+        
+        for ch in channels:
+            if ch in df_wide.columns:
+                # Extract non-null times and values for this channel
+                valid_mask = df_wide[ch].notna()
+                times = df_wide.loc[valid_mask, 'Time'].values
+                values = df_wide.loc[valid_mask, ch].values
+                per_channel_dict[f'Time_{ch}'] = list(times)
+                per_channel_dict[ch] = list(values)
+                max_len = max(max_len, len(times))
+            else:
+                # Channel not in data
+                per_channel_dict[f'Time_{ch}'] = []
+                per_channel_dict[ch] = []
+        
+        # Pad all arrays to same max length with None (which pandas converts to NaN)
+        for key in per_channel_dict:
+            while len(per_channel_dict[key]) < max_len:
+                per_channel_dict[key].append(None)
+        
+        return pd.DataFrame(per_channel_dict)
 
     @staticmethod
     def quick_export_csv(app: Application) -> None:
@@ -63,10 +201,9 @@ class ExportHelpers:
 
             # Build user-specific default path
             default_dir = Path.home() / "Documents" / "Affilabs Data"
-            if hasattr(app, 'user_profile_manager') and app.user_profile_manager:
-                current_user = app.user_profile_manager.get_current_user()
-                if current_user:
-                    default_dir = default_dir / current_user / "SPR_data"
+            current_user = app._get_current_user() if hasattr(app, '_get_current_user') else ""
+            if current_user:
+                default_dir = default_dir / current_user / "SPR_data"
             default_dir.mkdir(parents=True, exist_ok=True)
 
             # Show save dialog
@@ -228,13 +365,21 @@ class ExportHelpers:
 
             df = pd.DataFrame(df_data)
 
+            # Get current user for metadata (used in both CSV header and JSON)
+            current_user = "Unknown"
+            if hasattr(app, '_get_current_user'):
+                current_user = app._get_current_user() or "Unknown"
+            elif hasattr(app, 'user_profile_manager') and app.user_profile_manager:
+                current_user = app.user_profile_manager.get_current_user() or "Unknown"
+
             # Write to CSV with metadata
+            from affilabs.utils.time_utils import now_utc_iso
+
             with open(filepath, "w", newline="", encoding="utf-8") as f:
                 # Write metadata
                 f.write("# AffiLabs Cycle Autosave\n")
-                from affilabs.utils.time_utils import now_utc_iso
-
                 f.write(f"# Timestamp,{now_utc_iso()}\n")
+                f.write(f"# Operator,{current_user}\n")
                 f.write(f"# Cycle Start,{start_time:.3f} s\n")
                 f.write(f"# Cycle Stop,{stop_time:.3f} s\n")
                 f.write(f"# Duration,{stop_time - start_time:.3f} s\n")
@@ -248,12 +393,6 @@ class ExportHelpers:
 
                 # Write DataFrame (vectorized)
                 df.to_csv(f, index=False, float_format="%.4f")
-
-            # Save flag metadata to JSON
-            # Get current user for metadata
-            current_user = "Unknown"
-            if hasattr(app, 'user_profile_manager') and app.user_profile_manager:
-                current_user = app.user_profile_manager.get_current_user() or "Unknown"
 
             metadata = {
                 "timestamp": now_utc_iso(),
@@ -390,9 +529,7 @@ class ExportHelpers:
                 destination = config.get("destination", "")
                 if not destination:
                     # Use user-specific directory if user available
-                    current_user = None
-                    if hasattr(app, 'user_profile_manager') and app.user_profile_manager:
-                        current_user = app.user_profile_manager.get_current_user()
+                    current_user = app._get_current_user() if hasattr(app, '_get_current_user') else ""
                     if current_user:
                         destination = str(Path.home() / "Documents" / "Affilabs Data" / current_user / "SPR_data")
                     else:
@@ -465,7 +602,7 @@ class ExportHelpers:
                 # Export using format-specific logic
                 if format_type == "excel":
                     # If writing to an existing recording workbook, append/replace only the Channels XY sheet;
-                    # otherwise, create a full new workbook with all sheets.
+                    # otherwise, create a full new workbook with all sheets via ExcelExporter
                     if (
                         hasattr(app, "recording_mgr")
                         and app.recording_mgr is not None
@@ -474,35 +611,10 @@ class ExportHelpers:
                         and Path(str(app.recording_mgr.current_file)) == full_path
                     ):
                         try:
-                            # Write or replace 'Channels XY' sheet in existing workbook
-                            # Build Channels XY DataFrame
-                            all_channels = channels
-                            max_len = 0
-                            for ch in all_channels:
-                                if ch in app._idx_to_channel:
-                                    max_len = max(max_len, len(app.buffer_mgr.cycle_data[ch].time))
-
-                            if max_len > 0:
-                                sheet_data: dict[str, np.ndarray] = {}
-                                for ch in all_channels:
-                                    if ch not in app._idx_to_channel:
-                                        sheet_data[f"Time_{ch.upper()}"] = np.full((max_len,), np.nan)
-                                        sheet_data[f"SPR_{ch.upper()}"] = np.full((max_len,), np.nan)
-                                        continue
-
-                                    ch_time = app.buffer_mgr.cycle_data[ch].time
-                                    ch_spr = app.buffer_mgr.cycle_data[ch].spr
-
-                                    if len(ch_time) < max_len:
-                                        ch_time = np.pad(ch_time, (0, max_len - len(ch_time)), constant_values=np.nan)
-                                    if len(ch_spr) < max_len:
-                                        ch_spr = np.pad(ch_spr, (0, max_len - len(ch_spr)), constant_values=np.nan)
-
-                                    sheet_data[f"Time_{ch.upper()}"] = ch_time
-                                    sheet_data[f"SPR_{ch.upper()}"] = ch_spr
-
-                                df_xy = pd.DataFrame(sheet_data)
-
+                            # Write or replace 'Channels XY' sheet in existing workbook (append mode)
+                            df_xy = ExportHelpers.build_channels_xy_dataframe(app.buffer_mgr, channels)
+                            
+                            if not df_xy.empty:
                                 with pd.ExcelWriter(
                                     str(full_path),
                                     engine='openpyxl',
@@ -513,75 +625,53 @@ class ExportHelpers:
                         except Exception as e:
                             print(f"Warning: could not update 'Channels XY' in recording file: {e}")
                     else:
-                        with pd.ExcelWriter(str(full_path), engine='openpyxl') as writer:
-                            # Sheet 1: Raw Data
-                            df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
-
-                            # Sheet 2: Cycles (if available)
-                            if cycles_data:
-                                df_cycles = pd.DataFrame(cycles_data)
-
-                                # Deduplicate cycles to prevent duplicate rows in Excel
-                                if 'cycle_id' in df_cycles.columns:
-                                    original_count = len(df_cycles)
-                                    df_cycles = df_cycles.drop_duplicates(subset=['cycle_id'], keep='first')
-                                    if len(df_cycles) < original_count:
-                                        print(f"Warning: Removed {original_count - len(df_cycles)} duplicate cycle rows during export")
-                                elif 'cycle_num' in df_cycles.columns:
-                                    original_count = len(df_cycles)
-                                    df_cycles = df_cycles.drop_duplicates(subset=['cycle_num'], keep='first')
-                                    if len(df_cycles) < original_count:
-                                        print(f"Warning: Removed {original_count - len(df_cycles)} duplicate cycle rows during export")
-
-                                df_cycles.to_excel(writer, sheet_name='Cycles', index=False)
-
-                            # Sheet 3: Flags (if available from recording manager)
-                            if hasattr(app, 'recording_mgr') and app.recording_mgr.data_collector.flags:
-                                df_flags = pd.DataFrame(app.recording_mgr.data_collector.flags)
-                                df_flags.to_excel(writer, sheet_name='Flags', index=False)
-
-                            # Sheet 4: Events (if available from recording manager)
-                            if hasattr(app, 'recording_mgr') and app.recording_mgr.data_collector.events:
-                                df_events = pd.DataFrame(app.recording_mgr.data_collector.events)
-                                df_events.to_excel(writer, sheet_name='Events', index=False)
-
-                            # Sheet 5: Metadata (if available from recording manager)
-                            if hasattr(app, 'recording_mgr') and app.recording_mgr.data_collector.metadata:
-                                df_meta = pd.DataFrame([app.recording_mgr.data_collector.metadata])
-                                df_meta.to_excel(writer, sheet_name='Metadata', index=False)
-
-                            # Sheet 6: Per-Channel XY (time and SPR per channel)
-                            try:
-                                all_channels = channels
-                                max_len = 0
-                                for ch in all_channels:
-                                    if ch in app._idx_to_channel:
-                                        max_len = max(max_len, len(app.buffer_mgr.cycle_data[ch].time))
-
-                                if max_len > 0:
-                                    sheet_data: dict[str, np.ndarray] = {}
-                                    for ch in all_channels:
-                                        if ch not in app._idx_to_channel:
-                                            sheet_data[f"Time_{ch.upper()}"] = np.full((max_len,), np.nan)
-                                            sheet_data[f"SPR_{ch.upper()}"] = np.full((max_len,), np.nan)
-                                            continue
-
-                                        ch_time = app.buffer_mgr.cycle_data[ch].time
-                                        ch_spr = app.buffer_mgr.cycle_data[ch].spr
-
-                                        if len(ch_time) < max_len:
-                                            ch_time = np.pad(ch_time, (0, max_len - len(ch_time)), constant_values=np.nan)
-                                        if len(ch_spr) < max_len:
-                                            ch_spr = np.pad(ch_spr, (0, max_len - len(ch_spr)), constant_values=np.nan)
-
-                                        sheet_data[f"Time_{ch.upper()}"] = ch_time
-                                        sheet_data[f"SPR_{ch.upper()}"] = ch_spr
-
-                                    df_xy = pd.DataFrame(sheet_data)
-                                    df_xy.to_excel(writer, sheet_name='Channels XY', index=False)
-                            except Exception as e:
-                                # Non-fatal: continue export even if XY sheet fails
-                                print(f"Warning: could not create 'Channels XY' sheet: {e}")
+                        # Use ExcelExporter service for complete workbook creation
+                        from affilabs.services.excel_exporter import ExcelExporter
+                        excel_exporter = ExcelExporter()
+                        
+                        # Gather all data from recording manager if available
+                        raw_data_rows_for_export = []
+                        cycles_data_for_export = []
+                        flags_data = []
+                        events_data = []
+                        metadata_data = {}
+                        recording_start_time = time.time()
+                        channels_xy_df = None
+                        
+                        if hasattr(app, 'recording_mgr') and app.recording_mgr is not None:
+                            collector = app.recording_mgr.data_collector
+                            raw_data_rows_for_export = collector.raw_data_rows
+                            cycles_data_for_export = collector.cycles
+                            flags_data = collector.flags
+                            events_data = collector.events
+                            metadata_data = collector.metadata
+                            recording_start_time = collector.recording_start_time
+                        else:
+                            # Fallback: build raw data from buffer_mgr
+                            raw_data_rows_for_export = raw_data_rows
+                        
+                        # Build Channels XY sheet if buffer_mgr available
+                        try:
+                            if app.buffer_mgr is not None:
+                                channels_xy_df = ExportHelpers.build_channels_xy_dataframe(
+                                    app.buffer_mgr,
+                                    channels=channels
+                                )
+                        except Exception as e:
+                            print(f"Warning: Could not build Channels XY sheet: {e}")
+                        
+                        excel_exporter.export_to_excel(
+                            filepath=full_path,
+                            raw_data_rows=raw_data_rows_for_export,
+                            cycles=cycles_data_for_export,
+                            flags=flags_data,
+                            events=events_data,
+                            analysis_results=[],
+                            metadata=metadata_data,
+                            recording_start_time=recording_start_time,
+                            alignment_data=None,
+                            channels_xy_dataframe=channels_xy_df
+                        )
                 elif format_type == "csv":
                     df_raw.to_csv(str(full_path), index=False)
                 elif format_type == "json":

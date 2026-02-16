@@ -1,12 +1,12 @@
 # Standalone Tools
 
-This folder contains standalone applications that can be run independently from the main ezControl application.
+This folder contains standalone applications that can be run independently from the main Affilabs.core application.
 
 ## Tools
 
 ### 1. Data Replay (`data_replay.py`)
-**Purpose**: Video-style playback of recorded SPR experiments  
-**Usage**: `python data_replay.py`  
+**Purpose**: Video-style playback of recorded SPR experiments
+**Usage**: `python data_replay.py`
 **Features**:
 - Load Excel files with SPR data (live acquisition format or export format)
 - Animated playback of experimental data cycle-by-cycle
@@ -21,8 +21,8 @@ This folder contains standalone applications that can be run independently from 
 ---
 
 ### 2. Experiment Planner (`experiment_planner.py`)
-**Purpose**: Interactive SPR experiment design and planning tool  
-**Usage**: `python experiment_planner.py`  
+**Purpose**: Interactive SPR experiment design and planning tool
+**Usage**: `python experiment_planner.py`
 **Features**:
 - Plan immobilization levels
 - Estimate expected responses
@@ -37,8 +37,8 @@ This folder contains standalone applications that can be run independently from 
 ---
 
 ### 3. Data Analysis (`data_analysis.py`)
-**Purpose**: Prototype for Affilabs.analyze - data analysis and visualization  
-**Usage**: `python data_analysis.py`  
+**Purpose**: Prototype for Affilabs.analyze - data analysis and visualization
+**Usage**: `python data_analysis.py`
 **Features**:
 - Multi-experiment data loading
 - Peak detection and analysis

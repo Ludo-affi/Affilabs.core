@@ -50,6 +50,7 @@ class ExcelExporter:
         metadata: dict,
         recording_start_time: float,
         alignment_data: dict | None = None,
+        channels_xy_dataframe = None,  # Optional: pre-built wide-format channels DataFrame
     ) -> None:
         """Export all data to Excel file with multiple sheets.
 
@@ -63,6 +64,8 @@ class ExcelExporter:
             metadata: Dictionary of metadata key-value pairs
             recording_start_time: Unix timestamp of recording start
             alignment_data: Dict mapping cycle_index -> {'channel': str, 'shift': float}
+            channels_xy_dataframe: Optional pre-built wide-format channels DataFrame 
+                                   (if provided, replaces internal Channel Data sheet with Channels XY sheet)
 
         Raises:
             ImportError: If pandas/openpyxl not installed
@@ -82,7 +85,11 @@ class ExcelExporter:
                     logger.debug(f"Exported {len(raw_data_rows)} raw data points")
 
                 # Sheet 2: Channel-Specific Data (each channel with its own time column)
-                if raw_data_rows:
+                # If channels_xy_dataframe provided, use it as Channels XY sheet instead
+                if channels_xy_dataframe is not None and not channels_xy_dataframe.empty:
+                    channels_xy_dataframe.to_excel(writer, sheet_name="Channels XY", index=False)
+                    logger.debug(f"Exported Channels XY sheet with {len(channels_xy_dataframe)} rows")
+                elif raw_data_rows:
                     df_raw = pd.DataFrame(raw_data_rows)
                     # Convert absolute timestamps to elapsed time (t=0 at recording start)
                     if "time" in df_raw.columns:
@@ -131,20 +138,8 @@ class ExcelExporter:
                     df_cycles = pd.DataFrame(cycles_formatted)
 
                     # Deduplicate cycles based on cycle_id or cycle_num to prevent duplicate rows
-                    if "cycle_id" in df_cycles.columns:
-                        original_count = len(df_cycles)
-                        df_cycles = df_cycles.drop_duplicates(subset=["cycle_id"], keep="first")
-                        if len(df_cycles) < original_count:
-                            logger.warning(
-                                f"Removed {original_count - len(df_cycles)} duplicate cycle rows during export"
-                            )
-                    elif "cycle_num" in df_cycles.columns:
-                        original_count = len(df_cycles)
-                        df_cycles = df_cycles.drop_duplicates(subset=["cycle_num"], keep="first")
-                        if len(df_cycles) < original_count:
-                            logger.warning(
-                                f"Removed {original_count - len(df_cycles)} duplicate cycle rows during export"
-                            )
+                    from affilabs.utils.export_helpers import ExportHelpers
+                    df_cycles = ExportHelpers.deduplicate_cycles_dataframe(df_cycles)
 
                     # Reorder columns for better readability
                     preferred_order = [

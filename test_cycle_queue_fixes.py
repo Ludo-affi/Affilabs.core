@@ -30,7 +30,7 @@ def test_backup_includes_completed_cycles():
     )
 
     completed_cycle = Cycle(
-        type='Concentration',
+        type='Binding',
         length_minutes=10.0,
         name='Cycle 2',
         note='Completed cycle',
@@ -43,7 +43,7 @@ def test_backup_includes_completed_cycles():
         'queue': [queue_cycle.to_dict()],
         'completed_cycles': [completed_cycle.to_dict()],
         'cycle_counter': 2,
-        'type_counts': {'Conc.': 1, 'Baseline': 1},
+        'type_counts': {'Bind.': 1, 'Baseline': 1},
         'timestamp': 1234567890.0
     }
 
@@ -117,16 +117,24 @@ def test_centralized_abbreviation():
 
     def abbreviate_cycle_type(cycle_type: str) -> str:
         """Centralized abbreviation logic."""
+        if cycle_type.lower() in ('binding', 'bind', 'bind.'):
+            return 'Bind.'
+        if cycle_type.lower() in ('kinetic', 'kin', 'kin.'):
+            return 'Kin.'
+        # Legacy alias
         if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
-            return 'Conc.'
+            return 'Bind.'
         return cycle_type
 
     # Test various inputs
     test_cases = [
-        ('Concentration', 'Conc.'),
-        ('concentration', 'Conc.'),
-        ('CONCENTRATION', 'Conc.'),
-        ('Conc.', 'Conc.'),
+        ('Binding', 'Bind.'),
+        ('binding', 'Bind.'),
+        ('Kinetic', 'Kin.'),
+        ('kinetic', 'Kin.'),
+        ('Concentration', 'Bind.'),  # Legacy alias
+        ('concentration', 'Bind.'),  # Legacy alias
+        ('Conc.', 'Bind.'),          # Legacy alias
         ('Baseline', 'Baseline'),
         ('Immobilization', 'Immobilization'),
     ]

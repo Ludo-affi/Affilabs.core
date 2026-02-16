@@ -189,7 +189,7 @@ def patch_application_for_simulation(app):
             cycle_type = app._current_cycle.type.lower()
             if 'baseline' in cycle_type:
                 app._sim_generator.set_phase("baseline", time.time() - app._sim_start_time)
-            elif 'association' in cycle_type or 'concentration' in cycle_type:
+            elif 'association' in cycle_type or 'binding' in cycle_type or 'kinetic' in cycle_type or 'concentration' in cycle_type:
                 app._sim_generator.set_phase("association", time.time() - app._sim_start_time)
             elif 'dissociation' in cycle_type:
                 app._sim_generator.set_phase("dissociation", time.time() - app._sim_start_time)

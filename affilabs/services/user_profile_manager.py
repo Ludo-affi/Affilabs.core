@@ -1,7 +1,22 @@
 """User Profile Manager - Simple user profile storage and management.
 
-Stores user profiles in a JSON file for tracking who runs experiments.
-Profiles are saved in Excel metadata and used for filename generation.
+🔒 PRIVACY POLICY:
+==================
+User profiles are stored LOCALLY ONLY in user_profiles.json.
+This file is NEVER uploaded to cloud services or shared externally.
+
+What stays local:
+- User names
+- Experiment counts
+- Progression data (Novice → Master)
+- Training completion status
+
+What gets exported (for data attribution):
+- Current user name in Excel files (required for GLP/GMP compliance)
+- No other user information is ever exported or uploaded
+
+Storage location: ./user_profiles.json (local workspace directory)
+
 """
 
 import json
@@ -190,8 +205,13 @@ class UserProfileManager:
     def get_user_for_metadata(self) -> dict:
         """Get user information for Excel metadata.
 
+        NOTE: Only the current user's NAME is exported to Excel files for
+        data attribution (required for GLP/GMP compliance).
+        User profile count is included for stats only.
+        The complete user database NEVER leaves this machine.
+
         Returns:
-            Dictionary with user information
+            Dictionary with user information for export
         """
         return {"User": self.current_user, "User_Profile_Count": len(self.profiles)}
 

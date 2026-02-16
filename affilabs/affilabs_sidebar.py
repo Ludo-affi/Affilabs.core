@@ -15,7 +15,7 @@ Author: AffiLabs Team
 Last Updated: December 4, 2025 - Added MVVM refactoring with CycleConfigViewModel
 """
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
@@ -25,7 +25,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtGui import QTransform
+from PySide6.QtGui import QPainter, QIcon, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 
 # Tab builders
 from affilabs.sidebar_tabs.AL_device_status_builder import DeviceStatusTabBuilder
@@ -48,6 +49,76 @@ from affilabs.viewmodels import CycleConfigViewModel
 # Colorblind-safe palette (Tol bright scheme)
 COLORBLIND_PALETTE = ["#4477AA", "#EE6677", "#228833", "#CCBB44"]
 
+# SVG icons for tabs
+TAB_ICONS = {
+    "Device Status": '''<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g transform="rotate(-90 12 12)">
+        <rect x="5" y="2" width="14" height="16" rx="2" stroke="currentColor" stroke-width="1"/>
+        <path d="M8 20h8" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <path d="M10 20v2" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <path d="M14 20v2" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        </g>
+    </svg>''',
+    "Method": '''<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g transform="rotate(-90 12 12)">
+        <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="1"/>
+        <path d="M3 8h18" stroke="currentColor" stroke-width="1"/>
+        <path d="M3 13h18" stroke="currentColor" stroke-width="1"/>
+        <path d="M3 18h18" stroke="currentColor" stroke-width="1"/>
+        <path d="M9 3v18" stroke="currentColor" stroke-width="1"/>
+        </g>
+    </svg>''',
+    "Flow": '''<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g transform="rotate(-90 12 12)">
+        <circle cx="12" cy="12" r="7" stroke="currentColor" stroke-width="1"/>
+        <circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1"/>
+        <path d="M3 12H5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <path d="M19 12h2" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <path d="M21 12l-2-2m2 2l-2 2" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+    </svg>''',
+    "Export": '''<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g transform="rotate(-90 12 12)">
+        <path d="M12 3v12" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        <path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4 14v5a2 2 0 002 2h12a2 2 0 002-2v-5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+        </g>
+    </svg>''',
+    "Settings": '''<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g transform="rotate(-90 12 12)">
+        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+    </svg>''',
+}
+
+def create_icon_from_svg(svg_data: str, color: str = "#4D4D4D", selected_color: str = "white") -> QIcon:
+    """Create a QIcon from SVG data with normal and selected states."""
+    icon = QIcon()
+
+    # Normal state (unselected)
+    svg_normal = svg_data.replace('currentColor', color)
+    renderer_normal = QSvgRenderer(svg_normal.encode())
+    pixmap_normal = QPixmap(32, 32)
+    pixmap_normal.fill(Qt.GlobalColor.transparent)
+    painter_normal = QPainter(pixmap_normal)
+    renderer_normal.render(painter_normal)
+    painter_normal.end()
+    icon.addPixmap(pixmap_normal, QIcon.Mode.Normal)
+
+    # Selected state
+    svg_selected = svg_data.replace('currentColor', selected_color)
+    renderer_selected = QSvgRenderer(svg_selected.encode())
+    pixmap_selected = QPixmap(32, 32)
+    pixmap_selected.fill(Qt.GlobalColor.transparent)
+    painter_selected = QPainter(pixmap_selected)
+    renderer_selected.render(painter_selected)
+    painter_selected.end()
+    icon.addPixmap(pixmap_selected, QIcon.Mode.Selected)
+    icon.addPixmap(pixmap_selected, QIcon.Mode.Active)
+
+    return icon
+
 
 class AffilabsSidebar(QWidget):
     """Production sidebar for AffiLabs.core application.
@@ -55,7 +126,7 @@ class AffilabsSidebar(QWidget):
     Used by: affilabs_core_ui.AffilabsMainWindow
 
     Architecture:
-    - 7 tabs: Device Status, Method, Flow, Export, Settings, Spark
+    - 6 tabs: Device Status, Method, Flow, Export, Settings, Graphic Control
     - Each tab built by dedicated builder method (~550 lines average)
     - Signal abstraction layer for loose coupling
     """
@@ -139,61 +210,79 @@ class AffilabsSidebar(QWidget):
         if getattr(self, "_ui_setup_done", False):
             return
         self._ui_setup_done = True
-        self.setStyleSheet(f"background: {Colors.BACKGROUND_LIGHT};")
+        # Scoped styles prevent unscoped background from overriding QToolTip theme
+        self.setObjectName("AffilabsSidebar")
+        self.setStyleSheet(
+            f"QWidget#AffilabsSidebar {{ background: {Colors.BACKGROUND_LIGHT}; }}"
+            f"QToolTip {{"
+            f"  background-color: #2b2b2b;"
+            f"  color: #ffffff;"
+            f"  border: 1px solid #555555;"
+            f"  border-radius: 6px;"
+            f"  padding: 10px 14px;"
+            f"  font-size: 13px;"
+            f"  font-weight: 500;"
+            f"  font-family: 'Segoe UI', system-ui, sans-serif;"
+            f"}}"
+        )
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         self.setUpdatesEnabled(False)
 
         container = QWidget()
+        container.setObjectName("SidebarContainer")
         container.setStyleSheet(
-            f"background: {Colors.BACKGROUND_WHITE};"
+            f"QWidget#SidebarContainer {{ background: {Colors.BACKGROUND_WHITE}; }}"
         )
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(0)
 
         self.tab_widget = QTabWidget()
-        self.tab_widget.setTabPosition(QTabWidget.TabPosition.West)
+        self.tab_widget.setTabPosition(QTabWidget.TabPosition.East)
         self.tab_widget.setDocumentMode(False)
+        self.tab_widget.setIconSize(QSize(24, 24))
 
-        # Style the tab widget with compact vertical tabs (original design)
+        # Style the tab widget with smaller, refined icon-only tabs
         self.tab_widget.setStyleSheet(f"""
             QTabWidget::pane {{
                 border: none;
-                border-left: 1px solid rgba(0, 0, 0, 0.08);
+                border-right: 1px solid #E5E5EA;
                 background: {Colors.BACKGROUND_WHITE};
             }}
             QTabBar {{
-                alignment: left;
-                background: #FAFAFA;
+                alignment: center;
+                background: #F5F5F7;
             }}
             QTabBar::tab {{
-                background: transparent;
-                color: {Colors.SECONDARY_TEXT};
-                padding: 12px 20px;
-                margin: 2px 0;
-                border: none;
-                font-size: 13px;
-                font-weight: 500;
-                min-height: 50px;
-                border-radius: 6px;
+                background: #FFFFFF;
+                padding: 6px;
+                margin: 3px 3px;
+                border: 1px solid #E5E5EA;
+                min-height: 24px;
+                max-height: 24px;
+                min-width: 24px;
+                max-width: 24px;
+                border-radius: 8px;
             }}
             QTabBar::tab:selected {{
-                background: rgba(0, 0, 0, 0.08);
-                color: {Colors.PRIMARY_TEXT};
-                font-weight: 700;
+                background: rgba(46, 48, 227, 0.2);
+                border: none;
+                border-bottom: 2px solid #2E30E3;
+                color: #2E30E3;
             }}
             QTabBar::tab:hover:!selected {{
-                background: {Colors.OVERLAY_LIGHT_6};
+                background: #F5F5F7;
+                border: 1px solid #D1D1D6;
             }}
             QTabBar::tab:disabled {{
-                background: transparent;
-                color: {Colors.OVERLAY_LIGHT_20};
+                background: #FAFAFA;
+                border: 1px solid #E0E0E0;
+                opacity: 0.4;
             }}
             QTabBar::tab:selected:!disabled {{
-                border-left: 4px solid #1D1D1F;
-                padding-left: 16px;
+                border-bottom: 2px solid #2E30E3;
             }}
         """)
 
@@ -228,14 +317,8 @@ class AffilabsSidebar(QWidget):
             (
                 "Settings",
                 "Settings & Diagnostics",
-                "Calibration and maintenance",
+                "",
                 self._build_settings_tab,
-            ),
-            (
-                "⚡",
-                "⚡ Spark",
-                "Ask questions about using Affilabs.core",
-                self._build_spark_tab,
             ),
         ]
 
@@ -256,7 +339,8 @@ class AffilabsSidebar(QWidget):
             scroll_area.setStyleSheet(scrollbar_style())
 
             tab_content = QWidget()
-            tab_content.setStyleSheet(f"background: {Colors.BACKGROUND_WHITE};")
+            tab_content.setObjectName("SidebarTabContent")
+            tab_content.setStyleSheet(f"QWidget#SidebarTabContent {{ background: {Colors.BACKGROUND_WHITE}; }}")
             tab_layout = QVBoxLayout(tab_content)
             tab_layout.setContentsMargins(20, 20, 20, 20)
             tab_layout.setSpacing(12)
@@ -290,87 +374,22 @@ class AffilabsSidebar(QWidget):
             # Add stretch to push all sections to the top (prevents even spacing when collapsed)
             tab_layout.addStretch()
 
-            # For Spark tab, we want to rotate the lightning icon 90 degrees
-            # We'll add the tab normally but store the index to customize later
-            self.tab_widget.addTab(scroll_area, label)
+            # Create icon for tab
+            if label in TAB_ICONS:
+                icon = create_icon_from_svg(TAB_ICONS[label])
+                self.tab_widget.addTab(scroll_area, icon, "")
+            else:
+                self.tab_widget.addTab(scroll_area, label)
+
+            # Set tooltip so title appears on hover
+            self.tab_widget.setTabToolTip(tab_index, title_text)
 
             scroll_area.setWidget(tab_content)
 
             # Store tab index for later reference
             self.tab_indices[label] = tab_index
 
-            # Apply rotation to Spark tab icon after it's added
-            if label == "⚡":
-                # Get the tab bar and apply rotation via stylesheet transform
-                # Note: QTabBar doesn't support CSS transforms directly,
-                # so we'll rotate the text using a custom approach
-                from PySide6.QtGui import QPixmap, QPainter, QFont, QFontMetrics
-                from PySide6.QtCore import QSize, QRect
-
-                # Create a rotated pixmap of the lightning symbol
-                # Use smaller size to match text height better
-                icon_size = 28
-                pixmap = QPixmap(icon_size, icon_size)
-                pixmap.fill(Qt.GlobalColor.transparent)
-
-                painter = QPainter(pixmap)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-
-                # Set font to match tab text size
-                font = QFont()
-                font.setPixelSize(20)
-                font.setBold(True)
-                painter.setFont(font)
-
-                # Get font metrics to properly center the text
-                metrics = QFontMetrics(font)
-                text_rect = metrics.boundingRect("⚡")
-
-                # Center the coordinate system
-                painter.translate(icon_size / 2, icon_size / 2)
-                # Rotate 90 degrees clockwise
-                painter.rotate(90)
-
-                # Draw centered (offset by half of text bounds)
-                painter.drawText(
-                    -text_rect.width() / 2,
-                    text_rect.height() / 2 - metrics.descent(),
-                    "⚡"
-                )
-                painter.end()
-
-                # Set as tab icon with updated size
-                self.tab_widget.setTabIcon(tab_index, pixmap)
-                # Set icon size for the tab bar to match text line height
-                self.tab_widget.tabBar().setIconSize(QSize(28, 28))
-                # Clear the text label since we're using icon
-                self.tab_widget.setTabText(tab_index, "")
-
             tab_index += 1
-
-        # Apply light green background to Spark tab button
-        spark_tab_index = self.tab_indices.get("⚡")
-        if spark_tab_index is not None:
-            # Update stylesheet to include green background for Spark tab
-            current_style = self.tab_widget.styleSheet()
-            # Add specific styling that matches based on tab text
-            enhanced_style = current_style.replace(
-                "QTabBar::tab:selected:!disabled {",
-                """QTabBar::tab[text="⚡"] {
-                background: #E8F5E9 !important;
-                color: #1B5E20 !important;
-            }
-            QTabBar::tab[text="⚡"]:selected {
-                background: #C8E6C9 !important;
-                color: #1B5E20 !important;
-            }
-            QTabBar::tab[text="⚡"]:hover:!selected {
-                background: #D4EDD6 !important;
-            }
-            QTabBar::tab:selected:!disabled {"""
-            )
-            self.tab_widget.setStyleSheet(enhanced_style)
 
         container_layout.addWidget(self.tab_widget)
         # Compatibility alias expected by main code
@@ -551,25 +570,29 @@ class AffilabsSidebar(QWidget):
             indicator = self.operation_modes["static"]["indicator"]
             status_label = self.operation_modes["static"]["status_label"]
             if static_available:
-                indicator.setStyleSheet("color: #34C759; font-size: 16px;")
+                indicator.setStyleSheet("QLabel { color: #34C759; font-size: 16px; }")
                 status_label.setText("Available")
-                status_label.setStyleSheet("font-size: 12px; color: #34C759;")
+                status_label.setStyleSheet("QLabel { font-size: 12px; color: #34C759; }")
             else:
-                indicator.setStyleSheet("color: #86868B; font-size: 16px;")
+                indicator.setStyleSheet("QLabel { color: #86868B; font-size: 16px; }")
                 status_label.setText("Disabled")
-                status_label.setStyleSheet("font-size: 12px; color: #86868B;")
+                status_label.setStyleSheet("QLabel { font-size: 12px; color: #86868B; }")
 
         if "flow" in self.operation_modes:
             indicator = self.operation_modes["flow"]["indicator"]
             status_label = self.operation_modes["flow"]["status_label"]
             if flow_available:
-                indicator.setStyleSheet("color: #34C759; font-size: 16px;")
+                indicator.setStyleSheet("QLabel { color: #34C759; font-size: 16px; }")
                 status_label.setText("Available")
-                status_label.setStyleSheet("font-size: 12px; color: #34C759;")
+                status_label.setStyleSheet("QLabel { font-size: 12px; color: #34C759; }")
             else:
-                indicator.setStyleSheet("color: #86868B; font-size: 16px;")
+                indicator.setStyleSheet("QLabel { color: #86868B; font-size: 16px; }")
                 status_label.setText("Disabled")
-                status_label.setStyleSheet("font-size: 12px; color: #86868B;")
+                status_label.setStyleSheet("QLabel { font-size: 12px; color: #86868B; }")
+
+    def switch_to_spark_tab(self):
+        """Show Spark sidebar (now handled by main window, kept for compatibility)."""        # This method is now handled by the main window showing the Spark sidebar
+        logger.debug("switch_to_spark_tab called - Spark is now a separate sidebar")
 
     def _build_device_status_tab(self, tab_layout: QVBoxLayout):
         """Build Device Status tab with hardware and subunit indicators using builder."""
@@ -764,20 +787,9 @@ class AffilabsSidebar(QWidget):
         tab_layout.addWidget(placeholder, stretch=1)
 
     def _on_tab_changed(self, index: int):
-        """Handle tab change events — lazy-load Spark tab on first visit."""
-        spark_index = self.tab_indices.get("⚡")
-        if index == spark_index and not getattr(self, "_spark_loaded", True):
-            self._spark_loaded = True
-            layout = self._spark_tab_layout
-            # Remove placeholder
-            while layout.count():
-                item = layout.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
-            # Build the real Spark widget
-            from affilabs.widgets.spark_help_widget import SparkHelpWidget
-            self.spark_widget = SparkHelpWidget()
-            layout.addWidget(self.spark_widget, stretch=1)
+        """Handle tab change events."""
+        # Spark tab removed - no special handling needed
+        pass
 
     def _build_deferred_spectroscopy_plots(self):
         """Build spectroscopy plots on-demand when Settings tab is first opened."""

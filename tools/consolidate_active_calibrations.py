@@ -10,7 +10,7 @@ Consolidates:
 
 Run this after implementing the new calibration structure to migrate existing data.
 
-Author: ezControl OEM System
+Author: Affilabs.core OEM System
 Date: December 19, 2025
 """
 
@@ -25,7 +25,7 @@ from typing import Optional
 
 def consolidate_active_calibrations(project_root: Optional[Path] = None) -> None:
     """Consolidate active calibrations into calibrations/active/ structure.
-    
+
     Args:
         project_root: Project root path (if None, auto-detect)
     """

@@ -4,7 +4,7 @@ import pyqtgraph as pg
 
 from affilabs.ui_styles import Colors
 
-AXIS_COLOR = "#86868B"
+AXIS_COLOR = "#1D1D1F"
 GRID_ALPHA = 0.15
 AXIS_PEN_COLOR = "#E5E5EA"
 

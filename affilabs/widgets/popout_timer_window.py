@@ -94,6 +94,8 @@ class PopOutTimerWindow(QWidget):
         restart_requested: User wants to restart the timer.
         closed: Window was closed by the user.
         timer_ready: Emitted when user confirms settings (time_seconds, label).
+        window_shown: Emitted when popup becomes visible
+        window_hidden: Emitted when popup is hidden/closed
     """
 
     clear_requested = Signal()
@@ -104,6 +106,8 @@ class PopOutTimerWindow(QWidget):
     timer_ready = Signal(int, str)  # (total_seconds, label)
     alarm_stopped = Signal()  # User stopped the alarm
     time_edited_while_paused = Signal(int)  # (remaining_seconds) - emitted when time is edited while paused
+    window_shown = Signal()  # Emitted when window becomes visible
+    window_hidden = Signal()  # Emitted when window is hidden/closed
 
     def __init__(self, parent=None):
         super().__init__(
@@ -206,7 +210,8 @@ class PopOutTimerWindow(QWidget):
 
         # Play/Pause button - square with thin arrow
         self._pause_btn = QPushButton("||")
-        self._pause_btn.setFixedSize(28, 22)
+        self._pause_btn.setMinimumSize(28, 22)
+        self._pause_btn.setMaximumSize(32, 26)
         self._pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._pause_btn.setToolTip("Pause timer")
         self._pause_btn.clicked.connect(self._toggle_pause)
@@ -215,7 +220,8 @@ class PopOutTimerWindow(QWidget):
 
         # Start button (shown only in config mode)
         self._start_btn = QPushButton("▶")
-        self._start_btn.setFixedSize(28, 22)
+        self._start_btn.setMinimumSize(28, 22)
+        self._start_btn.setMaximumSize(32, 26)
         self._start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._start_btn.setToolTip("Start timer")
         self._start_btn.clicked.connect(self._on_start_timer)
@@ -225,7 +231,8 @@ class PopOutTimerWindow(QWidget):
 
         # Restart button - square with thin arrow
         self._restart_btn = QPushButton("↺")
-        self._restart_btn.setFixedSize(28, 22)
+        self._restart_btn.setMinimumSize(28, 22)
+        self._restart_btn.setMaximumSize(32, 26)
         self._restart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._restart_btn.setToolTip("Restart timer")
         self._restart_btn.clicked.connect(self.restart_requested.emit)
@@ -234,7 +241,8 @@ class PopOutTimerWindow(QWidget):
 
         # Resize button (cycles font sizes)
         self._resize_btn = QPushButton("Aa")
-        self._resize_btn.setFixedSize(24, 24)
+        self._resize_btn.setMinimumSize(24, 24)
+        self._resize_btn.setMaximumSize(28, 28)
         self._resize_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._resize_btn.setToolTip("Cycle font size")
         self._resize_btn.clicked.connect(self._cycle_font_size)
@@ -243,7 +251,8 @@ class PopOutTimerWindow(QWidget):
 
         # Close button
         self._close_btn = QPushButton("✕")
-        self._close_btn.setFixedSize(24, 24)
+        self._close_btn.setMinimumSize(24, 24)
+        self._close_btn.setMaximumSize(28, 28)
         self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._close_btn.setToolTip("Close timer window")
         self._close_btn.clicked.connect(self._on_close)
@@ -255,6 +264,8 @@ class PopOutTimerWindow(QWidget):
         # --- Big countdown label (double-click to edit time) ---
         self._time_lbl = TimeLabel("00:00")
         self._time_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._time_lbl.setMinimumHeight(40)
+        self._time_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._time_lbl.setStyleSheet(
             f"color: {Colors.PRIMARY_TEXT}; font-family: {Fonts.MONOSPACE}; font-weight: 700;"
         )
@@ -265,18 +276,20 @@ class PopOutTimerWindow(QWidget):
 
         # --- Stop Alarm button (hidden by default, shown when alarm is active) ---
         self._stop_alarm_btn = QPushButton("⏹ STOP ALARM")
-        self._stop_alarm_btn.setMinimumHeight(50)
+        self._stop_alarm_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._stop_alarm_btn.setMinimumHeight(60)
         self._stop_alarm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._stop_alarm_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #FF3B30, stop:1 #CC0000);
                 border: 2px solid #990000;
-                border-radius: 8px;
+                border-radius: 12px;
                 color: white;
-                font-size: 18px;
+                font-size: 16px;
                 font-weight: 700;
-                padding: 8px;
+                padding: 12px 18px;
+                margin: 5px 0px;
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -504,12 +517,15 @@ class PopOutTimerWindow(QWidget):
         self._remaining = 0
         self._paused = False
 
-        # Make time display flash red/orange
+        # Make time display flash red/orange (use regular font for alarm text, not monospace)
         preset = _FONT_PRESETS[self._size_index]
+        # Use smaller font for alarm text to ensure it fits
+        alarm_font_size = min(preset['timer'], 48)
         self._time_lbl.setStyleSheet(
             f"QLabel {{"
-            f"  color: #FF3B30; font-family: {Fonts.MONOSPACE}; "
-            f"  font-weight: 700; font-size: {preset['timer']}px;"
+            f"  color: #FF3B30; font-family: -apple-system, 'SF Pro Display', sans-serif; "
+            f"  font-weight: 700; font-size: {alarm_font_size}px;"
+            f"  text-align: center; line-height: 1.0; padding: 5px;"
             f"}}"
             f"QToolTip {{"
             f"  font-size: 12px;"
@@ -520,6 +536,13 @@ class PopOutTimerWindow(QWidget):
             f"  border-radius: 4px;"
             f"}}"
         )
+
+        # Adjust window size to accommodate alarm text and stop button
+        # Ensure minimum space for both alarm text and button
+        min_width = max(preset["w"], 280)
+        min_height = max(preset["h"], 160)
+        self.setMinimumSize(min_width, min_height)
+        self.resize(min_width, min_height)
 
         # Hide control buttons, show stop alarm button
         self._pause_btn.setVisible(False)
@@ -538,6 +561,23 @@ class PopOutTimerWindow(QWidget):
 
         # Emit signal to stop alarm sound in main UI
         self.alarm_stopped.emit()
+
+        # Reset time label color and font to default blue and monospace
+        preset = _FONT_PRESETS[self._size_index]
+        self._time_lbl.setStyleSheet(
+            f"QLabel {{"
+            f"  color: #0080FF; font-family: {Fonts.MONOSPACE}; "
+            f"  font-weight: 700; font-size: {preset['timer']}px;"
+            f"}}"
+            f"QToolTip {{"
+            f"  font-size: 12px;"
+            f"  background-color: #2D2D2D;"
+            f"  color: #FFFFFF;"
+            f"  border: 1px solid #555555;"
+            f"  padding: 4px 8px;"
+            f"  border-radius: 4px;"
+            f"}}"
+        )
 
         # Reset to configurable/idle mode with the initial time
         self.set_configurable(
@@ -814,7 +854,16 @@ class PopOutTimerWindow(QWidget):
             self.move(0, 0)
             self._first_show = False
         super().showEvent(event)
+        # Emit signal to notify button to highlight
+        self.window_shown.emit()
+
+    def hideEvent(self, event):
+        """Handle hide event - notify button to remove highlight."""
+        super().hideEvent(event)
+        self.window_hidden.emit()
 
     def closeEvent(self, event):
+        # Emit signal to notify button to remove highlight
+        self.window_hidden.emit()
         self.closed.emit()
         event.accept()

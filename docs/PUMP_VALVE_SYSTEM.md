@@ -1,4 +1,4 @@
-# Pump & Valve System Documentation
+﻿# Pump & Valve System Documentation
 
 ## Overview
 
@@ -1490,4 +1490,5 @@ pump.close()                                   # Disconnect
 
 **Document Version:** 1.0
 **Last Updated:** February 2026
-**Maintained By:** Affinity Instruments Development Team
+**Maintained By:** Affinité Instruments Development Team
+

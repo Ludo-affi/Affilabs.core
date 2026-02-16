@@ -18,7 +18,8 @@
       "Bash(\".venv/Scripts/python.exe\" -m pip install pyserial scipy requests)",
       "Bash(\".venv/Scripts/python.exe\" -m pip install --index-url https://gitlab.com/api/v4/groups/affinite-software/-/packages/pypi/simple pump-controller oceandirect)",
       "Bash(python:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(ls:*)"
     ]
   }
 }

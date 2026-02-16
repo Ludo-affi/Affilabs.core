@@ -48,18 +48,23 @@ CycleType = Literal[
     "Immobilization",
     "Blocking",
     "Wash",
-    "Concentration",
+    "Binding",
+    "Kinetic",
     "Regeneration",
     "Other",
     "Auto-read",
     "Custom",
+    # Legacy alias — old files may contain "Concentration"; treat as "Binding"
+    "Concentration",
 ]
+MethodMode = Literal["manual", "semi-automated", "automated"]
+DetectionPriority = Literal["auto", "priority", "off"]
 
 
 class Cycle(BaseModel):
     """Domain model for experiment cycle with automatic validation.
 
-    Represents a timed segment of the experiment (e.g., Baseline, Association).
+    "Represents a timed segment of the experiment (e.g., Baseline, Binding, Kinetic).\n"
     Cycles are queued and executed in sequence.
 
     Attributes:
@@ -75,7 +80,7 @@ class Cycle(BaseModel):
     """
 
     # Required fields with validation
-    type: str = Field(..., description="Cycle type (Baseline, Association, etc.)")
+    type: str = Field(..., description="Cycle type (Baseline, Binding, Kinetic, Regeneration, etc.)")
     length_minutes: float = Field(..., gt=0, description="Duration in minutes (must be positive)")
 
     # Optional fields with defaults
@@ -121,6 +126,11 @@ class Cycle(BaseModel):
         default_factory=list,
         description="Flags that occurred during this cycle (injection, wash, spike)",
     )
+    flag_data: List[dict] = Field(
+        default_factory=list,
+        description="Detailed flag marker data with positions and metadata: "
+        "[{'channel': 'A', 'time': 123.5, 'spr': 1000.0, 'type': 'injection', 'is_reference': True}, ...]",
+    )
 
     # Per-channel injection detection data (set during injection phase)
     injection_time_by_channel: Dict[str, float] = Field(
@@ -162,12 +172,12 @@ class Cycle(BaseModel):
         default=None, description="Contact time in seconds (for association phase)"
     )
 
-    # Manual injection mode for P4SPR concentration cycles
+    # Manual injection mode for P4SPR binding/kinetic cycles
     manual_injection_mode: Optional[Literal["automated", "manual"]] = Field(
         default=None,
         description="Injection mode for P4SPR: 'automated' (pump injects, user confirms), "
         "'manual' (user injects via syringe, system prompts at flags), "
-        "None = use hardware default",
+        "None = use hardware default. Used by Binding (manual) and Kinetic (flow) cycles.",
     )
     planned_concentrations: List[str] = Field(
         default_factory=list,
@@ -176,7 +186,34 @@ class Cycle(BaseModel):
     )
     injection_count: int = Field(
         default=0,
-        description="Number of manual injections completed so far in this concentration cycle",
+        description="Number of manual injections completed so far in this binding cycle",
+    )
+
+    # Method mode and detection fields
+    method_mode: Optional[str] = Field(
+        default=None,
+        description="Method execution mode: 'manual' (P4SPR default), "
+        "'semi-automated' (P4PRO default), 'automated' (PRO+ only). "
+        "Cascades into detection sensitivity, injection handling, etc.",
+    )
+    detection_priority: str = Field(
+        default="auto",
+        description="Detection priority: 'auto' (mode-dependent), "
+        "'priority' (lower threshold, faster detection), "
+        "'off' (no auto-detection, rely on timer/manual). "
+        "In manual mode auto→priority; in semi-automated auto→auto; in automated auto→off.",
+    )
+    detection_sensitivity: Optional[float] = Field(
+        default=None,
+        description="Detection sensitivity multiplier (0.5=more sensitive, 2.0=less sensitive). "
+        "Applied to min_rise_threshold in auto_detect_injection_point(). "
+        "None = use mode default.",
+    )
+    target_channels: Optional[str] = Field(
+        default=None,
+        description="Explicit target channels for detection (e.g., 'AC', 'BD', 'ABCD'). "
+        "When set, injection detection focuses on these channels first. "
+        "None = detect on all active channels.",
     )
 
     # Pydantic configuration
@@ -259,6 +296,7 @@ class Cycle(BaseModel):
             "delta_spr": self.delta_spr,
             "delta_spr_by_channel": self.delta_spr_by_channel,
             "flags": self.flags if self.flags else [],
+            "flag_data": self.flag_data if self.flag_data else [],
             "flow_rate": self.flow_rate,
             "pump_type": self.pump_type,
             "channels": self.channels,
@@ -271,6 +309,10 @@ class Cycle(BaseModel):
             "injection_time_by_channel": self.injection_time_by_channel,
             "injection_confidence_by_channel": self.injection_confidence_by_channel,
             "injection_mislabel_flags": self.injection_mislabel_flags,
+            "method_mode": self.method_mode,
+            "detection_priority": self.detection_priority,
+            "detection_sensitivity": self.detection_sensitivity,
+            "target_channels": self.target_channels,
         }
 
     @classmethod

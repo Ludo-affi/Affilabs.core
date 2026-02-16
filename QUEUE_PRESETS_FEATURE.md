@@ -115,7 +115,7 @@ Users can now save and load entire queue sequences as presets. This is different
             ...
         },
         {
-            "type": "Concentration",
+            "type": "Binding",
             "length_minutes": 5.0,
             "note": "[A:100]",
             "units": "nM",

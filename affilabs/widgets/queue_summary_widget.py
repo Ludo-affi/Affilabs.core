@@ -301,14 +301,16 @@ class QueueSummaryWidget(QTableWidget):
         type_lower = cycle_type.lower()
         if 'baseline' in type_lower:
             return '#F0F4FF'  # Subtle blue
+        elif 'binding' in type_lower:
+            return '#FFFEF0'  # Subtle yellow (manual injection / incubation)
         elif 'kinetic' in type_lower or 'association' in type_lower:
-            return '#F0FFF4'  # Subtle green
+            return '#F0FFF4'  # Subtle green (flow / on+off rate)
         elif 'dissociation' in type_lower:
             return '#FFF4F0'  # Subtle orange
         elif 'regeneration' in type_lower:
             return '#FFF0F5'  # Subtle pink
         elif 'concentration' in type_lower:
-            return '#FFFEF0'  # Subtle yellow
+            return '#FFFEF0'  # Legacy alias for Binding
         return None  # No background for other types
 
     def _abbreviate_type(self, cycle_type: str) -> str:

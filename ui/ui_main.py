@@ -435,7 +435,7 @@ class Ui_mainWindow:
 
     def retranslateUi(self, mainWindow):
         mainWindow.setWindowTitle(
-            QCoreApplication.translate("mainWindow", "ezControl Software", None),
+            QCoreApplication.translate("mainWindow", "Affilabs.core Software", None),
         )
         self.label.setText("")
         self.sensorgram_btn.setText(

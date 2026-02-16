@@ -6,6 +6,7 @@ Model details are kept internal - users just see "Spark" working.
 """
 
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +16,7 @@ class SparkTinyLM:
 
     Provides conversational AI fallback when pattern matching doesn't work.
     Uses lazy loading - model only loads when first needed.
+    Thread-safe: Multiple calls to generate_answer won't cause double-loading.
     """
 
     def __init__(self):
@@ -27,6 +29,7 @@ class SparkTinyLM:
         self._pipeline = None
         self._loading = False
         self._initialized = False
+        self._load_lock = threading.Lock()  # Prevent concurrent model loading
 
     def is_initialized(self) -> bool:
         """Check if TinyLM model is loaded."""
@@ -35,61 +38,74 @@ class SparkTinyLM:
     def _load_model(self):
         """Load TinyLlama model (called on first use).
 
+        Thread-safe: Uses lock to prevent concurrent loading.
         Silent loading - no user-visible messages about technical details.
         """
-        if self._loading:
-            logger.debug("Model already loading...")
-            return False
-
+        # Quick check without lock (fast path)
         if self._initialized:
             logger.debug("Model already loaded")
             return True
 
-        try:
-            self._loading = True
-            logger.debug("Loading Spark AI model...")
+        # Use lock to ensure only one thread loads the model
+        with self._load_lock:
+            # Double-check after acquiring lock (race condition protection)
+            if self._initialized:
+                return True
 
-            # Deferred imports - torch and transformers are very heavy (~20s)
-            import torch
-            from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+            if self._loading:
+                logger.debug("Model already loading (another thread)...")
+                # Block until other thread finishes
+                return self._initialized
 
-            # Detect device (prefer GPU if available, silent fallback to CPU)
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            logger.debug(f"Using device: {device}")
+            try:
+                self._loading = True
+                logger.debug("Loading Spark AI model...")
 
-            # Load model and tokenizer
-            model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+                # Deferred imports - torch and transformers are very heavy (~20s)
+                import torch
+                from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
-            self._tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self._model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                dtype=torch.float16 if device == "cuda" else torch.float32,
-                low_cpu_mem_usage=True,
-            )
-            self._model.to(device)
+                # Detect device (prefer GPU if available, silent fallback to CPU)
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                logger.debug(f"Using device: {device}")
 
-            # Create text generation pipeline
-            self._pipeline = pipeline(
-                "text-generation",
-                model=self._model,
-                tokenizer=self._tokenizer,
-                device=0 if device == "cuda" else -1,
-                max_new_tokens=150,
-                temperature=0.7,
-                do_sample=True,
-                top_p=0.9,
-            )
+                # Load model and tokenizer
+                model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
-            self._initialized = True
-            logger.debug("Spark AI model ready")
-            return True
+                self._tokenizer = AutoTokenizer.from_pretrained(model_name)
+                self._model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    dtype=torch.float16 if device == "cuda" else torch.float32,
+                    low_cpu_mem_usage=True,
+                )
+                self._model.to(device)
 
-        except Exception as e:
-            logger.error(f"Failed to load Spark AI model: {e}")
-            self._initialized = False
-            return False
-        finally:
-            self._loading = False
+                # Create text generation pipeline
+                self._pipeline = pipeline(
+                    "text-generation",
+                    model=self._model,
+                    tokenizer=self._tokenizer,
+                    device=0 if device == "cuda" else -1,
+                    max_new_tokens=100,
+                    temperature=0.7,
+                    do_sample=True,
+                    top_p=0.9,
+                )
+
+                self._initialized = True
+                logger.debug("Spark AI model ready")
+                return True
+
+            except ImportError:
+                logger.info("Spark AI model unavailable (torch/transformers not installed) — using pattern matching only")
+                self._initialized = False
+                return False
+            except Exception as e:
+                logger.warning(f"Failed to load Spark AI model: {e}")
+                self._initialized = False
+                return False
+            finally:
+                self._loading = False
 
     def _build_context(self, question: str) -> str:
         """Build focused context for the question.
@@ -254,8 +270,8 @@ class SparkTinyLM:
         if not self._initialized:
             if not self._load_model():
                 return (
-                    "I'm still learning to answer that question. "
-                    "Try asking about starting acquisitions, calibration, methods, export, or flow control.",
+                    "I'm not sure about that one yet. "
+                    "Try asking about setup, calibration, methods, pumps, or data export.",
                     False,
                 )
 
@@ -265,10 +281,12 @@ class SparkTinyLM:
 
             # Create prompt with system instructions
             prompt = f"""<|system|>
-You are Spark, the helpful assistant for Affilabs.core SPR analysis software.
-You provide concise, practical answers about using the software.
-Keep responses focused on Affilabs.core features and workflows.
-Use 2-3 sentences maximum. Be helpful and friendly.
+You are Spark, a friendly assistant for Affilabs SPR software.
+Rules:
+- Answer in 1-3 short sentences. Never more than 4 sentences.
+- Be warm and conversational, like a helpful colleague.
+- Only mention the most important step or detail. Skip background info.
+- If you don't know, say so briefly and suggest contacting support.
 <|user|>
 {context}
 
@@ -314,8 +332,7 @@ User question: {question}
         except Exception as e:
             logger.error(f"Response generation failed: {e}")
             return (
-                "I'm having trouble understanding that question. "
-                "Try asking about: starting acquisitions, calibration, building methods, "
-                "exporting data, or controlling pumps and valves.",
+                "Hmm, I had trouble with that one. "
+                "Try rephrasing, or ask about setup, calibration, methods, pumps, or export.",
                 False,
             )

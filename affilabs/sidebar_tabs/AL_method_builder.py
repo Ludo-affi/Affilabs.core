@@ -11,7 +11,9 @@ The Method sidebar is the main interface for building and managing SPR assays.
 Extracted from sidebar.py to improve modularity.
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QIcon, QPixmap, QPainter
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -43,6 +45,67 @@ class MethodTabBuilder:
         # Use shared instance from sidebar (will be set by main app)
         self.user_manager = None
         self._app_reference = None
+
+    @staticmethod
+    def _create_svg_icon(svg_string: str, icon_size: int = 18) -> QIcon:
+        """Create QIcon from SVG string.
+
+        Args:
+            svg_string: SVG markup as string
+            icon_size: Size of the icon in pixels
+
+        Returns:
+            QIcon with rendered SVG
+        """
+        svg_renderer = QSvgRenderer(svg_string.encode('utf-8'))
+        pixmap = QPixmap(icon_size, icon_size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        svg_renderer.render(painter)
+        painter.end()
+        return QIcon(pixmap)
+
+    @staticmethod
+    def _create_play_icon() -> QIcon:
+        """Create play/start icon."""
+        svg = '''<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 5v14l11-7z" fill="white"/>
+        </svg>'''
+        return MethodTabBuilder._create_svg_icon(svg)
+
+    @staticmethod
+    def _create_stop_icon() -> QIcon:
+        """Create stop icon."""
+        svg = '''<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <rect x="6" y="6" width="12" height="12" fill="white" rx="2"/>
+        </svg>'''
+        return MethodTabBuilder._create_svg_icon(svg)
+
+    @staticmethod
+    def _create_duplicate_icon() -> QIcon:
+        """Create duplicate/copy icon."""
+        svg = '''<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="3" width="14" height="14" rx="2"/>
+            <path d="M21 15a2 2 0 0 1-2 2h-2v-4v-2a2 2 0 0 1 2-2h2v6z"/>
+        </svg>'''
+        return MethodTabBuilder._create_svg_icon(svg)
+
+    @staticmethod
+    def _create_skip_icon() -> QIcon:
+        """Create skip/next icon."""
+        svg = '''<svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 4v16l8-8-8-8z" fill="white"/>
+            <path d="M15 4v16" stroke="white" stroke-width="2" fill="none"/>
+        </svg>'''
+        return MethodTabBuilder._create_svg_icon(svg)
+
+    @staticmethod
+    def _create_add_icon() -> QIcon:
+        """Create add/plus icon."""
+        svg = '''<svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 3v18M3 12h18" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>
+        </svg>'''
+        return MethodTabBuilder._create_svg_icon(svg)
 
     def set_app_reference(self, app):
         """Set reference to main application for accessing segment_queue.
@@ -85,28 +148,32 @@ class MethodTabBuilder:
         # Status indicators
         self.sidebar.intel_status_label = QLabel("✓ Good")
         self.sidebar.intel_status_label.setStyleSheet(
-            "font-size: 12px;"
-            "color: #34C759;"
-            "background: transparent;"
-            "font-weight: 700;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+            "QLabel {"
+            "  font-size: 12px;"
+            "  color: #34C759;"
+            "  background: transparent;"
+            "  font-weight: 700;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}",
         )
         intel_bar_layout.addWidget(self.sidebar.intel_status_label)
 
         # Separator bullet
         self.sidebar.intel_separator = QLabel("•")
         self.sidebar.intel_separator.setStyleSheet(
-            "font-size: 12px;color: #86868B;background: transparent;",
+            "QLabel { font-size: 12px; color: #86868B; background: transparent; }",
         )
         intel_bar_layout.addWidget(self.sidebar.intel_separator)
 
         self.sidebar.intel_message_label = QLabel("→ Ready for injection")
         self.sidebar.intel_message_label.setStyleSheet(
-            "font-size: 12px;"
-            "color: #007AFF;"
-            "background: transparent;"
-            "font-weight: 600;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+            "QLabel {"
+            "  font-size: 12px;"
+            "  color: #007AFF;"
+            "  background: transparent;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}",
         )
         intel_bar_layout.addWidget(self.sidebar.intel_message_label)
 
@@ -134,18 +201,18 @@ class MethodTabBuilder:
         method_layout.setContentsMargins(0, 0, 0, 0)
         method_layout.setSpacing(0)
 
-        # Build Method button
-        self.sidebar.build_method_btn = QPushButton("➕ Build Method")
-        self.sidebar.build_method_btn.setFixedHeight(32)
+        # Build Method button with SVG icon
+        self.sidebar.build_method_btn = QPushButton("Build Method")
+        self.sidebar.build_method_btn.setFixedHeight(40)
         self.sidebar.build_method_btn.setStyleSheet(
             "QPushButton {"
             "  background: #007AFF;"
             "  color: white;"
             "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 6px 12px;"
-            "  font-size: 13px;"
-            "  font-weight: 500;"
+            "  border-radius: 8px;"
+            "  padding: 8px 14px;"
+            "  font-size: 14px;"
+            "  font-weight: 600;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
             "}"
             "QPushButton:hover {"
@@ -155,6 +222,10 @@ class MethodTabBuilder:
             "  background: #003D99;"
             "}"
         )
+        # Add SVG icon
+        add_icon = self._create_add_icon()
+        self.sidebar.build_method_btn.setIcon(add_icon)
+        self.sidebar.build_method_btn.setIconSize(QSize(18, 18))
         self.sidebar.build_method_btn.setToolTip("Open method builder to create and queue cycles")
         method_layout.addWidget(self.sidebar.build_method_btn)
 
@@ -198,16 +269,18 @@ class MethodTabBuilder:
         info_layout.setSpacing(8)
 
         info_icon = QLabel("ℹ️")
-        info_icon.setStyleSheet("background: transparent; font-size: 12px;")
+        info_icon.setStyleSheet("QLabel { background: transparent; font-size: 12px; }")
         info_layout.addWidget(info_icon)
 
         info_label = QLabel("Completed cycles appear in the Edit tab")
         info_label.setStyleSheet(
-            "font-size: 11px;"
-            "font-weight: 500;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "QLabel {"
+            "  font-size: 11px;"
+            "  font-weight: 500;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
         )
         info_layout.addWidget(info_label)
         info_layout.addStretch()
@@ -375,8 +448,10 @@ class MethodTabBuilder:
         controls_row = QHBoxLayout()
         controls_row.setSpacing(8)
 
-        self.sidebar.start_queue_btn = QPushButton("▶ Start Run")
+        self.sidebar.start_queue_btn = QPushButton("Start Run")
         self.sidebar.start_queue_btn.setFixedHeight(32)
+        self.sidebar.start_queue_btn.setIcon(self._create_play_icon())
+        self.sidebar.start_queue_btn.setIconSize(QSize(16, 16))
         self.sidebar.start_queue_btn.setToolTip("Start executing the queued cycles")
         self.sidebar.start_queue_btn.setProperty("mode", "start")  # Initialize in start mode
         self.sidebar.start_queue_btn.setStyleSheet(
@@ -396,8 +471,10 @@ class MethodTabBuilder:
         )
         controls_row.addWidget(self.sidebar.start_queue_btn)
 
-        self.sidebar.duplicate_last_btn = QPushButton("+ Duplicate")
+        self.sidebar.duplicate_last_btn = QPushButton("Duplicate")
         self.sidebar.duplicate_last_btn.setFixedHeight(32)
+        self.sidebar.duplicate_last_btn.setIcon(self._create_duplicate_icon())
+        self.sidebar.duplicate_last_btn.setIconSize(QSize(16, 16))
         self.sidebar.duplicate_last_btn.setToolTip("Quickly duplicate the last cycle (useful for repetitive testing)")
         self.sidebar.duplicate_last_btn.setStyleSheet(
             "QPushButton {"
@@ -418,8 +495,10 @@ class MethodTabBuilder:
         self.sidebar.duplicate_last_btn.clicked.connect(self._on_duplicate_last)
         controls_row.addWidget(self.sidebar.duplicate_last_btn)
 
-        self.sidebar.next_cycle_btn = QPushButton("⏭ Next Cycle")
+        self.sidebar.next_cycle_btn = QPushButton("Next Cycle")
         self.sidebar.next_cycle_btn.setFixedHeight(32)
+        self.sidebar.next_cycle_btn.setIcon(self._create_skip_icon())
+        self.sidebar.next_cycle_btn.setIconSize(QSize(16, 16))
         self.sidebar.next_cycle_btn.setEnabled(False)
         self.sidebar.next_cycle_btn.setToolTip("Skip to the next cycle")
         self.sidebar.next_cycle_btn.setStyleSheet(

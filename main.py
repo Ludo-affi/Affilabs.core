@@ -177,7 +177,7 @@ os.environ["QT_NO_GLIB"] = "1"
 # ============================================================================
 # SECTION 4: Qt Core Imports
 # ============================================================================
-from PySide6.QtCore import Qt, QTimer, QtMsgType, Signal, qInstallMessageHandler
+from PySide6.QtCore import Qt, QTimer, QtMsgType, Signal, qInstallMessageHandler, QSize
 from PySide6.QtWidgets import QApplication
 
 from affilabs.core.experiment_clock import ExperimentClock, TimeBase
@@ -334,7 +334,6 @@ MAX_CALIBRATION_RETRIES = 3
 # Channel configuration
 CHANNELS = ["a", "b", "c", "d"]
 CHANNEL_INDICES = {"a": 0, "b": 1, "c": 2, "d": 3}
-DEFAULT_AXIS = "x"
 
 # Filter defaults
 DEFAULT_FILTER_METHOD = "median"  # Options: 'median', 'kalman'
@@ -534,6 +533,19 @@ class Application(QApplication):
         """Get a sidebar widget by name, or None if it doesn't exist."""
         return getattr(self.main_window.sidebar, name, None)
 
+    def _get_current_user(self) -> str:
+        """Get the current user name from the profile manager.
+
+        Single source of truth for user identity. The sidebar user_combo
+        syncs to the profile manager via signal, so no fallback is needed.
+
+        Returns:
+            Current user name, or empty string if unavailable.
+        """
+        if hasattr(self, 'user_profile_manager') and self.user_profile_manager:
+            return self.user_profile_manager.get_current_user() or ""
+        return ""
+
     def _validate_critical_imports(self):
         """Fail fast if critical modules are missing or broken.
 
@@ -660,8 +672,7 @@ class Application(QApplication):
         self._calibration_completed = False
         self._qc_dialog = None
 
-        # Channel/axis selection
-        self._selected_axis = DEFAULT_AXIS
+        # Channel selection
         self._selected_channel = None
         self._reference_channel = None
         self._ref_subtraction_enabled = False
@@ -712,9 +723,6 @@ class Application(QApplication):
         # Baseline data recording
         self._baseline_recorder = None
 
-        # Analysis window (created on demand)
-        self.analysis_window = None
-
         # Next cycle warning line for active cycle graph
         self._next_cycle_warning_line = None
 
@@ -737,6 +745,11 @@ class Application(QApplication):
             Exception: If any critical manager fails to initialize
 
         """
+        # User profile manager (must be before RecordingManager)
+        from affilabs.services.user_profile_manager import UserProfileManager
+        self.user_profile_manager = UserProfileManager()
+        logger.debug("✓ UserProfileManager (centralized)")
+
         # Initialize pipeline registry BEFORE DataAcquisitionManager
         from affilabs.utils.pipelines import initialize_pipelines
 
@@ -771,7 +784,7 @@ class Application(QApplication):
             raise RuntimeError("DataBufferManager initialization failed")
 
         # Recording manager
-        self.recording_mgr = RecordingManager(self.data_mgr, self.buffer_mgr)
+        self.recording_mgr = RecordingManager(self.data_mgr, self.buffer_mgr, user_manager=self.user_profile_manager)
         if self.recording_mgr is None:
             raise RuntimeError("RecordingManager initialization failed")
 
@@ -848,11 +861,6 @@ class Application(QApplication):
         self.experiment_folder_mgr = ExperimentFolderManager()
         logger.debug("✓ ExperimentFolderManager")
 
-        # User profile manager (centralized singleton)
-        from affilabs.services.user_profile_manager import UserProfileManager
-        self.user_profile_manager = UserProfileManager()
-        logger.debug("✓ UserProfileManager (centralized)")
-
         # Phase 1.2 business services
         self.transmission_calc = TransmissionCalculator()
         if self.transmission_calc is None:
@@ -912,9 +920,7 @@ class Application(QApplication):
         # Set default export path in sidebar (user-specific)
         if hasattr(self.main_window, 'sidebar') and (w := self._sidebar_widget('export_dest_input')):
             # Use user-specific directory: Documents/Affilabs Data/<username>/SPR_data/
-            current_user = None
-            if hasattr(self, 'user_profile_manager') and self.user_profile_manager:
-                current_user = self.user_profile_manager.get_current_user()
+            current_user = self._get_current_user()
             if current_user:
                 default_path = str(Path.home() / "Documents" / "Affilabs Data" / current_user / "SPR_data")
             else:
@@ -1088,8 +1094,8 @@ class Application(QApplication):
         """Connect all signals (require all subsystems initialized)."""
         logger.debug("Connecting signals...")
 
-        # Connect hardware manager signals to UI
-        self._connect_signals()
+        # Connect hardware, data, calibration, recording & kinetic manager signals
+        self._connect_hardware_and_manager_signals()
 
         # Connect signals organized by subsystem (Phase 4 refactoring)
         self._connect_viewmodel_signals()
@@ -1257,8 +1263,12 @@ class Application(QApplication):
         # Register emergency cleanup handler for unexpected exits
         atexit.register(self._emergency_cleanup)
 
-    def _connect_signals(self):
-        """Connect all manager signals directly to application handlers."""
+    def _connect_hardware_and_manager_signals(self):
+        """Connect hardware, data, calibration, recording & kinetic manager signals.
+
+        These are cross-thread connections (QueuedConnection) for thread safety
+        since managers run in worker threads.
+        """
         # === HARDWARE MANAGER SIGNALS ===
         # Queued connections for thread safety (hardware manager runs in worker thread)
         self.hardware_mgr.hardware_connected.connect(
@@ -1396,12 +1406,19 @@ class Application(QApplication):
 
             logger.info("Showing QC report dialog (modal)...")
 
+            # Stop the calibration startup dialog timer (freeze on final elapsed time)
+            if hasattr(self, 'calibration') and hasattr(self.calibration, '_calibration_dialog'):
+                calib_dialog = self.calibration._calibration_dialog
+                if calib_dialog and hasattr(calib_dialog, '_stop_activity_animation'):
+                    logger.info("Stopping calibration timer display...")
+                    calib_dialog._stop_activity_animation()
+
             # Create dialog instance
             dialog = CalibrationQCDialog(
                 parent=self.main_window,
                 calibration_data=qc_data,
             )
-            
+
             # Store reference and show modal dialog
             self._qc_dialog = dialog
             dialog.setModal(True)
@@ -1423,26 +1440,6 @@ class Application(QApplication):
 
         except Exception as e:
             logger.error(f"[X] Failed to show QC report: {e}", exc_info=True)
-
-    def open_analysis_window(self):
-        """Open the data analysis window for post-processing."""
-        try:
-            from affilabs.widgets.analysis import AnalysisWindow
-
-            # Create window if it doesn't exist
-            if self.analysis_window is None:
-                self.analysis_window = AnalysisWindow(recording_mgr=self.recording_mgr)
-                self.analysis_window.setWindowTitle("AffiLabs Data Analysis")
-                logger.info("✓ Analysis window created")
-
-            # Show the window
-            self.analysis_window.show()
-            self.analysis_window.raise_()
-            self.analysis_window.activateWindow()
-            logger.info("Analysis window opened")
-
-        except Exception as e:
-            logger.error(f"Failed to open analysis window: {e}", exc_info=True)
 
     def _connect_queue_widgets(self):
         """Connect new queue widgets (QueueSummaryWidget and QueueToolbar) to presenter."""
@@ -1626,18 +1623,10 @@ class Application(QApplication):
                     logger.debug("✓ Connected: DataWindow.reset_graphs_sig -> _on_clear_graphs_requested")
                     break
 
-        # NOTE: These signals not yet implemented in main window
-        # self.main_window.clear_flags_requested.connect(self._on_clear_flags_requested)
-        # self.main_window.pipeline_changed.connect(self._on_pipeline_changed)
         logger.debug("Connected: main_window UI action signals")
 
         # === DEBUG SHORTCUTS ===
         from PySide6.QtGui import QKeySequence, QShortcut
-
-        # Ctrl+Shift+C: Bypass calibration - DISABLED (missing debug_helpers module)
-        # bypass_calibration_shortcut = QShortcut(QKeySequence("Ctrl+Shift+C"), self.main_window)
-        # bypass_calibration_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
-        # bypass_calibration_shortcut.activated.connect(self.debug.bypass_calibration)
         # logger.info(f"[OK] Ctrl+Shift+C registered: {bypass_calibration_shortcut}")
 
         # Ctrl+Shift+S: Start simulation mode (inject fake spectra)
@@ -1669,13 +1658,6 @@ class Application(QApplication):
         """
         ui = self.main_window
 
-        # --- Graph Controls (hidden per user request) ---
-        # ui.grid_check.toggled.connect(self._on_grid_toggled)
-        # ui.autoscale_check.toggled.connect(self._on_autoscale_toggled)
-        # ui.min_input.editingFinished.connect(self._on_manual_range_changed)
-        # ui.max_input.editingFinished.connect(self._on_manual_range_changed)
-        # ui.x_axis_btn.toggled.connect(self._on_axis_selected)
-        # ui.y_axis_btn.toggled.connect(self._on_axis_selected)
         ui.colorblind_check.toggled.connect(self._on_colorblind_toggled)
 
         # --- Channel and Marker Controls ---
@@ -1718,13 +1700,6 @@ class Application(QApplication):
             self._on_graph_clicked,
         )
 
-        # NOTE: Polarizer Calibration button is already connected in affilabs_core_ui.py
-        # to _handle_polarizer_calibration which calls app._on_polarizer_calibration
-        # Do NOT connect again here to avoid double-triggering
-        # if hasattr(ui, "polarizer_calibration_btn"):
-        #     ui.polarizer_calibration_btn.clicked.connect(self._on_polarizer_calibration)
-        #     logger.debug("[OK] Connected Polarizer Calibration button to handler")
-
         # OEM Calibration button (direct connection)
         ui.oem_led_calibration_btn.clicked.connect(self._on_oem_led_calibration)
 
@@ -1753,15 +1728,6 @@ class Application(QApplication):
                 logger.info(
                     "[OK] Connected Advanced Settings optical calibration signal",
                 )
-
-        # Start Cycle button: DEPRECATED - now in Method Builder dialog
-        # ui.sidebar.start_cycle_btn.clicked.connect(self._on_start_button_clicked)
-        # logger.debug("✓ start_cycle_btn connected")
-
-        # Next Cycle button: DEPRECATED - now in Method Builder dialog
-        # if hasattr(ui.sidebar, 'next_cycle_btn'):
-        #     ui.sidebar.next_cycle_btn.clicked.connect(self._on_next_cycle)
-        #     logger.debug("✓ next_cycle_btn connected")
 
         # --- Flow Tab Controls ---
         # Pump operations buttons
@@ -1922,15 +1888,6 @@ class Application(QApplication):
         # NOTE: Detector wait time and pipeline selector are in Advanced Settings dialog
         # Values are applied when dialog is accepted
 
-        # Add to Queue button (TEST MODE - segment queue)
-        if hasattr(ui.sidebar, "add_to_queue_btn"):
-            ui.sidebar.add_to_queue_btn.clicked.connect(self._on_add_to_queue)
-            logger.debug(
-                "✓ add_to_queue_btn connected (TEST MODE)",
-            )
-        else:
-            logger.warning("[WARN] add_to_queue_btn NOT found in UI")
-
         # Build Method button - opens popup dialog
         if hasattr(ui.sidebar, "build_method_btn"):
             ui.sidebar.build_method_btn.clicked.connect(self._on_build_method)
@@ -2088,11 +2045,8 @@ class Application(QApplication):
         calibration, recording, and kinetic managers.
         """
         # === CALIBRATION SERVICE ===
-        # NOTE: Already connected in _connect_signals() at line 598 to _on_calibration_complete_status_update
+        # NOTE: Already connected in _connect_hardware_and_manager_signals()
         # (merged with _on_calibration_complete to avoid duplicate QC dialogs)
-        logger.info(
-            "[OK] CalibrationService signals already connected in _connect_signals()",
-        )
 
         # === PUMP MANAGER STATUS SIGNALS ===
         if self.pump_mgr:
@@ -2198,7 +2152,7 @@ class Application(QApplication):
         and restores the intelligence refresh timer.  Unlike
         ``_on_cycle_completed`` this does **not** auto-start the next
         queued cycle, so the run truly stops.
-        
+
         Also saves the partial cycle data to the Edits table automatically.
         """
         # Stop both timers (display-update + end-of-cycle)
@@ -2207,9 +2161,39 @@ class Application(QApplication):
         if hasattr(self, '_cycle_end_timer') and self._cycle_end_timer.isActive():
             self._cycle_end_timer.stop()
 
+        # Hide the progress bar (without affecting injection buttons)
+        try:
+            from affilabs.widgets.datawindow import DataWindow
+            for widget in self.main_window.findChildren(DataWindow):
+                if hasattr(widget, 'ui') and hasattr(widget.ui, 'progress_bar'):
+                    widget.ui.progress_bar.hide()
+                    widget.ui.progress_bar.setValue(0)
+                    logger.debug("✓ Progress bar hidden (cycle aborted)")
+                    break
+        except Exception as e:
+            logger.warning(f"⚠️ Could not hide progress bar: {e}")
+
         # Resume the 5 s intelligence refresh timer
         if hasattr(self.main_window, 'intelligence_refresh_timer'):
             self.main_window.intelligence_refresh_timer.start(5000)
+
+        # Clear Active Cycle graph intelligence footer
+        try:
+            if hasattr(self.main_window, 'cycle_of_interest_graph') and hasattr(self.main_window.cycle_of_interest_graph, 'intelligence_footer'):
+                footer = self.main_window.cycle_of_interest_graph.intelligence_footer
+                footer.update_cycle_info(None)  # Clear cycle data (shows "No cycle loaded")
+
+                # Reset status indicators to idle
+                status_data = {
+                    'build': '✅ Built',
+                    'detection': '⚪ Idle',
+                    'flags': 0,
+                    'injection': '⚪ Ready',
+                }
+                footer.update_status(status_data)
+
+        except Exception as e:
+            logger.debug(f"⚠️ Could not clear intelligence footer: {e}")
 
         # Save incomplete cycle data before clearing
         had_cycle = self._current_cycle is not None
@@ -2222,40 +2206,36 @@ class Application(QApplication):
                     end_sensorgram_time = self.clock.convert(
                         timeline.stop_cursor.value(), TimeBase.DISPLAY, TimeBase.RAW_ELAPSED
                     )
-            
+
             # Set end time on cycle (even if incomplete)
             if end_sensorgram_time is not None:
                 self._current_cycle.end_time_sensorgram = end_sensorgram_time
                 logger.info(f"💾 Saving incomplete cycle (stopped at {end_sensorgram_time:.2f}s)")
-            
+
             # Export and save to table and recording
             try:
                 cycle_export_data = self._current_cycle.to_export_dict(clock=self.clock)
-                
+
                 # Save to Edits table
                 if hasattr(self.main_window, 'edits_tab'):
                     self.main_window.edits_tab.add_cycle(cycle_export_data)
                     logger.info(f"✓ Incomplete {cycle_export_data.get('type', 'cycle')} saved to Edits table")
-                
+
                 # Save to recording if active
                 if hasattr(self, 'recording_mgr') and self.recording_mgr.is_recording:
                     self.recording_mgr.add_cycle(cycle_export_data)
                     logger.info(f"✓ Incomplete cycle added to recording")
-                
+
                 # Mark as completed in queue presenter
                 if hasattr(self, 'queue_presenter'):
                     self.queue_presenter.mark_cycle_completed(self._current_cycle)
-                    
+
             except Exception as e:
                 logger.error(f"Failed to save incomplete cycle: {e}")
 
         # Clear cycle state
         self._current_cycle = None
         self._cycle_end_time = None
-
-        # Hide "Now Running" banner
-        if had_cycle:
-            self._update_now_running_banner("", 0.0, show=False)
 
         # Unlock queue so user can edit it again
         try:
@@ -2273,8 +2253,8 @@ class Application(QApplication):
             self._next_cycle_warning_line = None
 
         # Clear running cycle highlight from queue table
-        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'summary_table'):
-            self.main_window.sidebar.summary_table.set_running_cycle(None)
+        if tbl := self._sidebar_widget('summary_table'):
+            tbl.set_running_cycle(None)
             logger.debug("✓ Queue table highlight cleared (Cancel)")
 
         # Change Stop Run button back to Start Run
@@ -2289,8 +2269,27 @@ class Application(QApplication):
     def _set_start_button_to_stop_mode(self):
         """Change Start Run button to Stop Run mode (red, cancels execution)."""
         if btn := self._sidebar_widget('start_queue_btn'):
-            btn.setText("⏹ Stop Run")
+            btn.setText("Stop Run")
             btn.setToolTip("Stop the running cycle queue")
+
+            # Set stop icon (SVG)
+            try:
+                from PySide6.QtGui import QIcon, QPixmap, QPainter
+                from PySide6.QtSvg import QSvgRenderer
+                svg = '''<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="6" y="6" width="12" height="12" fill="white" rx="2"/>
+                </svg>'''
+                svg_renderer = QSvgRenderer(svg.encode('utf-8'))
+                pixmap = QPixmap(18, 18)
+                pixmap.fill(Qt.GlobalColor.transparent)
+                painter = QPainter(pixmap)
+                svg_renderer.render(painter)
+                painter.end()
+                btn.setIcon(QIcon(pixmap))
+                btn.setIconSize(QSize(16, 16))
+            except Exception as e:
+                logger.warning(f"Failed to set stop icon: {e}")
+
             btn.setStyleSheet(
                 "QPushButton {"
                 "  background: #FF3B30;"
@@ -2312,8 +2311,27 @@ class Application(QApplication):
     def _set_start_button_to_start_mode(self):
         """Change Stop Run button back to Start Run mode (green, starts execution)."""
         if btn := self._sidebar_widget('start_queue_btn'):
-            btn.setText("▶ Start Run")
+            btn.setText("Start Run")
             btn.setToolTip("Start executing the queued cycles")
+
+            # Set play icon (SVG)
+            try:
+                from PySide6.QtGui import QIcon, QPixmap, QPainter
+                from PySide6.QtSvg import QSvgRenderer
+                svg = '''<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M8 5v14l11-7z" fill="white"/>
+                </svg>'''
+                svg_renderer = QSvgRenderer(svg.encode('utf-8'))
+                pixmap = QPixmap(18, 18)
+                pixmap.fill(Qt.GlobalColor.transparent)
+                painter = QPainter(pixmap)
+                svg_renderer.render(painter)
+                painter.end()
+                btn.setIcon(QIcon(pixmap))
+                btn.setIconSize(QSize(16, 16))
+            except Exception as e:
+                logger.warning(f"Failed to set play icon: {e}")
+
             btn.setStyleSheet(
                 "QPushButton {"
                 "  background: #34C759;"
@@ -2339,6 +2357,9 @@ class Application(QApplication):
         import time
 
         logger.info("▶ Start Cycle button clicked")
+
+        # Clear any legacy cycle markers from previous runs
+        self._clear_all_cycle_markers()
 
         # If no cycles in queue, start auto-read mode
         if self.queue_presenter.get_queue_size() == 0:
@@ -2411,12 +2432,9 @@ class Application(QApplication):
         logger.debug(f"   cycle_num={cycle_num}, total={total_cycles}, duration={duration_min}min")
 
         # Highlight the running cycle in the queue table
-        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'summary_table'):
-            self.main_window.sidebar.summary_table.set_running_cycle(cycle.cycle_id)
+        if tbl := self._sidebar_widget('summary_table'):
+            tbl.set_running_cycle(cycle.cycle_id)
             logger.debug(f"✓ Queue table highlighting cycle #{cycle_num} (ID: {cycle.cycle_id})")
-
-        # Show "Now Running" banner in sidebar
-        self._update_now_running_banner(cycle_type, duration_min, show=True)
 
         # Update status bar operation status
         if hasattr(self.main_window, 'update_status_operation'):
@@ -2440,6 +2458,21 @@ class Application(QApplication):
             logger.debug(f"   _cycle_timer isActive: {self._cycle_timer.isActive()}, interval: {self._cycle_timer.interval()}ms")
         else:
             logger.error("❌ _cycle_timer does not exist - cycle display will not update!")
+
+        # Start the progress bar to track cycle progress during live data acquisition
+        # Directly show and configure progress bar without affecting injection buttons
+        try:
+            from affilabs.widgets.datawindow import DataWindow
+            for widget in self.main_window.findChildren(DataWindow):
+                if hasattr(widget, 'ui') and hasattr(widget.ui, 'progress_bar'):
+                    # Set maximum to duration in milliseconds (matches increment of 100 every 100ms)
+                    widget.ui.progress_bar.setMaximum(duration_ms)
+                    widget.ui.progress_bar.setValue(0)
+                    widget.ui.progress_bar.show()
+                    logger.info(f"✓ Progress bar started for {cycle_type} ({duration_min} min)")
+                    break
+        except Exception as e:
+            logger.warning(f"⚠️ Could not start progress bar: {e}")
 
         # === PUMP ORCHESTRATION FOR THIS CYCLE ===
         has_pump = self.pump_mgr.is_available if hasattr(self, 'pump_mgr') else False
@@ -2515,8 +2548,8 @@ class Application(QApplication):
         except Exception as e:
             logger.debug(f"Could not reset cursors: {e}")
 
-        # Add blue vertical marker to Full Sensorgram timeline
-        self._add_cycle_marker()
+        # Cycle marker disabled per user request - no visual markers on live sensorgram
+        # self._add_cycle_marker()
 
     def _stop_pump_for_cycle_transition(self):
         """Stop any running pump operation for cycle transition (runs in background)."""
@@ -2651,15 +2684,6 @@ class Application(QApplication):
         if not success:
             logger.warning("Injection was cancelled at schedule stage")
 
-        # Log event to sensorgram
-        if hasattr(self, "recording_mgr"):
-            mode = "Manual" if is_manual_mode else "Auto"
-            method = cycle.injection_method or "unknown"
-            event_name = f"{mode} Injection ({method})"
-            if cycle.contact_time:
-                event_name += f" - {cycle.contact_time}s contact"
-            self.recording_mgr.log_event(event_name)
-
     def _trigger_simple_injection(self, assay_rate: float):
         """Trigger simple injection (reuse existing code).
 
@@ -2739,9 +2763,13 @@ class Application(QApplication):
         if remaining_sec <= 10 and remaining_sec > 0 and self.segment_queue:
             next_cycle = self.segment_queue[0]
             next_type = next_cycle.type
-            # Shorten "Concentration" to "Conc."
+            # Shorten long cycle type names for display
             if next_type == "Concentration":
-                next_type = "Conc."
+                next_type = "Binding"  # Legacy alias
+            elif next_type == "Binding":
+                next_type = "Bind."
+            elif next_type == "Kinetic":
+                next_type = "Kin."
 
             # Add concentration if available - use proper field
             if next_cycle.concentrations and 'ALL' in next_cycle.concentrations:
@@ -2751,6 +2779,20 @@ class Application(QApplication):
 
             next_cycle_warning = f"→ Next: {next_type} in {int(remaining_sec)}s"
 
+        # Update progress bar with actual elapsed time (synchronized with display)
+        # Convert elapsed_sec to the same scale as the maximum set in start_progress_bar()
+        try:
+            from affilabs.widgets.datawindow import DataWindow
+            for widget in self.main_window.findChildren(DataWindow):
+                if hasattr(widget, 'ui') and hasattr(widget.ui, 'progress_bar'):
+                    # Calculate progress value based on actual elapsed time
+                    # progress_bar maximum was set to duration_ms, so scale accordingly
+                    progress_value = int((elapsed_sec / total_sec) * widget.ui.progress_bar.maximum())
+                    widget.ui.progress_bar.setValue(progress_value)
+                    break
+        except Exception as e:
+            logger.debug(f"⚠️ Could not update progress bar value: {e}")
+
         # Update unified cycle bar with RUNNING state
         # Update sidebar intelligence bar
         message_text = f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) — {time_format}"
@@ -2758,6 +2800,51 @@ class Application(QApplication):
             message_text += f" {next_cycle_warning}"
         color = Colors.WARNING if next_cycle_warning else Colors.INFO
         self.main_window.set_intel_message(message_text, color)
+
+        # Update Active Cycle graph intelligence footer with cycle details
+        try:
+            if hasattr(self.main_window, 'cycle_of_interest_graph') and hasattr(self.main_window.cycle_of_interest_graph, 'intelligence_footer'):
+                footer = self.main_window.cycle_of_interest_graph.intelligence_footer
+
+                # Prepare cycle data for footer display
+                cycle_data = {
+                    'name': f"Cycle {cycle_num}/{total_cycles}",
+                    'type': cycle_type,
+                    'duration_minutes': total_sec / 60.0,
+                }
+
+                # Add cycle notes if available
+                if hasattr(self._current_cycle, 'note') and self._current_cycle.note:
+                    cycle_data['note'] = self._current_cycle.note
+
+                # Add concentration if available
+                if hasattr(self._current_cycle, 'concentrations') and self._current_cycle.concentrations:
+                    if 'ALL' in self._current_cycle.concentrations:
+                        cycle_data['concentration'] = self._current_cycle.concentrations['ALL']
+                        cycle_data['units'] = getattr(self._current_cycle, 'units', 'nM')
+
+                # Add channels if available
+                if hasattr(self._current_cycle, 'target_channels') and self._current_cycle.target_channels:
+                    cycle_data['channels'] = self._current_cycle.target_channels
+
+                footer.update_cycle_info(cycle_data)
+
+                # Update status indicators with live status
+                detection_status = '🟡 Acquiring' if elapsed_sec > 2 else '🟢 Starting'
+                if remaining_sec <= 10 and remaining_sec > 0:
+                    detection_status = '🟠 Completing'
+
+                flag_count = len(self.flag_mgr.get_live_flags()) if hasattr(self, 'flag_mgr') and self.flag_mgr else 0
+                status_data = {
+                    'build': '✅ Built',
+                    'detection': detection_status,
+                    'flags': flag_count,
+                    'injection': '✅ Ready',
+                }
+                footer.update_status(status_data)
+
+        except Exception as e:
+            logger.debug(f"⚠️ Could not update intelligence footer: {e}")
 
         # Show/hide warning line on active cycle graph when <10s to next cycle
         self._update_next_cycle_warning_visual(remaining_sec, total_sec)
@@ -2773,22 +2860,6 @@ class Application(QApplication):
                     logger.error("❌ main_window does NOT have cycle_of_interest_graph attribute!")
         except Exception as e:
             logger.error(f"❌ Error updating cycle overlay: {e}", exc_info=True)
-
-        # Running banner removed - info now static in method builder tab
-
-    def _update_now_running_banner(self, cycle_type: str, duration_min: float, show: bool):
-        """Show or hide the "Now Running" banner in the sidebar.
-        
-        DEPRECATED: Banner removed - running status shown in intelligence bar instead.
-        Completed cycles info is now static in method builder tab.
-
-        Args:
-            cycle_type: Type of cycle running (e.g. "Baseline", "Wash")
-            duration_min: Duration of cycle in minutes
-            show: True to show the banner, False to hide it
-        """
-        # Method kept for compatibility but does nothing
-        pass
 
     def _update_next_cycle_warning_visual(self, remaining_sec: float, total_sec: float):
         """Show/hide orange warning line on active cycle graph when <10s to next cycle.
@@ -2873,9 +2944,39 @@ class Application(QApplication):
         self._cycle_timer.stop()
         self._cycle_end_timer.stop()
 
+        # Hide the progress bar (without affecting injection buttons)
+        try:
+            from affilabs.widgets.datawindow import DataWindow
+            for widget in self.main_window.findChildren(DataWindow):
+                if hasattr(widget, 'ui') and hasattr(widget.ui, 'progress_bar'):
+                    widget.ui.progress_bar.hide()
+                    widget.ui.progress_bar.setValue(0)
+                    logger.debug("✓ Progress bar hidden")
+                    break
+        except Exception as e:
+            logger.warning(f"⚠️ Could not hide progress bar: {e}")
+
         # Resume the 5s intelligence refresh timer
         if hasattr(self.main_window, 'intelligence_refresh_timer'):
             self.main_window.intelligence_refresh_timer.start(5000)
+
+        # Clear Active Cycle graph intelligence footer
+        try:
+            if hasattr(self.main_window, 'cycle_of_interest_graph') and hasattr(self.main_window.cycle_of_interest_graph, 'intelligence_footer'):
+                footer = self.main_window.cycle_of_interest_graph.intelligence_footer
+                footer.update_cycle_info(None)  # Clear cycle data (shows "No cycle loaded")
+
+                # Reset status indicators to idle
+                status_data = {
+                    'build': '✅ Built',
+                    'detection': '⚪ Idle',
+                    'flags': 0,
+                    'injection': '⚪ Ready',
+                }
+                footer.update_status(status_data)
+
+        except Exception as e:
+            logger.debug(f"⚠️ Could not clear intelligence footer: {e}")
 
         # Clear all flags for clean start of next cycle
         self.flag_mgr.clear_flags_for_new_cycle()
@@ -2931,12 +3032,9 @@ class Application(QApplication):
         self._cycle_end_time = None
 
         # Clear running cycle highlight from queue table
-        if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'summary_table'):
-            self.main_window.sidebar.summary_table.set_running_cycle(None)
+        if tbl := self._sidebar_widget('summary_table'):
+            tbl.set_running_cycle(None)
             logger.debug("✓ Queue table highlight cleared")
-
-        # Hide "Now Running" banner
-        self._update_now_running_banner("", 0.0, show=False)
 
         # Update status bar operation status
         if hasattr(self.main_window, 'update_status_operation'):
@@ -3043,14 +3141,13 @@ class Application(QApplication):
             wash_time = injection_time + self._current_cycle.contact_time
             contact_duration = self._current_cycle.contact_time
 
-            # (Marker display disabled - skipping visual marker creation)
             # Use FlagManager to create wash deadline marker on graph
-            # self.flag_mgr.create_auto_marker(
-            #     marker_type='wash_deadline',
-            #     time=wash_time,
-            #     label='⏱ Wash Due',
-            #     color='#FF9500'
-            # )
+            self.flag_mgr.create_auto_marker(
+                marker_type='wash_deadline',
+                time=wash_time,
+                label='⏱ Wash Due',
+                color='#FF9500'
+            )
 
             # Transition unified bar to CONTACT state
             self._start_contact_countdown(contact_duration)
@@ -3066,13 +3163,6 @@ class Application(QApplication):
 
         except Exception as e:
             logger.debug(f"Could not show contact time marker: {e}")
-
-    def _auto_start_contact_popout_timer(self, contact_duration: float):
-        """DEPRECATED: Use _start_contact_countdown() instead.
-
-        Kept for backward compatibility. Redirects to the new method.
-        """
-        self._start_contact_countdown(contact_duration)
 
     def _start_contact_countdown(self, contact_duration: float):
         """Start contact time countdown in unified bar + timer infrastructure.
@@ -3092,13 +3182,14 @@ class Application(QApplication):
             planned = getattr(cycle, 'planned_concentrations', [])
             total_injections = len(planned) if planned else 0
 
-            # Build label: e.g. "Contact Time — 50 nM (2/5)" or "Contact Time"
+            # Build label: e.g. "Contact Time — 50 nM • Inj. 2/5" or "Contact Time"
             label_parts = ["Contact Time"]
             if planned and injection_num > 0 and injection_num <= len(planned):
                 conc = planned[injection_num - 1]
                 label_parts.append(f"— {conc}")
             if total_injections > 0:
-                label_parts.append(f"({injection_num}/{total_injections})")
+                # Use "Inj." prefix to clarify these are injection numbers, NOT cycle numbers
+                label_parts.append(f"• Inj. {injection_num}/{total_injections}")
             label = " ".join(label_parts)
 
             total_seconds = int(contact_duration)
@@ -3111,7 +3202,11 @@ class Application(QApplication):
             mw._manual_timer_next_action = "🧪 WASH NOW"
 
             # ── 3. Start the internal countdown (creates QTimer, handles tick/alarm) ──
-            mw._start_manual_timer_countdown(label, total_seconds, sound_enabled=False)
+            # Enable sound for contact timer - critical experimental milestone
+            mw._start_manual_timer_countdown(label, total_seconds, sound_enabled=True)
+
+            # ── 3.5. Create timer overlay on the cycle graph ──
+            self.flag_manager.create_contact_timer_overlay(contact_duration)
 
             # Save last settings so manual re-open uses same values
             mw._last_timer_minutes = total_seconds // 60
@@ -3244,6 +3339,34 @@ class Application(QApplication):
             self._injection_completion_time = None
         except Exception as e:
             logger.debug(f"Could not clear contact time marker: {e}")
+
+    def _clear_all_cycle_markers(self):
+        """Remove all cycle markers from Full Sensorgram timeline.
+
+        Called on acquisition start to remove any legacy markers from previous runs.
+        """
+        try:
+            if not hasattr(self.main_window, 'full_timeline_graph'):
+                return
+
+            timeline = self.main_window.full_timeline_graph
+
+            # Remove all markers from graph
+            for cycle_id, marker_data in self._cycle_markers.items():
+                try:
+                    if 'line' in marker_data:
+                        timeline.removeItem(marker_data['line'])
+                    if 'label' in marker_data:
+                        timeline.removeItem(marker_data['label'])
+                except Exception as e:
+                    logger.debug(f"Could not remove cycle marker {cycle_id}: {e}")
+
+            # Clear the dictionary
+            self._cycle_markers.clear()
+            logger.debug("✓ Cleared all cycle markers from timeline")
+
+        except Exception as e:
+            logger.debug(f"Could not clear cycle markers: {e}")
 
     def _calculate_cycle_analysis(self, cycle):
         """Calculate delta SPR and detect flags for a completed cycle.
@@ -3468,8 +3591,8 @@ class Application(QApplication):
             logger.debug("🔓 Queue unlocked after early cycle completion")
 
             # Clear running cycle highlight from queue table
-            if hasattr(self.main_window, 'sidebar') and hasattr(self.main_window.sidebar, 'summary_table'):
-                self.main_window.sidebar.summary_table.set_running_cycle(None)
+            if tbl := self._sidebar_widget('summary_table'):
+                tbl.set_running_cycle(None)
                 logger.debug("✓ Queue table highlight cleared (Next Cycle)")
 
             # Get completed cycles from presenter (includes this one)
@@ -3672,14 +3795,47 @@ class Application(QApplication):
         # Reuse existing dialog or create new one
         if not hasattr(self, '_method_builder_dialog') or not self._method_builder_dialog:
             self._method_builder_dialog = MethodBuilderDialog(
-                self.main_window, 
+                self.main_window,
                 user_manager=self.user_profile_manager
             )
             self._method_builder_dialog.method_ready.connect(self._on_method_ready)
 
+        # Auto-configure mode selector from detected hardware every time
+        # dialog is shown (hardware may reconnect between opens).
+        # User can still override the auto-selected mode.
+        hw_name = self._detect_hw_name()
+        has_pump = hasattr(self, 'pump_mgr') and self.pump_mgr and self.pump_mgr.is_available
+        self._method_builder_dialog.configure_for_hardware(hw_name, has_affipump=has_pump)
+
         self._method_builder_dialog.show()  # Non-modal - stays open
         self._method_builder_dialog.raise_()  # Bring to front
         self._method_builder_dialog.activateWindow()
+
+    def _detect_hw_name(self) -> str:
+        """Return hardware identifier string from connected controller.
+
+        Checks hardware_mgr._ctrl_type and firmware_id to distinguish
+        P4SPR / P4PRO / P4PROPLUS.
+
+        Returns:
+            One of 'P4SPR', 'P4PRO', 'P4PROPLUS', or 'P4SPR' as fallback.
+        """
+        try:
+            if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
+                ctrl_type = getattr(self.hardware_mgr, '_ctrl_type', None)
+                if ctrl_type == "PicoP4SPR":
+                    return "P4SPR"
+                elif ctrl_type == "PicoP4PRO":
+                    # Distinguish PRO from PRO+ by firmware_id
+                    raw = getattr(self.hardware_mgr, '_ctrl_raw', None)
+                    if raw and hasattr(raw, 'firmware_id'):
+                        fwid = raw.firmware_id.lower()
+                        if 'p4proplus' in fwid or 'pro+' in fwid:
+                            return "P4PROPLUS"
+                    return "P4PRO"
+        except Exception:
+            pass
+        return "P4SPR"  # Safe fallback
 
     def _on_method_ready(self, action: str, method_name: str, cycles: list):
         """Handle method push from Method Builder dialog.
@@ -3693,6 +3849,9 @@ class Application(QApplication):
             return
 
         logger.info(f"🔵 Method ready: '{method_name}' with {len(cycles)} cycles")
+
+        # Clear any legacy cycle markers from previous runs
+        self._clear_all_cycle_markers()
 
         # Add all cycles to queue
         for cycle in cycles:
@@ -3709,98 +3868,6 @@ class Application(QApplication):
         # Force refresh the summary table
         if tbl := self._sidebar_widget('summary_table'):
             tbl.refresh()
-
-    def _on_add_to_queue(self):
-        """Add current cycle configuration to segment queue (TEST MODE).
-
-        This is a minimal test implementation to validate the architecture.
-        Creates a segment definition dict without executing it.
-
-        NOTE: Adding cycles is now allowed even when queue is locked (running).
-        This enables users to append additional cycles to an active method.
-        """
-        import re
-        import time
-
-        # REMOVED: Queue lock check - users can now add cycles during execution
-        # The queue manager allows appending to the back while preventing
-        # deletion/reordering of cycles already started
-
-        logger.info("🔵 TEST MODE: Adding cycle to segment queue")
-        logger.debug(f"   Current queue size: {self.queue_presenter.get_queue_size()} cycles")
-
-        try:
-            # Read form values
-            cycle_type = self.main_window.sidebar.cycle_type_combo.currentText()
-            length_text = self.main_window.sidebar.cycle_length_combo.currentText()
-
-            # Parse duration - handle both "30 sec" and "5 min" formats
-            if not length_text or not length_text.strip():
-                raise ValueError("Cycle length cannot be empty")
-
-            parts = length_text.split()
-            if len(parts) == 0:
-                raise ValueError("Invalid cycle length format")
-
-            duration_value = int(parts[0])
-            duration_unit = parts[1] if len(parts) > 1 else "min"
-
-            # Convert to minutes
-            if duration_unit == "sec":
-                length_minutes = duration_value / 60.0  # Convert seconds to minutes
-            else:
-                length_minutes = duration_value  # Already in minutes
-
-            note = self.main_window.sidebar.note_input.toPlainText()
-            units = self.main_window.sidebar.units_combo.currentText().split()[
-                0
-            ]  # Extract unit from "nM (Nanomolar)"
-
-            # Parse concentration tags from note
-            tags = re.findall(r"\[([A-D]|ALL):(\d+\.?\d*)\]", note)
-            concentrations_dict = {ch: float(val) for ch, val in tags} if tags else {}
-
-            # Create cycle using domain model (ID assigned by presenter)
-            cycle = Cycle(
-                type=cycle_type,
-                length_minutes=length_minutes,
-                note=note,
-                status="pending",
-                units=units,
-                concentrations=concentrations_dict,
-                timestamp=time.time(),
-            )
-
-            if concentrations_dict:
-                logger.debug(
-                    f"Parsed concentrations: {concentrations_dict} {units}",
-                )
-
-            # Add to queue via presenter (handles ID, numbering, undo/redo)
-            success = self.queue_presenter.add_cycle(cycle)
-
-            if not success:
-                raise RuntimeError("Failed to add cycle to queue (queue may be locked)")
-
-            # Sync backward compatibility list
-            self.segment_queue = self.queue_presenter.get_queue_snapshot()
-
-            logger.info(f"✓ Added cycle {self.queue_presenter.get_queue_size()}: {cycle_type}, {length_minutes}min")
-            logger.debug(f"   Queue now has {self.queue_presenter.get_queue_size()} cycles")
-
-            if len(cycle.note) > 100:
-                logger.debug(f"   Note: {cycle.note[:100]}...")
-            else:
-                logger.debug(f"   Note: {cycle.note}")
-
-            # Note: Summary table auto-refreshes via presenter.queue_changed signal
-
-            # Auto-save queue for crash recovery
-            self._save_queue_backup()
-
-        except Exception as e:
-            logger.exception(f"[ERROR] Failed to add cycle to queue: {e}")
-            self.main_window.set_intel_message(f"✗ Failed to add: {e}", Colors.ERROR)
 
     # Template methods removed - Presets now handle both single cycles and full sequences
     # def _on_save_template(self): ...
@@ -3970,7 +4037,7 @@ class Application(QApplication):
             else:
                 # Pause queue
                 self.queue_presenter.pause_queue()
-                btn.setText("▶ Resume Queue")
+                btn.setText("Resume Queue")
                 btn.setToolTip("Resume queue execution")
                 logger.info("⏸ Queue paused (will stop after current cycle)")
 
@@ -4001,8 +4068,13 @@ class Application(QApplication):
         Returns:
             Abbreviated cycle type for display
         """
+        if cycle_type.lower() in ('binding', 'bind', 'bind.'):
+            return 'Bind.'
+        if cycle_type.lower() in ('kinetic', 'kin', 'kin.'):
+            return 'Kin.'
+        # Legacy: keep backward compat for old saved queues
         if cycle_type.lower() in ('concentration', 'conc', 'conc.'):
-            return 'Conc.'
+            return 'Bind.'
         # Add more abbreviations as needed
         return cycle_type
 
@@ -4239,10 +4311,6 @@ class Application(QApplication):
             logger.info(f"  [{i}] {cycle.name} ({cycle.type}, {cycle.length_minutes} min)")
 
         logger.info(f"✓ Queue updated - {len(self.segment_queue)} cycles remaining")
-
-    def _on_scan_requested(self):
-        """User clicked Scan button in UI."""
-        self.hardware_events.on_scan_requested()
 
     def _on_hardware_connected(self, status: dict):
         """Hardware connection completed and update Device Status UI."""
@@ -4846,14 +4914,9 @@ class Application(QApplication):
 
         # Export initial metadata
         if self.recording_mgr.is_recording:
-            # Add user profile information (prefer profile manager over combo)
+            # Add user profile information
             try:
-                current_user = None
-                if hasattr(self, 'user_profile_manager') and self.user_profile_manager:
-                    current_user = self.user_profile_manager.get_current_user()
-                if not current_user:
-                    if combo := self._sidebar_widget('user_combo'):
-                        current_user = combo.currentText()
+                current_user = self._get_current_user()
                 if current_user:
                     self.recording_mgr.update_metadata('User', current_user)
                     self.recording_mgr.update_metadata('operator', current_user)
@@ -4990,6 +5053,12 @@ class Application(QApplication):
     def _on_acquisition_started(self):
         """Live data acquisition has started - enable record and pause buttons."""
         self.acquisition_events.on_acquisition_started()
+
+        # Show Spark sidebar automatically when live data starts
+        if hasattr(self.main_window, "spark_sidebar"):
+            if not self.main_window.spark_sidebar.isVisible():
+                if hasattr(self.main_window, "spark_toggle_btn"):
+                    self.main_window.spark_toggle_btn.setChecked(True)
 
         # Update spectroscopy status to "Running"
         if (
@@ -5163,7 +5232,7 @@ class Application(QApplication):
         # Always reset buffer button text when any pump operation completes
         # (buffer may have been stopped by cycle transition or injection)
         if btn := self._sidebar_widget('start_buffer_btn'):
-            btn.setText("▶ Start Buffer")
+            btn.setText("Start Buffer")
 
     def _on_pump_status_updated(self, status: str, flow_rate: float, plunger_pos: float, contact_time_current: float, contact_time_expected: float):
         """Handle real-time pump status update - update all status board values."""
@@ -5460,7 +5529,7 @@ class Application(QApplication):
 
             # Update button text back to Start
             if btn := self._sidebar_widget('start_buffer_btn'):
-                btn.setText("▶ Start Buffer")
+                btn.setText("Start Buffer")
 
             # Update status immediately to show stopping state
             ui = self.main_window.sidebar
@@ -5735,7 +5804,7 @@ class Application(QApplication):
 
                 # Update UI immediately to prevent lag
                 btn = self.main_window.sidebar.pump1_toggle_btn
-                btn.setText("■ Stop")
+                btn.setText("Stop")
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
                 self._update_internal_pump_status(f"Pump 1: {rpm_corrected:.0f} RPM", running=True)
@@ -5752,7 +5821,7 @@ class Application(QApplication):
                         btn.blockSignals(True)
                         btn.setChecked(False)
                         btn.blockSignals(False)
-                        btn.setText("▶ Start")
+                        btn.setText("Start")
                         btn.style().unpolish(btn)
                         btn.style().polish(btn)
                         self._update_internal_pump_status("Idle", running=False)
@@ -5775,7 +5844,7 @@ class Application(QApplication):
 
                 # Update UI immediately to prevent lag
                 btn = self.main_window.sidebar.pump1_toggle_btn
-                btn.setText("▶ Start")
+                btn.setText("Start")
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
                 self._update_internal_pump_status("Idle", running=False)
@@ -5849,7 +5918,7 @@ class Application(QApplication):
 
                 # Update UI immediately to prevent lag
                 btn = self.main_window.sidebar.synced_toggle_btn
-                btn.setText("■ Stop")
+                btn.setText("Stop")
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
                 self._update_internal_pump_status(f"Both Pumps: P1={rpm_p1:.0f} P2={rpm_p2:.0f} µL/min", running=True)
@@ -5871,7 +5940,7 @@ class Application(QApplication):
                     btn.blockSignals(True)
                     btn.setChecked(False)
                     btn.blockSignals(False)
-                    btn.setText("▶ Start")
+                    btn.setText("Start")
                     btn.style().unpolish(btn)
                     btn.style().polish(btn)
                     self._update_internal_pump_status("Idle", running=False)
@@ -5890,7 +5959,7 @@ class Application(QApplication):
 
                 # Update UI immediately to prevent lag
                 btn = self.main_window.sidebar.synced_toggle_btn
-                btn.setText("▶ Start")
+                btn.setText("Start")
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
                 self._update_internal_pump_status("Idle", running=False)
@@ -5978,7 +6047,7 @@ class Application(QApplication):
 
                         # Update button back to ready state
                         if btn := self._sidebar_widget('internal_pump_inject_30s_btn'):
-                            btn.setText("💉 Inject")
+                            btn.setText("Inject")
                             btn.setProperty("injection_state", "ready")
                             btn.setToolTip("✅ Ready to inject")
                             btn.style().unpolish(btn)
@@ -6083,7 +6152,7 @@ class Application(QApplication):
                 if btn := self._sidebar_widget('pump1_toggle_btn'):
                     btn.blockSignals(True)
                     btn.setChecked(True)
-                    btn.setText("■ Stop")
+                    btn.setText("Stop")
                     btn.setEnabled(False)  # Disable during injection
                     btn.style().unpolish(btn)
                     btn.style().polish(btn)
@@ -6092,7 +6161,7 @@ class Application(QApplication):
                 if btn := self._sidebar_widget('pump2_toggle_btn'):
                     btn.blockSignals(True)
                     btn.setChecked(True)
-                    btn.setText("■ Stop")
+                    btn.setText("Stop")
                     btn.setEnabled(False)  # Disable during injection
                     btn.style().unpolish(btn)
                     btn.style().polish(btn)
@@ -6101,7 +6170,7 @@ class Application(QApplication):
                 if btn := self._sidebar_widget('synced_toggle_btn'):
                     btn.blockSignals(True)
                     btn.setChecked(True)
-                    btn.setText("■ Stop")
+                    btn.setText("Stop")
                     btn.setEnabled(False)  # Disable during injection
                     btn.style().unpolish(btn)
                     btn.style().polish(btn)
@@ -6231,7 +6300,7 @@ class Application(QApplication):
             if btn := self._sidebar_widget('internal_pump_inject_30s_btn'):
                 btn.setEnabled(True)
                 btn.setProperty("injection_state", "ready")
-                btn.setText("💉 Inject")
+                btn.setText("Inject")
                 btn.setToolTip("✅ Ready to inject")
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
@@ -6390,7 +6459,7 @@ class Application(QApplication):
         if btn := self._sidebar_widget('pump1_toggle_btn'):
             btn.blockSignals(True)
             btn.setChecked(self._pump1_running)
-            btn.setText("■ Stop" if self._pump1_running else "▶ Start")
+            btn.setText("Stop" if self._pump1_running else "Start")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
             btn.blockSignals(False)
@@ -6399,7 +6468,7 @@ class Application(QApplication):
         if btn := self._sidebar_widget('pump2_toggle_btn'):
             btn.blockSignals(True)
             btn.setChecked(self._pump2_running)
-            btn.setText("■ Stop" if self._pump2_running else "▶ Start")
+            btn.setText("Stop" if self._pump2_running else "Start")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
             btn.blockSignals(False)
@@ -6408,7 +6477,7 @@ class Application(QApplication):
         if btn := self._sidebar_widget('synced_toggle_btn'):
             btn.blockSignals(True)
             btn.setChecked(self._synced_pumps_running)
-            btn.setText("■ Stop" if self._synced_pumps_running else "▶ Start")
+            btn.setText("Stop" if self._synced_pumps_running else "Start")
             btn.style().unpolish(btn)
             btn.style().polish(btn)
             btn.blockSignals(False)
@@ -7048,149 +7117,7 @@ class Application(QApplication):
         except Exception as e:
             logger.error(f"[X] HAL disconnect error: {e}", exc_info=True)
 
-    def register_hal_devices_from_legacy(self):
-        """Register existing legacy hardware with HAL (bridge pattern).
-
-        This allows gradual migration - wraps legacy hardware_mgr devices
-        in HAL adapters and registers them with DeviceManager.
-        """
-        if not HAL_AVAILABLE or not self.device_manager:
-            return
-
-        try:
-            # Register controller if available (already a HAL)
-            if (
-                hasattr(self, "hardware_mgr")
-                and self.hardware_mgr
-                and self.hardware_mgr.ctrl
-            ):
-                # hardware_mgr.ctrl is already a HAL created by create_controller_hal()
-                self.device_manager.register_controller(self.hardware_mgr.ctrl)
-                logger.debug("✓ Controller HAL registered")
-
-            # Wrap legacy spectrometer if available
-            if (
-                hasattr(self, "hardware_mgr")
-                and self.hardware_mgr
-                and self.hardware_mgr.usb
-            ):
-                spec_adapter = spectrometer_adapter.wrap_existing_spectrometer(
-                    self.hardware_mgr.usb,
-                )
-                self.device_manager.register_spectrometer(spec_adapter)
-                logger.debug("✓ Legacy spectrometer registered")
-
-            # Note: Servo is managed separately, could add servo adapter here
-
-        except Exception as e:
-            logger.warning(
-                f"Could not register legacy devices with HAL: {e}",
-            )
-
     # === END PHASE 1.4 HAL METHODS ===
-
-    # === Graphic Control Callbacks ===
-
-    def _on_grid_toggled(self, checked: bool):
-        """Grid checkbox toggled - applies to Active Cycle graph only."""
-        from affilabs.plot_helpers import GRID_ALPHA
-        logger.info(f"Grid toggled: {checked} (Active Cycle graph)")
-        # Only apply to Active Cycle graph (bottom graph), not timeline
-        try:
-            self.main_window.cycle_of_interest_graph.showGrid(x=checked, y=checked, alpha=GRID_ALPHA)
-            logger.info(f"✓ Grid {'shown' if checked else 'hidden'} on Active Cycle graph")
-        except Exception as e:
-            logger.error(f"Failed to toggle grid: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def _on_autoscale_toggled(self, checked: bool):
-        """Autoscale checkbox toggled."""
-        if checked:
-            logger.info(f"Autoscale enabled for {self._selected_axis.upper()}-axis")
-            # Enable autoscale for selected axis
-            if self._selected_axis == "x":
-                self.main_window.cycle_of_interest_graph.enableAutoRange(axis="x")
-            else:
-                self.main_window.cycle_of_interest_graph.enableAutoRange(axis="y")
-        else:
-            logger.info(f"Manual scale enabled for {self._selected_axis.upper()}-axis")
-            # Disable autoscale for selected axis
-            if self._selected_axis == "x":
-                self.main_window.cycle_of_interest_graph.disableAutoRange(axis="x")
-            else:
-                self.main_window.cycle_of_interest_graph.disableAutoRange(axis="y")
-            # Apply current manual range values if any
-            self._on_manual_range_changed()
-
-    def _on_manual_range_changed(self):
-        """Manual range input values changed."""
-        # Check if controls exist (may be hidden)
-        if not hasattr(self.main_window, 'autoscale_check'):
-            return
-
-        # Only apply if autoscale is disabled (manual mode)
-        if self.main_window.autoscale_check.isChecked():
-            return
-
-        try:
-            min_text = self.main_window.min_input.text()
-            max_text = self.main_window.max_input.text()
-
-            # Parse values
-            if not min_text or not max_text:
-                return  # Need both values
-
-            min_val = float(min_text)
-            max_val = float(max_text)
-
-            if min_val >= max_val:
-                logger.warning(f"Invalid range: min ({min_val}) >= max ({max_val})")
-                return
-
-            logger.info(
-                f"Setting {self._selected_axis.upper()}-axis range: [{min_val}, {max_val}]",
-            )
-
-            # Apply range to selected axis
-            if self._selected_axis == "x":
-                self.main_window.cycle_of_interest_graph.setXRange(
-                    min_val,
-                    max_val,
-                    padding=0,
-                )
-            else:
-                self.main_window.cycle_of_interest_graph.setYRange(
-                    min_val,
-                    max_val,
-                    padding=0,
-                )
-
-        except ValueError as e:
-            logger.warning(f"Invalid manual range input: {e}")
-
-    def _on_axis_selected(self, checked: bool):
-        """Axis selector button toggled."""
-        # Check if controls exist (may be hidden)
-        if not hasattr(self.main_window, 'x_axis_btn'):
-            return
-
-        if not checked:  # Button was unchecked
-            return
-
-        # Determine which axis is now selected
-        if self.main_window.x_axis_btn.isChecked():
-            self._selected_axis = "x"
-            logger.info("X-axis selected for scaling controls")
-        else:
-            self._selected_axis = "y"
-            logger.info("Y-axis selected for scaling controls")
-
-        # Re-apply current mode to new axis
-        if self.main_window.autoscale_check.isChecked():
-            self._on_autoscale_toggled(True)
-        else:
-            self._on_manual_range_changed()
 
     def _on_channel_filter_changed(self, channel: str):
         """Channel combo selection changed - filter which channels are displayed."""
@@ -7468,9 +7395,12 @@ class Application(QApplication):
     def _on_graph_clicked(self, event):
         """Handle mouse clicks on cycle_of_interest_graph.
 
+        UNIFIED FLAG SYSTEM: Manual flag placement on the live graph is disabled.
+        Flags during acquisition are placed by software only (injection detection,
+        wash events, etc.). Users can adjust flags in the Edits tab.
+
         Double-Click: Select nearest channel (highlights curve)
-        Ctrl+Click: Show flag type menu to add marker
-        Right-Click: Remove flag marker near cursor
+        Left-Click near flag: Select flag for keyboard movement
         """
         from PySide6.QtCore import Qt
 
@@ -7489,62 +7419,20 @@ class Application(QApplication):
             nearest_channel = self._find_nearest_channel_at_click(time_clicked, spr_clicked)
             if nearest_channel:
                 self._select_flag_channel_visual(nearest_channel)
-                logger.info(f"Selected Channel {nearest_channel.upper()} for flag placement (double-click)")
+                logger.info(f"Selected Channel {nearest_channel.upper()} (double-click)")
             else:
                 logger.warning("Double-click: No channel found near click position")
             return
 
-        # Check if Ctrl key is pressed (add flag)
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            # Check if it's Ctrl+Right-click (remove flag)
-            if event.button() == Qt.MouseButton.RightButton:
-                self.flag_mgr.remove_flag_near_click(time_clicked, spr_clicked)
-                # Accept event to prevent default PyQtGraph context menu from appearing
-                event.accept()
-                return
-
-            # Ctrl+Left-click (add flag)
-            # Use the selected flag channel instead of auto-detecting
-            # Default to 'a' if not yet initialized (defensive)
-            selected_channel = getattr(self, '_selected_flag_channel', 'a')
-
-            # CRITICAL: Get DISPLAY data matching Active Cycle graph coordinates
-            # Active Cycle uses: display_time = raw_time - start_cursor_raw
-            cycle_time_raw = self.buffer_mgr.cycle_data[selected_channel].time
-            cycle_spr_raw = self.buffer_mgr.cycle_data[selected_channel].spr
-
-            if len(cycle_time_raw) == 0 or len(cycle_spr_raw) == 0:
-                logger.warning(f"Not enough data for Channel {selected_channel.upper()}")
-                return
-
-            # Match ui_update_helpers.py: rebase to start cursor position (raw coords)
-            start_cursor_display = self.main_window.full_timeline_graph.start_cursor.value()
-            start_time_raw = self.clock.convert(start_cursor_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
-            cycle_time_display = cycle_time_raw - start_time_raw
-            cycle_spr_display = cycle_spr_raw
-
-            # Find NEAREST DATA POINT in DISPLAY coordinates
-            time_idx = np.argmin(np.abs(cycle_time_display - time_clicked))
-            time_at_point = cycle_time_display[time_idx]  # Display time (rebased)
-            spr_at_time = cycle_spr_display[time_idx]
-
-            # Show flag type selection menu (use display time for alignment)
-            self.flag_mgr.show_flag_type_menu(event, selected_channel, time_at_point, spr_at_time)
-
-            # Accept event to prevent default PyQtGraph context menu from appearing
-            event.accept()
-
-        # Check if right-click WITHOUT Ctrl (just ignore, let default menu show)
-        elif event.button() == Qt.MouseButton.RightButton:
-            # Don't handle plain right-click here to allow PyQtGraph default menu
-            pass
-
-        # Check if left-click near a flag (select for keyboard movement)
-        elif event.button() == Qt.MouseButton.LeftButton:
+        # Left-click near a flag: select for keyboard movement (arrow keys to nudge)
+        if event.button() == Qt.MouseButton.LeftButton:
             self.flag_mgr.try_select_flag_for_movement(time_clicked, spr_clicked)
 
     def _show_flag_type_menu(self, event, channel: str, time_val: float, spr_val: float):
-        """Show dropdown menu to select flag type.
+        """Place injection flag directly (wash flags are automatic).
+
+        Wash flags are now placed automatically when contact time expires.
+        Spike flags are deprecated.
 
         Args:
             event: Mouse event
@@ -7552,33 +7440,9 @@ class Application(QApplication):
             time_val: Time position for flag
             spr_val: SPR value at flag position
         """
-        from PySide6.QtWidgets import QMenu
-        from PySide6.QtGui import QAction, QCursor
-
-        menu = QMenu()
-
-        # Create flag type actions
-        injection_action = QAction("▲ Injection", menu)
-        injection_action.triggered.connect(
-            lambda: self._add_flag_marker(channel, time_val, spr_val, 'injection')
-        )
-
-        wash_action = QAction("■ Wash", menu)
-        wash_action.triggered.connect(
-            lambda: self._add_flag_marker(channel, time_val, spr_val, 'wash')
-        )
-
-        spike_action = QAction("★ Spike", menu)
-        spike_action.triggered.connect(
-            lambda: self._add_flag_marker(channel, time_val, spr_val, 'spike')
-        )
-
-        menu.addAction(injection_action)
-        menu.addAction(wash_action)
-        menu.addAction(spike_action)
-
-        # Show menu at cursor position
-        menu.exec(QCursor.pos())
+        # Directly place injection flag without menu
+        # Wash flags are automatic (placed when contact timer expires)
+        self._add_flag_marker(channel, time_val, spr_val, 'injection')
 
     def _find_nearest_channel_at_click(self, time_clicked: float, spr_clicked: float) -> str | None:
         """Find which channel curve is closest to the click position.
@@ -7715,7 +7579,8 @@ class Application(QApplication):
                 # First injection - set as reference
                 self._injection_reference_time = time_val
                 self._injection_reference_channel = channel
-                self._create_injection_alignment_line(time_val)
+                # Removed: visual alignment line removed per user request
+                # self._create_injection_alignment_line(time_val)
                 logger.info(f"✓ Injection reference set at t={time_val:.2f}s (Channel {channel.upper()})")
             else:
                 # Subsequent injection - ALWAYS align channel data to reference
@@ -8976,21 +8841,9 @@ class Application(QApplication):
         destination = self.main_window.sidebar.export_dest_input.text() or str(default_directory)
 
         # Get current user and create user-specific directory structure
-        # Priority: user_profile_manager > combo box
-        current_user = None
+        current_user = self._get_current_user()
 
-        # Try to get from user_profile_manager first (most reliable)
-        if hasattr(self, 'user_profile_manager') and self.user_profile_manager:
-            current_user = self.user_profile_manager.get_current_user()
-            logger.debug(f"Got current user from profile manager: {current_user}")
-
-        # Fallback to combo box if profile manager not available
-        if not current_user:
-            if combo := self._sidebar_widget('user_combo'):
-                current_user = combo.currentText()
-                logger.debug(f"Got current user from combo box: {current_user}")
-
-        if current_user and current_user != "":
+        if current_user:
             # Only add user path if not already present (prevents duplication)
             if current_user not in destination or "SPR_data" not in destination:
                 # Create: output/Username/SPR_data/
@@ -9174,28 +9027,6 @@ class Application(QApplication):
 
         except Exception as e:
             logger.error(f"[ERROR] Error clearing buffer data: {e}", exc_info=True)
-
-    def _on_clear_flags_requested(self):
-        """Handle clear flags button click - clear all flag data."""
-        logger.info("[UI] Clear flags requested")
-        try:
-            # Delegate to FlagManager
-            self.flag_mgr.clear_all_flags()
-
-
-        except Exception as e:
-            logger.error(f"[ERROR] Error clearing flag data: {e}", exc_info=True)
-
-    def _on_pipeline_changed(self, pipeline_id: str):
-        """Handle peak finding pipeline selection change.
-
-        Args:
-            pipeline_id: Pipeline identifier ('fourier', 'hybrid', 'hybrid_original')
-
-        """
-        self.peripheral_events.on_pipeline_changed(pipeline_id)
-
-    # ==================== End Timeframe Mode Handlers ====================
 
     def _update_device_status_ui(self, status: dict):
         """Update Device Status UI with hardware information.

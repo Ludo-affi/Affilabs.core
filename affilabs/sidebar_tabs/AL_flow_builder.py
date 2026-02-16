@@ -5,7 +5,9 @@ Handles building the Flow Control tab UI with fluidics experiments configuration
 Author: Affilabs
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QByteArray, QSize
+from PySide6.QtGui import QIcon, QPixmap, QPainter
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -162,7 +164,9 @@ class AdvancedFlowRatesDialog(QDialog):
         ops_layout.setSpacing(8)
 
         # Prime Pump button
-        self.prime_btn = QPushButton("🔧 Prime Pump")
+        self.prime_btn = QPushButton("Prime Pump")
+        self.prime_btn.setIcon(_svg_icon(_SVG_WRENCH))
+        self.prime_btn.setIconSize(QSize(14, 14))
         self.prime_btn.setFixedHeight(36)
         self.prime_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.prime_btn.setStyleSheet(
@@ -172,7 +176,9 @@ class AdvancedFlowRatesDialog(QDialog):
         ops_layout.addWidget(self.prime_btn)
 
         # Clean Pump button
-        self.cleanup_btn = QPushButton("🧹 Clean Pump")
+        self.cleanup_btn = QPushButton("Clean Pump")
+        self.cleanup_btn.setIcon(_svg_icon(_SVG_BROOM))
+        self.cleanup_btn.setIconSize(QSize(14, 14))
         self.cleanup_btn.setFixedHeight(36)
         self.cleanup_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.cleanup_btn.setStyleSheet(
@@ -218,6 +224,89 @@ class AdvancedFlowRatesDialog(QDialog):
             f"  background: {pressed};"
             "}"
         )
+
+
+def _svg_icon(svg_str: str, size: int = 16) -> QIcon:
+    """Create a QIcon from an inline SVG string.
+
+    Args:
+        svg_str: SVG markup string
+        size: Icon size in pixels
+
+    Returns:
+        QIcon rendered from the SVG
+    """
+    renderer = QSvgRenderer(QByteArray(svg_str.encode()))
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
+
+
+# ── SVG icon definitions (white, for use on colored buttons) ──
+_SVG_HOME = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M2 8.5L8 3l6 5.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M3.5 9.5V13.5H6.5V10.5H9.5V13.5H12.5V9.5" stroke="white" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>'''
+
+_SVG_STOP = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="6" stroke="white" stroke-width="1.6"/>
+  <rect x="5.5" y="5.5" width="5" height="5" rx="0.8" fill="white"/>
+</svg>'''
+
+_SVG_FLUSH = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M2 8a6 6 0 0 1 10.3-4.2" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M14 8a6 6 0 0 1-10.3 4.2" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M12 2.5L12.3 5.8 9 5.5" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M4 13.5L3.7 10.2 7 10.5" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>'''
+
+_SVG_PLAY = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M5 3.5L12.5 8 5 12.5Z" fill="white"/>
+</svg>'''
+
+_SVG_BASELINE = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <rect x="2" y="9" width="3" height="5" rx="0.6" fill="white"/>
+  <rect x="6.5" y="5" width="3" height="9" rx="0.6" fill="white"/>
+  <rect x="11" y="2" width="3" height="12" rx="0.6" fill="white"/>
+</svg>'''
+
+_SVG_SYRINGE = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M10.5 1.5L14.5 5.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M9 3L13 7L6.5 13.5L2 14L2.5 9.5Z" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M5 8.5L7.5 11" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M4 10.5L5.5 12" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+</svg>'''
+
+_SVG_GEAR = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <circle cx="8" cy="8" r="2.2" stroke="#1D1D1F" stroke-width="1.4"/>
+  <path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9" stroke="#1D1D1F" stroke-width="1.4" stroke-linecap="round"/>
+</svg>'''
+
+_SVG_WRENCH = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M10 2a4 4 0 0 0-3.8 5.2L2 11.5V14h2.5l4.3-4.2A4 4 0 1 0 10 2z" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="10.5" cy="5.5" r="1" fill="white"/>
+</svg>'''
+
+_SVG_BROOM = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M6 2L10 6" stroke="white" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M8.5 4.5L4.5 8.5C3 10 3.5 12 4 13L7 14C8 14 10 13 11.5 11.5L8.5 4.5Z" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M6 10L5 13" stroke="white" stroke-width="1" stroke-linecap="round"/>
+  <path d="M8 9L7.5 12.5" stroke="white" stroke-width="1" stroke-linecap="round"/>
+</svg>'''
+
+_SVG_STOP_SQUARE = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <rect x="3.5" y="3.5" width="9" height="9" rx="1.2" fill="white"/>
+</svg>'''
+
+_SVG_INJECT_DARK = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
+  <path d="M10.5 1.5L14.5 5.5" stroke="white" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M9 3L13 7L6.5 13.5L2 14L2.5 9.5Z" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M5 8.5L7.5 11" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M4 10.5L5.5 12" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+</svg>'''
 
 
 class FlowTabBuilder:
@@ -481,7 +570,9 @@ class FlowTabBuilder:
         maintenance_layout.setSpacing(8)
 
         # Home Pumps button
-        home_btn = QPushButton("🏠 Home")
+        home_btn = QPushButton("Home")
+        home_btn.setIcon(_svg_icon(_SVG_HOME))
+        home_btn.setIconSize(QSize(14, 14))
         home_btn.setFixedHeight(34)
         home_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         home_btn.setStyleSheet(
@@ -492,7 +583,9 @@ class FlowTabBuilder:
         self.sidebar.pump_home_btn = home_btn
 
         # Emergency Stop button
-        emergency_stop_btn = QPushButton("🛑 STOP")
+        emergency_stop_btn = QPushButton("STOP")
+        emergency_stop_btn.setIcon(_svg_icon(_SVG_STOP))
+        emergency_stop_btn.setIconSize(QSize(14, 14))
         emergency_stop_btn.setFixedHeight(28)
         emergency_stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         emergency_stop_btn.setStyleSheet(
@@ -503,7 +596,9 @@ class FlowTabBuilder:
         self.sidebar.pump_emergency_stop_btn = emergency_stop_btn
 
         # Flush Loop button
-        flush_btn = QPushButton("🔄 Flush")
+        flush_btn = QPushButton("Flush")
+        flush_btn.setIcon(_svg_icon(_SVG_FLUSH))
+        flush_btn.setIconSize(QSize(14, 14))
         flush_btn.setFixedHeight(34)
         flush_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         flush_btn.setStyleSheet(
@@ -552,7 +647,9 @@ class FlowTabBuilder:
         start_flush_layout.setSpacing(8)
 
         # Start Buffer button
-        start_buffer_btn = QPushButton("▶ Start Buffer")
+        start_buffer_btn = QPushButton("Start Buffer")
+        start_buffer_btn.setIcon(_svg_icon(_SVG_PLAY))
+        start_buffer_btn.setIconSize(QSize(14, 14))
         start_buffer_btn.setFixedHeight(34)
         start_buffer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         start_buffer_btn.setStyleSheet(
@@ -569,7 +666,9 @@ class FlowTabBuilder:
         inject_layout.setSpacing(8)
 
         # Baseline button
-        baseline_btn = QPushButton("📊 Baseline")
+        baseline_btn = QPushButton("Baseline")
+        baseline_btn.setIcon(_svg_icon(_SVG_BASELINE))
+        baseline_btn.setIconSize(QSize(14, 14))
         baseline_btn.setFixedHeight(34)
         baseline_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         baseline_btn.setStyleSheet(
@@ -580,7 +679,9 @@ class FlowTabBuilder:
         self.sidebar.baseline_btn = baseline_btn
 
         # Simple Inject button
-        inject_simple_btn = QPushButton("💉 Inject (Simple)")
+        inject_simple_btn = QPushButton("Inject (Simple)")
+        inject_simple_btn.setIcon(_svg_icon(_SVG_SYRINGE))
+        inject_simple_btn.setIconSize(QSize(14, 14))
         inject_simple_btn.setFixedHeight(34)
         inject_simple_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         inject_simple_btn.setStyleSheet(
@@ -591,7 +692,9 @@ class FlowTabBuilder:
         self.sidebar.inject_simple_btn = inject_simple_btn
 
         # Advanced Inject button
-        inject_advanced_btn = QPushButton("💉 Inject (Advanced)")
+        inject_advanced_btn = QPushButton("Inject (Advanced)")
+        inject_advanced_btn.setIcon(_svg_icon(_SVG_SYRINGE))
+        inject_advanced_btn.setIconSize(QSize(14, 14))
         inject_advanced_btn.setFixedHeight(34)
         inject_advanced_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         inject_advanced_btn.setStyleSheet(
@@ -607,7 +710,9 @@ class FlowTabBuilder:
         advanced_layout = QHBoxLayout()
         advanced_layout.addStretch()
 
-        advanced_btn = QPushButton("⚙️")
+        advanced_btn = QPushButton()
+        advanced_btn.setIcon(_svg_icon(_SVG_GEAR, size=18))
+        advanced_btn.setIconSize(QSize(18, 18))
         advanced_btn.setFixedSize(32, 32)
         advanced_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         advanced_btn.setStyleSheet(
@@ -858,7 +963,9 @@ class FlowTabBuilder:
         self._on_synced_flowrate_changed()
 
         # Start/Stop toggle button for synced pumps
-        synced_toggle_btn = QPushButton("▶ Start")
+        synced_toggle_btn = QPushButton("Start")
+        synced_toggle_btn.setIcon(_svg_icon(_SVG_PLAY))
+        synced_toggle_btn.setIconSize(QSize(12, 12))
         synced_toggle_btn.setCheckable(True)
         synced_toggle_btn.setFixedHeight(36)
         synced_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -971,7 +1078,9 @@ class FlowTabBuilder:
             pass
 
         # Start/Stop toggle button for Pump 1
-        pump1_toggle_btn = QPushButton("▶ Start")
+        pump1_toggle_btn = QPushButton("Start")
+        pump1_toggle_btn.setIcon(_svg_icon(_SVG_PLAY))
+        pump1_toggle_btn.setIconSize(QSize(12, 12))
         pump1_toggle_btn.setCheckable(True)
         pump1_toggle_btn.setFixedHeight(36)
         pump1_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -997,7 +1106,9 @@ class FlowTabBuilder:
         inject_layout.setSpacing(6)
 
         # Inject button (uses contact time from spinbox)
-        inject_30s_btn = QPushButton("💉 Inject")
+        inject_30s_btn = QPushButton("Inject")
+        inject_30s_btn.setIcon(_svg_icon(_SVG_INJECT_DARK))
+        inject_30s_btn.setIconSize(QSize(16, 16))
         inject_30s_btn.setFixedHeight(42)
         inject_30s_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         inject_30s_btn.setProperty("injection_state", "ready")  # States: ready, busy, manual
@@ -1487,13 +1598,14 @@ class FlowTabBuilder:
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QToolTip {"
-            "  background: white;"
-            "  color: #1D1D1F;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 4px;"
-            "  padding: 4px 8px;"
-            "  font-size: 12px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  background-color: #2b2b2b;"
+            "  color: #ffffff;"
+            "  border: 1px solid #555555;"
+            "  border-radius: 6px;"
+            "  padding: 10px 14px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "  font-family: 'Segoe UI', system-ui, sans-serif;"
             "}",
         )
         if tooltip:

@@ -2,11 +2,13 @@
 
 This module provides a beautiful splash screen that appears instantly
 before heavy module imports, giving immediate visual feedback to users.
+Features SVG-based loading indicators and molecular visualizations.
 """
 
 import math
+import time
 
-from PySide6.QtCore import Qt, QPointF
+from PySide6.QtCore import Qt, QPointF, QTimer
 from PySide6.QtGui import (
     QPainter, QPixmap, QFont, QColor, QPen, QBrush,
     QLinearGradient, QRadialGradient, QPainterPath,
@@ -15,6 +17,79 @@ from PySide6.QtWidgets import QSplashScreen
 from pathlib import Path
 
 from affilabs.utils.resource_path import get_affilabs_resource
+
+
+def _draw_svg_loading_spinner(painter, x, y, size, rotation):
+    """Draw an SVG-style animated loading spinner.
+    
+    Args:
+        painter: QPainter instance
+        x, y: Center position
+        size: Diameter of spinner
+        rotation: Rotation angle in degrees (0-360)
+    """
+    painter.save()
+    painter.translate(x, y)
+    painter.rotate(rotation)
+    painter.translate(-x, -y)
+    
+    # Outer ring
+    ring_pen = QPen(QColor(100, 180, 255, 200))
+    ring_pen.setWidth(3)
+    ring_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(ring_pen)
+    painter.setBrush(Qt.NoBrush)
+    
+    # Draw arc (3/4 of circle)
+    arc_rect = (x - size // 2, y - size // 2, size, size)
+    painter.drawArc(*arc_rect, 0, 270 * 16)
+    
+    # Inner glow
+    glow_pen = QPen(QColor(150, 210, 255, 80))
+    glow_pen.setWidth(1)
+    painter.setPen(glow_pen)
+    inner_size = size - 8
+    painter.drawEllipse(x - inner_size // 2, y - inner_size // 2, inner_size, inner_size)
+    
+    painter.restore()
+
+
+
+
+
+def _draw_svg_logo_badge(painter, x, y, size):
+    """Draw a professional badge-style logo using SVG-inspired drawing.
+    
+    Args:
+        painter: QPainter instance
+        x, y: Position
+        size: Size of badge
+    """
+    painter.save()
+    
+    # Outer circle with gradient
+    radial = QRadialGradient(x, y, size // 2)
+    radial.setColorAt(0, QColor(150, 200, 255, 60))
+    radial.setColorAt(1, QColor(100, 150, 255, 20))
+    
+    painter.setPen(QPen(QColor(120, 180, 255, 100), 1))
+    painter.setBrush(QBrush(radial))
+    painter.drawEllipse(x - size // 2, y - size // 2, size, size)
+    
+    # Inner circle with "A" letter (Affinite badge)
+    inner_size = int(size * 0.6)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QBrush(QColor(100, 180, 255, 80)))
+    painter.drawEllipse(x - inner_size // 2, y - inner_size // 2, inner_size, inner_size)
+    
+    # Draw stylized "A"
+    font = QFont("Segoe UI", size // 4, QFont.Weight.Bold)
+    painter.setFont(font)
+    painter.setPen(QColor(200, 230, 255, 200))
+    painter.drawText(x - size // 2, y - size // 2, size, size, 
+                    Qt.AlignmentFlag.AlignCenter, "A")
+    
+    painter.restore()
 
 
 def _draw_protein_decorations(painter):
@@ -27,169 +102,270 @@ def _draw_protein_decorations(painter):
     """
     painter.save()
 
-    # --- 1. IgG Antibody (Y-shape) - left side ---
-    ab_fill = QColor(120, 180, 255, 25)
-    ab_edge = QColor(140, 200, 255, 40)
+    # --- 1. IgG Antibody (Molecular Model Style) - left side ---
+    painter.setRenderHint(QPainter.Antialiasing)
+    
     cx, cy = 75, 185
-
-    # Fc stem
-    painter.setPen(QPen(ab_edge, 1.5))
-    painter.setBrush(QBrush(ab_fill))
-    stem = QPainterPath()
-    stem.addRoundedRect(cx - 6, cy + 5, 12, 30, 4, 4)
-    painter.drawPath(stem)
-
-    # Hinge
-    painter.drawEllipse(QPointF(cx, cy + 5), 5, 5)
-
-    # Left Fab arm + binding site
-    painter.setPen(QPen(ab_edge, 2.5))
-    painter.setBrush(Qt.NoBrush)
-    arm_l = QPainterPath()
-    arm_l.moveTo(cx, cy + 5)
-    arm_l.lineTo(cx - 22, cy - 25)
-    painter.drawPath(arm_l)
-    painter.setBrush(QBrush(QColor(150, 210, 255, 30)))
-    painter.drawEllipse(QPointF(cx - 22, cy - 25), 7, 9)
-
-    # Right Fab arm + binding site
-    painter.setBrush(Qt.NoBrush)
-    arm_r = QPainterPath()
-    arm_r.moveTo(cx, cy + 5)
-    arm_r.lineTo(cx + 22, cy - 25)
-    painter.drawPath(arm_r)
-    painter.setBrush(QBrush(QColor(150, 210, 255, 30)))
-    painter.drawEllipse(QPointF(cx + 22, cy - 25), 7, 9)
-
-    # --- 2. Globular Protein (BSA-like) - upper right ---
-    glob_fill = QColor(180, 140, 255, 20)
-    glob_edge = QColor(200, 160, 255, 35)
-    painter.setPen(QPen(glob_edge, 1.0))
-    painter.setBrush(QBrush(glob_fill))
+    
+    # Draw connectors first (so they appear behind spheres)
+    connector_pen = QPen(QColor(100, 180, 255, 40), 1.5)
+    painter.setPen(connector_pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    
+    # Left Fab arm connector
+    painter.drawLine(cx, cy, cx - 25, cy - 30)
+    # Right Fab arm connector
+    painter.drawLine(cx, cy, cx + 25, cy - 30)
+    
+    # --- Fc Region (large central sphere) ---
+    fc_radius = 12
+    fc_gradient = QRadialGradient(cx, cy + 10, fc_radius)
+    fc_gradient.setColorAt(0, QColor(120, 200, 255, 50))
+    fc_gradient.setColorAt(1, QColor(80, 160, 255, 25))
+    painter.setPen(QPen(QColor(100, 180, 255, 70), 1))
+    painter.setBrush(QBrush(fc_gradient))
+    painter.drawEllipse(cx - fc_radius, cy - fc_radius + 10, fc_radius * 2, fc_radius * 2)
+    
+    # --- Hinge Region (connecting spheres) ---
+    painter.setPen(QPen(QColor(130, 210, 255, 80), 1))
+    hinge_gradient = QRadialGradient(cx, cy - 5, 4)
+    hinge_gradient.setColorAt(0, QColor(150, 220, 255, 60))
+    hinge_gradient.setColorAt(1, QColor(100, 190, 255, 30))
+    painter.setBrush(QBrush(hinge_gradient))
+    painter.drawEllipse(cx - 4, cy - 9, 8, 8)
+    
+    # --- LEFT FAB ARM (Fragment Antigen Binding) ---
+    # Constant domain (Fc-like)
+    left_fc_x, left_fc_y = cx - 20, cy - 18
+    fc_gradient_l = QRadialGradient(left_fc_x, left_fc_y, 8)
+    fc_gradient_l.setColorAt(0, QColor(120, 200, 255, 50))
+    fc_gradient_l.setColorAt(1, QColor(80, 160, 255, 25))
+    painter.setPen(QPen(QColor(100, 180, 255, 60), 1))
+    painter.setBrush(QBrush(fc_gradient_l))
+    painter.drawEllipse(left_fc_x - 8, left_fc_y - 8, 16, 16)
+    
+    # Variable domain 1 (Vl)
+    vl_x, vl_y = cx - 28, cy - 32
+    var_gradient = QRadialGradient(vl_x, vl_y, 6)
+    var_gradient.setColorAt(0, QColor(150, 220, 255, 70))
+    var_gradient.setColorAt(1, QColor(100, 190, 255, 35))
+    painter.setPen(QPen(QColor(130, 210, 255, 70), 1))
+    painter.setBrush(QBrush(var_gradient))
+    painter.drawEllipse(vl_x - 6, vl_y - 6, 12, 12)
+    
+    # Variable domain 2 (Vh)
+    vh_x, vh_y = cx - 23, cy - 38
+    painter.setBrush(QBrush(var_gradient))
+    painter.drawEllipse(vh_x - 6, vh_y - 6, 12, 12)
+    
+    # --- RIGHT FAB ARM (mirrored) ---
+    # Constant domain
+    right_fc_x, right_fc_y = cx + 20, cy - 18
+    painter.setPen(QPen(QColor(100, 180, 255, 60), 1))
+    painter.setBrush(QBrush(fc_gradient_l))
+    painter.drawEllipse(right_fc_x - 8, right_fc_y - 8, 16, 16)
+    
+    # Variable domain 1
+    vl_x_r, vl_y_r = cx + 28, cy - 32
+    painter.setPen(QPen(QColor(130, 210, 255, 70), 1))
+    painter.setBrush(QBrush(var_gradient))
+    painter.drawEllipse(vl_x_r - 6, vl_y_r - 6, 12, 12)
+    
+    # Variable domain 2
+    vh_x_r, vh_y_r = cx + 23, cy - 38
+    painter.setBrush(QBrush(var_gradient))
+    painter.drawEllipse(vh_x_r - 6, vh_y_r - 6, 12, 12)
+    
+    # --- 2. Protein Structure (BSA tertiary/quaternary) - upper right ---
     gx, gy = 630, 100
-    for dx, dy, r in [
-        (0, 0, 14), (-12, -8, 10), (10, -10, 11),
-        (-10, 10, 9), (12, 8, 10), (0, -16, 8), (0, 15, 8),
-    ]:
-        painter.drawEllipse(QPointF(gx + dx, gy + dy), r, r)
+    
+    # Draw interconnected subunits with SVG-style gradient fill
+    subunits = [
+        (0, 0, 16, QColor(180, 140, 255, 30)),      # Large central
+        (-15, -12, 12, QColor(200, 150, 255, 25)),  # Top left
+        (14, -14, 11, QColor(200, 160, 255, 28)),   # Top right
+        (-16, 12, 10, QColor(190, 130, 255, 26)),   # Bottom left
+        (15, 10, 11, QColor(210, 170, 255, 27)),    # Bottom right
+        (0, -22, 8, QColor(180, 140, 255, 22)),     # Top cap
+        (0, 20, 8, QColor(190, 150, 255, 24)),      # Bottom cap
+    ]
+    
+    for dx, dy, radius, color in subunits:
+        # Draw subunit with subtle gradient
+        radial = QRadialGradient(gx + dx, gy + dy, radius // 2)
+        radial.setColorAt(0, color)
+        radial.setColorAt(1, QColor(color.red() - 30, color.green() - 30, color.blue() - 30, color.alpha() // 2))
+        
+        painter.setPen(QPen(QColor(160, 120, 255, 50), 1))
+        painter.setBrush(QBrush(radial))
+        painter.drawEllipse(gx + dx - radius, gy + dy - radius, radius * 2, radius * 2)
 
-    # --- 3. DNA Double Helix - lower right ---
-    dna_edge1 = QColor(120, 240, 200, 40)
-    dna_edge2 = QColor(255, 200, 140, 40)
-    rung_color = QColor(200, 200, 255, 20)
+    # --- 3. DNA Double Helix - lower right, enhanced ---
     hx, hy = 645, 320
-    helix_h, helix_w, n = 70, 16, 30
-
+    helix_h, helix_w, n = 75, 20, 32
+    
+    # Calculate strand positions
     strand1, strand2 = [], []
     for i in range(n):
         t = i / (n - 1)
         y = hy - helix_h / 2 + t * helix_h
-        strand1.append(QPointF(hx + helix_w * math.sin(t * 3 * math.pi), y))
-        strand2.append(QPointF(hx + helix_w * math.sin(t * 3 * math.pi + math.pi), y))
-
-    painter.setBrush(Qt.NoBrush)
-    for strand, color in [(strand1, dna_edge1), (strand2, dna_edge2)]:
-        painter.setPen(QPen(color, 2.0))
+        strand1.append(QPointF(hx + helix_w * math.sin(t * 3.5 * math.pi), y))
+        strand2.append(QPointF(hx + helix_w * math.sin(t * 3.5 * math.pi + math.pi), y))
+    
+    # Draw strands with gradient colors
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    for strand_idx, (strand, base_color) in enumerate([
+        (strand1, QColor(100, 220, 200, 60)),  # Cyan
+        (strand2, QColor(255, 180, 100, 60))   # Orange
+    ]):
+        painter.setPen(QPen(base_color, 2.5))
         path = QPainterPath()
         path.moveTo(strand[0])
         for pt in strand[1:]:
             path.lineTo(pt)
         painter.drawPath(path)
-
-    painter.setPen(QPen(rung_color, 1.0))
-    for i in range(0, n, 4):
-        painter.drawLine(strand1[i], strand2[i])
+    
+    # Draw base pair connections (rungs)
+    painter.setPen(QPen(QColor(150, 200, 255, 40), 1.5))
+    for i in range(0, n, 5):
+        # Draw rung with slight curve
+        rung = QPainterPath()
+        rung.moveTo(strand1[i])
+        rung.quadTo(
+            (strand1[i].x() + strand2[i].x()) / 2,
+            (strand1[i].y() + strand2[i].y()) / 2 - 2,
+            strand2[i].x(),
+            strand2[i].y()
+        )
+        painter.drawPath(rung)
+    
+    # Add base pair nucleotides (small circles)
+    painter.setPen(QPen(QColor(200, 220, 255, 50), 0.5))
+    painter.setBrush(QBrush(QColor(150, 200, 255, 30)))
+    for i in range(0, n, 6):
+        painter.drawEllipse(strand1[i].x() - 2, strand1[i].y() - 2, 4, 4)
+        painter.drawEllipse(strand2[i].x() - 2, strand2[i].y() - 2, 4, 4)
 
     painter.restore()
 
 
 def create_splash_screen():
-    """Create and return modern splash screen with update function.
+    """Create and return modern splash screen with SVG elements and animation.
 
     Returns:
         tuple: (splash, pixmap, update_function)
     """
     # Create splash screen with larger size and frameless
     splash = QSplashScreen()
-    splash.setFixedSize(700, 400)
+    splash.setFixedSize(700, 420)
+    
+    # Track animation state for loading spinner
+    splash._animation_frame = 0
+    splash._start_time = time.time()
 
-    # Create custom splash with modern design
-    splash_pixmap = QPixmap(700, 400)
-    splash_pixmap.fill(QColor(0, 0, 0, 0))  # Transparent
+    def _draw_main_content(message="Initializing..."):
+        """Helper to draw splash content with animation."""
+        # Create custom splash with modern design
+        splash_pixmap = QPixmap(700, 420)
+        splash_pixmap.fill(QColor(0, 0, 0, 0))  # Transparent
 
-    painter = QPainter(splash_pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        painter = QPainter(splash_pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-    # Main gradient - deep blue to purple
-    gradient = QLinearGradient(0, 0, 700, 400)
-    gradient.setColorAt(0, QColor(15, 32, 96))      # Deep navy blue
-    gradient.setColorAt(0.5, QColor(32, 64, 128))   # Rich blue
-    gradient.setColorAt(1, QColor(48, 25, 107))     # Deep purple
+        # Main gradient - deep blue to purple with more depth
+        gradient = QLinearGradient(0, 0, 700, 420)
+        gradient.setColorAt(0, QColor(12, 25, 80))       # Deep navy
+        gradient.setColorAt(0.4, QColor(28, 50, 120))    # Rich blue
+        gradient.setColorAt(0.7, QColor(40, 35, 100))    # Blue-purple
+        gradient.setColorAt(1, QColor(45, 20, 100))      # Deep purple
 
-    # Draw rounded rectangle background
-    painter.setPen(Qt.NoPen)
-    painter.setBrush(QBrush(gradient))
-    painter.drawRoundedRect(0, 0, 700, 400, 20, 20)
+        # Draw rounded rectangle background
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(gradient))
+        painter.drawRoundedRect(0, 0, 700, 420, 20, 20)
 
-    # Add subtle glow effect
-    radial = QRadialGradient(350, 200, 300)
-    radial.setColorAt(0, QColor(100, 150, 255, 30))
-    radial.setColorAt(1, QColor(0, 0, 0, 0))
-    painter.setBrush(radial)
-    painter.drawRoundedRect(0, 0, 700, 400, 20, 20)
+        # Add animated glow effect (pulsing)
+        elapsed = (time.time() - splash._start_time) % 2.0
+        pulse = 0.5 + 0.5 * math.sin(elapsed * math.pi)
+        radial = QRadialGradient(350, 210, 350)
+        radial.setColorAt(0, QColor(100, 150, 255, int(40 * pulse)))
+        radial.setColorAt(1, QColor(0, 0, 0, 0))
+        painter.setBrush(radial)
+        painter.drawRoundedRect(0, 0, 700, 420, 20, 20)
 
-    # Draw molecular decorations (IgG antibody, globular protein, DNA helix)
-    _draw_protein_decorations(painter)
+        # Draw molecular decorations (IgG antibody, globular protein, DNA helix)
+        _draw_protein_decorations(painter)
 
-    # Try to load and draw icon
-    try:
-        icon_path = get_affilabs_resource("ui/img/affinite2.ico")
-        if icon_path.exists():
-            icon_pixmap = QPixmap(str(icon_path))
-            # Draw icon at top left
-            icon_size = 64
-            painter.drawPixmap(20, 20, icon_size, icon_size, icon_pixmap)
-    except Exception:
-        pass  # Skip icon if not found
+        # Try to load and draw icon
+        try:
+            icon_path = get_affilabs_resource("ui/img/affinite2.ico")
+            if icon_path.exists():
+                icon_pixmap = QPixmap(str(icon_path))
+                # Draw icon at top left with SVG-style badge glow
+                _draw_svg_logo_badge(painter, 45, 45, 50)
+                painter.drawPixmap(20, 20, 50, 50, icon_pixmap)
+        except Exception:
+            # Fallback: draw just the badge
+            _draw_svg_logo_badge(painter, 45, 45, 50)
 
-    # Draw title with modern font
-    title_font = QFont("Segoe UI Light", 42, QFont.Thin)
-    painter.setFont(title_font)
-    painter.setPen(QColor(255, 255, 255, 255))
-    painter.drawText(0, 130, 700, 70, Qt.AlignCenter, "AffiLabs.core")
+        # Draw title with modern font
+        title_font = QFont("Segoe UI Light", 44, QFont.Thin)
+        painter.setFont(title_font)
+        painter.setPen(QColor(255, 255, 255, 255))
+        painter.drawText(0, 125, 700, 70, Qt.AlignCenter, "AffiLabs.core")
 
-    # Draw subtitle with accent color
-    subtitle_font = QFont("Segoe UI", 14)
-    painter.setFont(subtitle_font)
-    painter.setPen(QColor(150, 200, 255, 230))
-    painter.drawText(0, 200, 700, 30, Qt.AlignCenter, "Surface Plasmon Resonance Analysis")
+        # Draw subtitle with accent color
+        subtitle_font = QFont("Segoe UI", 13)
+        painter.setFont(subtitle_font)
+        painter.setPen(QColor(150, 200, 255, 230))
+        painter.drawText(0, 195, 700, 30, Qt.AlignCenter, "Surface Plasmon Resonance Analysis")
 
-    # Draw inspiring slogan
-    slogan_font = QFont("Segoe UI", 13, QFont.Medium)
-    painter.setFont(slogan_font)
-    painter.setPen(QColor(255, 215, 100, 255))  # Gold accent for inspiration
-    painter.drawText(0, 250, 700, 30, Qt.AlignCenter, "Where Light Meets Matter - Science Revealed")
+        # Draw inspiring slogan with glow effect
+        slogan_font = QFont("Segoe UI", 12, QFont.Medium)
+        painter.setFont(slogan_font)
+        painter.setPen(QColor(255, 215, 100, 200))
+        painter.drawText(0, 235, 700, 25, Qt.AlignCenter, "Where Light Meets Matter - Science Revealed")
 
-    # Draw initial status message
-    status_font = QFont("Segoe UI", 11)
-    painter.setFont(status_font)
-    painter.setPen(QColor(200, 220, 255, 200))
-    painter.drawText(0, 310, 700, 30, Qt.AlignCenter, "Initializing...")
+        # Draw animated loading spinner
+        rotation = (splash._animation_frame * 6) % 360
+        _draw_svg_loading_spinner(painter, 350, 310, 28, rotation)
 
-    # Draw version and copyright
-    version_font = QFont("Segoe UI", 9)
-    painter.setFont(version_font)
-    painter.setPen(QColor(150, 180, 220, 150))
-    painter.drawText(0, 360, 700, 20, Qt.AlignCenter, "Version 2.0.4  •  © 2026 Affinite Instruments")
+        # Draw status message with highlight
+        status_font = QFont("Segoe UI Semibold", 11, QFont.DemiBold)
+        painter.setFont(status_font)
+        painter.setPen(QColor(120, 220, 255, 255))
+        painter.drawText(0, 335, 700, 30, Qt.AlignCenter, message)
 
-    painter.end()
+        # Draw version and copyright
+        version_font = QFont("Segoe UI", 9)
+        painter.setFont(version_font)
+        painter.setPen(QColor(150, 180, 220, 150))
+        painter.drawText(0, 375, 700, 20, Qt.AlignCenter, "Version 2.0.4  •  © 2026 Affinite Instruments")
+        
+        # Draw footer accent line
+        painter.setPen(QPen(QColor(100, 150, 255, 100), 1))
+        painter.drawLine(100, 405, 600, 405)
 
+        painter.end()
+        
+        return splash_pixmap
+
+    splash_pixmap = _draw_main_content()
     splash.setPixmap(splash_pixmap)
     splash.setWindowFlags(Qt.SplashScreen | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+    
+    # Setup animation timer
+    animation_timer = QTimer()
+    def _animate():
+        splash._animation_frame += 1
+        if splash.isVisible():
+            splash.setPixmap(_draw_main_content("Initializing..."))
+    animation_timer.timeout.connect(_animate)
+    animation_timer.start(50)  # Update every 50ms for smooth 20fps animation
 
     def update_splash(message: str, app=None):
-        """Update splash screen message with smooth animation.
+        """Update splash screen message with animation.
 
         Args:
             message: Status message to display
@@ -198,79 +374,14 @@ def create_splash_screen():
         if not splash.isVisible():
             return
 
-        # Recreate pixmap with new message (optimized - reuse gradient)
-        new_pixmap = QPixmap(700, 400)
-        new_pixmap.fill(QColor(0, 0, 0, 0))
-
-        painter = QPainter(new_pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform)
-
-        # Main gradient
-        gradient = QLinearGradient(0, 0, 700, 400)
-        gradient.setColorAt(0, QColor(15, 32, 96))
-        gradient.setColorAt(0.5, QColor(32, 64, 128))
-        gradient.setColorAt(1, QColor(48, 25, 107))
-
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(gradient))
-        painter.drawRoundedRect(0, 0, 700, 400, 20, 20)
-
-        # Glow effect
-        radial = QRadialGradient(350, 200, 300)
-        radial.setColorAt(0, QColor(100, 150, 255, 30))
-        radial.setColorAt(1, QColor(0, 0, 0, 0))
-        painter.setBrush(radial)
-        painter.drawRoundedRect(0, 0, 700, 400, 20, 20)
-
-        # Draw molecular decorations (IgG antibody, globular protein, DNA helix)
-        _draw_protein_decorations(painter)
-
-        # Icon
-        try:
-            icon_path = get_affilabs_resource("ui/img/affinite2.ico")
-            if icon_path.exists():
-                icon_pixmap = QPixmap(str(icon_path))
-                painter.drawPixmap(20, 20, 64, 64, icon_pixmap)
-        except Exception:
-            pass
-
-        # Title
-        title_font = QFont("Segoe UI Light", 42, QFont.Thin)
-        painter.setFont(title_font)
-        painter.setPen(QColor(255, 255, 255, 255))
-        painter.drawText(0, 130, 700, 70, Qt.AlignCenter, "AffiLabs.core")
-
-        # Subtitle
-        subtitle_font = QFont("Segoe UI", 14)
-        painter.setFont(subtitle_font)
-        painter.setPen(QColor(150, 200, 255, 230))
-        painter.drawText(0, 200, 700, 30, Qt.AlignCenter, "Surface Plasmon Resonance Analysis")
-
-        # Inspiring slogan
-        slogan_font = QFont("Segoe UI", 13, QFont.Medium)
-        painter.setFont(slogan_font)
-        painter.setPen(QColor(255, 215, 100, 255))  # Gold accent for inspiration
-        painter.drawText(0, 250, 700, 30, Qt.AlignCenter, "Where Light Meets Matter - Science Revealed")
-
-        # Status message (UPDATED - highlighted)
-        status_font = QFont("Segoe UI Semibold", 11, QFont.DemiBold)
-        painter.setFont(status_font)
-        painter.setPen(QColor(120, 220, 255, 255))  # Brighter for active status
-        painter.drawText(0, 310, 700, 30, Qt.AlignCenter, message)
-
-        # Version
-        version_font = QFont("Segoe UI", 9)
-        painter.setFont(version_font)
-        painter.setPen(QColor(150, 180, 220, 150))
-        painter.drawText(0, 360, 700, 20, Qt.AlignCenter, "Version 2.0.4  •  © 2026 Affinite Instruments")
-
-        painter.end()
-
-        splash.setPixmap(new_pixmap)
+        splash_pixmap = _draw_main_content(message)
+        splash.setPixmap(splash_pixmap)
 
         # Process events to ensure splash updates
         if app:
             app.processEvents()
+    
+    # Store timer reference to prevent garbage collection
+    splash._animation_timer = animation_timer
 
     return splash, splash_pixmap, update_splash
