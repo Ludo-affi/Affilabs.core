@@ -7,10 +7,11 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QPlainTextEdit, QFrame, QTextEdit, QScrollArea, QSizePolicy,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox, QLineEdit, QComboBox,
-    QCheckBox
+    QCheckBox, QTabWidget, QWidget
 )
-from PySide6.QtCore import Signal, Qt, QTimer
-from PySide6.QtGui import QKeyEvent, QCursor, QColor
+from PySide6.QtCore import Signal, Qt, QTimer, QSize
+from PySide6.QtGui import QKeyEvent, QCursor, QColor, QIcon, QPixmap, QPainter
+from PySide6.QtSvg import QSvgRenderer
 from affilabs.domain.cycle import Cycle
 from affilabs.services.queue_preset_storage import QueuePresetStorage
 from affilabs.services.user_profile_manager import UserProfileManager
@@ -18,6 +19,39 @@ from affilabs.widgets.ui_constants import CycleTypeStyle
 import time
 import re
 import threading
+
+
+# ---------------------------------------------------------------------------
+# SVG icon helper
+# ---------------------------------------------------------------------------
+
+def _create_svg_icon(svg_string: str, size: int = 16) -> QIcon:
+    """Create QIcon from inline SVG markup."""
+    renderer = QSvgRenderer(svg_string.encode('utf-8'))
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
+
+
+# SVG icon definitions (24×24 viewBox, rendered at requested size)
+_SVG_UNDO = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9 14L4 9l5-5" stroke="#1D1D1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h11a5 5 0 0 1 0 10h-3" stroke="#1D1D1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
+_SVG_REDO = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 14l5-5-5-5" stroke="#1D1D1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9H9a5 5 0 0 0 0 10h3" stroke="#1D1D1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
+_SVG_TRASH = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18" stroke="#FF3B30" stroke-width="2" stroke-linecap="round"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="#FF3B30" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" stroke="#FF3B30" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke="#FF3B30" stroke-width="2" stroke-linecap="round"/></svg>'
+
+_SVG_CHEVRON_UP = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M18 15l-6-6-6 6" stroke="#1D1D1F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
+_SVG_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9l6 6 6-6" stroke="#1D1D1F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
+_SVG_CLEAR = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#86868B" stroke-width="2"/><path d="M15 9l-6 6M9 9l6 6" stroke="#86868B" stroke-width="2" stroke-linecap="round"/></svg>'
+
+_SVG_PLUS_WHITE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>'
+
+_SVG_CLIPBOARD_WHITE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" stroke="white" stroke-width="2" stroke-linecap="round"/><rect x="8" y="2" width="8" height="4" rx="1" stroke="white" stroke-width="2"/><path d="M9 12h6M9 16h4" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>'
 
 
 # ---------------------------------------------------------------------------
@@ -810,6 +844,30 @@ class MethodBuilderDialog(QDialog):
         layout.addLayout(meta_row)
         layout.addSpacing(8)
 
+        # Mode/Device/Detection combos — created here, placed in settings panel below table
+        self.mode_combo = QComboBox()
+        self.mode_combo.setFixedHeight(24)
+        self.mode_combo.addItems(["Manual", "Semi-Automated"])
+        self.mode_combo.setCurrentIndex(0)
+        self.mode_combo.setToolTip(
+            "Manual: User injects by syringe, detection helps find injection point\n"
+            "Semi-Automated: Pump handles flow, valves switch automatically"
+        )
+        self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
+
+        self.hw_label = QLabel("P4SPR")
+        self.hw_label.setToolTip("Detected hardware platform")
+
+        self.detection_combo = QComboBox()
+        self.detection_combo.setFixedHeight(24)
+        self.detection_combo.addItems(["Auto", "Priority", "Off"])
+        self.detection_combo.setCurrentIndex(0)
+        self.detection_combo.setToolTip(
+            "Auto: Sensitivity adapts to mode (×2.0 manual, ×0.75 pump)\n"
+            "Priority: Most sensitive (×1.0 — 2.5σ threshold)\n"
+            "Off: No auto-detection, rely on timer"
+        )
+
         # Notes field with header and help button
         notes_header = QHBoxLayout()
         notes_label = QLabel("Note:")
@@ -887,7 +945,9 @@ class MethodBuilderDialog(QDialog):
         queue_header.addStretch()
 
         # Compact Add to Method button
-        self.add_to_method_btn = QPushButton("➕ Add to Method")
+        self.add_to_method_btn = QPushButton("Add to Method")
+        self.add_to_method_btn.setIcon(_create_svg_icon(_SVG_PLUS_WHITE, 14))
+        self.add_to_method_btn.setIconSize(QSize(14, 14))
         self.add_to_method_btn.setFixedHeight(28)
         self.add_to_method_btn.setStyleSheet(
             "QPushButton {"
@@ -906,19 +966,8 @@ class MethodBuilderDialog(QDialog):
         queue_header.addWidget(self.add_to_method_btn)
         layout.addLayout(queue_header)
 
-        # Local queue table
-        self.method_table = QTableWidget()
-        self.method_table.setColumnCount(3)
-        self.method_table.setHorizontalHeaderLabels(["Type", "Duration (min)", "Notes"])
-        self.method_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.method_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.method_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.method_table.setMaximumHeight(300)  # Increased from 180px to show more cycles
-        self.method_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.method_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.method_table.itemSelectionChanged.connect(self._on_selection_changed)
-        self.method_table.verticalHeader().setVisible(True)  # Show row numbers
-        self.method_table.setStyleSheet(
+        # Local queue table — two-tab layout (Overview + Details)
+        table_style = (
             "QTableWidget {"
             "  background: white;"
             "  border: 1px solid rgba(0,0,0,0.1);"
@@ -933,12 +982,165 @@ class MethodBuilderDialog(QDialog):
             "  font-weight: 600;"
             "}"
         )
-        layout.addWidget(self.method_table)
+
+        self.method_tabs = QTabWidget()
+        self.method_tabs.setMaximumHeight(320)
+        self.method_tabs.setStyleSheet(
+            "QTabWidget::pane { border: none; }"
+            "QTabBar::tab {"
+            "  background: rgba(0,0,0,0.03);"
+            "  border: none;"
+            "  padding: 4px 16px;"
+            "  font-size: 11px;"
+            "  font-weight: 600;"
+            "  color: #86868B;"
+            "}"
+            "QTabBar::tab:selected {"
+            "  background: white;"
+            "  color: #007AFF;"
+            "  border-bottom: 2px solid #007AFF;"
+            "}"
+        )
+
+        # Tab 1: Overview (Type, Duration, Notes)
+        overview_widget = QWidget()
+        overview_layout = QVBoxLayout(overview_widget)
+        overview_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.method_table = QTableWidget()
+        self.method_table.setColumnCount(3)
+        self.method_table.setHorizontalHeaderLabels(["Type", "Duration (min)", "Notes"])
+        self.method_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.method_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.method_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.method_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.method_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.method_table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.method_table.verticalHeader().setVisible(True)
+        self.method_table.setStyleSheet(table_style)
+        overview_layout.addWidget(self.method_table)
+
+        self.method_tabs.addTab(overview_widget, "Overview")
+
+        # Tab 2: Details (Channels, Conc, Contact Time)
+        details_widget = QWidget()
+        details_layout = QVBoxLayout(details_widget)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.details_table = QTableWidget()
+        self.details_table.setColumnCount(4)
+        self.details_table.setHorizontalHeaderLabels([
+            "#", "Channels", "Concentration", "Contact Time"
+        ])
+        self.details_table.horizontalHeader().resizeSection(0, 30)
+        self.details_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self.details_table.horizontalHeader().resizeSection(1, 70)
+        self.details_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.details_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.details_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.details_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.details_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.details_table.itemSelectionChanged.connect(self._on_details_selection_changed)
+        self.details_table.verticalHeader().setVisible(False)
+        self.details_table.setStyleSheet(table_style)
+        details_layout.addWidget(self.details_table)
+
+        self.method_tabs.addTab(details_widget, "Details")
+
+        layout.addWidget(self.method_tabs)
+
+        # Settings row — cog button + collapsible panel (below table)
+        _SVG_COG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="#86868B" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="#86868B" stroke-width="2"/></svg>'
+
+        settings_cog_row = QHBoxLayout()
+        settings_cog_row.setContentsMargins(0, 2, 0, 0)
+        settings_cog_row.addStretch()
+        self._settings_btn = QPushButton()
+        self._settings_btn.setIcon(_create_svg_icon(_SVG_COG, 14))
+        self._settings_btn.setIconSize(QSize(14, 14))
+        self._settings_btn.setFixedSize(24, 24)
+        self._settings_btn.setToolTip("Method settings")
+        self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._settings_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+            "QPushButton:hover { background: rgba(0,0,0,0.05); border-radius: 4px; }"
+        )
+        self._settings_btn.setCheckable(True)
+        self._settings_btn.toggled.connect(self._toggle_advanced_settings)
+        settings_cog_row.addWidget(self._settings_btn)
+        layout.addLayout(settings_cog_row)
+
+        # Collapsible settings panel
+        self._adv_settings_frame = QFrame()
+        self._adv_settings_frame.setVisible(False)
+        self._adv_settings_frame.setStyleSheet(
+            "QFrame#advSettings {"
+            "  background: #F9F9FB;"
+            "  border: 1px solid rgba(0,0,0,0.08);"
+            "  border-radius: 6px;"
+            "}"
+        )
+        self._adv_settings_frame.setObjectName("advSettings")
+
+        _combo_ss = (
+            "QComboBox {"
+            "  background: white;"
+            "  border: 1px solid rgba(0,0,0,0.12);"
+            "  border-radius: 4px;"
+            "  padding: 2px 6px;"
+            "  font-size: 11px;"
+            "  color: #1D1D1F;"
+            "}"
+            "QComboBox:focus { border-color: #007AFF; }"
+            "QComboBox::drop-down { border: none; width: 18px; }"
+            "QComboBox::down-arrow {"
+            "  image: none;"
+            "  border-left: 3px solid transparent;"
+            "  border-right: 3px solid transparent;"
+            "  border-top: 4px solid #86868B;"
+            "  margin-right: 6px;"
+            "}"
+        )
+        _lbl_ss = "font-size: 11px; color: #86868B; font-weight: 500;"
+
+        adv_lay = QHBoxLayout(self._adv_settings_frame)
+        adv_lay.setContentsMargins(10, 6, 10, 6)
+        adv_lay.setSpacing(8)
+
+        _mode_lbl = QLabel("Mode:")
+        _mode_lbl.setStyleSheet(_lbl_ss)
+        adv_lay.addWidget(_mode_lbl)
+        self.mode_combo.setStyleSheet(_combo_ss)
+        adv_lay.addWidget(self.mode_combo)
+
+        _sep = QFrame()
+        _sep.setFrameShape(QFrame.Shape.VLine)
+        _sep.setStyleSheet("color: rgba(0,0,0,0.08);")
+        _sep.setFixedHeight(18)
+        adv_lay.addWidget(_sep)
+
+        _dev_lbl = QLabel("Device:")
+        _dev_lbl.setStyleSheet(_lbl_ss)
+        adv_lay.addWidget(_dev_lbl)
+        self.hw_label.setStyleSheet("font-size: 11px; color: #1D1D1F; font-weight: 600;")
+        adv_lay.addWidget(self.hw_label)
+
+        adv_lay.addStretch()
+
+        _det_lbl = QLabel("Detection:")
+        _det_lbl.setStyleSheet(_lbl_ss)
+        adv_lay.addWidget(_det_lbl)
+        self.detection_combo.setStyleSheet(_combo_ss)
+        adv_lay.addWidget(self.detection_combo)
+
+        layout.addWidget(self._adv_settings_frame)
 
         # Queue control buttons
         queue_btn_row = QHBoxLayout()
 
-        self.undo_btn = QPushButton("↶ Undo")
+        self.undo_btn = QPushButton("Undo")
+        self.undo_btn.setIcon(_create_svg_icon(_SVG_UNDO, 14))
+        self.undo_btn.setIconSize(QSize(14, 14))
         self.undo_btn.setFixedHeight(28)
         self.undo_btn.setEnabled(False)
         self.undo_btn.setToolTip("Undo last action (Ctrl+Z)")
@@ -956,7 +1158,9 @@ class MethodBuilderDialog(QDialog):
         )
         queue_btn_row.addWidget(self.undo_btn)
 
-        self.redo_btn = QPushButton("↷ Redo")
+        self.redo_btn = QPushButton("Redo")
+        self.redo_btn.setIcon(_create_svg_icon(_SVG_REDO, 14))
+        self.redo_btn.setIconSize(QSize(14, 14))
         self.redo_btn.setFixedHeight(28)
         self.redo_btn.setEnabled(False)
         self.redo_btn.setToolTip("Redo last action (Ctrl+Shift+Z)")
@@ -979,7 +1183,9 @@ class MethodBuilderDialog(QDialog):
         separator.setStyleSheet("color: rgba(0,0,0,0.1); font-size: 14px; margin: 0 4px;")
         queue_btn_row.addWidget(separator)
 
-        self.delete_cycle_btn = QPushButton("🗑 Delete")
+        self.delete_cycle_btn = QPushButton("Delete")
+        self.delete_cycle_btn.setIcon(_create_svg_icon(_SVG_TRASH, 14))
+        self.delete_cycle_btn.setIconSize(QSize(14, 14))
         self.delete_cycle_btn.setFixedHeight(28)
         self.delete_cycle_btn.setEnabled(False)
         self.delete_cycle_btn.setStyleSheet(
@@ -997,7 +1203,9 @@ class MethodBuilderDialog(QDialog):
         self.delete_cycle_btn.clicked.connect(self._on_delete_selected)
         queue_btn_row.addWidget(self.delete_cycle_btn)
 
-        self.move_up_btn = QPushButton("↑")
+        self.move_up_btn = QPushButton()
+        self.move_up_btn.setIcon(_create_svg_icon(_SVG_CHEVRON_UP, 16))
+        self.move_up_btn.setIconSize(QSize(16, 16))
         self.move_up_btn.setFixedSize(28, 28)
         self.move_up_btn.setEnabled(False)
         self.move_up_btn.setStyleSheet(
@@ -1008,7 +1216,9 @@ class MethodBuilderDialog(QDialog):
         self.move_up_btn.clicked.connect(self._on_move_up)
         queue_btn_row.addWidget(self.move_up_btn)
 
-        self.move_down_btn = QPushButton("↓")
+        self.move_down_btn = QPushButton()
+        self.move_down_btn.setIcon(_create_svg_icon(_SVG_CHEVRON_DOWN, 16))
+        self.move_down_btn.setIconSize(QSize(16, 16))
         self.move_down_btn.setFixedSize(28, 28)
         self.move_down_btn.setEnabled(False)
         self.move_down_btn.setStyleSheet(
@@ -1020,6 +1230,8 @@ class MethodBuilderDialog(QDialog):
         queue_btn_row.addWidget(self.move_down_btn)
 
         self.clear_method_btn = QPushButton("Clear All")
+        self.clear_method_btn.setIcon(_create_svg_icon(_SVG_CLEAR, 14))
+        self.clear_method_btn.setIconSize(QSize(14, 14))
         self.clear_method_btn.setFixedHeight(28)
         self.clear_method_btn.setStyleSheet(
             "QPushButton {"
@@ -1156,8 +1368,34 @@ class MethodBuilderDialog(QDialog):
 
         button_row.addStretch()
 
+        # Copy Schedule button
+        self._copy_schedule_btn = QPushButton("📋 Copy Schedule")
+        self._copy_schedule_btn.setFixedHeight(40)
+        self._copy_schedule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._copy_schedule_btn.setToolTip("Copy injection schedule to clipboard")
+        self._copy_schedule_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  color: #007AFF;"
+            "  border: 1px solid rgba(0,122,255,0.3);"
+            "  border-radius: 8px;"
+            "  padding: 8px 16px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+            "QPushButton:hover { background: rgba(0,122,255,0.08); }"
+        )
+        self._copy_schedule_btn.clicked.connect(self._copy_schedule_to_clipboard)
+        button_row.addWidget(self._copy_schedule_btn)
+
+        self._copy_confirm_label = QLabel("")
+        self._copy_confirm_label.setStyleSheet("font-size: 12px; color: #34C759; font-weight: 600;")
+        button_row.addWidget(self._copy_confirm_label)
+
         # Push to Queue button
-        self.queue_btn = QPushButton("📋 Push to Queue")
+        self.queue_btn = QPushButton("Push to Queue")
+        self.queue_btn.setIcon(_create_svg_icon(_SVG_CLIPBOARD_WHITE, 18))
+        self.queue_btn.setIconSize(QSize(18, 18))
         self.queue_btn.setFixedHeight(40)
         self.queue_btn.setStyleSheet(
             "QPushButton {"
@@ -1390,7 +1628,7 @@ Baseline 2min
             duration_minutes = 8 * 60.0  # 480 minutes
         else:
             # Parse hours, minutes, or seconds (e.g., "24h", "5min", "30sec")
-            duration_match = re.search(r'(\d+(?:\.\d+)?)(h|hr|hour|hours|min|m|sec|s)\b', text, re.IGNORECASE)
+            duration_match = re.search(r'(\d+(?:\.\d+)?)\s*(h|hr|hour|hours|min|m|sec|s)\b', text, re.IGNORECASE)
             if duration_match:
                 value = float(duration_match.group(1))
                 unit = duration_match.group(2).lower()
@@ -1415,7 +1653,7 @@ Baseline 2min
 
         # Parse contact time (e.g., "contact 180s", "contact 3min")
         contact_time = None
-        contact_match = re.search(r'contact[:\s]+(\d+(?:\.\d+)?)(s|sec|m|min)?', text, re.IGNORECASE)
+        contact_match = re.search(r'contact[:\s]+(\d+(?:\.\d+)?)\s*(s|sec|m|min)?', text, re.IGNORECASE)
         if contact_match:
             value = float(contact_match.group(1))
             unit = contact_match.group(2).lower() if contact_match.group(2) else 's'
@@ -1477,6 +1715,22 @@ Baseline 2min
             # Use first 30 chars of text as name
             name = text[:30] if text else cycle_type
 
+        # Parse detection priority override (e.g., "detection priority", "detection off")
+        detection_priority_override = None
+        det_match = re.search(r'detection\s+(priority|off|auto)', text, re.IGNORECASE)
+        if det_match:
+            detection_priority_override = det_match.group(1).lower()
+
+        # Parse target channels override (e.g., "channels AC", "channels BD")
+        target_channels = None
+        ch_match = re.search(r'channels?\s+([ABCD]+)', text, re.IGNORECASE)
+        if ch_match:
+            target_channels = ch_match.group(1).upper()
+
+        # Determine mode and detection from dialog selectors
+        method_mode = self._get_method_mode()
+        detection_priority = detection_priority_override or self._get_detection_priority()
+
         return Cycle(
             type=cycle_type,
             name=name,
@@ -1494,6 +1748,10 @@ Baseline 2min
             # Manual injection mode fields
             manual_injection_mode=manual_injection_mode,
             planned_concentrations=planned_concentrations,
+            # Mode and detection fields
+            method_mode=method_mode,
+            detection_priority=detection_priority,
+            target_channels=target_channels,
         )
 
     def _on_add_to_method(self):
@@ -1527,9 +1785,24 @@ Baseline 2min
         # Split by newlines to support multiple cycles at once
         lines = [line.strip() for line in notes_text.split('\n') if line.strip()]
 
+        # Separate #N modifier lines from new cycle lines
+        modifier_lines = []
+        cycle_lines = []
         for line in lines:
+            if re.match(r'^#(\d+|all|\d+-\d+)\s', line, re.IGNORECASE):
+                modifier_lines.append(line)
+            else:
+                cycle_lines.append(line)
+
+        # Process #N modifier commands (edit existing cycles in-place)
+        if modifier_lines:
+            self._apply_modifiers(modifier_lines)
+
+        # Process new cycle lines
+        for line in cycle_lines:
             cycle = self._build_cycle_from_text(line)
             self._local_cycles.append(cycle)
+            self._validate_and_warn_cycle(cycle)
 
         self._refresh_method_table()
 
@@ -1541,16 +1814,151 @@ Baseline 2min
         self._history_index = -1
         self._current_draft = ""
 
+    # -- #N modifier parser ------------------------------------------------
+
+    def _apply_modifiers(self, lines: list[str]):
+        """Apply #N modifier commands to existing cycles in _local_cycles.
+
+        Syntax examples:
+            #3 contact 120s          — set contact time on cycle 3
+            #3 channels BD           — set target channels on cycle 3
+            #3 detection priority    — set detection priority on cycle 3
+            #3 injection manual      — set injection mode on cycle 3
+            #3 flow 50               — set flow rate on cycle 3
+            #3 conc A:100nM B:50nM   — set concentrations on cycle 3
+            #all detection off       — apply to ALL cycles
+            #2-5 channels AC         — apply to range of cycles
+        """
+        import re
+
+        for line in lines:
+            # Parse the target selector: #N, #all, #N-M
+            match = re.match(r'^#(\d+|all|(\d+)-(\d+))\s+(.+)$', line, re.IGNORECASE)
+            if not match:
+                continue
+
+            selector = match.group(1).lower()
+            rest = match.group(4).strip()
+
+            # Determine which cycle indices to modify
+            indices = []
+            if selector == "all":
+                indices = list(range(len(self._local_cycles)))
+            elif "-" in selector:
+                range_match = re.match(r'(\d+)-(\d+)', selector)
+                if range_match:
+                    start = int(range_match.group(1)) - 1  # 1-indexed to 0-indexed
+                    end = int(range_match.group(2)) - 1
+                    indices = [i for i in range(start, end + 1) if 0 <= i < len(self._local_cycles)]
+            else:
+                idx = int(selector) - 1  # 1-indexed to 0-indexed
+                if 0 <= idx < len(self._local_cycles):
+                    indices = [idx]
+
+            if not indices:
+                continue
+
+            # Parse the field=value pairs from the rest of the line
+            for idx in indices:
+                cycle = self._local_cycles[idx]
+                self._apply_single_modifier(cycle, rest)
+
+    def _apply_single_modifier(self, cycle: Cycle, text: str):
+        """Apply a single modifier string to a Cycle object.
+
+        Args:
+            cycle: Cycle to modify in-place
+            text: Modifier text like 'contact 120s', 'channels BD', etc.
+        """
+        import re
+        text_lower = text.lower().strip()
+
+        # contact Ns / contact Nm
+        contact_match = re.match(r'contact\s+(\d+(?:\.\d+)?)\s*(s|sec|m|min)?', text_lower)
+        if contact_match:
+            value = float(contact_match.group(1))
+            unit = contact_match.group(2) or 's'
+            if unit in ('m', 'min'):
+                cycle.contact_time = value * 60.0
+            else:
+                cycle.contact_time = value
+            return
+
+        # channels XX
+        ch_match = re.match(r'channels?\s+([abcd]+)', text_lower)
+        if ch_match:
+            cycle.target_channels = ch_match.group(1).upper()
+            return
+
+        # detection priority/off/auto
+        det_match = re.match(r'detection\s+(priority|off|auto)', text_lower)
+        if det_match:
+            cycle.detection_priority = det_match.group(1)
+            return
+
+        # injection manual/simple/partial/automated
+        inj_match = re.match(r'injection\s+(manual|simple|partial|automated)', text_lower)
+        if inj_match:
+            mode = inj_match.group(1)
+            if mode == "manual":
+                cycle.manual_injection_mode = "manual"
+            elif mode == "automated":
+                cycle.manual_injection_mode = "automated"
+            else:
+                cycle.injection_method = mode
+            return
+
+        # flow N (µL/min)
+        flow_match = re.match(r'flow\s+(\d+(?:\.\d+)?)', text_lower)
+        if flow_match:
+            cycle.flow_rate = float(flow_match.group(1))
+            return
+
+        # conc A:100nM B:50nM ...
+        conc_match = re.match(r'conc\s+(.+)', text, re.IGNORECASE)
+        if conc_match:
+            conc_text = conc_match.group(1)
+            tags = re.findall(r'([A-D]):(\d+\.?\d*)([a-zA-Zµ/]+)?', conc_text)
+            for ch, val, unit_str in tags:
+                cycle.concentrations[ch] = float(val)
+                if unit_str:
+                    cycle.units = unit_str
+            return
+
+        # duration Nmin / Ns / Nh
+        dur_match = re.match(r'(?:duration|time|length)\s+(\d+(?:\.\d+)?)\s*(s|sec|m|min|h|hr)?', text_lower)
+        if dur_match:
+            value = float(dur_match.group(1))
+            unit = dur_match.group(2) or 'min'
+            if unit in ('s', 'sec'):
+                cycle.length_minutes = value / 60.0
+            elif unit in ('h', 'hr'):
+                cycle.length_minutes = value * 60.0
+            else:
+                cycle.length_minutes = value
+            return
+
+        # Compound modifiers: multiple keywords on one line separated by spaces
+        # e.g., "#3 contact 120s channels BD detection priority"
+        # Try recursive splitting at known keywords
+        keywords = ['contact', 'channels', 'channel', 'detection', 'injection', 'flow', 'conc', 'duration', 'time', 'length']
+        parts = re.split(r'\s+(?=(?:' + '|'.join(keywords) + r')\s)', text, flags=re.IGNORECASE)
+        if len(parts) > 1:
+            for part in parts:
+                self._apply_single_modifier(cycle, part.strip())
+
     def _on_clear_method(self):
         """Clear all cycles from local method."""
         self._local_cycles.clear()
         self._refresh_method_table()
 
     def _refresh_method_table(self):
-        """Update the method table display."""
+        """Update both Overview and Details table displays."""
         self.method_table.setRowCount(0)
+        self.details_table.setRowCount(0)
 
         for i, cycle in enumerate(self._local_cycles):
+            # --- Overview tab (Type, Duration, Notes) ---
             row = self.method_table.rowCount()
             self.method_table.insertRow(row)
 
@@ -1570,9 +1978,50 @@ Baseline 2min
             notes_item = QTableWidgetItem(cycle.note or "")
             self.method_table.setItem(row, 2, notes_item)
 
+            # --- Details tab (#, Channels, Concentration, Contact, Injection, Detection) ---
+            drow = self.details_table.rowCount()
+            self.details_table.insertRow(drow)
+
+            # Column 0: #
+            num_item = QTableWidgetItem(str(i + 1))
+            num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.details_table.setItem(drow, 0, num_item)
+
+            # Column 1: Channels
+            ch_text = cycle.target_channels or cycle.channels or "ALL"
+            ch_item = QTableWidgetItem(ch_text)
+            ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.details_table.setItem(drow, 1, ch_item)
+
+            # Column 2: Concentration (wider — gets Stretch space)
+            if cycle.concentrations:
+                conc_parts = [f"{ch}:{v}{cycle.units}" for ch, v in cycle.concentrations.items()]
+                conc_text = "  ".join(conc_parts)
+            elif cycle.concentration_value is not None:
+                conc_text = f"{cycle.concentration_value} {cycle.concentration_units}"
+            else:
+                conc_text = "—"
+            conc_item = QTableWidgetItem(conc_text)
+            self.details_table.setItem(drow, 2, conc_item)
+
+            # Column 3: Contact time
+            if cycle.contact_time is not None:
+                ct_text = f"{cycle.contact_time:.0f}s"
+            else:
+                ct_text = "—"
+            ct_item = QTableWidgetItem(ct_text)
+            ct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.details_table.setItem(drow, 3, ct_item)
+
         # Update count label
         count = len(self._local_cycles)
         self.method_count_label.setText(f"{count} cycle{'s' if count != 1 else ''}")
+
+    def _on_details_selection_changed(self):
+        """Sync selection from details table to overview table."""
+        selected_rows = [item.row() for item in self.details_table.selectedItems()]
+        if selected_rows:
+            self.method_table.selectRow(selected_rows[0])
 
     def _on_selection_changed(self):
         """Update button states based on selection."""
@@ -1624,6 +2073,68 @@ Baseline 2min
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Failed to update OVERNIGHT_MODE setting: {e}")
+
+    def _toggle_advanced_settings(self, checked: bool):
+        """Show/hide the advanced settings panel (device type & detection)."""
+        self._adv_settings_frame.setVisible(checked)
+
+    # -- Mode / Hardware helpers ------------------------------------------
+
+    def _on_mode_changed(self, mode_text: str):
+        """Handle method mode change — keep detection on Auto (factor adapts internally)."""
+        # Detection stays 'Auto' — the sensitivity_factor in
+        # manual_injection_dialog adapts automatically (2.0 for manual, 0.75 for pump)
+        self.detection_combo.setCurrentText("Auto")
+
+    def configure_for_hardware(self, hw_name: str, has_affipump: bool = False):
+        """Configure mode selector based on detected hardware.
+
+        Called from main window on dialog open. Auto-selects the best mode
+        for the connected hardware but leaves the combo enabled so the user
+        can override.
+
+        Args:
+            hw_name: Hardware identifier — 'P4SPR', 'P4PRO', 'P4PROPLUS'
+            has_affipump: True if an AffiPump is connected (external syringe pump)
+        """
+        hw_upper = hw_name.upper() if hw_name else "P4SPR"
+        label = hw_upper
+
+        if hw_upper == "P4SPR" and not has_affipump:
+            # Static controller, no pump → manual only
+            label = "P4SPR"
+            self.mode_combo.clear()
+            self.mode_combo.addItems(["Manual"])
+            self.mode_combo.setCurrentIndex(0)
+            self.mode_combo.setEnabled(False)
+        elif hw_upper == "P4SPR" and has_affipump:
+            # Static controller + AffiPump → can do semi-automated
+            label = "P4SPR + AffiPump"
+            self.mode_combo.clear()
+            self.mode_combo.addItems(["Manual", "Semi-Automated"])
+            self.mode_combo.setCurrentIndex(1)  # Default semi-auto with pump
+            self.mode_combo.setEnabled(True)
+        elif hw_upper in ("P4PRO", "P4PROPLUS"):
+            self.mode_combo.clear()
+            self.mode_combo.addItems(["Manual", "Semi-Automated"])
+            self.mode_combo.setCurrentIndex(1)  # Default semi-automated for PRO
+            self.mode_combo.setEnabled(True)
+            if hw_upper == "P4PROPLUS":
+                label = "P4PRO+"
+            elif has_affipump:
+                label = f"{hw_upper} + AffiPump"
+
+        # Detection always defaults to Auto — factor adapts internally
+        self.detection_combo.setCurrentText("Auto")
+        self.hw_label.setText(label)
+
+    def _get_method_mode(self) -> str:
+        """Return the current method mode as a lowercase string for Cycle fields."""
+        return self.mode_combo.currentText().lower()
+
+    def _get_detection_priority(self) -> str:
+        """Return the current detection priority as a lowercase string."""
+        return self.detection_combo.currentText().lower()
 
     def _on_push_to_queue(self):
         """Push all cycles to main queue."""
@@ -1800,3 +2311,157 @@ Baseline 2min
             self.rect(),
             2000
         )
+
+    # -- Validation & clipboard helpers ------------------------------------
+
+    def _validate_and_warn_cycle(self, cycle: Cycle):
+        """Show non-blocking warnings for potential cycle issues."""
+        warnings = []
+
+        # Check 1: Contact time vs cycle duration
+        if cycle.injection_method and cycle.contact_time:
+            cycle_seconds = cycle.length_minutes * 60
+            if cycle.contact_time > cycle_seconds * 0.9:
+                warnings.append(
+                    f"⚠️ Contact time ({cycle.contact_time:.0f}s) is "
+                    f"{cycle.contact_time / cycle_seconds:.0%} of cycle "
+                    f"duration ({cycle_seconds:.0f}s)\n"
+                    "   → Might not leave enough time for wash/baseline"
+                )
+
+        # Check 2: Very short cycles with injection
+        if cycle.length_minutes < 2.0 and cycle.injection_method:
+            warnings.append(
+                f"⚠️ Short cycle ({cycle.length_minutes:.1f} min) may be "
+                "rushed\n   → Consider 3-5 min minimum for manual injection"
+            )
+
+        # Check 3: Multi-injection concentration cycles
+        if cycle.type == "Concentration" and cycle.planned_concentrations:
+            n = len(cycle.planned_concentrations)
+            secs = cycle.length_minutes * 60
+            per = secs / n
+            if per < (cycle.contact_time or 0) + 60:
+                warnings.append(
+                    f"⚠️ {n} injections in {cycle.length_minutes:.1f} min = "
+                    f"{per:.0f}s each\n"
+                    f"   → With {cycle.contact_time:.0f}s contact, this is tight\n"
+                    f"   → Consider {((cycle.contact_time or 0) + 120) * n / 60:.1f} min"
+                )
+
+        # Check 4: Detection explicitly off
+        det = getattr(cycle, 'detection_priority', 'auto')
+        if cycle.injection_method and det == 'off':
+            warnings.append(
+                "⚠️ Injection detection is OFF\n"
+                "   → You must manually place all flags\n"
+                "   → Set to 'Auto' for assisted detection"
+            )
+
+        # Check 5: High sensitivity factor
+        mode = getattr(cycle, 'method_mode', 'manual')
+        if mode == 'manual' and det == 'priority':
+            warnings.append(
+                "ℹ️ High sensitivity detection (factor = 2.0)\n"
+                "   → Conservative — avoids false positives\n"
+                "   → May miss weak injections"
+            )
+
+        if warnings:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setWindowTitle("Cycle Validation")
+            msg.setText("Potential issues detected:")
+            msg.setInformativeText("\n\n".join(warnings))
+            msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.exec()
+
+    def _copy_schedule_to_clipboard(self):
+        """Copy injection schedule to clipboard in a print-friendly tracking format."""
+        from PySide6.QtWidgets import QApplication
+        from datetime import datetime
+
+        if not self._local_cycles:
+            return
+
+        now = datetime.now().strftime("%Y-%m-%d")
+        total = len(self._local_cycles)
+
+        lines = []
+        lines.append("┌─────────────────────────────────────────────────────────┐")
+        lines.append("│              EXPERIMENT INJECTION SCHEDULE              │")
+        lines.append("├─────────────────────────────────────────────────────────┤")
+        lines.append(f"│  Date: {now:<20s}  Cycles: {total:<18}│")
+        lines.append("└─────────────────────────────────────────────────────────┘")
+        lines.append("")
+
+        # Build schedule rows
+        inj_num = 1
+        rows = []  # (step, type, conc, duration, contact, done_box)
+
+        for i, cycle in enumerate(self._local_cycles, 1):
+            duration = f"{cycle.length_minutes:.1f} min" if cycle.length_minutes else "—"
+            ct = getattr(cycle, 'contact_time', None)
+            contact = f"{ct:.0f}s" if ct else "—"
+
+            if cycle.planned_concentrations:
+                for j, conc in enumerate(cycle.planned_concentrations):
+                    label = f"{cycle.type}" if j == 0 else "  └─"
+                    rows.append((
+                        str(inj_num),
+                        label,
+                        conc,
+                        duration if j == 0 else "",
+                        contact if j == 0 else "",
+                    ))
+                    inj_num += 1
+            else:
+                conc_str = ""
+                if cycle.concentrations:
+                    conc_str = ", ".join(
+                        f"Ch{ch.upper()}:{v}" for ch, v in cycle.concentrations.items()
+                    )
+                elif cycle.concentration_value is not None:
+                    conc_str = f"{cycle.concentration_value} {cycle.concentration_units or 'nM'}"
+                if cycle.injection_method:
+                    rows.append((str(inj_num), cycle.type, conc_str or "—", duration, contact))
+                    inj_num += 1
+                else:
+                    rows.append(("—", cycle.type, conc_str or "—", duration, contact))
+
+        # Format table
+        hdr = ("  #", "Step", "Concentration", "Duration", "Contact", "Done")
+        col_w = [4, 16, 18, 10, 9, 6]
+
+        def pad(vals, widths):
+            return "│".join(f" {str(v):<{w}}" for v, w in zip(vals, widths)) + "│"
+
+        sep = "├" + "┼".join("─" * (w + 1) for w in col_w) + "┤"
+        top = "┌" + "┬".join("─" * (w + 1) for w in col_w) + "┐"
+        bot = "└" + "┴".join("─" * (w + 1) for w in col_w) + "┘"
+
+        lines.append(top)
+        lines.append(pad(hdr, col_w))
+        lines.append(sep)
+        for row in rows:
+            full_row = row + ("[ ]",)
+            lines.append(pad(full_row, col_w))
+        lines.append(bot)
+
+        # Summary footer
+        inj_total = inj_num - 1
+        buffer_only = sum(1 for c in self._local_cycles if not c.injection_method)
+        total_min = sum(c.length_minutes for c in self._local_cycles)
+        lines.append("")
+        lines.append(f"  Total injections: {inj_total}    "
+                      f"Buffer-only steps: {buffer_only}    "
+                      f"Est. runtime: {total_min:.0f} min")
+        lines.append("")
+        lines.append("  Notes: _______________________________________________")
+        lines.append("")
+
+        QApplication.clipboard().setText("\n".join(lines))
+
+        # Flash confirmation
+        self._copy_confirm_label.setText("✓ Copied!")
+        QTimer.singleShot(2000, lambda: self._copy_confirm_label.setText(""))

@@ -1,8 +1,8 @@
 """Affilabs SPR Control System - Version Information"""
 
-__version__ = "2.0.3"
-__version_name__ = "Affilabs-Core v2.0.3"
-__release_date__ = "2026-02-12"
+__version__ = "2.0.4"
+__version_name__ = "Affilabs-Core v2.0.4"
+__release_date__ = "2026-02-15"
 __status__ = "Release"
 
 
