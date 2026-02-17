@@ -99,8 +99,8 @@ class HardwareEventCoordinator:
 
         # Update power button based on valid hardware combinations
         if valid_hardware:
-            logger.info(
-                f"[OK] Scan SUCCESSFUL - found valid hardware: {', '.join(valid_hardware)}",
+            logger.debug(
+                f"Scan successful - found: {', '.join(valid_hardware)}",
             )
             self._main_window.set_power_state("connected")
         else:
@@ -153,7 +153,7 @@ class HardwareEventCoordinator:
         # Check if this was an intentional disconnect
         was_intentional = self._app._intentional_disconnect
         if was_intentional:
-            logger.info("Hardware disconnected (user-initiated)")
+            logger.debug("Hardware disconnected (user-initiated)")
             self._app._intentional_disconnect = False
         else:
             logger.error("=" * 80)
@@ -169,7 +169,7 @@ class HardwareEventCoordinator:
 
         # Stop acquisition if running
         if acquisition_was_running:
-            logger.info("Stopping acquisition (hardware disconnected gracefully)...")
+            logger.debug("Stopping acquisition (hardware disconnected gracefully)...")
             try:
                 self._app.data_mgr.stop_acquisition()
             except Exception as e:
@@ -213,7 +213,7 @@ class HardwareEventCoordinator:
 
     def on_connection_progress(self, message: str):
         """Hardware connection progress update."""
-        logger.info(f"Connection: {message}")
+        logger.debug(f"Connection: {message}")
 
     def on_hardware_error(self, error: str):
         """Hardware error occurred."""
@@ -342,7 +342,7 @@ class HardwareEventCoordinator:
 
     def _initialize_device_config(self, status: dict, device_serial: str):
         """Initialize device configuration for newly connected device."""
-        logger.info(f"Re-initializing device configuration for S/N: {device_serial}")
+        logger.debug(f"Re-initializing device configuration for S/N: {device_serial}")
 
         # Initialize device-specific directory and configuration
         from affilabs.utils.device_integration import initialize_device_on_connection
@@ -356,7 +356,7 @@ class HardwareEventCoordinator:
         device_dir = initialize_device_on_connection(mock_usb)
 
         if device_dir:
-            logger.info(f"[OK] Device initialized: {device_dir}")
+            logger.debug(f"Device initialized: {device_dir}")
 
         # Initialize device config and prompt for missing fields
         self._main_window._init_device_config(device_serial=device_serial)
@@ -364,11 +364,11 @@ class HardwareEventCoordinator:
         # Check for and apply special case if detector is in registry
         special_case_info = status.get("special_case")
         if special_case_info and special_case_info.get("has_overrides"):
-            logger.info("=" * 60)
-            logger.info("APPLYING SPECIAL CASE CONFIGURATION")
-            logger.info(f"   Detector S/N: {special_case_info['detector_serial']}")
-            logger.info(f"   Description: {special_case_info['description']}")
-            logger.info("=" * 60)
+            logger.debug("=" * 60)
+            logger.debug("APPLYING SPECIAL CASE CONFIGURATION")
+            logger.debug(f"   Detector S/N: {special_case_info['detector_serial']}")
+            logger.debug(f"   Description: {special_case_info['description']}")
+            logger.debug("=" * 60)
 
             # Get special case and apply to device config
             special_case = self._hardware_mgr.get_special_case()
@@ -554,7 +554,7 @@ class HardwareEventCoordinator:
                     logger.info("=" * 80)
                     logger.info("✅ OEM MODEL TRAINING COMPLETE")
                     logger.info("=" * 80)
-                    logger.info("Starting regular calibration workflow...")
+                    logger.debug("Starting regular calibration workflow...")
 
                     # Close training dialog
                     training_dialog.close()
@@ -652,16 +652,7 @@ class HardwareEventCoordinator:
             logger.info("[OK] Calibration already completed - ready for live data")
             return
 
-        logger.info("=" * 80)
-        logger.info("HARDWARE CONNECTION SUCCESSFUL")
-        logger.info("=" * 80)
-        logger.info("   Hardware Detected:")
-        logger.info(f"     Controller: {status.get('ctrl_type')}")
-        logger.info("     Spectrometer: Connected")
-        logger.info("")
-        logger.info("✅ Hardware ready!")
-        logger.info("   Showing calibration dialog...")
-        logger.info("=" * 80)
+        logger.info("Hardware ready!")
 
         # Show calibration dialog with Start button (user must click to begin)
         self._app.calibration.start_calibration()

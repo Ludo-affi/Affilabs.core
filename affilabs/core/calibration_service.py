@@ -271,11 +271,7 @@ class CalibrationService(QObject):
             logger.info("[OK] Headless calibration thread started")
             return True
 
-        logger.info("=" * 80)
-        logger.info(
-            "🎬 CALIBRATION SERVICE: Showing calibration dialog (awaiting Start)...",
-        )
-        logger.info("=" * 80)
+        logger.debug("Showing calibration dialog (awaiting Start)...")
 
         # Check if LED model exists - if not, prompt for OEM calibration instead
         if not force_oem_retrain:
@@ -353,7 +349,7 @@ class CalibrationService(QObject):
         # Check if pump is detected
         hw = self.app.hardware_mgr
         has_pump = hw.pump is not None
-        logger.info(f"Calibration dialog: pump detected = {has_pump}")
+        logger.debug(f"Calibration dialog: pump detected = {has_pump}")
 
         pump_instruction = ""
         if has_pump:
@@ -398,7 +394,7 @@ class CalibrationService(QObject):
 
         self._calibration_dialog.hide_progress_bar()
         self._calibration_dialog.show()
-        logger.info("[OK] Calibration dialog displayed (Start button visible)")
+        logger.debug("Calibration dialog displayed")
 
     def _add_compression_assistant_button(self) -> None:
         """Add a 'Compression Assistant' button to the calibration dialog.
@@ -788,7 +784,7 @@ class CalibrationService(QObject):
         """
         # Emit to UI and log for console visibility
         with contextlib.suppress(Exception):
-            logger.info(f"[CAL] {message} ({progress}%)")
+            logger.debug(f"[CAL] {message} ({progress}%)")
         self.calibration_progress.emit(message, progress)
 
     def _update_dialog_progress(self, message: str, progress: int) -> None:
@@ -812,11 +808,35 @@ class CalibrationService(QObject):
     def _on_calibration_failed_dialog(self, error_message: str) -> None:
         """Handle calibration failure in dialog - show retry/continue options.
 
+        After 2 failed retries with a weak-channel pattern (LED=255 but signal
+        far below historical average), SPARK opens automatically and guides
+        the user through interactive LED troubleshooting.
+
         Args:
             error_message: Error message to display
 
         """
         if self._calibration_dialog:
+            # After 2+ retries, check if this is a weak-channel issue and launch SPARK
+            if self._retry_count >= 2:
+                diagnosis = self._check_weak_channel_diagnosis(error_message)
+                if diagnosis is not None:
+                    logger.info(
+                        f"Weak channel detected after {self._retry_count + 1} attempts: "
+                        f"Channel {diagnosis['channel'].upper()} at {diagnosis['pct_of_historical']}% of historical"
+                    )
+                    self._launch_spark_troubleshooting(diagnosis)
+                    # Still show the failure dialog with updated message
+                    self._calibration_dialog.show_error_state(
+                        error_message=(
+                            f"{error_message}\n\n"
+                            f"SPARK is guiding you through troubleshooting for Channel {diagnosis['channel'].upper()}."
+                        ),
+                        retry_count=self._retry_count,
+                        max_retries=self._max_retries,
+                    )
+                    return
+
             # Show retry options if under max attempts
             if self._retry_count < self._max_retries:
                 logger.info(
@@ -833,20 +853,79 @@ class CalibrationService(QObject):
                 )
                 self._calibration_dialog.show_max_retries_error(error_message)
 
+    def _check_weak_channel_diagnosis(self, error_message: str) -> dict | None:
+        """Parse convergence error for weak-channel pattern and compare to history.
+
+        Looks for channels at LED=255 with signal far below historical averages.
+        Returns diagnosis dict if found, None otherwise.
+        """
+        import re
+
+        try:
+            # Parse error message for channel data: "D=19.2% (LED=255)"
+            pattern = r"([A-D])=([\d.]+)%\s*\(LED=(\d+)\)"
+            matches = re.findall(pattern, error_message)
+            if not matches:
+                return None
+
+            failed_signals = {}
+            failed_leds = {}
+            target = 65535 * 0.85  # detector max * target percent
+
+            for ch_upper, pct_str, led_str in matches:
+                ch = ch_upper.lower()
+                pct = float(pct_str)
+                led = int(led_str)
+                failed_signals[ch] = (pct / 100.0) * target
+                failed_leds[ch] = led
+
+            # Load historical calibration data
+            from affilabs.utils.startup_calibration import (
+                load_recent_successful_calibrations,
+                diagnose_weak_channel,
+            )
+
+            history = load_recent_successful_calibrations(n=5)
+            if not history:
+                logger.debug("No historical calibrations available for weak-channel diagnosis")
+                return None
+
+            return diagnose_weak_channel(failed_signals, failed_leds, history)
+
+        except Exception as e:
+            logger.debug(f"Weak channel diagnosis check failed: {e}")
+            return None
+
+    def _launch_spark_troubleshooting(self, diagnosis: dict) -> None:
+        """Open SPARK sidebar and start guided LED troubleshooting flow."""
+        try:
+            main_window = getattr(self.app, "main_window", None)
+            hw = getattr(self.app, "hardware_mgr", None)
+
+            if main_window is None or hw is None or hw.ctrl is None:
+                logger.warning("Cannot launch SPARK troubleshooting: missing main_window or hardware")
+                return
+
+            spark_sidebar = getattr(main_window, "spark_sidebar", None)
+            if spark_sidebar is None:
+                logger.warning("Cannot launch SPARK troubleshooting: spark_sidebar not found")
+                return
+
+            spark_sidebar.push_troubleshooting(diagnosis, hw.ctrl)
+            logger.info(f"SPARK troubleshooting launched for Channel {diagnosis['channel'].upper()}")
+
+        except Exception as e:
+            logger.error(f"Failed to launch SPARK troubleshooting: {e}")
+
     def _on_retry_calibration(self) -> None:
         """Handle retry button click - user wants to retry calibration."""
-        logger.info("=" * 80)
-        logger.info("🔄 User clicked Retry - restarting calibration...")
-        logger.info("=" * 80)
-
         if self._calibration_dialog:
             # Increment retry counter
             self._retry_count += 1
-            logger.info(f"Retry attempt {self._retry_count}/{self._max_retries}")
+            logger.info(f"Retry calibration (attempt {self._retry_count}/{self._max_retries})")
 
-            # Reset dialog to progress state
+            # Reset dialog to progress state (clears error title/status)
             self._calibration_dialog.reset_to_progress_state()
-            self._calibration_dialog.update_status("Retrying calibration...")
             self._calibration_dialog.show_progress_bar()
 
             # Restart calibration thread
@@ -861,13 +940,11 @@ class CalibrationService(QObject):
             )
             self._thread.start()
             self.calibration_started.emit()
-            logger.info("[OK] Retry calibration thread started")
+            logger.debug("Retry calibration thread started")
 
     def _on_continue_anyway(self) -> None:
         """Handle continue anyway button - user wants to proceed despite failure."""
-        logger.warning("=" * 80)
-        logger.warning("⚠️  User chose to continue with failed calibration")
-        logger.warning("=" * 80)
+        logger.warning("User chose to continue with failed calibration")
 
         if self._calibration_dialog:
             # Close dialog and allow user to proceed
@@ -991,7 +1068,7 @@ class CalibrationService(QObject):
             )
             return
 
-        logger.info("Starting calibration...")
+        logger.debug("Starting calibration...")
 
         # Update dialog
         if self._calibration_dialog:
@@ -1054,7 +1131,7 @@ class CalibrationService(QObject):
             ctrl = hardware_mgr.ctrl
             usb = hardware_mgr.usb
             pump = hardware_mgr.pump  # Get pump if available
-            logger.info(
+            logger.debug(
                 f"Calibration: pump={pump is not None}, prime_completed={self._prime_pump_completed}"
             )
 
@@ -1094,7 +1171,7 @@ class CalibrationService(QObject):
                         )
 
                         # USB buffer clear with device reset if needed
-                        logger.info("🔄 Clearing USB buffer with dummy reads...")
+                        logger.debug("Clearing USB buffer...")
 
                         def try_dummy_reads(attempt_num=1):
                             """Attempt dummy reads to clear USB buffer.
@@ -1106,9 +1183,6 @@ class CalibrationService(QObject):
                                     usb._integration_time * 1000
                                     if hasattr(usb, "_integration_time")
                                     else 100
-                                )
-                                logger.info(
-                                    f"   Waking up device with integration time re-set ({current_int:.1f}ms)..."
                                 )
                                 usb.set_integration(current_int)
                                 time.sleep(0.5)  # Increased stabilization time from 100ms to 500ms
@@ -1139,9 +1213,6 @@ class CalibrationService(QObject):
                                             f"   Dummy read {i + 1}/3: TIMEOUT (continuing...)"
                                         )
                                     elif result[0] is not None and len(result[0]) > 0:
-                                        logger.info(
-                                            f"   Dummy read {i + 1}/3: Success ({len(result[0])} pixels)"
-                                        )
                                         any_success = True
                                     else:
                                         logger.warning(
@@ -1427,10 +1498,10 @@ class CalibrationService(QObject):
                         "Pump already primed during Compression Assistant — running optical calibration only..."
                     )
                 else:
-                    logger.info("No pump detected - running optical calibration only...")
+                    logger.debug("No pump - running optical calibration only")
 
                 # CRITICAL FIX: Clear USB device buffer with dummy reads and device reset if needed
-                logger.info("🔄 Clearing USB buffer with dummy reads...")
+                logger.debug("Clearing USB buffer...")
 
                 def try_dummy_reads_nopump(attempt_num=1):
                     """Attempt dummy reads to clear USB buffer.
@@ -1442,9 +1513,6 @@ class CalibrationService(QObject):
                             usb._integration_time * 1000
                             if hasattr(usb, "_integration_time")
                             else 100
-                        )
-                        logger.info(
-                            f"   Waking up device with integration time re-set ({current_int:.1f}ms)..."
                         )
                         usb.set_integration(current_int)
                         time.sleep(0.5)  # Increased stabilization time from 100ms to 500ms
@@ -1471,9 +1539,6 @@ class CalibrationService(QObject):
                             if read_thread.is_alive():
                                 logger.warning(f"   Dummy read {i + 1}/3: TIMEOUT (continuing...)")
                             elif result[0] is not None and len(result[0]) > 0:
-                                logger.info(
-                                    f"   Dummy read {i + 1}/3: Success ({len(result[0])} pixels)"
-                                )
                                 any_success = True
                             else:
                                 logger.warning(f"   Dummy read {i + 1}/3: No data (continuing...)")
@@ -1517,9 +1582,9 @@ class CalibrationService(QObject):
                         logger.error(f"❌ Device reset failed: {e}")
                         raise RuntimeError(f"USB device reset failed: {e}")
                 else:
-                    logger.info("[OK] USB buffer cleared")
+                    logger.debug("USB buffer cleared")
 
-                logger.info("[OK] Hardware ready")
+                logger.debug("Hardware ready for calibration")
 
                 # Load configuration and run calibration (no-pump path)
                 self.calibration_progress.emit("Loading configuration...", 10)
@@ -1531,7 +1596,6 @@ class CalibrationService(QObject):
                 # Run calibration
                 from affilabs.core.calibration_orchestrator import run_startup_calibration
 
-                logger.info("🚀 Starting 6-step calibration...")
                 device_type = ctrl.get_device_type()  # Use HAL method, not Python class name
 
                 try:
@@ -1575,7 +1639,7 @@ class CalibrationService(QObject):
                         self._progress_callback("Servo calibration required - starting...", 0)
 
                         # Trigger servo calibration automatically
-                        logger.info("🔧 Starting automatic servo calibration...")
+                        logger.debug("🔧 Starting automatic servo calibration...")
                         try:
                             # Import servo calibration function
                             from servo_polarizer_calibration.calibrate_polarizer import (
@@ -1760,16 +1824,16 @@ class CalibrationService(QObject):
             # Convert calibration result to domain model
             self.calibration_progress.emit("Storing results...", 95)
             # This provides type safety, validation, and immutability
-            logger.info("🔄 Converting calibration result to domain model...")
+            logger.debug("Converting calibration result to domain model...")
             try:
                 calibration_data = led_calibration_result_to_domain(cal_result)
-                logger.info("[OK] Calibration data converted to domain model")
-                logger.info(f"   Channels: {list(calibration_data.s_pol_ref.keys())}")
-                logger.info(
+                logger.debug("Calibration data converted to domain model")
+                logger.debug(f"   Channels: {list(calibration_data.s_pol_ref.keys())}")
+                logger.debug(
                     f"   Integration times: S={calibration_data.integration_time_s}ms, P={calibration_data.integration_time_p}ms",
                 )
-                logger.info(f"   P-mode LEDs: {calibration_data.p_mode_intensities}")
-                logger.info(f"   S-mode LEDs: {calibration_data.s_mode_intensities}")
+                logger.debug(f"   P-mode LEDs: {calibration_data.p_mode_intensities}")
+                logger.debug(f"   S-mode LEDs: {calibration_data.s_mode_intensities}")
             except Exception as e:
                 logger.error(f"[ERROR] Failed to convert calibration data: {e}")
                 msg = f"Calibration data conversion failed: {e}"
@@ -1783,20 +1847,20 @@ class CalibrationService(QObject):
                     None,
                 )
                 if ts:
-                    logger.info(
-                        f"⏱ Timing Sync: avg={ts.get('avg_cycle_ms', 0):.1f} ms, "
+                    logger.debug(
+                        f"Timing Sync: avg={ts.get('avg_cycle_ms', 0):.1f} ms, "
                         f"jitter={ts.get('jitter_ms', 0):.1f} ms, status={ts.get('status', 'unknown')}",
                     )
                 else:
-                    logger.info(
-                        "⏱ Timing Sync: not measured (no timing_sync available)",
+                    logger.debug(
+                        "Timing Sync: not measured (no timing_sync available)",
                     )
             except Exception as _e:
                 logger.debug(f"(Timing sync log skipped: {_e})")
 
             # Domain model has built-in validation
             # Note: validate() method is from CalibrationData dataclass
-            logger.info("[OK] Calibration data validated (domain model)")
+            logger.debug("Calibration data validated (domain model)")
 
             # Store calibration data
             self._current_calibration_data = calibration_data
@@ -1810,7 +1874,7 @@ class CalibrationService(QObject):
                     device_serial=device_serial,
                 )
                 if json_path:
-                    logger.info(f"💾 Calibration result saved: {json_path}")
+                    logger.debug(f"Calibration result saved: {json_path}")
                 else:
                     logger.warning("Failed to save calibration result JSON")
             except Exception as save_err:
@@ -1821,8 +1885,8 @@ class CalibrationService(QObject):
                 if hasattr(self.app, "data_mgr") and self.app.data_mgr is not None:
                     if getattr(calibration_data, "wavelengths", None) is not None:
                         self.app.data_mgr.wave_data = calibration_data.wavelengths
-                        logger.info(
-                            f"📡 Wavelengths propagated to data_mgr: {len(self.app.data_mgr.wave_data)} points",
+                        logger.debug(
+                            f"Wavelengths propagated to data_mgr: {len(self.app.data_mgr.wave_data)} points",
                         )
             except Exception as _e:
                 logger.debug(f"(Wavelength propagation skipped: {_e})")
@@ -1846,8 +1910,8 @@ class CalibrationService(QObject):
                 )
                 self._calibration_dialog.set_progress(100, 100)
                 self._calibration_dialog.enable_start_button()
-                logger.info(
-                    "[OK] Calibration dialog updated - Start button enabled for live data",
+                logger.debug(
+                    "Calibration dialog updated - Start button enabled for live data",
                 )
 
             # Some builds may not include the UI hook; guard the call
@@ -1859,18 +1923,18 @@ class CalibrationService(QObject):
             self.calibration_failed.emit(str(e))
 
             if self._calibration_dialog:
-                self._calibration_dialog.update_title("[ERROR] Calibration Failed")
+                self._calibration_dialog.update_title("Calibration Failed")
                 self._calibration_dialog.update_status(f"Error: {e}")
                 self._calibration_dialog.hide_progress_bar()
 
         finally:
             self._running = False
-            logger.info("Calibration service reset - UI should be re-enabled")
+            logger.debug("Calibration service reset")
             # No stream redirection performed; nothing to restore.
             # Detach file handler cleanly so subsequent runs create fresh logs
             try:
                 if log_handler is not None:
-                    logger.info("[CAL] Closing file logger")
+                    logger.debug("[CAL] Closing file logger")
                     logger.removeHandler(log_handler)
                     log_handler.close()
             except Exception:

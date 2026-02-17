@@ -107,7 +107,7 @@ def led_calibration_result_to_domain(legacy_result) -> CalibrationData:
     # Handle both dict and object forms (7-step returns dict, 6-step returns object)
     is_dict = isinstance(legacy_result, dict)
 
-    logger.info(
+    logger.debug(
         f"[ADAPTER] Converting calibration result: is_dict={is_dict}, type={type(legacy_result).__name__}",
     )
 
@@ -124,8 +124,8 @@ def led_calibration_result_to_domain(legacy_result) -> CalibrationData:
     if is_dict:
         p_mode_intensities = dict(legacy_result.get("p_mode_intensities", {}))
         s_mode_intensities = dict(legacy_result.get("s_mode_intensities", {}))
-        logger.info(f"[ADAPTER] Dict form - P-mode LEDs: {p_mode_intensities}")
-        logger.info(f"[ADAPTER] Dict form - S-mode LEDs: {s_mode_intensities}")
+        logger.debug(f"[ADAPTER] Dict form - P-mode LEDs: {p_mode_intensities}")
+        logger.debug(f"[ADAPTER] Dict form - S-mode LEDs: {s_mode_intensities}")
     else:
         # Object form: check for plural attribute first, then singular, then fallback
         p_mode_intensities = (

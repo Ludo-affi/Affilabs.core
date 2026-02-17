@@ -192,8 +192,7 @@ class QCReportManager:
             with open(latest_file, "w", encoding="utf-8") as f:
                 json.dump(qc_report, f, indent=2, default=str)
 
-            logger.info(f"✅ QC report saved: {timestamped_file.name}")
-            logger.info(f"📁 Location: {reports_dir}")
+            logger.debug(f"QC report saved: {timestamped_file.name} ({reports_dir})")
 
             return timestamped_file
 
@@ -323,7 +322,7 @@ class QCReportManager:
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(html_content)
 
-            logger.info(f"HTML report exported: {output_path}")
+            logger.debug(f"HTML report exported: {output_path}")
             return output_path
 
         except Exception as e:

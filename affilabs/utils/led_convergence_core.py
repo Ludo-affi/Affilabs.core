@@ -145,7 +145,7 @@ class ConvergenceState:
     def clear_boundaries(self, logger: Optional[object] = None) -> None:
         """Clear all boundaries (called when integration time changes)."""
         if self.boundaries:
-            _log(logger, "info", "  🔄 Integration time changed → clearing all LED boundaries")
+            _log(logger, "debug", "  🔄 Integration time changed → clearing all LED boundaries")
         self.boundaries.clear()
         self.history.clear()
         if self.sticky_locked:
@@ -188,7 +188,7 @@ class ConvergenceState:
         bounds = self.get_boundaries(channel)
         if bounds.max_led_no_sat is None or led < bounds.max_led_no_sat:
             bounds.max_led_no_sat = led
-            _log(logger, "info", f"  ⚠️ {channel.upper()} saturated @ LED={led} → never exceed LED={led-5}")
+            _log(logger, "debug", f"  ⚠️ {channel.upper()} saturated @ LED={led} → never exceed LED={led-5}")
 
     def record_above_target(self, channel: str, led: int, logger: Optional[object] = None) -> None:
         """Record that this LED achieved above-target signal."""
@@ -230,14 +230,14 @@ class ConvergenceState:
             max_safe = bounds.max_led_no_sat - margin
             if proposed_led > max_safe:
                 proposed_led = max(config.MIN_LED, max_safe)
-                _log(logger, "info", f"  🔒 {channel.upper()} capped LED {original_led}→{proposed_led} (saturation boundary)")
+                _log(logger, "debug", f"  🔒 {channel.upper()} capped LED {original_led}→{proposed_led} (saturation boundary)")
 
         # Don't go below LED that gave good signal (plus margin)
         if bounds.min_led_above_target is not None:
             min_safe = bounds.min_led_above_target + margin
             if proposed_led < min_safe:
                 proposed_led = min(config.MAX_LED, min_safe)
-                _log(logger, "info", f"  🔒 {channel.upper()} raised LED {original_led}→{proposed_led} (undershoot boundary)")
+                _log(logger, "debug", f"  🔒 {channel.upper()} raised LED {original_led}→{proposed_led} (undershoot boundary)")
 
         return proposed_led
 
@@ -430,7 +430,7 @@ def calculate_led_adjustment(
             slope_str = f"model:{model_slope:.1f}"
         else:
             slope_str = f"est:{(estimated_slope or 0.0):.1f}"
-        _log(logger, "info", f"  🎯 {channel.upper()} LED {current_led}→{new_led} (Δ{led_delta:+.1f}, {slope_str})")
+        _log(logger, "debug", f"  🎯 {channel.upper()} LED {current_led}→{new_led} (Δ{led_delta:+.1f}, {slope_str})")
 
     else:
         # Fallback: ratio-based adjustment
@@ -441,7 +441,7 @@ def calculate_led_adjustment(
             ratio = 1.5
 
         new_led = int(current_led * ratio)
-        _log(logger, "info", f"  📊 {channel.upper()} LED {current_led}→{new_led} (ratio: {ratio:.2f})")
+        _log(logger, "debug", f"  📊 {channel.upper()} LED {current_led}→{new_led} (ratio: {ratio:.2f})")
 
     # Clamp to valid range
     new_led = max(config.MIN_LED, min(config.MAX_LED, new_led))
@@ -496,9 +496,9 @@ def calculate_saturation_recovery(
     new_led = int(max(config.MIN_LED, current_led - led_reduction))
 
     if model_slope:
-        _log(logger, "info", f"  🚨 {channel.upper()} saturated ({sat_pixels}px, {signal_excess_pct:+.1f}% above target) → LED {current_led}→{new_led} (Δ-{led_reduction:.1f}, slope={model_slope:.1f})")
+        _log(logger, "debug", f"  🚨 {channel.upper()} saturated ({sat_pixels}px, {signal_excess_pct:+.1f}% above target) → LED {current_led}→{new_led} (Δ-{led_reduction:.1f}, slope={model_slope:.1f})")
     else:
-        _log(logger, "info", f"  🚨 {channel.upper()} saturated ({sat_pixels}px) → LED {current_led}→{new_led} (Δ-{led_reduction:.0f})")
+        _log(logger, "debug", f"  🚨 {channel.upper()} saturated ({sat_pixels}px) → LED {current_led}→{new_led} (Δ-{led_reduction:.0f})")
 
     return new_led
 
@@ -528,6 +528,6 @@ def calculate_integration_time_reduction(
     new_integration = max(detector_params.min_integration_time, new_integration)
 
     if new_integration < current_integration:
-        _log(logger, "info", f"  ⏱️ Reducing integration time: {current_integration:.1f}ms → {new_integration:.1f}ms (saturation: {total_sat}px)")
+        _log(logger, "debug", f"  ⏱️ Reducing integration time: {current_integration:.1f}ms → {new_integration:.1f}ms (saturation: {total_sat}px)")
 
     return new_integration

@@ -89,8 +89,8 @@ def initialize_device_on_connection(usb_device: Any) -> Path | None:
         device_manager = get_device_manager()
         device_dir = device_manager.set_device(serial_number)
 
-        logger.info(f"[OK] Device initialized: {serial_number}")
-        logger.info(f"   Config directory: {device_dir}")
+        logger.debug(f"Device initialized: {serial_number}")
+        logger.debug(f"   Config directory: {device_dir}")
 
         return device_dir
 

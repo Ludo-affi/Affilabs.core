@@ -41,7 +41,7 @@ def initialize_pipelines():
             with open(config_file) as f:
                 config_data = json.load(f)
                 saved_pipeline = config_data.get("active_pipeline", "fourier")
-                logger.info(f"Loaded saved pipeline preference: {saved_pipeline}")
+                logger.debug(f"Loaded saved pipeline preference: {saved_pipeline}")
     except Exception as e:
         logger.warning(f"Could not load pipeline config, using default: {e}")
 

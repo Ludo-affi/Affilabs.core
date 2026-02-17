@@ -88,10 +88,10 @@ class QueueSummaryWidget(QTableWidget):
         self.setColumnCount(4)
         self.setHorizontalHeaderLabels(["#", "Type", "Duration (min)", "Notes"])
 
-        # Column sizing
+        # Column sizing - fit content for short columns, stretch Notes
         header = self.horizontalHeader()
         header.setSectionResizeMode(self.COL_NUM, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(self.COL_TYPE, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(self.COL_TYPE, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(self.COL_DURATION, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(self.COL_NOTES, QHeaderView.ResizeMode.Stretch)
 

@@ -238,7 +238,7 @@ class QueueManager(QObject):
             cycle: Completed Cycle object
         """
         self._completed.append(cycle)
-        logger.info(f"✅ Marked cycle as completed: {cycle.name} (ID: {cycle.cycle_id})")
+        logger.debug(f"✅ Marked cycle as completed: {cycle.name} (ID: {cycle.cycle_id})")
 
     def get_completed_cycles(self) -> List[Cycle]:
         """Get list of all completed cycles.

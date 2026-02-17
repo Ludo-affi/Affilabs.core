@@ -79,8 +79,8 @@ class DeviceManager:
         # Create device directory if it doesn't exist
         self.current_device_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"📱 Device set: {serial_number}")
-        logger.info(f"   Config directory: {self.current_device_dir}")
+        logger.debug(f"Device set: {serial_number}")
+        logger.debug(f"   Config directory: {self.current_device_dir}")
 
         # Load device config (create if doesn't exist)
         self._load_or_create_device_config()
@@ -105,7 +105,7 @@ class DeviceManager:
             try:
                 with open(config_file) as f:
                     self.device_config = json.load(f)
-                logger.info(f"[OK] Loaded device config: {config_file.name}")
+                logger.debug(f"Loaded device config: {config_file.name}")
                 return self.device_config
             except json.JSONDecodeError as e:
                 logger.error(f"[ERROR] Invalid JSON in device config: {e}")

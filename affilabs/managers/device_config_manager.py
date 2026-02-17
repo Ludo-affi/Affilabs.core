@@ -117,11 +117,11 @@ class DeviceConfigManager:
                 self.oem_config_just_completed = False
                 # Will be triggered automatically when hardware is ready
             else:
-                logger.info("✓ Device configuration loaded successfully")
+                logger.debug("Device configuration loaded successfully")
                 if self.device_config.loaded_from_eeprom:
-                    logger.info("  Source: EEPROM → JSON (auto-saved)")
+                    logger.debug("  Source: EEPROM -> JSON (auto-saved)")
                 else:
-                    logger.info("  Source: JSON file")
+                    logger.debug("  Source: JSON file")
 
             # Update UI with current values
             if hasattr(self.main_window, "_update_maintenance_display"):
@@ -143,7 +143,7 @@ class DeviceConfigManager:
                             led_c=led_intensities.get("c", 0),
                             led_d=led_intensities.get("d", 0),
                         )
-                        logger.info(
+                        logger.debug(
                             f"Auto-loaded hardware settings to sidebar: S={s_pos}, P={p_pos}",
                         )
                     else:
@@ -152,11 +152,11 @@ class DeviceConfigManager:
                     logger.warning(f"Could not auto-load hardware settings: {e}")
 
             if device_serial:
-                logger.info(
+                logger.debug(
                     f"Device configuration initialized for S/N: {device_serial}",
                 )
             else:
-                logger.info("Device configuration initialized with default config")
+                logger.debug("Device configuration initialized with default config")
         except Exception as e:
             logger.error(f"Failed to initialize device configuration: {e}")
             self.device_config = None
@@ -395,7 +395,7 @@ class DeviceConfigManager:
         4. Pull LED intensities from data_mgr and update device_config
         5. Push complete config to EEPROM
         """
-        logger.info("🏭 Starting OEM calibration workflow...")
+        logger.debug("🏭 Starting OEM calibration workflow...")
 
         # Check if hardware is ready
         if not hasattr(self.main_window, "app") or not self.main_window.app:

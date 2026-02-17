@@ -650,10 +650,17 @@ def auto_detect_injection_point(
             dt = times[injection_idx + 1] - times[injection_idx - 1]
             dy = values[injection_idx + 1] - values[injection_idx - 1]
             max_slope_value = dy / dt if dt > 0 else 0.0
-        else:
+        elif injection_idx == 0 and len(values) > 1:
             dt = times[1] - times[0]
-            dy = values[injection_idx + 1] - values[injection_idx]
+            dy = values[1] - values[0]
             max_slope_value = dy / dt if dt > 0 else 0.0
+        elif injection_idx > 0:
+            # Last point — use backward difference
+            dt = times[injection_idx] - times[injection_idx - 1]
+            dy = values[injection_idx] - values[injection_idx - 1]
+            max_slope_value = dy / dt if dt > 0 else 0.0
+        else:
+            max_slope_value = 0.0
 
         # Determine injection direction
         injection_direction = 1 if max_slope_value >= 0 else -1
@@ -716,7 +723,7 @@ def auto_detect_injection_point(
         }
 
     except Exception as e:
-        logger.warning(f"Auto-detection failed: {e}")
+        logger.debug(f"Auto-detection failed: {e}")
         return {
             'injection_time': None,
             'injection_index': None,

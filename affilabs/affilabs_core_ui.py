@@ -313,6 +313,13 @@ class AffilabsMainWindow(QMainWindow):
         self._connecting_anim_step = 0
         self._connecting_anim_timer.timeout.connect(self._update_connecting_animation)
 
+        # Semi-transparent backdrop for connecting overlay
+        self._connecting_backdrop = QFrame(self)
+        self._connecting_backdrop.setStyleSheet(
+            "QFrame { background: rgba(0, 0, 0, 0.35); }"
+        )
+        self._connecting_backdrop.setVisible(False)
+
     def _setup_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -578,13 +585,19 @@ class AffilabsMainWindow(QMainWindow):
                     self._connecting_anim_step = 0
                     self.connecting_label.setText("Connecting to hardware...")
 
-                    # Position as centered overlay
+                    # Show dimming backdrop over entire window
+                    self._connecting_backdrop.setParent(self)
+                    self._connecting_backdrop.setGeometry(0, 0, self.width(), self.height())
+                    self._connecting_backdrop.setVisible(True)
+                    self._connecting_backdrop.raise_()
+
+                    # Position label as centered overlay on top of backdrop
                     self.connecting_label.setParent(self)
-                    self.connecting_label.raise_()  # Bring to front
+                    self.connecting_label.raise_()
 
                     # Center the label
-                    label_width = 300
-                    label_height = 60
+                    label_width = 380
+                    label_height = 80
                     x = (self.width() - label_width) // 2
                     y = (self.height() - label_height) // 2
                     self.connecting_label.setGeometry(x, y, label_width, label_height)
@@ -597,9 +610,10 @@ class AffilabsMainWindow(QMainWindow):
                     self._busy_cursor_active = True
                     logger.debug("Connecting indicator: busy cursor set")
             else:
-                # Stop animation and hide label
+                # Stop animation and hide label + backdrop
                 self._connecting_anim_timer.stop()
                 self.connecting_label.setVisible(False)
+                self._connecting_backdrop.setVisible(False)
 
                 # Restore cursor with fallback safety
                 if hasattr(self, "_busy_cursor_active") and self._busy_cursor_active:
@@ -1427,16 +1441,249 @@ class AffilabsMainWindow(QMainWindow):
 
                 logger.info("âœ… Cleared injection alignment reference")
 
+            # Hide shift indicator label
+            if hasattr(self, 'channel_shift_label'):
+                self.channel_shift_label.setVisible(False)
+
             # Refresh the Active Cycle display to show updated timing
-            if hasattr(self.app, '_refresh_active_cycle_display'):
+            if hasattr(self.app, '_update_cycle_of_interest_graph'):
+                self.app._update_cycle_of_interest_graph()
+            elif hasattr(self.app, '_refresh_active_cycle_display'):
                 self.app._refresh_active_cycle_display()
 
-            print("âœ… Channel timing reset to default")
-            logger.info("âœ… Channel timing reset complete")
+            print("✅ Channel timing reset to default")
+            logger.info("✅ Channel timing reset complete")
 
         except Exception as e:
             logger.error(f"âŒ Error resetting channel timing: {e}")
             print(f"âŒ Error resetting timing: {e}")
+
+    # ── Cycle Notes Popup ──────────────────────────────────────────────
+
+    def _open_cycle_notes_popup(self):
+        """Open a floating popup to add/edit notes for the currently running cycle."""
+        # Close existing popup if open
+        if hasattr(self, '_notes_popup') and self._notes_popup is not None:
+            self._notes_popup.close()
+            self._notes_popup = None
+            return
+
+        # Get current note text from the running cycle
+        current_note = ""
+        if hasattr(self, 'app') and self.app:
+            cycle = getattr(self.app, '_current_cycle', None)
+            if cycle is not None:
+                current_note = getattr(cycle, 'note', "") or ""
+            elif hasattr(self.app, '_current_running_cycle') and self.app._current_running_cycle:
+                current_note = self.app._current_running_cycle.get("notes", "") or ""
+
+        # Build popup frame
+        popup = QFrame(self, Qt.WindowType.Popup)
+        popup.setFixedWidth(320)
+        popup.setStyleSheet(
+            "QFrame {"
+            "  background: #FFFFFF;"
+            "  border: 1px solid #D1D1D6;"
+            "  border-radius: 10px;"
+            "}"
+        )
+        popup.setGraphicsEffect(create_card_shadow())
+
+        layout = QVBoxLayout(popup)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+
+        # Header row
+        header_row = QHBoxLayout()
+        title = QLabel("Cycle Notes")
+        title.setStyleSheet(
+            f"font-size: 13px; font-weight: {Fonts.WEIGHT_SEMIBOLD}; "
+            f"color: {Colors.PRIMARY_TEXT}; background: transparent; border: none;"
+        )
+        header_row.addWidget(title)
+        header_row.addStretch()
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(22, 22)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; font-size: 13px; "
+            f"color: {Colors.SECONDARY_TEXT}; border-radius: 4px; }}"
+            "QPushButton:hover { background: rgba(0,0,0,0.06); }"
+        )
+        close_btn.clicked.connect(popup.close)
+        header_row.addWidget(close_btn)
+        layout.addLayout(header_row)
+
+        # Text input
+        from PySide6.QtWidgets import QPlainTextEdit
+        text_edit = QPlainTextEdit()
+        text_edit.setPlainText(current_note)
+        text_edit.setPlaceholderText("e.g. Bubble on Ch A, sample looked cloudy...")
+        text_edit.setMaximumHeight(80)
+        text_edit.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background: #F9F9F9;"
+            "  border: 1px solid rgba(0, 0, 0, 0.1);"
+            "  border-radius: 6px;"
+            "  padding: 6px 8px;"
+            "  font-size: 12px;"
+            f"  color: {Colors.PRIMARY_TEXT};"
+            f"  font-family: {Fonts.SYSTEM};"
+            "}"
+            "QPlainTextEdit:focus {"
+            "  border: 1.5px solid #007AFF;"
+            "}"
+        )
+        layout.addWidget(text_edit)
+
+        # Bottom row: char counter + save button
+        bottom_row = QHBoxLayout()
+        char_label = QLabel(f"{len(current_note)}/250")
+        char_label.setStyleSheet(
+            f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; "
+            f"background: transparent; border: none;"
+        )
+        bottom_row.addWidget(char_label)
+        bottom_row.addStretch()
+
+        save_btn = QPushButton("Save")
+        save_btn.setFixedHeight(26)
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF; color: white; border: none; border-radius: 6px;"
+            "  padding: 0px 16px; font-size: 12px; font-weight: 600;"
+            "}"
+            "QPushButton:hover { background: #0066DD; }"
+            "QPushButton:pressed { background: #0055BB; }"
+        )
+        bottom_row.addWidget(save_btn)
+        layout.addLayout(bottom_row)
+
+        # Wire up char counter with 250 limit
+        def _on_text_changed():
+            text = text_edit.toPlainText()
+            if len(text) > 250:
+                text_edit.setPlainText(text[:250])
+                cursor = text_edit.textCursor()
+                cursor.movePosition(cursor.MoveOperation.End)
+                text_edit.setTextCursor(cursor)
+            char_label.setText(f"{len(text_edit.toPlainText())}/250")
+
+        text_edit.textChanged.connect(_on_text_changed)
+
+        # Wire save
+        def _save_note():
+            note_text = text_edit.toPlainText().strip()
+            self._save_cycle_note(note_text)
+            popup.close()
+
+        save_btn.clicked.connect(_save_note)
+
+        # Position popup above the note button
+        btn_pos = self.cycle_note_btn.mapToGlobal(self.cycle_note_btn.rect().topLeft())
+        popup.adjustSize()
+        popup.move(btn_pos.x(), btn_pos.y() - popup.height() - 6)
+
+        # Track and show
+        self._notes_popup = popup
+        popup.destroyed.connect(lambda: setattr(self, '_notes_popup', None))
+        popup.show()
+        text_edit.setFocus()
+
+    def _save_cycle_note(self, note_text: str):
+        """Save note text to the currently running cycle and update UI.
+
+        Args:
+            note_text: The note content to save
+        """
+        if not hasattr(self, 'app') or not self.app:
+            return
+
+        saved = False
+
+        # Save to Cycle domain object if available
+        cycle = getattr(self.app, '_current_cycle', None)
+        if cycle is not None and hasattr(cycle, 'note'):
+            cycle.note = note_text
+            saved = True
+            logger.info(f"Saved cycle note to domain object: {note_text[:50]}...")
+
+        # Save to running cycle dict (legacy path)
+        if hasattr(self.app, '_current_running_cycle') and self.app._current_running_cycle:
+            self.app._current_running_cycle["notes"] = note_text
+            saved = True
+
+        if saved:
+            # Update button appearance
+            self._update_cycle_note_button(bool(note_text))
+
+            # Refresh queue summary widget if it shows notes
+            if hasattr(self.app, 'main_window') and hasattr(self.app.main_window, 'queue_summary'):
+                try:
+                    self.app.main_window.queue_summary._refresh_display()
+                except Exception:
+                    pass
+            elif hasattr(self, 'queue_summary'):
+                try:
+                    self.queue_summary._refresh_display()
+                except Exception:
+                    pass
+
+            logger.info(f"Cycle note saved: '{note_text[:60]}{'...' if len(note_text) > 60 else ''}'")
+        else:
+            logger.warning("No active cycle to save note to")
+
+    def _update_cycle_note_button(self, has_note: bool, visible: bool = True):
+        """Update the Note button appearance and visibility.
+
+        Args:
+            has_note: True if the current cycle has a non-empty note
+            visible: True to show the button (cycle running), False to hide (no active cycle)
+        """
+        if not hasattr(self, 'cycle_note_btn'):
+            return
+
+        self.cycle_note_btn.setVisible(visible)
+        self._cycle_note_has_content = has_note
+
+        if has_note:
+            self.cycle_note_btn.setText("Note *")
+            self.cycle_note_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: rgba(0, 122, 255, 0.12);"
+                "  padding: 0px 10px;"
+                "  font-size: 11px;"
+                "  font-weight: 600;"
+                "  color: #007AFF;"
+                "  border-radius: 6px;"
+                "  border: 1px solid rgba(0, 122, 255, 0.3);"
+                "}"
+                "QPushButton:hover { background: rgba(0, 122, 255, 0.2); }"
+                "QPushButton:pressed { background: rgba(0, 122, 255, 0.3); }"
+            )
+        else:
+            self.cycle_note_btn.setText("Note")
+            self.cycle_note_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: rgba(0, 0, 0, 0.05);"
+                "  padding: 0px 10px;"
+                "  font-size: 11px;"
+                "  font-weight: 500;"
+                "  color: #86868B;"
+                "  border-radius: 6px;"
+                "  border: 1px solid #D1D1D6;"
+                "}"
+                "QPushButton:hover { background: rgba(0, 0, 0, 0.08); color: #1D1D1F; }"
+                "QPushButton:pressed { background: rgba(0, 0, 0, 0.12); }"
+            )
+
+    def _close_cycle_notes_popup(self):
+        """Close the notes popup if open."""
+        if hasattr(self, '_notes_popup') and self._notes_popup is not None:
+            self._notes_popup.close()
+            self._notes_popup = None
 
     def _update_flag_counter(self):
         """Update the flag counter label with current number of flags from FlagManager."""
@@ -1748,6 +1995,53 @@ class AffilabsMainWindow(QMainWindow):
             self.reset_timing_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.reset_timing_btn.clicked.connect(self._reset_channel_timing)
             flag_row.addWidget(self.reset_timing_btn)
+
+            # Cycle Notes button - add/edit notes for the currently running cycle
+            self.cycle_note_btn = QPushButton("Note")
+            self.cycle_note_btn.setFixedHeight(28)
+            self.cycle_note_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.cycle_note_btn.setToolTip("Add or edit notes for the current cycle")
+            self.cycle_note_btn.setVisible(False)  # Hidden until a cycle starts
+            self._cycle_note_has_content = False
+            self.cycle_note_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: rgba(0, 0, 0, 0.05);"
+                "  padding: 0px 10px;"
+                "  font-size: 11px;"
+                "  font-weight: 500;"
+                "  color: #86868B;"
+                "  border-radius: 6px;"
+                "  border: 1px solid #D1D1D6;"
+                "}"
+                "QPushButton:hover { background: rgba(0, 0, 0, 0.08); color: #1D1D1F; }"
+                "QPushButton:pressed { background: rgba(0, 0, 0, 0.12); }"
+            )
+            self.cycle_note_btn.clicked.connect(self._open_cycle_notes_popup)
+            flag_row.addWidget(self.cycle_note_btn)
+
+            # Channel time-shift indicator (hidden until a shift is applied)
+            self.channel_shift_label = QLabel("")
+            self.channel_shift_label.setVisible(False)
+            self.channel_shift_label.setStyleSheet(
+                "QLabel {"
+                "  background: rgba(0, 122, 255, 0.08);"
+                "  border: 1px solid rgba(0, 122, 255, 0.25);"
+                "  border-radius: 4px;"
+                "  padding: 2px 8px;"
+                "  font-size: 11px;"
+                "  color: #007AFF;"
+                f"  font-family: {Fonts.MONOSPACE};"
+                "  font-weight: 600;"
+                "}"
+            )
+            self.channel_shift_label.setToolTip(
+                "Channel time shift (visual only)\n"
+                "← / → Arrow keys: shift ±0.1s\n"
+                "Shift + Arrow: shift ±1.0s\n"
+                "Esc: reset selected channel\n"
+                "Reset Timing button: reset all"
+            )
+            flag_row.addWidget(self.channel_shift_label)
 
             # Add spacing before delta SPR display
             flag_row.addSpacing(16)
@@ -2173,7 +2467,7 @@ class AffilabsMainWindow(QMainWindow):
     def _load_data_from_excel(self):
         """Load previous acquisition data from Excel file for editing."""
         from PySide6.QtWidgets import QFileDialog
-        
+
         # Open file dialog
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -2181,13 +2475,13 @@ class AffilabsMainWindow(QMainWindow):
             "",
             "Excel Files (*.xlsx);All Files (*)"
         )
-        
+
         if not file_path:
             return
-        
+
         # Call internal load function
         self._load_data_from_excel_internal(file_path)
-    
+
     def _load_data_from_excel_internal(self, file_path: str):
         """Internal function to load Excel data (used by both dialog and direct calls)."""
         from PySide6.QtWidgets import QMessageBox
@@ -2379,6 +2673,17 @@ class AffilabsMainWindow(QMainWindow):
                             cycle_dict['flags'] = flags_val
                     elif not flags_val or (isinstance(flags_val, float) and pd.isna(flags_val)):
                         cycle_dict['flags'] = ''
+
+                    # Parse flag_data from string list representation if present
+                    flag_data_val = cycle_dict.get('flag_data', [])
+                    if isinstance(flag_data_val, str) and flag_data_val.startswith('['):
+                        import ast
+                        try:
+                            cycle_dict['flag_data'] = ast.literal_eval(flag_data_val)
+                        except Exception:
+                            cycle_dict['flag_data'] = []
+                    elif isinstance(flag_data_val, float) and pd.isna(flag_data_val):
+                        cycle_dict['flag_data'] = []
 
                     cycles_data.append(cycle_dict)
 
@@ -3801,7 +4106,7 @@ class AffilabsMainWindow(QMainWindow):
 
             if result == QMessageBox.StandardButton.Yes:
                 # User confirmed power off
-                print("[UI] Power OFF: Disconnecting hardware...")
+                logger.debug("Power OFF: Disconnecting hardware...")
                 self.power_btn.setProperty("powerState", "disconnected")
                 self._update_power_button_style()
                 self.power_btn.setChecked(False)
@@ -4054,20 +4359,17 @@ class AffilabsMainWindow(QMainWindow):
         self._update_subunit_readiness_from_status(status)
 
         # Update operation mode availability based on hardware
-        logger.debug(f"ðŸ“¥ update_hardware_status received: flow_calibrated={status.get('flow_calibrated', 'NOT SET')}")
         self._update_operation_modes(status)
 
     def _update_subunit_readiness_from_status(self, status: dict[str, Any]) -> None:
         """Update subunit readiness based on hardware verification results."""
         # Sensor readiness
         if "sensor_ready" in status:
-            logger.info(f"[UI] Setting Sensor readiness: {status['sensor_ready']}")
             self._set_subunit_status("Sensor", status["sensor_ready"])
 
         # Optics readiness
         if "optics_ready" in status:
             optics_ready = status["optics_ready"]
-            logger.info(f"[UI] Setting Optics readiness: {optics_ready}")
             optics_details = {
                 "failed_channels": status.get("optics_failed_channels", []),
                 "maintenance_channels": status.get("optics_maintenance_channels", []),
@@ -4077,9 +4379,6 @@ class AffilabsMainWindow(QMainWindow):
         # Fluidics readiness - only show for flow-capable controllers
         if "fluidics_ready" in status:
             fluidics_ready = status["fluidics_ready"]
-            logger.info(f"[UI] Setting Fluidics readiness: {fluidics_ready}")
-            logger.info(f"[UI] Full status dict keys: {list(status.keys())}")
-            logger.info(f"[UI] pump_connected={status.get('pump_connected')}, flow_calibrated={status.get('flow_calibrated')}")
             self._set_subunit_status("Fluidics", fluidics_ready)
             # Show the fluidics row
             self._set_subunit_visibility("Fluidics", True)
@@ -4158,7 +4457,7 @@ class AffilabsMainWindow(QMainWindow):
 
             from affilabs.utils.logger import logger
 
-            logger.info(f"{subunit_name}: {'Ready' if is_ready else 'Not Ready'}")
+            logger.debug(f"{subunit_name}: {'Ready' if is_ready else 'Not Ready'}")
 
     def _set_optics_warning(self) -> None:
         """Apply light red background to live sensorgram when proceeding with unready optics."""
@@ -4218,7 +4517,7 @@ class AffilabsMainWindow(QMainWindow):
 
             from affilabs.utils.logger import logger
 
-            logger.info("âœ… Optics ready - sensorgram background restored to normal")
+            logger.debug("Optics ready - sensorgram background restored to normal")
 
     def _update_operation_modes(self, status: dict[str, Any]) -> None:
         """Update available operation modes based on hardware type."""
@@ -4239,29 +4538,12 @@ class AffilabsMainWindow(QMainWindow):
         # For P4PROPLUS (internal pumps) and other flow controllers, still needs calibration
         flow_available = status.get("flow_calibrated", False)  # Enabled after calibration completes
 
-        logger.info("ðŸ”„ Operation modes update:")
-        logger.info(f"   ctrl_type={ctrl_type}")
-        logger.info(f"   pump_connected={has_pump}")
-        logger.info(f"   flow_calibrated={status.get('flow_calibrated', 'NOT IN STATUS DICT')}")
-        logger.info(f"   flow_available={flow_available} (THIS CONTROLS GREEN/GRAY)")
-        logger.info(f"   static_available={static_available}")
+        logger.debug(f"Operation modes: ctrl={ctrl_type} static={static_available} flow={flow_available} pump={has_pump}")
 
         # P4SPR static device - only Static mode
-        if ctrl_type in ["P4SPR", "PicoP4SPR"]:
-            logger.info(f"P4SPR device detected - Static mode: {'âœ… Available' if static_available else 'âŒ Disabled'}")
-            if has_pump:
-                logger.info("Pump detected - Flow mode also available")
-            else:
-                logger.info("No pump - Flow mode disabled")
-
-        # EZSPR or other devices
-        elif ctrl_type in ["EZSPR", "PicoEZSPR"]:
-            logger.info(f"EZSPR device detected - Static mode: {'âœ… Available' if static_available else 'âŒ Disabled'}, Flow mode: {'âœ… Available' if flow_available else 'âŒ Disabled'}")
-
         # Update UI indicators
         if hasattr(self.sidebar, "set_operation_mode_availability"):
             self.sidebar.set_operation_mode_availability(static_available, flow_available)
-            logger.debug(f"âœ“ Called set_operation_mode_availability(static={static_available}, flow={flow_available})")
 
     def _update_scan_button_style(self) -> None:
         """Update scan button style based on scanning state.
@@ -4693,7 +4975,7 @@ class AffilabsMainWindow(QMainWindow):
 
         self.last_powered_on = datetime.datetime.now()
 
-        logger.info(
+        logger.debug(
             f"Device powered on at {self.last_powered_on.strftime('%Y-%m-%d %H:%M:%S')}",
         )
         self._update_maintenance_display()
@@ -4882,8 +5164,99 @@ class AffilabsMainWindow(QMainWindow):
                 logger.info(f"âœ“ Queue completed - no more cycles")
                 if hasattr(self, '_queue_running'):
                     self._queue_running = False
+                self._show_run_complete_dialog()
             elif self._current_running_cycle:
                 logger.warning(f"âš ï¸ Cannot start next cycle - current cycle still running")
+
+    def _show_run_complete_dialog(self):
+        """Show completion dialog prompting user to review data and export."""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+        from PySide6.QtCore import Qt
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Run Complete")
+        dialog.setFixedWidth(420)
+        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+        dialog.setStyleSheet(
+            "QDialog {"
+            "  background: #FFFFFF;"
+            "  border-radius: 12px;"
+            "}"
+        )
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(12)
+
+        # Icon + title
+        title = QLabel("\u2705  All cycles complete")
+        title.setStyleSheet(
+            "font-size: 18px; font-weight: 700; color: #1D1D1F;"
+            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+        )
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        # Body text
+        body = QLabel(
+            "Your experiment run has finished and Auto-Read is now active.\n\n"
+            "Review your data in the Edits tab and export the raw data before closing."
+        )
+        body.setWordWrap(True)
+        body.setStyleSheet(
+            "font-size: 13px; color: #86868B; line-height: 1.5;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        body.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(body)
+
+        layout.addSpacing(8)
+
+        # Buttons row
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+
+        dismiss_btn = QPushButton("Dismiss")
+        dismiss_btn.setFixedHeight(36)
+        dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        dismiss_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #F5F5F7; color: #1D1D1F; border: none;"
+            "  border-radius: 8px; padding: 8px 20px;"
+            "  font-size: 13px; font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover { background: #E8E8ED; }"
+        )
+        dismiss_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(dismiss_btn)
+
+        export_btn = QPushButton("\U0001F4E5  Export Data")
+        export_btn.setFixedHeight(36)
+        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        export_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF; color: white; border: none;"
+            "  border-radius: 8px; padding: 8px 20px;"
+            "  font-size: 13px; font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover { background: #0066D6; }"
+        )
+
+        def _on_export():
+            dialog.accept()
+            # Switch to Edits tab
+            self.content_stack.setCurrentIndex(1)
+            # Trigger raw data export
+            if hasattr(self, 'edits_tab'):
+                self.edits_tab._export_raw_data()
+
+        export_btn.clicked.connect(_on_export)
+        btn_layout.addWidget(export_btn)
+
+        layout.addLayout(btn_layout)
+        dialog.exec()
 
     def start_cycle_countdown(self, duration_minutes: int):
         """Start countdown timer for cycle duration.
@@ -5475,68 +5848,68 @@ class AffilabsMainWindow(QMainWindow):
 
     def _place_automatic_wash_flags(self):
         """Automatically place wash flags when contact time expires.
-        
+
         Places wash flags on all channels that have injection flags.
         Wash time = current sensorgram time (when contact timer expired).
         """
         from affilabs.utils.logger import logger
-        
+
         try:
             # Get current sensorgram time
             if not hasattr(self, 'full_timeline_graph'):
                 return
-            
+
             timeline = self.full_timeline_graph
             if not hasattr(timeline, 'stop_cursor'):
                 return
-            
+
             wash_time = timeline.stop_cursor.value()
-            
+
             # Get cycle coordinator to access flag data
             if not hasattr(self, 'cycle_coordinator'):
                 return
-            
+
             coordinator = self.cycle_coordinator
             if not hasattr(coordinator, '_flag_markers'):
                 return
-            
+
             # Find all channels with injection flags
             injection_flags = {f['channel']: f for f in coordinator._flag_markers if f['type'] == 'injection'}
-            
+
             if not injection_flags:
                 logger.debug("No injection flags found - skipping automatic wash flags")
                 return
-            
+
             # Place wash flag on each channel that has an injection flag
             for channel, inj_flag in injection_flags.items():
                 # Get SPR value at wash time for this channel
                 try:
                     if channel not in self.buffer_mgr.cycle_data:
                         continue
-                    
+
                     channel_data = self.buffer_mgr.cycle_data[channel]
                     if len(channel_data.time) == 0 or len(channel_data.spr) == 0:
                         continue
-                    
+
                     # Convert wash time from display to raw for lookup
                     from affilabs.domain import TimeBase
                     wash_time_raw = self.clock.convert(wash_time, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
-                    
+
                     # Find SPR value at wash time
                     import numpy as np
                     time_idx = np.argmin(np.abs(channel_data.time - wash_time_raw))
                     spr_val = channel_data.spr[time_idx]
-                    
+
                     # Place wash flag
                     coordinator._add_flag_marker(channel, wash_time, spr_val, 'wash')
                     logger.info(f"✓ Automatic wash flag placed on channel {channel.upper()} at t={wash_time:.1f}s")
-                    
+
                 except Exception as e:
                     logger.debug(f"Could not place wash flag on channel {channel}: {e}")
-            
+
         except Exception as e:
             logger.debug(f"Could not place automatic wash flags: {e}")
-    
+
     def _stop_alarm_loop(self):
         """Stop the looping alarm sound and clean up timer state."""
         from affilabs.utils.alarm_sound import get_alarm_player
@@ -5881,8 +6254,8 @@ class AffilabsMainWindow(QMainWindow):
                 led_d=led_intensities.get("d", 0),
             )
 
-            logger.info(
-                f"âœ“ Loaded current settings: S={s_pos}Â°, P={p_pos}Â°, LEDs={led_intensities} (source={source})",
+            logger.debug(
+                f"Loaded current settings: S={s_pos}, P={p_pos}, LEDs={led_intensities} (source={source})",
             )
 
             # Initialize pipeline selector to current configuration
@@ -6278,9 +6651,9 @@ class AffilabsMainWindow(QMainWindow):
             # 3. Pumps are stopped
             # NO EXIT PATH bypasses this graceful shutdown
             if app_instance and hasattr(app_instance, 'close'):
-                logger.info("ðŸ”’ Triggering graceful hardware shutdown...")
+                logger.debug("Triggering graceful hardware shutdown...")
                 app_instance.close()
-                logger.info("âœ“ Hardware shutdown complete")
+                logger.debug("Hardware shutdown complete")
 
             devices_to_unplug = []
             if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
@@ -6838,6 +7211,10 @@ class AffilabsMainWindow(QMainWindow):
                             end_time = start_time + (duration_min * 60)
                         else:
                             end_time = start_time + 300  # 5 minutes default
+
+            # Update barchart with new cycle data
+            if hasattr(self, 'edits_tab'):
+                self.edits_tab._update_delta_spr_barchart()
 
         except Exception as e:
             logger.exception(f"Error loading cycle data to edits graph: {e}")

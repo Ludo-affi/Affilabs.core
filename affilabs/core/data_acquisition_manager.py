@@ -343,9 +343,7 @@ class DataAcquisitionManager(QObject):
 
         """
         try:
-            logger.info("=" * 80)
-            logger.info("📊 APPLYING CALIBRATION DATA")
-            logger.info("=" * 80)
+            logger.debug("Applying calibration data")
 
             # Validate input
             if calibration_data is None:
@@ -364,22 +362,14 @@ class DataAcquisitionManager(QObject):
             spol_channels = (
                 list(calibration_data.s_pol_ref.keys()) if calibration_data.s_pol_ref else []
             )
-            logger.info(f"  S-pol ref channels in calibration_data: {spol_channels}")
-            for ch in spol_channels:
-                ref = calibration_data.s_pol_ref[ch]
-                logger.info(
-                    f"    Ch {ch}: {'None' if ref is None else f'len={len(ref)}, type={type(ref).__name__}'}",
-                )
-
-            # Log key parameters
-            logger.info(f"  Integration Time: {calibration_data.integration_time}ms")
-            logger.info(f"  Scans per Spectrum: {calibration_data.num_scans}")
-            logger.info(f"  Calibrated Channels: {calibration_data.get_channels()}")
-            logger.info(
-                f"  Wavelength Range: {calibration_data.wavelength_min:.1f}-{calibration_data.wavelength_max:.1f}nm",
-            )
-            logger.info(
-                f"  SPR Range Indices: {calibration_data.wave_min_index}-{calibration_data.wave_max_index}",
+            ref_info = ", ".join([f"{ch}:{len(calibration_data.s_pol_ref[ch])}" for ch in spol_channels if calibration_data.s_pol_ref[ch] is not None])
+            
+            # Log key parameters in compact format
+            logger.debug(
+                f"  Ref: [{ref_info}] | Int: {calibration_data.integration_time:.2f}ms | "
+                f"Scans: {calibration_data.num_scans} | Ch: {calibration_data.get_channels()} | "
+                f"λ: {calibration_data.wavelength_min:.0f}-{calibration_data.wavelength_max:.0f}nm | "
+                f"SPR idx: {calibration_data.wave_min_index}-{calibration_data.wave_max_index}"
             )
 
             # LED timing now controlled via Advanced Settings (LED_ON_TIME_MS, LED_OFF_TIME_MS)
@@ -388,10 +378,7 @@ class DataAcquisitionManager(QObject):
             # Mark as calibrated (enables start_acquisition)
             self.calibrated = True
 
-            logger.info("Calibration data applied successfully")
-            logger.info("Acquisition manager ready for live measurements")
-            logger.info("=" * 80)
-            logger.info("")
+            logger.debug("✓ Calibration applied, acquisition ready")
 
         except Exception as e:
             logger.error(f"❌ Failed to apply calibration data: {e}", exc_info=True)
@@ -642,7 +629,7 @@ class DataAcquisitionManager(QObject):
             logger.debug("stop_acquisition called but not acquiring")
             return
 
-        logger.info("Stopping spectrum acquisition...")
+        logger.debug("Stopping spectrum acquisition...")
 
         # Signal threads to stop
         self._stop_acquisition.set()
@@ -661,7 +648,7 @@ class DataAcquisitionManager(QObject):
                 if ctrl._ser.in_waiting > 0:
                     response = ctrl._ser.read(ctrl._ser.in_waiting)
                     if b"BATCH_STOPPED" in response:
-                        logger.info("✅ Firmware rankbatch timer stopped")
+                        logger.debug("Firmware rankbatch timer stopped")
         except Exception as e:
             logger.debug(f"Firmware stop command failed (non-critical): {e}")
 
@@ -670,12 +657,12 @@ class DataAcquisitionManager(QObject):
             ctrl = self.hardware_mgr.ctrl
             if ctrl and hasattr(ctrl, "emergency_shutdown"):
                 ctrl.emergency_shutdown()
-                logger.info("✅ Emergency shutdown - all LEDs off")
+                logger.debug("Emergency shutdown - all LEDs off")
 
             # Unlock servo control (P4SPR safeguard)
             if ctrl:
                 ctrl._acquisition_blocked = False
-                logger.info("🔓 Servo control UNLOCKED")
+                logger.debug("Servo control UNLOCKED")
         except Exception as e:
             logger.debug(
                 f"Emergency shutdown or servo unlock failed (non-critical): {e}",
@@ -688,7 +675,7 @@ class DataAcquisitionManager(QObject):
             if self._acquisition_thread.is_alive():
                 logger.warning("⚠️ Acquisition thread did not stop within timeout")
             else:
-                logger.info("✅ Acquisition thread stopped cleanly")
+                logger.debug("Acquisition thread stopped cleanly")
 
         self._acquisition_thread = None
 
@@ -1099,9 +1086,10 @@ class DataAcquisitionManager(QObject):
                     # This is the standard production method - reliable and predictable
                     if not self._rank_mode_enabled and self._batch_supported:
                         try:
-                            logger.debug(
-                                f"[BATCH] Starting batch acquisition for cycle {cycle_count}"
-                            )
+                            if cycle_count % 100 == 0:
+                                logger.debug(
+                                    f"[BATCH] Batch acquisition cycle {cycle_count}"
+                                )
 
                             # Build LED intensity dict
                             led_intensities = {}

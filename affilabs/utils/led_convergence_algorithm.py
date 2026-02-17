@@ -254,10 +254,7 @@ def LEDconverge(
         # Integration time behavior is controlled by recipe/config and detector params.
 
         if converged:
-            _log(logger, "info", f"\n✅ CONVERGED at iteration {iteration}!")
-            _log(logger, "info", "   All channels in tolerance + zero saturation")
-            _log(logger, "info", f"   Final integration time: {integration_ms:.1f}ms")
-            _log(logger, "info", f"   Final LEDs: {led_intensities}")
+            _log(logger, "debug", f"Converged at iteration {iteration}, integration={integration_ms:.1f}ms, LEDs={led_intensities}")
             return integration_ms, signals, True
 
         # Identify locked channels: ACCEPTABLE AND zero saturation

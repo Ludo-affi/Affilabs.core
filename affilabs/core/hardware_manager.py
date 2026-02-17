@@ -374,9 +374,11 @@ class HardwareManager(QObject):
         NOTE: Uses self.ctrl (HAL-wrapped controller) for all operations.
         """
         try:
-            logger.info("=" * 60)
-            logger.info("🔧 INITIALIZING SERVO POLARIZER...")
-            logger.info("=" * 60)
+            logger.debug("🔧 Initializing servo polarizer...")
+            if HARDWARE_DEBUG:
+                logger.debug("=" * 60)
+                logger.debug("🔧 INITIALIZING SERVO POLARIZER...")
+                logger.debug("=" * 60)
 
             # Check if controller supports servo (use HAL)
             if not hasattr(self.ctrl, "servo_move_calibration_only"):
@@ -414,12 +416,12 @@ class HardwareManager(QObject):
             )
 
             # Store positions in controller memory (no EEPROM write)
-            logger.info("📝 Loading servo positions to controller (RAM-only, no flash writes)...")
+            logger.debug("📝 Loading servo positions to controller (RAM-only, no flash writes)...")
             self._ctrl_raw.set_servo_positions(s_position, p_position)
-            logger.info("[OK] Servo positions loaded from device config")
+            logger.debug("[OK] Servo positions loaded from device config")
 
             # Turn off all LEDs for safety during servo movement
-            logger.info("💡 Turning off all LEDs for safe servo movement...")
+            logger.debug("💡 Turning off all LEDs for safe servo movement...")
             self.ctrl.turn_off_channels()
 
             import time
@@ -427,7 +429,7 @@ class HardwareManager(QObject):
             time.sleep(0.1)
 
             # Park servo to 1° to remove backlash (use HAL servo methods)
-            logger.info("🏠 Parking polarizer to 1° (remove backlash)...")
+            logger.debug("🏠 Parking polarizer to 1° (remove backlash)...")
             self.ctrl.servo_move_calibration_only(s=1, p=1)
             time.sleep(0.5)  # Allow servo to complete movement
 
@@ -439,12 +441,13 @@ class HardwareManager(QObject):
             time.sleep(0.5)  # Allow servo to complete movement
 
             # Lock to S-mode via firmware command
-            logger.info("🔒 Locking to S-mode via firmware...")
+            logger.debug("🔒 Locking to S-mode via firmware...")
             self.ctrl.servo_set(s=s_position, p=p_position)
             time.sleep(0.2)
 
-            logger.info("[OK] Servo polarizer initialized to S-mode")
-            logger.info("=" * 60)
+            logger.debug("[OK] Servo polarizer initialized to S-mode")
+            if HARDWARE_DEBUG:
+                logger.debug("=" * 60)
 
         except Exception as e:
             logger.error(f"[ERROR] Servo initialization failed: {e}")
@@ -463,9 +466,9 @@ class HardwareManager(QObject):
         logger.info("_connect_spectrometer() called (manual mode)")
         try:
             if HARDWARE_DEBUG:
-                logger.info("=" * 60)
-                logger.info("SCANNING FOR SPECTROMETER...")
-                logger.info("=" * 60)
+                logger.debug("=" * 60)
+                logger.debug("SCANNING FOR SPECTROMETER...")
+                logger.debug("=" * 60)
 
             # Try fast reconnect first if we have cached info
             if self._spec_serial and self._try_reconnect_spectrometer():
@@ -491,11 +494,9 @@ class HardwareManager(QObject):
                     # Cache serial number for future reconnects
                     if hasattr(usb, "serial_number"):
                         self._spec_serial = usb.serial_number
-                        logger.info(f"Spectrometer connected (HAL wrapped): {self._spec_serial}")
+                        logger.debug(f"Spectrometer connected (HAL wrapped): {self._spec_serial}")
                     else:
-                        logger.info("Spectrometer connected (no serial)")
-
-                # Warm-up dummy read at 10 ms
+                        logger.debug("Spectrometer connected (no serial)")
                 try:
                     import time
 
@@ -623,7 +624,7 @@ class HardwareManager(QObject):
             try:
                 from affilabs.utils.usb4000_wrapper import reset_usb_spectrometers
 
-                logger.info("Attempting software reset of USB spectrometers...")
+                logger.debug("Attempting software reset of USB spectrometers...")
                 reset_usb_spectrometers()
             except Exception as reset_error:
                 # Non-fatal - continue with normal connection
@@ -685,18 +686,12 @@ class HardwareManager(QObject):
                 # Step 1: Try to connect to SPR controller FIRST (priority order)
                 # This determines which main unit is plugged in
                 self.connection_progress.emit("Looking for SPR controller...")
-                print("=" * 80)
-                print("DEBUG: _connect_controller() about to be called")
-                print(f"DEBUG: self.ctrl before scan = {self.ctrl}")
-                print("=" * 80)
-                logger.info("🔍 Starting controller scan (PicoP4SPR → PicoP4PRO → PicoEZSPR)...")
+                logger.debug("Starting controller scan...")
                 t0 = time.time()
                 try:
                     self._connect_controller()
-                    print(f"DEBUG: _connect_controller() returned, self.ctrl = {self.ctrl}")
                 except Exception as ctrl_e:
-                    logger.error(f"❌ Controller scan crashed: {ctrl_e}")
-                    print(f"DEBUG: Exception in _connect_controller(): {ctrl_e}")
+                    logger.error(f"Controller scan crashed: {ctrl_e}")
                     if HARDWARE_DEBUG:
                         import traceback
 
@@ -807,7 +802,7 @@ class HardwareManager(QObject):
                 # Check SPR devices (P4SPR, P4PRO, ezSPR) - require controller + detector
                 if ctrl_type and self.ctrl and self.usb:
                     valid_hardware.append(ctrl_type)
-                    logger.info(f"Hardware ready: {ctrl_type}")
+                    logger.debug(f"Hardware ready: {ctrl_type}")
                 elif ctrl_type and self.ctrl and not self.usb:
                     logger.warning(f"{ctrl_type} controller found, detector missing")
                     # Do NOT add to valid_hardware - power button stays yellow
@@ -816,12 +811,12 @@ class HardwareManager(QObject):
                 knx_type = self._get_kinetic_type()
                 if knx_type and self.knx:
                     valid_hardware.append(knx_type)
-                    logger.info(f"Hardware ready: {knx_type}")
+                    logger.debug(f"Hardware ready: {knx_type}")
 
                 # Check pump (AffiPump) - standalone, mutually exclusive with KNX
                 if self.pump:
                     valid_hardware.append("AffiPump")
-                    logger.info("Hardware ready: AffiPump")
+                    logger.debug("Hardware ready: AffiPump")
 
                 # Emit final status
                 # DEBUG: Log spectrometer serial detection
@@ -847,29 +842,17 @@ class HardwareManager(QObject):
 
                 # Log hardware detection results
                 total_time = time.time() - scan_start
-                logger.info("=" * 60)
-                logger.info(f"HARDWARE SCAN COMPLETE ({total_time:.2f}s)")
-                logger.info("Scanning order: Controller → Detector → Pump → Kinetic")
-                logger.info(
-                    f"  • Controller: {self.ctrl.get_device_type() if self.ctrl else 'NOT FOUND'}",
+                ctrl_str = self.ctrl.get_device_type() if self.ctrl else '-'
+                pump_str = 'yes' if self.pump else '-'
+                knx_str = self.knx.name if self.knx else '-'
+                det_str = 'yes' if self.usb else '-'
+                logger.debug(
+                    f"Scan complete ({total_time:.1f}s): ctrl={ctrl_str} det={det_str} pump={pump_str} knx={knx_str}"
                 )
-                logger.info(
-                    f"  • Detector:   {'CONNECTED' if self.usb else 'NOT FOUND'}",
-                )
-                logger.info(
-                    f"  • Pump:       {'CONNECTED' if self.pump else 'NOT FOUND'}",
-                )
-                logger.info(
-                    f"  • Kinetic:    {self.knx.name if self.knx else ('SKIPPED' if self.pump else 'NOT FOUND')}",
-                )
-                logger.info(
-                    f"  → Valid Hardware: {', '.join(valid_hardware) if valid_hardware else 'NONE'}",
-                )
-                logger.info("=" * 60)
 
                 # Emit status
                 if valid_hardware:
-                    logger.info(
+                    logger.debug(
                         f"[OK] Hardware scan SUCCESSFUL - found {len(valid_hardware)} device(s)",
                     )
 
@@ -1103,47 +1086,37 @@ class HardwareManager(QObject):
             logger.info("Fast reconnect failed, doing full scan...")
 
         try:
-            print("DEBUG: ENTERED try block in _connect_controller")
-            logger.info("=" * 60)
-            logger.info("SCANNING FOR CONTROLLERS...")
-            logger.info("=" * 60)
-            print("DEBUG: About to import serial.tools.list_ports")
+            if HARDWARE_DEBUG:
+                logger.debug("Scanning for controllers...")
 
             # Check available serial ports
             import serial.tools.list_ports
 
             available_ports = list(serial.tools.list_ports.comports())
-            print(f"DEBUG: Found {len(available_ports)} ports")
-            logger.info(f"Serial ports: {len(available_ports)}")
-            for port in available_ports:
-                vid_str = f"0x{port.vid:04X}" if port.vid else "None"
-                pid_str = f"0x{port.pid:04X}" if port.pid else "None"
-                logger.info(
-                    f"  {port.device}: VID={vid_str} PID={pid_str} - {port.description}",
-                )
+            logger.debug(f"Serial ports: {len(available_ports)}")
+            if HARDWARE_DEBUG:
+                for port in available_ports:
+                    vid_str = f"0x{port.vid:04X}" if port.vid else "None"
+                    pid_str = f"0x{port.pid:04X}" if port.pid else "None"
+                    logger.debug(
+                        f"  {port.device}: VID={vid_str} PID={pid_str} - {port.description}",
+                    )
 
             # Get controller classes safely
-            print("DEBUG: Getting controller classes")
             classes = _get_controller_classes()
             settings = _get_settings()
-            print(f"DEBUG: Got classes={list(classes.keys())}")
 
             # Try controllers in priority order: PicoP4SPR → PicoP4PRO → PicoEZSPR → Arduino
             # STOP at first controller found - ignore the rest
 
             # Priority 1: Try PicoP4SPR first (most common modern controller)
-            print("DEBUG: [1/3] About to try PicoP4SPR")
-            logger.info(
+            logger.debug(
                 f"[1/3] Trying PicoP4SPR (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
             )
             pico_p4spr = classes["PicoP4SPR"]()
-            print("DEBUG: Calling pico_p4spr.open()...")
             open_result = pico_p4spr.open()
-            print(f"DEBUG: pico_p4spr.open() returned: {open_result}")
-            print(f"DEBUG: pico_p4spr.open() returned: {open_result}")
             if open_result:
-                print("DEBUG: PicoP4SPR connected successfully!")
-                logger.info(f"✅ [OK] Controller connected: {pico_p4spr.name}")
+                logger.debug(f"Controller connected: {pico_p4spr.name}")
 
                 # Wrap with HAL for consistent interface
                 from affilabs.utils.hal.controller_hal import create_controller_hal
@@ -1157,26 +1130,20 @@ class HardwareManager(QObject):
                     # Cache port if available
                     if hasattr(pico_p4spr, "_ser") and pico_p4spr._ser:
                         self._ctrl_port = pico_p4spr._ser.port
-                        logger.info(f"Cached controller port: {self._ctrl_port}")
+                        logger.debug(f"Cached controller port: {self._ctrl_port}")
 
                 # NOTE: Servo initialization moved to after device_config is loaded (after detector connection)
-                logger.info("[OK] Controller wrapped with HAL")
+                logger.debug("Controller wrapped with HAL")
                 return  # Found controller - stop searching
-            print("DEBUG: PicoP4SPR.open() returned False - trying next controller")
-            logger.info("   ❌ PicoP4SPR not found")
+            logger.debug("PicoP4SPR not found")
 
             # Priority 2: Try PicoP4PRO (standalone P4PRO hardware)
-            print("DEBUG: [2/3] About to try PicoP4PRO")
-            logger.info(
+            logger.debug(
                 f"[2/3] Trying PicoP4PRO (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
             )
-            print("DEBUG: About to instantiate PicoP4PRO class...")
             pico_p4pro = classes["PicoP4PRO"]()
-            print("DEBUG: PicoP4PRO class instantiated successfully")
-            print("DEBUG: Calling pico_p4pro.open()...")
             if pico_p4pro.open():
-                print("DEBUG: PicoP4PRO connected successfully!")
-                logger.info(f"✅ [OK] Controller connected: {pico_p4pro.name}")
+                logger.debug(f"Controller connected: {pico_p4pro.name}")
 
                 # Wrap with HAL for consistent interface
                 from affilabs.utils.hal.controller_hal import create_controller_hal
@@ -1191,17 +1158,17 @@ class HardwareManager(QObject):
                         self._ctrl_port = pico_p4pro._ser.port
 
                 # NOTE: Servo initialization moved to after device_config is loaded (after detector connection)
-                logger.info("[OK] Controller wrapped with HAL")
+                logger.debug("Controller wrapped with HAL")
                 return  # Found controller - stop searching
-            logger.info("   ❌ PicoP4PRO not found")
+            logger.debug("PicoP4PRO not found")
 
             # Priority 3: Try PicoEZSPR (EZSPR/AFFINITE hardware)
-            logger.info(
+            logger.debug(
                 f"[3/3] Trying PicoEZSPR (VID:PID = {hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})...",
             )
             pico_ezspr = classes["PicoEZSPR"]()
             if pico_ezspr.open():
-                logger.info(f"✅ [OK] Controller connected: {pico_ezspr.name}")
+                logger.debug(f"Controller connected: {pico_ezspr.name}")
 
                 # Wrap with HAL for consistent interface
                 from affilabs.utils.hal.controller_hal import create_controller_hal
@@ -1216,16 +1183,16 @@ class HardwareManager(QObject):
                         self._ctrl_port = pico_ezspr._ser.port
 
                 # NOTE: Servo initialization moved to after device_config is loaded (after detector connection)
-                logger.info("[OK] Controller wrapped with HAL")
+                logger.debug("Controller wrapped with HAL")
                 return  # Found controller - stop searching
-            logger.info("   ❌ PicoEZSPR not found")
+            logger.debug("PicoEZSPR not found")
 
             # Arduino controller DELETED - obsolete hardware
             # Only PicoP4SPR, PicoP4PRO, and PicoEZSPR are supported
 
             logger.warning("No SPR controller found")
             settings = _get_settings()
-            logger.info(
+            logger.debug(
                 f"   Checked: Pico ({hex(settings['PICO_VID'])}:{hex(settings['PICO_PID'])})",
             )
             logger.info("   Check: drivers, USB cable, port, other programs")
@@ -1234,7 +1201,7 @@ class HardwareManager(QObject):
                 # Don't clear cache - keep for retry
 
         except Exception as e:
-            logger.error(f"❌ EXCEPTION in _connect_controller: {e}")
+            logger.error(f"Exception in _connect_controller: {e}")
             logger.error(f"Exception type: {type(e).__name__}")
             if HARDWARE_DEBUG:
                 import traceback
@@ -1294,7 +1261,7 @@ class HardwareManager(QObject):
     def _connect_pump(self) -> None:
         """Attempt to connect to AffiPump (Tecan Cavro Centris dual syringe pumps)."""
         try:
-            logger.info("🔍 Scanning for AffiPump via FTDI...")
+            logger.debug("🔍 Scanning for AffiPump via FTDI...")
             from AffiPump import CavroPumpManager, PumpController
 
             from affilabs.utils.hal.pump_hal import create_pump_hal
@@ -1303,12 +1270,12 @@ class HardwareManager(QObject):
             logger.debug("   Calling PumpController.from_first_available()...")
             controller = PumpController.from_first_available()
             if not controller:
-                logger.info("   ❌ No FTDI pump controller found")
-                logger.info("   Check: FTDI driver installed, USB cable, pump power")
+                logger.debug("   ❌ No FTDI pump controller found")
+                logger.debug("   Check: FTDI driver installed, USB cable, pump power")
                 self.pump = None
                 return
 
-            logger.info(f"   ✅ FTDI controller found: {controller}")
+            logger.debug(f"   ✅ FTDI controller found: {controller}")
 
             # Create pump manager with hardware controller
             logger.debug("   Creating CavroPumpManager...")
@@ -1333,12 +1300,12 @@ class HardwareManager(QObject):
             # Connect pump without initialization
             self.pump = create_pump_hal(pump_manager)
             logger.info(
-                "✅ AffiPump connected (initialization skipped) - 2x Tecan Cavro Centris pumps",
+                "✅ AffiPump connected - 2x Tecan Cavro Centris pumps",
             )
 
         except ImportError as e:
-            logger.info(f"   ❌ AffiPump module not available: {e}")
-            logger.info("   AffiPump package may not be installed")
+            logger.debug(f"   ❌ AffiPump module not available: {e}")
+            logger.debug("   AffiPump package may not be installed")
             self.pump = None
         except Exception as e:
             logger.error(f"❌ Pump connection failed: {e}")
@@ -1583,7 +1550,7 @@ class HardwareManager(QObject):
             and not self._optics_leak_detected
         ):
             self._optics_verified = True
-            logger.info("[OK] Optics verification: All conditions met - OPTICS READY")
+            logger.debug("Optics verification: All conditions met - OPTICS READY")
         else:
             self._optics_verified = False
 
@@ -2040,9 +2007,7 @@ class HardwareManager(QObject):
 
     def disconnect_all(self) -> None:
         """Disconnect all hardware devices gracefully and unlock for new hardware."""
-        logger.info("=" * 60)
-        logger.info("🔓 DISCONNECTING ALL HARDWARE - Unlocking configuration")
-        logger.info("=" * 60)
+        logger.debug("Disconnecting all hardware - unlocking configuration")
 
         # Turn off all LEDs before disconnecting (graceful exit)
         if self.ctrl:
@@ -2113,7 +2078,5 @@ class HardwareManager(QObject):
         # Unlock hardware - ready for new connection
         self._hardware_locked = False
 
-        logger.info("=" * 60)
-        logger.info("[OK] Hardware disconnected safely - ready for offline mode")
-        logger.info("=" * 60)
+        logger.debug("Hardware disconnected safely - ready for offline mode")
         self.hardware_disconnected.emit()

@@ -369,10 +369,10 @@ class CalibrationData:
                     if "qc_metrics" in validation_data:
                         qc_metrics = validation_data["qc_metrics"]
                         qc_validation[channel] = {
-                            "transmission_min": -qc_metrics.get(
+                            "transmission_min": qc_metrics.get(
                                 "dip_depth",
                                 0.0,
-                            ),  # Negative because it's a dip
+                            ),  # Positive percentage (dip depth)
                             "ratio": qc_metrics.get("p_s_ratio"),  # None if not calculated
                             "dip_detected": qc_metrics.get("dip_detected", False),
                             "fwhm": qc_metrics.get("fwhm", 0.0),

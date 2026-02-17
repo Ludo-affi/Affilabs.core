@@ -62,9 +62,7 @@ def reset_usb_spectrometers():
         import usb.util
         import time
 
-        logger.info("=" * 60)
-        logger.info("🔄 SOFTWARE RESET: Attempting USB spectrometer power cycle")
-        logger.info("=" * 60)
+        logger.debug("USB spectrometer software reset...")
 
         # Ocean Optics USB4000 VID/PID
         OCEAN_OPTICS_VID = 0x2457  # Ocean Optics vendor ID
@@ -89,7 +87,7 @@ def reset_usb_spectrometers():
             logger.warning("No Ocean Optics USB devices found for reset")
             return False
 
-        logger.info(f"Found {len(device_list)} Ocean Optics device(s)")
+        logger.debug(f"Found {len(device_list)} Ocean Optics device(s)")
 
         reset_count = 0
         for dev in device_list:
@@ -113,12 +111,12 @@ def reset_usb_spectrometers():
                 except Exception:
                     pass
 
-                logger.info(f"  Resetting: {device_info}")
+                logger.debug(f"  Resetting: {device_info}")
 
                 # Perform USB reset (equivalent to unplug/replug)
                 dev.reset()
                 reset_count += 1
-                logger.info("  ✅ Reset successful")
+                logger.debug("  Reset successful")
 
             except usb.core.USBError as e:
                 # Permission errors are common on Windows - not critical
@@ -130,14 +128,12 @@ def reset_usb_spectrometers():
                 logger.warning(f"  ⚠️  Reset failed: {e}")
 
         if reset_count > 0:
-            logger.info(f"✅ Reset {reset_count} device(s) - waiting for re-enumeration...")
+            logger.debug(f"Reset {reset_count} device(s) - waiting for re-enumeration...")
             time.sleep(2.0)  # Give USB stack time to re-enumerate devices
-            logger.info("USB reset complete - devices should be ready")
-            logger.info("=" * 60)
+            logger.debug("USB reset complete")
             return True
         else:
             logger.warning("No devices were successfully reset")
-            logger.info("=" * 60)
             return False
 
     except ImportError:
@@ -176,7 +172,7 @@ class USB4000:
                     self.opened = False
                     self._device = None
 
-            logger.info("Connecting to USB4000...")
+            logger.debug("Connecting to USB4000...")
 
             try:
                 import seabreeze
@@ -184,9 +180,7 @@ class USB4000:
                 seabreeze.use("pyseabreeze")
                 from seabreeze.spectrometers import Spectrometer, list_devices
 
-                logger.info(
-                    "USB4000: Using pyseabreeze backend (pure Python, WinUSB-compatible)",
-                )
+                logger.debug("USB4000: pyseabreeze backend")
             except ImportError as e:
                 logger.error(f"SeaBreeze not available: {e}")
                 logger.error("Install with: pip install seabreeze pyusb")
@@ -266,10 +260,10 @@ class USB4000:
                 logger.error(f"USB device scan failed: {exception[0]}")
                 return False
 
-            logger.info(f"SeaBreeze found {len(devices)} device(s)")
+            logger.debug(f"SeaBreeze found {len(devices)} device(s)")
             for idx, dev in enumerate(devices):
                 with contextlib.suppress(Exception):
-                    logger.info(
+                    logger.debug(
                         f"  Device[{idx}] serial={getattr(dev, 'serial_number', 'N/A')} model={getattr(dev, 'model', 'N/A')}",
                     )
 
@@ -279,7 +273,7 @@ class USB4000:
 
             dev0 = devices[0]
             target_serial = getattr(dev0, "serial_number", None)
-            logger.info(f"Connecting to device serial: {target_serial}")
+            logger.debug(f"Connecting to device serial: {target_serial}")
 
             connection_exception = [None]
 

@@ -129,7 +129,7 @@ class AcquisitionEventCoordinator:
 
     def on_acquisition_stopped(self):
         """Live data acquisition has stopped - disable record and pause buttons."""
-        logger.info("Live acquisition stopped - disabling record/pause buttons")
+        logger.debug("Live acquisition stopped - disabling record/pause buttons")
         self._main_window.record_btn.setEnabled(False)
         self._main_window.pause_btn.setEnabled(False)
         self._main_window.record_btn.setToolTip(

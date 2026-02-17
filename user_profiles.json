@@ -13,6 +13,14 @@
         "score": null,
         "date": null
       }
+    },
+    "Ludo": {
+      "experiment_count": 2,
+      "compression_training": {
+        "completed": false,
+        "score": null,
+        "date": null
+      }
     }
   }
 }

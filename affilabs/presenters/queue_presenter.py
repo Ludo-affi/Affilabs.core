@@ -116,7 +116,7 @@ class QueuePresenter(QObject):
         self._history.can_redo_changed.connect(self.can_redo_changed)
         self._history.history_changed.connect(self._on_history_changed)
 
-        logger.info("QueuePresenter initialized")
+        logger.debug("QueuePresenter initialized")
 
     # ========================================================================
     # PUBLIC API - Queue Operations (Undoable)
@@ -312,12 +312,12 @@ class QueuePresenter(QObject):
     def lock_queue(self):
         """Lock queue to prevent modifications during execution."""
         self._queue_manager.lock()
-        logger.info("🔒 Queue locked by presenter")
+        logger.debug("Queue locked by presenter")
 
     def unlock_queue(self):
         """Unlock queue after execution completes."""
         self._queue_manager.unlock()
-        logger.info("🔓 Queue unlocked by presenter")
+        logger.debug("Queue unlocked by presenter")
 
     def pop_next_cycle(self) -> Optional[Cycle]:
         """Remove and return next cycle for execution.
@@ -336,7 +336,7 @@ class QueuePresenter(QObject):
             cycle: Completed cycle to add to history
         """
         self._queue_manager.mark_completed(cycle)
-        logger.info(f"✅ Cycle {cycle.name} marked completed")
+        logger.debug(f"✅ Cycle {cycle.name} marked completed")
 
     # ========================================================================
     # PUBLIC API - State Persistence

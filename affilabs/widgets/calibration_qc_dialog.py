@@ -256,45 +256,37 @@ class CalibrationQCDialog(QDialog):
         layout.addLayout(button_layout)
 
     def _create_graphs_content(self) -> QWidget:
-        """Create the graphs section with 4 graphs (2x2) and combined QC table below."""
+        """Create the graphs section with 2x2 quadrant layout and table."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        # Single row of graphs (1x3 layout for better horizontal space usage)
-        graphs_container = QFrame()
-        graphs_layout = QHBoxLayout(graphs_container)
-        graphs_layout.setSpacing(8)
-        graphs_layout.setContentsMargins(0, 0, 0, 0)
+        # 2x2 Grid layout for quadrant display
+        from PySide6.QtWidgets import QGridLayout
+        
+        grid_container = QWidget()
+        grid_layout = QGridLayout(grid_container)
+        grid_layout.setSpacing(8)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
 
-        # All 3 graphs in one row
+        # Create graphs and table
         s_pol_graph = self._create_graph("S-Pol", "s_pol")
         p_pol_graph = self._create_graph("P-Pol", "p_pol")
         transmission_graph = self._create_graph("Transmission", "transmission")
-
-        graphs_layout.addWidget(s_pol_graph)
-        graphs_layout.addWidget(p_pol_graph)
-        graphs_layout.addWidget(transmission_graph)
-
-        layout.addWidget(graphs_container)
-
-        # Tables side by side: LED Calibration | QC Validation
-        tables_container = QWidget()
-        tables_layout = QHBoxLayout(tables_container)
-        tables_layout.setContentsMargins(0, 0, 0, 0)
-        tables_layout.setSpacing(12)
-
-        # Convergence summary (LED Calibration)
-        convergence_summary = self._create_convergence_summary()
-        if convergence_summary:
-            tables_layout.addWidget(convergence_summary, stretch=1)
-
-        # QC validation table
         combined_qc_table = self._create_combined_qc_table()
-        tables_layout.addWidget(combined_qc_table, stretch=1)
 
-        layout.addWidget(tables_container)
+        # Quadrant layout:
+        # Top left: S-Pol
+        # Top right: P-Pol
+        # Bottom left: Transmission
+        # Bottom right: Table
+        grid_layout.addWidget(s_pol_graph, 0, 0)
+        grid_layout.addWidget(p_pol_graph, 0, 1)
+        grid_layout.addWidget(transmission_graph, 1, 0)
+        grid_layout.addWidget(combined_qc_table, 1, 1)
+
+        layout.addWidget(grid_container)
 
         return widget
 
@@ -500,8 +492,7 @@ class CalibrationQCDialog(QDialog):
         return container
 
     def _create_combined_qc_table(self) -> QWidget:
-        """Create combined QC validation table with both orientation and transmission data."""
-        # Container for frame + title at bottom
+        """Create unified QC validation table with transmission, P-pol, and convergence data."""
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
@@ -517,13 +508,16 @@ class CalibrationQCDialog(QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
+        # Single unified table with all metrics
         table = QTableWidget()
-        table.setColumnCount(4)
+        table.setColumnCount(6)
         table.setHorizontalHeaderLabels(
             [
                 "Ch",
                 "Min Trans%",
                 "FWHM (nm)",
+                "P-Pol Signal",
+                "Conv Iter",
                 "Status",
             ],
         )
@@ -546,15 +540,13 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        transmission_validation = self.calibration_data.get(
-            "transmission_validation",
-            {},
-        )
+        transmission_validation = self.calibration_data.get("transmission_validation", {})
+        p_pol_spectra = self.calibration_data.get("p_pol_spectra", {})
+        s_iterations = int(self.calibration_data.get("s_iterations", 0) or 0)
+        p_iterations = int(self.calibration_data.get("p_iterations", 0) or 0)
 
         channels = ["a", "b", "c", "d"]
         table.setRowCount(4)
-
-        global_pass_transmission = False
 
         for idx, ch in enumerate(channels):
             # Channel name
@@ -562,11 +554,9 @@ class CalibrationQCDialog(QDialog):
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 0, ch_item)
 
-            # === TRANSMISSION DATA (Columns 1-5) ===
+            # Min Transmission % (already positive from calibration_data.py)
             if ch in transmission_validation:
                 ch_data = transmission_validation[ch]
-
-                # Min Transmission %
                 trans_min = ch_data.get("transmission_min")
                 if trans_min is not None:
                     trans_item = QTableWidgetItem(f"{trans_min:.1f}")
@@ -581,12 +571,11 @@ class CalibrationQCDialog(QDialog):
                 else:
                     table.setItem(idx, 1, QTableWidgetItem("N/A"))
 
-                # FWHM (moved to column 2)
+                # FWHM (nm)
                 fwhm = ch_data.get("fwhm")
                 if fwhm is not None:
                     fwhm_item = QTableWidgetItem(f"{fwhm:.1f}")
                     fwhm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    # Color code: green < 80nm, yellow 80-100nm, red > 100nm
                     if fwhm < 80:
                         fwhm_item.setForeground(QColor("#34C759"))
                     elif fwhm < 100:
@@ -597,13 +586,11 @@ class CalibrationQCDialog(QDialog):
                 else:
                     table.setItem(idx, 2, QTableWidgetItem("N/A"))
 
-                # Status (column 3)
+                # Status
                 status = ch_data.get("status", "INDETERMINATE")
-                # Convert status to user-friendly display
                 if "[OK]" in status or "PASS" in status:
                     display_status = "GOOD"
                     status_color = QColor("#34C759")
-                    global_pass_transmission = True
                 elif "[ERROR]" in status or "FAIL" in status:
                     display_status = "BAD"
                     status_color = QColor("#FF3B30")
@@ -614,34 +601,61 @@ class CalibrationQCDialog(QDialog):
                 status_item = QTableWidgetItem(display_status)
                 status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 status_item.setForeground(status_color)
-                table.setItem(idx, 3, status_item)
+                table.setItem(idx, 5, status_item)
             else:
                 # No transmission data
-                for col in range(1, 4):
+                for col in [1, 2, 5]:
                     item = QTableWidgetItem("N/A")
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     table.setItem(idx, col, item)
 
+            # P-pol Signal (max brightness)
+            if ch in p_pol_spectra and p_pol_spectra[ch] is not None:
+                try:
+                    p_arr = np.asarray(p_pol_spectra[ch], dtype=float)
+                    p_max = float(np.max(p_arr))
+                    brightness_item = QTableWidgetItem(f"{p_max:.0f}")
+                    brightness_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    if p_max > 50000:
+                        brightness_item.setForeground(QColor("#34C759"))
+                    elif p_max > 30000:
+                        brightness_item.setForeground(QColor("#FF9500"))
+                    else:
+                        brightness_item.setForeground(QColor("#FF3B30"))
+                    table.setItem(idx, 3, brightness_item)
+                except Exception:
+                    table.setItem(idx, 3, QTableWidgetItem("N/A"))
+            else:
+                table.setItem(idx, 3, QTableWidgetItem("N/A"))
+
+            # Convergence Iterations (S/P format)
+            if s_iterations > 0 or p_iterations > 0:
+                iter_text = f"{s_iterations}/{p_iterations}"
+                iter_item = QTableWidgetItem(iter_text)
+                iter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if s_iterations <= 5:
+                    iter_item.setForeground(QColor("#34C759"))
+                elif s_iterations <= 10:
+                    iter_item.setForeground(QColor("#FF9500"))
+                else:
+                    iter_item.setForeground(QColor("#FF3B30"))
+                table.setItem(idx, 4, iter_item)
+            else:
+                table.setItem(idx, 4, QTableWidgetItem("N/A"))
+
         # Optimize column widths
-        table.setColumnWidth(0, 60)  # Ch
-        table.setColumnWidth(1, 110)  # Min Trans%
-        table.setColumnWidth(2, 100)  # FWHM
+        table.setColumnWidth(0, 50)   # Ch
+        table.setColumnWidth(1, 95)   # Min Trans%
+        table.setColumnWidth(2, 90)   # FWHM
+        table.setColumnWidth(3, 100)  # P-Pol Signal
+        table.setColumnWidth(4, 90)   # Conv Iter
         table.horizontalHeader().setSectionResizeMode(
-            3,
+            5,
             table.horizontalHeader().ResizeMode.Stretch,
         )  # Status
         table.setMaximumHeight(160)
 
-        # Create horizontal layout for FWHM table and P-pol brightness table
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(12)
-        content_layout.addWidget(table, stretch=1)
-
-        # Add P-pol brightness and iteration table
-        ppol_table = self._create_ppol_brightness_table()
-        content_layout.addWidget(ppol_table, stretch=1)
-
-        layout.addLayout(content_layout)
+        layout.addWidget(table)
         container_layout.addWidget(frame)
 
         return container
@@ -1133,7 +1147,7 @@ class CalibrationQCDialog(QDialog):
             if ch in transmission_validation:
                 ch_data = transmission_validation[ch]
 
-                # Min Transmission %
+                # Min Transmission % (already positive from calibration_data.py)
                 trans_min = ch_data.get("transmission_min")
                 if trans_min is not None:
                     trans_item = QTableWidgetItem(f"{trans_min:.1f}%")
@@ -1543,8 +1557,7 @@ class CalibrationQCDialog(QDialog):
         try:
             data = self.calibration_data
 
-            # Debug logging
-            logger.debug(f"Plotting {data_type} - calibration_data keys: {list(data.keys())}")
+            logger.debug(f"Plotting {data_type}")
 
             wavelengths = data.get("wavelengths", None)
 
@@ -1604,10 +1617,8 @@ class CalibrationQCDialog(QDialog):
             data_dict = {}
             if data_type == "s_pol":
                 data_dict = data.get("s_pol_spectra", {})
-                logger.debug(f"S-pol channels found: {list(data_dict.keys())}")
             elif data_type == "p_pol":
                 data_dict = data.get("p_pol_spectra", {})
-                logger.debug(f"P-pol channels found: {list(data_dict.keys())}")
             elif data_type == "dark":
                 # NEW: Support per-channel darks for both S-pol and P-pol
                 dark_s_scans = data.get("dark_s_scans", {})
@@ -1685,10 +1696,8 @@ class CalibrationQCDialog(QDialog):
                     return  # Skip normal plotting below
                 # Fallback to legacy single dark per channel
                 data_dict = data.get("dark_scan", {})
-                logger.debug(f"Dark channels found: {list(data_dict.keys())}")
             elif data_type == "transmission":
                 data_dict = data.get("transmission_spectra", {})
-                logger.debug(f"Transmission channels found: {list(data_dict.keys())}")
 
             # Log if no data found
             if not data_dict:

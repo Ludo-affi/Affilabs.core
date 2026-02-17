@@ -28,7 +28,7 @@ def create_detector(app: Any, config: dict) -> Any | None:
         Initialized detector instance, or None if no detector found
 
     """
-    logger.info("Scanning for detectors (auto-detect: USB4000 → PhasePhotonics)...")
+    logger.debug("Scanning for detectors (auto-detect: USB4000 → PhasePhotonics)...")
 
     # Pre-scan: if any USB4000/Ocean Optics device is present, do NOT try PhasePhotonics
     # This avoids redundant PhasePhotonics scans when an Ocean Optics spectrometer is connected
@@ -42,7 +42,7 @@ def create_detector(app: Any, config: dict) -> Any | None:
         try:
             devs = list_devices()
             devices_present = len(devs) > 0
-            logger.info(f"Pre-scan found {len(devs)} Ocean Optics device(s)")
+            logger.debug(f"Pre-scan found {len(devs)} Ocean Optics device(s)")
         except Exception as pre_scan_err:
             logger.debug(f"Ocean Optics pre-scan failed: {pre_scan_err}")
             devices_present = False
@@ -57,7 +57,7 @@ def create_detector(app: Any, config: dict) -> Any | None:
 
         detector = USB4000(app)
         if detector.open():
-            logger.info("✓ USB4000 spectrometer connected")
+            logger.debug("USB4000 spectrometer connected")
             return detector
         if devices_present:
             # Ocean Optics device is present but open failed; skip PhasePhotonics per user requirement

@@ -192,14 +192,10 @@ def LEDconverge_engine(
 
         if logger:
             if converged:
-                logger.info("\n✅ ENGINE CONVERGED!")
-                logger.info(f"   Final integration time: {integration_ms:.1f}ms")
-                logger.info(f"   Converged at iteration: {best_iteration}")
-                logger.info(f"   Final signals: {signals}")
+                logger.debug(f"Engine converged: integration={integration_ms:.1f}ms, iteration={best_iteration}")
+                logger.debug(f"   Final signals: {signals}")
             else:
-                logger.warning("\n⚠️  ENGINE DID NOT CONVERGE")
-                logger.warning(f"   Final integration time: {integration_ms:.1f}ms")
-                logger.warning(f"   Best iteration: {best_iteration}")
+                logger.warning(f"Engine did not converge: integration={integration_ms:.1f}ms, best_iteration={best_iteration}")
 
         return integration_ms, signals, converged, final_leds, best_iteration
 

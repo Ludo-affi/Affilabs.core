@@ -1,9 +1,9 @@
 """Affilabs SPR Control System - Version Information"""
 
-__version__ = "2.0.4"
-__version_name__ = "Affilabs-Core v2.0.4"
-__release_date__ = "2026-02-15"
-__status__ = "Release"
+__version__ = "2.0.5 beta"
+__version_name__ = "Affilabs-Core v2.0.5 beta"
+__release_date__ = "2026-02-17"
+__status__ = "Beta"
 
 
 def get_version_info() -> dict:

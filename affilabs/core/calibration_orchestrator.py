@@ -96,13 +96,7 @@ def run_startup_calibration(
     result.detector_serial = detector_serial  # Store device serial for QC history
 
     try:
-        logger.info("=" * 80)
-        logger.info("🚀 6-STEP CALIBRATION - HAL-BASED CLEAN IMPLEMENTATION")
-        logger.info("=" * 80)
-        logger.info(f"Device: {device_type}")
-        logger.info(f"Detector: {detector_serial}")
-        logger.info(f"Mode: {'Single channel' if single_mode else 'All channels'}")
-        logger.info("=" * 80 + "\n")
+        logger.info(f"🚀 Starting calibration — Device: {device_type}, Detector: {detector_serial}, Mode: {'Single channel' if single_mode else 'All channels'}")
 
         # =================================================================
         # STEP 1: Hardware Validation & LED Preparation
@@ -110,26 +104,23 @@ def run_startup_calibration(
         if progress_callback:
             progress_callback("Step 1/6: Hardware Validation & LED Preparation", 5)
 
-        logger.info("STEP 1: Hardware Validation & LED Preparation")
-        logger.info("-" * 80)
-
         # Attempt to turn off LEDs using HAL (non-fatal if fails)
         try:
             ctrl.turn_off_channels()
             time.sleep(LED_OFF_SETTLING_S)
-            logger.info("[OK] LEDs turned off")
+            logger.debug("[OK] LEDs turned off")
         except Exception as e:
             logger.warning(f"[WARN] LED turn-off failed: {e}")
             logger.warning("[WARN] Continuing calibration - convergence will control LEDs")
 
         # Enable batch LED commands if supported
         if ctrl.supports_batch_leds:
-            logger.info("[HAL] Enabling batch LED mode...")
+            logger.debug("[HAL] Enabling batch LED mode...")
             # HAL handles this internally - no raw serial access needed
             time.sleep(LED_BATCH_ENABLE_S)
-            logger.info("[OK] Batch LED mode ready")
+            logger.debug("[OK] Batch LED mode ready")
 
-        logger.info("[OK] Step 1 complete\n")
+        logger.debug("[OK] Step 1 complete\n")
 
         # =================================================================
         # STEP 2: Wavelength Calibration
@@ -137,15 +128,12 @@ def run_startup_calibration(
         if progress_callback:
             progress_callback("Step 2/6: Wavelength Calibration", 17)
 
-        logger.info("STEP 2: Wavelength Calibration")
-        logger.info("-" * 80)
-
         # Read wavelength data from detector EEPROM (HAL method)
         wave_data = usb.read_wavelength()
         if wave_data is None or len(wave_data) == 0:
             raise RuntimeError("Failed to read wavelength data from detector")
 
-        logger.info(f"[OK] Wavelength range: {wave_data[0]:.1f}-{wave_data[-1]:.1f} nm")
+        logger.debug(f"[OK] Wavelength range: {wave_data[0]:.1f}-{wave_data[-1]:.1f} nm")
 
         # Define ROI (560-720nm for SPR)
         from settings import MIN_WAVELENGTH, MAX_WAVELENGTH
@@ -164,7 +152,7 @@ def run_startup_calibration(
         logger.info(
             f"     Indices: [{wave_min_index}:{wave_max_index}] ({wave_max_index - wave_min_index} pixels)"
         )
-        logger.info("[OK] Step 2 complete\n")
+        logger.debug("[OK] Step 2 complete\n")
 
         # =================================================================
         # STEP 3: LED Brightness Measurement & Model Validation
@@ -172,25 +160,17 @@ def run_startup_calibration(
         if progress_callback:
             progress_callback("Step 3/6: LED Brightness & Model Validation", 30)
 
-        logger.info("STEP 3: LED Brightness Measurement & Model Validation")
-        logger.info("-" * 80)
-
         # Get detector parameters and channel list
         from affilabs.utils.calibration_helpers import determine_channel_list, get_detector_params
 
         detector_params = get_detector_params(
             usb
         )  # FIXED: Pass detector object, not device_type string
-        logger.info(f"🔍 DEBUG: detector_params.max_counts = {detector_params.max_counts}")
-        logger.info(f"🔍 DEBUG: detector object type = {type(usb).__name__}")
-        logger.info(
-            f"🔍 DEBUG: detector max_counts attribute = {getattr(usb, 'max_counts', 'MISSING')}"
-        )
         ch_list = determine_channel_list(device_type, single_mode, single_ch)
-        logger.info(f"Channels: {ch_list}")
+        logger.debug(f"Channels: {ch_list}")
 
         # Check if LED calibration model exists (skip if force_oem_retrain)
-        logger.info("\nChecking for LED calibration model...")
+        logger.debug("Checking for LED calibration model...")
         from affilabs.services.led_model_loader import (
             LEDCalibrationModelLoader,
             ModelNotFoundError,
@@ -204,12 +184,12 @@ def run_startup_calibration(
 
         if force_oem_retrain:
             # Skip loading old model when doing OEM retrain (we're creating a new one)
-            logger.info("[SKIP] OEM retrain mode - will create new calibration model")
+            logger.debug("[SKIP] OEM retrain mode - will create new calibration model")
             model_exists = False
         else:
             try:
                 model_loader.load_model(detector_serial)
-                logger.info(f"[OK] LED calibration model found for detector {detector_serial}")
+                logger.debug(f"[OK] LED calibration model found for detector {detector_serial}")
                 # Extract slopes for S and P polarization
                 model_slopes_s = model_loader.get_slopes(
                     polarization="S", channels=[c.upper() for c in ch_list]
@@ -220,7 +200,10 @@ def run_startup_calibration(
                 # Convert to lowercase keys for consistency
                 model_slopes_s = {k.lower(): v for k, v in model_slopes_s.items()}
                 model_slopes_p = {k.lower(): v for k, v in model_slopes_p.items()}
-                logger.info(f"[OK] Model slopes loaded: S={model_slopes_s}, P={model_slopes_p}")
+                # Round slopes for cleaner logging
+                slopes_s_rounded = {k: round(v, 1) for k, v in model_slopes_s.items()}
+                slopes_p_rounded = {k: round(v, 1) for k, v in model_slopes_p.items()}
+                logger.debug(f"[OK] Model slopes loaded: S={slopes_s_rounded}, P={slopes_p_rounded}")
             except ModelNotFoundError as e:
                 logger.warning(f"⚠️  No LED calibration model found: {e}")
                 model_exists = False
@@ -232,13 +215,9 @@ def run_startup_calibration(
         # If model missing OR force_oem_retrain requested, run automatic OEM training
         if not model_exists or force_oem_retrain:
             if force_oem_retrain and model_exists:
-                logger.info("\n⚡ FORCE RETRAIN REQUESTED - Rebuilding optical model...")
-                logger.info("   (Existing model will be replaced)\n")
-            logger.info("\n" + "=" * 80)
-            logger.info("🔧 AUTOMATIC OEM MODEL TRAINING")
-            logger.info("=" * 80)
-            logger.info("No LED calibration model found - creating one automatically...")
-            logger.info("This will take ~2 minutes...\n")
+                logger.info("⚡ Rebuilding optical model (force retrain requested)")
+            else:
+                logger.info("🔧 Training LED calibration model (first-time setup, ~2 minutes)...")
 
             if progress_callback:
                 progress_callback("Training LED calibration model...", 20)
@@ -263,8 +242,8 @@ def run_startup_calibration(
                     "Failed to create LED calibration model. " "Cannot proceed with calibration."
                 )
 
-            logger.info("\n[OK] LED calibration model created successfully")
-            logger.info("Loading newly created model...\n")
+            logger.info("✓ LED calibration model created")
+            logger.debug("Loading newly created model...")
 
             # Reload the model to get slopes
             try:
@@ -278,29 +257,29 @@ def run_startup_calibration(
                 # Convert to lowercase keys for consistency
                 model_slopes_s = {k.lower(): v for k, v in model_slopes_s.items()}
                 model_slopes_p = {k.lower(): v for k, v in model_slopes_p.items()}
-                logger.info(
+                logger.debug(
                     f"[OK] Model slopes loaded from new model: S={model_slopes_s}, P={model_slopes_p}"
                 )
             except Exception as e:
                 logger.warning(f"⚠️  Failed to load newly created model: {e}")
                 logger.warning("Will proceed with ratio-based LED convergence")
 
-            logger.info("Continuing with startup calibration...\n")
+            logger.debug("Continuing with startup calibration...")
 
         # Determine weakest channel from OEM model slopes
         # The OEM model training (Step 2) measured all channels at 10-60ms,
         # so model slopes accurately reflect relative channel brightness.
         if model_slopes_s:
             weakest_ch = min(model_slopes_s.keys(), key=lambda c: model_slopes_s[c])
-            logger.info(f"Weakest channel (from model): {weakest_ch.upper()}")
+            logger.debug(f"Weakest channel (from model): {weakest_ch.upper()}")
         else:
             weakest_ch = ch_list[0]
-            logger.info(f"Weakest channel defaulted to: {weakest_ch.upper()}")
+            logger.debug(f"Weakest channel defaulted to: {weakest_ch.upper()}")
 
         # =================================================================
         # Load and configure servo positions BEFORE mode switching
         # =================================================================
-        logger.info("Loading servo positions from device_config...")
+        logger.debug("Loading servo positions from device_config...")
         servo_positions = device_config.get_servo_positions()
 
         # Check if servo positions are calibrated
@@ -325,11 +304,7 @@ def run_startup_calibration(
 
         s_pos = servo_positions["s"]
         p_pos = servo_positions["p"]
-        logger.info("=" * 80)
-        logger.info("🔍 SERVO POSITION VALIDATION")
-        logger.info("=" * 80)
-        logger.info(f"   Device config servo positions (PWM): S={s_pos}, P={p_pos}")
-        logger.info(f"   Device: {detector_serial}")
+        logger.debug(f"Servo positions (PWM): S={s_pos}, P={p_pos}  [Device: {detector_serial}]")
 
         # Check if these look like default/uncalibrated values
         if s_pos == 10 and p_pos == 100:
@@ -369,13 +344,10 @@ def run_startup_calibration(
                                 )
                         else:
                             logger.warning("⚠️  Could not read back EEPROM for verification")
-                else:
-                    logger.warning("⚠️  EEPROM sync failed - convergence may use old positions")
             else:
                 logger.warning("⚠️  Cannot sync EEPROM - missing sync_to_eeprom method")
         except Exception as sync_err:
             logger.error(f"Failed to sync EEPROM: {sync_err}")
-        logger.info("=" * 80)
 
         # Move servo to S-position for calibration (since we disabled auto-init during hardware connection)
         logger.info("🔧 Moving servo to S-position for calibration...")
@@ -394,12 +366,12 @@ def run_startup_calibration(
 
         # Park servo first to ensure user hears movement and to eliminate backlash
         if ctrl.supports_polarizer:
-            logger.info("   🏠 Parking servo first (PWM 1) to confirm movement...")
+            logger.debug("Parking servo (PWM 1)...")
             ctrl.servo_move_raw_pwm(1)
             time.sleep(0.8)  # Longer delay so servo fully reaches park position
 
         # Use set_mode() which sends 'ss' and relies on positions loaded above
-        logger.info(f"   🎯 Sending 'ss' command to move to S-mode (target PWM: {s_pos})...")
+        logger.debug(f"Sending 'ss' command to move to S-mode (target PWM: {s_pos})...")
         logger.info(
             f"   Expected S position from device_config: PWM {s_pos} ({(s_pos / 255.0) * 180:.1f}°)"
         )
@@ -427,21 +399,15 @@ def run_startup_calibration(
         if progress_callback:
             progress_callback("Step 4/6: S-Mode LED Convergence & Reference", 45)
 
-        logger.info("STEP 4: S-Mode LED Convergence + Reference Capture")
-        logger.info("-" * 80)
-
         # Servo position already loaded via set_servo_positions() above
         # No need to move servo before LED convergence
-        logger.info("[OK] S-mode positions ready")
+        logger.debug("[OK] S-mode positions ready")
 
         # =================================================================
         # PRE-CONVERGENCE SIGNAL TEST: Detect polarizer blocking
         # =================================================================
         logger.info("")
-        logger.info("🔍 PRE-CONVERGENCE POLARIZER CHECK")
-        logger.info("-" * 80)
-        logger.info("   Testing ALL 4 LEDs at 5% to verify polarizer is transmitting...")
-        logger.info("   (This matches the servo calibration measurement conditions)")
+        logger.info("🔍 Pre-convergence polarizer check (ALL 4 LEDs @ 5%, 5ms)...")
 
         # Import hardware acquisition function
         from affilabs.utils.startup_calibration import acquire_raw_spectrum as hw_acquire
@@ -519,13 +485,12 @@ def run_startup_calibration(
             logger.warning(f"⚠️  Pre-convergence signal test failed: {e}")
             logger.warning("   Proceeding with calibration anyway...")
 
-        logger.info("-" * 80)
         logger.info("")
 
         # Enable LED channels for P4PRO/flow-mode controllers (required before set_intensity works)
         # P4SPR/static controllers don't need channel enable - LEDs are always available
         detected_type = ctrl.get_device_type()
-        logger.info(f"DEBUG: Device type from HAL = '{detected_type}'")
+        logger.debug(f"Device type from HAL = '{detected_type}'")
 
         # Check if this is a flow-mode controller (has pumps/valves)
         raw_ctrl = ctrl._ctrl if hasattr(ctrl, "_ctrl") else ctrl
@@ -534,13 +499,13 @@ def run_startup_calibration(
         )
 
         if needs_channel_enable:
-            logger.info("Enabling flow-mode controller LED channels...")
+            logger.debug("Enabling flow-mode controller LED channels...")
             for ch in ch_list:
                 ctrl.turn_on_channel(ch)
             time.sleep(0.05)  # Brief delay for channel enable
-            logger.info("[OK] Channels enabled")
+            logger.debug("[OK] Channels enabled")
         else:
-            logger.info(
+            logger.debug(
                 f"Static controller ('{detected_type}') - LEDs always available, skipping channel enable"
             )
 
@@ -702,7 +667,7 @@ def run_startup_calibration(
                     # Fallback if slope missing
                     initial_leds[ch] = 150
 
-            logger.info(f"Initial LEDs: {initial_leds}")
+            logger.debug(f"Initial LEDs: {initial_leds}")
         else:
             # Fallback to equal intensities if no model
             # Use safer integration in trained range
@@ -891,12 +856,12 @@ def run_startup_calibration(
         # Determine weakest channel from S-mode to carry over into P-mode
         if s_final_signals:
             s_weakest_ch = min(ch_list, key=lambda c: s_final_signals.get(c, float("inf")))
-            logger.info(f"🔗 Carrying weakest channel from S→P: {s_weakest_ch.upper()}")
+            logger.debug(f"Carrying weakest channel from S→P: {s_weakest_ch.upper()}")
         else:
             # Fallback to lowest LED setting if signals missing
             s_weakest_ch = min(ch_list, key=lambda c: s_mode_leds.get(c, 0))
-            logger.info(
-                f"🔗 Carrying weakest channel from S→P (fallback by LED): {s_weakest_ch.upper()}"
+            logger.debug(
+                f"Carrying weakest channel from S→P (fallback by LED): {s_weakest_ch.upper()}"
             )
 
         # Capture S-pol reference spectra (using num_scans for high-quality baseline)
@@ -951,25 +916,19 @@ def run_startup_calibration(
         if progress_callback:
             progress_callback("Step 5/6: P-Mode LED Convergence & Dark Capture", 65)
 
-        logger.info("STEP 5: P-Mode LED Convergence + Reference + Dark Capture")
-        logger.info("-" * 80)
-
         # Turn off LEDs before servo movement
         ctrl.turn_off_channels()
         time.sleep(0.05)  # Minimal delay - just ensure command processed
 
         # Move servo to P-mode position using sv + sp commands (working format from test)
-        logger.info("=" * 80)
-        logger.info("🔧 MOVING SERVO TO P-MODE POSITION")
-        logger.info("=" * 80)
-        logger.info(f"   Target P position: PWM {p_pos} ({(p_pos/255.0)*180:.1f}°)")
+        logger.debug(f"Moving servo to P-mode (PWM {p_pos}, {(p_pos/255.0)*180:.1f}°)")
 
         # Get raw controller access for parking
         raw_ctrl = ctrl._ctrl if hasattr(ctrl, "_ctrl") else ctrl
 
         # Park servo first to ensure user hears movement and to eliminate backlash
         if ctrl.supports_polarizer:
-            logger.info("   🏠 Parking servo first (PWM 1) to confirm movement...")
+            logger.debug("Parking servo (PWM 1)...")
             raw_ctrl.servo_move_raw_pwm(1)
             time.sleep(0.8)  # Longer delay so servo fully reaches park position
 
@@ -979,17 +938,16 @@ def run_startup_calibration(
 
         # Set positions using sv command
         sv_cmd = f"sv{s_degrees:03d}{p_degrees:03d}\n"
-        logger.info(f"   📤 Sending sv command: {sv_cmd.strip()} (S={s_degrees}°, P={p_degrees}°)")
+        logger.debug(f"Sending sv command: sv{s_degrees:03d}{p_degrees:03d}")
         raw_ctrl._ser.write(sv_cmd.encode())
         time.sleep(0.2)
 
         # Move to P position using sp command
-        logger.info("   🎯 Sending sp command to move to P position...")
+        logger.debug("Sending sp command...")
         raw_ctrl._ser.write(b"sp\n")
         time.sleep(0.5)  # Wait for servo to settle at P position
 
-        logger.info(f"   ✅ Servo positioned at P-mode (PWM {p_pos}, {p_degrees}°)")
-        logger.info("=" * 80)
+        logger.info(f"P-mode: servo positioned at {p_degrees}° (PWM {p_pos})")
 
         # Enable LED channels for P4PRO (required after turning them off)
         if ctrl.get_device_type() == "PicoP4PRO":
@@ -1091,7 +1049,7 @@ def run_startup_calibration(
         result.p_mode_intensity = p_mode_leds
         result.p_integration_time = p_integration_time
 
-        logger.info(f"P-mode: {p_integration_time:.1f}ms, LEDs={p_mode_leds}")
+        logger.debug(f"P-mode: {p_integration_time:.1f}ms, LEDs={p_mode_leds}")
 
         # CRITICAL: Dark signal detection - check if P-pol position is blocked/wrong
         # If all channels show dark signals (<1000 counts), servo position is incorrect
@@ -1206,9 +1164,6 @@ def run_startup_calibration(
         if progress_callback:
             progress_callback("Step 6/6: QC Validation & Result Packaging", 85)
 
-        logger.info("STEP 6: QC Validation & Result Packaging")
-        logger.info("-" * 80)
-
         # Import QC processors
         from affilabs.core.spectrum_preprocessor import SpectrumPreprocessor
         from affilabs.core.transmission_processor import TransmissionProcessor
@@ -1276,7 +1231,7 @@ def run_startup_calibration(
             dip_depth_str = f"{dip_depth:.1f}" if dip_depth is not None else "N/A"
             fwhm_str = f"{fwhm:.1f}" if fwhm is not None else "N/A"
 
-            logger.info(
+            logger.debug(
                 f"Channel {ch.upper()}: "
                 f"Dip={dip_wl_str}nm, "
                 f"Depth={dip_depth_str}%, "
@@ -1289,22 +1244,19 @@ def run_startup_calibration(
         result.detector_max_counts = detector_params.max_counts
         result.detector_saturation_threshold = detector_params.saturation_threshold
 
-        logger.info("[OK] Step 6 complete - QC validation passed\n")
+        logger.debug("[OK] Step 6 complete - QC validation passed\n")
 
         # =================================================================
         # FINALIZE
         # =================================================================
         result.success = True
 
-        logger.info("=" * 80)
-        logger.info("✅ CALIBRATION COMPLETE")
-        logger.info("=" * 80)
-        logger.info(f"S-mode: {result.s_mode_intensity}")
-        logger.info(f"P-mode: {result.p_mode_intensity}")
-        logger.info(
+        logger.debug("Calibration complete")
+        logger.debug(f"S-mode: {result.s_mode_intensity}")
+        logger.debug(f"P-mode: {result.p_mode_intensity}")
+        logger.debug(
             f"Integration times: S={result.s_integration_time:.1f}ms, P={result.p_integration_time:.1f}ms"
         )
-        logger.info("=" * 80 + "\n")
 
         return result
 
@@ -1317,9 +1269,9 @@ def run_startup_calibration(
     finally:
         # Always turn off LEDs on exit (success or failure)
         try:
-            logger.info("\n[CLEANUP] Turning off all LEDs...")
+            logger.debug("[CLEANUP] Turning off all LEDs...")
             ctrl.turn_off_channels()
             time.sleep(0.05)
-            logger.info("[CLEANUP] LEDs turned off")
+            logger.debug("[CLEANUP] LEDs turned off")
         except Exception as cleanup_error:
             logger.error(f"[CLEANUP] Failed to turn off LEDs: {cleanup_error}")

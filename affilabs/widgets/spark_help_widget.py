@@ -266,6 +266,110 @@ class MessageBubble(QFrame):
         self.feedback_given.emit(feedback)
 
 
+class InteractiveMessageBubble(QFrame):
+    """Chat bubble with clickable option buttons for guided troubleshooting."""
+
+    option_selected = Signal(str)  # Emits the selected option label
+
+    def __init__(self, text: str, options: list[str], parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("""
+            QFrame {
+                background: #FFF3E0;
+                border-radius: 12px;
+                margin: 0px;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(10)
+
+        # Message text (rich HTML)
+        label = QLabel(_format_spark_text(text))
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        label.setStyleSheet("""
+            color: #212121;
+            font-size: 14px;
+            font-family: -apple-system, 'Segoe UI', sans-serif;
+            background: transparent;
+            line-height: 1.5;
+        """)
+        label.setMinimumHeight(40)
+        layout.addWidget(label)
+
+        # Option buttons row
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        self._option_buttons: list[QPushButton] = []
+
+        for option_text in options:
+            btn = QPushButton(option_text)
+            btn.setMinimumHeight(34)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: white;
+                    color: #007AFF;
+                    border: 2px solid #007AFF;
+                    border-radius: 17px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    padding: 6px 16px;
+                    font-family: -apple-system, 'Segoe UI', sans-serif;
+                }
+                QPushButton:hover {
+                    background: #007AFF;
+                    color: white;
+                }
+                QPushButton:pressed {
+                    background: #005ECB;
+                    color: white;
+                }
+            """)
+            btn.clicked.connect(lambda _checked=False, opt=option_text: self._on_option_clicked(opt))
+            self._option_buttons.append(btn)
+            btn_layout.addWidget(btn)
+
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+
+        # Timestamp
+        timestamp = datetime.now().strftime("%H:%M")
+        time_label = QLabel(timestamp)
+        time_label.setStyleSheet("""
+            color: #9E9E9E;
+            font-size: 10px;
+            background: transparent;
+        """)
+        layout.addWidget(time_label)
+
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        self.setMaximumWidth(310)
+        self.setMinimumHeight(40)
+
+    def _on_option_clicked(self, option: str):
+        """Handle option button click — disable all buttons and emit signal."""
+        for btn in self._option_buttons:
+            btn.setEnabled(False)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: #F0F0F0;
+                    color: #999;
+                    border: 2px solid #DDD;
+                    border-radius: 17px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    padding: 6px 16px;
+                    font-family: -apple-system, 'Segoe UI', sans-serif;
+                }
+            """)
+        self.option_selected.emit(option)
+
+
 class SparkHelpWidget(QWidget):
     """Main Spark AI assistant widget."""
 
@@ -480,8 +584,9 @@ class SparkHelpWidget(QWidget):
     def _add_welcome_message(self):
         """Add welcome message to chat."""
         welcome = MessageBubble(
-            "\U0001f44b Hi! I'm Spark, your Affilabs assistant.\n\n"
-            "Ask me about setup, calibration, methods, pumps, data export, or troubleshooting.",
+            "\U0001f44b Hi! I'm Spark, your Affilabs assistant. "
+            "I'm especially expert at **method building** — ask me about cycle syntax, shortcuts, examples, presets, and more!\n\n"
+            "I can also help with setup, calibration, pumps, data export, and troubleshooting.",
             is_user=False
         )
         self.chat_layout.addWidget(welcome, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -757,3 +862,150 @@ class SparkHelpWidget(QWidget):
                 self._thinking_timer = None
         except Exception:
             pass
+
+    # ── SPARK Troubleshooting Flow ───────────────────────────────────────
+
+    def push_system_message(self, text: str):
+        """Push a system-initiated message into the SPARK chat (not user-initiated).
+
+        Used by the troubleshooting flow to display diagnostic information
+        and guidance steps in the chat.
+        """
+        bubble = MessageBubble(text, is_user=False)
+        self.chat_layout.addWidget(bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+        QTimer.singleShot(50, self._scroll_to_bottom)
+
+    def push_interactive_message(self, text: str, options: list[str]) -> InteractiveMessageBubble:
+        """Push a message with clickable option buttons into the chat.
+
+        Args:
+            text: Message text (supports markdown-like formatting).
+            options: List of button labels for user to choose from.
+
+        Returns:
+            The InteractiveMessageBubble instance (caller connects to option_selected).
+        """
+        bubble = InteractiveMessageBubble(text, options)
+        self.chat_layout.addWidget(bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+        QTimer.singleShot(50, self._scroll_to_bottom)
+        return bubble
+
+    def start_troubleshooting_flow(self, diagnosis: dict, controller):
+        """Start the guided LED troubleshooting flow.
+
+        Args:
+            diagnosis: Output of ``diagnose_weak_channel()`` containing:
+                channel, current_signal, current_led, historical_avg, pct_of_historical
+            controller: PicoP4SPR controller instance for LED commands.
+        """
+        self._ts_controller = controller
+        self._ts_diagnosis = diagnosis
+        self._ts_state = "START"
+        self._advance_troubleshooting()
+
+    def _advance_troubleshooting(self):
+        """State machine for the LED troubleshooting flow."""
+        state = self._ts_state
+        diag = self._ts_diagnosis
+        ctrl = self._ts_controller
+        ch = diag["channel"].upper()
+
+        if state == "START":
+            self.push_system_message(
+                f"**Calibration failed — Channel {ch} signal is critically low.**\n\n"
+                f"Right now, Channel {ch} at maximum LED brightness is producing only "
+                f"**{diag['current_signal']:,.0f} counts** ({diag['pct_of_historical']:.0f}% of normal).\n\n"
+                f"Historically, Channel {ch} produces ~**{diag['historical_avg']:,.0f} counts**.\n\n"
+                f"I'll guide you through troubleshooting. "
+                f"First, I'm turning on LED {ch} at full brightness."
+            )
+
+            # Turn on the problematic LED at max brightness
+            try:
+                led_args = {c: 0 for c in ("a", "b", "c", "d")}
+                led_args[diag["channel"]] = 255
+                ctrl.set_batch_intensities(**led_args)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Troubleshooting LED control failed: {e}")
+
+            self._ts_state = "CHECK_WATER"
+            # Short delay before showing the next question
+            QTimer.singleShot(1500, self._advance_troubleshooting)
+
+        elif state == "CHECK_WATER":
+            bubble = self.push_interactive_message(
+                f"Place a piece of paper in the **Channel {ch}** light path.\n\n"
+                f"**Is the paper wet?**",
+                ["Yes, it's wet", "No, it's dry"],
+            )
+            bubble.option_selected.connect(self._on_water_check_answer)
+
+        elif state == "CHECK_LED_BRIGHTNESS":
+            # Turn on LED A alongside the problematic LED for comparison
+            self.push_system_message(
+                f"Now I'm turning on **LED A** at full brightness alongside **LED {ch}** "
+                f"so you can compare them."
+            )
+            try:
+                led_args = {c: 0 for c in ("a", "b", "c", "d")}
+                led_args["a"] = 255
+                led_args[diag["channel"]] = 255
+                ctrl.set_batch_intensities(**led_args)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Troubleshooting LED control failed: {e}")
+
+            # Short delay then ask the comparison question
+            QTimer.singleShot(1500, self._show_led_comparison_question)
+
+        elif state == "DONE":
+            # Turn off all LEDs
+            try:
+                ctrl.turn_off_channels()
+            except Exception:
+                pass
+            # Clear controller reference
+            self._ts_controller = None
+            self._ts_diagnosis = None
+
+    def _show_led_comparison_question(self):
+        """Show the LED brightness comparison question (called after delay)."""
+        ch = self._ts_diagnosis["channel"].upper()
+        bubble = self.push_interactive_message(
+            f"Look at both LEDs. **Is LED {ch} noticeably dimmer than LED A?**",
+            [f"Yes, {ch} is dimmer", "No, they look similar"],
+        )
+        bubble.option_selected.connect(self._on_led_brightness_answer)
+
+    def _on_water_check_answer(self, answer: str):
+        """Handle user response to the water check question."""
+        ch = self._ts_diagnosis["channel"].upper()
+        if "wet" in answer.lower():
+            self.push_system_message(
+                f"**Water in the optical path** is causing the low signal on Channel {ch}.\n\n"
+                f"Clean and dry the channel thoroughly, then retry calibration."
+            )
+            self._ts_state = "DONE"
+            self._advance_troubleshooting()
+        else:
+            self._ts_state = "CHECK_LED_BRIGHTNESS"
+            self._advance_troubleshooting()
+
+    def _on_led_brightness_answer(self, answer: str):
+        """Handle user response to the LED brightness comparison question."""
+        ch = self._ts_diagnosis["channel"].upper()
+        if "dimmer" in answer.lower():
+            self.push_system_message(
+                f"**LED {ch} appears to be failing.** The LED PCB likely needs "
+                f"to be replaced.\n\nContact support for a replacement LED PCB."
+            )
+        else:
+            self.push_system_message(
+                f"The LEDs look OK and the path is dry. This could be a **fiber alignment "
+                f"issue** or an intermittent connection.\n\n"
+                f"Try reseating the fiber for Channel {ch} and retry calibration. "
+                f"If the problem persists, contact support."
+            )
+        self._ts_state = "DONE"
+        self._advance_troubleshooting()

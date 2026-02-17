@@ -74,6 +74,7 @@ class UnifiedCycleBar(QFrame):
     user_cancel_injection = Signal()
     wash_acknowledged = Signal()
     popout_requested = Signal()
+    note_requested = Signal()  # User wants to add/edit cycle notes
 
     def __init__(self, parent=None):
         """Initialize unified cycle bar.
@@ -124,6 +125,17 @@ class UnifiedCycleBar(QFrame):
         )
         self.info_label.hide()
         layout.addWidget(self.info_label)
+
+        # ── Note button (RUNNING state) ──
+        self.note_btn = QPushButton("Note")
+        self.note_btn.setFixedHeight(28)
+        self.note_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._has_note = False
+        self.note_btn.setStyleSheet(self._note_btn_style(has_note=False))
+        self.note_btn.setToolTip("Add or edit cycle notes")
+        self.note_btn.clicked.connect(self.note_requested)
+        self.note_btn.hide()
+        layout.addWidget(self.note_btn)
 
         # ── Cancel button (INJECT state) ──
         self.cancel_btn = QPushButton("Cancel")
@@ -239,6 +251,7 @@ class UnifiedCycleBar(QFrame):
         """
         self._state = CycleBarState.RUNNING
         self._hide_all_buttons()
+        self.note_btn.show()  # Note button visible during RUNNING
 
         # Format countdown
         if total_sec >= 6000:
@@ -398,7 +411,9 @@ class UnifiedCycleBar(QFrame):
     def set_inject_detected(self, channel: str, confidence: float) -> None:
         """Briefly show detection success before transitioning to next state.
 
-        Displayed for ~1 second before the bar transitions to CONTACT or RUNNING.
+        Displayed for ~3 seconds before the bar transitions to CONTACT or RUNNING.
+        This gives users time to see the detection confirmation and verify all
+        channels were detected properly.
 
         Args:
             channel: Channel where injection was detected (e.g., "a")
@@ -521,6 +536,7 @@ class UnifiedCycleBar(QFrame):
 
     def _hide_all_buttons(self):
         """Hide all action buttons."""
+        self.note_btn.hide()
         self.cancel_btn.hide()
         self.done_btn.hide()
         self.dismiss_btn.hide()
@@ -573,6 +589,47 @@ class UnifiedCycleBar(QFrame):
                     stop:0 #FF3B30, stop:1 #FF6B35);
                 border-top: 2px solid #CC2F27;
             }
+        """
+
+    def set_note_indicator(self, has_note: bool) -> None:
+        """Update note button appearance based on whether a note exists.
+
+        Args:
+            has_note: True if the current cycle has a note
+        """
+        self._has_note = has_note
+        self.note_btn.setText("Note" if not has_note else "Note *")
+        self.note_btn.setStyleSheet(self._note_btn_style(has_note))
+
+    @staticmethod
+    def _note_btn_style(has_note: bool = False) -> str:
+        """Style for the cycle notes button."""
+        if has_note:
+            return """
+                QPushButton {
+                    background: rgba(0, 122, 255, 0.12);
+                    padding: 0px 12px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: #007AFF;
+                    border-radius: 6px;
+                    border: 1px solid rgba(0, 122, 255, 0.3);
+                }
+                QPushButton:hover { background: rgba(0, 122, 255, 0.2); }
+                QPushButton:pressed { background: rgba(0, 122, 255, 0.3); }
+            """
+        return """
+            QPushButton {
+                background: rgba(0, 0, 0, 0.05);
+                padding: 0px 12px;
+                font-size: 12px;
+                font-weight: 500;
+                color: #86868B;
+                border-radius: 6px;
+                border: 1px solid #D1D1D6;
+            }
+            QPushButton:hover { background: rgba(0, 0, 0, 0.08); color: #1D1D1F; }
+            QPushButton:pressed { background: rgba(0, 0, 0, 0.12); }
         """
 
     @staticmethod

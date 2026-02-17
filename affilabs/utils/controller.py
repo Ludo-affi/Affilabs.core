@@ -790,9 +790,6 @@ class PicoP4SPR(StaticController):
                         )
 
                     if ok:
-                        logger.debug(
-                            f"[OK] LED {ch.upper()} intensity set to {raw_val} (ack={resp!r})",
-                        )
                         # Update cached intensity on success
                         self._last_led_intensities[ch] = int(raw_val)
                     else:
@@ -879,20 +876,17 @@ class PicoP4SPR(StaticController):
                         # Enable channels: lm:a,b,c,d
                         channel_str = ",".join(channels_to_enable)
                         lm_cmd = f"lm:{channel_str}\n"
-                        logger.debug(f"Enabling LED channels: {lm_cmd.strip()}")
                         self._ser.write(lm_cmd.encode())
                         time.sleep(0.02)  # Wait for channel enable
 
                         # Read ACK for lm command
                         lm_response = self._ser.read(1)
-                        logger.debug(f"lm command response: {lm_response!r}")
 
                         self._ser.reset_input_buffer()
 
                     # Step 2: Set intensities with batch command
                     # Format: batch:A,B,C,D\n
                     cmd = f"batch:{a},{b},{c},{d}\n"
-                    logger.debug(f"Setting LED intensities: {cmd.strip()}")
                     self._ser.write(cmd.encode())
 
                     # Firmware v2.4.1: Minimal wait for command processing (~2ms firmware execution)
@@ -927,9 +921,7 @@ class PicoP4SPR(StaticController):
                     # V2.4.1: No need to clear enabled tracking - batch command is atomic
                     # Update cached intensities on success
                     self._last_led_intensities.update({"a": a, "b": b, "c": c, "d": d})
-                    logger.debug(
-                        f"Batch LED command successful: A={a}, B={b}, C={c}, D={d}",
-                    )
+                    logger.debug(f"Batch LED set: A={a} B={b} C={c} D={d}")
                     return True
                 logger.warning(f"Batch LED command failed - response: {response}")
                 return False
@@ -1497,7 +1489,7 @@ class PicoP4SPR(StaticController):
                         # V2.4 firmware: 500ms movement duration specified in command
                         # Add extra margin for physical settling
                         time.sleep(0.6)  # 600ms total wait (500ms movement + 100ms settle)
-                        logger.info(f"Servo physically moved to angle {angle} degrees (PWM {pwm_val})")
+                        logger.debug(f"Servo physically moved to angle {angle} degrees (PWM {pwm_val})")
                         return True
                     else:
                         logger.error(f"❌ servo command failed: {response!r} (expected b'1' or b'6')")
@@ -1752,17 +1744,11 @@ class PicoP4SPR(StaticController):
 
                     # Read response with timeout
                     response = self._ser.read(10)  # Read up to 10 bytes to catch any error messages
-                    logger.debug(f"📥 EEPROM write response: {response!r}")
 
                     success = b"6" in response
 
                     if success:
                         logger.info("✓ Device config written to PicoP4SPR EEPROM")
-                    else:
-                        logger.warning(
-                            f"PicoP4SPR EEPROM write failed, response: {response}",
-                        )
-                        logger.warning("   This may be normal for V2.4 firmware - config still applied to RAM")
 
                     return success
 

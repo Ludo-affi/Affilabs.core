@@ -46,6 +46,8 @@ class SparkKnowledgeBase:
                     in affilabs/data/spark/knowledge_base.json
         """
         from tinydb import TinyDB
+        import json
+        from pathlib import Path
 
         if db_path is None:
             # Default to organized data location
@@ -56,6 +58,22 @@ class SparkKnowledgeBase:
         # Ensure parent directory exists
         db_file = Path(db_path)
         db_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Handle corrupted or empty database files
+        if db_file.exists():
+            try:
+                with open(db_file, 'r') as f:
+                    content = f.read().strip()
+                    if not content:
+                        # Empty file - delete it to force reinit
+                        db_file.unlink()
+                    else:
+                        # Try to parse JSON
+                        json.loads(content)
+            except (json.JSONDecodeError, IOError):
+                # Corrupted file - delete it
+                logger.warning(f"Corrupted knowledge base file {db_file}, removing")
+                db_file.unlink()
 
         self.db = TinyDB(str(db_path))
         self.articles = self.db.table("articles")
@@ -143,6 +161,230 @@ class SparkKnowledgeBase:
                 ),
                 "category": "support",
                 "keywords": ["contact", "support", "help", "email", "phone", "assistance"],
+                "url": "https://www.affiniteinstruments.com/",
+                "last_updated": datetime.now().isoformat(),
+            },
+            {
+                "title": "Method Builder - Complete Syntax Guide",
+                "content": (
+                    "The Method Builder lets you create automated experiment sequences (methods). "
+                    "Each method is a series of timed cycles that run back-to-back.\n\n"
+                    "BASIC CYCLE FORMAT:\n"
+                    "Type Duration [Channel:Concentration] [Modifiers]\n\n"
+                    "CYCLE TYPES:\n"
+                    "• Baseline (BL) - Running buffer only\n"
+                    "• Binding (BN) - Manual injection with contact time\n"
+                    "• Kinetic (KN) - Flow injection (association + dissociation)\n"
+                    "• Regeneration (RG) - Strip bound analyte\n"
+                    "• Immobilization (IM) - Attach ligand to sensor\n"
+                    "• Blocking (BK) - Block unreacted surface\n"
+                    "• Wash (WS) - Rinse flow path\n"
+                    "• Other (OT) - Custom steps\n\n"
+                    "DURATION EXAMPLES:\n"
+                    "5s, 30sec, 5min, 5m, 2h, 2hr, overnight (=8h)\n\n"
+                    "CONTACT TIME (for injections):\n"
+                    "contact 180s, contact 3min, contact 5h (auto-enables Overnight Mode if >3h)\n\n"
+                    "PARAMETER SHORTCUTS:\n"
+                    "fr 50 (flow rate 50 µL/min) - shorthand for 'flow 50'\n"
+                    "iv 25 (injection volume 25 µL)\n\n"
+                    "MODIFIERS:\n"
+                    "partial - 30 µL spike injection (vs full loop)\n"
+                    "manual/automated - override injection mode\n"
+                    "detection priority/off - adjust sensitivity\n\n"
+                    "CHANNELS:\n"
+                    "A, B, C, D, ALL (default)\n"
+                    "Per-channel: A:100nM B:50nM (mix concentrations)\n\n"
+                    "QUICK EXAMPLES:\n"
+                    "Baseline 5min\n"
+                    "BN 5min A:100nM contact 180s\n"
+                    "KN 5min A:100nM fr 50 contact 3min\n"
+                    "RG 30sec ALL:50mM"
+                ),
+                "category": "method-building",
+                "keywords": ["method", "builder", "syntax", "cycle", "format", "type"],
+                "url": "https://www.affiniteinstruments.com/",
+                "last_updated": datetime.now().isoformat(),
+            },
+            {
+                "title": "Cycle Type Abbreviations",
+                "content": (
+                    "Use these 2-letter abbreviations anywhere instead of full cycle type names:\n\n"
+                    "BL = Baseline - Running buffer only, establishes stable signal\n"
+                    "BN = Binding - Manual injection with contact time (5 min default)\n"
+                    "IM = Immobilization - Attach ligand to sensor surface\n"
+                    "BK = Blocking - Block unreacted surface sites\n"
+                    "KN = Kinetic - Flow injection (association + dissociation phases)\n"
+                    "CN = Concentration - Alias for Binding (deprecated, use BN)\n"
+                    "RG = Regeneration - Strip bound analyte, restore baseline (30s default)\n"
+                    "AS = Association - Alias for Kinetic (deprecated, use KN)\n"
+                    "DS = Dissociation - Alias for Baseline (deprecated, use BL)\n"
+                    "WS = Wash - Rinse flow path between steps\n"
+                    "OT = Other - Custom steps (activation, equilibration, etc.)\n\n"
+                    "EXAMPLES:\n"
+                    "BL 5min (instead of Baseline 5min)\n"
+                    "BN 5min A:100nM contact 180s (instead of Binding 5min A:100nM contact 180s)"
+                ),
+                "category": "method-building",
+                "keywords": ["abbreviation", "cycle", "type", "short", "form", "BL", "BN", "IM", "BK"],
+                "url": "https://www.affiniteinstruments.com/",
+                "last_updated": datetime.now().isoformat(),
+            },
+            {
+                "title": "Duration Shortcuts and Time Units",
+                "content": (
+                    "Flexible duration format:\n\n"
+                    "SECONDS: 5s OR 5sec\n"
+                    "MINUTES: 5m OR 5min\n"
+                    "HOURS: 2h OR 2hr\n"
+                    "SPECIAL: overnight (= 8 hours, auto-enables Overnight Mode)\n\n"
+                    "EXAMPLES:\n"
+                    "Baseline 30sec - 30 seconds\n"
+                    "Binding 5min - 5 minutes\n"
+                    "Baseline 2h - 2 hours\n"
+                    "Baseline overnight - 8 hours (perfect for stability tests)\n\n"
+                    "CONTACT TIME with HOURS:\n"
+                    "contact 5h - 5 hours incubation (18,000 seconds)\n"
+                    "contact 3m - 3 minutes (180 seconds)\n"
+                    "⚠️ IMPORTANT: Contact times > 3 hours AUTO-ENABLE OVERNIGHT MODE"
+                ),
+                "category": "method-building",
+                "keywords": ["duration", "time", "unit", "second", "minute", "hour", "overnight", "contact"],
+                "url": "https://www.affiniteinstruments.com/",
+                "last_updated": datetime.now().isoformat(),
+            },
+            {
+                "title": "Parameter Shorthand (fr and iv)",
+                "content": (
+                    "Express flow rate and injection volume concisely:\n\n"
+                    "FLOW RATE SHORTHAND:\n"
+                    "fr 50 = same as 'flow 50' = 50 µL/min\n"
+                    "Add to Kinetic cycles to control pump speed\n\n"
+                    "INJECTION VOLUME SHORTHAND:\n"
+                    "iv 25 = 25 µL injection volume\n"
+                    "Add to any injection cycle\n\n"
+                    "EXAMPLES:\n"
+                    "Kinetic 5min A:100nM fr 50\n"
+                    "Binding 5min A:100nM iv 25\n"
+                    "Kinetic 5min A:100nM fr 50 iv 25 contact 3min (both parameters)\n\n"
+                    "💡 Use fr for flow-based experiments, iv to customize injection size"
+                ),
+                "category": "method-building",
+                "keywords": ["flow", "rate", "injection", "volume", "fr", "iv", "shorthand", "parameter"],
+                "url": "https://www.affiniteinstruments.com/",
+                "last_updated": datetime.now().isoformat(),
+            },
+            {
+                "title": "In-Place Cycle Editing (#N Commands)",
+                "content": (
+                    "Edit cycles in the method table without removing them:\n\n"
+                    "SYNTAX:\n"
+                    "#N [modifiers] - Edit cycle number N\n"
+                    "#2-5 [modifiers] - Edit range (cycles 2 through 5)\n"
+                    "#all [modifiers] - Edit ALL cycles\n\n"
+                    "EXAMPLES:\n"
+                    "#3 contact 120s - Change cycle 3 contact time to 2 minutes\n"
+                    "#3 channels BD - Restrict cycle 3 to channels B & D\n"
+                    "#2-5 detection priority - Apply detection priority to cycles 2-5\n"
+                    "#all detection off - Disable detection on ALL cycles\n"
+                    "#3 contact 120s channels BD detection priority - Multiple mods at once\n\n"
+                    "WORKFLOW:\n"
+                    "1. Method table shows your queued cycles\n"
+                    "2. Type an #N command in the Note field\n"
+                    "3. Click '➕ Add to Method'\n"
+                    "4. Changes apply immediately to the selected cycle(s)"
+                ),
+                "category": "method-building",
+                "keywords": ["in-place", "edit", "modify", "#N", "#3", "cycle", "range", "all"],
+                "url": "https://www.affiniteinstruments.com/",
+                "last_updated": datetime.now().isoformat(),
+            },
+            {
+                "title": "Channel Selection and Concentration Tags",
+                "content": (
+                    "CHANNEL FORMATS:\n"
+                    "channels A - Single channel\n"
+                    "channels BD - Multiple channels (B and D)\n"
+                    "channels ALL - All channels (default)\n\n"
+                    "CONCENTRATION TAGS:\n"
+                    "Format: Channel:ValueUnit or [Channel:ValueUnit] (brackets optional)\n"
+                    "Channels: A, B, C, D, ALL\n"
+                    "Units: nM, µM, pM, mM, M, mg/mL, µg/mL, ng/mL\n\n"
+                    "EXAMPLES:\n"
+                    "A:100nM - Channel A at 100 nanoM\n"
+                    "B:50µM - Channel B at 50 microM\n"
+                    "ALL:25pM - All channels at 25 picoM\n"
+                    "A:100nM B:50nM - Different concentrations per channel\n\n"
+                    "PURPOSE:\n"
+                    "Tags are for documentation and workflow tracking. "
+                    "They don't affect injection volume or flow rate calculations."
+                ),
+                "category": "method-building",
+                "keywords": ["channel", "concentration", "tag", "unit", "A", "B", "C", "D", "ALL"],
+                "url": "https://www.affiniteinstruments.com/",
+                "last_updated": datetime.now().isoformat(),
+            },
+            {
+                "title": "Presets and Templates",
+                "content": (
+                    "SAVE A PRESET:\n"
+                    "Type: !save my_protocol_name\n"
+                    "Click: ➕ Add to Method\n"
+                    "Saved in: cycle_templates.json\n\n"
+                    "LOAD A PRESET:\n"
+                    "Type: @my_protocol_name\n"
+                    "Click: ⚡ Spark\n\n"
+                    "BUILT-IN TEMPLATES:\n"
+                    "@spark titration - Dose-response series (auto-generates 5 concentrations + regen)\n"
+                    "@spark kinetics - Association + long dissociation + regeneration\n"
+                    "@spark amine coupling - Full amine coupling workflow\n"
+                    "@spark binding - Multi-concentration binding template\n"
+                    "@spark baseline - Single baseline cycle\n"
+                    "@spark regeneration - Single regeneration cycle\n\n"
+                    "QUICK GENERATION:\n"
+                    "build 5 - Auto-generates 5 × (Binding 15min + Regen + Baseline)\n"
+                    "build 10 - Auto-generates 10 × (Binding 15min + Regen + Baseline)"
+                ),
+                "category": "method-building",
+                "keywords": ["preset", "template", "save", "load", "spark", "build", "reuse"],
+                "url": "https://www.affiniteinstruments.com/",
+                "last_updated": datetime.now().isoformat(),
+            },
+            {
+                "title": "Common Method Examples",
+                "content": (
+                    "SIMPLE BINDING:\n"
+                    "Baseline 5min\n"
+                    "Binding 5min A:100nM contact 180s\n"
+                    "Regeneration 30sec ALL:50mM\n\n"
+                    "DOSE-RESPONSE TITRATION:\n"
+                    "Baseline 5min\n"
+                    "Binding 5min A:10nM contact 180s\n"
+                    "Regeneration 30sec ALL:50mM\n"
+                    "Baseline 2min\n"
+                    "Binding 5min A:50nM contact 180s\n"
+                    "Regeneration 30sec ALL:50mM\n"
+                    "(Add more concentrations: 100nM, 500nM)\n\n"
+                    "KINETICS (Association + Dissociation):\n"
+                    "Baseline 2min\n"
+                    "Kinetic 5min A:100nM contact 120s\n"
+                    "Baseline 10min (dissociation phase)\n"
+                    "Regeneration 30sec ALL:50mM\n\n"
+                    "OVERNIGHT STABILITY TEST:\n"
+                    "Baseline overnight (8 hours, auto-enables Overnight Mode)\n"
+                    "Baseline 12h (12 hours)\n"
+                    "Baseline 24hr (24 hours)\n\n"
+                    "AMINE COUPLING WITH IMMOBILIZATION:\n"
+                    "Baseline 30sec\n"
+                    "Other 4min (EDC/NHS activation)\n"
+                    "Immobilization 4min A:50µg/mL contact 180s\n"
+                    "Wash 30sec\n"
+                    "Other 4min (ethanolamine blocking)\n"
+                    "Wash 30sec\n"
+                    "Baseline 15min\n"
+                    "(Add titration cycles)"
+                ),
+                "category": "method-building",
+                "keywords": ["example", "binding", "titration", "kinetics", "amine", "coupling", "overnight"],
                 "url": "https://www.affiniteinstruments.com/",
                 "last_updated": datetime.now().isoformat(),
             },

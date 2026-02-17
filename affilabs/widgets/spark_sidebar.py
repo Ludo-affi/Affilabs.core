@@ -26,6 +26,8 @@ class SparkSidebar(QFrame):
         self._spark_loaded = False
         self.spark_widget = None
         self._setup_ui()
+        # Start hidden to avoid visual glitch during load
+        self.hide()
 
     def _setup_ui(self):
         """Initialize the Spark sidebar UI."""
@@ -127,10 +129,33 @@ class SparkSidebar(QFrame):
             self.spark_widget = SparkHelpWidget()
             self.main_layout.addWidget(self.spark_widget, 1)
             logger.debug("Spark widget loaded successfully")
+            # Show sidebar after widget is fully loaded (prevents visual glitch)
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(100, self.show)
         except Exception as e:
             logger.error(f"Failed to load Spark widget: {e}")
             error_label = QLabel(f"Failed to load Spark:\n{str(e)}")
             error_label.setStyleSheet("color: #FF3B30; font-size: 11px; padding: 20px;")
             error_label.setWordWrap(True)
             self.main_layout.addWidget(error_label, 1)
+            self.show()  # Show even on error
+
+    def push_troubleshooting(self, diagnosis: dict, controller) -> None:
+        """Auto-open SPARK sidebar and start the guided LED troubleshooting flow.
+
+        Called by calibration_service when a weak-channel pattern is detected
+        after repeated convergence failures.
+
+        Args:
+            diagnosis: Output of ``diagnose_weak_channel()`` with channel info.
+            controller: PicoP4SPR controller instance for LED commands.
+        """
+        # Ensure sidebar is loaded and visible
+        self.load_spark_widget()
+        self.setVisible(True)
+
+        if self.spark_widget is not None:
+            self.spark_widget.start_troubleshooting_flow(diagnosis, controller)
+        else:
+            logger.error("Cannot start troubleshooting: Spark widget not loaded")
 

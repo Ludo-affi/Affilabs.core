@@ -27,8 +27,6 @@ from PySide6.QtWidgets import (
 class PumpControl(QGroupBox):
     """Parameters related to pumps."""
 
-from __future__ import annotations
-
 
 class PumpGroupBox(QGroupBox):
     """Pump control group box."""

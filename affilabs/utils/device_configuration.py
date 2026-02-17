@@ -184,7 +184,7 @@ class DeviceConfiguration:
                 config_dir.mkdir(parents=True, exist_ok=True)
                 self.config_path = config_dir / "device_config.json"
                 if not silent_load:
-                    logger.info(
+                    logger.debug(
                         f"Using device-specific configuration for S/N: {device_serial}",
                     )
             else:
@@ -217,14 +217,14 @@ class DeviceConfiguration:
         #  in sync with reality even if an older JSON file had stale controller_model.
         if self.controller is not None:
             try:
-                logger.info("Syncing controller config from connected hardware...")
+                logger.debug("Syncing controller config from connected hardware...")
                 self._sync_controller_from_hardware()
             except Exception as e:
                 # Best-effort only – never fail config loading because of this
                 logger.error(f"Failed to sync controller hardware info from device: {e}", exc_info=True)
 
         if not silent_load:
-            logger.info(f"Device configuration loaded from: {self.config_path}")
+            logger.debug("Device configuration loaded")
             self._log_config_summary()
 
     def _sync_controller_from_hardware(self) -> None:
@@ -253,9 +253,9 @@ class DeviceConfiguration:
         ctrl_name = getattr(self.controller, "name", "").lower()
         firmware_id = getattr(self.controller, "firmware_id", "").lower()
 
-        logger.info(f"   Controller name: {ctrl_name}")
-        logger.info(f"   Firmware ID: {firmware_id}")
-        logger.info(f"   Current config model: {old_model}")
+        logger.debug(f"   Controller name: {ctrl_name}")
+        logger.debug(f"   Firmware ID: {firmware_id}")
+        logger.debug(f"   Current config model: {old_model}")
 
         new_model = old_model
         new_type = old_type
@@ -304,15 +304,15 @@ class DeviceConfiguration:
             except Exception:
                 pass
 
-            logger.info(
+            logger.debug(
                 f"Updated controller config: {old_model!r} -> {new_model!r} (type: {old_type!r} -> {new_type!r})"
             )
 
             # Persist the correction so future runs and logs stay in sync
             self.save()
-            logger.info(f"Saved updated config to {self.config_path}")
+            logger.debug(f"Saved updated config to {self.config_path}")
         else:
-            logger.info(f"Controller config already correct: {old_model}")
+            logger.debug(f"Controller config already correct: {old_model}")
 
     def _load_or_create_config(self) -> dict[str, Any]:
         """Load configuration from file or create new with defaults.
@@ -331,9 +331,7 @@ class DeviceConfiguration:
                 with open(self.config_path) as f:
                     config = json.load(f)
                 if not self.silent_load:
-                    logger.info(
-                        f"✓ Loaded existing configuration from {self.config_path}",
-                    )
+                    logger.debug("Loaded existing configuration")
 
                 # Validate and merge with defaults (in case new fields added)
                 config = self._merge_with_defaults(config)
@@ -621,16 +619,14 @@ class DeviceConfiguration:
             with open(self.config_path, "w") as f:
                 json.dump(self.config, f, indent=2)
 
-            logger.info(f"Configuration saved to {self.config_path}")
-
             # Auto-sync to EEPROM if requested and controller available
             if auto_sync_eeprom and self.controller is not None:
-                logger.info("Auto-syncing configuration to EEPROM...")
+                logger.debug("Auto-syncing configuration to EEPROM...")
                 success = self.sync_to_eeprom(self.controller)
                 if success:
-                    logger.info("✓ Configuration auto-synced to EEPROM")
+                    logger.debug("Configuration auto-synced to EEPROM")
                 else:
-                    logger.warning("✗ EEPROM auto-sync failed")
+                    logger.warning("EEPROM auto-sync failed")
 
         except Exception as e:
             logger.error(f"Failed to save configuration: {e}")
@@ -701,29 +697,11 @@ class DeviceConfiguration:
     def _log_config_summary(self) -> None:
         """Log summary of current configuration."""
         hw = self.config["hardware"]
-        logger.info("=" * 60)
-        logger.info("DEVICE CONFIGURATION SUMMARY")
-        logger.info("=" * 60)
-        logger.info(f"  LED PCB Model: {hw['led_pcb_model']}")
-        logger.info(f"  Optical Fiber: {hw['optical_fiber_diameter_um']} µm")
-        logger.info(
-            f"  Polarizer Type: {hw.get('polarizer_type', 'barrel')} ({'2 fixed windows' if hw.get('polarizer_type', 'barrel') == 'barrel' else 'continuous rotation'})",
-        )
-        logger.info(
-            f"  Spectrometer: {hw['spectrometer_model']} (S/N: {hw['spectrometer_serial'] or 'N/A'})",
-        )
-        logger.info(f"  Controller: {hw['controller_model']}")
-
         cal = self.config["calibration"]
-        logger.info(
-            f"  Factory Calibrated: {'Yes' if cal['factory_calibrated'] else 'No'}",
+        logger.debug(
+            f"Device config: LED={hw['led_pcb_model']} spec={hw['spectrometer_model']}({hw['spectrometer_serial'] or 'N/A'}) "
+            f"ctrl={hw['controller_model']} factory_cal={'Y' if cal['factory_calibrated'] else 'N'}"
         )
-        logger.info(f"  User Calibrated: {'Yes' if cal['user_calibrated'] else 'No'}")
-
-        if cal["dark_calibration_date"]:
-            logger.info(f"  Last Dark Calibration: {cal['dark_calibration_date']}")
-
-        logger.info("=" * 60)
 
     # ========================================================================
     # Getter/Setter Methods
@@ -1137,7 +1115,7 @@ class DeviceConfiguration:
         cal = self.config["calibration"]
         cal["integration_time_ms"] = integration_time_ms
         self.config["device_info"]["last_modified"] = datetime.now().isoformat()
-        logger.info(f"Integration time updated: {integration_time_ms} ms")
+        logger.debug(f"Integration time updated: {integration_time_ms} ms")
 
     def get_integration_time(self) -> float | None:
         """Get calibrated integration time.
@@ -1364,9 +1342,7 @@ class DeviceConfiguration:
         cal["led_intensity_c"] = led_c
         cal["led_intensity_d"] = led_d
         self.config["device_info"]["last_modified"] = datetime.now().isoformat()
-        logger.info(
-            f"LED intensities updated: A={led_a}, B={led_b}, C={led_c}, D={led_d}",
-        )
+
 
     def get_calibration_settings(self) -> dict[str, int | None]:
         """Get calibration settings (integration time and number of scans).
@@ -1569,8 +1545,6 @@ class DeviceConfiguration:
 
             if success:
                 logger.info("✓ Configuration synchronized to EEPROM")
-            else:
-                logger.warning("✗ Failed to sync configuration to EEPROM")
 
             return success
 

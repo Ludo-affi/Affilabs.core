@@ -170,16 +170,8 @@ class InjectionCoordinator(QObject):
         # Determine injection mode: explicit setting takes precedence
         is_manual_mode = self._determine_injection_mode(cycle)
 
-        # For binding/kinetic cycles in manual mode, show schedule upfront
-        if (is_manual_mode and
-            cycle.type in ("Binding", "Kinetic", "Concentration") and
-            cycle.planned_concentrations and
-            cycle.injection_count == 0):  # Only show at cycle start
-
-            schedule_dialog = ConcentrationScheduleDialog(cycle, parent_widget)
-            if schedule_dialog.exec() != ConcentrationScheduleDialog.DialogCode.Accepted:
-                logger.info("User cancelled binding/kinetic cycle")
-                return False
+        # NOTE: Schedule dialog (ConcentrationScheduleDialog) is now shown earlier
+        # in main.py _schedule_injection() with a 20s countdown, so we skip it here.
 
         # Execute appropriate injection mode
         if is_manual_mode:
@@ -253,6 +245,8 @@ class InjectionCoordinator(QObject):
             self._open_valves_for_manual_injection(sample_info["channels"])
 
         # For binding/kinetic cycles, show injection number
+        # NOTE: planned_concentrations groups parallel channels into ONE entry,
+        # so len() correctly reflects actual injection events (not channel count)
         injection_num = None
         total_injections = None
         if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
@@ -519,13 +513,12 @@ class InjectionCoordinator(QObject):
         cycle = self._current_cycle
         if cycle and cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
             cycle.injection_count += 1
-            logger.info(f"  Injection count: {cycle.injection_count}/{len(cycle.planned_concentrations)}")
 
         # Close valves
         self._close_valves_after_manual_injection()
 
-        # Brief delay for user to see detection result, then emit completed
-        QTimer.singleShot(1000, self.injection_completed.emit)
+        # 3-second delay for user to see all detection results before transitioning
+        QTimer.singleShot(3000, self.injection_completed.emit)
 
     def _scan_all_channels_for_injection(self):
         """Retroactively scan all 4 channels for injection points.
@@ -587,6 +580,14 @@ class InjectionCoordinator(QObject):
 
         except Exception as e:
             logger.warning(f"Per-channel injection scan failed: {e}")
+
+    def _log_detection_success(self):
+        """Placeholder - detection success already shown in unified bar UI.
+        
+        Suppressed to reduce verbose logging. The injection flag and detection
+        results are already displayed in the cycle bar and detection dialog.
+        """
+        pass
 
     def _on_detection_timeout(self):
         """60-second detection window expired without clear detection."""
@@ -740,8 +741,6 @@ class InjectionCoordinator(QObject):
                 logger.info(
                     f"✓ Valves opened for manual injection (channels: {channels})"
                 )
-            else:
-                logger.debug(f"Controller {type(ctrl).__name__} doesn't have valve control - manual injection without automated valves")
 
             # Optionally open 6-port valves to INJECT position
             # This depends on your hardware setup - may or may not be needed
@@ -770,15 +769,7 @@ class InjectionCoordinator(QObject):
             # Check if controller supports valve control (FlowController only)
             if hasattr(ctrl, 'knx_three_both'):
                 ctrl.knx_three_both(state=default_state)
-            else:
-                logger.debug(f"Controller {type(ctrl).__name__} doesn't have valve control - skipping")
-
-            # Close 6-port valves to LOAD position
             if hasattr(ctrl, 'knx_six_both'):
                 ctrl.knx_six_both(state=0)
-            else:
-                logger.debug(f"Controller {type(ctrl).__name__} doesn't have 6-port valves - skipping")
-
-            logger.info(f"✓ Valves returned to default ({default_channels})")
         except Exception as e:
             logger.error(f"Failed to close valves: {e}")

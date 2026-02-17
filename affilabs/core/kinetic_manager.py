@@ -223,7 +223,7 @@ class KineticManager(QObject):
 
     def stop_all_pumps(self) -> None:
         """Stop all pumps."""
-        logger.info("Stopping all pumps...")
+        logger.debug("Stopping all pumps...")
         for ch in ["a", "b", "c", "d"]:
             if self.pump_running[ch]:
                 self.stop_pump(ch)

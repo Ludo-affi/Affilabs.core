@@ -474,11 +474,11 @@ class ManualInjectionDialog(QDialog):
         elif priority == "auto":
             # Mode-dependent defaults
             if mode == "manual":
-                return 2.0  # Manual syringe — conservative to avoid noise triggers
+                return 5.0  # Manual syringe — very conservative (12.5σ threshold)
             elif mode == "semi-automated":
                 return 0.75  # Pump-controlled — tight, predictable signal
             else:
-                return 2.0  # Fallback to conservative
+                return 5.0  # Fallback to very conservative
         else:
             return 2.0
 

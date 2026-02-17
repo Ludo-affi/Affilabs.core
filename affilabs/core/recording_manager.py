@@ -54,9 +54,29 @@ class RecordingManager(QObject):
         self.recording_start_offset = 0.0  # Elapsed time when recording started (for t=0 export)
 
         # Recording settings
+        # Default output directory — updated to user-specific path by _get_user_output_directory()
         self.output_directory = Path.home() / "Documents" / "Affilabs Data"
         self.auto_save_interval = 60  # seconds
         self.last_save_time = 0
+
+    def get_user_output_directory(self) -> Path:
+        """Get user-specific output directory: Documents/Affilabs Data/<username>/SPR_data/.
+
+        Always resolves the current user dynamically (same logic as Edits tab).
+        Falls back to generic Affilabs Data if no user is set.
+
+        Returns:
+            Path to user-specific export directory
+        """
+        username = ""
+        if self.user_manager:
+            username = self.user_manager.get_current_user() or ""
+        if username:
+            user_dir = Path.home() / "Documents" / "Affilabs Data" / username / "SPR_data"
+        else:
+            user_dir = self.output_directory
+        user_dir.mkdir(parents=True, exist_ok=True)
+        return user_dir
 
         # Initialized silently
 

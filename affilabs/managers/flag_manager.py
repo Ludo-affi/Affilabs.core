@@ -669,7 +669,7 @@ class FlagManager:
             )
 
             self._auto_markers.append(auto_marker)
-            logger.info(f"✓ Created auto-marker: {label} at t={time:.1f}s")
+            logger.debug(f"Auto-marker: {label} at t={time:.1f}s")
             return auto_marker
 
         except Exception as e:

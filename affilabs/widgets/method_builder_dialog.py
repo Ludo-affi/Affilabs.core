@@ -16,6 +16,7 @@ from affilabs.domain.cycle import Cycle
 from affilabs.services.queue_preset_storage import QueuePresetStorage
 from affilabs.services.user_profile_manager import UserProfileManager
 from affilabs.widgets.ui_constants import CycleTypeStyle
+from affilabs.utils.logger import logger
 import time
 import re
 import threading
@@ -487,7 +488,6 @@ class MethodBuilderDialog(QDialog):
         self._preset_storage = QueuePresetStorage()  # For @preset and !save commands
         self._waiting_for_response = False  # Track if we're waiting for user answer
         self._pending_command = None  # Store the command waiting for answer (e.g., "amine_coupling", "build")
-        self._spark_popup = None  # Lazy-created Spark popup
 
         # Use shared user manager if provided, otherwise create fallback
         if user_manager:
@@ -497,31 +497,6 @@ class MethodBuilderDialog(QDialog):
             self._user_manager = UserProfileManager()
 
         self._setup_ui()
-
-    # -- Spark popup -------------------------------------------------------
-
-    def _open_spark_popup(self):
-        """Open (or focus) the Spark AI chat popup for method building."""
-        if self._spark_popup is None or not self._spark_popup.isVisible():
-            self._spark_popup = SparkMethodPopup(self)
-            self._spark_popup.insert_requested.connect(self._on_spark_insert)
-            self._spark_popup.show()
-        else:
-            # Already open — bring to front
-            self._spark_popup.raise_()
-            self._spark_popup.activateWindow()
-
-    def _on_spark_insert(self, text: str):
-        """Receive text from Spark popup and paste into the notes field."""
-        current = self.notes_input.toPlainText().strip()
-        if current:
-            self.notes_input.setPlainText(current + "\n" + text)
-        else:
-            self.notes_input.setPlainText(text)
-        # Move cursor to end
-        cursor = self.notes_input.textCursor()
-        cursor.movePosition(cursor.MoveOperation.End)
-        self.notes_input.setTextCursor(cursor)
 
     def _detect_and_respond_to_question(self):
         """Detect if user is asking a question and provide helpful suggestions.
@@ -843,6 +818,8 @@ class MethodBuilderDialog(QDialog):
             "  margin-right: 8px;"
             "}"
         )
+        # When operator changes, propagate to user profile manager + export path
+        self.operator_combo.currentTextChanged.connect(self._on_operator_changed)
         meta_row.addWidget(self.operator_combo)
 
         layout.addLayout(meta_row)
@@ -876,25 +853,6 @@ class MethodBuilderDialog(QDialog):
         notes_header = QHBoxLayout()
         notes_label = QLabel("Note:")
         notes_header.addWidget(notes_label)
-
-        # Spark AI button
-        ask_btn = QPushButton("⚡ Spark")
-        ask_btn.setFixedSize(60, 24)
-        ask_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 10px;"
-            "  font-size: 11px;"
-            "  font-weight: bold;"
-            "  padding: 2px 4px;"
-            "}"
-            "QPushButton:hover { background: #28A745; }"
-        )
-        ask_btn.setToolTip("Open Spark AI assistant for method building help")
-        ask_btn.clicked.connect(self._open_spark_popup)
-        notes_header.addWidget(ask_btn)
 
         # Help button
         help_btn = QPushButton("?")
@@ -941,7 +899,7 @@ class MethodBuilderDialog(QDialog):
         )
         layout.addWidget(syntax_guide)
         layout.addSpacing(2)
-        
+
         layout.addWidget(self.notes_input)
         self.notes_input.textChanged.connect(self._update_char_count)
         layout.addSpacing(12)
@@ -1395,10 +1353,6 @@ class MethodBuilderDialog(QDialog):
         self._copy_schedule_btn.clicked.connect(self._copy_schedule_to_clipboard)
         button_row.addWidget(self._copy_schedule_btn)
 
-        self._copy_confirm_label = QLabel("")
-        self._copy_confirm_label.setStyleSheet("font-size: 12px; color: #34C759; font-weight: 600;")
-        button_row.addWidget(self._copy_confirm_label)
-
         # Push to Queue button
         self.queue_btn = QPushButton("Push to Queue")
         self.queue_btn.setIcon(_create_svg_icon(_SVG_CLIPBOARD_WHITE, 18))
@@ -1467,12 +1421,64 @@ Each cycle runs for its set duration and auto-advances to the next.</p>
 <tr><td><b>Type</b></td><td>Yes</td><td>Baseline, Binding, Kinetic, Regeneration, Immobilization, Blocking, Wash, Other</td></tr>
 <tr><td><b>Duration</b></td><td>Yes</td><td>e.g. <code>5min</code>, <code>30sec</code>, <code>2h</code>, <code>overnight</code> (= 8 h). Default 5 min if omitted.</td></tr>
 <tr><td><b>[Tags]</b></td><td>No</td><td>Channel + optional concentration: <code>A:100nM</code>  <code>ALL:100nM</code>  <code>B:50µM</code> (brackets optional)</td></tr>
-<tr><td><b>contact Ns</b></td><td>No</td><td>Injection contact time: <code>contact 180s</code> or <code>contact 3min</code></td></tr>
+<tr><td><b>contact Ns</b></td><td>No</td><td>Injection contact time: <code>contact 180s</code>, <code>contact 3min</code>, <code>contact 5h</code>, or shorthand <code>ct 180s</code>. ⚠️ Auto-enables Overnight Mode if > 3 hours</td></tr>
 <tr><td><b>partial</b></td><td>No</td><td>Use partial injection (30 µL spike) instead of simple (full loop)</td></tr>
 <tr><td><b>manual / automated</b></td><td>No</td><td>Override injection mode for this cycle</td></tr>
 <tr><td><b>detection priority/off</b></td><td>No</td><td>Override injection-detection sensitivity for this cycle</td></tr>
 <tr><td><b>channels AC</b></td><td>No</td><td>Override target channels (e.g. <code>channels BD</code>)</td></tr>
+<tr><td><b>fr N</b></td><td>No</td><td>Flow rate in µL/min: <code>fr 50</code> (shorthand for <code>flow</code>)</td></tr>
+<tr><td><b>iv N</b></td><td>No</td><td>Injection volume in µL: <code>iv 25</code> (shorthand for <code>injection volume</code>)</td></tr>
 </table>
+
+<hr/>
+
+<h4>⚡ Quick Syntax Reference</h4>
+<p><b>Cycle Type Abbreviations:</b></p>
+<table border="1" cellpadding="3" cellspacing="0" style="border-collapse:collapse; font-size:11px;">
+<tr><td><code>BL</code></td><td>Baseline</td></tr>
+<tr><td><code>BN</code></td><td>Binding</td></tr>
+<tr><td><code>IM</code></td><td>Immobilization</td></tr>
+<tr><td><code>BK</code></td><td>Blocking</td></tr>
+<tr><td><code>KN</code></td><td>Kinetic</td></tr>
+<tr><td><code>CN</code></td><td>Concentration</td></tr>
+<tr><td><code>RG</code></td><td>Regeneration</td></tr>
+<tr><td><code>AS</code></td><td>Association</td></tr>
+<tr><td><code>DS</code></td><td>Dissociation</td></tr>
+<tr><td><code>WS</code></td><td>Wash</td></tr>
+<tr><td><code>OT</code></td><td>Other</td></tr>
+</table>
+
+<p><b>Duration Shortcuts:</b></p>
+<ul style="margin-top:4px; margin-bottom:12px;">
+<li><code>5s</code>, <code>30sec</code> — Seconds</li>
+<li><code>5m</code>, <code>30min</code> — Minutes</li>
+<li><code>2h</code>, <code>5hr</code> — Hours (auto-enables Overnight Mode if &gt; 3h)</li>
+<li><code>overnight</code> — 8 hours (default for long equilibration)</li>
+</ul>
+
+<p><b>Parameter Shorthand:</b></p>
+<ul style="margin-top:4px; margin-bottom:12px;">
+<li><code>flow 50</code> or <code>fr 50</code> — Flow rate in µL/min</li>
+<li><code>iv 25</code> — Injection volume in µL</li>
+<li><code>contact 5m</code> or <code>ct 5m</code> — Contact time with auto-conversion (e.g., <code>ct 180s</code>, <code>ct 3min</code>, <code>ct 5h</code>)</li>
+</ul>
+
+<p><b>Injection Modifiers:</b></p>
+<ul style="margin-top:4px; margin-bottom:12px;">
+<li><code>partial</code> — 30 µL spike injection (vs full loop)</li>
+<li><code>manual</code> — Manual syringe injection</li>
+<li><code>automated</code> — Peristaltic pump injection</li>
+<li><code>detection priority</code> — High-sensitivity detection</li>
+<li><code>detection off</code> — Disable detection for this cycle</li>
+</ul>
+
+<p><b>Channel Selection:</b></p>
+<ul style="margin-top:4px; margin-bottom:12px;">
+<li><code>channels A</code>, <code>channels BD</code>, <code>channels ALL</code> — Target specific channels</li>
+<li><code>A:100nM</code>, <code>B:50µM</code> — Per-channel concentration tags</li>
+</ul>
+
+<p><b>Full Example:</b> <code>Binding 5min A:100nM fr 50 iv 25 contact 3m partial</code></p>
 
 <hr/>
 
@@ -1655,22 +1661,41 @@ Binding 5min A:100nM contact 120s partial
     def _build_cycle_from_text(self, text: str) -> Cycle:
         """Build Cycle object from a single line of text.
 
+        Notes (after #) are strictly informational and never parsed.
+        Only the command portion before # is used to build cycle parameters.
+
         Args:
-            text: Single line like "Baseline 5min A:100nM B:50µM" or "Baseline 5min [A:100nM] [B:50µM]"
+            text: Single line like "Baseline 5min A:100nM  # my note"
         """
         import re
+
+        # ── Separate command from user note ────────────────────────────
+        # Everything after the first '#' that is NOT a modifier (#3, #all, #1-5)
+        # is treated as a free-form, unparsed user note.
+        user_note = ""
+        command = text
+        note_match = re.search(r'(?<!^)\s+#(?!\d|all|\d+-\d+)\s*(.*)', text, re.IGNORECASE)
+        if note_match:
+            user_note = note_match.group(1).strip()
+            command = text[:note_match.start()].strip()
+        # If the entire line is just a comment, keep it as note with empty command
+        if not command:
+            command = text
+
+        # Use 'command' (not 'text') for all parsing below
+        text = command
 
         # Parse type from text (updated cycle types)
         cycle_type = "Baseline"  # default
         type_keywords = [
-            ('Baseline', r'baseline'),
-            ('Immobilization', r'immobilization|immobilize|immob'),
-            ('Blocking', r'blocking|block'),
-            ('Wash', r'\bwash\b'),  # Match 'wash' as standalone word
-            ('Kinetic', r'kinetic|kinetics'),
-            ('Binding', r'binding|concentration|conc|association|inject'),
-            ('Regeneration', r'regeneration|regen|clean'),
-            ('Other', r'other|custom'),
+            ('Baseline', r'\bbl\b|baseline'),
+            ('Immobilization', r'\bim\b|immobilization|immobilize|immob'),
+            ('Blocking', r'\bbk\b|blocking|block'),
+            ('Wash', r'\bws\b|\bwash\b'),  # Match 'wash' as standalone word
+            ('Kinetic', r'\bkn\b|kinetic|kinetics'),
+            ('Binding', r'\bbn\b|\bcn\b|binding|concentration|conc|association|inject'),
+            ('Regeneration', r'\brg\b|regeneration|regen|clean'),
+            ('Other', r'\bot\b|other|custom'),
         ]
 
         for type_name, pattern in type_keywords:
@@ -1713,13 +1738,23 @@ Binding 5min A:100nM contact 120s partial
             if unit_str:  # If units specified in tag, use it
                 detected_unit = unit_str
 
-        # Parse contact time (e.g., "contact 180s", "contact 3min")
+        # Parse contact time (e.g., "contact 180s", "contact180s", "contact 3min", "ct 2min", "ct3m")
         contact_time = None
-        contact_match = re.search(r'contact[:\s]+(\d+(?:\.\d+)?)\s*(s|sec|m|min)?', text, re.IGNORECASE)
+        # Try full "contact" keyword first (allows both "contact 3m" and "contact3m")
+        contact_match = re.search(r'contact[:\s]*(\d+(?:\.\d+)?)\s*(s|sec|m|min|h|hr)?', text, re.IGNORECASE)
+        if not contact_match:
+            # Try shorthand "ct" keyword (allows both "ct 3m" and "ct3m")
+            contact_match = re.search(r'\bct\s*(\d+(?:\.\d+)?)\s*(s|sec|m|min|h|hr)?', text, re.IGNORECASE)
+
         if contact_match:
             value = float(contact_match.group(1))
             unit = contact_match.group(2).lower() if contact_match.group(2) else 's'
-            if unit in ['m', 'min']:
+            if unit in ['h', 'hr']:
+                contact_time = value * 3600.0  # Convert to seconds
+                # Auto-enable overnight mode if > 3 hours
+                if value > 3:
+                    self.overnight_mode_check.setChecked(True)
+            elif unit in ['m', 'min']:
                 contact_time = value * 60.0  # Convert to seconds
             else:
                 contact_time = value
@@ -1740,13 +1775,17 @@ Binding 5min A:100nM contact 120s partial
 
         # Injection rules by cycle type
         if cycle_type == "Immobilization":
-            injection_method = "simple"
+            # In manual mode, no injection_method (runs like Baseline)
+            # In automated mode, use simple injection
+            injection_method = None if manual_injection_mode == "manual" else "simple"
             # contact_time from parsing (required by user)
         elif cycle_type == "Blocking":
-            injection_method = "simple"
+            # In manual mode, no injection_method (runs like Baseline)
+            injection_method = None if manual_injection_mode == "manual" else "simple"
             # contact_time from parsing (required by user)
         elif cycle_type == "Wash":
-            injection_method = "simple"
+            # In manual mode, no injection_method (runs like Baseline)
+            injection_method = None if manual_injection_mode == "manual" else "simple"
             # contact_time from parsing (required by user)
         elif cycle_type == "Binding":
             injection_method = "partial" if is_partial else "simple"  # Allow override
@@ -1760,18 +1799,32 @@ Binding 5min A:100nM contact 120s partial
             injection_method = "simple"
             if contact_time is None:
                 contact_time = 30.0  # Fixed 30s default for Regeneration
-        # Baseline and Other get no injection (None)
+        elif cycle_type in ("Baseline", "Other"):
+            # Baseline and Other: No injection, no contact time
+            injection_method = None
+            contact_time = None  # Explicitly clear any accidentally parsed contact_time
 
         # Build planned_concentrations list for concentration cycles
-        # Format: ["100 nM", "50 nM", "10 nM"]
+        # Format: ["Channels A, B: 50 nM"] for parallel, ["100 nM", "50 nM"] for sequential
+        # IMPORTANT: Multi-channel injections (A:50nM B:50nM) are PARALLEL (one injection event),
+        # NOT sequential. Group them into ONE entry so injection count is correct.
         planned_concentrations = []
         if cycle_type in ("Binding", "Kinetic") and concentrations:
-            # Sort concentrations by value (descending) for natural order
-            sorted_conc = sorted(concentrations.items(), key=lambda x: x[1], reverse=True)
-            for ch, val in sorted_conc:
-                # Format as "value unit" (e.g., "100 nM")
+            # Group channels by concentration value (parallel channels share same event)
+            from collections import defaultdict
+            conc_to_channels = defaultdict(list)
+            for ch, val in concentrations.items():
+                conc_to_channels[val].append(ch)
+
+            # Sort groups by concentration value (descending) for natural order
+            for val in sorted(conc_to_channels.keys(), reverse=True):
+                channels = sorted(conc_to_channels[val])
                 conc_str = f"{val} {detected_unit}".replace(" .", ".")  # Clean up decimals
-                planned_concentrations.append(conc_str)
+                if len(channels) > 1:
+                    ch_str = ", ".join(channels)
+                    planned_concentrations.append(f"Ch {ch_str}: {conc_str}")
+                else:
+                    planned_concentrations.append(f"Ch {channels[0]}: {conc_str}")
 
         # Generate name from type + tags or just text
         if concentrations:
@@ -1804,7 +1857,7 @@ Binding 5min A:100nM contact 120s partial
             type=cycle_type,
             name=name,
             length_minutes=duration_minutes,
-            note=text,
+            note=user_note,
             status="pending",
             units=detected_unit,
             concentrations=concentrations,
@@ -1871,7 +1924,7 @@ Binding 5min A:100nM contact 120s partial
         for line in cycle_lines:
             cycle = self._build_cycle_from_text(line)
             self._local_cycles.append(cycle)
-            self._validate_and_warn_cycle(cycle)
+            self._validate_and_warn_cycle(cycle, raw_text=line)
 
         self._refresh_method_table()
 
@@ -1942,12 +1995,22 @@ Binding 5min A:100nM contact 120s partial
         import re
         text_lower = text.lower().strip()
 
-        # contact Ns / contact Nm
-        contact_match = re.match(r'contact\s+(\d+(?:\.\d+)?)\s*(s|sec|m|min)?', text_lower)
+        # contact Ns / contact Nm / contact Nh / contact Nhr
+        contact_match = re.match(r'contact\s+(\d+(?:\.\d+)?)\s*(s|sec|m|min|h|hr)?', text_lower)
         if contact_match:
+            # Don't allow contact_time on Baseline or Other cycles (no injection)
+            if cycle.type in ("Baseline", "Other"):
+                logger.warning(f"⚠️ Cannot set contact_time on {cycle.type} cycle (no injection)")
+                return
+
             value = float(contact_match.group(1))
             unit = contact_match.group(2) or 's'
-            if unit in ('m', 'min'):
+            if unit in ('h', 'hr'):
+                cycle.contact_time = value * 3600.0
+                # Auto-enable overnight mode if > 3 hours
+                if value > 3:
+                    self.overnight_mode_check.setChecked(True)
+            elif unit in ('m', 'min'):
                 cycle.contact_time = value * 60.0
             else:
                 cycle.contact_time = value
@@ -1983,6 +2046,39 @@ Binding 5min A:100nM contact 120s partial
             cycle.flow_rate = float(flow_match.group(1))
             return
 
+        # fr N (µL/min) - shorthand for flow rate
+        fr_match = re.match(r'fr\s+(\d+(?:\.\d+)?)', text_lower)
+        if fr_match:
+            cycle.flow_rate = float(fr_match.group(1))
+            return
+
+        # iv N (µL) - injection volume
+        iv_match = re.match(r'iv\s+(\d+(?:\.\d+)?)', text_lower)
+        if iv_match:
+            cycle.injection_volume = float(iv_match.group(1))
+            return
+
+        # ct Ns / ct Nm / ct Nh / ct Nhr - shorthand for contact time
+        ct_match = re.match(r'ct\s+(\d+(?:\.\d+)?)\s*(s|sec|m|min|h|hr)?', text_lower)
+        if ct_match:
+            # Don't allow contact_time on Baseline or Other cycles (no injection)
+            if cycle.type in ("Baseline", "Other"):
+                logger.warning(f"⚠️ Cannot set contact_time on {cycle.type} cycle (no injection)")
+                return
+
+            value = float(ct_match.group(1))
+            unit = ct_match.group(2) or 's'
+            if unit in ('h', 'hr'):
+                cycle.contact_time = value * 3600.0
+                # Auto-enable overnight mode if > 3 hours
+                if value > 3:
+                    self.overnight_mode_check.setChecked(True)
+            elif unit in ('m', 'min'):
+                cycle.contact_time = value * 60.0
+            else:
+                cycle.contact_time = value
+            return
+
         # conc A:100nM B:50nM ...
         conc_match = re.match(r'conc\s+(.+)', text, re.IGNORECASE)
         if conc_match:
@@ -2008,9 +2104,9 @@ Binding 5min A:100nM contact 120s partial
             return
 
         # Compound modifiers: multiple keywords on one line separated by spaces
-        # e.g., "#3 contact 120s channels BD detection priority"
+        # e.g., "#3 contact 120s channels BD detection priority" or "#3 ct 120s channels BD"
         # Try recursive splitting at known keywords
-        keywords = ['contact', 'channels', 'channel', 'detection', 'injection', 'flow', 'conc', 'duration', 'time', 'length']
+        keywords = ['contact', 'ct', 'channels', 'channel', 'detection', 'injection', 'flow', 'fr', 'iv', 'conc', 'duration', 'time', 'length']
         parts = re.split(r'\s+(?=(?:' + '|'.join(keywords) + r')\s)', text, flags=re.IGNORECASE)
         if len(parts) > 1:
             for part in parts:
@@ -2299,6 +2395,17 @@ Binding 5min A:100nM contact 120s partial
         except Exception as e:
             QMessageBox.critical(self, "Save Error", f"Failed to save method:\n{e}")
 
+    def _on_operator_changed(self, user_name: str):
+        """Update current user when operator changes in Build Method dialog.
+
+        This ensures the user_profile_manager stays in sync with the selected
+        operator, so the export path and other user-dependent features use the
+        correct user folder.
+        """
+        if user_name and hasattr(self, '_user_manager') and self._user_manager:
+            self._user_manager.set_current_user(user_name)
+            logger.debug(f"Operator changed in Build Method → current_user set to '{user_name}'")
+
     def _on_load_method(self):
         """Load method from a JSON file."""
         from PySide6.QtWidgets import QFileDialog
@@ -2397,9 +2504,22 @@ Binding 5min A:100nM contact 120s partial
 
     # -- Validation & clipboard helpers ------------------------------------
 
-    def _validate_and_warn_cycle(self, cycle: Cycle):
+    def _validate_and_warn_cycle(self, cycle: Cycle, raw_text: str = ""):
         """Show non-blocking warnings for potential cycle issues."""
         warnings = []
+
+        # Check 0: Detect unparsed contact time patterns
+        if raw_text and cycle.injection_method:
+            # Check if text contains contact time pattern that wasn't successfully parsed
+            ct_pattern_found = bool(re.search(r'\b(ct|contact)[:\s]*\d', raw_text, re.IGNORECASE))
+            if ct_pattern_found and cycle.type in ("Binding", "Kinetic") and cycle.contact_time == 300.0:
+                # Likely failed to parse (using default 300s)
+                warnings.append(
+                    f"⚠️ Contact time may not be parsed correctly\n"
+                    f"   → Text contains 'ct' or 'contact' but using default 300s\n"
+                    f"   → Use format: 'ct 3m' or 'contact 180s' (space after 'ct')\n"
+                    f"   → If you meant 300s, this is correct (ignore)"
+                )
 
         # Check 1: Contact time vs cycle duration
         if cycle.injection_method and cycle.contact_time:
@@ -2420,17 +2540,37 @@ Binding 5min A:100nM contact 120s partial
             )
 
         # Check 3: Multi-injection binding/kinetic cycles
+        # NOTE: Multi-channel injections (A:100nM B:50nM) are PARALLEL, not sequential
+        # Only warn for truly sequential planned_concentrations with no channel tags
         if cycle.type in ("Binding", "Kinetic") and cycle.planned_concentrations:
             n = len(cycle.planned_concentrations)
-            secs = cycle.length_minutes * 60
-            per = secs / n
-            if per < (cycle.contact_time or 0) + 60:
-                warnings.append(
-                    f"⚠️ {n} injections in {cycle.length_minutes:.1f} min = "
-                    f"{per:.0f}s each\n"
-                    f"   → With {cycle.contact_time:.0f}s contact, this is tight\n"
-                    f"   → Consider {((cycle.contact_time or 0) + 120) * n / 60:.1f} min"
-                )
+
+            # Detect if these are parallel multi-channel injections
+            # If concentrations dict has multiple channels, they inject in parallel (seconds apart)
+            is_parallel = len(getattr(cycle, 'concentrations', {})) > 1
+
+            if is_parallel:
+                # Parallel: All channels inject ~simultaneously (just valve-switch delay)
+                # Time available = full cycle duration
+                secs = cycle.length_minutes * 60
+                min_needed = (cycle.contact_time or 0) + 60  # contact + 1min buffer
+                if secs < min_needed:
+                    warnings.append(
+                        f"⚠️ {n} parallel injections in {cycle.length_minutes:.1f} min\n"
+                        f"   → With {cycle.contact_time:.0f}s contact, need {min_needed / 60:.1f} min minimum\n"
+                        f"   → Consider {min_needed / 60:.1f} min"
+                    )
+            else:
+                # Sequential: Injections happen one after another
+                secs = cycle.length_minutes * 60
+                per = secs / n
+                if per < (cycle.contact_time or 0) + 60:
+                    warnings.append(
+                        f"⚠️ {n} sequential injections in {cycle.length_minutes:.1f} min = "
+                        f"{per:.0f}s each\n"
+                        f"   → With {cycle.contact_time:.0f}s contact, this is tight\n"
+                        f"   → Consider {((cycle.contact_time or 0) + 120) * n / 60:.1f} min"
+                    )
 
         # Check 4: Detection explicitly off
         det = getattr(cycle, 'detection_priority', 'auto')
@@ -2469,7 +2609,7 @@ Binding 5min A:100nM contact 120s partial
 
         now = datetime.now().strftime("%B %d, %Y")
         method_name = self.method_name_input.text().strip() or "Untitled Method"
-        
+
         lines = []
         lines.append("=" * 70)
         lines.append(f"  SPR EXPERIMENT SCHEDULE — {method_name}")
@@ -2482,7 +2622,7 @@ Binding 5min A:100nM contact 120s partial
         inj_num = 1
         for i, cycle in enumerate(self._local_cycles, 1):
             duration = f"{cycle.length_minutes:.1f}min" if cycle.length_minutes else "—"
-            
+
             # Cycle header
             lines.append(f"{'─' * 70}")
             lines.append(f"  Cycle {i}: {cycle.type} • {duration}")
@@ -2491,9 +2631,9 @@ Binding 5min A:100nM contact 120s partial
             # Show injections if any
             ct = getattr(cycle, 'contact_time', None)
             contact = f" • {ct:.0f}s contact" if ct else ""
-            
+
             if cycle.planned_concentrations:
-                # Multiple injections in this cycle
+                # Injection events for this cycle (parallel channels already grouped)
                 for conc in cycle.planned_concentrations:
                     lines.append(f"    ☐  Injection {inj_num}: {conc}{contact}")
                     inj_num += 1
@@ -2505,7 +2645,7 @@ Binding 5min A:100nM contact 120s partial
                     conc_str = " • ".join(parts)
                 elif cycle.concentration_value is not None:
                     conc_str = f"{cycle.concentration_value} {cycle.concentration_units or 'nM'}"
-                
+
                 if conc_str:
                     lines.append(f"    ☐  Injection {inj_num}: {conc_str}{contact}")
                 else:
@@ -2514,7 +2654,7 @@ Binding 5min A:100nM contact 120s partial
             else:
                 # Buffer-only cycle (no injection)
                 lines.append(f"       (Buffer only — no injection)")
-            
+
             lines.append("")
 
         # Summary footer
@@ -2524,12 +2664,12 @@ Binding 5min A:100nM contact 120s partial
         total_min = sum(c.length_minutes for c in self._local_cycles)
         hours = total_min // 60
         mins = total_min % 60
-        
+
         if hours > 0:
             runtime = f"{int(hours)}h {int(mins)}min"
         else:
             runtime = f"{int(mins)}min"
-        
+
         lines.append("")
         lines.append(f"  SUMMARY:")
         lines.append(f"    • Total manual injections: {inj_total}")
@@ -2545,6 +2685,33 @@ Binding 5min A:100nM contact 120s partial
 
         QApplication.clipboard().setText("\n".join(lines))
 
-        # Flash confirmation
-        self._copy_confirm_label.setText("✓ Copied!")
-        QTimer.singleShot(2000, lambda: self._copy_confirm_label.setText(""))
+        # Flash confirmation on the button itself
+        self._copy_schedule_btn.setText("✓ Copied!")
+        self._copy_schedule_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(52,199,89,0.1);"
+            "  color: #34C759;"
+            "  border: 1px solid rgba(52,199,89,0.4);"
+            "  border-radius: 8px;"
+            "  padding: 8px 16px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+        )
+        QTimer.singleShot(2000, self._reset_copy_schedule_btn)
+
+    def _reset_copy_schedule_btn(self):
+        """Restore Copy Schedule button to default state."""
+        self._copy_schedule_btn.setText("\U0001F4CB Copy Schedule")
+        self._copy_schedule_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  color: #007AFF;"
+            "  border: 1px solid rgba(0,122,255,0.3);"
+            "  border-radius: 8px;"
+            "  padding: 8px 16px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+            "QPushButton:hover { background: rgba(0,122,255,0.08); }"
+        )

@@ -189,6 +189,43 @@ class ConvergenceEngine:
 
         return False
 
+    def _led_change_symbol(self, old_led: int, new_led: int, include_values: bool = False) -> str:
+        """Convert LED change to descriptive symbol.
+
+        Args:
+            old_led: Original LED value
+            new_led: New LED value
+            include_values: If True, include numeric values for ML training logs
+
+        Returns:
+            Symbol string like "+", "++", "+++", "-", "--", "---"
+        """
+        delta = new_led - old_led
+        abs_delta = abs(delta)
+
+        if delta == 0:
+            symbol = "="
+        elif delta > 0:
+            # Increase
+            if abs_delta <= 20:
+                symbol = "+"
+            elif abs_delta <= 60:
+                symbol = "++"
+            else:
+                symbol = "+++"
+        else:
+            # Decrease
+            if abs_delta <= 20:
+                symbol = "-"
+            elif abs_delta <= 60:
+                symbol = "--"
+            else:
+                symbol = "---"
+
+        if include_values:
+            return f"{symbol} ({old_led}→{new_led})"
+        return symbol
+
     def _apply_led_updates(self, led_dict: Dict[str, int], locked_set: set,
                           state: EngineState, log_prefix: str = "  📐") -> None:
         """Apply LED updates to state and log changes."""
@@ -196,7 +233,10 @@ class ConvergenceEngine:
             if ch not in locked_set:
                 old_led = state.leds[ch]
                 state.leds[ch] = new_led
-                self._log("info", f"{log_prefix} {ch.upper()}: LED {old_led}→{new_led}")
+                change_symbol = self._led_change_symbol(old_led, new_led)
+                self._log("info", f"{log_prefix} {ch.upper()}: LED {change_symbol}")
+                # ML training: detailed values in debug log
+                self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {old_led}→{new_led} (Δ{new_led-old_led:+d})")
             else:
                 self._log("info", f"{log_prefix} {ch.upper()} is locked - skipping")
 
@@ -365,11 +405,11 @@ class ConvergenceEngine:
                     if max_pixel >= params.saturation_threshold:
                         # Already saturated - aggressive reduction needed
                         sat_pixel_count = max(sat_pixel_count, 1000)  # Force heavy reduction
-                        self._log("warning", f"  🔴 {ch.upper()} MAX PIXEL SATURATED: {int(max_pixel)} counts ({max_pixel/params.max_counts*100:.1f}% of max)")
+                        self._log("warning", f"  {ch.upper()} SAT 100%")
                     else:
                         # Approaching saturation - moderate reduction
                         sat_pixel_count = max(sat_pixel_count, 50)  # Force moderate reduction
-                        self._log("warning", f"  ⚠️  {ch.upper()} max pixel {int(max_pixel)} at {max_pixel/params.max_counts*100:.1f}% (approaching saturation)")
+                        self._log("warning", f"  {ch.upper()} ~SAT {max_pixel/params.max_counts*100:.1f}%")
 
                 return sig, sat_pixel_count
 
@@ -422,10 +462,33 @@ class ConvergenceEngine:
 
             for ch in recipe.channels:
                 pct = 100.0 * signals[ch] / target_signal if target_signal > 0 else 0.0
-                sat_txt = "no sat" if saturation[ch] == 0 else f"SAT={saturation[ch]}px"
+
+                # Saturation status with color coding
+                sat_px = saturation[ch]
+                if sat_px == 0:
+                    sat_txt = ""
+                elif sat_px > 1000:
+                    sat_txt = f" / 🔴{sat_px}px"
+                elif sat_px >= 50:
+                    sat_txt = f" / 🟡{sat_px}px"
+                else:
+                    sat_txt = f" / 🟢{sat_px}px"
+
+                # Target status descriptor
+                if pct <= 75:
+                    target_txt = "Far"
+                elif pct <= 95:
+                    target_txt = "Closer"
+                elif pct <= 105:
+                    target_txt = "On target"
+                elif pct <= 110:
+                    target_txt = "Above"
+                else:
+                    target_txt = "Off"
+
                 self._log(
                     "info",
-                    f"  {ch.upper()}: LED={state.leds[ch]:3d} {int(signals[ch]):7d} counts ({pct:5.1f}% of target) [{sat_txt}]",
+                    f"  {ch.upper()}: {state.leds[ch]} / {int(signals[ch])} ({target_txt}{sat_txt})",
                 )
 
             # Track best brightness PER CHANNEL across iterations
@@ -509,7 +572,7 @@ class ConvergenceEngine:
             # PARTIAL CONVERGENCE: If 3+ channels are acceptable, report progress
             if len(acc.acceptable) >= 3:
                 remaining = [ch.upper() for ch in recipe.channels if ch not in acc.acceptable]
-                self._log("info", f"  🎯 Partial convergence: {len(acc.acceptable)}/4 channels locked. Remaining: {', '.join(remaining)}")
+                self._log("info", f"  {len(acc.acceptable)}/4 locked. Remaining: {', '.join(remaining)}")
 
             # Sensitivity classification (early iterations only)
             if iteration <= 2 and not high_sensitivity_detected:
@@ -572,8 +635,7 @@ class ConvergenceEngine:
 
                 if label == SensitivityLabel.HIGH or label == "HIGH":
                     high_sensitivity_detected = True
-                    self._log("info", f"  🧭 Classifier: HIGH sensitivity (conf={conf:.2f}) [{reason}]")
-                    self._log("info", "     → Will cap integration time ≤20ms to prevent saturation spiral")
+                    self._log("info", f"  Classifier: HIGH (conf={conf:.2f}) [{reason}], cap ≤20ms")
 
                     # PHASE 1 REFINEMENT: Only reduce integration if significantly over target
                     # Don't panic-reduce if channels are close to target (within 20%)
@@ -590,16 +652,16 @@ class ConvergenceEngine:
                         old_int = state.integration_ms
                         state.integration_ms = new_time
                         state.clear_for_integration_change(old_int, new_time)
-                        self._log("info", f"     → Reduced integration to {new_time:.1f}ms (HIGH sens, {over_target_pct*100:.1f}% over target)")
+                        self._log("info", f"     → Int {new_time:.1f}ms ({over_target_pct*100:.1f}% over)")
                         # Update hardware integration time
                         self.spectrometer.set_integration(state.integration_ms)
                         import time
                         time.sleep(0.02)  # Brief settling delay
                         continue
                     elif over_target_pct <= 0.25:
-                        self._log("info", f"     → Keeping integration at {state.integration_ms:.1f}ms (only {over_target_pct*100:.1f}% over target)")
+                        self._log("info", f"     → Keep {state.integration_ms:.1f}ms ({over_target_pct*100:.1f}% over)")
                 else:
-                    self._log("info", f"  🧭 Classifier: BASELINE (conf={conf:.2f}) [{reason}]")
+                    self._log("info", f"  Classifier: BASELINE (conf={conf:.2f})")
 
             # Convergence prediction (iteration 1 only, after first real signals)
             if iteration == 1 and self.convergence_predictor:
@@ -703,15 +765,15 @@ class ConvergenceEngine:
                     del state.sticky_locked[ch]
                 elif error_pct > self.UNLOCK_DRIFT_THRESHOLD:
                     # Unlock if drifted from target
-                    self._log("info", f"  🔓 Unlocking {ch.upper()} (drifted {error_pct*100:.1f}% from target)")
+                    self._log("info", f"  🔓 Unlock {ch.upper()} (drift {error_pct*100:.1f}%)")
                     del state.sticky_locked[ch]
                 elif has_lagging_channel and sig > target_signal * 1.10:
                     # Unlock if >10% over target while other channels lag significantly
-                    self._log("info", f"  🔓 Unlocking {ch.upper()} (above target {(sig/target_signal-1)*100:.1f}% while others lag)")
+                    self._log("info", f"  🔓 Unlock {ch.upper()} (+{(sig/target_signal-1)*100:.1f}% while lag)")
                     del state.sticky_locked[ch]
                 elif any_channel_below_target and sig < target_signal:
                     # Unlock if below target while other channels are struggling (prevents premature locking)
-                    self._log("info", f"  🔓 Unlocking {ch.upper()} (below target {(sig/target_signal)*100:.1f}% while system converging)")
+                    self._log("info", f"  🔓 Unlock {ch.upper()} ({(sig/target_signal)*100:.1f}% converging)")
                     del state.sticky_locked[ch]
                 else:
                     locked.append(ch)
@@ -733,7 +795,7 @@ class ConvergenceEngine:
                     if can_lock:
                         state.sticky_locked[ch] = True
                         locked.append(ch)
-                        self._log("info", f"  🔐 {ch.upper()} locked at {state.leds[ch]} (within 5% of target: {error_pct*100:.1f}%)")
+                        self._log("info", f"  🔐 {ch.upper()}@{state.leds[ch]} ({error_pct*100:.1f}%)")
 
             # ML TRAINING: Log iteration-level metrics (after locked is fully calculated)
             locked_count = len(locked)
@@ -742,7 +804,7 @@ class ConvergenceEngine:
             # Log locked channels for visibility
             if locked and iteration > 1:
                 locked_info = [f"{ch.upper()}@{state.leds[ch]}" for ch in locked]
-                self._log("info", f"  🔒 Locked channels (converged): {', '.join(locked_info)}")
+                self._log("info", f"  🔒 {', '.join(locked_info)}")
 
             # EARLY STOPPING: Check if system is stable with good results
             if self._check_early_stopping(iteration, iteration_trend, avg_error_pct, saturation, state, signals):
@@ -767,7 +829,7 @@ class ConvergenceEngine:
 
                 if integration_changed and leds_stable:
                     prefer_led_adjustment = True
-                    self._log("info", "  💡 Strategy: PREFER LED ADJUSTMENT (integration oscillating, LEDs stable)")
+                    self._log("info", "  Strategy: PREFER LED (int osc, LED stable)")
 
             # Early saturation handling with weakest channel protection
             if sum(saturation.values()) > 0:
@@ -781,11 +843,10 @@ class ConvergenceEngine:
 
                 # Log total saturation for visibility
                 total_sat_pixels = sum(saturation.values())
-                self._log("info", f"  ⚠️  SATURATION DETECTED: {len(acc.saturating)}/{len(recipe.channels)} channels ({total_sat_pixels} total pixels)")
+                self._log("info", f"  SAT: {len(acc.saturating)}/{len(recipe.channels)} ch ({total_sat_pixels}px)")
 
                 if all_saturating and all_close_to_target:
-                    self._log("info", "  ⚠️  ALL channels close to target (85-105%) but saturating")
-                    self._log("info", "  💡 Strategy: MODEL-BASED LED reduction using SATURATED PIXEL COUNT")
+                    self._log("info", "  All ch near target but saturating - model-based LED reduction")
 
                     for ch in recipe.channels:
                         old_led = state.leds[ch]
@@ -819,18 +880,16 @@ class ConvergenceEngine:
                             new_led = max(10, min(255, new_led))
                             state.leds[ch] = new_led
 
-                            self._log("info",
-                                     f"     {ch.upper()}: LED {old_led}→{new_led} "
-                                     f"({sat_pixels} sat pixels → {int((1-safety_margin)*100)}% reduction = Δ{int(led_reduction)})")
-                            # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=saturation_model, sat_pixels={sat_pixels}, confidence=high)")
+                            change_symbol = self._led_change_symbol(old_led, new_led)
+                            self._log("info", f"  {ch.upper()} LED {change_symbol} ({sat_pixels}px sat)")
+                            self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {old_led}→{new_led} (sat_pixels={sat_pixels}, reduction={int((1-safety_margin)*100)}%)")
                         else:
                             # Fallback if no model
                             new_led = max(10, int(old_led * safety_margin))
                             state.leds[ch] = new_led
-                            self._log("info", f"     {ch.upper()}: LED {old_led}→{new_led} ({sat_pixels} sat pixels → {int((1-safety_margin)*100)}%)")
-                            # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=saturation_fallback, sat_pixels={sat_pixels}, confidence=medium)")
+                            change_symbol = self._led_change_symbol(old_led, new_led)
+                            self._log("info", f"  {ch.upper()} LED {change_symbol} ({sat_pixels}px sat)")
+                            self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {old_led}→{new_led} (sat_pixels={sat_pixels}, reduction={int((1-safety_margin)*100)}%)")
 
                     # Continue to next iteration - integration will be increased if signals drop
                     continue
@@ -853,10 +912,9 @@ class ConvergenceEngine:
 
                 if should_adjust_leds_not_time:
                     if weakest_led >= 255 and weakest_locked:
-                        self._log("info", f"  ℹ️  Weakest channel {weakest_ch.upper()} at max LED (255) and locked")
-                        self._log("info", "  ℹ️  Normalizing saturating channels relative to weakest using slopes")
+                        self._log("info", f"  {weakest_ch.upper()} max LED (255), normalizing others")
                     else:
-                        self._log("info", f"  💡 {num_saturating} channel(s) saturating (≤3) - reducing their LEDs instead of cutting integration")
+                        self._log("info", f"  {num_saturating} ch sat (≤3) - reduce LED not int")
 
                     weakest_slope = None
                     if state.model_slopes_at_10ms and weakest_ch in state.model_slopes_at_10ms:
@@ -896,17 +954,11 @@ class ConvergenceEngine:
                             # actually decrease each iteration.
                             if new_led >= state.leds[ch] and sat_pixels > 0:
                                 new_led = max(10, int(state.leds[ch] * safety_margin))
-                                self._log("info",
-                                         f"  📐 {ch.upper()} LED {state.leds[ch]}→{new_led} "
-                                         f"(normalized would stay {int(normalized_led * safety_margin)}, "
-                                         f"forcing {int((1-safety_margin)*100)}% reduction to clear {sat_pixels} sat px)")
+                                self._log("info", f"  {ch.upper()} LED {state.leds[ch]}→{new_led} (force -{int((1-safety_margin)*100)}%, {sat_pixels}px sat)")
                             else:
-                                self._log("info",
-                                         f"  📐 {ch.upper()} LED {state.leds[ch]}→{new_led} "
-                                         f"(normalized: {weakest_slope:.1f}/{ch_slope:.1f} × 255 × {safety_margin:.2f}, {sat_pixels} sat px)")
-
-                            # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {state.leds[ch]}-{new_led} (reason=weakest_normalization, weakest_ratio={weakest_slope/ch_slope:.3f}, sat_pixels={sat_pixels}, confidence=high)")
+                                change_symbol = self._led_change_symbol(state.leds[ch], new_led)
+                                self._log("info", f"  {ch.upper()} LED {change_symbol} (norm {sat_pixels}px sat)")
+                                self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {state.leds[ch]}→{new_led} (normalized, sat_pixels={sat_pixels})")
 
                             state.leds[ch] = new_led
                         else:
@@ -914,9 +966,9 @@ class ConvergenceEngine:
                             old_led = state.leds[ch]
                             new_led = int(old_led * safety_margin)
                             new_led = max(10, min(255, new_led))
-                            self._log("info", f"  📉 {ch.upper()} LED {old_led}→{new_led} (reduce by {int((1-safety_margin)*100)}% to clear {sat_pixels} sat px)")
-                            # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=saturation_reduction, sat_pixels={sat_pixels}, confidence=high)")
+                            change_symbol = self._led_change_symbol(old_led, new_led)
+                            self._log("info", f"  {ch.upper()} LED {change_symbol} ({sat_pixels}px sat)")
+                            self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {old_led}→{new_led} (sat_pixels={sat_pixels}, reduction={int((1-safety_margin)*100)}%)")
                             state.leds[ch] = new_led
 
                     # Also boost non-saturated channels to maximize LED brightness
@@ -953,8 +1005,9 @@ class ConvergenceEngine:
                                     if sig < target_signal and new_led < old_led:
                                         new_led = min(255, old_led + max(5, int(old_led * 0.10)))
 
-                                    self._log("info", f"  📈 {ch.upper()} LED {old_led}→{new_led} (+{new_led-old_led}, slope boost, {error_pct*100:.1f}% below target)")
-                                    self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=slope_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
+                                    change_symbol = self._led_change_symbol(old_led, new_led)
+                                    self._log("info", f"  {ch.upper()} LED {change_symbol} ({error_pct*100:.1f}% below)")
+                                    self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {old_led}→{new_led} (error_pct={error_pct*100:.1f}%, reason=slope_boost)")
                                     state.leds[ch] = new_led
                                     boosted = True
 
@@ -963,22 +1016,23 @@ class ConvergenceEngine:
                                 ratio = target_signal / sig
                                 new_led = int(old_led * min(ratio, 2.5) * 0.7)  # 70% step toward target
                                 new_led = max(old_led + 5, min(255, new_led))  # Must increase by at least 5
-                                self._log("info", f"  📈 {ch.upper()} LED {old_led}→{new_led} (+{new_led-old_led}, proportional boost, {error_pct*100:.1f}% below target)")
-                                self._log("info", f"    LED_DECISION: {ch.upper()} {old_led}-{new_led} (reason=proportional_boost_during_saturation_handling, error_pct={error_pct*100:.1f}%, confidence=medium)")
+                                change_symbol = self._led_change_symbol(old_led, new_led)
+                                self._log("info", f"  {ch.upper()} LED {change_symbol} ({error_pct*100:.1f}% below)")
+                                self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {old_led}→{new_led} (error_pct={error_pct*100:.1f}%, reason=proportional_boost)")
                                 state.leds[ch] = new_led
 
                     # CRITICAL: If we handled saturation by reducing LEDs (≤3 channels),
                     # DON'T also reduce integration time - the LED reduction already fixed it
                     # Only reduce integration if >3 channels saturating (can't fix with LED alone)
                     if num_saturating <= 3:
-                        self._log("info", f"  ✓ Saturation handled by LED reduction ({num_saturating}/4 channels)")
+                        self._log("info", f"  Sat handled by LED ({num_saturating}/4)")
                         # Skip integration time reduction and continue to next iteration
                         continue
 
                 # Saturation handling: reduce integration time ONLY if >3 channels saturating
                 # (If ≤3 channels, we already handled it above by LED reduction)
                 if num_saturating > 3:
-                    self._log("info", "  ⏱️  Saturation detected - reducing integration time to help clear saturation")
+                    self._log("info", "  Sat detected - reducing int time")
                 new_time = saturation_policy.reduce_integration(
                     saturation,
                     state.integration_ms,
@@ -986,10 +1040,7 @@ class ConvergenceEngine:
                     polarization_mode=recipe.polarization_mode,  # Pass polarization mode
                 )
                 if new_time < state.integration_ms:
-                    self._log(
-                        "info",
-                        f"  ⏱️ Reducing integration time: {state.integration_ms:.1f}ms → {new_time:.1f}ms",
-                    )
+                    self._log("info", f"  Int {state.integration_ms:.1f}→{new_time:.1f}ms")
                     old_int = state.integration_ms
                     state.integration_ms = new_time
                     state.clear_for_integration_change(old_int, new_time)
@@ -1026,7 +1077,9 @@ class ConvergenceEngine:
                                 new_led = min(255, int(old_led * scale_factor))
                                 if new_led != old_led:
                                     state.leds[ch] = new_led
-                                    self._log("info", f"     {ch.upper()}: LED {old_led}→{new_led}")
+                                    change_symbol = self._led_change_symbol(old_led, new_led)
+                                    self._log("info", f"     {ch.upper()}: LED {change_symbol}")
+                                    self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {old_led}→{new_led} (speed_opt, scale={scale_factor:.2f}x)")
 
                             old_int = state.integration_ms
                             state.integration_ms = new_int
@@ -1176,9 +1229,9 @@ class ConvergenceEngine:
 
             # ML TRAINING: Log phase transitions
             if prev_phase != phase:
-                self._log("info", f"PHASE_CHANGE: {prev_phase}→{phase} (reason=iteration_threshold, locked={len(locked)}/{len(recipe.channels)})")
+                self._log("info", f"{prev_phase}→{phase} (locked={len(locked)}/{len(recipe.channels)})")
 
-            self._log("info", f"  🎯 {phase}: Model {int(model_weight*100)}% / Empirical {int(empirical_weight*100)}%")
+            self._log("info", f"  {phase}: M{int(model_weight*100)}% / E{int(empirical_weight*100)}%")
 
             # ============================================================================
             # CALCULATE EMPIRICAL SLOPES from iteration history
@@ -1323,10 +1376,12 @@ class ConvergenceEngine:
                         for ch in recipe.channels:
                             old_led = state.leds[ch]
                             new_led = optimal_leds[ch]
+                            change_symbol = self._led_change_symbol(old_led, new_led)
                             if ch == weakest_channel:
-                                self._log("info", f"         {ch.upper()}: LED {old_led}→{new_led} (WEAKEST - maxed out)")
+                                self._log("info", f"         {ch.upper()}: LED {change_symbol} (WEAKEST)")
                             else:
-                                self._log("info", f"         {ch.upper()}: LED {old_led}→{new_led}")
+                                self._log("info", f"         {ch.upper()}: LED {change_symbol}")
+                            self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {old_led}→{new_led} (phase_jump_opt, int={optimal_integration:.1f}ms)")
 
                         # Apply the optimization
                         old_int = state.integration_ms
@@ -1538,23 +1593,18 @@ class ConvergenceEngine:
                             slope_source = "blend" if ch in empirical_slopes_at_current_int else "model"
                             # Calculate predicted counts with new LED
                             predicted_counts = sig + (new_led - current_led) * counts_per_led
-                            self._log("info",
-                                     f"  📐 [{phase}] {ch.upper()}: LED {current_led}→{new_led} "
-                                     f"(Δ{int(adjusted_delta):+d}, {slope_source}, damp {final_damping:.0%}, err {error_pct*100:.1f}%)")
-                            # ML TRAINING: Model prediction tracking
-                            self._log("info", f"    MODEL_PRED: {ch.upper()} expected_counts={predicted_counts:.0f}, current={sig:.0f}, target={target_signal:.0f}, source={slope_source}")
-                            # ML TRAINING: LED decision reasoning
-                            self._log("info", f"    LED_DECISION: {ch.upper()} {current_led}-{new_led} (reason=model_adjustment, error_pct={error_pct*100:.2f}%, confidence=high)")
+                            self._log("info", f"  [{phase}] {ch.upper()} LED {current_led}\u2192{new_led} (\u0394{int(adjusted_delta):+d}, {error_pct*100:.1f}%)")
+
                             state.leds[ch] = new_led
                             incremental_adjusted.add(ch)
                             adjustments_made = True
 
                     if not adjustments_made:
-                        self._log("info", f"  ✓ [{phase}] Converged - no adjustments needed")
+                        self._log("info", f"  [{phase}] Converged")
 
                 else:
                     # Fallback ratio method if no slopes available
-                    self._log("warning", f"  ⚠️  [{phase}] No slopes - using ratio fallback")
+                    self._log("warning", f"  [{phase}] No slopes - ratio fallback")
 
                     for ch in recipe.channels:
                         if ch in locked or saturation.get(ch, 0) > 0:
@@ -1655,9 +1705,9 @@ class ConvergenceEngine:
 
                                 new_led = max(10, current_led - led_reduction)
 
-                                self._log("warning",
-                                         f"  🔴 {ch.upper()} SATURATED ({sat}px, {approach}): LED {current_led}→{new_led} "
-                                         f"(-{led_reduction} LED, drop {int(counts_to_drop)} counts @ {counts_per_led:.1f} counts/LED)")
+                                change_symbol = self._led_change_symbol(current_led, new_led)
+                                self._log("warning", f"  {ch.upper()} SAT {sat}px ({approach}): LED {change_symbol}")
+                                self._log("debug", f"    LED_CHANGE_DETAIL: {ch.upper()} {current_led}→{new_led} (sat_pixels={sat}, led_reduction={led_reduction}, counts_to_drop={int(counts_to_drop)}, approach={approach})")
                             else:
                                 # Already below safe target - no reduction needed
                                 new_led = current_led
@@ -1917,8 +1967,31 @@ class ConvergenceEngine:
                     # Report
                     for ch in recipe.channels:
                         pct = 100.0 * signals_fine[ch] / target_signal if target_signal > 0 else 0.0
-                        sat_txt = "no sat" if saturation_fine[ch] == 0 else f"SAT={saturation_fine[ch]}px"
-                        self._log("info", f"  {ch.upper()}: LED={state.leds[ch]:3d} {int(signals_fine[ch]):7d} counts ({pct:5.1f}% of target) [{sat_txt}]")
+
+                        # Saturation status with color coding
+                        sat_px = saturation_fine[ch]
+                        if sat_px == 0:
+                            sat_txt = ""
+                        elif sat_px > 1000:
+                            sat_txt = f" / 🔴{sat_px}px"
+                        elif sat_px >= 50:
+                            sat_txt = f" / 🟡{sat_px}px"
+                        else:
+                            sat_txt = f" / 🟢{sat_px}px"
+
+                        # Target status descriptor
+                        if pct <= 75:
+                            target_txt = "Far"
+                        elif pct <= 95:
+                            target_txt = "Closer"
+                        elif pct <= 105:
+                            target_txt = "On target"
+                        elif pct <= 110:
+                            target_txt = "Above"
+                        else:
+                            target_txt = "Off"
+
+                        self._log("info", f"  {ch.upper()}: LED={state.leds[ch]:3d} {int(signals_fine[ch]):7d} ({target_txt}{sat_txt})")
 
                     # Check convergence
                     acc_fine = accept.evaluate(signals_fine, saturation_fine, target_signal, tol_signal, recipe)
@@ -2001,7 +2074,20 @@ class ConvergenceEngine:
                 self._log("info", f"\n📊 Using PER-CHANNEL best brightness (all from {best_integration:.1f}ms, boosted where needed):")
                 for ch in recipe.channels:
                     pct = (final_signals[ch] / target_signal * 100) if target_signal > 0 else 0
-                    self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} counts ({pct:5.1f}% of target)")
+
+                    # Target status descriptor
+                    if pct <= 75:
+                        target_txt = "Far"
+                    elif pct <= 95:
+                        target_txt = "Closer"
+                    elif pct <= 105:
+                        target_txt = "On target"
+                    elif pct <= 110:
+                        target_txt = "Above"
+                    else:
+                        target_txt = "Off"
+
+                    self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} ({target_txt})")
 
                 # Use the integration time from per-channel best
                 final_integration = best_integration
@@ -2023,7 +2109,20 @@ class ConvergenceEngine:
                     self._log("info", f"\n📊 Using final iteration LEDs (complete set at {state.integration_ms:.1f}ms):")
                 for ch in recipe.channels:
                     pct = (final_signals[ch] / target_signal * 100) if target_signal > 0 else 0
-                    self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} counts ({pct:5.1f}% of target)")
+
+                    # Target status descriptor
+                    if pct <= 75:
+                        target_txt = "Far"
+                    elif pct <= 95:
+                        target_txt = "Closer"
+                    elif pct <= 105:
+                        target_txt = "On target"
+                    elif pct <= 110:
+                        target_txt = "Above"
+                    else:
+                        target_txt = "Off"
+
+                    self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} ({target_txt})")
 
             # Calculate QC metrics using final combined results
             qc_warnings = []

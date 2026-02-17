@@ -66,7 +66,7 @@ class PumpManager(QObject):
         self._shutdown_requested = False
         self._default_channels: str = "AC"  # Global default: AC (state=0) or BD (state=1)
 
-        logger.info("PumpManager initialized")
+        logger.debug("PumpManager initialized")
 
     @property
     def is_available(self) -> bool:

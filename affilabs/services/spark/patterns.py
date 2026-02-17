@@ -576,6 +576,184 @@ PATTERNS = {
             "keywords": ["example", "method", "sample", "show"],
             "priority": "medium"
         },
+        r"cycle.*abbreviation|short.*cycle|abbreviate|cycle.*short.*form|BL|BN|IM|BK|KN|CN|RG|AS|DS|WS|OT": {
+            "answer": "**Cycle Type Abbreviations** (use anywhere):\n\n"
+            "• **BL** — Baseline\n"
+            "• **BN** — Binding\n"
+            "• **IM** — Immobilization\n"
+            "• **BK** — Blocking\n"
+            "• **KN** — Kinetic\n"
+            "• **CN** — Concentration\n"
+            "• **RG** — Regeneration\n"
+            "• **AS** — Association\n"
+            "• **DS** — Dissociation\n"
+            "• **WS** — Wash\n"
+            "• **OT** — Other\n\n"
+            "Example: `BN 5min A:100nM contact 180s` (short for Binding)",
+            "category": "method",
+            "keywords": ["abbreviation", "short", "form", "BL", "BN", "IM", "BK", "KN", "CN", "RG"],
+            "priority": "high"
+        },
+        r"duration.*shortcut|time.*shortcut|minute|second|hour|overnight|5m|5s|5h|24h": {
+            "answer": "**Duration Shortcuts** (all equivalent):\n\n"
+            "Seconds: `5s` or `5sec`\n"
+            "Minutes: `5m` or `5min`\n"
+            "Hours: `2h` or `2hr`\n"
+            "Special: `overnight` (= 8h, auto-enables Overnight Mode)\n\n"
+            "Examples: `Baseline 30sec`, `Binding 5min`, `Baseline 2h`, `Baseline overnight`",
+            "category": "method",
+            "keywords": ["duration", "shortcut", "time", "minute", "second", "hour", "overnight"],
+            "priority": "high"
+        },
+        r"flow.*rate|fr|injection.*volume|iv|shorthand.*parameter": {
+            "answer": "**Parameter Shorthand** for power users:\n\n"
+            "• `flow 50` or `fr 50` — Set flow rate to 50 µL/min\n"
+            "• `iv 25` — Set injection volume to 25 µL\n\n"
+            "Examples:\n"
+            "`Kinetic 5min A:100nM fr 50` (flow rate shorthand)\n"
+            "`Binding 5min A:100nM iv 25` (injection volume shorthand)\n"
+            "`Kinetic 5min A:100nM fr 50 iv 25 contact 3min` (both)",
+            "category": "method",
+            "keywords": ["flow", "rate", "injection", "volume", "shorthand", "parameter", "fr", "iv"],
+            "priority": "high"
+        },
+        r"contact.*time.*hour|contact.*hour|contact.*h|contact.*hr|5h|3h": {
+            "answer": "**Contact Time with Hours** (auto-converts to seconds):\n\n"
+            "`contact 5h` → 18,000 seconds\n"
+            "`contact 3h 30min` → 2+ hours shown as contact time\n"
+            "⚠️ **Auto-enables Overnight Mode if > 3 hours**\n\n"
+            "Examples:\n"
+            "`Binding 5min A:100nM contact 5h` (long overnight binding)\n"
+            "`Immobilization 4min contact 2hr` (controlled surface prep)",
+            "category": "method",
+            "keywords": ["contact", "time", "hour", "h", "hr", "3h", "5h"],
+            "priority": "high"
+        },
+        r"partial.*injection|simple.*injection|injection.*type": {
+            "answer": "**Injection Types** (modifiers):\n\n"
+            "• `partial` — 30 µL spike (quick test, less reagent)\n"
+            "• No modifier (default) — Full sample loop injection\n\n"
+            "Usage: `Binding 5min A:100nM contact 180s partial`\n"
+            "Also works with: `manual` or `automated` to override injection mode",
+            "category": "method",
+            "keywords": ["partial", "injection", "simple", "type"],
+            "priority": "medium"
+        },
+        r"detection.*mode|detection.*priority|baseline|priority|elevated|off": {
+            "answer": "**Detection Modes** (sensitivity level):\n\n"
+            "• `detection baseline` — Low sensitivity (factor 2.0)\n"
+            "• `detection priority` — Medium (factor 1.0)\n"
+            "• `detection elevated` — High (factor 0.5)\n"
+            "• `detection off` — Disabled\n\n"
+            "Example: `Binding 5min A:100nM detection priority`\n"
+            "Sets injection detection sensitivity for this cycle only.",
+            "category": "method",
+            "keywords": ["detection", "mode", "priority", "baseline", "elevated", "off", "sensitivity"],
+            "priority": "medium"
+        },
+        r"channel.*selection|channels.*A|channels.*B|channels.*BD|override.*channel|per.*channel": {
+            "answer": "**Channel Selection** (override defaults):\n\n"
+            "`channels A` — Restrict to channel A only\n"
+            "`channels BD` — Run on channels B & D\n"
+            "`channels ALL` — All channels (default)\n\n"
+            "Per-channel concentration (combo tag):\n"
+            "`A:100nM B:50nM` — Different concentrations per channel\n\n"
+            "Examples:\n"
+            "`Binding 5min A:100nM B:50nM`\n"
+            "`Binding 5min channels AC` (restrict to A & C)",
+            "category": "method",
+            "keywords": ["channel", "selection", "channels", "A", "B", "C", "D", "BD", "ALL", "override"],
+            "priority": "medium"
+        },
+        r"in.*place.*edit|#N|#3|#all|#2-5|modify.*cycle.*line": {
+            "answer": "**In-Place Modifiers** — Edit cycles without removing them:\n\n"
+            "`#3 contact 120s` — Change cycle 3 contact time\n"
+            "`#3 channels BD` — Restrict cycle 3 to B & D\n"
+            "`#2-5 detection priority` — Apply to cycles 2-5\n"
+            "`#all detection off` — Disable detection on ALL cycles\n"
+            "`#3 contact 120s channels BD detection priority` — Multiple mods in one line\n\n"
+            "Then click **➕ Add to Method** to apply.",
+            "category": "method",
+            "keywords": ["in", "place", "edit", "modify", "cycle", "line", "#N", "#3"],
+            "priority": "high"
+        },
+        r"concentration.*unit|nM|µM|mM|pM|mg/mL|µg/mL|ng/mL|unit|tag": {
+            "answer": "**Concentration/Unit Tags** (optional documentation):\n\n"
+            "Supported units: nM, µM, pM, mM, M, mg/mL, µg/mL, ng/mL\n"
+            "Format: `Channel:ValueUnit` or `[Channel:ValueUnit]`\n\n"
+            "Examples:\n"
+            "`A:100nM` — Channel A at 100 nanoM\n"
+            "`B:50µM` — Channel B at 50 microM\n"
+            "`ALL:25pM` — All channels at 25 picoM\n"
+            "`A:100nM B:50nM` — Multiple per-channel tags\n\n"
+            "Tags are for reference; they don't affect injection volume.",
+            "category": "method",
+            "keywords": ["concentration", "unit", "nM", "µM", "mM", "tag", "mg/mL"],
+            "priority": "medium"
+        },
+        r"preset|save.*preset|load.*preset|!save|@save|reuse": {
+            "answer": "**Presets & Templates** for quick reuse:\n\n"
+            "**Save a preset:**\n"
+            "Type `!save my_protocol_name` and click **➕ Add to Method**\n\n"
+            "**Load a preset:**\n"
+            "Type `@my_protocol_name` and click **⚡ Spark**\n\n"
+            "**Built-in templates:**\n"
+            "`@spark titration` — Dose-response series\n"
+            "`@spark kinetics` — Association + long dissociation\n"
+            "`@spark amine coupling` — Full coupling workflow\n"
+            "`@spark binding` — Multi-concentration binding",
+            "category": "method",
+            "keywords": ["preset", "save", "load", "template", "reuse", "!save", "@"],
+            "priority": "high"
+        },
+        r"build.*quick|build.*5|build.*10|auto.*generate|automate": {
+            "answer": "**Build Quick Series** (auto-generates):\n\n"
+            "`build 5` → 5 × (Binding 15min + Regeneration + Baseline)\n"
+            "`build 10` → 10 × (Binding 15min + Regeneration + Baseline)\n\n"
+            "Perfect for dose-response or replicate binding runs.\n"
+            "Click **➕ Add to Method**, adjust concentrations as needed.",
+            "category": "method",
+            "keywords": ["build", "quick", "series", "5", "10", "auto", "generate"],
+            "priority": "medium"
+        },
+        r"full.*example|dose.*response|titration|amine.*coupling|overnight": {
+            "answer": "**Full Method Examples:**\n\n"
+            "**Dose-Response Titration:**\n"
+            "`Baseline 5min`\n"
+            "`Binding 5min A:10nM contact 180s`\n"
+            "`Regen 30sec ALL:50mM`\n"
+            "`Baseline 2min`\n"
+            "`Binding 5min A:50nM contact 180s`\n"
+            "`< repeat at 100nM, 500nM >`\n\n"
+            "**Overnight Stability:**\n"
+            "`Baseline overnight` (8 hours, auto-enables Overnight Mode)\n"
+            "`Baseline 12h` (12 hours)\n\n"
+            "**Amine Coupling:**\n"
+            "`Baseline 30sec`\n"
+            "`Other 4min` (EDC/NHS activation)\n"
+            "`Immobilization 4min A:50µg/mL contact 180s`\n"
+            "`< blocking & titration >`",
+            "category": "method",
+            "keywords": ["example", "dose", "response", "titration", "amine", "coupling", "overnight"],
+            "priority": "high"
+        },
+        r"quick.*reference|all.*syntax|cheat.*sheet|shortcut|quick": {
+            "answer": "**Quick Syntax Cheat Sheet:**\n\n"
+            "**Type Duration Channel Contact Modifiers**\n\n"
+            "Examples:\n"
+            "`BN 5min A:100nM contact 180s` (short for Binding)\n"
+            "`KN 5min A:100nM fr 50 contact 3min` (Kinetic with flow rate)\n"
+            "`IM 4min A:50µg/mL contact 2h` (2-hour immobilization)\n"
+            "`RG 30sec ALL:50mM` (Regeneration)\n"
+            "`BL 5min` (Baseline)\n\n"
+            "**Modifiers:** `partial`, `manual`, `automated`, `detection priority/off`\n"
+            "**In-place edit:** `#3 contact 120s` or `#2-5 detection off`\n"
+            "**Presets:** `!save myprotocol` or `@myprotocol`\n"
+            "Click **?** button in Method Builder for full docs!",
+            "category": "method",
+            "keywords": ["quick", "reference", "syntax", "cheat", "sheet"],
+            "priority": "high"
+        },
     },
 
     "analysis": {

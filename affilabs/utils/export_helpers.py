@@ -526,9 +526,11 @@ class ExportHelpers:
                     timestamp = for_filename().replace(".", "_")
                     filename = f"AffiLabs_data_{timestamp}"
 
-                destination = config.get("destination", "")
-                if not destination:
-                    # Use user-specific directory if user available
+                # Always resolve user-specific directory dynamically (same as Edits tab)
+                # Ignores stale export_dest_input value — always uses current user
+                if hasattr(app, 'recording_mgr') and hasattr(app.recording_mgr, 'get_user_output_directory'):
+                    destination = str(app.recording_mgr.get_user_output_directory())
+                else:
                     current_user = app._get_current_user() if hasattr(app, '_get_current_user') else ""
                     if current_user:
                         destination = str(Path.home() / "Documents" / "Affilabs Data" / current_user / "SPR_data")

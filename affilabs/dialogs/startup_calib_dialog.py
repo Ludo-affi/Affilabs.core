@@ -330,6 +330,21 @@ class StartupCalibProgressDialog(QDialog):
             try:
                 self.title_label.setText(title)
                 self.setWindowTitle(title)
+                # Apply red color for failure titles, normal color otherwise
+                if "failed" in title.lower():
+                    self.title_label.setStyleSheet(
+                        "font-size: 18px;font-weight: 700;color: #FF3B30;",
+                    )
+                    self._stop_activity_animation()
+                    self.step_description_label.setVisible(False)
+                elif "successful" in title.lower():
+                    self.title_label.setStyleSheet(
+                        "font-size: 18px;font-weight: 700;color: #34C759;",
+                    )
+                else:
+                    self.title_label.setStyleSheet(
+                        "font-size: 18px;font-weight: 700;color: #1D1D1F;",
+                    )
             except RuntimeError:
                 pass  # Widget deleted
 
@@ -450,6 +465,17 @@ class StartupCalibProgressDialog(QDialog):
                 self._is_complete = True
                 self._is_error_state = False
                 self.start_button.setEnabled(True)
+                self.start_button.setVisible(True)  # Re-show after being hidden during calibration
+
+                # Stop activity animation - calibration is done
+                self._stop_activity_animation()
+                self.step_description_label.setVisible(False)
+
+                # Hide retry/continue buttons if they exist (from previous error state)
+                if self.retry_button:
+                    self.retry_button.hide()
+                if self.continue_button:
+                    self.continue_button.hide()
             except RuntimeError:
                 pass  # Widget deleted
 
@@ -475,8 +501,12 @@ class StartupCalibProgressDialog(QDialog):
             self._is_error_state = True
             self._is_complete = False
 
+            # Stop activity animation
+            self._stop_activity_animation()
+            self.step_description_label.setVisible(False)
+
             # Update title and status
-            self.title_label.setText("[WARN] Calibration Failed")
+            self.title_label.setText("Calibration Failed")
             self.title_label.setStyleSheet(
                 "font-size: 18px;"
                 "font-weight: 700;"
@@ -544,8 +574,17 @@ class StartupCalibProgressDialog(QDialog):
         try:
             self._is_error_state = True
 
+            # Stop activity animation
+            self._stop_activity_animation()
+            self.step_description_label.setVisible(False)
+
             # Update title and status
-            self.title_label.setText("[ERROR] Calibration Failed")
+            self.title_label.setText("Calibration Failed")
+            self.title_label.setStyleSheet(
+                "font-size: 18px;"
+                "font-weight: 700;"
+                "color: #FF3B30;",
+            )
             self.status_label.setText(
                 f"{error_message}\n\nMaximum retry attempts reached.\nPlease contact technical support.",
             )
@@ -590,10 +629,14 @@ class StartupCalibProgressDialog(QDialog):
             self._is_error_state = False
             self._is_complete = False
 
-            # Reset title color
+            # Reset title text and color back to normal
+            self.title_label.setText("Calibrating SPR System")
             self.title_label.setStyleSheet(
                 "font-size: 18px;font-weight: 700;color: #1D1D1F;",
             )
+
+            # Reset status
+            self.status_label.setText("Retrying calibration...")
 
             # Hide error buttons
             if self.retry_button:
@@ -601,8 +644,21 @@ class StartupCalibProgressDialog(QDialog):
             if self.continue_button:
                 self.continue_button.hide()
 
+            # Reset step description
+            self._current_step_text = ""
+            self.step_description_label.setText("")
+            self.step_description_label.setVisible(False)
+
+            # Reset activity animation
+            self._calibration_running = False
+            self._dot_count = 0
+            self.activity_label.setText("Working...")
+            self.activity_label.setVisible(True)
+
             # Reset progress bar
             self.progress_bar.setValue(0)
+            self.progress_bar.setMaximum(100)
+            self.progress_bar.setVisible(True)
 
         except RuntimeError:
             pass  # Widget deleted

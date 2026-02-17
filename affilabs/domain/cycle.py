@@ -153,6 +153,9 @@ class Cycle(BaseModel):
     flow_rate: Optional[float] = Field(
         default=None, description="Flow rate in µL/min (None = no pump control)"
     )
+    injection_volume: Optional[float] = Field(
+        default=None, description="Injection volume in µL (None = use default for injection method)"
+    )
     pump_type: Optional[Literal["affipump", "p4proplus"]] = Field(
         default=None, description="Pump type (auto-detected from hardware)"
     )

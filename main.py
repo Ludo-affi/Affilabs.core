@@ -194,15 +194,8 @@ def qt_message_handler(msg_type, context, message):
     if _is_suppressed_qt_text(message):
         return
 
-    # Forward legitimate messages to stdout
-    level_map = {
-        QtMsgType.QtDebugMsg: "Debug",
-        QtMsgType.QtWarningMsg: "Warning",
-        QtMsgType.QtCriticalMsg: "Critical",
-        QtMsgType.QtFatalMsg: "Fatal",
-    }
-    level = level_map.get(msg_type, "Unknown")
-    print(f"Qt {level}: {message}")
+    # Don't print remaining Qt messages to console - keep output clean
+    # (Messages are still logged via Qt's internal mechanisms if needed)
 
 
 # ============================================================================
@@ -519,7 +512,8 @@ class Application(QApplication):
 
         """
         try:
-            logger.info(f"[{phase}] {name}")
+            # Only log in detail for debug mode, otherwise keep it quiet
+            logger.debug(f"[{phase}] {name}")
             func()
             logger.debug(f"[{phase}] ✓ {name}")
         except Exception as e:
@@ -852,7 +846,7 @@ class Application(QApplication):
         self.features = self.license_mgr.load_license()
 
         license_info = self.license_mgr.get_license_info()
-        logger.info(f"✓ License: {license_info['tier_name']} tier")
+        logger.debug(f"✓ License: {license_info['tier_name']} tier")
         if not license_info['is_valid'] and license_info.get('errors'):
             logger.warning(f"License validation issues: {', '.join(license_info['errors'])}")
 
@@ -866,7 +860,7 @@ class Application(QApplication):
         if self.transmission_calc is None:
             raise RuntimeError("TransmissionCalculator initialization failed")
 
-        logger.info(
+        logger.debug(
             "✓ Business services",
         )
 
@@ -1340,7 +1334,7 @@ class Application(QApplication):
 
         # Resume live spectrum updates after calibration
         if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-            logger.info("Resuming live spectrum updates after calibration...")
+            logger.debug("Resuming live spectrum updates after calibration...")
             self.ui_updates.set_transmission_updates_enabled(True)
             self.ui_updates.set_raw_spectrum_updates_enabled(True)
 
@@ -1350,14 +1344,14 @@ class Application(QApplication):
         if hasattr(self, 'hardware_mgr') and self.hardware_mgr and hasattr(self.hardware_mgr, 'ctrl'):
             try:
                 intensities = calibration_data.p_mode_intensities
-                logger.info(f"Setting LED intensities (fixed for run): A={intensities.get('a', 0)}, B={intensities.get('b', 0)}, C={intensities.get('c', 0)}, D={intensities.get('d', 0)}")
+                logger.debug(f"Setting LED intensities (fixed for run): A={intensities.get('a', 0)}, B={intensities.get('b', 0)}, C={intensities.get('c', 0)}, D={intensities.get('d', 0)}")
                 self.hardware_mgr.ctrl.set_batch_intensities(
                     a=int(intensities.get('a', 0)),
                     b=int(intensities.get('b', 0)),
                     c=int(intensities.get('c', 0)),
                     d=int(intensities.get('d', 0))
                 )
-                logger.info("✓ LED intensities configured - will not change during run")
+
             except Exception as e:
                 logger.warning(f"Could not set LED intensities: {e}")
 
@@ -1368,28 +1362,23 @@ class Application(QApplication):
         self._log_calibration_to_database(calibration_data)
 
         # Populate LED brightness in Hardware Configuration section
-        logger.info("📋 Populating calibration settings in UI...")
         try:
             if hasattr(self.main_window, '_load_current_settings'):
                 self.main_window._load_current_settings(show_warnings=False)
-                logger.info("   ✓ LED brightness populated in Hardware Configuration")
             else:
                 logger.warning("   _load_current_settings method not found on main_window")
         except Exception as e:
             logger.warning(f"   Could not populate settings: {e}")
 
         # Clear graph and resume live data after OEM calibration
-        logger.info("📊 Clearing graph and resuming live data after calibration...")
-
         # Clear the graph
         if hasattr(self, 'graph') and self.graph:
             self.graph.clear_plot()
-            logger.info("   Graph cleared")
 
         # NOTE: Live acquisition will be started only after user reviews QC and clicks "Start"
         # See: _on_qc_start_requested() handler and _show_qc_dialog()
 
-        logger.info("✓ Post-calibration cleanup complete")
+
 
     def _show_qc_dialog(self, calibration_data):
         """Show QC dialog with calibration results (Layer 1 - UI responsibility).
@@ -1404,13 +1393,13 @@ class Application(QApplication):
             # Convert to dict for QC dialog
             qc_data = calibration_data.to_dict()
 
-            logger.info("Showing QC report dialog (modal)...")
+            logger.debug("Showing QC report dialog (modal)...")
 
             # Stop the calibration startup dialog timer (freeze on final elapsed time)
             if hasattr(self, 'calibration') and hasattr(self.calibration, '_calibration_dialog'):
                 calib_dialog = self.calibration._calibration_dialog
                 if calib_dialog and hasattr(calib_dialog, '_stop_activity_animation'):
-                    logger.info("Stopping calibration timer display...")
+                    logger.debug("Stopping calibration timer display...")
                     calib_dialog._stop_activity_animation()
 
             # Create dialog instance
@@ -1426,17 +1415,16 @@ class Application(QApplication):
             dialog.setWindowModality(Qt.ApplicationModal)
             dialog.exec()
 
-            logger.info("QC report displayed and closed (modal)")
+            logger.debug("QC report displayed and closed (modal)")
 
             # Turn off all LEDs after QC report
             if hasattr(self, 'hardware_mgr') and self.hardware_mgr and hasattr(self.hardware_mgr, 'ctrl'):
                 try:
                     self.hardware_mgr.ctrl.turn_off_channels()
-                    logger.info("✓ All LEDs turned off after calibration QC report")
                 except Exception as led_error:
                     logger.warning(f"Failed to turn off LEDs: {led_error}")
 
-            logger.info("System ready - Live data acquisition controlled by user")
+            logger.debug("System ready - Live data acquisition controlled by user")
 
         except Exception as e:
             logger.error(f"[X] Failed to show QC report: {e}", exc_info=True)
@@ -1452,7 +1440,7 @@ class Application(QApplication):
         # Connect QueueSummaryWidget to presenter
         if hasattr(sidebar, 'summary_table'):
             sidebar.summary_table.set_presenter(self.queue_presenter)
-            logger.info("✓ QueueSummaryWidget connected to presenter")
+            logger.debug("✓ QueueSummaryWidget connected to presenter")
 
             # Connect widget signals for operations
             sidebar.summary_table.cycle_reordered.connect(
@@ -1468,27 +1456,27 @@ class Application(QApplication):
 
         # Connect presenter signals for auto-refresh (replaces manual _update_summary_table calls)
         self.queue_presenter.queue_changed.connect(self._on_queue_changed)
-        logger.info("✓ Queue auto-refresh enabled (presenter.queue_changed signal)")
+        logger.debug("✓ Queue auto-refresh enabled (presenter.queue_changed signal)")
 
         # Connect Start Queued Run button
         if hasattr(sidebar, 'queued_run_started'):
             sidebar.queued_run_started.connect(self._on_start_queued_run)
-            logger.info("✓ Start Queued Run button connected")
+            logger.debug("✓ Start Queued Run button connected")
 
         # Connect Queue Cancel (Stop Run button)
         if hasattr(sidebar, 'queue_cancel_requested'):
             sidebar.queue_cancel_requested.connect(self._cancel_active_cycle)
-            logger.info("✓ Queue Cancel (Stop Run) button connected")
+            logger.debug("✓ Queue Cancel (Stop Run) button connected")
 
         # Connect Next Cycle button
         if hasattr(sidebar, 'next_cycle_requested'):
             sidebar.next_cycle_requested.connect(self._on_next_cycle)
-            logger.info("✓ Next Cycle button connected")
+            logger.debug("✓ Next Cycle button connected")
 
         # Connect Clear Queue button (sidebar signal path)
         if hasattr(sidebar, 'queue_cleared'):
             sidebar.queue_cleared.connect(self._confirm_clear_queue)
-            logger.info("✓ Clear Queue button connected")
+            logger.debug("✓ Clear Queue button connected")
 
     def _delete_selected_cycles(self):
         """Delete selected cycles from queue (called by toolbar Delete button)."""
@@ -1931,50 +1919,35 @@ class Application(QApplication):
 
     def _verify_cycle_table_connections(self):
         """Verify all cycle table connections are properly set up."""
-        logger.info("=" * 80)
-        logger.info("🔍 CYCLE TABLE CONNECTION VERIFICATION")
-        logger.info("=" * 80)
+        logger.debug("Verifying cycle table connections...")
+
+        # Quick verification with minimal logging
+        errors = []
 
         # Check 1: Main window has edits_tab
-        if hasattr(self.main_window, 'edits_tab'):
-            logger.info("✓ main_window.edits_tab EXISTS")
+        if not hasattr(self.main_window, 'edits_tab'):
+            errors.append("main_window.edits_tab missing")
+        elif not hasattr(self.main_window.edits_tab, 'cycle_data_table'):
+            errors.append("edits_tab.cycle_data_table missing")
 
-            # Check 2: edits_tab has cycle_data_table
-            if hasattr(self.main_window.edits_tab, 'cycle_data_table'):
-                table = self.main_window.edits_tab.cycle_data_table
-                logger.info(f"✓ edits_tab.cycle_data_table EXISTS (type: {type(table).__name__})")
-                logger.info(f"   - Current rows: {table.rowCount()}")
-                logger.info(f"   - Current columns: {table.columnCount()}")
-            else:
-                logger.error("✗ edits_tab.cycle_data_table DOES NOT EXIST!")
-        else:
-            logger.error("✗ main_window.edits_tab DOES NOT EXIST!")
-
-        # Check 4: Sidebar has method_tab_builder
+        # Check 2: Sidebar has method_tab_builder
         if hasattr(self.main_window, 'sidebar'):
             if builder := self._sidebar_widget('method_tab_builder'):
-                logger.info("✓ sidebar.method_tab_builder EXISTS")
-
-                # Check 5: method_tab_builder has app reference
-                if hasattr(builder, '_app_reference') and builder._app_reference is not None:
-                    logger.info("✓ method_tab_builder._app_reference IS SET")
-                    logger.info(f"   - Points to: {type(builder._app_reference).__name__}")
-                else:
-                    logger.error("✗ method_tab_builder._app_reference IS NOT SET!")
+                if not (hasattr(builder, '_app_reference') and builder._app_reference is not None):
+                    errors.append("method_tab_builder app reference not set")
             else:
-                logger.error("✗ sidebar.method_tab_builder DOES NOT EXIST!")
+                errors.append("sidebar.method_tab_builder missing")
         else:
-            logger.error("✗ main_window.sidebar DOES NOT EXIST!")
+            errors.append("main_window.sidebar missing")
 
-        # Check 6: Segment queue exists
-        if hasattr(self, 'segment_queue'):
-            logger.info(f"✓ app.segment_queue EXISTS (current size: {len(self.segment_queue)})")
+        # Check 3: Segment queue exists
+        if not hasattr(self, 'segment_queue'):
+            errors.append("app.segment_queue missing")
+
+        if errors:
+            logger.warning(f"Cycle table setup issues: {'; '.join(errors)}")
         else:
-            logger.error("✗ app.segment_queue DOES NOT EXIST!")
-
-        logger.info("=" * 80)
-        logger.info("END VERIFICATION")
-        logger.info("=" * 80)
+            logger.debug("✓ Cycle table connections verified")
 
     def _connect_viewmodel_signals(self):
         """Connect ViewModel signals to handlers (Phase 4 refactoring).
@@ -2127,7 +2100,7 @@ class Application(QApplication):
             # Reset EMA state when changing filters
             self._ema_state = {"a": None, "b": None, "c": None, "d": None}
 
-            logger.info(f"Display filter: {config['label']}")
+            logger.debug(f"Display filter: {config['label']}")
             logger.debug(
                 f"   Method: {self._display_filter_method}, Alpha: {self._display_filter_alpha}",
             )
@@ -2237,6 +2210,12 @@ class Application(QApplication):
         self._current_cycle = None
         self._cycle_end_time = None
 
+        # Close notes popup and hide button (no active cycle)
+        if hasattr(self.main_window, '_close_cycle_notes_popup'):
+            self.main_window._close_cycle_notes_popup()
+        if hasattr(self.main_window, '_update_cycle_note_button'):
+            self.main_window._update_cycle_note_button(False, visible=False)
+
         # Unlock queue so user can edit it again
         try:
             self.queue_presenter.unlock_queue()
@@ -2264,7 +2243,7 @@ class Application(QApplication):
             btn.setEnabled(False)
 
         if had_cycle:
-            logger.info("🛑 Active cycle cancelled – timers stopped, queue unlocked")
+            logger.debug("🛑 Active cycle cancelled – timers stopped, queue unlocked")
 
     def _set_start_button_to_stop_mode(self):
         """Change Start Run button to Stop Run mode (red, cancels execution)."""
@@ -2442,10 +2421,14 @@ class Application(QApplication):
             notes = getattr(cycle, 'note', '') or ''
             self.main_window.update_status_operation(f"Running: {cycle_type} ({duration_str})", notes=notes)
 
+        # Sync note button state with the cycle's existing note (if any) and show button
+        if hasattr(self.main_window, '_update_cycle_note_button'):
+            self.main_window._update_cycle_note_button(bool(getattr(cycle, 'note', '')), visible=True)
+
         # Schedule auto-completion when cycle duration expires
         duration_ms = int(duration_min * 60 * 1000)
         self._cycle_end_timer.start(duration_ms)
-        logger.info(f"✓ Cycle end timer scheduled: {duration_min} min ({duration_ms} ms)")
+        logger.debug(f"Cycle end timer scheduled: {duration_min} min ({duration_ms} ms)")
 
         # Pause the 5s intelligence refresh timer to avoid overwriting cycle countdown
         if hasattr(self.main_window, 'intelligence_refresh_timer'):
@@ -2454,7 +2437,7 @@ class Application(QApplication):
         # Start the 1-second update timer for intelligence bar and overlay
         if hasattr(self, '_cycle_timer'):
             self._cycle_timer.start(1000)  # Update every 1 second
-            logger.info("✓ Cycle display timer started (updates every 1 second)")
+            logger.debug("Cycle display timer started (updates every 1 second)")
             logger.debug(f"   _cycle_timer isActive: {self._cycle_timer.isActive()}, interval: {self._cycle_timer.interval()}ms")
         else:
             logger.error("❌ _cycle_timer does not exist - cycle display will not update!")
@@ -2599,7 +2582,7 @@ class Application(QApplication):
 
     def _on_start_queued_run(self):
         """Start executing all cycles in queue sequentially."""
-        logger.info("▶ Start Queued Run button clicked")
+        logger.debug("▶ Start Queued Run button clicked")
 
         # Check if there are cycles in queue
         queue_size = self.queue_presenter.get_queue_size()
@@ -2619,24 +2602,58 @@ class Application(QApplication):
             self.acquisition_events.on_start_button_clicked()
 
         # Start first cycle (subsequent cycles will auto-start when previous completes)
-        logger.info(f"Starting queued run with {queue_size} cycles")
+        logger.debug(f"Starting queued run with {queue_size} cycles")
         self._on_start_button_clicked()
-        logger.info("✓ Queued run started successfully")
 
     def _schedule_injection(self, cycle):
-        """Schedule injection to trigger after delay.
+        """Show pre-injection schedule dialog (if applicable) then execute injection.
+
+        For binding/kinetic cycles with planned concentrations in manual mode,
+        shows a two-phase dialog:
+          Phase 1 — 20s countdown so user can prepare their sample.
+          Phase 2 — Per-channel LED indicators that turn green as injection
+                    is detected on each active channel, then 3s success → close.
+
+        The dialog stays open throughout detection so the user gets real-time
+        feedback that their manual injection was detected on every channel.
 
         Args:
             cycle: Cycle object with injection_method and injection_delay
         """
         from PySide6.QtCore import QTimer
 
-        delay_ms = int(cycle.injection_delay * 1000)  # Convert to milliseconds
+        # Check if we should show the "get ready" schedule dialog
+        # ONLY for multi-injection experiments (more than 1 planned concentration)
+        is_manual_mode = self.hardware_mgr.requires_manual_injection
+        if (is_manual_mode and
+            cycle.type in ("Binding", "Kinetic", "Concentration") and
+            cycle.planned_concentrations and
+            len(cycle.planned_concentrations) > 1 and  # MULTI-injection only
+            getattr(cycle, 'injection_count', 0) == 0):
 
-        logger.info(f"⏲ Injection scheduled in {cycle.injection_delay}s ({cycle.injection_method})")
+            from affilabs.dialogs.concentration_schedule_dialog import ConcentrationScheduleDialog
+            schedule_dialog = ConcentrationScheduleDialog(cycle, self.main_window)
 
-        # Use QTimer.singleShot to trigger injection after delay
-        QTimer.singleShot(delay_ms, lambda: self._execute_injection(cycle))
+            # Wire up Phase 2: dialog calls _execute_injection when user clicks
+            # Ready (or countdown expires), and listens to coordinator signals
+            # for per-channel detection feedback.
+            schedule_dialog.set_injection_hooks(
+                execute_callback=lambda: self._execute_injection(cycle),
+                injection_coordinator=self.injection_coordinator,
+            )
+
+            result = schedule_dialog.exec()  # Blocks; Phase 2 runs inside exec()
+
+            if result != ConcentrationScheduleDialog.DialogCode.Accepted:
+                logger.info("User cancelled injection from schedule dialog")
+                return
+
+            logger.info(f"⏲ Schedule dialog done — injection already executing ({cycle.injection_method})")
+        else:
+            # Non-binding or automated mode: use standard delay
+            delay_ms = int(cycle.injection_delay * 1000)
+            logger.info(f"⏲ Injection scheduled in {cycle.injection_delay}s ({cycle.injection_method})")
+            QTimer.singleShot(delay_ms, lambda: self._execute_injection(cycle))
 
     def _execute_injection(self, cycle):
         """Execute injection for cycle - delegates to InjectionCoordinator.
@@ -2723,9 +2740,6 @@ class Application(QApplication):
     def _update_cycle_display(self):
         """Update Active Cycle overlay with cycle progress."""
         import time
-
-        # DEBUG: Log to verify this is being called
-        logger.debug(f"_update_cycle_display called - current_cycle={self._current_cycle is not None}, end_time={self._cycle_end_time is not None}")
 
         if not self._current_cycle or not self._cycle_end_time:
             logger.warning(f"Cannot update cycle display - current_cycle: {self._current_cycle is not None}, end_time: {self._cycle_end_time is not None}")
@@ -3036,6 +3050,12 @@ class Application(QApplication):
             tbl.set_running_cycle(None)
             logger.debug("✓ Queue table highlight cleared")
 
+        # Close notes popup and hide button (no active cycle)
+        if hasattr(self.main_window, '_close_cycle_notes_popup'):
+            self.main_window._close_cycle_notes_popup()
+        if hasattr(self.main_window, '_update_cycle_note_button'):
+            self.main_window._update_cycle_note_button(False, visible=False)
+
         # Update status bar operation status
         if hasattr(self.main_window, 'update_status_operation'):
             self.main_window.update_status_operation("Idle")
@@ -3156,9 +3176,8 @@ class Application(QApplication):
             start_time = timeline.start_cursor.value()
             relative_wash_time = wash_time - start_time
 
-            logger.info(
-                f"⏱ Contact time marker: {contact_duration:.0f}s "
-                f"(wash due at +{relative_wash_time:.1f}s)"
+            logger.debug(
+                f"Contact countdown: {contact_duration:.0f}s (wash due at +{relative_wash_time:.1f}s)"
             )
 
         except Exception as e:
@@ -3252,7 +3271,7 @@ class Application(QApplication):
         pass  # Silent mode
 
     def _on_injection_auto_detected(self, channel: str, injection_time: float, confidence: float):
-        """Handle injection auto-detected — log success.
+        """Handle injection auto-detected — log success and show detection feedback.
 
         Args:
             channel: Channel where injection was detected
@@ -3263,6 +3282,10 @@ class Application(QApplication):
             f"✓ Injection auto-detected: channel {channel.upper()} at t={injection_time:.1f}s "
             f"(confidence: {confidence:.0%})"
         )
+
+        # Show brief detection success feedback in unified bar (if available)
+        if hasattr(self.main_window, 'unified_bar') and self.main_window.unified_bar:
+            self.main_window.unified_bar.set_inject_detected(channel, confidence)
 
     def _on_injection_window_expired(self):
         """Handle 60-second detection window expiry — log warning."""
@@ -3616,6 +3639,12 @@ class Application(QApplication):
             self._current_cycle = None
             self._cycle_end_time = None
 
+            # Close notes popup and hide button (no active cycle)
+            if hasattr(self.main_window, '_close_cycle_notes_popup'):
+                self.main_window._close_cycle_notes_popup()
+            if hasattr(self.main_window, '_update_cycle_note_button'):
+                self.main_window._update_cycle_note_button(False, visible=False)
+
             # Save backup after completion to preserve completed cycles
             self._save_queue_backup()
 
@@ -3671,6 +3700,13 @@ class Application(QApplication):
             # On error, still try to clean up and continue
             self._current_cycle = None
             self._cycle_end_time = None
+
+            # Close notes popup and hide button (no active cycle)
+            if hasattr(self.main_window, '_close_cycle_notes_popup'):
+                self.main_window._close_cycle_notes_popup()
+            if hasattr(self.main_window, '_update_cycle_note_button'):
+                self.main_window._update_cycle_note_button(False, visible=False)
+
             if hasattr(self, '_cycle_timer'):
                 self._cycle_timer.stop()
             if hasattr(self, '_cycle_end_timer'):
@@ -3864,6 +3900,16 @@ class Application(QApplication):
         # Update method name in sidebar using the name from the builder
         if method_label := self._sidebar_widget('method_name_label'):
             method_label.setText(method_name)
+
+        # Propagate current user to export destination path
+        # (operator_combo in Build Method dialog already called set_current_user,
+        #  but the sidebar export_dest_input text field still needs updating)
+        current_user = self._get_current_user()
+        if current_user and (w := self._sidebar_widget('export_dest_input')):
+            user_path = str(Path.home() / "Documents" / "Affilabs Data" / current_user / "SPR_data")
+            Path(user_path).mkdir(parents=True, exist_ok=True)
+            w.setText(user_path)
+            logger.info(f"✓ Export path updated for user '{current_user}': {user_path}")
 
         # Force refresh the summary table
         if tbl := self._sidebar_widget('summary_table'):
@@ -4355,7 +4401,7 @@ class Application(QApplication):
 
                             if fn := self._sidebar_widget('set_detector_type'):
                                 fn(detector_type)
-                                logger.info(f"Sidebar updated with detector type: {detector_type}")
+                                logger.debug(f"Sidebar updated with detector type: {detector_type}")
         except Exception as e:
             logger.error(f"Error updating detector info: {e}")
 
@@ -4398,7 +4444,7 @@ class Application(QApplication):
         # Check if this was an intentional disconnect (user clicked power off)
         was_intentional = self._intentional_disconnect
         if was_intentional:
-            logger.info("Hardware disconnected (user-initiated)")
+            logger.debug("Hardware disconnected (user-initiated)")
             self._intentional_disconnect = False  # Reset flag
         else:
             # Unexpected disconnect - show critical error
@@ -4416,7 +4462,7 @@ class Application(QApplication):
 
         # Stop acquisition if running
         if acquisition_was_running:
-            logger.info("Stopping acquisition (hardware disconnected gracefully)...")
+            logger.debug("Stopping acquisition (hardware disconnected gracefully)...")
             try:
                 self.data_mgr.stop_acquisition()
             except Exception as e:
@@ -4506,8 +4552,8 @@ class Application(QApplication):
 
     def _on_servo_calibration_needed(self):
         """Servo positions not found - trigger auto-calibration."""
-        logger.info("🔧 Servo calibration needed signal received")
-        logger.info("   Starting automatic servo calibration...")
+        logger.debug("🔧 Servo calibration needed signal received")
+        logger.debug("   Starting automatic servo calibration...")
 
         # Use QTimer to delay calibration start (allow connection to complete)
         from PySide6.QtCore import QTimer
@@ -4529,7 +4575,7 @@ class Application(QApplication):
         #
         # This integration will be enabled once calibration orchestrator
         # saves these files automatically during calibration runs.
-        logger.debug("📊 Database logging skipped - awaiting log file integration")
+
         return
 
     @property
@@ -4576,7 +4622,7 @@ class Application(QApplication):
             except Exception:
                 pass
             self._processing_thread.join(timeout=2.0)
-            logger.info("[OK] Processing thread stopped")
+            logger.debug("Processing thread stopped")
 
     def _processing_worker(self):
         """Worker thread for processing spectrum data (Phase 3 optimization).
@@ -4586,8 +4632,7 @@ class Application(QApplication):
         """
         import queue
 
-        logger.info("[WORKER-THREAD] Processing worker entered; thread is running...")
-        logger.info("Γëí╞Æ╞Æ├│ Processing worker started")
+        logger.debug("Processing worker started")
 
         while self._processing_active:
             try:
@@ -4616,8 +4661,8 @@ class Application(QApplication):
                 logger.error(f"[X] Processing worker error: {e}", exc_info=True)
 
         # Log final statistics
-        logger.info(
-            f"Γëí╞Æ├╢Γöñ Processing worker stopped - Stats: {self._queue_stats['processed']} processed, "
+        logger.debug(
+            f"Processing worker stopped - Stats: {self._queue_stats['processed']} processed, "
             f"{self._queue_stats['dropped']} dropped, max queue: {self._queue_stats['max_size']}",
         )
 
@@ -5044,10 +5089,10 @@ class Application(QApplication):
     def _on_acquisition_pause_requested(self, pause: bool):
         """Handle acquisition pause/resume request from UI."""
         if pause:
-            logger.info("Pausing live acquisition...")
+            logger.debug("Pausing live acquisition...")
             self.data_mgr.pause_acquisition()
         else:
-            logger.info("Resuming live acquisition...")
+            logger.debug("Resuming live acquisition...")
             self.data_mgr.resume_acquisition()
 
     def _on_acquisition_started(self):
@@ -5144,13 +5189,13 @@ class Application(QApplication):
 
         # Stop recording if active
         if self.recording_mgr.is_recording:
-            logger.info("Stopping recording due to acquisition stop...")
+            logger.debug("Stopping recording due to acquisition stop...")
             self.recording_mgr.stop_recording()
 
         # Cancel active cycle if running – do NOT call _on_cycle_completed
         # because that auto-starts the next queued cycle.
         self._cancel_active_cycle()
-        logger.info("🛑 Active cycle cancelled due to acquisition stop")
+        logger.debug("Active cycle cancelled due to acquisition stop")
 
     # === Kinetic Operations Callbacks ===
 
@@ -6076,16 +6121,16 @@ class Application(QApplication):
             idx = combo.currentIndex()
         rpm = flowrate_map.get(idx, 50)
 
-        # Rule: For P4PRO+ internal pump, when flowrate is 25 µL/min,
-        # set contact time to 180 seconds automatically.
+        # Warning: For P4PRO+ internal pump, when flowrate is 25 µL/min,
+        # contact time should be >= 180 seconds for proper operation.
+        # User can choose to proceed with shorter times for development/testing.
         try:
             ctrl = self.hardware_mgr._ctrl_raw
         except Exception:
             ctrl = None
         if ctrl and hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
-            if float(rpm) == 25.0:
-                contact_time_s = 180
-                logger.info("⏱ Contact time overridden to 180s for 25 µL/min (P4PRO+ internal pump)")
+            if float(rpm) == 25.0 and contact_time_s < 180:
+                logger.warning(f"⚠️  Contact time ({contact_time_s}s) is below recommended 180s for 25 µL/min (P4PRO+ internal pump). This may cause incomplete injection or pump errors.")
 
         ctrl = self.hardware_mgr._ctrl_raw
         if not ctrl:
@@ -6320,7 +6365,7 @@ class Application(QApplication):
         """Start countdown timer for valve injection status."""
         from PySide6.QtCore import QTimer
 
-        logger.info(f"🔄 Starting injection countdown timer (total={getattr(self, '_injection_total_time', 'NOT SET')}s)")
+        logger.debug(f"Starting injection countdown timer (total={getattr(self, '_injection_total_time', 'NOT SET')}s)")
 
         # Stop any existing timer
         if hasattr(self, '_injection_countdown_timer') and self._injection_countdown_timer:
@@ -6335,7 +6380,7 @@ class Application(QApplication):
         self._injection_countdown_timer = QTimer(parent)
         self._injection_countdown_timer.timeout.connect(self._update_injection_countdown)
         self._injection_countdown_timer.start(100)  # Update 10 times per second
-        logger.info("✓ Countdown timer started (interval=100ms)")
+        logger.debug("Countdown timer started (interval=100ms)")
 
         # Initial status update
         self._update_injection_countdown()
@@ -6942,9 +6987,9 @@ class Application(QApplication):
             if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
                 ctrl = getattr(self.hardware_mgr, 'ctrl', None)
                 if ctrl and hasattr(ctrl, 'turn_off_channels'):
-                    logger.info("💡 Turning off all LEDs gracefully...")
+                    logger.debug("Turning off all LEDs gracefully...")
                     ctrl.turn_off_channels()
-                    logger.info("✓ All LEDs turned off")
+                    logger.debug("All LEDs turned off")
         except Exception as e:
             logger.debug(f"Could not turn off LEDs during cleanup: {e}")
 
@@ -6953,9 +6998,9 @@ class Application(QApplication):
             if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
                 ctrl = getattr(self.hardware_mgr, '_ctrl_raw', None)
                 if ctrl and hasattr(ctrl, 'stop_kinetic'):
-                    logger.info("🔌 Powering off all valves gracefully...")
+                    logger.debug("Powering off all valves gracefully...")
                     ctrl.stop_kinetic()  # Turns off 3-way and 6-port valves
-                    logger.info("✓ All valves powered off")
+                    logger.debug("All valves powered off")
         except Exception as e:
             logger.debug(f"Could not power off valves during cleanup: {e}")
 
@@ -6964,9 +7009,9 @@ class Application(QApplication):
             if hasattr(self, 'hardware_mgr') and self.hardware_mgr:
                 ctrl = getattr(self.hardware_mgr, '_ctrl_raw', None)
                 if ctrl and hasattr(ctrl, 'has_internal_pumps') and ctrl.has_internal_pumps():
-                    logger.info("⏹️ Stopping internal pumps gracefully...")
+                    logger.debug("Stopping internal pumps gracefully...")
                     ctrl.pump_stop(ch=3)  # Stop all pumps (channel 3 = both)
-                    logger.info("✓ Internal pumps stopped")
+                    logger.debug("Internal pumps stopped")
         except Exception as e:
             logger.debug(f"Could not stop internal pumps during cleanup: {e}")
 
@@ -6978,7 +7023,7 @@ class Application(QApplication):
             return True  # Already closing, prevent double cleanup
 
         self.closing = True
-        logger.info("Γëí╞Æ├╢├ñ Closing application...")
+        logger.debug("Closing application...")
 
         # Perform graceful cleanup
         self._cleanup_resources(emergency=False)
@@ -7791,20 +7836,37 @@ class Application(QApplication):
 
             def eventFilter(self, obj, event):
                 if event.type() == QEvent.Type.KeyPress:
-                    # Check if a flag is selected
-                    if hasattr(self.app, '_selected_flag_idx') and self.app._selected_flag_idx is not None:
-                        key = event.key()
+                    key = event.key()
 
-                        # Arrow keys move flag
+                    # Priority 1: If a flag is selected, arrow keys move the flag
+                    if hasattr(self.app, '_selected_flag_idx') and self.app._selected_flag_idx is not None:
                         if key == Qt.Key.Key_Left:
-                            self.app._move_selected_flag(-1)  # Move left by 1 data point
+                            self.app._move_selected_flag(-1)
                             return True
                         elif key == Qt.Key.Key_Right:
-                            self.app._move_selected_flag(1)  # Move right by 1 data point
+                            self.app._move_selected_flag(1)
                             return True
                         elif key == Qt.Key.Key_Escape:
-                            self.app._deselect_flag()  # Deselect flag
+                            self.app._deselect_flag()
                             return True
+
+                    # Priority 2: Arrow keys shift the selected channel in time
+                    # Shift modifier = coarse step (1.0s), plain = fine step (0.1s)
+                    elif key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+                        step = 1.0 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 0.1
+                        direction = -1 if key == Qt.Key.Key_Left else 1
+                        self.app._shift_selected_channel(direction * step)
+                        return True
+                    elif key == Qt.Key.Key_Escape:
+                        # Reset shift for the selected channel only
+                        ch = getattr(self.app, '_selected_flag_channel', None)
+                        if ch and hasattr(self.app, '_channel_time_shifts'):
+                            if self.app._channel_time_shifts.get(ch, 0.0) != 0.0:
+                                self.app._channel_time_shifts[ch] = 0.0
+                                self.app._update_cycle_of_interest_graph()
+                                self.app._update_channel_shift_label()
+                                logger.info(f"↩ Reset Channel {ch.upper()} time shift to 0")
+                                return True
 
                 return super().eventFilter(obj, event)
 
@@ -7911,6 +7973,49 @@ class Application(QApplication):
 
         self._selected_flag_idx = None
         logger.debug("Flag deselected")
+
+    # === Channel Time Shift (Arrow Keys) ===
+
+    def _shift_selected_channel(self, delta_seconds: float):
+        """Shift the selected channel's display time by delta_seconds.
+
+        This is a pure visual shift on the Active Cycle graph.
+        Arrow Left/Right = ±0.1s, Shift+Arrow = ±1.0s.
+
+        Args:
+            delta_seconds: Time offset to add (negative = shift left, positive = shift right)
+        """
+        ch = getattr(self, '_selected_flag_channel', None)
+        if not ch:
+            return
+
+        current_shift = self._channel_time_shifts.get(ch, 0.0)
+        new_shift = round(current_shift + delta_seconds, 2)  # avoid float drift
+        self._channel_time_shifts[ch] = new_shift
+
+        # Refresh the Active Cycle graph (shift is applied in ui_update_helpers)
+        self._update_cycle_of_interest_graph()
+
+        # Update shift indicator in UI
+        self._update_channel_shift_label()
+
+    def _update_channel_shift_label(self):
+        """Update the channel shift indicator label in the UI."""
+        if not hasattr(self.main_window, 'channel_shift_label'):
+            return
+
+        # Build compact shift text showing only non-zero shifts
+        shifts = []
+        for ch in ['a', 'b', 'c', 'd']:
+            s = self._channel_time_shifts.get(ch, 0.0)
+            if s != 0.0:
+                shifts.append(f"{ch.upper()}: {s:+.1f}s")
+
+        if shifts:
+            self.main_window.channel_shift_label.setText("  ".join(shifts))
+            self.main_window.channel_shift_label.setVisible(True)
+        else:
+            self.main_window.channel_shift_label.setVisible(False)
 
     def _select_nearest_channel(self, click_time: float, click_value: float):
         """Select the channel whose curve is nearest to the click position."""
@@ -8068,7 +8173,6 @@ class Application(QApplication):
             # Apply to hardware immediately
             if self.hardware_mgr and self.hardware_mgr.ctrl:
                 self.hardware_mgr.ctrl.set_intensity(channel, brightness)
-                logger.debug(f"LED {channel.upper()} set to {brightness} (live update)")
 
                 # Save to device config
                 if self.main_window.device_config:
@@ -8197,21 +8301,21 @@ class Application(QApplication):
         """Helper method to restart acquisition from main thread after calibration."""
         # Resume live spectrum updates after calibration
         if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-            logger.info("Resuming live spectrum updates after calibration...")
+            logger.debug("Resuming live spectrum updates after calibration...")
             self.ui_updates.set_transmission_updates_enabled(True)
             self.ui_updates.set_raw_spectrum_updates_enabled(True)
 
         if hasattr(self, 'data_mgr') and self.data_mgr:
-            logger.info("🔄 Restarting live data acquisition...")
+            logger.debug("Restarting live data acquisition...")
             try:
                 self.data_mgr.start_acquisition()
-                logger.info("✅ Live data acquisition restarted")
+                logger.debug("Live data acquisition restarted")
             except Exception as e:
                 logger.error(f"Failed to restart live data: {e}")
 
     def _on_simple_led_calibration(self):
         """Run simple LED intensity adjustment (quick, for sensor swaps)."""
-        logger.info("Starting Simple LED Calibration...")
+        logger.info("🚀 Starting calibration...")
 
         # Check if hardware is connected
         if not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
@@ -8225,15 +8329,15 @@ class Application(QApplication):
 
         # Stop live data if running
         if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
-            logger.info("🛑 Stopping live data acquisition before calibration...")
+            logger.debug("Stopping live data acquisition before calibration...")
             self.data_mgr.stop_acquisition()
             import time
             time.sleep(0.1)
-            logger.info("[OK] Live data stopped")
+            logger.debug("Live data stopped")
 
         # Pause live spectrum updates during calibration
         if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-            logger.info("Pausing live spectrum updates during calibration...")
+            logger.debug("Pausing live spectrum updates during calibration...")
             self.ui_updates.set_transmission_updates_enabled(False)
             self.ui_updates.set_raw_spectrum_updates_enabled(False)
 
@@ -8330,7 +8434,7 @@ class Application(QApplication):
 
     def _on_polarizer_calibration(self):
         """Run servo polarizer calibration using existing hardware connection."""
-        logger.info("Starting Polarizer Calibration...")
+        logger.info("🚀 Starting calibration...")
 
         # Check if hardware is connected
         if not self.hardware_mgr or not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
@@ -8346,15 +8450,15 @@ class Application(QApplication):
 
         # Stop live data if running
         if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
-            logger.info("🛑 Stopping live data acquisition before polarizer calibration...")
+            logger.debug("🛑 Stopping live data acquisition before polarizer calibration...")
             self.data_mgr.stop_acquisition()
             import time
             time.sleep(0.2)
-            logger.info("[OK] Live data stopped")
+            logger.debug("Live data stopped")
 
         # Pause live spectrum updates during calibration
         if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-            logger.info("Pausing live spectrum updates during calibration...")
+            logger.debug("Pausing live spectrum updates during calibration...")
             self.ui_updates.set_transmission_updates_enabled(False)
             self.ui_updates.set_raw_spectrum_updates_enabled(False)
 
@@ -8511,15 +8615,13 @@ class Application(QApplication):
 
         def on_start():
             """Called when user clicks Start button."""
-            logger.info("=" * 80)
-            logger.info("Starting OEM Calibration (will rebuild optical model)...")
-            logger.info("=" * 80)
+            logger.info("🚀 Starting calibration...")
             dialog.hide_start_button()
             dialog.show_progress_bar()
 
             # Pause live spectrum updates during calibration
             if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-                logger.info("Pausing live spectrum updates during calibration...")
+                logger.debug("Pausing live spectrum updates during calibration...")
                 self.ui_updates.set_transmission_updates_enabled(False)
                 self.ui_updates.set_raw_spectrum_updates_enabled(False)
 
@@ -8575,15 +8677,15 @@ class Application(QApplication):
 
         # Stop live data if running
         if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
-            logger.info("🛑 Stopping live data acquisition before LED model training...")
+            logger.debug("Stopping live data acquisition before LED model training...")
             self.data_mgr.stop_acquisition()
             import time
             time.sleep(0.1)
-            logger.info("[OK] Live data stopped")
+            logger.debug("Live data stopped")
 
         # Pause live spectrum updates during calibration
         if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-            logger.info("Pausing live spectrum updates during LED model training...")
+            logger.debug("Pausing live spectrum updates during LED model training...")
             self.ui_updates.set_transmission_updates_enabled(False)
             self.ui_updates.set_raw_spectrum_updates_enabled(False)
 
@@ -8709,7 +8811,7 @@ class Application(QApplication):
     def _on_power_on_requested(self):
         """User requested to power on (connect hardware)."""
         try:
-            logger.info("Power ON: Scanning for hardware...")
+            logger.debug("Searching for hardware...")
 
             # Set to searching state
             logger.debug("Setting power button to 'searching' state...")
@@ -8739,7 +8841,7 @@ class Application(QApplication):
 
     def _on_power_off_requested(self):
         """User requested to power off (disconnect hardware)."""
-        logger.info("Γëí╞Æ├╢├« Power OFF requested - initiating graceful shutdown...")
+        logger.info("Power OFF requested - initiating graceful shutdown...")
 
         try:
             # Cancel any running cycle first (stops timers, unlocks queue)
@@ -8747,35 +8849,35 @@ class Application(QApplication):
 
             # Stop data acquisition (prevents new data from coming in)
             if self.data_mgr:
-                logger.info("╬ô├àΓòòΓê⌐Γòò├à  Stopping data acquisition...")
+                logger.debug("Stopping data acquisition...")
                 try:
                     self.data_mgr.stop_acquisition()
-                    logger.info("[OK] Data acquisition stopped")
+                    logger.debug("Data acquisition stopped")
                 except Exception as e:
                     logger.error(f"Error stopping data acquisition: {e}")
 
             # Stop recording if active (ensures data is saved)
             if self.recording_mgr and self.recording_mgr.is_recording:
-                logger.info("Γëí╞Æ├åΓò¢ Stopping active recording...")
+                logger.debug("Stopping active recording...")
                 try:
                     self.recording_mgr.stop_recording()
-                    logger.info("[OK] Recording stopped and saved")
+                    logger.debug("Recording stopped and saved")
                 except Exception as e:
                     logger.error(f"Error stopping recording: {e}")
 
             # Disconnect all hardware (safe shutdown of devices)
-            logger.info("Γëí╞Æ├╢├« Disconnecting hardware...")
+            logger.debug("Disconnecting hardware...")
             try:
                 self._intentional_disconnect = (
                     True  # Mark as intentional before disconnect
                 )
                 self.hardware_mgr.disconnect_all()
-                logger.info("[OK] Hardware disconnected safely")
+                logger.debug("Hardware disconnected safely")
             except Exception as e:
                 logger.error(f"Error disconnecting hardware: {e}")
 
             # Reset application state (fresh state for next power on)
-            logger.info("🧹 Resetting application state...")
+            logger.debug("Resetting application state...")
             try:
                 # Reset connection and calibration flags
                 self._device_config_initialized = False
@@ -8785,26 +8887,26 @@ class Application(QApplication):
                 # Clear data buffers
                 if hasattr(self, 'buffer_mgr') and self.buffer_mgr:
                     self.buffer_mgr.clear_all()
-                    logger.debug("  ✓ Data buffers cleared")
+                    logger.debug("Data buffers cleared")
 
                 # Reset data manager calibration state
                 if self.data_mgr:
                     self.data_mgr.calibrated = False
-                    logger.debug("  ✓ Data manager calibration flag reset")
+                    logger.debug("Data manager calibration flag reset")
 
                 # Reset experiment timing
                 self.clock.reset()
-                logger.debug("  ✓ Experiment timing reset")
+                logger.debug("Experiment timing reset")
 
-                logger.info("[OK] Application state reset complete")
+                logger.debug("Application state reset complete")
             except Exception as e:
                 logger.error(f"Error resetting application state: {e}")
 
             # Update UI to disconnected state
             self.main_window.set_power_state("disconnected")
 
-            logger.info(
-                "[OK] Graceful shutdown complete - software ready for next power cycle",
+            logger.debug(
+                "Graceful shutdown complete - software ready for next power cycle",
             )
 
         except Exception as e:
@@ -8834,29 +8936,19 @@ class Application(QApplication):
         # Prepare filename and destination
         timestamp = for_filename().replace(".", "_")
         default_filename = f"AffiLabs_data_{timestamp}"
-        default_directory = self.recording_mgr.output_directory
 
-        # Get current export settings
-        filename = self.main_window.sidebar.export_filename_input.text() or default_filename
-        destination = self.main_window.sidebar.export_dest_input.text() or str(default_directory)
-
-        # Get current user and create user-specific directory structure
+        # Always resolve user-specific directory dynamically (same as Edits tab)
+        # This ensures Record button always saves to Documents/Affilabs Data/<username>/SPR_data/
+        destination = str(self.recording_mgr.get_user_output_directory())
         current_user = self._get_current_user()
+        logger.info(f"✅ Recording destination for '{current_user or 'Default'}': {destination}")
 
-        if current_user:
-            # Only add user path if not already present (prevents duplication)
-            if current_user not in destination or "SPR_data" not in destination:
-                # Create: output/Username/SPR_data/
-                destination_path = Path(destination) / current_user / "SPR_data"
-                destination_path.mkdir(parents=True, exist_ok=True)
-                destination = str(destination_path)
-                logger.info(f"✅ Using user-specific directory for {current_user}: {destination}")
-            else:
-                # Path already contains user directory structure - use as-is
-                Path(destination).mkdir(parents=True, exist_ok=True)
-                logger.info(f"✅ Using existing user-specific directory: {destination}")
-        else:
-            logger.warning("⚠️ No current user found - saving to default directory!")
+        # Keep sidebar export_dest_input in sync with resolved user path
+        if w := self._sidebar_widget('export_dest_input'):
+            w.setText(destination)
+
+        # Get filename from UI or use default
+        filename = self.main_window.sidebar.export_filename_input.text() or default_filename
 
         # Use Excel format (format selector was removed for consistency)
         extension = ".xlsx"
@@ -8964,7 +9056,6 @@ class Application(QApplication):
 
     def _on_clear_graphs_requested(self):
         """Handle clear graphs button click - clear all buffer data and reset timeline."""
-        logger.info("[UI] Clear graphs requested")
         try:
             # Increment session epoch - invalidates all old data in one atomic operation
             self._session_epoch += 1
@@ -8988,14 +9079,13 @@ class Application(QApplication):
             # Clear all data buffers
             if hasattr(self, "buffer_mgr") and self.buffer_mgr:
                 self.buffer_mgr.clear_all()
-                logger.info("[OK] Buffer data cleared successfully")
             else:
                 logger.warning("[WARN] Buffer manager not available")
 
             # Clear visual graph data
             if hasattr(self, "sensogram_presenter") and self.sensogram_presenter:
                 self.sensogram_presenter.clear_all_graphs()
-                logger.info("[OK] Graph visual data cleared")
+                logger.debug("Graph visual data cleared")
 
             # Clear recording markers from Live Sensorgram
             if hasattr(self, '_recording_markers') and hasattr(self.main_window, 'full_timeline_graph'):
@@ -9012,18 +9102,13 @@ class Application(QApplication):
             if hasattr(self.main_window, 'full_timeline_graph'):
                 timeline = self.main_window.full_timeline_graph
                 if hasattr(timeline, 'start_cursor') and timeline.start_cursor:
-                    logger.info(f"[CLEAR] Start cursor before reset: {timeline.start_cursor.value()}")
                     timeline.start_cursor.setValue(0)
                     timeline.start_cursor.setPos(0)  # Force position update
-                    logger.info(f"[CLEAR] Start cursor after reset: {timeline.start_cursor.value()}")
                 if hasattr(timeline, 'stop_cursor') and timeline.stop_cursor:
-                    logger.info(f"[CLEAR] Stop cursor before reset: {timeline.stop_cursor.value()}")
                     timeline.stop_cursor.setValue(0)
                     timeline.stop_cursor.setPos(0)  # Force position update
-                    logger.info(f"[CLEAR] Stop cursor after reset: {timeline.stop_cursor.value()}")
-                logger.info("✓ Cursors reset to t=0")
 
-            logger.info("🔄 Timeline reset complete - next data point will start at t=0")
+            logger.debug("Graphs cleared and cursors reset to t=0")
 
         except Exception as e:
             logger.error(f"[ERROR] Error clearing buffer data: {e}", exc_info=True)
@@ -9035,7 +9120,7 @@ class Application(QApplication):
             status: Hardware status dict from HardwareManager
 
         """
-        logger.debug("Updating Device Status UI via ViewModel...")
+
 
         # Treat P4PROPLUS internal pumps as a flow-capable pump for UI purposes
         try:
@@ -9131,7 +9216,7 @@ class Application(QApplication):
                 logger.debug("✓ Started valve position polling (3s interval)")
 
         # Forward to main window for hardware list and subunit readiness updates
-        logger.debug(f"📤 Forwarding status to main_window.update_hardware_status: flow_calibrated={status.get('flow_calibrated', 'NOT SET')}")
+
         self.main_window.update_hardware_status(status)
 
         # Log concise hardware summary
@@ -9376,7 +9461,7 @@ class Application(QApplication):
 
     def _on_cal_vm_started(self):
         """Handle calibration_started signal from CalibrationViewModel."""
-        logger.info("[CalibrationViewModel] Calibration started")
+        logger.debug("[CalibrationViewModel] Calibration started")
         # Future: Update UI to show calibration in progress
 
     def _on_cal_vm_progress(self, percent: int, message: str):
@@ -9805,7 +9890,7 @@ def main():
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
     sys.excepthook = exception_hook
-    logger.info("Γëí╞Æ┬ó├¡Γê⌐Γòò├à Global exception hook installed")
+    logger.debug("Global exception hook installed")
 
     # NullWriter for emergency cleanup
     class NullWriter:
@@ -9826,9 +9911,8 @@ def main():
     sys.stderr = QtWarningFilter(original_stderr)
 
     dtnow = dt.datetime.now(TIME_ZONE)
-    logger.info("="*70)
     logger.info(f"AffiLabs.core {SW_VERSION.split()[1]} | {dtnow.strftime('%Y-%m-%d %H:%M')}")
-    logger.info("="*70)
+    logger.info("Initializing...")
 
     # Install emergency cleanup on exit
     def emergency_silence():

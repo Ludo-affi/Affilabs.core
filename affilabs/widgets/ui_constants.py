@@ -22,7 +22,7 @@ class CycleTypeStyle:
         "Baseline": ("BL", "#007AFF"),
         "Immobilization": ("IM", "#AF52DE"),
         "Blocking": ("BK", "#FF2D55"),
-        "Binding": ("BD", "#FF9500"),
+        "Binding": ("BN", "#FF9500"),
         "Kinetic": ("KN", "#5856D6"),
         "Concentration": ("CN", "#FF9500"),  # Legacy alias → treat as Binding
         "Regeneration": ("RG", "#FF3B30"),

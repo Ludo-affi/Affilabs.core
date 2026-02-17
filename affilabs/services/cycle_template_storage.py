@@ -99,7 +99,7 @@ class CycleTemplateStorage:
         self.db = TinyDB(self.db_path)
         self.templates_table = self.db.table('templates')
 
-        logger.info(f"CycleTemplateStorage initialized: {self.db_path}")
+        logger.debug(f"CycleTemplateStorage initialized: {self.db_path}")
 
     # ========================================================================
     # CRUD Operations

@@ -680,6 +680,7 @@ class SensorgramGraph(GraphicsLayoutWidget):
                 "color": (255, 0, 0),
                 "movable": False,
                 "fill": (0, 0, 0, 100),
+                "anchors": [(1, 0.5), (1, 0.5)],
             },
         )
 

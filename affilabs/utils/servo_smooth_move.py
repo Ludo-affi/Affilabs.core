@@ -22,13 +22,13 @@ def smooth_servo_move(ctrl, start_angle: int, end_angle: int, step_size: int = 5
         step_delay: Delay between steps (seconds, default 0.1)
 
     Example:
-        # Slow sweep from 10-¦ to 170-¦ for calibration
+        # Slow sweep from 10 to 170 degrees for calibration
         smooth_servo_move(ctrl, start_angle=10, end_angle=170, step_size=3, step_delay=0.15)
-        # Takes ~8 seconds for 160-¦ sweep (53 steps +ù 0.15s)
+        # Takes ~8 seconds for 160 degree sweep (53 steps x 0.15s)
 
         # Fast sweep (default)
         smooth_servo_move(ctrl, start_angle=10, end_angle=170, step_size=10, step_delay=0.05)
-        # Takes ~0.8 seconds for 160-¦ sweep (16 steps +ù 0.05s)
+        # Takes ~0.8 seconds for 160 degree sweep (16 steps x 0.05s)
     """
     # Determine direction
     if end_angle > start_angle:
@@ -36,7 +36,7 @@ def smooth_servo_move(ctrl, start_angle: int, end_angle: int, step_size: int = 5
     else:
         angles = range(start_angle, end_angle - 1, -step_size)
 
-    logger.info(f"=ƒöä Smooth servo move: {start_angle}-¦ GåÆ {end_angle}-¦ (step={step_size}-¦, delay={step_delay*1000:.0f}ms)")
+    logger.info(f"Smooth servo move: {start_angle} -> {end_angle} (step={step_size}, delay={step_delay*1000:.0f}ms)")
 
     for angle in angles:
         # Move to intermediate position
@@ -50,7 +50,7 @@ def smooth_servo_move(ctrl, start_angle: int, end_angle: int, step_size: int = 5
         ctrl.set_mode('s')
         time.sleep(step_delay)
 
-    logger.info(f"G£à Reached {end_angle}-¦")
+    logger.info(f"Gï¿½ï¿½ Reached {end_angle}-ï¿½")
 
 
 def sweep_with_measurements(ctrl, usb, start_angle: int, end_angle: int,
@@ -72,7 +72,7 @@ def sweep_with_measurements(ctrl, usb, start_angle: int, end_angle: int,
 
     Example:
         def analyze_position(angle, spectrum):
-            print(f"Angle {angle}-¦: max={spectrum.max():.0f}")
+            print(f"Angle {angle}-ï¿½: max={spectrum.max():.0f}")
 
         results = sweep_with_measurements(
             ctrl, usb,
@@ -89,7 +89,7 @@ def sweep_with_measurements(ctrl, usb, start_angle: int, end_angle: int,
 
     measurements = {}
 
-    logger.info(f"=ƒö¼ Servo sweep with measurements: {start_angle}-¦ GåÆ {end_angle}-¦")
+    logger.info(f"=ï¿½ï¿½ï¿½ Servo sweep with measurements: {start_angle}-ï¿½ Gï¿½ï¿½ {end_angle}-ï¿½")
     logger.info(f"   Steps: {len(list(angles))}, Time per step: {step_delay*1000:.0f}ms")
 
     for i, angle in enumerate(angles):
@@ -109,7 +109,7 @@ def sweep_with_measurements(ctrl, usb, start_angle: int, end_angle: int,
         if (i + 1) % 10 == 0:
             logger.info(f"   Progress: {i+1}/{len(list(angles))} positions measured")
 
-    logger.info(f"G£à Sweep complete: {len(measurements)} measurements")
+    logger.info(f"Gï¿½ï¿½ Sweep complete: {len(measurements)} measurements")
     return measurements
 
 
@@ -123,9 +123,9 @@ def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
     Args:
         ctrl: Controller instance
         usb: Spectrometer instance
-        min_angle: Minimum sweep angle (default 10-¦)
-        max_angle: Maximum sweep angle (default 170-¦)
-        step_size: Step size in degrees (default 5-¦ - smaller = slower)
+        min_angle: Minimum sweep angle (default 10-ï¿½)
+        max_angle: Maximum sweep angle (default 170-ï¿½)
+        step_size: Step size in degrees (default 5-ï¿½ - smaller = slower)
         step_delay: Hold time per position (default 0.15s)
 
     Returns:
@@ -150,8 +150,8 @@ def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
     num_steps = (max_angle - min_angle) // step_size + 1
     total_time = num_steps * step_delay
     logger.info(f"Configuration:")
-    logger.info(f"  Range: {min_angle}-¦ to {max_angle}-¦")
-    logger.info(f"  Step size: {step_size}-¦")
+    logger.info(f"  Range: {min_angle}-ï¿½ to {max_angle}-ï¿½")
+    logger.info(f"  Step size: {step_size}-ï¿½")
     logger.info(f"  Steps: {num_steps}")
     logger.info(f"  Estimated time: {total_time:.1f} seconds")
     logger.info("")
@@ -164,7 +164,7 @@ def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
         signal = spectrum.max()
         intensities.append(signal)
         angles.append(angle)
-        logger.debug(f"  Angle {angle:3d}-¦: signal={signal:6.0f} counts")
+        logger.debug(f"  Angle {angle:3d}-ï¿½: signal={signal:6.0f} counts")
 
     sweep_with_measurements(
         ctrl, usb,
@@ -184,7 +184,7 @@ def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
     s_angle = angles[s_idx]
     s_intensity = intensities[s_idx]
 
-    # Find P position (minimum signal, 90-¦ from S for circular polarizer)
+    # Find P position (minimum signal, 90-ï¿½ from S for circular polarizer)
     # Look for minimum in range [S-100 to S-80] or [S+80 to S+100]
     p_candidates = []
     for offset in [-90, 90]:
@@ -198,15 +198,15 @@ def slow_calibration_sweep(ctrl, usb, min_angle: int = 10, max_angle: int = 170,
         # Choose the one with lower intensity
         p_angle, p_intensity = min(p_candidates, key=lambda x: x[1])
     else:
-        logger.error("Could not find valid P position 90-¦ from S")
+        logger.error("Could not find valid P position 90-ï¿½ from S")
         return None
 
     logger.info("")
     logger.info("=" * 80)
     logger.info("RESULTS")
     logger.info("=" * 80)
-    logger.info(f"S position: {s_angle}-¦ (signal: {s_intensity:.0f} counts)")
-    logger.info(f"P position: {p_angle}-¦ (signal: {p_intensity:.0f} counts)")
+    logger.info(f"S position: {s_angle}-ï¿½ (signal: {s_intensity:.0f} counts)")
+    logger.info(f"P position: {p_angle}-ï¿½ (signal: {p_intensity:.0f} counts)")
     logger.info(f"S/P ratio: {s_intensity/p_intensity:.2f}")
     logger.info("")
 

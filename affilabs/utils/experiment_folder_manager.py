@@ -34,7 +34,7 @@ class ExperimentFolderManager:
 
         # Ensure base directory exists
         self.base_directory.mkdir(parents=True, exist_ok=True)
-        logger.info(f"📁 Experiment base directory: {self.base_directory}")
+        logger.debug(f"📁 Experiment base directory: {self.base_directory}")
 
     def create_experiment_folder(
         self,

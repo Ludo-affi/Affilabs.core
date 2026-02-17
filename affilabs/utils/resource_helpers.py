@@ -11,7 +11,10 @@ These are utility functions extracted from the main Application class.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from main_simplified import Application  # type: ignore[import-not-found]
@@ -43,36 +46,36 @@ class ResourceHelpers:
                     app.profiler.print_hotspots(top_n=10)
 
                 # Stop processing thread first (Phase 3)
-                print("Stopping processing thread...")
+                logger.debug("Stopping processing thread...")
                 app._stop_processing_thread()
 
                 # Stop data acquisition
                 if app.data_mgr:
-                    print("Stopping data acquisition...")
+                    logger.debug("Stopping data acquisition...")
                     try:
                         app.data_mgr.stop_acquisition()
                     except Exception as e:
-                        print(f"Error stopping data acquisition: {e}")
+                        logger.debug(f"Error stopping data acquisition: {e}")
 
                 # Stop recording
                 if app.recording_mgr and app.recording_mgr.is_recording:
-                    print("Stopping recording...")
+                    logger.debug("Stopping recording...")
                     try:
                         app.recording_mgr.stop_recording()
                     except Exception as e:
-                        print(f"Error stopping recording: {e}")
+                        logger.debug(f"Error stopping recording: {e}")
 
                 # Stop all pumps
                 if app.kinetic_mgr:
-                    print("Stopping pumps...")
+                    logger.debug("Stopping pumps...")
                     try:
                         app.kinetic_mgr.stop_all_pumps()
                     except Exception as e:
-                        print(f"Error stopping pumps: {e}")
+                        logger.debug(f"Error stopping pumps: {e}")
 
                 # Home pumps to zero position before closing
                 if hasattr(app, "pump_mgr") and app.pump_mgr:
-                    print("Homing pumps to zero position...")
+                    logger.debug("Homing pumps to zero position...")
                     try:
                         import asyncio
                         # Run async home_pumps in sync context via PumpManager
@@ -80,14 +83,14 @@ class ResourceHelpers:
                         asyncio.set_event_loop(loop)
                         loop.run_until_complete(app.pump_mgr.home_pumps())
                         loop.close()
-                        print("✓ Pumps homed successfully")
+                        logger.debug("Pumps homed successfully")
                     except Exception as e:
-                        print(f"Error homing pumps: {e}")
+                        logger.debug(f"Error homing pumps: {e}")
 
             # Disconnect hardware (force close in emergency mode)
             if hasattr(app, "hardware_mgr") and app.hardware_mgr:
                 if not emergency:
-                    print("Disconnecting hardware...")
+                    logger.debug("Disconnecting hardware...")
                 try:
                     # Close controller
                     if (
@@ -100,7 +103,7 @@ class ResourceHelpers:
                             app.hardware_mgr.controller.close()
                         except Exception as e:
                             if not emergency:
-                                print(f"Error closing controller: {e}")
+                                logger.debug(f"Error closing controller: {e}")
 
                     # Close spectrometer
                     if (
@@ -111,10 +114,10 @@ class ResourceHelpers:
                             app.hardware_mgr.spectrometer.close()
                         except Exception as e:
                             if not emergency:
-                                print(f"Error closing spectrometer: {e}")
+                                logger.debug(f"Error closing spectrometer: {e}")
                 except Exception as e:
                     if not emergency:
-                        print(f"Error during hardware disconnect: {e}")
+                        logger.debug(f"Error during hardware disconnect: {e}")
 
             # Close kinetics controller
             if hasattr(app, "kinetic_mgr") and app.kinetic_mgr:
@@ -126,14 +129,14 @@ class ResourceHelpers:
                         app.kinetic_mgr.kinetics_controller.close()
                     except Exception as e:
                         if not emergency:
-                            print(f"Error closing kinetics: {e}")
+                            logger.debug(f"Error closing kinetics: {e}")
 
             if not emergency:
                 # Avoid arbitrary sleeps; threads joined above.
-                print("[OK] Application closed successfully")
+                logger.debug("Application closed successfully")
             else:
-                print("[OK] Emergency cleanup completed")
+                logger.debug("Emergency cleanup completed")
 
         except Exception as e:
             if not emergency:
-                print(f"Error during cleanup: {e}")
+                logger.error(f"Error during cleanup: {e}")

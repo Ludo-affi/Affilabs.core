@@ -148,12 +148,12 @@ class NavigationPresenter:
         self.main_window.connecting_label.setStyleSheet(
             "QLabel {"
             "  color: #1D1D1F;"
-            "  background: rgba(255, 255, 255, 0.95);"
-            "  font-size: 14px;"
-            "  font-weight: 600;"
-            "  padding: 16px 32px;"
-            "  border: 2px solid #E6B800;"
-            "  border-radius: 12px;"
+            "  background: rgba(255, 255, 255, 0.97);"
+            "  font-size: 18px;"
+            "  font-weight: 700;"
+            "  padding: 20px 40px;"
+            "  border: 3px solid #E6B800;"
+            "  border-radius: 14px;"
             "}",
         )
         # Don't add to nav_layout - will be positioned as overlay in show_connecting_indicator

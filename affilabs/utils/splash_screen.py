@@ -341,7 +341,7 @@ def create_splash_screen():
         version_font = QFont("Segoe UI", 9)
         painter.setFont(version_font)
         painter.setPen(QColor(150, 180, 220, 150))
-        painter.drawText(0, 375, 700, 20, Qt.AlignCenter, "Version 2.0.4  •  © 2026 Affinite Instruments")
+        painter.drawText(0, 375, 700, 20, Qt.AlignCenter, "Version 2.0.5 Beta  •  © 2026 Affinite Instruments")
         
         # Draw footer accent line
         painter.setPen(QPen(QColor(100, 150, 255, 100), 1))

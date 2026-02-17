@@ -265,14 +265,9 @@ class SettingsHelpers:
         """
         try:
             # === PART 1: Apply calibration to acquisition manager ===
-            print("=" * 80)
-            print("CALIBRATION COMPLETE - APPLYING TO ACQUISITION MANAGER")
-            print("=" * 80)
+            logger.debug("Applying calibration to acquisition manager...")
 
             app.data_mgr.apply_calibration(calibration_data)
-
-            print("Calibration data applied successfully")
-            print("System ready for live acquisition")
 
             # Save SPR model path to device config
             device_serial = (
@@ -287,9 +282,9 @@ class SettingsHelpers:
                         str(spr_model_path)
                     )
                     app.main_window.device_config.save()
-                    print(f"✓ SPR model path saved to device_config: {spr_model_path}")
+                    logger.debug(f"SPR model path saved to device_config: {spr_model_path}")
                 else:
-                    print(
+                    logger.debug(
                         f"SPR model file not in QC folder (expected location): {spr_model_path}"
                     )
 
@@ -317,24 +312,17 @@ class SettingsHelpers:
                 )
 
                 if report_path:
-                    print(
-                        f"QC report saved for ML/traceability: {report_path.name}"
-                    )
-
                     # Generate HTML export
                     html_path = qc_manager.export_to_html(report_path)
                     if html_path:
-                        print(f"HTML report exported: {html_path.name}")
-
-            print("=" * 80)
-            print("")
+                        logger.debug(f"QC report: {report_path.name} (HTML: {html_path.name})")
 
             # === PART 2: Update hardware manager status ===
             # CalibrationData is a dataclass, not a dict - check if channels were calibrated
             optics_ready = (
                 len(calibration_data.get_channels()) > 0 if calibration_data else False
             )
-            print(f"Calibration complete signal received - optics_ready={optics_ready}")
+            logger.debug(f"Calibration complete signal received - optics_ready={optics_ready}")
 
             # Extract channel errors and S-ref QC results
             ch_error_list = []
@@ -353,7 +341,7 @@ class SettingsHelpers:
             app.hardware_mgr.update_calibration_status(
                 ch_error_list, "full", s_ref_qc_results
             )
-            print(
+            logger.debug(
                 f"Hardware manager calibration status updated - ch_errors={ch_error_list}"
             )
 
@@ -374,52 +362,50 @@ class SettingsHelpers:
                     raw_ctrl = app.hardware_mgr._ctrl_raw
                     if hasattr(raw_ctrl, 'has_internal_pumps'):
                         internal_pump_available = raw_ctrl.has_internal_pumps()
-                        logger.info(f"🔧 P4PROPLUS internal pumps check (_ctrl_raw): {internal_pump_available}")
+                        logger.debug(f"P4PROPLUS internal pumps check (_ctrl_raw): {internal_pump_available}")
 
                 # Method 2: Fallback to ctrl (HAL adapter)
                 if not internal_pump_available and hasattr(app.hardware_mgr, 'ctrl') and app.hardware_mgr.ctrl:
                     if hasattr(app.hardware_mgr.ctrl, 'has_internal_pumps'):
                         internal_pump_available = app.hardware_mgr.ctrl.has_internal_pumps()
-                        logger.info(f"🔧 P4PROPLUS internal pumps check (ctrl): {internal_pump_available}")
+                        logger.debug(f"P4PROPLUS internal pumps check (ctrl): {internal_pump_available}")
 
                 # Flow mode available if EITHER external pump OR internal pumps present
                 pump_is_connected = external_pump_connected or internal_pump_available
 
-                logger.info(f"🔧 Pump detection: external={external_pump_connected}, internal={internal_pump_available}, total={pump_is_connected}")
+                logger.debug(f"Pump detection: external={external_pump_connected}, internal={internal_pump_available}, total={pump_is_connected}")
 
                 # Mark flow as calibrated after successful calibration with pump
                 if pump_is_connected:
                     app.hardware_mgr._flow_calibrated = True
-                    logger.info("✅ Flow mode calibrated - _flow_calibrated flag set to True")
+                    logger.debug("Flow mode calibrated - _flow_calibrated flag set")
 
                 # Save calibrated LED brightness and integration time to device_config for persistence
                 try:
                     if hasattr(calibration_data, 'p_mode_intensities') and calibration_data.p_mode_intensities:
-                        logger.info("💾 Saving calibrated LED brightness to device_config...")
+                        logger.debug("💾 Saving calibrated LED brightness to device_config...")
                         app.main_window.device_config.set_led_intensities(
                             led_a=int(calibration_data.p_mode_intensities.get('a', 0)),
                             led_b=int(calibration_data.p_mode_intensities.get('b', 0)),
                             led_c=int(calibration_data.p_mode_intensities.get('c', 0)),
                             led_d=int(calibration_data.p_mode_intensities.get('d', 0)),
                         )
-                        logger.info(f"   ✓ Saved LED brightness: A={calibration_data.p_mode_intensities['a']}, B={calibration_data.p_mode_intensities['b']}, C={calibration_data.p_mode_intensities['c']}, D={calibration_data.p_mode_intensities['d']}")
 
                     # Save integration time (prefer S-mode, then P-mode)
                     integration_time = None
                     if hasattr(calibration_data, 's_integration_time') and calibration_data.s_integration_time:
                         integration_time = calibration_data.s_integration_time
-                        logger.info(f"💾 Saving S-mode integration time to device_config: {integration_time} ms")
                     elif hasattr(calibration_data, 'p_integration_time') and calibration_data.p_integration_time:
                         integration_time = calibration_data.p_integration_time
-                        logger.info(f"💾 Saving P-mode integration time to device_config: {integration_time} ms")
 
                     if integration_time:
                         app.main_window.device_config.set_integration_time(integration_time)
 
                     # Save to disk once for all changes
                     app.main_window.device_config.save()
-                    if integration_time:
-                        logger.info(f"   ✓ Saved integration time: {integration_time} ms")
+                    
+                    # Compact log of saved values
+                    logger.debug(f"Saved: LED A={calibration_data.p_mode_intensities['a']}, B={calibration_data.p_mode_intensities['b']}, C={calibration_data.p_mode_intensities['c']}, D={calibration_data.p_mode_intensities['d']} | Int: {integration_time}ms")
 
                     # Refresh Settings sidebar to show new calibrated values
                     if hasattr(app, 'main_window') and hasattr(app.main_window, 'sidebar'):
@@ -434,7 +420,6 @@ class SettingsHelpers:
                                 led_c=led_intensities.get("c", 0),
                                 led_d=led_intensities.get("d", 0),
                             )
-                            logger.info("✅ Settings sidebar refreshed with calibrated LED values")
                         except Exception as refresh_error:
                             logger.warning(f"Could not refresh Settings sidebar: {refresh_error}")
                 except Exception as e:
@@ -453,11 +438,7 @@ class SettingsHelpers:
                 }
 
                 pump_type = "P4PROPLUS internal" if internal_pump_available else ("external" if external_pump_connected else "none")
-                logger.info("📋 Calibration complete - updating device status:")
-                logger.info("   Sensor: Ready")
-                logger.info("   Optics: Ready")
-                logger.info(f"   Fluidics: {'Ready' if pump_is_connected else 'Not Ready'} (pump: {pump_type})")
-                logger.info(f"   STATUS UPDATE DICT: {status_update}")
+                logger.debug(f"Calibration complete: Optics ✓ | Fluidics: {pump_type}")
 
                 app._update_device_status_ui(status_update)
 
@@ -467,18 +448,12 @@ class SettingsHelpers:
 
                 if hasattr(app, 'sidebar') and hasattr(app.sidebar, 'set_operation_mode_availability'):
                     app.sidebar.set_operation_mode_availability(static_available, flow_available)
-                    logger.info(f"✅ Operation mode indicators updated: Static={'Available' if static_available else 'Disabled'}, Flow={'Available' if flow_available else 'Disabled'}")
-                print(
-                    "Device status updated directly (no hardware scan post-calibration)"
-                )
 
                 # Mark calibration as completed (used by power-on workflow)
                 app._calibration_completed = True
-
-                print("Sensor and Optics status updated to READY in UI")
             else:
                 # Calibration failed - optics not ready
-                print(
+                logger.debug(
                     "Calibration completed but optics not ready (some channels failed)"
                 )
                 app._update_device_status_ui(
@@ -487,15 +462,10 @@ class SettingsHelpers:
 
             # === PART 3: Clear graphs and restart sensorgram at t=0 ===
             if optics_ready:
-                print("Clearing graphs and restarting sensorgram at t=0...")
                 app._on_clear_graphs_requested()
-                print("✓ Sensorgram reset complete - ready for new data")
 
             # NOTE: QC dialog shown by main.py handler (_on_calibration_complete_status_update)
             # to avoid duplicate dialog display
 
         except Exception as e:
-            print(f"[X] Failed to process calibration completion: {e}")
-            import traceback
-
-            traceback.print_exc()
+            logger.error(f"Failed to process calibration completion: {e}", exc_info=True)

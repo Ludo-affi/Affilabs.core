@@ -59,22 +59,8 @@ class RecordingEventCoordinator:
         # Update UI recording indicator with filename
         self.app.main_window.set_recording_state(True, filename)
 
-        # Update spectroscopy status
-        if (
-            hasattr(self.app.main_window, "sidebar")
-            and hasattr(self.app.main_window.sidebar, "subunit_status")
-            and "Spectroscopy" in self.app.main_window.sidebar.subunit_status
-        ):
-            status_label = self.app.main_window.sidebar.subunit_status["Spectroscopy"][
-                "status_label"
-            ]
-            status_label.setText("Recording...")
-            status_label.setStyleSheet(
-                "font-size: 13px;"
-                "color: #FF3B30;"  # Red for recording
-                "background: transparent;"
-                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-            )
+        # Note: Removed redundant sidebar spectroscopy status update
+        # Main recording indicator (rec_status_text) already shows recording state
 
     def on_recording_stopped(self):
         """Handle recording stopped signal."""
@@ -86,24 +72,8 @@ class RecordingEventCoordinator:
         # Update UI recording indicator
         self.app.main_window.set_recording_state(False)
 
-        # Update spectroscopy status back to "Running" (not recording)
-        if (
-            hasattr(self.app.main_window, "sidebar")
-            and hasattr(self.app.main_window.sidebar, "subunit_status")
-            and "Spectroscopy" in self.app.main_window.sidebar.subunit_status
-        ):
-            status_label = self.app.main_window.sidebar.subunit_status["Spectroscopy"][
-                "status_label"
-            ]
-            # Only update if acquisition is still running
-            if self.app.data_mgr._acquiring:
-                status_label.setText("Running")
-                status_label.setStyleSheet(
-                    "font-size: 13px;"
-                    "color: #34C759;"  # Green
-                    "background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-                )
+        # Note: Removed redundant sidebar spectroscopy status update
+        # Main recording indicator already handles state display
 
     def on_recording_error(self, error: str):
         """Handle recording error signal.

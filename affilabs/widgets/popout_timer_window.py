@@ -275,10 +275,28 @@ class PopOutTimerWindow(QWidget):
         container_layout.addWidget(self._time_lbl)
 
         # --- Stop Alarm button (hidden by default, shown when alarm is active) ---
-        self._stop_alarm_btn = QPushButton("⏹ STOP ALARM")
+        self._stop_alarm_btn = QPushButton(" STOP ALARM")
         self._stop_alarm_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._stop_alarm_btn.setMinimumHeight(60)
         self._stop_alarm_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        # SVG stop icon (square with rounded corners)
+        from PySide6.QtSvg import QSvgRenderer
+        from PySide6.QtGui import QPixmap
+        _stop_svg = (
+            '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">'
+            '<rect x="4" y="4" width="16" height="16" rx="3" fill="white"/>'
+            '</svg>'
+        )
+        _svg_renderer = QSvgRenderer(_stop_svg.encode())
+        _stop_pixmap = QPixmap(24, 24)
+        _stop_pixmap.fill(Qt.GlobalColor.transparent)
+        _painter = QPainter(_stop_pixmap)
+        _svg_renderer.render(_painter)
+        _painter.end()
+        self._stop_alarm_btn.setIcon(QIcon(_stop_pixmap))
+        self._stop_alarm_btn.setIconSize(QSize(24, 24))
+
         self._stop_alarm_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -411,6 +429,32 @@ class PopOutTimerWindow(QWidget):
         """Get current configuration (minutes, seconds, label, sound_enabled, rolling_numbers)."""
         return (self._config_minutes, self._config_seconds, self._label_text,
                 self._sound_enabled, self._rolling_numbers)
+
+    def set_running(self):
+        """Start the timer countdown immediately after configuration.
+        
+        This is a public API method that transitions from configurable mode
+        to running mode. Call after set_configurable() to start the timer.
+        
+        Example:
+            timer.set_configurable(minutes=5, seconds=0, label="Contact Time")
+            timer.set_running()  # Start counting down
+        """
+        if self._is_configurable:
+            total_seconds = self._config_minutes * 60 + self._config_seconds
+            if total_seconds > 0:
+                # Save initial config so we can reset after alarm
+                self._initial_config_minutes = self._config_minutes
+                self._initial_config_seconds = self._config_seconds
+                self._initial_config_label = self._label_text
+
+                self._is_configurable = False
+                # Show pause and restart buttons, hide start button
+                self._pause_btn.setVisible(True)
+                self._restart_btn.setVisible(True)
+                self._start_btn.setVisible(False)
+                # Emit signal to start countdown
+                self.timer_ready.emit(total_seconds, self._label_text)
 
     # ------------------------------------------------------------------
     #  Public API - Runtime

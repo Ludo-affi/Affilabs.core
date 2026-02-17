@@ -614,14 +614,152 @@ def save_calibration_result_json(
         with open(latest_file, "w") as f:
             json.dump(data, f, indent=2)
 
-        logger.info(f"💾 Calibration result saved: {timestamped_file}")
-        logger.info(f"💾 Latest calibration updated: {latest_file}")
+        logger.debug(f"Calibration result saved: {timestamped_file}")
+        logger.debug(f"Latest calibration updated: {latest_file}")
 
         return timestamped_file
 
     except Exception as e:
         logger.error(f"Failed to save calibration result: {e}")
         return None
+
+
+# =============================================================================
+# HISTORICAL CALIBRATION ANALYSIS
+# =============================================================================
+
+
+def load_recent_successful_calibrations(
+    n: int = 5,
+    base_dir: str = "calibration_results",
+) -> list[dict]:
+    """Load LED and signal data from the N most recent successful calibrations.
+
+    Reads only metadata, led_parameters, and qc_results from each file
+    (skips the large wavelength/spectrum arrays for performance).
+
+    Args:
+        n: Number of recent successful calibrations to return.
+        base_dir: Directory containing calibration JSON files.
+
+    Returns:
+        List of dicts sorted newest-first, each containing:
+        ``{timestamp, leds: {a,b,c,d}, signals: {a,b,c,d}, integration_time}``
+    """
+    output_dir = Path(base_dir)
+    if not output_dir.exists():
+        return []
+
+    # Collect timestamped calibration files (newest first)
+    cal_files = sorted(
+        output_dir.glob("calibration_2*.json"),
+        key=lambda p: p.stem,
+        reverse=True,
+    )
+
+    results: list[dict] = []
+    for cal_file in cal_files:
+        if len(results) >= n:
+            break
+        try:
+            with open(cal_file, "r") as f:
+                # Read raw text and decode only the fields we need
+                data = json.load(f)
+
+            meta = data.get("calibration_metadata", {})
+            if not meta.get("success", False):
+                continue
+
+            led_params = data.get("led_parameters", {})
+            s_leds = led_params.get("s_mode_intensity", {})
+            qc = data.get("qc_results", {})
+            integration = data.get("integration_times", {})
+
+            # Extract per-channel S-mode max counts from QC results
+            signals = {}
+            for ch in ("a", "b", "c", "d"):
+                ch_qc = qc.get(ch, {})
+                signals[ch] = ch_qc.get("s_max_counts", 0.0)
+
+            results.append({
+                "timestamp": meta.get("timestamp", ""),
+                "leds": s_leds,
+                "signals": signals,
+                "integration_time": integration.get("s_integration_time", 0.0),
+            })
+        except Exception as e:
+            logger.debug(f"Skipping {cal_file.name}: {e}")
+            continue
+
+    return results
+
+
+def diagnose_weak_channel(
+    failed_signals: dict[str, float],
+    failed_leds: dict[str, int],
+    history: list[dict],
+) -> dict | None:
+    """Compare failed calibration signals against historical averages.
+
+    Identifies channels that are at LED=255 but producing dramatically less
+    signal than their historical average — indicating a physical issue
+    (water in path, LED degradation, fiber misalignment).
+
+    Args:
+        failed_signals: Per-channel signal counts from the failed calibration.
+            e.g. ``{'a': 53849, 'b': 54147, 'c': 53832, 'd': 10676}``
+        failed_leds: Per-channel LED values from the failed calibration.
+            e.g. ``{'a': 83, 'b': 85, 'c': 77, 'd': 255}``
+        history: Output of ``load_recent_successful_calibrations()``.
+
+    Returns:
+        Dict with diagnosis if a weak channel is found::
+
+            {
+                'channel': 'd',
+                'current_signal': 10676.0,
+                'current_led': 255,
+                'historical_avg': 58123.0,
+                'pct_of_historical': 18.4,
+            }
+
+        Returns None if no weak channel pattern is detected.
+    """
+    if not history:
+        return None
+
+    # Calculate historical average signal per channel
+    hist_avg: dict[str, float] = {}
+    for ch in ("a", "b", "c", "d"):
+        ch_signals = [h["signals"].get(ch, 0.0) for h in history if h["signals"].get(ch, 0.0) > 0]
+        if ch_signals:
+            hist_avg[ch] = sum(ch_signals) / len(ch_signals)
+
+    # Find channels at LED=255 with signal < 30% of historical average
+    worst_channel = None
+    worst_pct = 100.0
+
+    for ch in ("a", "b", "c", "d"):
+        led = failed_leds.get(ch, 0)
+        sig = failed_signals.get(ch, 0.0)
+        avg = hist_avg.get(ch, 0.0)
+
+        if led >= 255 and avg > 0:
+            pct = (sig / avg) * 100.0
+            if pct < 30.0 and pct < worst_pct:
+                worst_channel = ch
+                worst_pct = pct
+
+    if worst_channel is None:
+        return None
+
+    return {
+        "channel": worst_channel,
+        "current_signal": failed_signals.get(worst_channel, 0.0),
+        "current_led": failed_leds.get(worst_channel, 0),
+        "historical_avg": hist_avg.get(worst_channel, 0.0),
+        "pct_of_historical": round(worst_pct, 1),
+    }
 
 
 # =============================================================================
