@@ -1,0 +1,28 @@
+{
+  "device_serial": "ST00012",
+  "device_type": "PicoP4SPR",
+  "detector_model": "USB4000",
+  "led_type": "LCW",
+  "led_type_full": "Luminus Cool White",
+  "oem_calibration_version": "1.1",
+  "calibration_date": "2026-01-26T16:24:52.361055",
+  "polarizer": {
+    "s_position": 195,
+    "p_position": 106,
+    "sp_ratio": 1.3284685135883174,
+    "polarizer_type": "BARREL",
+    "method": "servo_calibration_barrel_detection",
+    "led_intensity_used": "20%",
+    "s_intensity": 2399.91,
+    "p_intensity": 1806.5238095238096,
+    "s_stable_range": [
+      192,
+      198
+    ],
+    "p_stable_range": [
+      105,
+      108
+    ]
+  },
+  "afterglow": {}
+}

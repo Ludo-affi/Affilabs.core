@@ -81,7 +81,8 @@ class TimerButton(QPushButton):
         # Timer icon label (SVG icon)
         self.timer_icon_label = QLabel()
         import os
-        _clock_svg = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ui", "img", "clock_icon.svg")
+        from affilabs.utils.resource_path import get_affilabs_resource
+        _clock_svg = str(get_affilabs_resource("ui/img/clock_icon.svg"))
         if os.path.exists(_clock_svg):
             _pm = QPixmap(_clock_svg).scaled(QSize(20, 20), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             self.timer_icon_label.setPixmap(_pm)
@@ -300,7 +301,8 @@ class TimerButton(QPushButton):
                 icon_sz = 20 if size == "large" else 16
                 self.timer_icon_label.setFixedSize(icon_sz + 2, icon_sz + 2)
                 import os
-                _clock_svg = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ui", "img", "clock_icon.svg")
+                from affilabs.utils.resource_path import get_affilabs_resource
+                _clock_svg = str(get_affilabs_resource("ui/img/clock_icon.svg"))
                 if os.path.exists(_clock_svg):
                     _pm = QPixmap(_clock_svg).scaled(QSize(icon_sz, icon_sz), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     self.timer_icon_label.setPixmap(_pm)
@@ -423,7 +425,8 @@ class TimerButton(QPushButton):
             text: Text to display after the clock icon (empty string for icon-only)
         """
         import os
-        _clock_svg = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ui", "img", "clock_icon.svg")
+        from affilabs.utils.resource_path import get_affilabs_resource
+        _clock_svg = str(get_affilabs_resource("ui/img/clock_icon.svg"))
         if os.path.exists(_clock_svg):
             self.setIcon(QIcon(_clock_svg))
             self.setIconSize(QSize(16, 16))

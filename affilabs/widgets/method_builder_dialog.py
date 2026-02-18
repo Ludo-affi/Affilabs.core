@@ -15,6 +15,7 @@ from PySide6.QtSvg import QSvgRenderer
 from affilabs.domain.cycle import Cycle
 from affilabs.services.queue_preset_storage import QueuePresetStorage
 from affilabs.services.user_profile_manager import UserProfileManager
+from affilabs.services.spark import SparkAnswerEngine
 from affilabs.widgets.ui_constants import CycleTypeStyle
 from affilabs.utils.logger import logger
 import time
@@ -488,6 +489,7 @@ class MethodBuilderDialog(QDialog):
         self._preset_storage = QueuePresetStorage()  # For @preset and !save commands
         self._waiting_for_response = False  # Track if we're waiting for user answer
         self._pending_command = None  # Store the command waiting for answer (e.g., "amine_coupling", "build")
+        self._answer_engine = None  # Lazy-loaded Spark engine for pattern matching
 
         # Use shared user manager if provided, otherwise create fallback
         if user_manager:
@@ -501,8 +503,8 @@ class MethodBuilderDialog(QDialog):
     def _detect_and_respond_to_question(self):
         """Detect if user is asking a question and provide helpful suggestions.
 
+        Routes through SparkAnswerEngine (single source of truth for patterns).
         Also searches saved presets if text matches a preset name.
-        Handles multi-turn conversations (ask question → get answer → generate result).
         """
         text = self.notes_input.toPlainText().strip()
         text_lower = text.lower()
@@ -538,94 +540,60 @@ class MethodBuilderDialog(QDialog):
                 self.notes_input.clear()
                 return
 
-        # Question patterns and responses
-        import re
-        matched = False
-
-        # Check for "build" with number extraction
+        # Check for "build" with number (specialized pattern)
         build_match = re.search(r'build.*?(\d+)', text_lower)
         if build_match:
-            # Extract number of binding cycles
             num_cycles = int(build_match.group(1))
-            # Generate the pattern: binding 15min, regeneration 2min, baseline 2min (repeated)
             cycles = []
             for i in range(num_cycles):
                 cycles.append(f"Binding 15min [A]  # Binding {i+1}")
                 cycles.append("Regeneration 2min [ALL]")
                 cycles.append("Baseline 2min [ALL]")
             response = "\n".join(cycles)
-            matched = True
+            self._show_suggestion(response)
+            return
 
         # If just "build" without number, ask how many binding cycles
-        elif re.search(r'\bbuild\b', text_lower):
+        if re.search(r'\bbuild\b', text_lower):
             self._ask_question("How many binding cycles? (e.g., type '5' and press Enter)", "build")
             return
 
-        # Check each pattern
-        elif re.search(r'titration|dose.?response|concentration series|serial dilution', text_lower):
-            response = ("Baseline 5min ALL\n"
-                       "Binding 2min A:10nM contact 120s\n"
-                       "Binding 2min A:50nM contact 120s\n"
-                       "Binding 2min A:100nM contact 120s\n"
-                       "Binding 2min A:500nM contact 120s\n"
-                       "Regeneration 30sec ALL:50mM")
-            matched = True
-
-        elif re.search(r'kinetics|kinetic|dissociation|off.?rate', text_lower):
-            response = ("Baseline 2min ALL\n"
-                       "Kinetic 2min A:100nM contact 120s\n"
-                       "Baseline 10min ALL  # Dissociation phase\n"
-                       "Regeneration 30sec ALL:50mM")
-            matched = True
-
-        elif re.search(r'full cycle|complete cycle|entire run|whole method', text_lower):
-            response = ("Baseline 5min ALL\n"
-                       "Binding 2min A:100nM contact 120s\n"
-                       "Regeneration 30sec ALL:50mM")
-            matched = True
-
-        elif re.search(r'regeneration|regen|clean|wash|remove', text_lower):
-            response = "Regeneration 30sec ALL:50mM"
-            matched = True
-
-        elif re.search(r'binding|association|inject|sample|analyte', text_lower):
-            response = ("Binding 2min A:100nM B:50nM contact 120s\n"
-                       "Binding 5min A:200nM contact 180s\n"
-                       "Binding 10min A:500nM contact 300s")
-            matched = True
-
-        # IMPORTANT: Amine coupling BEFORE immobilization to catch "coupling" before "couple"
-        elif re.search(r'amine coupling|amine|coupling|build.*coupling|main coupling', text_lower):
-            # Ask how many binding cycles
+        # If "amine coupling" without a number, ask how many binding cycles
+        if re.search(r'amine coupling|amine|coupling', text_lower) and not build_match:
             self._ask_question("How many binding cycles? (e.g., type '5' and press Enter)", "amine_coupling")
             return
 
-        elif re.search(r'immobilization|immobilize|immob|attach', text_lower):
-            response = "Immobilization 10min [A:50µg/mL] contact 180s"
-            matched = True
+        # Route all other questions through SparkAnswerEngine (Layer 1 patterns + KB + AI)
+        try:
+            if self._answer_engine is None:
+                self._answer_engine = SparkAnswerEngine()
+            
+            answer, matched = self._answer_engine.generate_answer(text)
+            
+            if matched:
+                self._show_suggestion(answer)
+                return
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"SparkAnswerEngine failed: {e}")
 
-        elif re.search(r'baseline|start|begin|initial', text_lower):
-            response = "Baseline 5min [ALL]"
-            matched = True
+        # No match found - show available options including presets
+        from PySide6.QtWidgets import QMessageBox
+        preset_list = "\n".join(f"• @{name}" for name in preset_names) if preset_names else ""
+        preset_section = f"\n\nSaved Presets:\n{preset_list}" if preset_names else ""
 
-        if matched:
-            self._show_suggestion(response)
-        else:
-            # No match found - show available options including presets
-            from PySide6.QtWidgets import QMessageBox
-            preset_list = "\n".join(f"• @{name}" for name in preset_names) if preset_names else ""
-            preset_section = f"\n\nSaved Presets:\n{preset_list}" if preset_names else ""
+        QMessageBox.information(self, "Spark Says...",
+            f"I didn't match a pattern for that query.\n\n"
+            f"Try these keywords:\n"
+            f"• titration / dose response / serial dilution\n"
+            f"• kinetics / dissociation / off-rate\n"
+            f"• amine coupling\n"
+            f"• build N  (e.g. build 5)\n"
+            f"• regeneration / baseline / immobilization\n"
+            f"• binding / association / inject\n"
+            f"• p4spr channel / concentration / workflow"
+            f"{preset_section}")
 
-            QMessageBox.information(self, "Spark Says...",
-                f"I didn't match a built-in template.\n\n"
-                f"Try these keywords:\n"
-                f"• titration / dose response / serial dilution\n"
-                f"• kinetics / dissociation / off-rate\n"
-                f"• amine coupling\n"
-                f"• build N  (e.g. build 5)\n"
-                f"• regeneration / baseline / immobilization\n"
-                f"• binding / association / inject"
-                f"{preset_section}")
 
     def _ask_question(self, question, command):
         """Ask user a question and wait for their answer.
@@ -722,15 +690,27 @@ class MethodBuilderDialog(QDialog):
         self._helper_active = True
         # Replace text with suggestion
         self.notes_input.setPlainText(text)
-        # Show tooltip
+        
+        # Show tooltip with preset suggestion if method is substantial (>=3 cycles)
         from PySide6.QtWidgets import QToolTip
         from PySide6.QtGui import QCursor
+        
+        # Count cycles in suggestion (heuristic: lines with Binding, Regen, Baseline, etc.)
+        cycle_count = len([line for line in text.split('\n') if any(
+            keyword in line for keyword in ['Baseline', 'Binding', 'Kinetic', 'Regeneration', 'Immobilization', 'Wash']
+        )])
+        
+        if cycle_count >= 3:
+            tooltip_text = "⚡ Spark suggestion! Edit as needed.\n💡 Tip: Type !save my_protocol_name to save this as a preset."
+        else:
+            tooltip_text = "⚡ Spark suggestion! Edit as needed."
+        
         QToolTip.showText(
             QCursor.pos(),
-            "⚡ Spark suggestion! Edit as needed.",
+            tooltip_text,
             self.notes_input,
             self.notes_input.rect(),
-            3000
+            4000 if cycle_count >= 3 else 3000
         )
         self._helper_active = False
 
@@ -849,12 +829,19 @@ class MethodBuilderDialog(QDialog):
             "Off: No auto-detection, rely on timer"
         )
 
-        # Notes field with header and help button
+        # ── Side-by-side: Note panel (left) | → button (center) | Queue panel (right) ──
+        content_row = QHBoxLayout()
+        content_row.setSpacing(8)
+
+        # Left: Note panel
+        note_panel = QVBoxLayout()
+        note_panel.setSpacing(4)
+
         notes_header = QHBoxLayout()
         notes_label = QLabel("Note:")
+        notes_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F;")
         notes_header.addWidget(notes_label)
 
-        # Help button
         help_btn = QPushButton("?")
         help_btn.setFixedSize(20, 20)
         help_btn.setStyleSheet(
@@ -872,11 +859,19 @@ class MethodBuilderDialog(QDialog):
         help_btn.clicked.connect(self._show_notes_help)
         notes_header.addWidget(help_btn)
         notes_header.addStretch()
-        layout.addLayout(notes_header)
+        note_panel.addLayout(notes_header)
 
-        # Notes input with history navigation
+        syntax_guide = QLabel(
+            "Syntax: A:100nM B:50nM ALL:25µM  |  [A:100nM] also works  |  #3 contact 60s"
+        )
+        syntax_guide.setStyleSheet(
+            "font-size: 10px; color: #007AFF; "
+            "background: rgba(0, 122, 255, 0.05); padding: 3px 6px; border-radius: 3px;"
+        )
+        note_panel.addWidget(syntax_guide)
+
         self.notes_input = NotesTextEdit()
-        self.notes_input._parent_dialog = self  # Set reference for history navigation
+        self.notes_input._parent_dialog = self
         self.notes_input.setPlaceholderText(
             "Write cycles (one per line) or ask Spark:\n\n"
             "Baseline 5min\n"
@@ -888,50 +883,42 @@ class MethodBuilderDialog(QDialog):
             "📦 @preset_name   💾 !save name   ↑/↓ history"
         )
         self.notes_input.setMinimumHeight(100)
-
-        # Syntax guide — always visible reference for concentration and channel syntax
-        syntax_guide = QLabel(
-            "Syntax: A:100nM B:50nM ALL:25µM  |  [A:100nM] also works  |  #3 contact 60s"
-        )
-        syntax_guide.setStyleSheet(
-            "font-size: 10px; color: #007AFF; "
-            "background: rgba(0, 122, 255, 0.05); padding: 3px 6px; border-radius: 3px;"
-        )
-        layout.addWidget(syntax_guide)
-        layout.addSpacing(2)
-
-        layout.addWidget(self.notes_input)
+        note_panel.addWidget(self.notes_input)
         self.notes_input.textChanged.connect(self._update_char_count)
-        layout.addSpacing(12)
 
-        # Method Queue section
-        queue_header = QHBoxLayout()
-        queue_label = QLabel("Method Queue:")
-        queue_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F;")
-        queue_header.addWidget(queue_label)
-        queue_header.addStretch()
+        content_row.addLayout(note_panel, 2)
 
-        # Compact Add to Method button
-        self.add_to_method_btn = QPushButton("Add to Method")
-        self.add_to_method_btn.setIcon(_create_svg_icon(_SVG_PLUS_WHITE, 14))
-        self.add_to_method_btn.setIconSize(QSize(14, 14))
-        self.add_to_method_btn.setFixedHeight(28)
+        # Center: → send button
+        self.add_to_method_btn = QPushButton("→")
+        self.add_to_method_btn.setFixedSize(32, 32)
+        self.add_to_method_btn.setToolTip("Add to Method")
         self.add_to_method_btn.setStyleSheet(
             "QPushButton {"
             "  background: #007AFF;"
             "  color: white;"
             "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 4px 16px;"
-            "  font-size: 12px;"
+            "  border-radius: 16px;"
+            "  font-size: 16px;"
             "  font-weight: 600;"
             "}"
             "QPushButton:hover { background: #0051D5; }"
             "QPushButton:pressed { background: #003D99; }"
         )
         self.add_to_method_btn.clicked.connect(self._on_add_to_method)
-        queue_header.addWidget(self.add_to_method_btn)
-        layout.addLayout(queue_header)
+
+        arrow_col = QVBoxLayout()
+        arrow_col.addStretch()
+        arrow_col.addWidget(self.add_to_method_btn)
+        arrow_col.addStretch()
+        content_row.addLayout(arrow_col)
+
+        # Right: Queue panel
+        queue_panel = QVBoxLayout()
+        queue_panel.setSpacing(4)
+
+        queue_label = QLabel("Method Queue:")
+        queue_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F;")
+        queue_panel.addWidget(queue_label)
 
         # Local queue table — two-tab layout (Overview + Details)
         table_style = (
@@ -994,12 +981,11 @@ class MethodBuilderDialog(QDialog):
             "  background: #F9F9FB;"
             "  border-top: 1px solid rgba(0,0,0,0.08);"
             "  border-radius: 0px;"
-            "  padding: 12px;"
             "}"
         )
         summary_layout = QHBoxLayout(summary_frame)
-        summary_layout.setContentsMargins(12, 12, 12, 12)
-        summary_layout.setSpacing(20)
+        summary_layout.setContentsMargins(8, 4, 8, 4)
+        summary_layout.setSpacing(16)
 
         # Experiment time
         exp_time_label = QLabel("Total Experiment Time:")
@@ -1052,7 +1038,9 @@ class MethodBuilderDialog(QDialog):
 
         self.method_tabs.addTab(details_widget, "Details")
 
-        layout.addWidget(self.method_tabs)
+        queue_panel.addWidget(self.method_tabs)
+        content_row.addLayout(queue_panel, 3)
+        layout.addLayout(content_row)
 
         # SVG for settings cog (used in controls row below)
         _SVG_COG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="#86868B" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="#86868B" stroke-width="2"/></svg>'
@@ -2580,6 +2568,40 @@ Binding 5min A:100nM contact 120s partial
     def _validate_and_warn_cycle(self, cycle: Cycle, raw_text: str = ""):
         """Show non-blocking warnings for potential cycle issues."""
         warnings = []
+
+        # T6 Check: No contact time on Binding/Kinetic cycles
+        if cycle.type in ("Binding", "Kinetic") and cycle.injection_method and not cycle.contact_time:
+            warnings.append(
+                "⚠️ No contact time set — injection will run for full cycle duration"
+            )
+
+        # T6 Check: Contact time < 60s (too short)
+        if cycle.type in ("Binding", "Kinetic") and cycle.contact_time and cycle.contact_time < 60:
+            warnings.append(
+                f"⚠️ Contact time is very short ({cycle.contact_time:.0f}s) — most analytes need 30+ seconds"
+            )
+
+        # T6 Check: Channel mismatch (concentrations only on specific channels but cycle runs ALL)
+        if cycle.injection_method and getattr(cycle, 'concentrations', None):
+            conc_channels = set(cycle.concentrations.keys())
+            cycle_has_all = 'ALL' in raw_text.upper() or 'ALL' in cycle.name.upper() if cycle.name else False
+            if cycle_has_all and len(conc_channels) < 4:
+                channels_str = ", ".join(sorted(conc_channels))
+                warnings.append(
+                    f"⚠️ Channel mismatch — concentrations only set for {channels_str} but cycle runs ALL"
+                )
+
+        # T6 Check: Missing regeneration after Binding cycles
+        # This check is for the overall method, so we'll mark it but note it needs method-level checking
+        if cycle.type == "Binding" and cycle.injection_method:
+            # Find if next cycle is regen (user will need to add it)
+            cycle_idx = self._local_cycles.index(cycle) if cycle in self._local_cycles else -1
+            if cycle_idx >= 0 and cycle_idx < len(self._local_cycles) - 1:
+                next_cycle = self._local_cycles[cycle_idx + 1]
+                if next_cycle.type != "Regeneration":
+                    warnings.append(
+                        "💡 Tip: Consider adding a **Regeneration** cycle after this binding step to remove bound analyte"
+                    )
 
         # Check 0: Detect unparsed contact time patterns
         if raw_text and cycle.injection_method:

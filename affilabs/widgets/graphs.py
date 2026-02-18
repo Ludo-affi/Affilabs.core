@@ -1,3 +1,4 @@
+import os
 from copy import deepcopy
 
 import numpy as np
@@ -8,8 +9,8 @@ from pyqtgraph import (
     mkPen,
     setConfigOptions,
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtGui import QBrush, QColor, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QGraphicsProxyWidget,
@@ -280,23 +281,28 @@ class SensorgramGraph(GraphicsLayoutWidget):
 
     def _create_clear_button(self):
         """Create a Clear Graph button positioned at the top-left corner."""
-        # Create button widget
-        button = QPushButton("Clear")
-        button.setMinimumSize(50, 24)
-        button.setMaximumSize(60, 26)
+        button = QPushButton()
+        button.setFixedSize(26, 26)
+
+        _svg_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)), "ui", "img", "clear_icon.svg"
+        )
+        if os.path.exists(_svg_path):
+            button.setIcon(QIcon(_svg_path))
+            button.setIconSize(QSize(16, 16))
+        else:
+            button.setText("✕")
+
+        button.setToolTip("Clear graph")
         button.setStyleSheet("""
             QPushButton {
                 background: rgba(0, 0, 0, 25);
-                color: rgb(45, 45, 45);
                 border: 1px solid rgba(0, 0, 0, 40);
                 border-radius: 6px;
-                padding: 2px 8px;
-                font-size: 8pt;
-                font-weight: normal;
+                padding: 0px;
             }
             QPushButton:hover {
                 background: rgba(0, 0, 0, 50);
-                color: white;
             }
             QPushButton:pressed {
                 background: rgba(0, 0, 0, 70);

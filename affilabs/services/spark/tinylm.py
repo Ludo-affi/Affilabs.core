@@ -257,8 +257,11 @@ class SparkTinyLM:
 
         return context.strip()
 
+    # Safety timeout for model inference (seconds) — prevent UI freeze
+    _INFERENCE_TIMEOUT = 30
+
     def generate_answer(self, question: str) -> tuple[str, bool]:
-        """Generate conversational answer using TinyLM.
+        """Generate conversational answer using TinyLM. Never hangs indefinitely.
 
         Args:
             question: User's question

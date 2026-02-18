@@ -157,6 +157,7 @@ class AffilabsSidebar(QWidget):
 
         # Deferred loading flags (Settings tab plots now loaded immediately)
         self._settings_tab_loaded = False
+        self._settings_builder = None  # Set when Settings tab is built; used for progression refresh
 
         # Create baseline button IMMEDIATELY (before any signal connections)
         self._create_baseline_button()
@@ -772,6 +773,7 @@ class AffilabsSidebar(QWidget):
         """Build Settings tab with diagnostics, hardware, and calibration using builder."""
         builder = SettingsTabBuilder(self)
         builder.build(tab_layout)
+        self._settings_builder = builder  # Keep ref for external progression refresh
 
     def _build_spark_tab(self, tab_layout: QVBoxLayout):
         """Build Spark AI Help tab placeholder — actual widget loads on first visit."""

@@ -20,6 +20,7 @@ Storage location: ./user_profiles.json (local workspace directory)
 """
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
@@ -107,10 +108,80 @@ class UserProfileManager:
         """
         if username in self.profiles:
             self.current_user = username
+            self._update_user_data_field(username, "last_used", datetime.now(timezone.utc).isoformat())
             self._save_profiles()
             logger.info(f"Current user set to: {username}")
         else:
             logger.warning(f"User '{username}' not found in profiles")
+
+    def _update_user_data_field(self, username: str, field: str, value) -> None:
+        """Update a single field in user_data for a given user without disturbing other data."""
+        try:
+            user_data: dict = {}
+            file_data: dict = {}
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    file_data = json.load(f)
+                user_data = file_data.get("user_data", {})
+            if username not in user_data:
+                user_data[username] = {}
+            user_data[username][field] = value
+            file_data["users"] = self.profiles
+            file_data["current_user"] = self.current_user
+            file_data["user_data"] = user_data
+            with open(self.config_file, "w") as f:
+                json.dump(file_data, indent=2, fp=f)
+        except Exception as e:
+            logger.error(f"Failed to update user_data[{username}][{field}]: {e}")
+
+    def rename_user(self, old_name: str, new_name: str) -> bool:
+        """Rename an existing user profile.
+
+        Args:
+            old_name: Current name of the user.
+            new_name: New name to assign.
+
+        Returns:
+            True if renamed successfully, False otherwise.
+        """
+        new_name = new_name.strip()
+        if not new_name:
+            logger.warning("Cannot rename to empty username")
+            return False
+        if old_name not in self.profiles:
+            logger.warning(f"User '{old_name}' not found")
+            return False
+        if new_name in self.profiles:
+            logger.warning(f"User '{new_name}' already exists")
+            return False
+
+        # Update profiles list (keep sorted)
+        self.profiles[self.profiles.index(old_name)] = new_name
+        self.profiles.sort()
+
+        # Update current_user pointer if needed
+        if self.current_user == old_name:
+            self.current_user = new_name
+
+        # Rename key in user_data
+        try:
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    data = json.load(f)
+                user_data = data.get("user_data", {})
+                if old_name in user_data:
+                    user_data[new_name] = user_data.pop(old_name)
+                data["users"] = self.profiles
+                data["current_user"] = self.current_user
+                data["user_data"] = user_data
+                with open(self.config_file, "w") as f:
+                    json.dump(data, indent=2, fp=f)
+        except Exception as e:
+            logger.error(f"Failed to rename user_data key: {e}")
+            # Still saved profiles above; data may be orphaned but recoverable
+
+        logger.info(f"Renamed user '{old_name}' → '{new_name}'")
+        return True
 
     def add_user(self, username: str) -> bool:
         """Add a new user profile.
@@ -160,6 +231,8 @@ class UserProfileManager:
                 user_data[username] = {
                     "experiment_count": 0,
                     "compression_training": {"completed": False, "score": None, "date": None},
+                    "created_date": datetime.now(timezone.utc).isoformat(),
+                    "last_used": None,
                 }
 
             # Save back

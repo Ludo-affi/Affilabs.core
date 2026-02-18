@@ -1,2 +1,0 @@
-Timestamp	Experiment Time	Device Temp
-19:34:21	0.02	30.5

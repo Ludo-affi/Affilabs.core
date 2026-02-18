@@ -1,0 +1,28 @@
+{
+  "device_serial": "FLMT09788",
+  "device_type": "PicoP4SPR",
+  "detector_model": "USB4000",
+  "led_type": "LCW",
+  "led_type_full": "Luminus Cool White",
+  "oem_calibration_version": "1.1",
+  "calibration_date": "2026-02-10T17:28:18.985192",
+  "polarizer": {
+    "s_position": 193,
+    "p_position": 30,
+    "sp_ratio": 2.8637849753722855,
+    "polarizer_type": "CIRCULAR",
+    "method": "servo_calibration_barrel_detection",
+    "led_intensity_used": "20%",
+    "s_intensity": 57011.590821199425,
+    "p_intensity": 19907.7763559354,
+    "s_stable_range": [
+      187,
+      199
+    ],
+    "p_stable_range": [
+      27,
+      33
+    ]
+  },
+  "afterglow": {}
+}

@@ -295,8 +295,8 @@ class NavigationPresenter:
         )
 
         # Use SVG icon — load directly like timer/power buttons
-        pause_svg = get_resource_path("ui/img/pause_icon.svg")
-        pause_white_svg = get_resource_path("ui/img/pause_icon_white.svg")
+        pause_svg = get_affilabs_resource("ui/img/pause_icon.svg")
+        pause_white_svg = get_affilabs_resource("ui/img/pause_icon_white.svg")
         if pause_svg.exists():
             icon = QIcon(str(pause_svg))
             # Add white variant for checked (On) state
@@ -347,8 +347,8 @@ class NavigationPresenter:
         )
 
         # Use SVG icon — load directly like timer/power buttons
-        record_svg = get_resource_path("ui/img/record_icon.svg")
-        record_white_svg = get_resource_path("ui/img/record_icon_white.svg")
+        record_svg = get_affilabs_resource("ui/img/record_icon.svg")
+        record_white_svg = get_affilabs_resource("ui/img/record_icon_white.svg")
         if record_svg.exists():
             icon = QIcon(str(record_svg))
             # Add white variant for checked (On) state
@@ -369,7 +369,7 @@ class NavigationPresenter:
         self.main_window.power_btn.setProperty("powerState", "disconnected")
 
         # Use SVG icon instead of emoji text
-        power_svg = get_resource_path("ui/img/power_icon.svg")
+        power_svg = get_affilabs_resource("ui/img/power_icon.svg")
         if power_svg.exists():
             self.main_window.power_btn.setIcon(QIcon(str(power_svg)))
             self.main_window.power_btn.setIconSize(QSize(24, 24))

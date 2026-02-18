@@ -7,7 +7,7 @@
   "current_user": "Sandy",
   "user_data": {
     "Sandy": {
-      "experiment_count": 1,
+      "experiment_count": 2,
       "compression_training": {
         "completed": false,
         "score": null,

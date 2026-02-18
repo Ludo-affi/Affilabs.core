@@ -25,7 +25,10 @@ class SparkSidebar(QFrame):
         self.setObjectName("SparkSidebar")
         self._spark_loaded = False
         self.spark_widget = None
-        self._setup_ui()
+        try:
+            self._setup_ui()
+        except Exception as e:
+            logger.error(f"SparkSidebar UI setup failed (non-fatal): {e}")
         # Start hidden to avoid visual glitch during load
         self.hide()
 
@@ -63,28 +66,30 @@ class SparkSidebar(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        # Robot icon (properly oriented)
-        robot_svg = '''<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="5" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/>
-            <circle cx="9" cy="10" r="1.5" fill="currentColor"/>
-            <circle cx="15" cy="10" r="1.5" fill="currentColor"/>
-            <path d="M9 14h6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
-            <path d="M3 10v4M21 10v4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
-        </svg>'''
+        # Robot icon (properly oriented) — guarded so SVG issues never crash app
+        try:
+            robot_svg = '''<svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="5" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/>
+                <circle cx="9" cy="10" r="1.5" fill="currentColor"/>
+                <circle cx="15" cy="10" r="1.5" fill="currentColor"/>
+                <path d="M9 14h6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+                <path d="M3 10v4M21 10v4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+            </svg>'''
 
-        # Create robot icon pixmap
-        svg_renderer = QSvgRenderer()
-        svg_renderer.load(robot_svg.encode())
-        robot_pixmap = QPixmap(20, 20)
-        robot_pixmap.fill(Qt.transparent)
-        painter = QPainter(robot_pixmap)
-        svg_renderer.render(painter)
-        painter.end()
+            svg_renderer = QSvgRenderer()
+            svg_renderer.load(robot_svg.encode())
+            robot_pixmap = QPixmap(20, 20)
+            robot_pixmap.fill(Qt.transparent)
+            painter = QPainter(robot_pixmap)
+            svg_renderer.render(painter)
+            painter.end()
 
-        robot_icon_label = QLabel()
-        robot_icon_label.setPixmap(robot_pixmap)
-        robot_icon_label.setFixedSize(20, 20)
-        layout.addWidget(robot_icon_label)
+            robot_icon_label = QLabel()
+            robot_icon_label.setPixmap(robot_pixmap)
+            robot_icon_label.setFixedSize(20, 20)
+            layout.addWidget(robot_icon_label)
+        except Exception as e:
+            logger.warning(f"Spark robot icon failed (non-fatal): {e}")
 
         title = QLabel("SPARK AI assistant")
         title.setFixedHeight(27)
@@ -112,19 +117,19 @@ class SparkSidebar(QFrame):
         self.main_layout.addWidget(self.placeholder, 1)
 
     def load_spark_widget(self):
-        """Lazy load the actual Spark widget on first use."""
+        """Lazy load the actual Spark widget on first use. Never crashes the UI."""
         if self._spark_loaded:
             return
 
         self._spark_loaded = True
 
-        # Remove placeholder
-        if self.placeholder:
-            self.placeholder.deleteLater()
-            self.placeholder = None
-
-        # Load the real Spark widget
         try:
+            # Remove placeholder
+            if self.placeholder:
+                self.placeholder.deleteLater()
+                self.placeholder = None
+
+            # Load the real Spark widget
             from affilabs.widgets.spark_help_widget import SparkHelpWidget
             self.spark_widget = SparkHelpWidget()
             self.main_layout.addWidget(self.spark_widget, 1)
@@ -133,29 +138,35 @@ class SparkSidebar(QFrame):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(100, self.show)
         except Exception as e:
-            logger.error(f"Failed to load Spark widget: {e}")
-            error_label = QLabel(f"Failed to load Spark:\n{str(e)}")
-            error_label.setStyleSheet("color: #FF3B30; font-size: 11px; padding: 20px;")
-            error_label.setWordWrap(True)
-            self.main_layout.addWidget(error_label, 1)
+            logger.error(f"Failed to load Spark widget (non-fatal): {e}")
+            try:
+                error_label = QLabel(f"Spark unavailable")
+                error_label.setStyleSheet("color: #FF3B30; font-size: 11px; padding: 20px;")
+                error_label.setWordWrap(True)
+                self.main_layout.addWidget(error_label, 1)
+            except Exception:
+                pass
             self.show()  # Show even on error
 
     def push_troubleshooting(self, diagnosis: dict, controller) -> None:
         """Auto-open SPARK sidebar and start the guided LED troubleshooting flow.
 
         Called by calibration_service when a weak-channel pattern is detected
-        after repeated convergence failures.
+        after repeated convergence failures. Never crashes.
 
         Args:
             diagnosis: Output of ``diagnose_weak_channel()`` with channel info.
             controller: PicoP4SPR controller instance for LED commands.
         """
-        # Ensure sidebar is loaded and visible
-        self.load_spark_widget()
-        self.setVisible(True)
+        try:
+            # Ensure sidebar is loaded and visible
+            self.load_spark_widget()
+            self.setVisible(True)
 
-        if self.spark_widget is not None:
-            self.spark_widget.start_troubleshooting_flow(diagnosis, controller)
-        else:
-            logger.error("Cannot start troubleshooting: Spark widget not loaded")
+            if self.spark_widget is not None:
+                self.spark_widget.start_troubleshooting_flow(diagnosis, controller)
+            else:
+                logger.error("Cannot start troubleshooting: Spark widget not loaded")
+        except Exception as e:
+            logger.error(f"Spark troubleshooting launch failed (non-fatal): {e}")
 

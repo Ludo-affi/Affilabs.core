@@ -708,7 +708,6 @@ class ManualInjectionDialog(QDialog):
                 f"🔍 Inject within {remaining}s ({self._window_elapsed}s used)..."
             )
 
-        logger.debug(f"Injection window: {self._window_elapsed}s / 60s")
 
     def _finalize_detection_and_close(self) -> None:
         """Called after 3-second success display — finalize with timers already stopped."""

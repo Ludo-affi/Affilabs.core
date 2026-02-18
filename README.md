@@ -18,18 +18,20 @@ The [QUICK_START.md](QUICK_START.md) guide covers installation, hardware connect
 
 ### Prerequisites
 - Windows 10/11
-- Python 3.11+ (recommended: 3.12)
+- **Python 3.12 (required)** — application enforces this version strictly
 - USB4000 spectrometer with WinUSB drivers
 - PicoP4SPR V2.4 firmware controller
 
 ### Running the Application
 ```powershell
 # Development mode (recommended)
-python run_app.py
+py -3.12 run_app.py
 
 # Direct execution
-python main.py
+py -3.12 main.py
 ```
+
+**Note:** Use `py -3.12` launcher to ensure correct Python version. The application enforces Python 3.12 at startup.
 
 ### Building Executable
 ```powershell

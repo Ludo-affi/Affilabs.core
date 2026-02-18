@@ -371,48 +371,61 @@ class InteractiveMessageBubble(QFrame):
 
 
 class SparkHelpWidget(QWidget):
-    """Main Spark AI assistant widget."""
+    """Main Spark AI assistant widget. All methods guarded — Spark never crashes the UI."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, user_manager=None):
         super().__init__(parent)
+
+        # User context for personalization
+        self._user_manager = user_manager
 
         # Thinking indicator state
         self._thinking_timer = None
         self._thinking_start_time = None
         self._thinking_dots = 0
+        self._thinking_bubble = None
+        self.answer_engine = None
 
         # TTS setup (Piper TTS - lightweight model)
-        self.tts_enabled = True  # Start with TTS on
+        self.tts_enabled = False  # Start with TTS off by default
         self.piper_path = None
         self.voice_model = None
-        if TTS_AVAILABLE:
-            try:
-                # Piper will be installed as a standalone executable
-                from affilabs.utils.resource_path import get_resource_path
-                from pathlib import Path
+        try:
+            if TTS_AVAILABLE:
+                try:
+                    from affilabs.utils.resource_path import get_resource_path
+                    piper_exe = get_resource_path("piper/piper.exe")
+                    piper_dir = piper_exe.parent
+                    voice_file = piper_dir / "selected_voice.txt"
 
-                # Use resource_path for PyInstaller compatibility
-                piper_exe = get_resource_path("piper/piper.exe")
-                piper_dir = piper_exe.parent
-                voice_file = piper_dir / "selected_voice.txt"
-
-                if piper_exe.exists():
-                    self.piper_path = str(piper_exe)
-                    # Load selected voice (or use default)
-                    if voice_file.exists():
-                        self.voice_model = voice_file.read_text().strip()
+                    if piper_exe.exists():
+                        self.piper_path = str(piper_exe)
+                        if voice_file.exists():
+                            self.voice_model = voice_file.read_text().strip()
+                        else:
+                            self.voice_model = "en_US-lessac-medium"
+                        print(f"Piper TTS found! Voice: {self.voice_model}")
                     else:
-                        self.voice_model = "en_US-lessac-medium"
-                    print(f"Piper TTS found! Voice: {self.voice_model}")
-                else:
-                    print("Piper TTS not found - voice disabled")
+                        print("Piper TTS not found - voice disabled")
+                        self.piper_path = None
+                except Exception as e:
+                    print(f"TTS initialization failed: {e}")
                     self.piper_path = None
-            except Exception as e:
-                print(f"TTS initialization failed: {e}")
-                self.piper_path = None
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"TTS outer init failed: {e}")
 
-        self._setup_ui()
-        self._setup_knowledge_base()
+        try:
+            self._setup_ui()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark UI setup failed (non-fatal): {e}")
+
+        try:
+            self._setup_knowledge_base()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark knowledge base failed (non-fatal): {e}")
 
     def _setup_ui(self):
         """Create the UI layout."""
@@ -583,12 +596,28 @@ class SparkHelpWidget(QWidget):
 
     def _add_welcome_message(self):
         """Add welcome message to chat."""
-        welcome = MessageBubble(
-            "\U0001f44b Hi! I'm Spark, your Affilabs assistant. "
+        # Personalize with user name if available
+        user_name = ""
+        if self._user_manager:
+            try:
+                active_user = self._user_manager.get_active_user()
+                if active_user:
+                    user_name = active_user.strip()
+            except Exception:
+                pass
+        
+        if user_name:
+            greeting = f"\U0001f44b Hi {user_name}! I'm Spark, your Affilabs assistant."
+        else:
+            greeting = "\U0001f44b Hi! I'm Spark, your Affilabs assistant."
+        
+        welcome_text = (
+            f"{greeting} "
             "I'm especially expert at **method building** — ask me about cycle syntax, shortcuts, examples, presets, and more!\n\n"
-            "I can also help with setup, calibration, pumps, data export, and troubleshooting.",
-            is_user=False
+            "I can also help with setup, calibration, pumps, data export, and troubleshooting."
         )
+        
+        welcome = MessageBubble(welcome_text, is_user=False)
         self.chat_layout.addWidget(welcome, alignment=Qt.AlignmentFlag.AlignLeft)
 
     def _clear_chat(self):
@@ -651,19 +680,24 @@ class SparkHelpWidget(QWidget):
             except Exception:
                 pass
 
-            # Generate answer after short delay (to show thinking bubble)
+            # Generate answer in background thread (never blocks UI)
             try:
-                QTimer.singleShot(150, lambda: self._add_answer(question))
+                self._answer_worker = threading.Thread(
+                    target=self._generate_answer_async, args=(question,), daemon=True
+                )
+                self._answer_worker.start()
             except Exception as e:
                 import logging
-                logging.getLogger(__name__).error(f"Spark answer timer failed: {e}")
+                logging.getLogger(__name__).error(f"Spark answer thread failed: {e}")
+                # Fallback: show error inline
+                self._display_answer("Sorry, something went wrong. Please try again.")
 
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Spark _handle_question crashed: {e}")
 
-    def _add_answer(self, question: str):
-        """Find and display answer to question."""
+    def _generate_answer_async(self, question: str):
+        """Run answer generation in background thread, post result to UI thread."""
         try:
             answer_text = self._find_answer(question)
         except Exception as e:
@@ -671,6 +705,14 @@ class SparkHelpWidget(QWidget):
             logging.getLogger(__name__).error(f"Spark _find_answer crashed: {e}")
             answer_text = "Sorry, something went wrong. Please try again."
 
+        # Post result back to UI thread safely via QTimer, passing question for history
+        try:
+            QTimer.singleShot(0, lambda: self._display_answer(answer_text, question))
+        except Exception:
+            pass
+
+    def _display_answer(self, answer_text: str, question: str = ""):
+        """Display answer on UI thread (called from timer after background generation)."""
         # Stop thinking timer
         try:
             if self._thinking_timer:
@@ -697,6 +739,14 @@ class SparkHelpWidget(QWidget):
             logging.getLogger(__name__).error(f"Spark bubble creation failed: {e}")
             return
 
+        # Save Q&A to per-user history if question is provided
+        if question:
+            try:
+                self._save_qa_entry(question, answer_text)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).debug(f"Q&A history save failed (non-fatal): {e}")
+
         # Speak the answer with Piper TTS
         try:
             self._speak_text(answer_text)
@@ -704,6 +754,8 @@ class SparkHelpWidget(QWidget):
             pass  # TTS failure should never crash the app
 
         self._scroll_to_bottom()
+
+
 
     def _find_answer(self, question: str) -> str:
         """Generate answer using SparkAnswerEngine."""
@@ -716,6 +768,58 @@ class SparkHelpWidget(QWidget):
             import logging
             logging.getLogger(__name__).error(f"Spark answer error: {e}")
             return "Sorry, I had trouble generating an answer. Please try again."
+
+    def _save_qa_entry(self, question: str, answer: str):
+        """Save Q&A entry to per-user JSON history file (non-fatal)."""
+        import json
+        from pathlib import Path
+        from datetime import datetime
+        
+        try:
+            # Determine history file name (per-user or default)
+            if self._user_manager:
+                try:
+                    active_user = self._user_manager.get_active_user()
+                    if active_user:
+                        user_safe = active_user.replace(" ", "_").lower()
+                        filename = f"spark_qa_history_{user_safe}.json"
+                    else:
+                        filename = "spark_qa_history_default.json"
+                except Exception:
+                    filename = "spark_qa_history_default.json"
+            else:
+                filename = "spark_qa_history_default.json"
+            
+            # Use affilabs/data/ directory for history
+            from affilabs.utils.resource_path import get_resource_path
+            history_dir = get_resource_path("data/spark")
+            history_file = Path(history_dir) / filename
+            
+            # Load existing history
+            history = []
+            if history_file.exists():
+                try:
+                    history = json.loads(history_file.read_text())
+                except (json.JSONDecodeError, IOError):
+                    history = []
+            
+            # Append new entry
+            history.append({
+                "timestamp": datetime.now().isoformat(),
+                "question": question.strip(),
+                "answer": answer.strip()
+            })
+            
+            # Keep only last 50 entries to prevent bloat
+            if len(history) > 50:
+                history = history[-50:]
+            
+            # Save
+            history_file.write_text(json.dumps(history, indent=2))
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"Failed to save Q&A history: {e}")
+            # Silent fail - never crash on history save
 
     def _toggle_tts(self):
         """Toggle TTS on/off."""
@@ -891,20 +995,32 @@ class SparkHelpWidget(QWidget):
         return bubble
 
     def start_troubleshooting_flow(self, diagnosis: dict, controller):
-        """Start the guided LED troubleshooting flow.
+        """Start the guided LED troubleshooting flow. Never crashes the UI.
 
         Args:
             diagnosis: Output of ``diagnose_weak_channel()`` containing:
                 channel, current_signal, current_led, historical_avg, pct_of_historical
             controller: PicoP4SPR controller instance for LED commands.
         """
-        self._ts_controller = controller
-        self._ts_diagnosis = diagnosis
-        self._ts_state = "START"
-        self._advance_troubleshooting()
+        try:
+            self._ts_controller = controller
+            self._ts_diagnosis = diagnosis
+            self._ts_state = "START"
+            self._advance_troubleshooting()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark troubleshooting flow failed (non-fatal): {e}")
 
     def _advance_troubleshooting(self):
-        """State machine for the LED troubleshooting flow."""
+        """State machine for the LED troubleshooting flow. Never crashes."""
+        try:
+            self.__advance_troubleshooting_inner()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Spark troubleshooting step failed (non-fatal): {e}")
+
+    def __advance_troubleshooting_inner(self):
+        """Inner troubleshooting state machine (may raise)."""
         state = self._ts_state
         diag = self._ts_diagnosis
         ctrl = self._ts_controller

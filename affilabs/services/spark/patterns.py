@@ -756,6 +756,110 @@ PATTERNS = {
         },
     },
 
+    "p4spr": {
+        r"how.*use.*4.*channel|4.*channel|all.*four.*channel|independent.*channel": {
+            "answer": "P4SPR has **4 fully independent optical + fluidic channels (A, B, C, D)**.\n\n"
+            "You can inject 4 **different analytes simultaneously** — one per channel!\n\n"
+            "In Method Builder, specify channels per cycle:\n"
+            "`Binding 5min [A:100nM] [B:50nM] [C:25nM] [D:10nM] contact 180s`\n\n"
+            "Or use all channels: `Binding 5min ALL:100nM contact 180s`",
+            "category": "p4spr",
+            "keywords": ["4", "channel", "independent", "analyte", "parallel"],
+            "priority": "high"
+        },
+        r"p4spr.*inject|manual.*inject|how.*inject.*p4spr|pipette|syringe": {
+            "answer": "P4SPR uses **manual syringe injection**.\n\n"
+            "1. Prepare 4 sample aliquots (one per channel)\n"
+            "2. When method starts, you have **60 seconds** to pipette each channel\n"
+            "3. Inject smoothly into inlet ports — **avoid air bubbles**\n"
+            "4. Injections can be **up to 15 seconds apart** — software handles the timing\n\n"
+            "Watch the sensorgram in real-time for the blue shift (analyte binding).",
+            "category": "p4spr",
+            "keywords": ["p4spr", "inject", "manual", "syringe", "pipette", "sample"],
+            "priority": "high"
+        },
+        r"what.*concentration|starting.*concentration|how.*much.*analyte|dose.*p4spr": {
+            "answer": "**Typical starting concentrations for P4SPR:**\n\n"
+            "• **Proteins:** Start at **100 nM** → 3-fold dilutions → 5–7 concentrations\n"
+            "• **Small molecules:** Start at **500 nM** → 3-fold dilutions → 5–7 concentrations\n"
+            "• **Antibodies:** Start at **50 nM** → 2–3 fold dilutions → 5–7 concentrations\n\n"
+            "**Why?** Affilabs sensors bind ~50–200 nM of ligand. Too dilute = weak signal; too concentrated = saturates instantly.\n\n"
+            "Try 100 nM first, then adjust based on signal strength.",
+            "category": "p4spr",
+            "keywords": ["concentration", "dose", "dilution", "p4spr", "analyte"],
+            "priority": "high"
+        },
+        r"p4spr.*immobiliz|which.*channel.*ligand|how.*immobiliz": {
+            "answer": "In P4SPR, you typically immobilize ligand on **channel A only** (or any one channel).\n\n"
+            "Example workflow:\n"
+            "`Baseline 5min ALL`\n"
+            "`Immobilization 10min [A:50µg/mL] contact 300s` (only A gets ligand)\n"
+            "`Wash 30sec ALL`\n"
+            "`Baseline 5min ALL`\n\n"
+            "Then channels B, C, D remain in buffer as references while you inject analyte into **all 4 channels**, "
+            "and only A shows binding (because A has the ligand).",
+            "category": "p4spr",
+            "keywords": ["p4spr", "immobilize", "ligand", "channel"],
+            "priority": "medium"
+        },
+        r"p4spr.*workflow|complete.*p4spr|end.*to.*end.*p4spr": {
+            "answer": "**P4SPR End-to-End Workflow:**\n\n"
+            "1. **Prep** (20 min): Prepare buffers, samples, calibrate system\n"
+            "2. **Surface** (15–30 min): Immobilize ligand on channel A, baseline other channels\n"
+            "3. **Binding** (30–60 min): Add 5–7 concentration cycles with regeneration\n"
+            "4. **Analysis:** Fit kinetics, extract Kd, ka, kd\n\n"
+            "Total experiment: ~2–3 hours for a complete dose-response.\n\n"
+            "Type '!save my_p4spr_protocol' to save your method as a preset.",
+            "category": "p4spr",
+            "keywords": ["p4spr", "workflow", "protocol", "experiment"],
+            "priority": "medium"
+        },
+        r"p4spr.*regen|regenerat.*p4spr|strip.*analyte": {
+            "answer": "**Regeneration removes bound analyte** so you can run the next concentration.\n\n"
+            "Standard P4SPR regeneration: `Regeneration 30sec [ALL:50mM]`\n\n"
+            "Use a **harsh buffer** (e.g., 50 mM glycine pH 2.5) to strip binding.\n\n"
+            "**Important:** After regen, allow 1–2 min baseline stabilization before the next binding cycle.",
+            "category": "p4spr",
+            "keywords": ["regen", "regeneration", "p4spr", "strip", "surface"],
+            "priority": "medium"
+        },
+        r"p4spr.*missing.*regen|forgot.*regen|need.*regen|without.*regen": {
+            "answer": "**Regen is critical between binding cycles!**\n\n"
+            "Without regeneration:\n"
+            "• The old analyte stays on the sensor\n"
+            "• New analyte binds to already-occupied sites → signal is suppressed\n"
+            "• Kinetics look wrong (non-linear, weird shapes)\n\n"
+            "Always include: `Regeneration 30sec [ALL:50mM]` after each binding or kinetic cycle.",
+            "category": "p4spr",
+            "keywords": ["p4spr", "regen", "missing", "regeneration"],
+            "priority": "high"
+        },
+        r"p4spr.*baseline|baseline.*p4spr|how.*long.*baseline": {
+            "answer": "**P4SPR baseline cycles establish and verify signal stability.**\n\n"
+            "Typical baseline duration: **5–10 minutes** before immobilization.\n\n"
+            "Use after: regeneration (wait for surface recovery), temperature changes, or maintenance.\n\n"
+            "Example: `Baseline 10min ALL` → watch for drift < 0.5 nm/min before proceeding.",
+            "category": "p4spr",
+            "keywords": ["baseline", "p4spr", "duration", "stability"],
+            "priority": "medium"
+        },
+        r"p4spr.*different.*sample.*channel|two.*channel.*different|channel.*conflict": {
+            "answer": "**Yes! P4SPR channels are independent.** Each can have a different analyte.\n\n"
+            "Example method:\n"
+            "`Baseline 5min ALL`\n"
+            "`Binding 5min [A:100nM] [B:50nM] [C:25nM] [D:10nM] contact 180s`\n"
+            "`Regeneration 30sec ALL:50mM`\n\n"
+            "At injection time, you pipette:\n"
+            "• Channel A gets 100 nM solution\n"
+            "• Channel B gets 50 nM solution\n"
+            "• Etc.\n\n"
+            "No crosstalk — each channel is isolated.",
+            "category": "p4spr",
+            "keywords": ["p4spr", "different", "sample", "channel", "analyte"],
+            "priority": "high"
+        },
+    },
+
     "analysis": {
         r"baseline.*drift|baseline.*unstable": {
             "answer": "Allow 30-60 minutes of warmup, check for bubbles in the flow cell, "

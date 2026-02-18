@@ -1,0 +1,111 @@
+# =============================================
+# .claudeignore — Affilabs.core
+# Tells Claude Code which files to skip entirely.
+# This dramatically reduces search noise and
+# context window waste.
+#
+# VISIBLE to Claude: affilabs/, AffiPump/, main.py,
+#   run_app.py, version.py, settings/, config/,
+#   detector_profiles/, CLAUDE.md, .claudeignore
+#
+# BLOCKED: everything else (208 files, 61k lines)
+# =============================================
+
+# === Underscore folders (archived/non-essential) ===
+_scratch/
+_notes/
+_data/
+_build/
+
+# === Operational tooling (rarely edited, high file count) ===
+scripts/
+tools/
+standalone_tools/
+tests/
+
+# === Calibration tooling (scripts + data, not app code) ===
+calibrations/
+
+# === Virtual environments ===
+.venv/
+venv_*/
+venv/
+env/
+
+# === Python cache ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+.Python
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.pdm-build/
+
+# === Binary/archive files ===
+*.exe
+*.7z
+*.eps
+*.pdf
+*.png
+*.dll
+
+# === Data files (not code) ===
+*.xlsx
+*.log
+*.txt
+*.patch
+*.bak
+*.backup
+*.json
+
+# === Generated UI code (auto-generated from .ui files, never edit) ===
+affilabs/ui/ui_*.py
+affilabs/ui/ai_rc.py
+
+# === UI images and sounds ===
+affilabs/ui/img/
+affilabs/ui/sounds/
+
+# === Documentation (reference, not code) ===
+docs/
+
+# === AffiPump (only affipump_controller.py + readme matter) ===
+AffiPump/test_*.py
+AffiPump/debug_*.py
+AffiPump/diagnose_*.py
+AffiPump/*.pdf
+AffiPump/check_*.py
+AffiPump/find_*.py
+AffiPump/verify_*.py
+AffiPump/*_test*.py
+AffiPump/probe_*.py
+AffiPump/quick_*.py
+AffiPump/maintenance_*.py
+AffiPump/dispense_*.py
+AffiPump/speed_test.py
+AffiPump/pps_speed_test.py
+AffiPump/max_speed_test.py
+AffiPump/query_*.py
+
+# === OEM docs (reference only, not code) ===
+OEM_Communication/
+
+# === Config files Claude doesn't need ===
+*.lock
+*.yaml
+*.yml
+.gitignore
+.pylintrc
+.python-version
+.pdm-python
+*.ps1
+
+# === IDE / Git ===
+.vscode/
+.idea/
+.git/
+.github/
+icons/

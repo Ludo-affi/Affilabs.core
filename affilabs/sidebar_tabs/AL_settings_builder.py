@@ -6,6 +6,7 @@ Author: Affilabs
 """
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -14,12 +15,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QVBoxLayout,
     QInputDialog,
-    QMessageBox,
-    QListWidget,
 )
 
 # Import sections from central location
@@ -168,6 +170,9 @@ class SettingsTabBuilder:
         self.sidebar.user_list_widget = QListWidget()
         self._populate_user_list()
         self.sidebar.user_list_widget.setMaximumHeight(120)
+        self.sidebar.user_list_widget.itemDoubleClicked.connect(
+            self._on_set_active_user_settings
+        )
         self.sidebar.user_list_widget.setStyleSheet(
             f"QListWidget {{"
             f"  background: {Colors.BACKGROUND_LIGHT};"
@@ -214,7 +219,50 @@ class SettingsTabBuilder:
         add_user_btn.clicked.connect(self._on_add_user_settings)
         btn_row.addWidget(add_user_btn)
 
-        delete_user_btn = QPushButton("Delete Selected")
+        rename_user_btn = QPushButton("Rename")
+        rename_user_btn.setFixedHeight(32)
+        rename_user_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: transparent;"
+            f"  color: #007AFF;"
+            f"  border: 1px solid rgba(0, 122, 255, 0.35);"
+            f"  border-radius: 6px;"
+            f"  padding: 4px 10px;"
+            f"  font-size: 12px;"
+            f"  font-weight: 600;"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: rgba(0, 122, 255, 0.10);"
+            f"  border-color: #007AFF;"
+            f"}}"
+        )
+        rename_user_btn.clicked.connect(self._on_rename_user_settings)
+        btn_row.addWidget(rename_user_btn)
+
+        set_active_btn = QPushButton("Set Active")
+        set_active_btn.setFixedHeight(32)
+        set_active_btn.setToolTip("Set selected user as the current active user (double-click also works)")
+        set_active_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: transparent;"
+            f"  color: #FF9500;"
+            f"  border: 1px solid rgba(255, 149, 0, 0.35);"
+            f"  border-radius: 6px;"
+            f"  padding: 4px 10px;"
+            f"  font-size: 12px;"
+            f"  font-weight: 600;"
+            f"  font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: rgba(255, 149, 0, 0.10);"
+            f"  border-color: #FF9500;"
+            f"}}"
+        )
+        set_active_btn.clicked.connect(lambda: self._on_set_active_user_settings())
+        btn_row.addWidget(set_active_btn)
+
+        delete_user_btn = QPushButton("Delete")
         delete_user_btn.setFixedHeight(32)
         delete_user_btn.setStyleSheet(
             f"QPushButton {{"
@@ -246,17 +294,26 @@ class SettingsTabBuilder:
         if not self.user_manager:
             return
 
+        current = self.user_manager.get_current_user()
         self.sidebar.user_list_widget.clear()
         for username in self.user_manager.get_profiles():
             title, _ = self.user_manager.get_title(username)
             exp_count = self.user_manager.get_experiment_count(username)
 
+            is_active = username == current
+            marker = "★ " if is_active else "   "
             display = (
-                f"{username}  \u2014  {title.value} "
+                f"{marker}{username}  \u2014  {title.value} "
                 f"({exp_count} experiments)"
             )
 
-            self.sidebar.user_list_widget.addItem(display)
+            item = QListWidgetItem(display)
+            if is_active:
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+                item.setForeground(Qt.GlobalColor.blue)
+            self.sidebar.user_list_widget.addItem(item)
 
     def _update_progression_display(self):
         """Update the progression banner for the current user."""
@@ -374,11 +431,8 @@ class SettingsTabBuilder:
             )
             return
 
-        # Extract username from display text (format: "username  —  Title (...)")
-        display_text = selected_items[0].text()
-        # Remove leading warning emoji if present
-        clean = display_text.lstrip("\u26a0\ufe0f ").strip()
-        username = clean.split("  \u2014  ")[0].strip()
+        # Extract username from display text (format: "★ username  —  Title (...)")
+        username = self._extract_username_from_item(selected_items[0].text())
 
         # Confirm deletion
         reply = QMessageBox.question(
@@ -413,6 +467,85 @@ class SettingsTabBuilder:
                     "Cannot Delete",
                     "You must keep at least one user profile.",
                 )
+
+    def _extract_username_from_item(self, display_text: str) -> str:
+        """Extract plain username from list item display text.
+
+        Handles formats: '★ username  —  Title (N experiments)'
+        and '   username  —  Title (N experiments)'.
+        """
+        clean = display_text.lstrip("\u2605 ").strip()
+        return clean.split("  \u2014  ")[0].strip()
+
+    def _on_rename_user_settings(self):
+        """Handle renaming the selected user."""
+        if not self.user_manager and hasattr(self.sidebar, 'user_profile_manager'):
+            self.user_manager = self.sidebar.user_profile_manager
+        if not self.user_manager:
+            QMessageBox.warning(self.sidebar, "Not Ready", "User manager is not available yet.")
+            return
+
+        selected_items = self.sidebar.user_list_widget.selectedItems()
+        if not selected_items:
+            QMessageBox.information(self.sidebar, "No Selection", "Please select a user to rename.")
+            return
+
+        old_name = self._extract_username_from_item(selected_items[0].text())
+
+        new_name, ok = QInputDialog.getText(
+            self.sidebar,
+            "Rename User",
+            f"New name for '{old_name}':",
+            text=old_name,
+        )
+        if not ok or not new_name.strip():
+            return
+
+        new_name = new_name.strip()
+        if self.user_manager.rename_user(old_name, new_name):
+            self._populate_user_list()
+            self._update_progression_display()
+            if hasattr(self.sidebar, 'user_combo'):
+                current = self.user_manager.get_current_user()
+                self.sidebar.user_combo.clear()
+                self.sidebar.user_combo.addItems(self.user_manager.get_profiles())
+                if current:
+                    idx = self.sidebar.user_combo.findText(current)
+                    if idx >= 0:
+                        self.sidebar.user_combo.setCurrentIndex(idx)
+        else:
+            QMessageBox.warning(
+                self.sidebar,
+                "Rename Failed",
+                f"Could not rename to '{new_name}'. Name may already be in use.",
+            )
+
+    def _on_set_active_user_settings(self, item=None):
+        """Set the selected (or double-clicked) user as the currently active user."""
+        if not self.user_manager and hasattr(self.sidebar, 'user_profile_manager'):
+            self.user_manager = self.sidebar.user_profile_manager
+        if not self.user_manager:
+            return
+
+        if item is None:
+            selected_items = self.sidebar.user_list_widget.selectedItems()
+            if not selected_items:
+                QMessageBox.information(
+                    self.sidebar,
+                    "No Selection",
+                    "Please select a user to set as active.",
+                )
+                return
+            item = selected_items[0]
+
+        username = self._extract_username_from_item(item.text())
+        self.user_manager.set_current_user(username)
+        self._populate_user_list()
+        self._update_progression_display()
+        if hasattr(self.sidebar, 'user_combo'):
+            idx = self.sidebar.user_combo.findText(username)
+            if idx >= 0:
+                self.sidebar.user_combo.setCurrentIndex(idx)
 
     def _create_spectroscopy_placeholder(self, tab_layout: QVBoxLayout):
         """Create placeholder for spectroscopy plots - will be lazy loaded on tab open."""

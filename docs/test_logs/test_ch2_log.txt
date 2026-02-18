@@ -1,5 +1,0 @@
-Timestamp	Experiment Time	Event Type	Flow Rate	Sensor Temp	Device Temp
-19:34:21	0.01	CH 2 Stop	-	-	-
-19:34:21	0.01	Sensor reading	14.80	25.10	-
-19:34:21	0.02	Device reading	-	-	30.5
-19:34:21	0.02	Inject sample	-	-	-

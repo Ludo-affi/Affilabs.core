@@ -186,9 +186,9 @@ class SensogramPresenter:
                 if hasattr(self.window.full_timeline_graph, "stop_cursor"):
                     self.window.full_timeline_graph.stop_cursor.setValue(0)
 
-            print("✅ Graph data cleared")
+            logger.debug("Graph data cleared")
         except Exception as e:
-            print(f"❌ Error clearing graph data: {e}")
+            logger.error(f"Error clearing graph data: {e}")
 
     def add_flag_marker(self, time: float, label: str, color: str = "#FF3B30") -> None:
         """Add a flag marker to the timeline graph.

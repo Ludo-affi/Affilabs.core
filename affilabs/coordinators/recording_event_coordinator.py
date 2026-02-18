@@ -72,6 +72,16 @@ class RecordingEventCoordinator:
         # Update UI recording indicator
         self.app.main_window.set_recording_state(False)
 
+        # Refresh user progression display so XP count updates immediately
+        try:
+            sidebar = self.app.main_window.sidebar
+            builder = getattr(sidebar, "_settings_builder", None)
+            if builder is not None:
+                builder._populate_user_list()
+                builder._update_progression_display()
+        except Exception:
+            pass
+
         # Note: Removed redundant sidebar spectroscopy status update
         # Main recording indicator already handles state display
 
