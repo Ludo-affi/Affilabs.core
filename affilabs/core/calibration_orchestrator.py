@@ -1251,11 +1251,10 @@ def run_startup_calibration(
         # =================================================================
         result.success = True
 
-        logger.debug("Calibration complete")
-        logger.debug(f"S-mode: {result.s_mode_intensity}")
-        logger.debug(f"P-mode: {result.p_mode_intensity}")
         logger.debug(
-            f"Integration times: S={result.s_integration_time:.1f}ms, P={result.p_integration_time:.1f}ms"
+            f"Calibration complete: S-mode LEDs={result.s_mode_intensity}, "
+            f"P-mode LEDs={result.p_mode_intensity}, "
+            f"Integration S={result.s_integration_time:.1f}ms, P={result.p_integration_time:.1f}ms"
         )
 
         return result
@@ -1269,9 +1268,8 @@ def run_startup_calibration(
     finally:
         # Always turn off LEDs on exit (success or failure)
         try:
-            logger.debug("[CLEANUP] Turning off all LEDs...")
             ctrl.turn_off_channels()
             time.sleep(0.05)
-            logger.debug("[CLEANUP] LEDs turned off")
+            logger.debug("[CLEANUP] All LED channels turned off")
         except Exception as cleanup_error:
             logger.error(f"[CLEANUP] Failed to turn off LEDs: {cleanup_error}")

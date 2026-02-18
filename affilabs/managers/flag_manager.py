@@ -201,7 +201,7 @@ class FlagManager:
         menu.exec(QCursor.pos())
 
     def select_flag_channel_visual(self, channel: str):
-        """Select a channel for flagging and update visual highlighting.
+        """Select a channel for timing adjustment and update visual highlighting.
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
@@ -210,7 +210,7 @@ class FlagManager:
         self._selected_flag_channel = channel
 
         # Update visual highlighting through UI
-        self.app.main_window._on_flag_channel_selected(channel)
+        self.app.main_window._on_timing_channel_selected(channel)
 
     def add_flag_marker(self, channel: str, time_val: float, spr_val: float, flag_type: str):
         """Add a visual flag marker to the cycle graph (software-placed, live context).
@@ -242,12 +242,12 @@ class FlagManager:
                     angle=90,  # Vertical
                     pen=pg.mkPen(color=(255, 50, 50, 100), width=2, style=Qt.PenStyle.DashLine),
                     movable=False,
-                    label="Injection Reference",
+                    label="Injection Started",
                 )
                 self.app.main_window.cycle_of_interest_graph.addItem(self._injection_alignment_line)
 
                 logger.info(
-                    f"✓ Injection reference set at t={time_val:.2f}s (Channel {channel.upper()})"
+                    f"✓ Injection started at t={time_val:.2f}s (Channel {channel.upper()})"
                 )
             else:
                 # Subsequent injection - ALWAYS align channel data to reference

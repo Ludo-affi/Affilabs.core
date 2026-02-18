@@ -187,7 +187,14 @@ class QueueSummaryWidget(QTableWidget):
 
     @Slot()
     def refresh(self):
-        """Refresh table from presenter's queue state."""
+        """Refresh table from presenter's queue state.
+
+        During execution (locked + snapshot exists): shows the full original
+        method with completed/running/pending indicators so the user can
+        always see the entire plan.
+
+        Otherwise: shows the live queue as before.
+        """
         if not self._presenter:
             return
 
@@ -197,13 +204,35 @@ class QueueSummaryWidget(QTableWidget):
         # Block signals during bulk update to avoid flicker
         self.blockSignals(True)
         try:
-            # Clear and repopulate
             self.setRowCount(0)
 
-            cycles = self._presenter.get_queue_snapshot()
-
-            for row, cycle in enumerate(cycles):
-                self._add_cycle_row(row, cycle)
+            # Decide display mode
+            if self._is_locked and self._presenter.has_method_snapshot():
+                # EXECUTION MODE: show full original method with progress
+                original = self._presenter.get_original_method()
+                progress = self._presenter.get_method_progress()
+                for row, cycle in enumerate(original):
+                    if row < progress:
+                        self._add_cycle_row_with_status(row, cycle, "completed")
+                    elif row == progress:
+                        self._add_cycle_row_with_status(row, cycle, "running")
+                    else:
+                        self._add_cycle_row_with_status(row, cycle, "pending")
+            elif self._presenter.has_method_snapshot() and not self._is_locked:
+                # POST-RUN: snapshot still exists after unlock (cancelled or finished)
+                # Show full method with all progress so user can retrieve it
+                original = self._presenter.get_original_method()
+                progress = self._presenter.get_method_progress()
+                for row, cycle in enumerate(original):
+                    if row < progress:
+                        self._add_cycle_row_with_status(row, cycle, "completed")
+                    else:
+                        self._add_cycle_row_with_status(row, cycle, "pending")
+            else:
+                # NORMAL MODE: show live queue
+                cycles = self._presenter.get_queue_snapshot()
+                for row, cycle in enumerate(cycles):
+                    self._add_cycle_row(row, cycle)
         finally:
             self.blockSignals(False)
 
@@ -216,20 +245,75 @@ class QueueSummaryWidget(QTableWidget):
         if self._is_locked:
             self.setDragEnabled(False)
             self.setAcceptDrops(False)
-            for row in range(self.rowCount()):
-                for col in range(self.columnCount()):
-                    item = self.item(row, col)
-                    if item:
-                        item.setBackground(QBrush(QColor(235, 235, 235)))
 
         # Show/hide empty state
         if hasattr(self, '_empty_overlay'):
             self._empty_overlay.setVisible(self.rowCount() == 0)
 
-        # Force visual repaint and scroll to bottom so new rows are visible
+        # Force visual repaint; scroll to running row if visible
         self.viewport().update()
-        if self.rowCount() > 0:
+        running_row = self._find_running_row()
+        if running_row >= 0:
+            self.scrollTo(self.model().index(running_row, 0))
+        elif self.rowCount() > 0:
             self.scrollToBottom()
+
+    def _find_running_row(self) -> int:
+        """Find the row index of the currently running cycle.
+
+        Returns:
+            Row index, or -1 if no cycle is running
+        """
+        if not self._presenter or not self._presenter.has_method_snapshot():
+            return -1
+        return self._presenter.get_method_progress()  # running row == progress index
+
+    def _add_cycle_row_with_status(self, row: int, cycle: Cycle, status: str):
+        """Add a row with execution status styling.
+
+        Args:
+            row: Row index
+            cycle: Cycle to display
+            status: "completed", "running", or "pending"
+        """
+        self.insertRow(row)
+        abbr, fg_color = CycleTypeStyle.get(cycle.type)
+
+        if status == "running":
+            prefix, bg = "\u25b6 ", QColor("#E3F2FD")   # ▶ light blue
+            bold = True
+        elif status == "completed":
+            prefix, bg = "\u2713 ", QColor("#E8F5E9")    # ✓ light green
+            bold = False
+            fg_color = "#4CAF50"
+        else:
+            prefix, bg = "", None
+            bold = False
+
+        cycle_num = cycle.cycle_num if cycle.cycle_num > 0 else row + 1
+
+        for col, (text, align) in enumerate([
+            (str(cycle_num), Qt.AlignmentFlag.AlignCenter),
+            (f"{prefix}{abbr}", None),
+            (f"{cycle.length_minutes:.1f}", Qt.AlignmentFlag.AlignCenter),
+            (cycle.note or "", None),
+        ]):
+            item = QTableWidgetItem(text)
+            if align:
+                item.setTextAlignment(align)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            if col == 1:
+                item.setForeground(QColor(fg_color))
+                item.setToolTip(f"{cycle.type} ({status})")
+            if bg:
+                item.setBackground(QBrush(bg))
+            if bold:
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            self.setItem(row, col, item)
+
+        self.item(row, 0).setData(Qt.ItemDataRole.UserRole, cycle.cycle_id)
 
     def _add_cycle_row(self, row: int, cycle: Cycle):
         """Add a row for a cycle.

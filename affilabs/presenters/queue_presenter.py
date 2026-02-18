@@ -442,3 +442,35 @@ class QueuePresenter(QObject):
         stats = self.get_stats()
         return (f"QueuePresenter(queue={stats['queue_size']}, "
                 f"undo={stats['undo_count']}, redo={stats['redo_count']})")
+
+    # ========================================================================
+    # METHOD SNAPSHOT (preserves full method during execution)
+    # ========================================================================
+
+    def snapshot_method(self):
+        """Take a deep-copy snapshot of the queue before run starts."""
+        self._queue_manager.snapshot_method()
+
+    def advance_method_progress(self):
+        """Increment completed-cycle counter (called after each cycle)."""
+        self._queue_manager.advance_method_progress()
+
+    def get_original_method(self) -> list:
+        """Get the full original method snapshot (never mutated)."""
+        return self._queue_manager.get_original_method()
+
+    def get_method_progress(self) -> int:
+        """Get number of cycles completed in the current run."""
+        return self._queue_manager.get_method_progress()
+
+    def get_remaining_from_method(self) -> list:
+        """Get deep-copied remaining cycles for resume after pause."""
+        return self._queue_manager.get_remaining_from_method()
+
+    def clear_method_snapshot(self):
+        """Clear the method snapshot."""
+        self._queue_manager.clear_method_snapshot()
+
+    def has_method_snapshot(self) -> bool:
+        """Check whether a method snapshot exists."""
+        return self._queue_manager.has_method_snapshot()

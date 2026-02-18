@@ -12,6 +12,7 @@ Architecture:
 - ID management and cycle renumbering
 """
 
+import copy
 from typing import List, Optional
 from PySide6.QtCore import QObject, Signal
 
@@ -54,6 +55,11 @@ class QueueManager(QObject):
         self._completed: List[Cycle] = []
         self._cycle_counter = 0
         self._lock = False
+
+        # Method snapshot: deep copy of the queue taken when a run starts.
+        # Survives pop operations so the full method is always retrievable.
+        self._original_method: List[Cycle] = []
+        self._method_progress: int = 0  # Number of cycles completed in current run
 
         logger.debug("QueueManager initialized")
 
@@ -202,6 +208,8 @@ class QueueManager(QObject):
 
         count = len(self._queue)
         self._queue.clear()
+        self._original_method.clear()
+        self._method_progress = 0
         self.queue_changed.emit()
 
         logger.info(f"🧹 Cleared {count} cycles from queue")
@@ -443,6 +451,56 @@ class QueueManager(QObject):
                 return cycle
 
         return None
+
+    # ==================== METHOD SNAPSHOT ====================
+
+    def snapshot_method(self):
+        """Take a deep-copy snapshot of the current queue before execution.
+
+        Called once when 'Start Run' is pressed. The snapshot is never
+        mutated during execution so the full method is always retrievable.
+        """
+        self._original_method = copy.deepcopy(self._queue)
+        self._method_progress = 0
+        logger.info(f"📸 Method snapshot saved: {len(self._original_method)} cycles")
+
+    def advance_method_progress(self):
+        """Increment progress counter when a cycle completes."""
+        self._method_progress += 1
+        self.queue_changed.emit()  # Triggers table refresh with new progress
+        logger.debug(f"Method progress: {self._method_progress}/{len(self._original_method)}")
+
+    def get_original_method(self) -> List[Cycle]:
+        """Get the full original method (never mutated during execution).
+
+        Returns:
+            Copy of the snapshot list (safe to iterate).
+        """
+        return self._original_method.copy()
+
+    def get_method_progress(self) -> int:
+        """Get number of completed cycles in the current run."""
+        return self._method_progress
+
+    def get_remaining_from_method(self) -> List[Cycle]:
+        """Get remaining cycles from original method for resume after pause.
+
+        Returns deep copies so they can be safely re-queued without aliasing.
+
+        Returns:
+            List of Cycle deep-copies for cycles not yet executed.
+        """
+        return copy.deepcopy(self._original_method[self._method_progress:])
+
+    def clear_method_snapshot(self):
+        """Clear the method snapshot (run finished or user clears queue)."""
+        self._original_method.clear()
+        self._method_progress = 0
+        logger.debug("Method snapshot cleared")
+
+    def has_method_snapshot(self) -> bool:
+        """Check whether a method snapshot exists."""
+        return len(self._original_method) > 0
 
     def __repr__(self) -> str:
         """String representation for debugging."""

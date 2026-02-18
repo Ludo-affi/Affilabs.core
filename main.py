@@ -157,6 +157,7 @@ if not _env_flag("AFFILABS_VERBOSE_QT", default=False):
 # Suppress Python warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", message="seabreeze.use has to be called")  # Suppress seabreeze warning
 
 # ============================================================================
 # SECTION 3: Qt Environment Configuration (BEFORE Qt imports)
@@ -1152,22 +1153,43 @@ class Application(QApplication):
         # Timer will start when controller is detected
         logger.debug("✓ Valve polling timer initialized")
 
-        # Show window FIRST (before loading heavy widgets)
-        logger.debug("Showing main window...")
+        # Defer window visibility until after deferred widgets are loaded
+        # This ensures the window is fully loaded before displaying to user
+        logger.debug("Preparing main window (deferring visibility)...")
         if hasattr(self, "update_splash_message"):
-            self.update_splash_message("Building interface...")
+            self.update_splash_message("Loading interface components...")
 
-        self.main_window.show()
-        self.main_window.raise_()
-        self.main_window.activateWindow()
-        QApplication.processEvents()  # Force immediate render
-        logger.debug(f"Window visible: {self.main_window.isVisible()}")
-
-        # Load deferred widgets in background (after window visible)
-        QTimer.singleShot(50, self._load_deferred_widgets)
+        # Load deferred widgets FIRST, then show window
+        QTimer.singleShot(0, self._load_deferred_then_show)
 
         # DO NOT auto-connect hardware - user must press Power button
         logger.info("Ready - waiting for user to press Power button...")
+
+    def _load_deferred_then_show(self):
+        """Load deferred widgets, then show the main window when fully ready.
+
+        This ensures the window is only displayed after all components are
+        initialized, providing a cleaner startup experience.
+        """
+        try:
+            # Load all deferred widgets first
+            self._load_deferred_widgets()
+
+            # Now show the window for the first time (fully loaded)
+            logger.debug("Showing fully-loaded main window...")
+            self.main_window.show()
+            self.main_window.raise_()
+            self.main_window.activateWindow()
+            QApplication.processEvents()  # Force immediate render
+            logger.debug(f"Window visible: {self.main_window.isVisible()}")
+
+        except Exception as e:
+            logger.error(f"Error during deferred loading or window show: {e}", exc_info=True)
+            # Fallback: show window anyway so app is responsive
+            try:
+                self.main_window.show()
+            except Exception:
+                pass
 
     def _load_deferred_widgets(self):
         """Load heavy UI components after window is visible.
@@ -2033,12 +2055,6 @@ class Application(QApplication):
         if hasattr(self, 'injection_coordinator') and self.injection_coordinator:
             self.injection_coordinator.injection_completed.connect(self._show_contact_time_marker)
             self.injection_coordinator.injection_flag_requested.connect(self._place_injection_flag)
-
-            # Non-blocking manual injection signals
-            self.injection_coordinator.injection_ui_requested.connect(self._on_injection_ui_requested)
-            self.injection_coordinator.injection_detection_tick.connect(self._on_injection_detection_tick)
-            self.injection_coordinator.injection_auto_detected.connect(self._on_injection_auto_detected)
-            self.injection_coordinator.injection_window_expired.connect(self._on_injection_window_expired)
             self.injection_coordinator.injection_cancelled.connect(self._on_injection_cancelled)
 
             logger.debug("✓ InjectionCoordinator signals connected")
@@ -2202,6 +2218,7 @@ class Application(QApplication):
                 # Mark as completed in queue presenter
                 if hasattr(self, 'queue_presenter'):
                     self.queue_presenter.mark_cycle_completed(self._current_cycle)
+                    self.queue_presenter.advance_method_progress()
 
             except Exception as e:
                 logger.error(f"Failed to save incomplete cycle: {e}")
@@ -2216,8 +2233,10 @@ class Application(QApplication):
         if hasattr(self.main_window, '_update_cycle_note_button'):
             self.main_window._update_cycle_note_button(False, visible=False)
 
-        # Unlock queue so user can edit it again
+        # Clear pause state and unlock queue so user can edit it again
         try:
+            if self.queue_presenter.is_paused():
+                self.queue_presenter.resume_queue()
             self.queue_presenter.unlock_queue()
         except Exception:
             pass
@@ -2370,6 +2389,10 @@ class Application(QApplication):
                 if not self.recording_mgr.is_recording:
                     logger.info("Recording was not started — aborting cycle start")
                     return
+
+        # Snapshot the full method on first cycle start (for progress tracking)
+        if self.queue_presenter.get_method_progress() == 0:
+            self.queue_presenter.snapshot_method()
 
         # Lock queue during execution (prevents edits)
         self.queue_presenter.lock_queue()
@@ -2609,13 +2632,8 @@ class Application(QApplication):
         """Show pre-injection schedule dialog (if applicable) then execute injection.
 
         For binding/kinetic cycles with planned concentrations in manual mode,
-        shows a two-phase dialog:
-          Phase 1 — 20s countdown so user can prepare their sample.
-          Phase 2 — Per-channel LED indicators that turn green as injection
-                    is detected on each active channel, then 3s success → close.
-
-        The dialog stays open throughout detection so the user gets real-time
-        feedback that their manual injection was detected on every channel.
+        shows a countdown dialog (20s) so the user can prepare their sample.
+        After countdown, the ManualInjectionDialog handles real-time detection.
 
         Args:
             cycle: Cycle object with injection_method and injection_delay
@@ -2623,32 +2641,38 @@ class Application(QApplication):
         from PySide6.QtCore import QTimer
 
         # Check if we should show the "get ready" schedule dialog
-        # ONLY for multi-injection experiments (more than 1 planned concentration)
+        # For ANY manual injection experiment (single or multi-injection)
         is_manual_mode = self.hardware_mgr.requires_manual_injection
         if (is_manual_mode and
             cycle.type in ("Binding", "Kinetic", "Concentration") and
             cycle.planned_concentrations and
-            len(cycle.planned_concentrations) > 1 and  # MULTI-injection only
+            len(cycle.planned_concentrations) >= 1 and  # Single- and multi-injection
             getattr(cycle, 'injection_count', 0) == 0):
 
-            from affilabs.dialogs.concentration_schedule_dialog import ConcentrationScheduleDialog
-            schedule_dialog = ConcentrationScheduleDialog(cycle, self.main_window)
+            def show_schedule_dialog():
+                """Show dialog after 1-second delay so cycle starts at t=0 first."""
+                from affilabs.dialogs.concentration_schedule_dialog import ConcentrationScheduleDialog
+                schedule_dialog = ConcentrationScheduleDialog(cycle, self.main_window)
 
-            # Wire up Phase 2: dialog calls _execute_injection when user clicks
-            # Ready (or countdown expires), and listens to coordinator signals
-            # for per-channel detection feedback.
-            schedule_dialog.set_injection_hooks(
-                execute_callback=lambda: self._execute_injection(cycle),
-                injection_coordinator=self.injection_coordinator,
-            )
+                # Wire up Phase 2: dialog calls _execute_injection when user clicks
+                # Ready (or countdown expires), and listens to coordinator signals
+                # for per-channel detection feedback.
+                schedule_dialog.set_injection_hooks(
+                    execute_callback=lambda: self._execute_injection(cycle),
+                    injection_coordinator=self.injection_coordinator,
+                )
 
-            result = schedule_dialog.exec()  # Blocks; Phase 2 runs inside exec()
+                result = schedule_dialog.exec()  # Blocks; Phase 2 runs inside exec()
 
-            if result != ConcentrationScheduleDialog.DialogCode.Accepted:
-                logger.info("User cancelled injection from schedule dialog")
-                return
+                if result != ConcentrationScheduleDialog.DialogCode.Accepted:
+                    logger.info("User cancelled injection from schedule dialog")
+                    return
 
-            logger.info(f"⏲ Schedule dialog done — injection already executing ({cycle.injection_method})")
+                logger.info(f"⏲ Schedule dialog done — injection already executing ({cycle.injection_method})")
+
+            # Delay dialog by 1 second so Active Cycle graph starts at t=0 first
+            logger.info("⏲ Showing injection schedule dialog in 1 second (allows cycle to start at t=0)")
+            QTimer.singleShot(1000, show_schedule_dialog)
         else:
             # Non-binding or automated mode: use standard delay
             delay_ms = int(cycle.injection_delay * 1000)
@@ -3015,6 +3039,9 @@ class Application(QApplication):
         # Mark cycle as completed using presenter
         self.queue_presenter.mark_cycle_completed(self._current_cycle)
 
+        # Advance method progress counter (for snapshot-based display)
+        self.queue_presenter.advance_method_progress()
+
         # Unlock queue now that cycle is complete
         self.queue_presenter.unlock_queue()
         logger.debug("🔓 Queue unlocked after cycle completion")
@@ -3082,13 +3109,23 @@ class Application(QApplication):
             btn.setEnabled(False)
 
         # Auto-start next cycle or switch to auto-read
-        if self.segment_queue:
+        if self.segment_queue and not self.queue_presenter.is_paused():
             next_cycle = self.segment_queue[0]
             logger.info(f"Auto-starting next cycle: {next_cycle.type}")
             QTimer.singleShot(1000, self._on_start_button_clicked)
+        elif self.segment_queue and self.queue_presenter.is_paused():
+            # Queue paused mid-method: re-lock queue, acquisition keeps running
+            self.queue_presenter.lock_queue()
+            logger.info("⏸ Queue paused after cycle - monitoring continues, waiting for resume")
+            if hasattr(self.main_window, 'update_status_operation'):
+                self.main_window.update_status_operation("Paused - Monitoring")
+            return
         else:
             # No more cycles in queue
             logger.info("✓ Queue completed - all cycles finished")
+
+            # Clear method snapshot now that queue is fully done
+            self.queue_presenter.clear_method_snapshot()
 
             # Change Stop Run button back to Start Run
             self._set_start_button_to_start_mode()
@@ -3225,7 +3262,7 @@ class Application(QApplication):
             mw._start_manual_timer_countdown(label, total_seconds, sound_enabled=True)
 
             # ── 3.5. Create timer overlay on the cycle graph ──
-            self.flag_manager.create_contact_timer_overlay(contact_duration)
+            self.flag_mgr.create_contact_timer_overlay(contact_duration)
 
             # Save last settings so manual re-open uses same values
             mw._last_timer_minutes = total_seconds // 60
@@ -3251,45 +3288,6 @@ class Application(QApplication):
     # ------------------------------------------------------------------
     # Non-blocking injection UI handlers (unified bar)
     # ------------------------------------------------------------------
-
-    def _on_injection_ui_requested(self, sample_info, injection_num, total_injections):
-        """Handle injection_ui_requested signal — silent mode (no UI update).
-
-        Args:
-            sample_info: Sample info dict from coordinator
-            injection_num: Current injection number (or None)
-            total_injections: Total planned injections (or None)
-        """
-        pass  # Silent mode - no unified_bar display
-
-    def _on_injection_detection_tick(self, remaining_seconds: int):
-        """Handle detection countdown tick — silent mode (no UI update).
-
-        Args:
-            remaining_seconds: Seconds remaining in 60-second detection window
-        """
-        pass  # Silent mode
-
-    def _on_injection_auto_detected(self, channel: str, injection_time: float, confidence: float):
-        """Handle injection auto-detected — log success and show detection feedback.
-
-        Args:
-            channel: Channel where injection was detected
-            injection_time: Injection time
-            confidence: Detection confidence
-        """
-        logger.info(
-            f"✓ Injection auto-detected: channel {channel.upper()} at t={injection_time:.1f}s "
-            f"(confidence: {confidence:.0%})"
-        )
-
-        # Show brief detection success feedback in unified bar (if available)
-        if hasattr(self.main_window, 'unified_bar') and self.main_window.unified_bar:
-            self.main_window.unified_bar.set_inject_detected(channel, confidence)
-
-    def _on_injection_window_expired(self):
-        """Handle 60-second detection window expiry — log warning."""
-        logger.warning("⚠ Injection detection window expired (60s) - manual flag in Edits tab")
 
     def _on_injection_cancelled(self):
         """Handle user cancellation of injection — log cancellation."""
@@ -4080,6 +4078,12 @@ class Application(QApplication):
                     lbl.setText(
                         f"Queue: {size} cycles | {duration:.1f} min total | Running"
                     )
+
+                # If no cycle is currently running (paused between cycles),
+                # auto-start the next queued cycle to resume method execution
+                if self._current_cycle is None and self.queue_presenter.get_queue_size() > 0:
+                    logger.info("▶ Resuming method - starting next queued cycle")
+                    QTimer.singleShot(500, self._on_start_button_clicked)
             else:
                 # Pause queue
                 self.queue_presenter.pause_queue()
@@ -4944,13 +4948,20 @@ class Application(QApplication):
                 color: white;
                 font-weight: bold;
                 padding: 8px;
-                border-radius: 4px;
+                border-radius: 8px;
+                border: 1px solid rgba(255, 45, 85, 0.3);
             }
             QPushButton:hover {
                 background-color: #E41E3A;
+                border: 1px solid rgba(255, 45, 85, 0.5);
             }
             QPushButton:pressed {
                 background-color: #CC1A30;
+            }
+            QPushButton:disabled {
+                background-color: rgba(255, 45, 85, 0.2);
+                color: rgba(255, 255, 255, 0.5);
+                border: 1px solid rgba(255, 45, 85, 0.2);
             }
         """)
 
@@ -5004,17 +5015,20 @@ class Application(QApplication):
                 }
                 self.recording_mgr.add_cycle(legacy_export_data)
 
-            # Export any existing flags
+            # Export any existing flags (injection/wash flags only, not event markers)
             if hasattr(self, '_flag_markers'):
                 for flag in self._flag_markers:
-                    flag_export_data = {
-                        'type': flag.get('type', ''),
-                        'channel': flag.get('channel', ''),
-                        'time': flag.get('time', ''),
-                        'spr': flag.get('spr', ''),
-                        'timestamp': time.time(),
-                    }
-                    self.recording_mgr.add_flag(flag_export_data)
+                    # Only export data flags (injection, wash), not event markers
+                    flag_type = flag.get('type', '').lower()
+                    if flag_type in ['injection', 'wash', 'baseline', 'regeneration']:
+                        flag_export_data = {
+                            'type': flag.get('type', ''),
+                            'channel': flag.get('channel', ''),
+                            'time': flag.get('time', ''),
+                            'spr': flag.get('spr', ''),
+                            'timestamp': time.time(),
+                        }
+                        self.recording_mgr.add_flag(flag_export_data)
 
             logger.info("✓ Initial experiment state exported to recording")
 
@@ -5022,32 +5036,32 @@ class Application(QApplication):
         """Recording stopped."""
         self.recording_events.on_recording_stopped()
 
-        # Reset record button to default styling (remove RED)
+        # Log recording stopped event to create timeline marker
+        self.recording_mgr.log_event("Recording Stopped")
+
+        # Uncheck and reset record button to default blue styling
+        self.main_window.record_btn.setChecked(False)
         self.main_window.record_btn.setStyleSheet(
             "QPushButton {"
-            "  background: #F5F5F7;"
-            "  color: rgb(46, 48, 227);"
+            "  background: rgba(46, 48, 227, 0.1);"
             "  border: 1px solid rgba(46, 48, 227, 0.3);"
-            "  border-radius: 4px;"
-            "  font-size: 20px;"
-            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "  border-radius: 8px;"
+            "  padding: 0px;"
             "}"
             "QPushButton:hover:!checked {"
             "  background: rgba(46, 48, 227, 0.15);"
             "  border: 1px solid rgba(46, 48, 227, 0.4);"
             "}"
             "QPushButton:checked {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1;"
-            "  color: white;"
-            "  border: 1px solid rgba(255, 59, 48, 0.3);"
+            "  background: rgba(255, 59, 48, 0.9);"
+            "  border: 1px solid rgba(255, 59, 48, 0.5);"
             "}"
             "QPushButton:hover:checked {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1;"
-            "  border: 1px solid rgba(230, 52, 42, 0.3);"
+            "  background: rgba(230, 52, 42, 0.95);"
+            "  border: 1px solid rgba(230, 52, 42, 0.6);"
             "}"
             "QPushButton:disabled {"
             "  background: rgba(46, 48, 227, 0.1);"
-            "  color: rgba(46, 48, 227, 0.3);"
             "  border: 1px solid rgba(46, 48, 227, 0.1);"
             "}"
         )
@@ -5068,14 +5082,24 @@ class Application(QApplication):
                 if hasattr(self, 'clock') and self.clock.experiment_started:
                     elapsed_time = self.clock.raw_elapsed_now()
 
-                # Only add marker if we have a valid elapsed time
+                # For important events (Cycle Start, Recording Started/Stopped), add marker even if experiment hasn't started
+                # This allows cycle start markers to appear before the first data point arrives
+                is_important_event = any(keyword in event for keyword in ["Cycle Start", "Recording Started", "Recording Stopped"])
+                
                 if elapsed_time is None:
-                    logger.warning(f"Skipping event marker - acquisition not started yet: {event}")
-                    return
+                    if is_important_event:
+                        # Use time 0 for important events that occur before experiment start
+                        elapsed_time = 0.0
+                        logger.debug(f"Adding early marker at t=0 (before first data): {event}")
+                    else:
+                        logger.warning(f"Skipping event marker - acquisition not started yet: {event}")
+                        return
 
                 # Determine marker color based on event type
                 if "Recording Started" in event:
                     color = "#00C853"  # Green for recording start
+                elif "Recording Stopped" in event:
+                    color = "#F44336"  # Red for recording stop
                 elif "Cycle Start" in event:
                     color = "#2979FF"  # Blue for cycle start
                 else:
@@ -7576,7 +7600,7 @@ class Application(QApplication):
             return None
 
     def _select_flag_channel_visual(self, channel: str):
-        """Select a channel for flagging and update visual highlighting.
+        """Select a channel for timing adjustment and update visual highlighting.
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
@@ -7585,7 +7609,7 @@ class Application(QApplication):
         self._selected_flag_channel = channel
 
         # Update visual highlighting through UI
-        self.main_window._on_flag_channel_selected(channel)
+        self.main_window._on_timing_channel_selected(channel)
 
     def _add_flag_marker(self, channel: str, time_val: float, spr_val: float, flag_type: str):
         """Add a visual flag marker to the cycle graph.
@@ -7626,7 +7650,7 @@ class Application(QApplication):
                 self._injection_reference_channel = channel
                 # Removed: visual alignment line removed per user request
                 # self._create_injection_alignment_line(time_val)
-                logger.info(f"✓ Injection reference set at t={time_val:.2f}s (Channel {channel.upper()})")
+                logger.info(f"✓ Injection started at t={time_val:.2f}s (Channel {channel.upper()})")
             else:
                 # Subsequent injection - ALWAYS align channel data to reference
                 time_diff = time_val - self._injection_reference_time
@@ -7686,7 +7710,7 @@ class Application(QApplication):
         self._calculate_and_display_flag_deltas()
 
     def _create_injection_alignment_line(self, time_val: float):
-        """Create vertical line at injection reference time for alignment."""
+        """Create vertical line at injection start time for alignment."""
         import pyqtgraph as pg
         from PySide6.QtCore import Qt
 
@@ -7696,7 +7720,7 @@ class Application(QApplication):
             angle=90,  # Vertical
             pen=pg.mkPen(color=(255, 50, 50, 100), width=2, style=Qt.PenStyle.DashLine),
             movable=False,
-            label='Injection Reference'
+            label='Injection Started'
         )
         self.main_window.cycle_of_interest_graph.addItem(self._injection_alignment_line)
 

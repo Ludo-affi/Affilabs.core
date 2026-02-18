@@ -8,34 +8,19 @@ MODES:
    - P4SPR without pump → manual injection
    - P4SPR with pump or P4PRO → automated injection
 
-2. Per-Cycle User Selection (new):
+2. Per-Cycle User Selection:
    - User explicitly sets cycle.manual_injection_mode = "manual" or "automated"
    - Overrides hardware defaults
-   - Enables flexible concentration cycles
 
-CONCENTRATION CYCLES:
-- Single cycle with multiple injection points
-- Shows schedule dialog upfront
-- Prompts at each flag point
-- Tracks injection_count progress
-
-ARCHITECTURE:
-- Coordinator pattern: Single entry point for all injection requests
-- Mode detection: Checks cycle.manual_injection_mode first, then hardware
-- Manual mode: NON-BLOCKING — updates UnifiedCycleBar inline, runs detection in background
-- Automated mode: Executes pump injection in background thread
-- Event logging: Differentiates manual vs automated injections
-
-NON-BLOCKING MANUAL INJECTION (v2 — Unified Cycle Bar):
-- Instead of showing a blocking modal dialog (.exec()), the coordinator:
-  1. Emits injection_ui_requested to show INJECT state in the unified bar
-  2. Starts background detection timer (200ms polling)
-  3. When injection detected or 60s expires → emits injection_completed
-  4. User clicks Done → coordinator continues detection 10s then completes
-  5. User clicks Cancel → coordinator stops and emits injection_cancelled
+MANUAL INJECTION FLOW:
+- ManualInjectionDialog.exec() blocks but Qt events keep processing
+- Dialog handles 60-second detection window with per-channel LED feedback
+- Auto-detects injection peaks on all monitored channels
+- Shows 3-second success display when all channels detected
+- Returns detection results (channel, time, confidence) to coordinator
 
 HARDWARE MODES:
-- P4SPR + No Pump → Manual injection (unified bar shown)
+- P4SPR + No Pump → Manual injection (dialog shown)
 - P4SPR + AffiPump → Automated injection (pump controlled)
 - P4PRO/P4PROPLUS → Automated injection (internal pumps)
 
@@ -43,12 +28,8 @@ USAGE:
     from affilabs.coordinators.injection_coordinator import InjectionCoordinator
 
     coordinator = InjectionCoordinator(hardware_mgr, pump_mgr, parent=main_window)
-
-    # Execute injection (mode detected automatically or from cycle setting)
-    # Manual mode is NON-BLOCKING — result comes via signals
     coordinator.execute_injection(cycle, flow_rate=100.0, parent_widget=window)
 
-    # Connect to results:
     coordinator.injection_completed.connect(on_injection_done)
     coordinator.injection_cancelled.connect(on_injection_cancelled)
 """
@@ -57,12 +38,10 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import time
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, Signal
 
-from affilabs.dialogs.concentration_schedule_dialog import ConcentrationScheduleDialog
 from affilabs.utils.logger import logger
 from affilabs.utils.sample_parser import parse_sample_info
 
@@ -78,8 +57,7 @@ class InjectionCoordinator(QObject):
 
     Responsibilities:
     - Detect injection mode (manual vs automated)
-    - Display manual injection state in UnifiedCycleBar (non-blocking)
-    - Run real-time injection detection in background
+    - Show ManualInjectionDialog for manual injection with real-time detection
     - Execute automated injections via PumpManager
     - Handle valve control for manual injections
     - Log injection events differently based on mode
@@ -88,27 +66,13 @@ class InjectionCoordinator(QObject):
         injection_started: Injection sequence started (arg: injection_type str)
         injection_completed: Injection completed successfully
         injection_cancelled: User cancelled manual injection
-        manual_prompt_shown: Manual injection prompt displayed (in unified bar)
         injection_flag_requested: Place injection flag (args: channel, injection_time, confidence)
-        injection_ui_requested: Request unified bar to show INJECT state
-            (args: sample_info dict, injection_num or None, total_injections or None)
-        injection_detection_tick: Detection countdown update (arg: remaining_seconds int)
-        injection_auto_detected: Injection peak detected
-            (args: channel str, time float, confidence float)
-        injection_window_expired: 60-second detection window expired
     """
 
     injection_started = Signal(str)  # injection_type
     injection_completed = Signal()
     injection_cancelled = Signal()
-    manual_prompt_shown = Signal()
     injection_flag_requested = Signal(str, float, float)  # channel, injection_time, confidence
-
-    # Non-blocking manual injection signals (v2)
-    injection_ui_requested = Signal(object, object, object)  # sample_info, inj_num, total
-    injection_detection_tick = Signal(int)  # remaining_seconds
-    injection_auto_detected = Signal(str, float, float)  # channel, time, confidence
-    injection_window_expired = Signal()
 
     def __init__(
         self,
@@ -130,15 +94,9 @@ class InjectionCoordinator(QObject):
         self.pump_mgr = pump_mgr
         self.buffer_mgr = buffer_mgr
 
-        # Detection state (for non-blocking manual injection)
-        self._detection_active = False
-        self._detection_timer: Optional[QTimer] = None
-        self._status_timer: Optional[QTimer] = None
+        # State for manual injection flow
         self._window_start_time: Optional[float] = None
-        self._detection_start_wall: Optional[float] = None
         self._detection_channels: str = "ABCD"
-        self._user_done: bool = False
-        self._done_timestamp: Optional[float] = None
         self._current_cycle: Optional[Cycle] = None
         self._is_p4spr: bool = False
 
@@ -202,24 +160,20 @@ class InjectionCoordinator(QObject):
         return self.hardware_mgr.requires_manual_injection
 
     def _execute_manual_injection(self, cycle: Cycle, parent_widget) -> bool:
-        """Start non-blocking manual injection — shows INJECT state in unified bar.
+        """Execute manual injection — shows blocking ManualInjectionDialog.
 
-        Instead of showing a blocking modal dialog, this method:
-        1. Opens valves for manual injection
-        2. Emits injection_ui_requested to show INJECT state in unified bar
-        3. Starts background injection detection (200ms polling)
-        4. Returns immediately — result delivered via signals
-
-        User interactions from the unified bar:
-        - Done Injecting → on_user_done_injecting() → continues detection 10s
-        - Cancel → on_user_cancelled_injection() → stops and emits injection_cancelled
+        This method:
+        1. Opens valves for manual injection (non-P4SPR only)
+        2. Shows ManualInjectionDialog.exec() which blocks but keeps Qt events processing
+        3. Dialog handles 60s detection window with per-channel LED feedback
+        4. Processes detection results and updates cycle state
 
         Args:
             cycle: Cycle requiring injection
-            parent_widget: Parent widget (unused in non-blocking mode)
+            parent_widget: Parent widget for dialog positioning
 
         Returns:
-            True always (non-blocking — actual result via signals)
+            True if injection completed (detected or timed out), False if cancelled
         """
         logger.info("=== Manual Injection Mode (Non-Blocking) ===")
 
@@ -299,226 +253,79 @@ class InjectionCoordinator(QObject):
 
         result = dialog.exec()  # Blocks until user acts or 60s expires
 
-        if result == ManualInjectionDialog.DialogCode.Accepted:
-            if dialog.detected_injection_time is not None:
-                # Dialog auto-detected injection — place flag for primary channel
-                logger.info(
-                    f"✓ Injection auto-detected: channel {dialog.detected_channel.upper()} "
-                    f"at t={dialog.detected_injection_time:.1f}s "
-                    f"(confidence: {dialog.detected_confidence:.0%})"
-                )
-                self.injection_flag_requested.emit(
-                    dialog.detected_channel,
-                    dialog.detected_injection_time,
-                    dialog.detected_confidence,
-                )
-
-                # Use dialog's per-channel results (already scanned during grace period)
-                if dialog._detected_channels_results:
-                    cycle.injection_time_by_channel = {
-                        ch: r['time'] for ch, r in dialog._detected_channels_results.items()
-                    }
-                    cycle.injection_confidence_by_channel = {
-                        ch: r['confidence'] for ch, r in dialog._detected_channels_results.items()
-                    }
-                    logger.info(
-                        f"Per-channel injection times from dialog: "
-                        f"{list(cycle.injection_time_by_channel.keys())} "
-                        f"(confidences: {cycle.injection_confidence_by_channel})"
-                    )
-                else:
-                    # Fallback: retroactive scan if dialog didn't capture per-channel
-                    self._window_start_time = dialog.window_start_time
-                    self._scan_all_channels_for_injection()
-
-                # Track injection count for binding/kinetic cycles
-                if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
-                    cycle.injection_count += 1
-                    logger.info(
-                        f"  Injection count: {cycle.injection_count}/"
-                        f"{len(cycle.planned_concentrations)}"
-                    )
-            else:
-                # Timeout — no injection detected, still count
-                logger.warning("60s window expired — no injection peak detected")
-                if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
-                    cycle.injection_count += 1
-
-            # Close valves and emit completed (triggers contact countdown)
+        accepted = result == ManualInjectionDialog.DialogCode.Accepted
+        if accepted:
+            self._process_detection_results(dialog, cycle)
             self._close_valves_after_manual_injection()
             self.injection_completed.emit()
         else:
-            # User cancelled
             logger.info("❌ Injection cancelled by user")
             self._close_valves_after_manual_injection()
             self.injection_cancelled.emit()
 
-        return result == ManualInjectionDialog.DialogCode.Accepted
+        return accepted
 
-    # ------------------------------------------------------------------
-    # Non-blocking injection detection
-    # ------------------------------------------------------------------
+    def _process_detection_results(self, dialog, cycle: Cycle) -> None:
+        """Process detection results from ManualInjectionDialog after it closes.
 
-    def _start_injection_detection(self):
-        """Start background monitoring for injection within 60-second window.
+        Handles three cases:
+        1. Dialog auto-detected injection → emit flag + store per-channel results
+        2. Dialog detected but no per-channel results → retroactive scan
+        3. No detection (timeout) → just increment injection count
 
-        Polls buffer_mgr every 200ms using auto_detect_injection_point.
-        Emits injection_detection_tick(remaining) every second for UI updates.
+        Args:
+            dialog: Closed ManualInjectionDialog instance with detection results
+            cycle: Current cycle to update with injection data
         """
-        if not self.buffer_mgr or not self.buffer_mgr.timeline_data:
-            logger.warning("Cannot start detection - no data available")
-            # Complete immediately without detection
-            self._complete_injection(detected=False)
-            return
+        from affilabs.dialogs.manual_injection_dialog import ManualInjectionDialog
 
-        # Get current time as window start
-        first_channel = self._detection_channels[0].lower()
-        if first_channel in self.buffer_mgr.timeline_data:
-            channel_data = self.buffer_mgr.timeline_data[first_channel]
-            if channel_data and len(channel_data.time) > 0:
-                import numpy as np
-                times = np.array(channel_data.time)
-                self._window_start_time = times[-1]
+        if dialog.detected_injection_time is not None:
+            # Dialog auto-detected injection — place flag for primary channel
+            logger.info(
+                f"✓ Injection auto-detected: channel {dialog.detected_channel.upper()} "
+                f"at t={dialog.detected_injection_time:.1f}s "
+                f"(confidence: {dialog.detected_confidence:.0%})"
+            )
+            self.injection_flag_requested.emit(
+                dialog.detected_channel,
+                dialog.detected_injection_time,
+                dialog.detected_confidence,
+            )
+
+            # Use dialog's per-channel results (already scanned during grace period)
+            if dialog._detected_channels_results:
+                cycle.injection_time_by_channel = {
+                    ch: r['time'] for ch, r in dialog._detected_channels_results.items()
+                }
+                cycle.injection_confidence_by_channel = {
+                    ch: r['confidence'] for ch, r in dialog._detected_channels_results.items()
+                }
+                logger.info(
+                    f"Per-channel injection times from dialog: "
+                    f"{list(cycle.injection_time_by_channel.keys())} "
+                    f"(confidences: {cycle.injection_confidence_by_channel})"
+                )
             else:
-                logger.warning("No time data available in channel")
-                self._complete_injection(detected=False)
-                return
+                # Fallback: retroactive scan if dialog didn't capture per-channel
+                self._window_start_time = dialog.window_start_time
+                self._scan_all_channels_for_injection()
+
+            # Track injection count for binding/kinetic cycles
+            if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
+                cycle.injection_count += 1
+                logger.info(
+                    f"  Injection count: {cycle.injection_count}/"
+                    f"{len(cycle.planned_concentrations)}"
+                )
         else:
-            logger.warning(f"Channel {first_channel} not found in timeline data")
-            self._complete_injection(detected=False)
-            return
+            # Timeout — no injection detected, still count
+            logger.warning("60s window expired — no injection peak detected")
+            if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
+                cycle.injection_count += 1
 
-        self._detection_active = True
-        self._user_done = False
-        self._done_timestamp = None
-        self._detection_start_wall = time.time()
-
-        logger.info(f"Detection started - monitoring channels: {self._detection_channels}")
-
-        # 200ms detection timer
-        self._detection_timer = QTimer(self)
-        self._detection_timer.timeout.connect(self._check_for_injection)
-        self._detection_timer.start(200)
-
-        # 1s status update timer
-        self._status_timer = QTimer(self)
-        self._status_timer.timeout.connect(self._update_detection_status)
-        self._status_timer.start(1000)
-
-    def _check_for_injection(self):
-        """Check for injection peak in current data window (200ms polling).
-
-        Hard timeout: 60 seconds total from detection start.
-        After user clicks Done: continues detection for 10 more seconds.
-        """
-        if not self._detection_active or not self.buffer_mgr or self._window_start_time is None:
-            return
-
-        try:
-            from affilabs.utils.spr_signal_processing import auto_detect_injection_point
-            import numpy as np
-
-            # Hard 60-second limit
-            elapsed = time.time() - self._detection_start_wall
-            if elapsed >= 60.0:
-                self._on_detection_timeout()
-                return
-
-            # If user clicked Done, allow 10 more seconds then accept
-            if self._user_done and self._done_timestamp:
-                since_done = time.time() - self._done_timestamp
-                if since_done >= 10.0:
-                    logger.info("10s post-Done window expired — completing injection")
-                    self._complete_injection(detected=False)
-                    return
-
-            # Try each channel in priority order
-            for channel_letter in self._detection_channels.lower():
-                if channel_letter not in self.buffer_mgr.timeline_data:
-                    continue
-
-                channel_data = self.buffer_mgr.timeline_data[channel_letter]
-                if not channel_data or len(channel_data.time) < 10:
-                    continue
-
-                times = np.array(channel_data.time)
-                wavelengths = np.array(channel_data.wavelength)
-
-                if len(times) < 10 or len(wavelengths) < 10:
-                    continue
-
-                current_time = times[-1]
-
-                # Data within detection window
-                window_mask = (times >= self._window_start_time) & (times <= current_time)
-                window_times = times[window_mask]
-                window_wl = wavelengths[window_mask]
-
-                if len(window_times) < 10:
-                    continue
-
-                # Convert wavelength to RU
-                baseline = window_wl[0] if len(window_wl) > 0 else 0
-                window_ru = (window_wl - baseline) * 355.0
-
-                result = auto_detect_injection_point(window_times, window_ru)
-
-                # Accept detection if confidence > 70%
-                if result['injection_time'] is not None and result['confidence'] > 0.70:
-                    self._on_injection_detected(
-                        result['injection_time'],
-                        result['confidence'],
-                        channel_letter,
-                    )
-                    return
-
-        except Exception as e:
-            logger.debug(f"Detection check error: {e}")
-
-    def _update_detection_status(self):
-        """Emit detection countdown for unified bar (called every 1 second)."""
-        if not self._detection_active or not self._detection_start_wall:
-            return
-        elapsed = time.time() - self._detection_start_wall
-        remaining = max(0, 60 - int(elapsed))
-        self.injection_detection_tick.emit(remaining)
-
-    def _on_injection_detected(self, injection_time: float, confidence: float, channel: str):
-        """Injection peak detected — scan all channels, place flag, and complete.
-
-        After initial detection on one channel, retroactively scans all four
-        channels to find per-channel injection times. This is critical because
-        channels may have slightly different injection times due to flow path
-        geometry. Results stored on cycle for delta SPR calculation.
-        """
-        if not self._detection_active:
-            return
-        self._stop_detection()
-
-        logger.info(
-            f"✓ Injection detected at {injection_time:.2f}s "
-            f"(confidence: {confidence:.0%}) on channel {channel}"
-        )
-
-        # Emit detection for unified bar visual feedback
-        self.injection_auto_detected.emit(channel, injection_time, confidence)
-
-        # Place injection flag
-        self.injection_flag_requested.emit(channel, injection_time, confidence)
-
-        # --- Per-channel injection scan ---
-        self._scan_all_channels_for_injection()
-
-        # Track injection count for binding/kinetic cycles
-        cycle = self._current_cycle
-        if cycle and cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
-            cycle.injection_count += 1
-
-        # Close valves
-        self._close_valves_after_manual_injection()
-
-        # 3-second delay for user to see all detection results before transitioning
-        QTimer.singleShot(3000, self.injection_completed.emit)
+    # ------------------------------------------------------------------
+    # Per-channel injection scan
+    # ------------------------------------------------------------------
 
     def _scan_all_channels_for_injection(self):
         """Retroactively scan all 4 channels for injection points.
@@ -580,72 +387,6 @@ class InjectionCoordinator(QObject):
 
         except Exception as e:
             logger.warning(f"Per-channel injection scan failed: {e}")
-
-    def _log_detection_success(self):
-        """Placeholder - detection success already shown in unified bar UI.
-        
-        Suppressed to reduce verbose logging. The injection flag and detection
-        results are already displayed in the cycle bar and detection dialog.
-        """
-        pass
-
-    def _on_detection_timeout(self):
-        """60-second detection window expired without clear detection."""
-        if not self._detection_active:
-            return
-
-        logger.warning("⚠ 60-second injection window expired — no clear peak detected")
-        self.injection_window_expired.emit()
-        self._complete_injection(detected=False)
-
-    def _complete_injection(self, detected: bool):
-        """Finalize manual injection (detected or not).
-
-        Args:
-            detected: True if injection was auto-detected (flag already placed)
-        """
-        self._stop_detection()
-
-        cycle = self._current_cycle
-        if cycle and not detected:
-            # Track injection count even without detection
-            if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
-                cycle.injection_count += 1
-                logger.info(f"  Injection count: {cycle.injection_count}/{len(cycle.planned_concentrations)}")
-
-        self._close_valves_after_manual_injection()
-        self.injection_completed.emit()
-
-    def _stop_detection(self):
-        """Stop all detection timers."""
-        self._detection_active = False
-        if self._detection_timer:
-            self._detection_timer.stop()
-            self._detection_timer = None
-        if self._status_timer:
-            self._status_timer.stop()
-            self._status_timer = None
-
-    # ------------------------------------------------------------------
-    # User actions from unified bar
-    # ------------------------------------------------------------------
-
-    def on_user_done_injecting(self):
-        """Handle 'Done Injecting' click from unified bar.
-
-        Marks injection as user-confirmed. Detection continues for 10 more
-        seconds to find the injection peak, then completes regardless.
-        """
-        self._user_done = True
-        self._done_timestamp = time.time()
-        logger.info("User marked injection as done — continuing detection for 10s")
-
-    def on_user_cancelled_injection(self):
-        """Handle 'Cancel' click from unified bar."""
-        logger.info("⚠️ User cancelled manual injection")
-        self._stop_detection()
-        self._close_valves_after_manual_injection()
-        self.injection_cancelled.emit()
 
     def _execute_automated_injection(self, cycle: Cycle, flow_rate: float) -> bool:
         """Execute automated injection via PumpManager (existing logic).

@@ -987,6 +987,44 @@ class MethodBuilderDialog(QDialog):
         self.method_table.setStyleSheet(table_style)
         overview_layout.addWidget(self.method_table)
 
+        # Method summary section at bottom
+        summary_frame = QFrame()
+        summary_frame.setStyleSheet(
+            "QFrame {"
+            "  background: #F9F9FB;"
+            "  border-top: 1px solid rgba(0,0,0,0.08);"
+            "  border-radius: 0px;"
+            "  padding: 12px;"
+            "}"
+        )
+        summary_layout = QHBoxLayout(summary_frame)
+        summary_layout.setContentsMargins(12, 12, 12, 12)
+        summary_layout.setSpacing(20)
+
+        # Experiment time
+        exp_time_label = QLabel("Total Experiment Time:")
+        exp_time_label.setStyleSheet("font-size: 11px; color: #86868B; font-weight: 500;")
+        self.method_exp_time_value = QLabel("0 min")
+        self.method_exp_time_value.setStyleSheet("font-size: 11px; color: #1D1D1F; font-weight: 600;")
+        exp_time_box = QHBoxLayout()
+        exp_time_box.addWidget(exp_time_label)
+        exp_time_box.addWidget(self.method_exp_time_value)
+        exp_time_box.addStretch()
+        summary_layout.addLayout(exp_time_box, 1)
+
+        # Cycle count
+        cycle_count_label = QLabel("Total Cycles:")
+        cycle_count_label.setStyleSheet("font-size: 11px; color: #86868B; font-weight: 500;")
+        self.method_cycle_count_value = QLabel("0")
+        self.method_cycle_count_value.setStyleSheet("font-size: 11px; color: #1D1D1F; font-weight: 600;")
+        cycle_count_box = QHBoxLayout()
+        cycle_count_box.addWidget(cycle_count_label)
+        cycle_count_box.addWidget(self.method_cycle_count_value)
+        cycle_count_box.addStretch()
+        summary_layout.addLayout(cycle_count_box, 1)
+
+        overview_layout.addWidget(summary_frame)
+
         self.method_tabs.addTab(overview_widget, "Overview")
 
         # Tab 2: Details (Channels, Conc, Contact Time)
@@ -1722,19 +1760,49 @@ Binding 5min A:100nM contact 120s partial
                 else:  # min or m
                     duration_minutes = value
 
-        # Parse concentration tags WITH units: A:100nM, B:50µM, [A:100nM], [ALL:25pM], etc.
+        # Parse concentration tags WITH units: A:100nM, B:50µM, [A:100nM], [ALL:25pM], BD:5nM, ABC:10µM, etc.
         # Accepts both formats: simple (A:100nM) and bracketed ([A:100nM])
         # Also accepts lowercase (a, b, c, d) and uppercase (A, B, C, D)
-        tags_with_units = re.findall(r"\[?([A-Da-d]|ALL|all):(\d+\.?\d*)([a-zA-Zµ/]+)?\]?", text, re.IGNORECASE)
+        # Supports multi-channel shorthand: BD:5nM expands to B:5nM D:5nM
+        # Supports comma-separated concentrations: ABCD:100,50,25,10 maps A=100, B=50, C=25, D=10
+        tags_with_units = re.findall(r"\[?([A-Da-d]+|ALL|all):([\d.,\s]+)([a-zA-Zµ/]+)?\]?", text, re.IGNORECASE)
 
         # Extract concentrations and detect units
         concentrations = {}
         detected_unit = "nM"  # default
 
-        for ch, val, unit_str in tags_with_units:
-            # Normalize channel to uppercase
-            ch_upper = ch.upper()
-            concentrations[ch_upper] = float(val)
+        for ch_group, val_str, unit_str in tags_with_units:
+            # Normalize channel group to uppercase
+            ch_group_upper = ch_group.upper()
+            
+            # Handle special case: ALL means all channels
+            if ch_group_upper == "ALL":
+                channels_to_set = ["A", "B", "C", "D"]
+            else:
+                # Expand multi-character channel groups (e.g., "BD" -> ["B", "D"])
+                channels_to_set = list(ch_group_upper)
+                # Validate that all characters are valid channels
+                valid_channels = {"A", "B", "C", "D"}
+                channels_to_set = [ch for ch in channels_to_set if ch in valid_channels]
+            
+            # Parse concentration values (single value or comma-separated list)
+            if ',' in val_str:
+                # Comma-separated concentrations: map in order to channels
+                concentration_values = [float(v.strip()) for v in val_str.split(',') if v.strip()]
+                
+                # Map concentrations to channels in order
+                for i, ch in enumerate(channels_to_set):
+                    if i < len(concentration_values):
+                        concentrations[ch] = concentration_values[i]
+                    else:
+                        # If we run out of values, use the last value for remaining channels
+                        concentrations[ch] = concentration_values[-1] if concentration_values else 0.0
+            else:
+                # Single value: apply same concentration to all channels in the group
+                val = float(val_str.strip())
+                for ch in channels_to_set:
+                    concentrations[ch] = val
+                
             if unit_str:  # If units specified in tag, use it
                 detected_unit = unit_str
 
@@ -1805,26 +1873,15 @@ Binding 5min A:100nM contact 120s partial
             contact_time = None  # Explicitly clear any accidentally parsed contact_time
 
         # Build planned_concentrations list for concentration cycles
-        # Format: ["Channels A, B: 50 nM"] for parallel, ["100 nM", "50 nM"] for sequential
-        # IMPORTANT: Multi-channel injections (A:50nM B:50nM) are PARALLEL (one injection event),
-        # NOT sequential. Group them into ONE entry so injection count is correct.
+        # Format: Individual channel entries for proper injection counting and detection
+        # Each channel gets its own entry so injection detection properly recognizes all channels
         planned_concentrations = []
         if cycle_type in ("Binding", "Kinetic") and concentrations:
-            # Group channels by concentration value (parallel channels share same event)
-            from collections import defaultdict
-            conc_to_channels = defaultdict(list)
-            for ch, val in concentrations.items():
-                conc_to_channels[val].append(ch)
-
-            # Sort groups by concentration value (descending) for natural order
-            for val in sorted(conc_to_channels.keys(), reverse=True):
-                channels = sorted(conc_to_channels[val])
+            # Create individual entries for each channel to ensure proper detection
+            for ch in sorted(concentrations.keys()):
+                val = concentrations[ch]
                 conc_str = f"{val} {detected_unit}".replace(" .", ".")  # Clean up decimals
-                if len(channels) > 1:
-                    ch_str = ", ".join(channels)
-                    planned_concentrations.append(f"Ch {ch_str}: {conc_str}")
-                else:
-                    planned_concentrations.append(f"Ch {channels[0]}: {conc_str}")
+                planned_concentrations.append(f"Ch {ch}: {conc_str}")
 
         # Generate name from type + tags or just text
         if concentrations:
@@ -2187,6 +2244,22 @@ Binding 5min A:100nM contact 120s partial
         count = len(self._local_cycles)
         self.method_count_label.setText(f"{count} cycle{'s' if count != 1 else ''}")
 
+        # Update method summary (total experiment time and cycle count)
+        total_time = sum(cycle.length_minutes for cycle in self._local_cycles)
+        
+        # Format total time as hours and minutes if >= 60 minutes
+        if total_time == 0:
+            time_str = "0 min"
+        elif total_time >= 60:
+            hours = int(total_time // 60)
+            minutes = int(total_time % 60)
+            time_str = f"{hours}h {minutes}m" if minutes > 0 else f"{hours}h"
+        else:
+            time_str = f"{total_time:.1f} min"
+        
+        self.method_exp_time_value.setText(time_str)
+        self.method_cycle_count_value.setText(str(count))
+
     def _on_details_selection_changed(self):
         """Sync selection from details table to overview table."""
         selected_rows = [item.row() for item in self.details_table.selectedItems()]
@@ -2512,14 +2585,19 @@ Binding 5min A:100nM contact 120s partial
         if raw_text and cycle.injection_method:
             # Check if text contains contact time pattern that wasn't successfully parsed
             ct_pattern_found = bool(re.search(r'\b(ct|contact)[:\s]*\d', raw_text, re.IGNORECASE))
-            if ct_pattern_found and cycle.type in ("Binding", "Kinetic") and cycle.contact_time == 300.0:
-                # Likely failed to parse (using default 300s)
-                warnings.append(
-                    f"⚠️ Contact time may not be parsed correctly\n"
-                    f"   → Text contains 'ct' or 'contact' but using default 300s\n"
-                    f"   → Use format: 'ct 3m' or 'contact 180s' (space after 'ct')\n"
-                    f"   → If you meant 300s, this is correct (ignore)"
-                )
+            
+            # Only warn if the pattern was found BUT no unit was specified in the text
+            # This catches cases like "ct5" or "contact180" where the user forgot the unit
+            if ct_pattern_found and cycle.type in ("Binding", "Kinetic"):
+                # Check if a time unit was actually found in the text
+                unit_found = bool(re.search(r'\b(ct|contact)[:\s]*\d+(?:\.\d+)?\s*(s|sec|m|min|h|hr)', raw_text, re.IGNORECASE))
+                
+                # Only warn if no unit was found and we're using the default
+                if not unit_found and cycle.contact_time == 300.0:
+                    warnings.append(
+                        f"⚠️ Contact time detected but no unit specified, using default 300s\n"
+                        f"Add a unit for clarity: 'ct 5m' or 'contact 180s'"
+                    )
 
         # Check 1: Contact time vs cycle duration
         if cycle.injection_method and cycle.contact_time:

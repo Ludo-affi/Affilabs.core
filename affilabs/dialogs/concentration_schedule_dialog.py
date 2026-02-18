@@ -1,15 +1,7 @@
-"""Binding Schedule Dialog — Two-phase injection feedback for manual mode.
+"""Binding Schedule Dialog — Pre-injection countdown for manual mode.
 
-Phase 1 (COUNTDOWN):
-    Shows injection schedule, 20s countdown.  User clicks Ready or waits.
-
-Phase 2 (DETECTION):
-    Dialog stays open.  Per-channel LED indicators (one per active channel)
-    turn green as injection_auto_detected fires.  Once all channels are green,
-    dialog shows success for 3 seconds, then accepts and closes.
-
-The dialog is still used with .exec() — it connects to coordinator signals
-inside the event loop spawned by exec(), so callbacks fire normally.
+Shows injection schedule with 20s countdown. User clicks Ready or waits.
+When complete, closes and triggers ManualInjectionDialog for actual detection.
 
 USAGE:
     dialog = ConcentrationScheduleDialog(cycle, parent=main_window)
@@ -43,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConcentrationScheduleDialog(QDialog):
-    """Two-phase injection dialog: countdown → detection LED feedback.
+    """Pre-injection countdown dialog for multi-injection experiments.
 
     Attributes:
         cycle: Cycle with planned_concentrations / concentrations / channels
@@ -65,18 +57,14 @@ class ConcentrationScheduleDialog(QDialog):
             | Qt.WindowType.WindowTitleHint
         )
 
-        # Phase-1 state
+        # Countdown state
         self._countdown = 20
         self._countdown_timer: Optional[QTimer] = None
         self._phase1_done = False
 
-        # Phase-2 state (set via set_injection_hooks)
+        # Injection callback (set via set_injection_hooks)
         self._execute_callback: Optional[Callable] = None
         self._coordinator: Optional["InjectionCoordinator"] = None
-        self._active_channels: list[str] = []
-        self._channel_leds: dict[str, QLabel] = {}
-        self._channel_status: dict[str, QLabel] = {}
-        self._detected_channels: set[str] = set()
 
         # Persistent UI refs
         self._title_label: Optional[QLabel] = None
@@ -84,7 +72,6 @@ class ConcentrationScheduleDialog(QDialog):
         self._begin_btn: Optional[QPushButton] = None
         self._cancel_btn: Optional[QPushButton] = None
         self._schedule_widgets: list[QWidget] = []
-        self._detection_container: Optional[QVBoxLayout] = None
 
         self._setup_ui()
 
@@ -97,20 +84,14 @@ class ConcentrationScheduleDialog(QDialog):
         execute_callback: Callable,
         injection_coordinator: "InjectionCoordinator",
     ):
-        """Wire up injection execution and coordinator signals.
-
-        Must be called before exec() so Phase 2 works.
+        """Wire up injection execution callback.
 
         Args:
-            execute_callback: Starts the actual injection (e.g. _execute_injection)
-            injection_coordinator: Coordinator with injection_auto_detected signal
+            execute_callback: Function to call when user clicks Ready
+            injection_coordinator: Coordinator reference (stored but not used in countdown-only mode)
         """
         self._execute_callback = execute_callback
         self._coordinator = injection_coordinator
-
-        # Determine active channels from cycle.channels ("AC" / "BD" / etc.)
-        ch_str = (self.cycle.channels or "ABCD").upper()
-        self._active_channels = list(ch_str)
 
     # ------------------------------------------------------------------
     # UI Setup (Phase 1 visible, Phase 2 hidden)
@@ -138,11 +119,6 @@ class ConcentrationScheduleDialog(QDialog):
 
         # Schedule items (Phase 1 only — hidden in Phase 2)
         self._build_schedule_items(layout)
-
-        # Detection container (empty in Phase 1, populated in Phase 2)
-        self._detection_container = QVBoxLayout()
-        self._detection_container.setSpacing(6)
-        layout.addLayout(self._detection_container)
 
         layout.addStretch()
 
@@ -239,11 +215,11 @@ class ConcentrationScheduleDialog(QDialog):
             self._begin_btn.setText(f"Ready ({self._countdown}s)")
 
     # ------------------------------------------------------------------
-    # Phase 1 → Phase 2 transition
+    # Ready handler
     # ------------------------------------------------------------------
 
     def _on_ready(self):
-        """User clicked Ready (or countdown expired) — start Phase 2."""
+        """User clicked Ready (or countdown expired) — close dialog and trigger injection."""
         if self._phase1_done:
             return
         self._phase1_done = True
@@ -251,192 +227,14 @@ class ConcentrationScheduleDialog(QDialog):
         if self._countdown_timer:
             self._countdown_timer.stop()
 
-        # If no coordinator hooked up, fall back to simple 3s close
-        if not self._coordinator or not self._execute_callback:
-            self._show_simple_success()
-            return
-
-        # --- Switch UI to detection phase ---
-        self._title_label.setText("💉 Inject Now")
-        self._hint_label.setText(
-            "Waiting for injection detection on active channels..."
-        )
-        self._hint_label.setStyleSheet(
-            "font-size: 11px; color: #007AFF; font-weight: 500;"
-        )
-
-        # Hide schedule items
-        for w in self._schedule_widgets:
-            w.hide()
-
-        # Build per-channel LED indicators
-        self._build_channel_leds()
-
-        # Button → waiting state
-        self._begin_btn.setText("Waiting for injection...")
-        self._begin_btn.setEnabled(False)
-        self._begin_btn.setStyleSheet(
-            "QPushButton { background: #FF9500; border: none; border-radius: 6px; "
-            "padding: 0 20px; font-size: 13px; font-weight: 600; color: white; }"
-        )
-
-        # Connect coordinator signals (inside exec() event loop, they fire fine)
-        self._coordinator.injection_auto_detected.connect(self._on_channel_detected)
-        self._coordinator.injection_window_expired.connect(self._on_detection_timeout)
-
-        # Kick off the actual injection (non-blocking for manual mode)
-        logger.info("Schedule dialog Phase 2 — calling execute_callback")
-        self._execute_callback()
-
-    def _show_simple_success(self):
-        """Fallback when no coordinator — green for 3s then accept."""
-        if self._begin_btn:
-            self._begin_btn.setText("✅ Injecting...")
-            self._begin_btn.setEnabled(False)
-            self._begin_btn.setStyleSheet(
-                "QPushButton { background: #34C759; border: none; border-radius: 6px; "
-                "padding: 0 20px; font-size: 13px; font-weight: 600; color: white; }"
-            )
-        QTimer.singleShot(3000, self.accept)
-
-    # ------------------------------------------------------------------
-    # Phase 2: Per-channel detection LEDs
-    # ------------------------------------------------------------------
-
-    def _build_channel_leds(self):
-        """Create one LED row per active channel."""
-        for ch in self._active_channels:
-            row = QHBoxLayout()
-            row.setSpacing(8)
-
-            led = QLabel("⚪")
-            led.setFixedWidth(24)
-            led.setStyleSheet("font-size: 16px;")
-            row.addWidget(led)
-
-            label = QLabel(f"Channel {ch}")
-            label.setStyleSheet("font-size: 13px; font-weight: 600; color: #86868B;")
-            row.addWidget(label)
-
-            row.addStretch()
-
-            status = QLabel("Waiting...")
-            status.setStyleSheet("font-size: 11px; color: #86868B;")
-            row.addWidget(status)
-
-            self._detection_container.addLayout(row)
-            self._channel_leds[ch] = led
-            self._channel_status[ch] = status
-
-    def _on_channel_detected(
-        self, channel: str, injection_time: float, confidence: float
-    ):
-        """Slot for injection_auto_detected — lights primary channel green.
-
-        After a short delay, also checks cycle.injection_time_by_channel
-        (populated by the coordinator's _scan_all_channels_for_injection)
-        so remaining channels light up too.
-        """
-        self._set_channel_green(channel.upper(), injection_time, confidence)
-
-        # Give coordinator ~500ms to finish _scan_all_channels_for_injection
-        QTimer.singleShot(500, self._check_all_channel_results)
-
-    def _set_channel_green(
-        self, channel: str, injection_time: float, confidence: float
-    ):
-        """Light a single channel LED green."""
-        if channel in self._detected_channels:
-            return  # already lit
-        self._detected_channels.add(channel)
-
-        if channel in self._channel_leds:
-            self._channel_leds[channel].setText("🟢")
-        if channel in self._channel_status:
-            self._channel_status[channel].setText(
-                f"✓ Detected at {injection_time:.1f}s ({confidence:.0%})"
-            )
-            self._channel_status[channel].setStyleSheet(
-                "font-size: 11px; color: #34C759; font-weight: 600;"
-            )
-
-        self._maybe_all_detected()
-
-    def _check_all_channel_results(self):
-        """Read per-channel scan results stored on cycle by coordinator."""
-        times = getattr(self.cycle, "injection_time_by_channel", {}) or {}
-        confs = getattr(self.cycle, "injection_confidence_by_channel", {}) or {}
-
-        for ch in self._active_channels:
-            if ch in self._detected_channels:
-                continue
-            ch_lower = ch.lower()
-            t = times.get(ch) or times.get(ch_lower)
-            c = confs.get(ch, confs.get(ch_lower, 0.0))
-            if t is not None:
-                self._set_channel_green(ch, t, c)
-
-        self._maybe_all_detected()
-
-    def _maybe_all_detected(self):
-        """If every active channel is green → show success for 3s → accept."""
-        if not set(self._active_channels).issubset(self._detected_channels):
-            return
-
-        logger.info("All active channels detected — showing success for 3s")
-        self._title_label.setText("✅ Injection Detected")
-        self._hint_label.setText(
-            "All channels confirmed — continuing in 3 seconds..."
-        )
-        self._hint_label.setStyleSheet(
-            "font-size: 11px; color: #34C759; font-weight: 600;"
-        )
-        self._begin_btn.setText("✅ Success!")
-        self._begin_btn.setStyleSheet(
-            "QPushButton { background: #34C759; border: none; border-radius: 6px; "
-            "padding: 0 20px; font-size: 13px; font-weight: 600; color: white; }"
-        )
-        if self._cancel_btn:
-            self._cancel_btn.hide()
-
-        QTimer.singleShot(3000, self.accept)
-
-    # ------------------------------------------------------------------
-    # Timeout handling
-    # ------------------------------------------------------------------
-
-    def _on_detection_timeout(self):
-        """60s detection window expired — mark undetected as yellow, close."""
-        for ch in self._active_channels:
-            if ch not in self._detected_channels:
-                if ch in self._channel_leds:
-                    self._channel_leds[ch].setText("🟡")
-                if ch in self._channel_status:
-                    self._channel_status[ch].setText("Timeout — no detection")
-                    self._channel_status[ch].setStyleSheet(
-                        "font-size: 11px; color: #FF9500; font-weight: 500;"
-                    )
-
-        self._title_label.setText("⚠️ Detection Timeout")
-        self._hint_label.setText("Not all channels detected — closing in 3s...")
-        self._hint_label.setStyleSheet(
-            "font-size: 11px; color: #FF9500; font-weight: 500;"
-        )
-
-        self._begin_btn.setText("Continue anyway")
-        self._begin_btn.setEnabled(True)
-        self._begin_btn.setStyleSheet(
-            "QPushButton { background: #FF9500; border: none; border-radius: 6px; "
-            "padding: 0 20px; font-size: 13px; font-weight: 600; color: white; }"
-            "QPushButton:hover { background: #E08600; }"
-        )
-        try:
-            self._begin_btn.clicked.disconnect()
-        except (RuntimeError, TypeError):
-            pass
-        self._begin_btn.clicked.connect(self.accept)
-
-        QTimer.singleShot(3000, self.accept)
+        # Execute injection callback and close dialog
+        # ManualInjectionDialog will handle the actual "Inject Now" detection phase
+        logger.info("Schedule dialog: User ready — triggering injection")
+        if self._execute_callback:
+            self._execute_callback()
+        
+        # Accept and close (ManualInjectionDialog will show next)
+        self.accept()
 
     # ------------------------------------------------------------------
     # Cleanup
@@ -445,17 +243,4 @@ class ConcentrationScheduleDialog(QDialog):
     def closeEvent(self, event):
         if self._countdown_timer:
             self._countdown_timer.stop()
-        if self._coordinator:
-            try:
-                self._coordinator.injection_auto_detected.disconnect(
-                    self._on_channel_detected
-                )
-            except (RuntimeError, TypeError):
-                pass
-            try:
-                self._coordinator.injection_window_expired.disconnect(
-                    self._on_detection_timeout
-                )
-            except (RuntimeError, TypeError):
-                pass
         super().closeEvent(event)

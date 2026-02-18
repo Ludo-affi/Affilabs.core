@@ -1,4 +1,4 @@
-﻿"""AffiLabs.core Production UI - Main Window
+"""AffiLabs.core Production UI - Main Window
 
 PRODUCTION CODE - Used by main_simplified.py
 
@@ -27,7 +27,7 @@ UI ARCHITECTURE:
 INTEGRATION REFERENCE:
 ======================
 
-1. SIGNALS (UI â†’ Application):
+1. SIGNALS (UI → Application):
    - power_on_requested / power_off_requested: User pressed power button
    - recording_start_requested / recording_stop_requested: User pressed record button
    - acquisition_pause_requested(bool): User paused/resumed acquisition
@@ -176,7 +176,7 @@ class AffilabsMainWindow(QMainWindow):
 
     QUICK REFERENCE FOR INTEGRATION:
     ================================
-    Signals (UI â†’ App):
+    Signals (UI → App):
         - power_on_requested / power_off_requested
         - recording_start_requested / recording_stop_requested
         - acquisition_pause_requested(bool)
@@ -389,21 +389,21 @@ class AffilabsMainWindow(QMainWindow):
             self.transmission_plot = self.sidebar.transmission_plot
             self.transmission_curves = self.sidebar.transmission_curves
             logger.debug(
-                f"âœ“ Forwarded transmission plot ({len(self.transmission_curves)} curves)",
+                f"✓ Forwarded transmission plot ({len(self.transmission_curves)} curves)",
             )
         else:
             logger.warning(
-                "âš ï¸ transmission_plot NOT found in sidebar - plots will not work",
+                "⚠️ transmission_plot NOT found in sidebar - plots will not work",
             )
 
         if hasattr(self.sidebar, "raw_data_plot"):
             self.raw_data_plot = self.sidebar.raw_data_plot
             self.raw_data_curves = self.sidebar.raw_data_curves
             logger.debug(
-                f"âœ“ Forwarded raw plot ({len(self.raw_data_curves)} curves)",
+                f"✓ Forwarded raw plot ({len(self.raw_data_curves)} curves)",
             )
         else:
-            logger.warning("âš ï¸ raw_data_plot NOT found in sidebar - plots will not work")
+            logger.warning("⚠️ raw_data_plot NOT found in sidebar - plots will not work")
 
         # Forward calibration buttons
         self.simple_led_calibration_btn = self.sidebar.simple_led_calibration_btn
@@ -415,9 +415,9 @@ class AffilabsMainWindow(QMainWindow):
         # Forward baseline capture button (REBUILT)
         if hasattr(self.sidebar, "baseline_capture_btn"):
             self.baseline_capture_btn = self.sidebar.baseline_capture_btn
-            logger.debug("âœ“ Forwarded baseline capture button")
+            logger.debug("✓ Forwarded baseline capture button")
         else:
-            logger.warning("âš ï¸ baseline_capture_btn NOT found in sidebar")
+            logger.warning("⚠️ baseline_capture_btn NOT found in sidebar")
 
         right_widget = QWidget()
         right_widget.setMinimumWidth(
@@ -504,7 +504,7 @@ class AffilabsMainWindow(QMainWindow):
             show_delta_spr=True,
         )
 
-        # Initialize Channel A as selected for flagging (default)
+        # Initialize Channel A as selected for timing adjustment (default)
         # Make Channel A curve thicker to show it's selected
         import pyqtgraph as pg
         channel_colors = [
@@ -773,7 +773,7 @@ class AffilabsMainWindow(QMainWindow):
             return  # Already loaded
 
         try:
-            logger.info("ðŸ“Š Loading sensorgram graphs...")
+            logger.info("📊 Loading sensorgram graphs...")
 
             # Create real sensorgram content
             sensorgram_widget = self._create_sensorgram_content()
@@ -787,10 +787,10 @@ class AffilabsMainWindow(QMainWindow):
             self.navigation_presenter.switch_page(0)
 
             self._deferred_ui_loaded = True
-            logger.info("âœ“ Sensorgram graphs loaded successfully")
+            logger.info("✓ Sensorgram graphs loaded successfully")
 
         except Exception as e:
-            logger.error(f"âŒ Failed to load deferred graphs: {e}", exc_info=True)
+            logger.error(f"❌ Failed to load deferred graphs: {e}", exc_info=True)
             # Update placeholder with error message
             if hasattr(self, "_loading_label"):
                 self._loading_label.setText(f"Error loading graphs: {e}")
@@ -914,7 +914,7 @@ class AffilabsMainWindow(QMainWindow):
             self.clear_graph_btn.setIcon(_QIcon(_trash_icon_path))
             self.clear_graph_btn.setIconSize(_QSize(18, 18))
         else:
-            self.clear_graph_btn.setText("🗑")  # Fallback to emoji
+            self.clear_graph_btn.setText("??")  # Fallback to emoji
         self.clear_graph_btn.setStyleSheet(
             "QPushButton {"
             "  background: rgba(255, 59, 48, 0.1);"
@@ -1031,7 +1031,7 @@ class AffilabsMainWindow(QMainWindow):
         layout.addStretch()
 
         # Export selected range button
-        export_btn = QPushButton("📤 Export Range")
+        export_btn = QPushButton("?? Export Range")
         export_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_MD)
         export_btn.setToolTip("Export data from selected cursor range to CSV")
         export_btn.setStyleSheet(
@@ -1350,7 +1350,7 @@ class AffilabsMainWindow(QMainWindow):
     def _clear_cycle_markers(self):
         """Clear all flags from the Active Cycle graph and markers from Full Sensorgram timeline."""
         try:
-            logger.info("🗑️ Clear Flags button clicked")
+            logger.info("🧹 Clear Flags button clicked")
 
             # Clear flags from Active Cycle (bottom) graph via flag manager
             if hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
@@ -1359,16 +1359,16 @@ class AffilabsMainWindow(QMainWindow):
 
             # Also clear cycle markers from Full Sensorgram (top) graph
             if not hasattr(self, "full_timeline_graph"):
-                logger.warning("❌ Full timeline graph not found")
+                logger.warning("? Full timeline graph not found")
                 return
 
             if not hasattr(self, "app") or not self.app:
-                logger.warning("❌ App reference not found - cannot clear markers")
+                logger.warning("? App reference not found - cannot clear markers")
                 return
 
             # Get reference to app's cycle markers
             if not hasattr(self.app, "_cycle_markers"):
-                logger.warning("⚠️ No _cycle_markers attribute on app")
+                logger.warning("?? No _cycle_markers attribute on app")
                 return
 
             if not self.app._cycle_markers:
@@ -1417,13 +1417,13 @@ class AffilabsMainWindow(QMainWindow):
             logger.info("🔄 Reset Timing button clicked")
 
             if not hasattr(self, "app") or not self.app:
-                logger.warning("âŒ App reference not found")
+                logger.warning("❌ App reference not found")
                 return
 
             # Clear channel time shifts
             if hasattr(self.app, '_channel_time_shifts'):
                 self.app._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
-                logger.info("âœ… Reset all channel time shifts to 0.0")
+                logger.info("✅ Reset all channel time shifts to 0.0")
 
             # Clear injection reference if it exists in flag manager
             if hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
@@ -1439,7 +1439,7 @@ class AffilabsMainWindow(QMainWindow):
                             pass
                     self.app.flag_mgr._injection_alignment_line = None
 
-                logger.info("âœ… Cleared injection alignment reference")
+                logger.info("✅ Cleared injection alignment reference")
 
             # Hide shift indicator label
             if hasattr(self, 'channel_shift_label'):
@@ -1455,10 +1455,10 @@ class AffilabsMainWindow(QMainWindow):
             logger.info("✅ Channel timing reset complete")
 
         except Exception as e:
-            logger.error(f"âŒ Error resetting channel timing: {e}")
-            print(f"âŒ Error resetting timing: {e}")
+            logger.error(f"❌ Error resetting channel timing: {e}")
+            print(f"❌ Error resetting timing: {e}")
 
-    # ── Cycle Notes Popup ──────────────────────────────────────────────
+    # -- Cycle Notes Popup ----------------------------------------------
 
     def _open_cycle_notes_popup(self):
         """Open a floating popup to add/edit notes for the currently running cycle."""
@@ -1503,7 +1503,7 @@ class AffilabsMainWindow(QMainWindow):
         header_row.addWidget(title)
         header_row.addStretch()
 
-        close_btn = QPushButton("✕")
+        close_btn = QPushButton("?")
         close_btn.setFixedSize(22, 22)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.setStyleSheet(
@@ -1745,7 +1745,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # Update Active Cycle graph curve colors (bottom graph)
         if hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'curves'):
-            selected_channel = getattr(self, 'selected_channel_for_flagging', None)
+            selected_channel = getattr(self, 'selected_channel_for_timing', None)
             for i, curve in enumerate(self.cycle_of_interest_graph.curves):
                 width = 4 if selected_channel == i else 2
                 curve.setPen(pg.mkPen(color=channel_colors_rgb[i], width=width))
@@ -1848,14 +1848,14 @@ class AffilabsMainWindow(QMainWindow):
         # Initialize delta_display as None (only created if show_delta_spr is True)
         delta_display = None
 
-        # Add Flag controls row (only for Active Cycle graph)
+        # Add Timing Adjustment controls row (only for Active Cycle graph)
         if show_delta_spr:
-            flag_row = QHBoxLayout()
-            flag_row.setSpacing(8)
+            timing_row = QHBoxLayout()
+            timing_row.setSpacing(8)
 
-            # Flagging channel selection label with improved styling
-            flag_label = QLabel("Flag Controls:")
-            flag_label.setStyleSheet(
+            # Timing adjustment channel selection label with improved styling
+            timing_label = QLabel("Timing Adjustment:")
+            timing_label.setStyleSheet(
                 "QLabel {"
                 "  font-size: 12px;"
                 "  font-weight: 600;"
@@ -1864,22 +1864,22 @@ class AffilabsMainWindow(QMainWindow):
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
             )
-            flag_label.setToolTip("Flag marker controls - Select channel and manage flags")
-            flag_row.addWidget(flag_label)
+            timing_label.setToolTip("Timing adjustment controls - Select channel for visual alignment")
+            timing_row.addWidget(timing_label)
 
-            # Flagging channel selection buttons (radio-style)
+            # Timing adjustment channel selection buttons (radio-style)
             self.channel_selection_buttons = {}
 
-            flag_channel_names = ["A", "B", "C", "D"]
-            flag_tooltips = [
-                "Select Channel A for flagging",
-                "Select Channel B for flagging",
-                "Select Channel C for flagging",
-                "Select Channel D for flagging",
+            timing_channel_names = ["A", "B", "C", "D"]
+            timing_tooltips = [
+                "Select Channel A for timing adjustment",
+                "Select Channel B for timing adjustment",
+                "Select Channel C for timing adjustment",
+                "Select Channel D for timing adjustment",
             ]
 
-            for i, ch in enumerate(flag_channel_names):
-                tooltip = flag_tooltips[i]
+            for i, ch in enumerate(timing_channel_names):
+                tooltip = timing_tooltips[i]
                 ch_btn = QPushButton(ch)
                 ch_btn.setCheckable(True)
                 ch_btn.setChecked(ch == "A")  # Channel A selected by default
@@ -1909,20 +1909,20 @@ class AffilabsMainWindow(QMainWindow):
                 ch_btn.setStyleSheet(standard_style)
                 ch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-                # Store reference and connect to channel selection for flagging
+                # Store reference and connect to channel selection for timing adjustment
                 self.channel_selection_buttons[ch] = ch_btn
-                channel_letter_lower = ch.lower()  # 'A'â†’'a', 'B'â†’'b', etc.
+                channel_letter_lower = ch.lower()  # 'A'→'a', 'B'→'b', etc.
                 ch_btn.clicked.connect(
-                    lambda _, channel=channel_letter_lower: self._on_flag_channel_selected(channel)
+                    lambda _, channel=channel_letter_lower: self._on_timing_channel_selected(channel)
                 )
 
-                flag_row.addWidget(ch_btn)
+                timing_row.addWidget(ch_btn)
 
             # Spacing between channel buttons and controls
-            flag_row.addSpacing(12)
+            timing_row.addSpacing(12)
 
             # Spacing before action buttons
-            flag_row.addSpacing(8)
+            timing_row.addSpacing(8)
 
             # Clear Flags button with SVG icon
             self.clear_flags_btn = QPushButton()
@@ -1944,7 +1944,7 @@ class AffilabsMainWindow(QMainWindow):
                 self.clear_flags_btn.setIcon(_QIcon2(_clear_svg))
                 self.clear_flags_btn.setIconSize(_QSize2(16, 16))
             else:
-                self.clear_flags_btn.setText("✖")
+                self.clear_flags_btn.setText("?")
             self.clear_flags_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: rgba(255, 59, 48, 0.1);"
@@ -1960,7 +1960,7 @@ class AffilabsMainWindow(QMainWindow):
             )
             self.clear_flags_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.clear_flags_btn.clicked.connect(self._clear_cycle_markers)
-            flag_row.addWidget(self.clear_flags_btn)
+            timing_row.addWidget(self.clear_flags_btn)
 
             # Reset Timing button with SVG icon
             self.reset_timing_btn = QPushButton()
@@ -1994,7 +1994,7 @@ class AffilabsMainWindow(QMainWindow):
             )
             self.reset_timing_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             self.reset_timing_btn.clicked.connect(self._reset_channel_timing)
-            flag_row.addWidget(self.reset_timing_btn)
+            timing_row.addWidget(self.reset_timing_btn)
 
             # Cycle Notes button - add/edit notes for the currently running cycle
             self.cycle_note_btn = QPushButton("Note")
@@ -2017,7 +2017,7 @@ class AffilabsMainWindow(QMainWindow):
                 "QPushButton:pressed { background: rgba(0, 0, 0, 0.12); }"
             )
             self.cycle_note_btn.clicked.connect(self._open_cycle_notes_popup)
-            flag_row.addWidget(self.cycle_note_btn)
+            timing_row.addWidget(self.cycle_note_btn)
 
             # Channel time-shift indicator (hidden until a shift is applied)
             self.channel_shift_label = QLabel("")
@@ -2041,10 +2041,10 @@ class AffilabsMainWindow(QMainWindow):
                 "Esc: reset selected channel\n"
                 "Reset Timing button: reset all"
             )
-            flag_row.addWidget(self.channel_shift_label)
+            timing_row.addWidget(self.channel_shift_label)
 
             # Add spacing before delta SPR display
-            flag_row.addSpacing(16)
+            timing_row.addSpacing(16)
 
             # Delta SPR display on the right side (where users' eyes naturally look)
             delta_display = QLabel(self._get_delta_spr_display_text())
@@ -2064,11 +2064,11 @@ class AffilabsMainWindow(QMainWindow):
             delta_display.setToolTip(
                 "Real-time change in SPR signal in Response Units (RU)\nMeasured relative to cycle start",
             )
-            flag_row.addWidget(delta_display)
+            timing_row.addWidget(delta_display)
 
-            flag_row.addStretch()
+            timing_row.addStretch()
 
-            layout.addLayout(flag_row)
+            layout.addLayout(timing_row)
 
         # Create standardized time-series plot
         left_label = "Δ SPR (RU)" if show_delta_spr else "λ (nm)"
@@ -2092,10 +2092,10 @@ class AffilabsMainWindow(QMainWindow):
         #         try:
         #             # Make curve clickable with larger tolerance (18px)
         #             curve.setCurveClickable(True, width=18)
-        #             # Connect to channel selection for flagging
-        #             channel_letter = chr(ord('a') + i)  # 0â†’'a', 1â†’'b', 2â†’'c', 3â†’'d'
+        #             # Connect to channel selection for timing adjustment
+        #             channel_letter = chr(ord('a') + i)  # 0→'a', 1→'b', 2→'c', 3→'d'
         #             curve.sigClicked.connect(
-        #                 lambda *args, ch=channel_letter: self._on_flag_channel_selected(ch)
+        #                 lambda *args, ch=channel_letter: self._on_timing_channel_selected(ch)
         #             )
         #             logger.debug(f"[ACTIVE CYCLE] Connected click handler for channel {channel_letter.upper()}")
         #         except AttributeError as e:
@@ -2214,13 +2214,13 @@ class AffilabsMainWindow(QMainWindow):
 
         return plot_widget, container
 
-    def _on_flag_channel_selected(self, channel: str):
-        """Handle channel selection for flag placement in Active Cycle graph.
+    def _on_timing_channel_selected(self, channel: str):
+        """Handle channel selection for timing adjustment in Active Cycle graph.
 
         Selecting a channel from the sidebar:
-        - Selects the channel for flagging
+        - Selects the channel for timing adjustment
         - Highlights the curve
-        - Enables flagging mode
+        - Enables timing adjustment mode
 
         Args:
             channel: Channel identifier ('a', 'b', 'c', 'd')
@@ -2228,11 +2228,11 @@ class AffilabsMainWindow(QMainWindow):
         if not hasattr(self, "cycle_of_interest_graph"):
             return
 
-        # Store selected channel for flagging operations
-        channel_idx = ord(channel) - ord('a')  # 'a'â†’0, 'b'â†’1, 'c'â†’2, 'd'â†’3
+        # Store selected channel for timing adjustment
+        channel_idx = ord(channel) - ord('a')  # 'a'→0, 'b'→1, 'c'→2, 'd'→3
         channel_letter = channel.upper()
 
-        self.selected_channel_for_flagging = channel_idx
+        self.selected_channel_for_timing = channel_idx
         self.selected_channel_letter = channel_letter
 
         # Update button states (radio button behavior - only one checked)
@@ -2263,13 +2263,13 @@ class AffilabsMainWindow(QMainWindow):
                 # Unselected curves: normal width (width 2)
                 curve.setPen(pg.mkPen(color=channel_colors[i], width=2))
 
-        logger.debug(f"Channel {channel.upper()} selected for flagging (curve highlighted)")
+        logger.debug(f"Channel {channel.upper()} selected for timing adjustment (curve highlighted)")
 
-        # Enable flagging mode for Active Cycle graph
-        self._enable_flagging_mode(channel_idx, channel_letter, graph_name="Active Cycle")
+        # Enable timing adjustment mode for Active Cycle graph
+        self._enable_timing_mode(channel_idx, channel_letter, graph_name="Active Cycle")
 
-    def _enable_flagging_mode(self, channel_idx, channel_letter, graph_name="Active Cycle"):
-        """Enable flagging mode for the selected channel.
+    def _enable_timing_mode(self, channel_idx, channel_letter, graph_name="Active Cycle"):
+        """Enable timing adjustment mode for the selected channel.
 
         NOTE: In the unified flag system, live flags are software-placed only.
         This method now just stores the selected channel for the FlagManager.
@@ -2277,14 +2277,14 @@ class AffilabsMainWindow(QMainWindow):
         Args:
             channel_idx: Index of the channel (0-3)
             channel_letter: Letter of the channel (A-D)
-            graph_name: Name of the graph where flagging is enabled
+            graph_name: Name of the graph where timing adjustment is enabled
         """
         # Store selected channel for software-driven flag placement
-        if not hasattr(self, "flagging_enabled"):
-            self.flagging_enabled = False
+        if not hasattr(self, "timing_mode_enabled"):
+            self.timing_mode_enabled = False
 
         if graph_name == "Active Cycle":
-            print(f"Channel {channel_letter} selected for flag alignment")
+            print(f"Channel {channel_letter} selected for timing adjustment")
 
     def _on_plot_clicked(self, event, plot_widget):
         """Handle clicks on the Live Sensorgram (top graph).
@@ -2334,7 +2334,7 @@ class AffilabsMainWindow(QMainWindow):
         # Truncate event name if too long
         display_text = event_name if len(event_name) <= 30 else event_name[:27] + "..."
         event_text = pg.TextItem(
-            text=f"ðŸ“ {display_text}",
+            text=f"📍 {display_text}",
             color=color,
             anchor=(0.5, 1),  # Center, bottom - anchor at bottom so text hangs from top of graph
         )
@@ -2404,7 +2404,7 @@ class AffilabsMainWindow(QMainWindow):
         content_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Empty state message
-        empty_icon = QLabel("ðŸ“‘")
+        empty_icon = QLabel("📑")
         empty_icon.setStyleSheet(
             "QLabel {  font-size: 64px;  background: {Colors.TRANSPARENT};}",
         )
@@ -2499,7 +2499,7 @@ class AffilabsMainWindow(QMainWindow):
                     for _, row in df_meta.iterrows():
                         if pd.notna(row['key']) and pd.notna(row['value']):
                             loaded_metadata[str(row['key'])] = str(row['value'])
-                    logger.info(f"âœ“ Loaded {len(loaded_metadata)} metadata items from Metadata sheet")
+                    logger.info(f"✓ Loaded {len(loaded_metadata)} metadata items from Metadata sheet")
                 else:
                     logger.warning(f"Metadata sheet missing 'key' or 'value' column. Found: {list(df_meta.columns)}")
 
@@ -2521,7 +2521,7 @@ class AffilabsMainWindow(QMainWindow):
                             'channel': str(row['channel']).lower(),
                             'value': float(row['value'])
                         })
-                logger.info(f"âœ“ Loaded {len(raw_data_rows)} data points from 'Raw Data' sheet")
+                logger.info(f"✓ Loaded {len(raw_data_rows)} data points from 'Raw Data' sheet")
 
             # FORMAT 2: "Channel Data" sheet (current export format - side-by-side columns)
             elif 'Channel Data' in excel_data:
@@ -2541,7 +2541,7 @@ class AffilabsMainWindow(QMainWindow):
                                     'channel': ch.lower(),
                                     'value': float(row[value_col])
                                 })
-                logger.info(f"âœ“ Loaded {len(raw_data_rows)} data points from 'Channel Data' sheet")
+                logger.info(f"✓ Loaded {len(raw_data_rows)} data points from 'Channel Data' sheet")
 
             # FORMAT 3: Old format - separate "Channel_A", "Channel_B" sheets (legacy)
             else:
@@ -2558,7 +2558,7 @@ class AffilabsMainWindow(QMainWindow):
                                     'channel': channel,
                                     'value': row['Wavelength (nm)']
                                 })
-                logger.info(f"âœ“ Loaded {len(raw_data_rows)} data points from legacy Channel_X sheets")
+                logger.info(f"✓ Loaded {len(raw_data_rows)} data points from legacy Channel_X sheets")
 
             # Load cycles table and parse time ranges
             cycles_data = []
@@ -3126,8 +3126,8 @@ class AffilabsMainWindow(QMainWindow):
         stats_header.addWidget(stats_title)
         stats_header.addStretch()
 
-        # RÂ² display
-        r_squared = QLabel("RÂ² = 0.9987")
+        # R² display
+        r_squared = QLabel("R² = 0.9987")
         r_squared.setStyleSheet(
             "QLabel {"
             "  background: rgba(52, 199, 89, 0.1);"
@@ -3155,7 +3155,7 @@ class AffilabsMainWindow(QMainWindow):
         stats_placeholder = QLabel(
             "[Residuals / Chi-Square Plot]\n\n"
             "Statistical analysis visualization\n"
-            "ChiÂ² = 1.23e-4, RMSE = 0.012",
+            "Chi² = 1.23e-4, RMSE = 0.012",
         )
         stats_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stats_placeholder.setStyleSheet(
@@ -3334,7 +3334,7 @@ class AffilabsMainWindow(QMainWindow):
         data_header.addWidget(data_title)
         data_header.addStretch()
 
-        copy_btn = QPushButton("📋 Copy")
+        copy_btn = QPushButton("?? Copy")
         copy_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_MD)
         copy_btn.setMinimumWidth(72)
         copy_btn.setStyleSheet(
@@ -3396,10 +3396,10 @@ class AffilabsMainWindow(QMainWindow):
         from PySide6.QtWidgets import QTableWidgetItem
 
         results = [
-            ("ka (Mâ»Â¹sâ»Â¹)", "1.23e5 Â± 0.04e5"),
-            ("kd (sâ»Â¹)", "3.45e-4 Â± 0.12e-4"),
-            ("KD (M)", "2.80e-9 Â± 0.15e-9"),
-            ("Δ SPR (nm)", "0.45 Â± 0.02"),
+            ("ka (M⁻¹s⁻¹)", "1.23e5 ± 0.04e5"),
+            ("kd (s⁻¹)", "3.45e-4 ± 0.12e-4"),
+            ("KD (M)", "2.80e-9 ± 0.15e-9"),
+            ("? SPR (nm)", "0.45 ± 0.02"),
         ]
 
         for row, (param, value) in enumerate(results):
@@ -3466,7 +3466,7 @@ class AffilabsMainWindow(QMainWindow):
         export_layout.addLayout(export_btns)
 
         # Export graph image button (full width)
-        image_btn = QPushButton("📸 Export Active Cycle Image")
+        image_btn = QPushButton("?? Export Active Cycle Image")
         image_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_LG)
         image_btn.setStyleSheet(
             "QPushButton {"
@@ -3543,7 +3543,7 @@ class AffilabsMainWindow(QMainWindow):
         header.addStretch()
 
         # Generate PDF button
-        pdf_btn = QPushButton("📄 Generate PDF")
+        pdf_btn = QPushButton("?? Generate PDF")
         pdf_btn.setFixedHeight(Dimensions.HEIGHT_BUTTON_XL)
         pdf_btn.setMinimumWidth(140)
         pdf_btn.setStyleSheet(
@@ -3753,11 +3753,11 @@ class AffilabsMainWindow(QMainWindow):
 
         # Element buttons
         element_btns = [
-            ("ðŸ“Š Graph", "Insert saved graph"),
-            ("ðŸ“ˆ Bar Chart", "Create bar chart"),
-            ("ðŸ“‹ Table", "Insert data table"),
-            ("ðŸ“ Text Box", "Add text section"),
-            ("ðŸ–¼ï¸ Image", "Insert image"),
+            ("📊 Graph", "Insert saved graph"),
+            ("📈 Bar Chart", "Create bar chart"),
+            ("📋 Table", "Insert data table"),
+            ("📝 Text Box", "Add text section"),
+            ("🖼️ Image", "Insert image"),
         ]
 
         for icon_text, tooltip in element_btns:
@@ -3927,9 +3927,9 @@ class AffilabsMainWindow(QMainWindow):
 
         # Saved items list
         saved_items = [
-            "ðŸ“Š Sensorgram_ChA",
-            "ðŸ“ˆ Kinetic_Fit_Plot",
-            "ðŸ“‹ Results_Table_1",
+            "📊 Sensorgram_ChA",
+            "📈 Kinetic_Fit_Plot",
+            "📋 Results_Table_1",
         ]
 
         for item in saved_items:
@@ -4015,9 +4015,9 @@ class AffilabsMainWindow(QMainWindow):
         """Handle power button click - connects/disconnects hardware.
 
         Button behavior:
-        - DISCONNECTED (gray): Click to start connection â†’ SEARCHING (yellow)
-        - SEARCHING (yellow): Click to cancel search â†’ DISCONNECTED (gray)
-        - CONNECTED (green): Click to disconnect â†’ DISCONNECTED (gray)
+        - DISCONNECTED (gray): Click to start connection → SEARCHING (yellow)
+        - SEARCHING (yellow): Click to cancel search → DISCONNECTED (gray)
+        - CONNECTED (green): Click to disconnect → DISCONNECTED (gray)
         """
         current_state = self.power_btn.property("powerState")
         logger.info(f"Power button clicked: current_state={current_state}")
@@ -4146,7 +4146,7 @@ class AffilabsMainWindow(QMainWindow):
     def enable_controls(self) -> None:
         """Enable record and pause buttons after calibration completes."""
         try:
-            logger.info("🎙 Enabling recording controls (calibration complete)")
+            logger.info("✅ Enabling recording controls (calibration complete)")
             self.record_btn.setEnabled(True)
             self.pause_btn.setEnabled(True)
             self.record_btn.setToolTip("Start Recording\n(Click to begin saving data)")
@@ -4238,7 +4238,7 @@ class AffilabsMainWindow(QMainWindow):
 
     def _handle_add_hardware(self) -> None:
         """Handle Add Hardware button click - scan for peripheral devices only."""
-        logger.info("ðŸ”Œ User requested peripheral device scan (Affipump)...")
+        logger.info("🔌 User requested peripheral device scan (Affipump)...")
 
         # Check if application and kinetic manager are available
         if hasattr(self, "app") and self.app:
@@ -4246,7 +4246,7 @@ class AffilabsMainWindow(QMainWindow):
                 try:
                     # Scan for Affipump
                     self.app.kinetic_mgr.scan_for_pump()
-                    logger.info("âœ“ Peripheral scan initiated")
+                    logger.info("✓ Peripheral scan initiated")
                 except Exception as e:
                     logger.error(f"Failed to scan for peripherals: {e}")
                     from affilabs.ui.ui_message import error as ui_error
@@ -4316,7 +4316,7 @@ class AffilabsMainWindow(QMainWindow):
             else:
                 # Unknown controller - log warning but don't display
                 logger.warning(
-                    f"âš ï¸ Unknown controller type '{ctrl_type}' - not displayed in Hardware Connected",
+                    f"⚠️ Unknown controller type '{ctrl_type}' - not displayed in Hardware Connected",
                 )
 
         # Kinetic Controller (KNX)
@@ -4328,7 +4328,7 @@ class AffilabsMainWindow(QMainWindow):
             else:
                 # Unknown kinetic type - log warning but don't display
                 logger.warning(
-                    f"âš ï¸ Unknown kinetic type '{knx_type}' - not displayed in Hardware Connected",
+                    f"⚠️ Unknown kinetic type '{knx_type}' - not displayed in Hardware Connected",
                 )
 
         # Pump (AffiPump) - only show if external pump actually connected
@@ -4343,7 +4343,7 @@ class AffilabsMainWindow(QMainWindow):
         # Update device labels
         for i, label in enumerate(self.sidebar.hw_device_labels):
             if i < len(devices):
-                label.setText(f"• {devices[i]}")
+                label.setText(f"● {devices[i]}")
                 label.setVisible(True)
             else:
                 label.setVisible(False)
@@ -4498,7 +4498,7 @@ class AffilabsMainWindow(QMainWindow):
                     from affilabs.utils.logger import logger
 
                     logger.warning(
-                        f"âš ï¸ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]",
+                        f"⚠️ Optics NOT ready: calibration failed for channels [{failed_str}], maintenance required for channels [{maint_str}]",
                     )
                     logger.warning(
                         "   Live sensorgram background set to light red - please resolve optics issues",
@@ -4687,14 +4687,14 @@ class AffilabsMainWindow(QMainWindow):
         if is_paused:
             # Pause acquisition
             self.pause_btn.setToolTip("Resume Live Acquisition")
-            logger.info("â¸ Live acquisition paused")
+            logger.info("⏸ Live acquisition paused")
             # Emit signal to pause acquisition
             if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(True)
         else:
             # Resume acquisition
             self.pause_btn.setToolTip("Pause Live Acquisition")
-            logger.info("â–¶ï¸ Live acquisition resumed")
+            logger.info("▶️ Live acquisition resumed")
             # Emit signal to resume acquisition
             if hasattr(self, "acquisition_pause_requested"):
                 self.acquisition_pause_requested.emit(False)
@@ -4841,7 +4841,7 @@ class AffilabsMainWindow(QMainWindow):
             user_mgr = getattr(sidebar, 'user_profile_manager', None) if sidebar else None
             if user_mgr and hasattr(sidebar, 'users_count_value'):
                 user_count = len(user_mgr.get_profiles())
-                sidebar.users_count_value.setText(f"👤 {user_count}")
+                sidebar.users_count_value.setText(f"👥 {user_count}")
         except Exception as e:
             logger.debug(f"Could not update user count: {e}")
 
@@ -4858,11 +4858,11 @@ class AffilabsMainWindow(QMainWindow):
 
             # Update operation hours
             led_hours = self.device_config.config["maintenance"]["led_on_hours"]
-            sidebar.hours_value.setText(f"⏱ {led_hours:,.1f} hrs")
+            sidebar.hours_value.setText(f"⏱️ {led_hours:,.1f} hrs")
 
             # Update experiment count (total measurement cycles)
             total_cycles = self.device_config.config["maintenance"].get("total_measurement_cycles", 0)
-            sidebar.experiments_value.setText(f"🧪 {total_cycles:,}")
+            sidebar.experiments_value.setText(f"📊 {total_cycles:,}")
 
             # Update last operation date
             if self.last_powered_on:
@@ -4887,23 +4887,23 @@ class AffilabsMainWindow(QMainWindow):
                     next_due = datetime.datetime.fromisoformat(next_due_str[:10])
                     days_left = (next_due - now).days
                     if days_left < 0:
-                        sidebar.next_maintenance_value.setText(f"⚠ OVERDUE ({-days_left}d)")
+                        sidebar.next_maintenance_value.setText(f"🔧 OVERDUE ({-days_left}d)")
                         maintenance_overdue = True
                     elif days_left < 30:
-                        sidebar.next_maintenance_value.setText(f"⚠ {next_due.strftime('%b %d, %Y')}")
+                        sidebar.next_maintenance_value.setText(f"🔧 {next_due.strftime('%b %d, %Y')}")
                         maintenance_overdue = True
                     else:
-                        sidebar.next_maintenance_value.setText(f"⚠ {next_due.strftime('%b %Y')}")
+                        sidebar.next_maintenance_value.setText(f"🔧 {next_due.strftime('%b %Y')}")
                 except (ValueError, TypeError):
-                    sidebar.next_maintenance_value.setText("⚠ —")
+                    sidebar.next_maintenance_value.setText("🔧 —")
             elif led_hours >= SERVICE_INTERVAL_HOURS:
                 # No due date set, but hours exceeded threshold
-                sidebar.next_maintenance_value.setText(f"⚠ {led_hours:,.0f}/{SERVICE_INTERVAL_HOURS:,.0f} hrs")
+                sidebar.next_maintenance_value.setText(f"🔧 {led_hours:,.0f}/{SERVICE_INTERVAL_HOURS:,.0f} hrs")
                 maintenance_overdue = True
             else:
                 # No due date, show hours remaining until service
                 hrs_remaining = SERVICE_INTERVAL_HOURS - led_hours
-                sidebar.next_maintenance_value.setText(f"⚠ in {hrs_remaining:,.0f} hrs")
+                sidebar.next_maintenance_value.setText(f"🔧 in {hrs_remaining:,.0f} hrs")
 
             # Highlight based on urgency
             if maintenance_overdue:
@@ -4994,7 +4994,7 @@ class AffilabsMainWindow(QMainWindow):
         cycle_data["state"] = "running"
 
         logger.info(
-            f"ðŸš€ Starting queued run at FIRST cycle (1/{len(self.cycle_queue)}): {cycle_data['type']} - {cycle_data['notes']}",
+            f"🚀 Starting queued run at FIRST cycle (1/{len(self.cycle_queue)}): {cycle_data['type']} - {cycle_data['notes']}",
         )
 
         # Update display to show running state
@@ -5059,7 +5059,7 @@ class AffilabsMainWindow(QMainWindow):
         if hasattr(self.sidebar, 'queue_size_label'):
             self.sidebar.queue_size_label.setText(f"Showing last {new_rows} cycles")
 
-        logger.info(f"âœ“ Queue expanded: capacity now {self.max_queue_size}, table shows {new_rows} rows")
+        logger.info(f"✓ Queue expanded: capacity now {self.max_queue_size}, table shows {new_rows} rows")
 
         # Re-enable Add to Queue button if it was disabled
         if hasattr(self, 'add_to_queue_btn'):
@@ -5095,7 +5095,7 @@ class AffilabsMainWindow(QMainWindow):
             # Update queue display to show running state
             self._update_queue_display()
 
-            logger.info(f"ðŸƒ Cycle started: {cycle_data['type']} ({cycle_data.get('length_minutes', 0)} min) - {cycle_data.get('notes', 'No notes')}")
+            logger.info(f"🏃 Cycle started: {cycle_data['type']} ({cycle_data.get('length_minutes', 0)} min) - {cycle_data.get('notes', 'No notes')}")
         else:
             # No queue items - quick start mode (form-based cycle creation not yet implemented)
             logger.debug("Starting immediate cycle from form values")
@@ -5113,7 +5113,7 @@ class AffilabsMainWindow(QMainWindow):
             if self.cycle_queue and self.cycle_queue[0] == self._current_running_cycle:
                 self.cycle_queue.pop(0)
 
-            logger.info(f"âœ… Cycle completed: {self._current_running_cycle['type']}")
+            logger.info(f"✅ Cycle completed: {self._current_running_cycle['type']}")
             self._current_running_cycle = None
 
             # Update display
@@ -5126,7 +5126,7 @@ class AffilabsMainWindow(QMainWindow):
 
             # Start next cycle if queue is running and has cycles
             if self.cycle_queue and hasattr(self, '_queue_running') and self._queue_running:
-                logger.info(f"ðŸ”„ Auto-starting next cycle in queue ({len(self.cycle_queue)} remaining)")
+                logger.info(f"🔄 Auto-starting next cycle in queue ({len(self.cycle_queue)} remaining)")
                 # Use QTimer to start next cycle after a short delay
                 from PySide6.QtCore import QTimer
                 QTimer.singleShot(500, self._start_next_queued_cycle)
@@ -5143,7 +5143,7 @@ class AffilabsMainWindow(QMainWindow):
             if self.cycle_queue and self.cycle_queue[0] == self._current_running_cycle:
                 self.cycle_queue.pop(0)
 
-            logger.info(f"âŒ Cycle cancelled: {self._current_running_cycle['type']}")
+            logger.info(f"❌ Cycle cancelled: {self._current_running_cycle['type']}")
             self._current_running_cycle = None
 
             # Update display to remove cancelled cycle
@@ -5157,16 +5157,16 @@ class AffilabsMainWindow(QMainWindow):
     def _start_next_queued_cycle(self):
         """Start the next cycle in the queue automatically."""
         if self.cycle_queue and not self._current_running_cycle:
-            logger.info(f"ðŸš€ Auto-starting next queued cycle")
+            logger.info(f"🚀 Auto-starting next queued cycle")
             self.start_cycle()
         else:
             if not self.cycle_queue:
-                logger.info(f"âœ“ Queue completed - no more cycles")
+                logger.info(f"✓ Queue completed - no more cycles")
                 if hasattr(self, '_queue_running'):
                     self._queue_running = False
                 self._show_run_complete_dialog()
             elif self._current_running_cycle:
-                logger.warning(f"âš ï¸ Cannot start next cycle - current cycle still running")
+                logger.warning(f"⚠️ Cannot start next cycle - current cycle still running")
 
     def _show_run_complete_dialog(self):
         """Show completion dialog prompting user to review data and export."""
@@ -5270,7 +5270,7 @@ class AffilabsMainWindow(QMainWindow):
         self.cycle_duration_seconds = duration_minutes * 60
         self.cycle_start_time = time.time()
         self.cycle_countdown_timer.start(1000)  # Update every second
-        logger.info(f"â±ï¸ Started countdown timer for {duration_minutes} min cycle")
+        logger.debug(f"Started countdown timer for {duration_minutes} min cycle")
 
     def _update_countdown(self):
         """Update countdown timer display based on cycle progress.
@@ -5316,7 +5316,7 @@ class AffilabsMainWindow(QMainWindow):
             "for regulatory compliance and LIMS integration."
         )
 
-        logger.info("ðŸ“‹ AnIML export requested (Pro feature)")
+        logger.info("📋 AnIML export requested (Pro feature)")
 
     def _on_send_to_edits_clicked(self):
         """Transfer live recording data to Edits tab for review and modification."""
@@ -5325,7 +5325,7 @@ class AffilabsMainWindow(QMainWindow):
         # The app has access to both recording manager and edits tab
         self.send_to_edits_requested.emit()
 
-        logger.info("ðŸ“¤ Send to Edits requested - signal emitted")
+        logger.info("📤 Send to Edits requested - signal emitted")
 
     def _on_quick_csv_preset(self):
         """Quick CSV export preset - all data, all channels, CSV format."""
@@ -5495,7 +5495,7 @@ class AffilabsMainWindow(QMainWindow):
         # Update cycle notes if available
         if hasattr(self, 'cycle_notes_label'):
             if notes:
-                self.cycle_notes_label.setText(f"📝 {notes}")
+                self.cycle_notes_label.setText(f"?? {notes}")
                 self.cycle_notes_label.show()
             else:
                 self.cycle_notes_label.setText("")
@@ -5545,22 +5545,16 @@ class AffilabsMainWindow(QMainWindow):
             self._popout_timer.window_shown.connect(self._on_popout_shown)
             self._popout_timer.window_hidden.connect(self._on_popout_hidden)
 
-        # Set running state with current countdown
-        minutes = total_seconds // 60
-        seconds = total_seconds % 60
-        self._popout_timer.set_configurable(
-            minutes=minutes,
-            seconds=seconds,
-            label=label,
-            sound_enabled=self._manual_timer_sound
-        )
-        self._popout_timer.set_running()
+        # Put window into running display state WITHOUT emitting timer_ready.
+        # The QTimer countdown is already managed by _start_manual_timer_countdown;
+        # calling set_running() would re-emit timer_ready ? _on_popout_timer_ready
+        # ? _start_manual_timer_countdown ? _auto_show_timer_window ? infinite loop.
+        self._popout_timer.show_running_state(total_seconds, label)
 
         # Show the window
         self._popout_timer.show()
         self._popout_timer.raise_()
         self._popout_timer.activateWindow()
-        logger.info(f"Auto-opened timer window for: {label}")
 
     def _on_timer_button_clicked(self):
         """Handle Timer button click - open PopOutTimerWindow or stop alarm.
@@ -5573,7 +5567,7 @@ class AffilabsMainWindow(QMainWindow):
 
         # If wash alert is active, clicking stops the alarm
         if hasattr(self, 'timer_button') and self.timer_button.wash_alert_active:
-            logger.info("Wash acknowledged via timer button click")
+            logger.debug("Wash acknowledged via timer button click")
             self._on_wash_acknowledged()
             return
 
@@ -5622,7 +5616,7 @@ class AffilabsMainWindow(QMainWindow):
                 and self._manual_timer_remaining > 0
             )
 
-            logger.info(f"Syncing timer window (running={'paused' if is_paused else 'active'})")
+            logger.debug(f"Syncing timer window (running={'paused' if is_paused else 'active'})")
 
             # Update window with current timer state
             self._popout_timer.update_countdown(
@@ -5643,7 +5637,7 @@ class AffilabsMainWindow(QMainWindow):
                 sound_enabled=True,
                 rolling_numbers=False,
             )
-            logger.info("Timer window opened in config mode")
+            logger.debug("Timer window opened in config mode")
 
         # Show and focus the window
         self._popout_timer.show()
@@ -5657,7 +5651,7 @@ class AffilabsMainWindow(QMainWindow):
         """
         from affilabs.utils.logger import logger
 
-        logger.info(f"Timer started: {label} ({total_seconds//60}:{total_seconds%60:02d})")
+        logger.debug(f"Timer started: {label} ({total_seconds//60}:{total_seconds%60:02d})")
 
         # Save last used settings for next open
         self._last_timer_minutes = total_seconds // 60
@@ -5707,7 +5701,7 @@ class AffilabsMainWindow(QMainWindow):
         if hasattr(self, '_manual_timer') and self._manual_timer:
             if self._manual_timer.isActive():
                 self._manual_timer.stop()
-                logger.info("⏸ Timer paused")
+                logger.debug("? Timer paused")
 
             # Always update window state to ensure sync
             if hasattr(self, '_popout_timer') and self._popout_timer:
@@ -5721,7 +5715,7 @@ class AffilabsMainWindow(QMainWindow):
             if not self._manual_timer.isActive():
                 if hasattr(self, '_manual_timer_remaining') and self._manual_timer_remaining > 0:
                     self._manual_timer.start(1000)
-                    logger.info("▶ Timer resumed")
+                    logger.debug("? Timer resumed")
 
             # Always update window state to ensure sync
             if hasattr(self, '_popout_timer') and self._popout_timer:
@@ -5738,7 +5732,7 @@ class AffilabsMainWindow(QMainWindow):
         if hasattr(self, '_manual_timer_remaining'):
             old_value = self._manual_timer_remaining
             self._manual_timer_remaining = new_remaining_seconds
-            logger.info(f"Timer adjusted while paused: {old_value}s → {new_remaining_seconds}s")
+            logger.debug(f"Timer adjusted while paused: {old_value}s ? {new_remaining_seconds}s")
 
     def _start_manual_timer_countdown(self, label: str, total_seconds: int, sound_enabled: bool):
         """Start countdown timer for manual timers.
@@ -5785,12 +5779,12 @@ class AffilabsMainWindow(QMainWindow):
                 self._popout_timer.update_countdown(self._manual_timer_label, self._manual_timer_remaining)
 
             # Update contact timer overlay on cycle graph if active
-            if hasattr(self, 'app') and hasattr(self.app, 'flag_manager'):
-                self.app.flag_manager.update_contact_timer_display()
+            if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr'):
+                self.app.flag_mgr.update_contact_timer_display()
         else:
             # Timer completed
             self._manual_timer.stop()
-            logger.info(f"Manual timer '{self._manual_timer_label}' completed!")
+            logger.debug(f"Manual timer '{self._manual_timer_label}' completed!")
 
             # Show WASH NOW alert on timer button (click to stop alarm)
             if hasattr(self, 'timer_button'):
@@ -5802,8 +5796,8 @@ class AffilabsMainWindow(QMainWindow):
                 self._popout_timer.timer_finished(self._manual_timer_label, next_action)
 
             # Clear contact timer overlay from cycle graph
-            if hasattr(self, 'app') and hasattr(self.app, 'flag_manager'):
-                self.app.flag_manager.clear_contact_timer_overlay()
+            if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr'):
+                self.app.flag_mgr.clear_contact_timer_overlay()
 
             # Automatically place wash flags for all channels with injection flags
             self._place_automatic_wash_flags()
@@ -5865,16 +5859,13 @@ class AffilabsMainWindow(QMainWindow):
 
             wash_time = timeline.stop_cursor.value()
 
-            # Get cycle coordinator to access flag data
-            if not hasattr(self, 'cycle_coordinator'):
-                return
-
-            coordinator = self.cycle_coordinator
-            if not hasattr(coordinator, '_flag_markers'):
+            # Access flag markers from main app instance
+            if not hasattr(self.app, '_flag_markers'):
+                logger.debug("No flag markers found - skipping automatic wash flags")
                 return
 
             # Find all channels with injection flags
-            injection_flags = {f['channel']: f for f in coordinator._flag_markers if f['type'] == 'injection'}
+            injection_flags = {f['channel']: f for f in self.app._flag_markers if f['type'] == 'injection'}
 
             if not injection_flags:
                 logger.debug("No injection flags found - skipping automatic wash flags")
@@ -5900,9 +5891,9 @@ class AffilabsMainWindow(QMainWindow):
                     time_idx = np.argmin(np.abs(channel_data.time - wash_time_raw))
                     spr_val = channel_data.spr[time_idx]
 
-                    # Place wash flag
-                    coordinator._add_flag_marker(channel, wash_time, spr_val, 'wash')
-                    logger.info(f"✓ Automatic wash flag placed on channel {channel.upper()} at t={wash_time:.1f}s")
+                    # Place wash flag using main app's flag system
+                    self.app._add_flag_marker(channel, wash_time, spr_val, 'wash')
+                    logger.info(f"🧼 Automatic wash flag placed on channel {channel.upper()} at t={wash_time:.1f}s")
 
                 except Exception as e:
                     logger.debug(f"Could not place wash flag on channel {channel}: {e}")
@@ -5936,7 +5927,7 @@ class AffilabsMainWindow(QMainWindow):
         # Clear timer button display
         self.clear_timer_button()
 
-        logger.info("🔇 Alarm stopped and timer cleared")
+        logger.debug("?? Alarm stopped and timer cleared")
 
     def _on_clear_manual_timer(self):
         """Handle request to clear manual timer (from context menu)."""
@@ -5945,14 +5936,14 @@ class AffilabsMainWindow(QMainWindow):
         # Stop the manual timer if running
         if hasattr(self, '_manual_timer') and self._manual_timer:
             self._manual_timer.stop()
-            logger.info(f"â± Manual timer '{self._manual_timer_label}' cleared by user")
+            logger.debug(f"Manual timer cleared by user")
 
         # Clear the timer button display
         self.clear_timer_button()
 
         # Clear timer overlay from graph
-        if hasattr(self, 'app') and hasattr(self.app, 'flag_manager'):
-            self.app.flag_manager.clear_contact_timer_overlay()
+        if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr'):
+            self.app.flag_mgr.clear_contact_timer_overlay()
 
         # Hide pop-out window
         if hasattr(self, '_popout_timer') and self._popout_timer:
@@ -5972,7 +5963,7 @@ class AffilabsMainWindow(QMainWindow):
         label = self._manual_timer_label
         sound_enabled = self._manual_timer_sound
 
-        logger.info(f"⏪ Restarting manual timer '{label}' ({initial_duration}s)")
+        logger.debug(f"? Restarting manual timer '{label}' ({initial_duration}s)")
 
         # Stop any alarm that might be playing
         self._stop_alarm_loop()
@@ -5981,8 +5972,8 @@ class AffilabsMainWindow(QMainWindow):
         self._start_manual_timer_countdown(label, initial_duration, sound_enabled)
 
         # Recreate contact timer overlay on graph
-        if hasattr(self, 'app') and hasattr(self.app, 'flag_manager'):
-            self.app.flag_manager.create_contact_timer_overlay(initial_duration)
+        if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr'):
+            self.app.flag_mgr.create_contact_timer_overlay(initial_duration)
 
         # Update display immediately
         self.update_timer_button(label, initial_duration, is_manual=True)
@@ -6005,7 +5996,7 @@ class AffilabsMainWindow(QMainWindow):
         """Refresh the Intelligence Bar display with current system diagnostics.
 
         NOTE: If a cycle is currently running, this method will ONLY update the status
-        indicator (✓/⚠/❌) but NOT the message, to avoid overriding the cycle countdown
+        indicator (?/?/?) but NOT the message, to avoid overriding the cycle countdown
         """
         try:
             # Get system intelligence instance and run diagnosis
@@ -6036,7 +6027,7 @@ class AffilabsMainWindow(QMainWindow):
                     message_text = "✓ Calibrated"
                     message_color = "#34C759"
                 else:
-                    message_text = "⚠ Cal needed"
+                    message_text = "🔧 Cal needed"
                     message_color = "#FF9500"
 
             elif system_state == SystemState.DEGRADED:
@@ -6057,7 +6048,7 @@ class AffilabsMainWindow(QMainWindow):
                     message_text = "Attention required"
                 message_color = "#FF9500"
             elif system_state == SystemState.ERROR:
-                status_text = "âŒ"
+                status_text = "❌"
                 status_color = "#FF3B30"  # Red
                 if active_issues:
                     message_text = f"{active_issues[0].title}"
@@ -6065,7 +6056,7 @@ class AffilabsMainWindow(QMainWindow):
                     message_text = "System error"
                 message_color = "#FF3B30"
             else:  # UNKNOWN
-                status_text = "â—"
+                status_text = "●"
                 status_color = "#86868B"  # Gray
                 message_text = "Initializing..."
                 message_color = "#86868B"
@@ -6151,16 +6142,16 @@ class AffilabsMainWindow(QMainWindow):
             if state == "queued":
                 if row == 0:
                     # First item is ready to start
-                    state_text = "â–¶ï¸ Ready"
+                    state_text = "▶️ Ready"
                     state_color = QColor(227, 242, 253)  # Light blue
                 else:
-                    state_text = "ðŸŸ¡ Queued"
+                    state_text = "🟡 Queued"
                     state_color = QColor(245, 245, 245)  # Light gray
             elif state == "running":
-                state_text = "ðŸƒ Running"
+                state_text = "🏃 Running"
                 state_color = QColor(255, 243, 205)  # Light yellow/amber
             elif state == "completed":
-                state_text = "âœ“ Done"
+                state_text = "✓ Done"
                 state_color = QColor(232, 245, 233)  # Light green
 
             # Set cell values
@@ -6357,7 +6348,7 @@ class AffilabsMainWindow(QMainWindow):
             calibration_data = getattr(self.app.data_mgr, "calibration_data", None)
             if calibration_data:
                 dialog.load_calibration_params(calibration_data)
-                logger.info("âœ“ Loaded calibration parameters into Advanced Settings")
+                logger.info("✓ Loaded calibration parameters into Advanced Settings")
 
         # Load device info if available
         if self.device_config:
@@ -6398,12 +6389,12 @@ class AffilabsMainWindow(QMainWindow):
                 # Currently in S, switch to P
                 ctrl.set_mode("p")
                 self.polarizer_toggle_btn.setText("Position: P")
-                logger.info("âœ… Switched to P-mode")
+                logger.info("✅ Switched to P-mode")
             else:
                 # Currently in P, switch to S
                 ctrl.set_mode("s")
                 self.polarizer_toggle_btn.setText("Position: S")
-                logger.info("âœ… Switched to S-mode")
+                logger.info("✅ Switched to S-mode")
 
         except Exception as e:
             logger.error(f"Failed to toggle polarizer: {e}")
@@ -6412,12 +6403,12 @@ class AffilabsMainWindow(QMainWindow):
     def _apply_settings(self):
         """Apply polarizer and LED settings from the Settings tab.
 
-        ARCHITECTURE: Signal-based communication (UI â†’ Application)
+        ARCHITECTURE: Signal-based communication (UI → Application)
         UI validates input and emits signal with settings dict.
         Application layer handles business logic (hardware access, config save).
         """
         try:
-            logger.info("ðŸ”§ UI: Parsing settings...")
+            logger.info("🔧 UI: Parsing settings...")
 
             # Get polarizer positions
             s_pos_text = self.s_position_input.text()
@@ -6478,16 +6469,16 @@ class AffilabsMainWindow(QMainWindow):
             }
 
             # Emit signal - Application layer handles business logic
-            # This respects HAL architecture: UI â†’ Application â†’ Hardware
-            logger.info("ðŸ”§ UI: Emitting apply_led_settings_requested signal")
+            # This respects HAL architecture: UI → Application → Hardware
+            logger.info("🔧 UI: Emitting apply_led_settings_requested signal")
             self.apply_led_settings_requested.emit(settings)
-            logger.info("âœ… Settings saved to device config")
+            logger.info("✅ Settings saved to device config")
 
             # Note: Message boxes removed - visual feedback now via button style change only
             # LED brightness updates are now live (no need for confirmation dialogs)
 
         except Exception as e:
-            logger.error(f"âŒ Failed to apply settings: {e}", exc_info=True)
+            logger.error(f"❌ Failed to apply settings: {e}", exc_info=True)
             QMessageBox.warning(self, "Error", f"Failed to apply settings: {e}")
 
     def _handle_simple_led_calibration(self) -> None:
@@ -6525,7 +6516,7 @@ class AffilabsMainWindow(QMainWindow):
     def _on_recording_error(self, error_msg: str) -> None:
         """Handle recording error signal."""
         if hasattr(self, "baseline_capture_btn"):
-            self.baseline_capture_btn.setText("🔴 Record 5-Min Baseline Data")
+            self.baseline_capture_btn.setText("?? Record 5-Min Baseline Data")
             self.baseline_capture_btn.setStyleSheet(
                 "QPushButton {"
                 "  background: #FF3B30;"
@@ -6549,8 +6540,8 @@ class AffilabsMainWindow(QMainWindow):
                 "}",
             )
 
-        QMessageBox.critical(self, "Recording Error", f"âŒ {error_msg}")
-        logger.error(f"âŒ Baseline recording error: {error_msg}")
+        QMessageBox.critical(self, "Recording Error", f"❌ {error_msg}")
+        logger.error(f"❌ Baseline recording error: {error_msg}")
 
     def _connect_signals(self) -> None:
         """Connect UI signals."""
@@ -6740,7 +6731,7 @@ class AffilabsMainWindow(QMainWindow):
                     # Trigger selection view update
                     self._update_edits_selection_view()
 
-            logger.info(f"âœ“ Populated timeline graph with data from {len(raw_data)} rows")
+            logger.info(f"✓ Populated timeline graph with data from {len(raw_data)} rows")
 
         except Exception as e:
             logger.exception(f"Error populating timeline graph: {e}")
@@ -6790,17 +6781,17 @@ class AffilabsMainWindow(QMainWindow):
 
         menu = QMenu()
 
-        injection_action = QAction("▲ Injection", menu)
+        injection_action = QAction("? Injection", menu)
         injection_action.triggered.connect(
             lambda: flag_mgr.add_edits_flag(channel, time_val, spr_val, "injection")
         )
 
-        wash_action = QAction("■ Wash", menu)
+        wash_action = QAction("🧪 Wash", menu)
         wash_action.triggered.connect(
             lambda: flag_mgr.add_edits_flag(channel, time_val, spr_val, "wash")
         )
 
-        spike_action = QAction("★ Spike", menu)
+        spike_action = QAction("? Spike", menu)
         spike_action.triggered.connect(
             lambda: flag_mgr.add_edits_flag(channel, time_val, spr_val, "spike")
         )
@@ -6860,13 +6851,13 @@ class AffilabsMainWindow(QMainWindow):
                         flags_lower = flags.lower()
                         if any(word in flags_lower for word in ['error', 'fail', 'invalid', 'bad']):
                             flag_color = '#FF3B30'  # Red
-                            flag_text = f"⚠️ {flags}"
+                            flag_text = f"❌ {flags}"
                         elif any(word in flags_lower for word in ['warning', 'check', 'review']):
                             flag_color = '#FF9500'  # Orange
-                            flag_text = f"⚡ {flags}"
+                            flag_text = f"⚠ {flags}"
                         else:
                             flag_color = '#007AFF'  # Blue
-                            flag_text = f"ℹ️ {flags}"
+                            flag_text = f"🏷️ {flags}"
 
                         self.edits_tab.alignment_flags_display.setText(flag_text)
                         self.edits_tab.alignment_flags_display.setStyleSheet(f"""
@@ -7192,7 +7183,7 @@ class AffilabsMainWindow(QMainWindow):
             self.edits_primary_graph.setLabel('left', 'Response (RU)')
             logger.info("[GRAPH] Auto-scaled graph to fit data")
 
-            logger.info(f"âœ“ Loaded {valid_cycles_loaded} cycle(s) to edits graph")
+            logger.info(f"✓ Loaded {valid_cycles_loaded} cycle(s) to edits graph")
 
             # Handle baseline cursors (only for single selection)
             if len(selected_rows) == 1:
@@ -7420,7 +7411,7 @@ class AffilabsMainWindow(QMainWindow):
                 f"Time range: {min_start:.1f}s - {max_end:.1f}s"
             )
 
-            logger.info(f"âœ“ Created segment '{segment_name}' from {len(source_cycles)} cycles")
+            logger.info(f"✓ Created segment '{segment_name}' from {len(source_cycles)} cycles")
 
         except Exception as e:
             logger.exception(f"Error creating segment: {e}")
@@ -7457,7 +7448,7 @@ class AffilabsMainWindow(QMainWindow):
                 # Reset stored data
                 self.edits_reference_cycle_data[i] = None
 
-            logger.info("âœ“ Cleared all reference graphs")
+            logger.info("✓ Cleared all reference graphs")
 
         except Exception as e:
             logger.exception(f"Error clearing reference graphs: {e}")
@@ -7558,7 +7549,7 @@ class AffilabsMainWindow(QMainWindow):
             # Store cycle data
             self.edits_reference_cycle_data[ref_index] = cycle_row
 
-            logger.info(f"âœ“ Loaded {cycle_type} cycle {cycle_row + 1} to reference {ref_index + 1}")
+            logger.info(f"✓ Loaded {cycle_type} cycle {cycle_row + 1} to reference {ref_index + 1}")
 
         except Exception as e:
             logger.exception(f"Error loading cycle to reference: {e}")
@@ -7611,7 +7602,7 @@ class AffilabsMainWindow(QMainWindow):
                 f"Exported segment '{segment_name}' to:\n{file_path}"
             )
 
-            logger.info(f"âœ“ Exported segment '{segment_name}' to TraceDrawer CSV")
+            logger.info(f"✓ Exported segment '{segment_name}' to TraceDrawer CSV")
 
         except Exception as e:
             logger.exception(f"Error exporting segment: {e}")
@@ -7659,7 +7650,7 @@ class AffilabsMainWindow(QMainWindow):
                 f"Exported segment '{segment_name}' to:\n{file_path}"
             )
 
-            logger.info(f"âœ“ Exported segment '{segment_name}' to JSON")
+            logger.info(f"✓ Exported segment '{segment_name}' to JSON")
 
         except Exception as e:
             logger.exception(f"Error exporting segment to JSON: {e}")
@@ -7758,7 +7749,7 @@ class AffilabsMainWindow(QMainWindow):
                     f"Deleted segment '{segment_name}'."
                 )
 
-                logger.info(f"âœ“ Deleted segment '{segment_name}'")
+                logger.info(f"✓ Deleted segment '{segment_name}'")
 
         except Exception as e:
             logger.exception(f"Error deleting segment: {e}")
@@ -7840,7 +7831,7 @@ class AffilabsMainWindow(QMainWindow):
 
             # Check if app instance is available (it should be set by main_simplified)
             if not hasattr(self, "app") or self.app is None:
-                print("âš ï¸  Demo data: No app instance available")
+                print("⚠️  Demo data: No app instance available")
                 print(
                     "   Demo data can only be loaded when running through main_simplified.py",
                 )
@@ -7901,7 +7892,7 @@ class AffilabsMainWindow(QMainWindow):
                 self.app._update_cycle_of_interest_graph()
 
             print(
-                f"âœ… Demo data loaded: {len(time_array)} points, {len(cycle_boundaries)} cycles",
+                f"✅ Demo data loaded: {len(time_array)} points, {len(cycle_boundaries)} cycles",
             )
             print("   Use this view for promotional screenshots")
 
@@ -7919,7 +7910,7 @@ class AffilabsMainWindow(QMainWindow):
             )
 
         except ImportError as e:
-            print(f"âŒ Error importing demo data generator: {e}")
+            print(f"❌ Error importing demo data generator: {e}")
             from PySide6.QtWidgets import QMessageBox
 
             QMessageBox.critical(
@@ -7928,7 +7919,7 @@ class AffilabsMainWindow(QMainWindow):
                 f"Could not import demo data generator:\n{e}",
             )
         except Exception as e:
-            print(f"âŒ Error loading demo data: {e}")
+            print(f"❌ Error loading demo data: {e}")
             import traceback
 
             try:

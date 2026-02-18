@@ -4,10 +4,10 @@
     "Ludo",
     "Sandy"
   ],
-  "current_user": "Ludo",
+  "current_user": "Sandy",
   "user_data": {
     "Sandy": {
-      "experiment_count": 0,
+      "experiment_count": 1,
       "compression_training": {
         "completed": false,
         "score": null,

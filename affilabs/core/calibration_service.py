@@ -1824,43 +1824,12 @@ class CalibrationService(QObject):
             # Convert calibration result to domain model
             self.calibration_progress.emit("Storing results...", 95)
             # This provides type safety, validation, and immutability
-            logger.debug("Converting calibration result to domain model...")
             try:
                 calibration_data = led_calibration_result_to_domain(cal_result)
-                logger.debug("Calibration data converted to domain model")
-                logger.debug(f"   Channels: {list(calibration_data.s_pol_ref.keys())}")
-                logger.debug(
-                    f"   Integration times: S={calibration_data.integration_time_s}ms, P={calibration_data.integration_time_p}ms",
-                )
-                logger.debug(f"   P-mode LEDs: {calibration_data.p_mode_intensities}")
-                logger.debug(f"   S-mode LEDs: {calibration_data.s_mode_intensities}")
             except Exception as e:
                 logger.error(f"[ERROR] Failed to convert calibration data: {e}")
                 msg = f"Calibration data conversion failed: {e}"
                 raise RuntimeError(msg)
-
-            # Explicitly log timing sync metrics for QC visibility (prefer domain)
-            try:
-                ts = getattr(calibration_data, "timing_sync", None) or getattr(
-                    cal_result,
-                    "timing_sync",
-                    None,
-                )
-                if ts:
-                    logger.debug(
-                        f"Timing Sync: avg={ts.get('avg_cycle_ms', 0):.1f} ms, "
-                        f"jitter={ts.get('jitter_ms', 0):.1f} ms, status={ts.get('status', 'unknown')}",
-                    )
-                else:
-                    logger.debug(
-                        "Timing Sync: not measured (no timing_sync available)",
-                    )
-            except Exception as _e:
-                logger.debug(f"(Timing sync log skipped: {_e})")
-
-            # Domain model has built-in validation
-            # Note: validate() method is from CalibrationData dataclass
-            logger.debug("Calibration data validated (domain model)")
 
             # Store calibration data
             self._current_calibration_data = calibration_data
@@ -1960,7 +1929,9 @@ class CalibrationService(QObject):
             # Check if at least one channel passed
             passed_channels = []
             for ch, validation in transmission_validation.items():
-                status = validation.get("status", "")
+                # validation contains {"qc_metrics": {...}, "p_pol_raw": ..., "transmission": ...}
+                qc_metrics = validation.get("qc_metrics", {})
+                status = qc_metrics.get("status", "")
                 if "[OK] PASS" in status:
                     passed_channels.append(ch)
 

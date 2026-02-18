@@ -193,7 +193,9 @@ def LEDconverge_engine(
         if logger:
             if converged:
                 logger.debug(f"Engine converged: integration={integration_ms:.1f}ms, iteration={best_iteration}")
-                logger.debug(f"   Final signals: {signals}")
+                # Format signals to 1 decimal place for cleaner logging
+                signals_fmt = {ch: f"{val:.1f}" for ch, val in signals.items()}
+                logger.debug(f"   Final signals: {signals_fmt}")
             else:
                 logger.warning(f"Engine did not converge: integration={integration_ms:.1f}ms, best_iteration={best_iteration}")
 

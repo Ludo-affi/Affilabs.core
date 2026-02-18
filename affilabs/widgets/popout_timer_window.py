@@ -76,11 +76,11 @@ class TitleLabel(QLabel):
 # Font-size presets (label_px, timer_px, window_min_width, window_height)
 # ---------------------------------------------------------------------------
 _FONT_PRESETS = [
-    {"name": "Normal",  "label": 12, "timer": 28, "w": 220, "h": 80},
-    {"name": "Large",   "label": 14, "timer": 44, "w": 300, "h": 110},
-    {"name": "XL",      "label": 18, "timer": 64, "w": 400, "h": 140},
-    {"name": "XXL",     "label": 22, "timer": 96, "w": 540, "h": 190},
-    {"name": "XXXL",    "label": 26, "timer": 128, "w": 700, "h": 240},
+    {"name": "Normal",  "label": 10, "timer": 28, "w": 220, "h": 80},
+    {"name": "Large",   "label": 11, "timer": 44, "w": 300, "h": 110},
+    {"name": "XL",      "label": 14, "timer": 64, "w": 400, "h": 140},
+    {"name": "XXL",     "label": 18, "timer": 96, "w": 540, "h": 190},
+    {"name": "XXXL",    "label": 21, "timer": 128, "w": 700, "h": 240},
 ]
 
 
@@ -239,15 +239,15 @@ class PopOutTimerWindow(QWidget):
         self._style_control_btn(self._restart_btn)
         title_row.addWidget(self._restart_btn)
 
-        # Resize button (cycles font sizes)
-        self._resize_btn = QPushButton("Aa")
-        self._resize_btn.setMinimumSize(24, 24)
-        self._resize_btn.setMaximumSize(28, 28)
-        self._resize_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._resize_btn.setToolTip("Cycle font size")
-        self._resize_btn.clicked.connect(self._cycle_font_size)
-        self._style_mini_btn(self._resize_btn)
-        title_row.addWidget(self._resize_btn)
+        # Resize button (cycles font sizes) - DISABLED
+        # self._resize_btn = QPushButton("Aa")
+        # self._resize_btn.setMinimumSize(24, 24)
+        # self._resize_btn.setMaximumSize(28, 28)
+        # self._resize_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # self._resize_btn.setToolTip("Cycle font size")
+        # self._resize_btn.clicked.connect(self._cycle_font_size)
+        # self._style_mini_btn(self._resize_btn)
+        # title_row.addWidget(self._resize_btn)
 
         # Close button
         self._close_btn = QPushButton("✕")
@@ -455,6 +455,34 @@ class PopOutTimerWindow(QWidget):
                 self._start_btn.setVisible(False)
                 # Emit signal to start countdown
                 self.timer_ready.emit(total_seconds, self._label_text)
+
+    def show_running_state(self, total_seconds: int, label: str):
+        """Transition the window to running display without emitting timer_ready.
+
+        Use this when the countdown logic is already managed externally (e.g. by
+        a QTimer in the host widget) and you only want the pop-out to *display*
+        the running state without triggering another timer-start cycle.
+
+        Args:
+            total_seconds: Current remaining seconds to display.
+            label: Timer label text.
+        """
+        # Save initial values so restart works correctly
+        self._initial_config_minutes = total_seconds // 60
+        self._initial_config_seconds = total_seconds % 60
+        self._initial_config_label = label
+
+        # Transition out of configurable mode and update display
+        self._is_configurable = False
+        self._label_text = label
+        self._remaining = total_seconds
+        self._update_time_display()
+        self._label_lbl.setText(label)
+
+        # Show pause/restart buttons, hide start button
+        self._pause_btn.setVisible(True)
+        self._restart_btn.setVisible(True)
+        self._start_btn.setVisible(False)
 
     # ------------------------------------------------------------------
     #  Public API - Runtime

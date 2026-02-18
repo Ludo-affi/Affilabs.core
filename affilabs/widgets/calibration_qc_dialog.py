@@ -66,12 +66,12 @@ class CalibrationQCDialog(QDialog):
         from PySide6.QtGui import QGuiApplication
 
         screen = QGuiApplication.primaryScreen().availableGeometry()
-        # Use 90% of screen size with reasonable max dimensions
-        dialog_width = min(int(screen.width() * 0.9), 1600)
+        # Use 80% of screen size with narrower width for 2x2 layout
+        dialog_width = min(int(screen.width() * 0.8), 1300)
         dialog_height = min(int(screen.height() * 0.85), 850)
 
         # Set size constraints to prevent dialog from becoming unusable
-        self.setMinimumSize(1200, 650)
+        self.setMinimumSize(1000, 650)
         self.setMaximumSize(screen.width(), screen.height() - 50)  # Leave room for taskbar
         self.resize(dialog_width, dialog_height)
 
@@ -514,7 +514,7 @@ class CalibrationQCDialog(QDialog):
         table.setHorizontalHeaderLabels(
             [
                 "Ch",
-                "Min Trans%",
+                "Dip Depth %",
                 "FWHM (nm)",
                 "P-Pol Signal",
                 "Conv Iter",
@@ -554,16 +554,17 @@ class CalibrationQCDialog(QDialog):
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(idx, 0, ch_item)
 
-            # Min Transmission % (already positive from calibration_data.py)
+            # Min Transmission % (actually dip_depth from calibration_data.py - higher is better)
             if ch in transmission_validation:
                 ch_data = transmission_validation[ch]
-                trans_min = ch_data.get("transmission_min")
+                trans_min = ch_data.get("transmission_min")  # This is actually dip_depth %
                 if trans_min is not None:
                     trans_item = QTableWidgetItem(f"{trans_min:.1f}")
                     trans_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    if trans_min < 20:
+                    # Color code for dip depth: >70% = excellent (green), 50-70% = good (yellow), <50% = poor (red)
+                    if trans_min >= 70:
                         trans_item.setForeground(QColor("#34C759"))
-                    elif trans_min < 40:
+                    elif trans_min >= 50:
                         trans_item.setForeground(QColor("#FF9500"))
                     else:
                         trans_item.setForeground(QColor("#FF3B30"))
@@ -645,7 +646,7 @@ class CalibrationQCDialog(QDialog):
 
         # Optimize column widths
         table.setColumnWidth(0, 50)   # Ch
-        table.setColumnWidth(1, 95)   # Min Trans%
+        table.setColumnWidth(1, 100)  # Dip Depth %
         table.setColumnWidth(2, 90)   # FWHM
         table.setColumnWidth(3, 100)  # P-Pol Signal
         table.setColumnWidth(4, 90)   # Conv Iter
@@ -1097,7 +1098,7 @@ class CalibrationQCDialog(QDialog):
         table.setHorizontalHeaderLabels(
             [
                 "Channel",
-                "Min Trans %",
+                "Dip Depth %",
                 "FWHM (nm)",
                 "Status",
             ],
@@ -1147,15 +1148,15 @@ class CalibrationQCDialog(QDialog):
             if ch in transmission_validation:
                 ch_data = transmission_validation[ch]
 
-                # Min Transmission % (already positive from calibration_data.py)
-                trans_min = ch_data.get("transmission_min")
+                # Min Transmission % (actually dip_depth from calibration_data.py - higher is better)
+                trans_min = ch_data.get("transmission_min")  # This is actually dip_depth %
                 if trans_min is not None:
                     trans_item = QTableWidgetItem(f"{trans_min:.1f}%")
                     trans_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    # Color code: green if <20% (good SPR), yellow if 20-40%, red if >40%
-                    if trans_min < 20:
+                    # Color code for dip depth: >70% = excellent (green), 50-70% = good (yellow), <50% = poor (red)
+                    if trans_min >= 70:
                         trans_item.setForeground(QColor("#34C759"))
-                    elif trans_min < 40:
+                    elif trans_min >= 50:
                         trans_item.setForeground(QColor("#FF9500"))
                     else:
                         trans_item.setForeground(QColor("#FF3B30"))
@@ -1207,7 +1208,7 @@ class CalibrationQCDialog(QDialog):
         table.resizeColumnsToContents()
         table.horizontalHeader().setStretchLastSection(False)
         table.setColumnWidth(0, 100)  # Channel
-        table.setColumnWidth(1, 120)  # Min Trans %
+        table.setColumnWidth(1, 110)  # Dip Depth %
         table.setColumnWidth(2, 100)  # FWHM
         table.horizontalHeader().setSectionResizeMode(
             3,

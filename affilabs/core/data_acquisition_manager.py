@@ -343,7 +343,7 @@ class DataAcquisitionManager(QObject):
 
         """
         try:
-            logger.debug("Applying calibration data")
+            logger.debug("Applying calibration to data acquisition")
 
             # Validate input
             if calibration_data is None:

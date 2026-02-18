@@ -55,8 +55,10 @@ USAGE:
 
 from __future__ import annotations
 
+import time
 from typing import Any, TYPE_CHECKING
 
+import numpy as np
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
@@ -80,8 +82,48 @@ UPDATE_STATUS_INTERVAL_MS = 1000
 FINAL_MEASUREMENT_TIMEOUT_MS = 2000
 MINIMUM_DATA_POINTS = 10
 RU_CONVERSION_FACTOR = 355.0
-FINAL_MEASUREMENT_DURATION_SECONDS = 10
 CHANNEL_SCAN_GRACE_SECONDS = 10  # Keep scanning other channels after first detection
+
+# ── Stylesheet constants ──────────────────────────────────────────────
+_COLOR_GREEN = "#34C759"
+_COLOR_ORANGE = "#FF9500"
+_COLOR_RED = "#FF3B30"
+_COLOR_GRAY = "#86868B"
+_COLOR_TEXT = "#1D1D1F"
+_COLOR_LED_OFF = "#D1D1D6"
+_FONT_SYSTEM = "-apple-system, 'SF Pro Text', sans-serif"
+_FONT_MONO = "'SF Mono', 'Consolas', monospace"
+
+_STYLE_STATUS_SUCCESS = f"""
+    font-size: 14px; color: {_COLOR_GREEN}; font-weight: 600;
+    text-align: center; padding: 6px 0px;
+"""
+_STYLE_STATUS_SUCCESS_LARGE = f"""
+    font-size: 18px; color: {_COLOR_GREEN}; font-weight: 600;
+    text-align: center; padding: 20px 0px;
+"""
+_STYLE_STATUS_WARNING = f"""
+    font-size: 18px; color: {_COLOR_RED}; font-weight: 600;
+    text-align: center; padding: 20px 0px;
+"""
+_STYLE_STATUS_TIMEOUT = f"""
+    font-size: 16px; color: {_COLOR_ORANGE}; font-weight: 600;
+    text-align: center; padding: 20px 0px;
+"""
+_STYLE_LED_ON = f"font-size: 16px; color: {_COLOR_GREEN}; padding: 0px 2px;"
+_STYLE_LED_OFF = f"font-size: 16px; color: {_COLOR_LED_OFF}; padding: 0px 2px;"
+_STYLE_TIMER_ACTIVE = f"""
+    font-size: 13px; color: {_COLOR_GREEN}; font-weight: 600;
+    text-align: center; padding: 4px 0px; font-family: {_FONT_MONO};
+"""
+_STYLE_TIMER_INACTIVE = f"""
+    font-size: 13px; color: {_COLOR_TEXT}; font-weight: 600;
+    text-align: center; padding: 4px 0px; font-family: {_FONT_MONO};
+"""
+_STYLE_SPREAD = f"""
+    font-size: 12px; color: {_COLOR_ORANGE}; font-weight: 500;
+    text-align: center; padding: 2px 0px; font-family: {_FONT_MONO};
+"""
 
 
 class ManualInjectionDialog(QDialog):
@@ -153,8 +195,7 @@ class ManualInjectionDialog(QDialog):
         self.detection_priority = detection_priority or "auto"
         self.method_mode = method_mode
         self.detection_active = False
-        self.window_start_time = None  # Time when "Set Injection Flag" clicked
-        self.last_detection_time = None
+        self.window_start_time = None  # Time when detection window opens
         # Detection result (stored for coordinator to use for flag placement)
         self.detected_injection_time: float | None = None
         self.detected_channel: str | None = None
@@ -172,7 +213,10 @@ class ManualInjectionDialog(QDialog):
         self._channel_leds: dict[str, QLabel] = {}  # Maps channel letter to LED label
         self._channel_detected: dict[str, bool] = {}  # Tracks detection state per channel
         self._first_detection_time: float | None = None  # When first channel was detected
+        self._last_detection_time: float | None = None  # When last channel was detected
         self._detected_channels_results: dict[str, dict] = {}  # Per-channel: {time, confidence}
+        self._contact_timer_label: QLabel | None = None  # Contact time timer display
+        self._spread_timer_label: QLabel | None = None  # Injection spread time display
 
         # Set window title based on mode
         if injection_number and total_injections:
@@ -182,9 +226,9 @@ class ManualInjectionDialog(QDialog):
 
         self.setModal(True)  # Block execution
         self.setMinimumWidth(380)
-        self.setMinimumHeight(220)
+        self.setMinimumHeight(280)
         self.setMaximumWidth(450)
-        self.setMaximumHeight(280)
+        self.setMaximumHeight(340)
 
         # Remove close button (force user to click Complete/Cancel)
         self.setWindowFlags(
@@ -225,12 +269,7 @@ class ManualInjectionDialog(QDialog):
             header_text = f"{title}  •  {sample_id}"
 
         header = QLabel(header_text)
-        header.setStyleSheet("""
-            font-size: 13px;
-            font-weight: 600;
-            color: #1D1D1F;
-            font-family: -apple-system, 'SF Pro Text', sans-serif;
-        """)
+        header.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {_COLOR_TEXT}; font-family: {_FONT_SYSTEM};")
         main_layout.addWidget(header)
 
         # Channel LED indicators row
@@ -246,21 +285,12 @@ class ManualInjectionDialog(QDialog):
 
             # Channel label (A, B, C, D)
             ch_label = QLabel(f"Ch {channel}")
-            ch_label.setStyleSheet("""
-                font-size: 11px;
-                font-weight: 500;
-                color: #86868B;
-                font-family: -apple-system, 'SF Pro Text', sans-serif;
-            """)
+            ch_label.setStyleSheet(f"font-size: 11px; font-weight: 500; color: {_COLOR_GRAY}; font-family: {_FONT_SYSTEM};")
             ch_container.addWidget(ch_label)
 
             # LED indicator (circle)
             led = QLabel("●")
-            led.setStyleSheet("""
-                font-size: 16px;
-                color: #D1D1D6;
-                padding: 0px 2px;
-            """)
+            led.setStyleSheet(_STYLE_LED_OFF)
             led.setAlignment(Qt.AlignmentFlag.AlignCenter)
             ch_container.addWidget(led)
 
@@ -275,15 +305,22 @@ class ManualInjectionDialog(QDialog):
 
         # Status label (countdown/detection status)
         self._status_label = QLabel("🔍 Monitoring for injection...")
-        self._status_label.setStyleSheet("""
-            font-size: 14px;
-            color: #FF9500;
-            font-weight: 500;
-            text-align: center;
-            padding: 6px 0px;
-        """)
+        self._status_label.setStyleSheet(f"font-size: 14px; color: {_COLOR_ORANGE}; font-weight: 500; text-align: center; padding: 6px 0px;")
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self._status_label)
+
+        # Contact Time Timer Label
+        cycle_label = f"Cycle {self.injection_number}" if self.injection_number else "Cycle 1"
+        self._contact_timer_label = QLabel(f"Contact Time Timer {cycle_label}: --:--")
+        self._contact_timer_label.setStyleSheet(_STYLE_TIMER_INACTIVE)
+        self._contact_timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self._contact_timer_label)
+
+        # Injection Spread Timer Label (shows difference between first and last detected channel)
+        self._spread_timer_label = QLabel("")
+        self._spread_timer_label.setStyleSheet(f"font-size: 12px; color: {_COLOR_GRAY}; font-weight: 500; text-align: center; padding: 2px 0px; font-family: {_FONT_MONO};")
+        self._spread_timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self._spread_timer_label)
 
         # Compact button row
         button_row = QHBoxLayout()
@@ -318,9 +355,9 @@ class ManualInjectionDialog(QDialog):
         button_row.addStretch()
 
         # Done button (primary)
-        self._set_flag_btn = QPushButton("✓ 1:00")
+        self._set_flag_btn = QPushButton("✓ Done Injecting")
         self._set_flag_btn.setFixedHeight(32)
-        self._set_flag_btn.setMinimumWidth(130)  # Make button wider to show time
+        self._set_flag_btn.setMinimumWidth(130)
         self._set_flag_btn.setShortcut(QKeySequence.Open)  # Return/Enter key
         self._set_flag_btn.setStyleSheet("""
             QPushButton {
@@ -363,6 +400,15 @@ class ManualInjectionDialog(QDialog):
 
     def _cleanup_resources(self) -> None:
         """Stop all timers to prevent resource leaks."""
+        self._stop_all_timers()
+
+    def _stop_all_timers(self) -> None:
+        """Deactivate detection and stop all running timers.
+
+        Central cleanup method — called from _cleanup_resources, _finalize_detection,
+        _on_detection_timeout, _on_cancel, and the all-detected success path.
+        Safe to call multiple times (idempotent).
+        """
         self.detection_active = False
         if self._detection_timer:
             self._detection_timer.stop()
@@ -374,13 +420,7 @@ class ManualInjectionDialog(QDialog):
         if not self.buffer_mgr or not self.buffer_mgr.timeline_data:
             logger.warning("Cannot start detection - no data available")
             self._status_label.setText("⚠ No data available. Ensure acquisition is running.")
-            self._status_label.setStyleSheet("""
-                font-size: 18px;
-                color: #FF3B30;
-                font-weight: 600;
-                text-align: center;
-                padding: 20px 0px;
-            """)
+            self._status_label.setStyleSheet(_STYLE_STATUS_WARNING)
             return
 
         # Get current time as window start
@@ -388,7 +428,6 @@ class ManualInjectionDialog(QDialog):
         if first_channel in self.buffer_mgr.timeline_data:
             channel_data = self.buffer_mgr.timeline_data[first_channel]
             if channel_data and len(channel_data.time) > 0:
-                import numpy as np
                 times = np.array(channel_data.time)
                 self.window_start_time = times[-1]  # Current time = window start
             else:
@@ -403,18 +442,10 @@ class ManualInjectionDialog(QDialog):
         self._user_done_injecting = False
         self._done_timestamp = None
         self._window_elapsed = 0
-        import time
         self._detection_start_time = time.time()
 
         # Update status
         self._status_label.setText("🔍 Monitoring for injection...")
-        self._status_label.setStyleSheet("""
-            font-size: 18px;
-            color: #FF9500;
-            font-weight: 600;
-            text-align: center;
-            padding: 20px 0px;
-        """)
 
         logger.info("Auto-detection started - monitoring for injection")
 
@@ -431,31 +462,16 @@ class ManualInjectionDialog(QDialog):
     def _on_done_injecting(self) -> None:
         """User clicked 'Done Injecting' - mark as done but continue monitoring for 10 more seconds."""
         self._user_done_injecting = True
-        import time
         self._done_timestamp = time.time()
 
         logger.info("User marked injection as done - continuing to monitor for 10 more seconds")
 
         # Disable button and update status
         self._set_flag_btn.setEnabled(False)
-
-        # Update button with remaining time
-        remaining = max(0, INJECTION_WINDOW_SECONDS - int(time.time() - self._detection_start_time))
-        self._set_flag_btn.setText(f"✓ {self._format_time_display(remaining)}")
-
+        self._set_flag_btn.setText("✓ Done")
 
         self._status_label.setText("✓ Injection complete. Finalizing measurement...")
-        self._status_label.setStyleSheet("""
-            font-size: 18px;
-            color: #34C759;
-            font-weight: 600;
-            text-align: center;
-            padding: 20px 0px;
-        """)
-
-    def _on_set_flag(self):
-        """Legacy method - now redirects to _start_detection."""
-        self._start_detection()
+        self._status_label.setStyleSheet(_STYLE_STATUS_SUCCESS_LARGE)
 
     def _get_sensitivity_factor(self) -> float:
         """Compute sensitivity_factor from detection_priority and method_mode.
@@ -499,10 +515,6 @@ class ManualInjectionDialog(QDialog):
             return
 
         try:
-            from affilabs.utils.spr_signal_processing import auto_detect_injection_point
-            import numpy as np
-            import time
-
             now = time.time()
 
             # Hard 60-second limit from dialog start
@@ -524,91 +536,158 @@ class ManualInjectionDialog(QDialog):
 
             # Scan each channel (skip already-detected ones)
             for channel_letter in self.detection_channels.lower():
-                ch_upper = channel_letter.upper()
+                self._scan_channel(channel_letter, now)
 
-                # Skip channels already detected
-                if ch_upper in self._detected_channels_results:
-                    continue
-
-                if channel_letter not in self.buffer_mgr.timeline_data:
-                    continue
-
-                channel_data = self.buffer_mgr.timeline_data[channel_letter]
-                if not channel_data or len(channel_data.time) < 10:
-                    continue
-
-                times = np.array(channel_data.time)
-                wavelengths = np.array(channel_data.wavelength)
-
-                if len(times) < 10 or len(wavelengths) < 10:
-                    continue
-
-                # Define search window: from start until now
-                window_mask = (times >= self.window_start_time) & (times <= times[-1])
-                window_times = times[window_mask]
-                window_wl = wavelengths[window_mask]
-
-                if len(window_times) < 10:
-                    continue
-
-                # Convert wavelength to RU (baseline-corrected)
-                baseline = window_wl[0] if len(window_wl) > 0 else 0
-                window_ru = (window_wl - baseline) * RU_CONVERSION_FACTOR
-
-                result = auto_detect_injection_point(
-                    window_times, window_ru,
-                    sensitivity_factor=self._get_sensitivity_factor(),
-                )
-
-                if result['injection_time'] is not None and result['confidence'] > DETECTION_CONFIDENCE_THRESHOLD:
-                    # Light up LED
-                    self._update_channel_led(channel_letter, detected=True)
-
-                    # Store per-channel result
-                    self._detected_channels_results[ch_upper] = {
-                        'time': result['injection_time'],
-                        'confidence': result['confidence'],
-                    }
-
-                    logger.info(
-                        f"Channel {ch_upper} injection detected at "
-                        f"t={result['injection_time']:.1f}s "
-                        f"(confidence: {result['confidence']:.0%})"
-                    )
-
-                    # First detection — store primary result and start grace timer
-                    if self._first_detection_time is None:
-                        self._first_detection_time = now
-                        self.detected_injection_time = result['injection_time']
-                        self.detected_channel = channel_letter
-                        self.detected_confidence = result['confidence']
-                        self.injection_detected.emit()
-
-            # All monitored channels detected — close immediately
+            # All monitored channels detected — show success for 3s then close
             all_detected = all(
                 ch.upper() in self._detected_channels_results
                 for ch in self.detection_channels
             )
-            if all_detected and self._first_detection_time is not None:
-                logger.info(f"All {len(self._detected_channels_results)} channels detected — closing dialog")
-                self._finalize_detection()
+            if all_detected and self._first_detection_time is not None and self.detection_active:
+                self._handle_all_detected()
 
         except Exception as e:
             logger.debug(f"Detection check error: {e}")
+
+    def _scan_channel(self, channel_letter: str, now: float) -> None:
+        """Run injection detection on a single channel.
+
+        Checks buffer data for the given channel, converts to RU, and runs
+        auto_detect_injection_point. If injection is found, lights the LED
+        and stores the result. On first detection across any channel, sets
+        the primary detection result and starts the grace timer.
+
+        Args:
+            channel_letter: Lowercase channel letter (a, b, c, d)
+            now: Current time.time() value
+        """
+        from affilabs.utils.spr_signal_processing import auto_detect_injection_point
+
+        ch_upper = channel_letter.upper()
+
+        # Skip channels already detected
+        if ch_upper in self._detected_channels_results:
+            return
+
+        if channel_letter not in self.buffer_mgr.timeline_data:
+            return
+
+        channel_data = self.buffer_mgr.timeline_data[channel_letter]
+        if not channel_data or len(channel_data.time) < MINIMUM_DATA_POINTS:
+            return
+
+        times = np.array(channel_data.time)
+        wavelengths = np.array(channel_data.wavelength)
+
+        if len(times) < MINIMUM_DATA_POINTS or len(wavelengths) < MINIMUM_DATA_POINTS:
+            return
+
+        # Define search window: from start until now
+        window_mask = (times >= self.window_start_time) & (times <= times[-1])
+        window_times = times[window_mask]
+        window_wl = wavelengths[window_mask]
+
+        if len(window_times) < MINIMUM_DATA_POINTS:
+            return
+
+        # Convert wavelength to RU (baseline-corrected)
+        baseline = window_wl[0] if len(window_wl) > 0 else 0
+        window_ru = (window_wl - baseline) * RU_CONVERSION_FACTOR
+
+        result = auto_detect_injection_point(
+            window_times, window_ru,
+            sensitivity_factor=self._get_sensitivity_factor(),
+        )
+
+        if result['injection_time'] is None or result['confidence'] <= DETECTION_CONFIDENCE_THRESHOLD:
+            return
+
+        # Light up LED
+        self._update_channel_led(channel_letter, detected=True)
+
+        # Store per-channel result
+        self._detected_channels_results[ch_upper] = {
+            'time': result['injection_time'],
+            'confidence': result['confidence'],
+        }
+
+        logger.info(
+            f"Channel {ch_upper} injection detected at "
+            f"t={result['injection_time']:.1f}s "
+            f"(confidence: {result['confidence']:.0%})"
+        )
+
+        # First detection — store primary result and start grace timer
+        if self._first_detection_time is None:
+            self._first_detection_time = now
+            self.detected_injection_time = result['injection_time']
+            self.detected_channel = channel_letter
+            self.detected_confidence = result['confidence']
+            logger.info(f"✓ First detection: Channel {channel_letter} — starting contact timer")
+
+        # Track last detection time for spread calculation
+        self._last_detection_time = now
+        self.injection_detected.emit()
+
+    def _handle_all_detected(self) -> None:
+        """All monitored channels detected — show 3-second success display then close."""
+        logger.info(f"All {len(self._detected_channels_results)} channels detected — showing success for 3s")
+
+        # Stop detection to prevent multiple triggers
+        self._stop_all_timers()
+
+        # Update status to show success message
+        detected_chs = list(self._detected_channels_results.keys())
+        ch_list = ", ".join(detected_chs)
+        self._status_label.setText(f"✅ All channels detected ({ch_list}) — closing in 3s...")
+        self._status_label.setStyleSheet(_STYLE_STATUS_SUCCESS)
+
+        # Turn all LEDs green
+        for ch in detected_chs:
+            if ch in self._channel_leds:
+                self._channel_leds[ch].setStyleSheet(_STYLE_LED_ON)
+
+        # Disable buttons during success display
+        self._set_flag_btn.setEnabled(False)
+        self._set_flag_btn.setText("✓ Success!")
+
+        # Close after 3 seconds
+        QTimer.singleShot(3000, self._finalize_detection_and_close)
 
     def _update_detection_status(self) -> None:
         """Update status label to show elapsed time and per-channel detection progress."""
         if not self.detection_active or not self._detection_start_time:
             return
 
-        import time
         now = time.time()
         elapsed = now - self._detection_start_time
         self._window_elapsed = int(elapsed)
         remaining = max(0, INJECTION_WINDOW_SECONDS - self._window_elapsed)
 
-        # Update button with remaining time in MM:SS format
-        time_text = self._format_time_display(remaining)
+        # Update contact time timer label
+        cycle_label = f"Cycle {self.injection_number}" if self.injection_number else "Cycle 1"
+        if self._first_detection_time is not None:
+            # Timer started when first injection detected
+            contact_elapsed = int(now - self._first_detection_time)
+            self._contact_timer_label.setText(
+                f"Contact Time Timer {cycle_label}: {self._format_time_display(contact_elapsed)}"
+            )
+            self._contact_timer_label.setStyleSheet(_STYLE_TIMER_ACTIVE)
+        else:
+            # No detection yet
+            self._contact_timer_label.setText(f"Contact Time Timer {cycle_label}: --:--")
+            self._contact_timer_label.setStyleSheet(_STYLE_TIMER_INACTIVE)
+
+        # Update injection spread label (time between first and last detected channel)
+        if self._first_detection_time is not None and self._last_detection_time is not None:
+            spread = int(self._last_detection_time - self._first_detection_time)
+            if spread > 0:
+                self._spread_timer_label.setText(f"+{self._format_time_display(spread)}")
+                self._spread_timer_label.setStyleSheet(_STYLE_SPREAD)
+            else:
+                self._spread_timer_label.setText("")
+        else:
+            self._spread_timer_label.setText("")
 
         if self._first_detection_time is not None:
             # At least one channel detected — show scanning progress
@@ -619,54 +698,50 @@ class ManualInjectionDialog(QDialog):
                 f"✓ Detected: {', '.join(detected_chs)}  "
                 f"({len(detected_chs)}/{total_chs} channels, {grace_remaining}s scan)"
             )
-            self._status_label.setStyleSheet("""
-                font-size: 14px;
-                color: #34C759;
-                font-weight: 600;
-                text-align: center;
-                padding: 6px 0px;
-            """)
-            self._set_flag_btn.setText(f"✓ {time_text}")
+            self._status_label.setStyleSheet(_STYLE_STATUS_SUCCESS)
         elif self._user_done_injecting and self._done_timestamp:
             self._status_label.setText(
                 f"✓ Finalizing measurement ({remaining}s remaining)..."
             )
-            self._set_flag_btn.setText(f"✓ {time_text}")
         else:
             self._status_label.setText(
                 f"🔍 Inject within {remaining}s ({self._window_elapsed}s used)..."
             )
-            self._set_flag_btn.setText(f"✓ {time_text}")
 
         logger.debug(f"Injection window: {self._window_elapsed}s / 60s")
 
-    def _finalize_detection(self) -> None:
-        """All channels scanned (or grace period expired) — close dialog with results."""
-        if not self.detection_active:
-            return
+    def _finalize_detection_and_close(self) -> None:
+        """Called after 3-second success display — finalize with timers already stopped."""
+        self._finalize_detection(timers_already_stopped=True)
 
-        self.detection_active = False
-        if self._detection_timer:
-            self._detection_timer.stop()
-        if self._update_timer:
-            self._update_timer.stop()
+    def _finalize_detection(self, timers_already_stopped: bool = False) -> None:
+        """Close dialog with detection results.
+
+        Shared exit path for:
+        - All channels detected (3-second success display) → timers_already_stopped=True
+        - Grace period expired → timers_already_stopped=False
+        - 60-second timeout with partial results → timers_already_stopped=False
+
+        Args:
+            timers_already_stopped: If True, skip timer cleanup (already done by _handle_all_detected)
+        """
+        if not timers_already_stopped:
+            if not self.detection_active:
+                return
+            self._stop_all_timers()
 
         detected_chs = list(self._detected_channels_results.keys())
+        ch_list = ", ".join(detected_chs) if detected_chs else "none"
+
         logger.info(
             f"✓ Injection finalized — detected on {detected_chs} "
             f"(primary: {self.detected_channel}, t={self.detected_injection_time:.1f}s)"
         )
 
-        # Update UI before closing
-        ch_list = ", ".join(detected_chs) if detected_chs else "none"
+        # Update final UI state
         self._status_label.setText(f"✓ Injection detected on {ch_list}")
-        self._status_label.setStyleSheet("""
-            font-size: 18px;
-            color: #34C759;
-            font-weight: 600;
-            text-align: center;
-            padding: 20px 0px;
-        """)
+        self._status_label.setStyleSheet(_STYLE_STATUS_SUCCESS_LARGE)
+        self._set_flag_btn.setText("✓ Done")
 
         # Emit signal and close
         self.injection_complete.emit()
@@ -682,23 +757,13 @@ class ManualInjectionDialog(QDialog):
             self._finalize_detection()
             return
 
-        self.detection_active = False
-        if self._detection_timer:
-            self._detection_timer.stop()
-        if self._update_timer:
-            self._update_timer.stop()
+        self._stop_all_timers()
 
         logger.warning("⚠ 60-second injection window expired - no clear injection peak detected")
 
         # Update UI to show timeout
         self._status_label.setText("⚠ 60-second window expired\nNo injection peak detected\nManual adjustment available in Edits tab")
-        self._status_label.setStyleSheet("""
-            font-size: 16px;
-            color: #FF9500;
-            font-weight: 600;
-            text-align: center;
-            padding: 20px 0px;
-        """)
+        self._status_label.setStyleSheet(_STYLE_STATUS_TIMEOUT)
 
         # Auto-close dialog after 2 seconds
         close_timer = QTimer(self)
@@ -708,11 +773,7 @@ class ManualInjectionDialog(QDialog):
 
     def _on_cancel(self) -> None:
         """User cancelled injection."""
-        self.detection_active = False
-        if self._detection_timer:
-            self._detection_timer.stop()
-        if self._update_timer:
-            self._update_timer.stop()
+        self._stop_all_timers()
 
         logger.info("⚠️ User cancelled manual injection")
 
@@ -734,11 +795,7 @@ class ManualInjectionDialog(QDialog):
 
         if detected and not self._channel_detected[channel_upper]:
             # Light up green when injection detected
-            led.setStyleSheet("""
-                font-size: 16px;
-                color: #34C759;
-                padding: 0px 2px;
-            """)
+            led.setStyleSheet(_STYLE_LED_ON)
             self._channel_detected[channel_upper] = True
             logger.debug(f"LED indicator: Channel {channel_upper} detected ✓")
 
@@ -755,38 +812,5 @@ class ManualInjectionDialog(QDialog):
         seconds = total_seconds % 60
         return f"{minutes}:{seconds:02d}"
 
-    def _validate_detection_prerequisites(self) -> bool:
-        """Validate that prerequisites for detection are met before starting.
 
-        Returns:
-            True if all prerequisites met, False otherwise
-        """
-        if not self.buffer_mgr:
-            logger.warning("Cannot start detection - no buffer manager")
-            return False
-
-        if not self.buffer_mgr.timeline_data:
-            logger.warning("Cannot start detection - no timeline data")
-            return False
-
-        if not any(ch.lower() in self.buffer_mgr.timeline_data for ch in self.detection_channels):
-            logger.warning(f"Cannot start detection - no data for channels {self.detection_channels}")
-            return False
-
-        return True
-
-    def _show_error_state(self, message: str) -> None:
-        """Display error state in UI with consistent formatting.
-
-        Args:
-            message: Error message to display
-        """
-        self._status_label.setText(f"⚠ {message}")
-        self._status_label.setStyleSheet("""
-            font-size: 18px;
-            color: #FF3B30;
-            font-weight: 600;
-            text-align: center;
-            padding: 20px 0px;
-        """)
 
