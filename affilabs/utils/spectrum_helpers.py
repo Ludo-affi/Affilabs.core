@@ -76,13 +76,25 @@ class SpectrumHelpers:
             if has_raw_data or has_transmission:
                 try:
                     SpectrumHelpers.queue_transmission_update(app, channel, data)
-
-                    # Update Sensor IQ display if available
-                    if "sensor_iq" in data:
-                        app._update_sensor_iq_display(channel, data["sensor_iq"])
-
                 except Exception as e:
                     logger.error(f"[QUEUE] Ch {channel}: FAILED to queue update: {e}", exc_info=True)
+
+            # Sensor IQ — computed from the real pipeline peak (app._latest_peaks),
+            # not from data["wavelength"] which is the calibration wavelength axis array
+            if wavelength is not None:
+                try:
+                    from affilabs.utils.sensor_iq import classify_spr_quality
+                    # Pull fwhm + dip_depth from pipeline metadata (stored by _on_peak_updated)
+                    iq_metrics = getattr(app, '_latest_iq_metrics', {}).get(channel, {})
+                    sensor_iq = classify_spr_quality(
+                        wavelength=float(wavelength),
+                        fwhm=iq_metrics.get('fwhm'),
+                        dip_depth=iq_metrics.get('dip_depth'),
+                        channel=channel,
+                    )
+                    app._update_sensor_iq_display(channel, sensor_iq)
+                except Exception:
+                    pass
 
             # Update cursor position (via signal to main thread)
             # Convert raw elapsed → display coords for cursor position on Live Sensorgram

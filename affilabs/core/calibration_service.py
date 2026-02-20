@@ -356,13 +356,15 @@ class CalibrationService(QObject):
             pump_instruction = "  ✓  Buffer loaded in pump reservoir (for priming)\n"
 
         message = (
-            "Please verify before calibrating:\n"
-            "  ✓  Prism installed in sensor holder\n"
-            "  ✓  Water or buffer applied to prism\n"
-            "  ✓  No air bubbles visible\n"
+            "⚠  Water must be flowing over the prism before calibrating.\n"
+            "    Dry calibration will produce invalid results.\n"
+            "\n"
+            "Before starting:\n"
+            "  ✓  Buffer or water in flow cell, no air bubbles\n"
+            "  ✓  Prism seated in sensor holder\n"
             f"{pump_instruction}"
-            "  ✓  Temperature stabilized (10 min after power-on)\n"
-            "\n6 steps, may take up to 5 minutes"
+            "  ✓  Temperature stable (10 min after power-on)\n"
+            "\n6 steps, ~5 minutes"
         )
 
         self._calibration_dialog = StartupCalibProgressDialog(
@@ -443,19 +445,20 @@ class CalibrationService(QObject):
         if dialog is None:
             return
 
-        btn = QPushButton("\U0001f527 Compression Assistant")
-        btn.setFixedSize(210, 36)
+        btn = QPushButton("Compression Assistant")
+        btn.setFixedSize(190, 32)
         btn.setStyleSheet(
             "QPushButton {"
-            "  background: #5856D6;"
-            "  color: white;"
-            "  border: none;"
+            "  background: transparent;"
+            "  color: #5856D6;"
+            "  border: 1px solid #C7C6EA;"
             "  border-radius: 6px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
+            "  font-size: 12px;"
+            "  font-weight: 500;"
             "}"
             "QPushButton:hover {"
-            "  background: #4B49B0;"
+            "  background: #F0F0FA;"
+            "  border-color: #9997D6;"
             "}"
         )
         btn.setToolTip(
@@ -906,9 +909,10 @@ class CalibrationService(QObject):
                 logger.warning("Cannot launch SPARK troubleshooting: missing main_window or hardware")
                 return
 
-            spark_sidebar = getattr(main_window, "spark_sidebar", None)
+            # Prefer floating bubble; fall back to legacy sidebar
+            spark_sidebar = getattr(main_window, "spark_bubble", None) or getattr(main_window, "spark_sidebar", None)
             if spark_sidebar is None:
-                logger.warning("Cannot launch SPARK troubleshooting: spark_sidebar not found")
+                logger.warning("Cannot launch SPARK troubleshooting: spark_bubble/spark_sidebar not found")
                 return
 
             spark_sidebar.push_troubleshooting(diagnosis, hw.ctrl)
@@ -1875,7 +1879,7 @@ class CalibrationService(QObject):
             if self._calibration_dialog:
                 self._calibration_dialog.update_title("✅ Calibration Successful!")
                 self._calibration_dialog.update_status(
-                    "🎉 Your system is ready! Review the QC graphs below, then click Start when you're ready to begin live acquisition.",
+                    "Sensor is live and ready.\n\nReview the QC graphs below to confirm signal quality,\nthen click Start to begin acquiring data — or open Method Builder\nto set up your experiment first.",
                 )
                 self._calibration_dialog.set_progress(100, 100)
                 self._calibration_dialog.enable_start_button()

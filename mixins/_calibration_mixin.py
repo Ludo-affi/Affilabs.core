@@ -93,8 +93,9 @@ class CalibrationMixin:
         # Show QC dialog with calibration results
         self._show_qc_dialog(calibration_data)
 
-        # Automatically log calibration to database for ML training
-        self._log_calibration_to_database(calibration_data)
+        # Automatically log calibration to database for ML training (optional)
+        if hasattr(self, '_log_calibration_to_database'):
+            self._log_calibration_to_database(calibration_data)
 
         # Populate LED brightness in Hardware Configuration section
         try:
@@ -152,6 +153,15 @@ class CalibrationMixin:
 
             logger.debug("QC report displayed and closed (modal)")
 
+            # Switch sidebar to Method tab so user sees Build Method CTA immediately
+            try:
+                sidebar = self.main_window.sidebar
+                method_idx = sidebar.tab_indices.get("Method")
+                if method_idx is not None:
+                    sidebar.tab_widget.setCurrentIndex(method_idx)
+            except Exception:
+                pass
+
             # Turn off all LEDs after QC report
             if hasattr(self, 'hardware_mgr') and self.hardware_mgr and hasattr(self.hardware_mgr, 'ctrl'):
                 try:
@@ -166,6 +176,31 @@ class CalibrationMixin:
 
     def _restart_acquisition_after_calibration(self):
         """Helper method to restart acquisition from main thread after calibration."""
+        # Collapse Sparq sidebar so the sensorgram gets full attention
+        try:
+            if hasattr(self, 'splitter') and hasattr(self, 'spark_sidebar'):
+                sizes = self.splitter.sizes()
+                if len(sizes) == 3:
+                    self.splitter.setSizes([0, sizes[1] + sizes[0], sizes[2]])
+            if hasattr(self, 'spark_toggle_btn'):
+                self.spark_toggle_btn.setChecked(False)
+                # Brief tooltip hinting where to find Sparq
+                from PySide6.QtWidgets import QToolTip
+                from PySide6.QtCore import QTimer
+                btn = self.spark_toggle_btn
+                QTimer.singleShot(
+                    600,
+                    lambda: QToolTip.showText(
+                        btn.mapToGlobal(btn.rect().center()),
+                        "Click here to open the Sparq assistant",
+                        btn,
+                        btn.rect(),
+                        4000,
+                    ),
+                )
+        except Exception as e:
+            logger.debug(f"Could not collapse Sparq sidebar: {e}")
+
         # Resume live spectrum updates after calibration
         if hasattr(self, 'ui_updates') and self.ui_updates is not None:
             logger.debug("Resuming live spectrum updates after calibration...")

@@ -413,10 +413,10 @@ class TimerMixin:
                 logger.debug("No buffer_mgr or clock - skipping automatic wash flags")
                 return
 
-            # Read injection flags from FlagManager (Flag domain model instances)
+            # Read injection flags from FlagManager via public API
             from affilabs.domain.flag import InjectionFlag
             injection_flags = [
-                f for f in flag_mgr._flag_markers if isinstance(f, InjectionFlag)
+                f for f in flag_mgr.get_live_flags() if isinstance(f, InjectionFlag)
             ]
 
             if not injection_flags:
@@ -470,6 +470,25 @@ class TimerMixin:
 
                 except Exception as e:
                     logger.debug(f"Could not place wash flag on channel {ch}: {e}")
+
+            # Emit AutoMarker to timeline stream (non-critical)
+            try:
+                recording_mgr = getattr(app, 'recording_mgr', None)
+                if recording_mgr and recording_mgr.is_recording:
+                    from datetime import datetime as _dt_cls
+                    from affilabs.domain.timeline import AutoMarker, EventContext
+                    stream = recording_mgr.get_timeline_stream()
+                    stream.add_event(AutoMarker(
+                        time=wash_display_time,
+                        channel='A',
+                        context=EventContext.LIVE,
+                        created_at=_dt_cls.now(),
+                        marker_kind='wash_deadline',
+                        label='🧹 Auto-Wash',
+                    ))
+                    logger.debug(f"🧹 AutoMarker 'wash_deadline' emitted at t={wash_display_time:.1f}s")
+            except Exception as e:
+                logger.debug(f"Timeline AutoMarker failed (non-critical): {e}")
 
             # Also draw a single wash event line on the live sensorgram (full_timeline_graph)
             # stop_display is already in DISPLAY coords (the stop cursor position)

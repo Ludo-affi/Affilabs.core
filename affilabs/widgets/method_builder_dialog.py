@@ -15,7 +15,6 @@ from PySide6.QtSvg import QSvgRenderer
 from affilabs.domain.cycle import Cycle
 from affilabs.services.queue_preset_storage import QueuePresetStorage
 from affilabs.services.user_profile_manager import UserProfileManager
-from affilabs.services.spark import SparkAnswerEngine
 from affilabs.widgets.ui_constants import CycleTypeStyle
 from affilabs.utils.logger import logger
 import time
@@ -508,7 +507,7 @@ class MethodBuilderDialog(QDialog):
     def __init__(self, parent=None, user_manager=None):
         super().__init__(parent)
         self.setWindowTitle("Build Method")
-        self.setMinimumSize(700, 650)
+        self.setMinimumSize(860, 640)
         self._local_cycles = []  # Cycles built in this dialog
         self._notes_history = []  # History of previous notes
         self._history_index = -1  # Current position in history (-1 = not browsing)
@@ -755,8 +754,8 @@ class MethodBuilderDialog(QDialog):
         )
         self._helper_active = False
 
-    def _setup_ui(self):
-        """Build the dialog UI."""
+    def _setup_ui_LEGACY(self):
+        """LEGACY — full 7-region layout replaced by 3-zone redesign in _setup_ui."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
@@ -1470,8 +1469,827 @@ class MethodBuilderDialog(QDialog):
 
         layout.addLayout(button_row)
 
+    def _setup_ui(self):
+        """Build the redesigned 3-zone dialog UI (Method Builder v2)."""
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction, QShortcut, QKeySequence
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+
+        # ── Settings widgets (created early so all zones can reference them) ──
+        self.mode_combo = QComboBox()
+        self.mode_combo.setFixedHeight(24)
+        self.mode_combo.addItems(["Manual", "Semi-Automated"])
+        self.mode_combo.setCurrentIndex(0)
+        self.mode_combo.setToolTip(
+            "Manual: User injects by syringe\n"
+            "Semi-Automated: Pump handles flow, valves switch automatically"
+        )
+        self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
+
+        self.hw_label = QLabel("P4SPR")
+        self.hw_label.setToolTip("Detected hardware platform")
+
+        self.detection_combo = QComboBox()
+        self.detection_combo.setFixedHeight(24)
+        self.detection_combo.addItems(["Auto", "Priority", "Off"])
+        self.detection_combo.setCurrentIndex(0)
+        self.detection_combo.setToolTip(
+            "Auto: Sensitivity adapts to mode\nPriority: Most sensitive\nOff: No auto-detection"
+        )
+
+        # ═══════════════════════════════════════════════════════════════════
+        # ZONE A — Header (method name · operator · hw badge)
+        # ═══════════════════════════════════════════════════════════════════
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
+
+        title = QLabel("Build Method")
+        title.setStyleSheet(
+            "font-size: 18px; font-weight: 700; color: #1D1D1F;"
+            " font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;"
+        )
+        header_row.addWidget(title)
+        header_row.addSpacing(12)
+
+        _lbl = QLabel("📋")
+        _lbl.setStyleSheet("font-size: 13px; color: #86868B;")
+        header_row.addWidget(_lbl)
+
+        self.method_name_input = QLineEdit("Untitled Method")
+        self.method_name_input.setFixedHeight(28)
+        self.method_name_input.setMaximumWidth(200)
+        self.method_name_input.setStyleSheet(
+            "QLineEdit { background: white; border: 1px solid rgba(0,0,0,0.1);"
+            " border-radius: 4px; padding: 4px 8px; font-size: 12px; color: #1D1D1F; }"
+            " QLineEdit:focus { border-color: #007AFF; }"
+        )
+        header_row.addWidget(self.method_name_input)
+
+        _op_icon = QLabel("👤")
+        _op_icon.setStyleSheet("font-size: 13px; color: #86868B; margin-left: 8px;")
+        header_row.addWidget(_op_icon)
+
+        self.operator_combo = QComboBox()
+        self.operator_combo.setFixedHeight(28)
+        self.operator_combo.setMaximumWidth(140)
+        self.operator_combo.addItems(self._user_manager.get_profiles())
+        current_user = self._user_manager.get_current_user()
+        if current_user:
+            idx = self.operator_combo.findText(current_user)
+            if idx >= 0:
+                self.operator_combo.setCurrentIndex(idx)
+        if self.operator_combo.count() <= 1:
+            self.operator_combo.hide()
+            _op_icon.hide()
+        self.operator_combo.setStyleSheet(
+            "QComboBox { background: white; border: 1px solid rgba(0,0,0,0.1);"
+            " border-radius: 4px; padding: 4px 8px; font-size: 12px; color: #1D1D1F; }"
+            " QComboBox:focus { border-color: #007AFF; }"
+            " QComboBox::drop-down { border: none; width: 20px; }"
+            " QComboBox::down-arrow { image: none; border-left: 4px solid transparent;"
+            " border-right: 4px solid transparent; border-top: 5px solid #86868B; margin-right: 8px; }"
+        )
+        self.operator_combo.currentTextChanged.connect(self._on_operator_changed)
+        header_row.addWidget(self.operator_combo)
+        header_row.addStretch()
+
+        self.hw_label.setStyleSheet(
+            "font-size: 11px; font-weight: 600; color: #86868B; background: #F2F2F7;"
+            " border-radius: 4px; padding: 2px 8px;"
+        )
+        header_row.addWidget(self.hw_label)
+        layout.addLayout(header_row)
+
+        # ═══════════════════════════════════════════════════════════════════
+        # ZONE B — Template Gallery (collapses once first step is added)
+        # ═══════════════════════════════════════════════════════════════════
+        self._template_gallery_frame = QFrame()
+        self._template_gallery_frame.setObjectName("templateGallery")
+        self._template_gallery_frame.setStyleSheet(
+            "QFrame#templateGallery { background: #F5F5F7; border-radius: 8px;"
+            " border: 1px solid rgba(0,0,0,0.06); }"
+        )
+        gallery_layout = QVBoxLayout(self._template_gallery_frame)
+        gallery_layout.setContentsMargins(14, 10, 14, 10)
+        gallery_layout.setSpacing(8)
+
+        gallery_hdr = QLabel("Start from a template:")
+        gallery_hdr.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #86868B; background: transparent;"
+        )
+        gallery_layout.addWidget(gallery_hdr)
+
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(8)
+
+        _TEMPLATES = [
+            ("Binding", "Baseline → Binding\n→ Regeneration", [
+                "Baseline 5min",
+                "Binding 15min [A:100nM] contact 180s",
+                "Regeneration 30sec [ALL:50mM]",
+            ]),
+            ("Kinetics", "Association +\nDissociation + Regen", [
+                "Baseline 2min",
+                "Kinetic 5min [A:100nM] contact 120s",
+                "Baseline 10min  # Dissociation",
+                "Regeneration 30sec [ALL:50mM]",
+            ]),
+            ("Amine\nCoupling", "Full immobilization\nworkflow (11 steps)", [
+                "Baseline 30sec",
+                "Other 4min  # Activation",
+                "Wash 30sec contact 30s",
+                "Immobilization 4min [A:50µg/mL] contact 180s",
+                "Wash 30sec contact 30s",
+                "Other 4min  # Blocking",
+                "Wash 30sec contact 30s",
+                "Baseline 15min",
+                "Binding 15min [A:100nM] contact 180s",
+                "Regeneration 2min [ALL:50mM]",
+                "Baseline 2min",
+            ]),
+            ("Titration", "Dose-response series\n(5 concentrations)", [
+                "Baseline 5min",
+                "Binding 2min [A:10nM] contact 120s",
+                "Regeneration 30sec [ALL:50mM]",
+                "Baseline 2min",
+                "Binding 2min [A:50nM] contact 120s",
+                "Regeneration 30sec [ALL:50mM]",
+                "Baseline 2min",
+                "Binding 2min [A:100nM] contact 120s",
+                "Regeneration 30sec [ALL:50mM]",
+                "Baseline 2min",
+                "Binding 2min [A:500nM] contact 120s",
+                "Regeneration 30sec [ALL:50mM]",
+                "Baseline 2min",
+            ]),
+            ("✏ Custom", "Start with a blank\nstep list", []),
+        ]
+
+        _card_ss = (
+            "QPushButton { background: white; border: 1.5px solid rgba(0,0,0,0.09);"
+            " border-radius: 8px; padding: 10px 8px; font-size: 11px; color: #1D1D1F;"
+            " text-align: left;"
+            " font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif; }"
+            " QPushButton:hover { border-color: #007AFF; background: #F0F6FF; }"
+            " QPushButton:pressed { background: #E3EDFF; }"
+        )
+
+        for name, subtitle, lines in _TEMPLATES:
+            btn = QPushButton(f"{name}\n{subtitle}")
+            btn.setToolTip(subtitle.replace("\n", " "))
+            btn.setMinimumHeight(62)
+            btn.setMinimumWidth(100)
+            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            btn.setStyleSheet(_card_ss)
+            _lines_copy = list(lines)
+            _name_copy = name.replace("\n", " ")
+            btn.clicked.connect(
+                lambda checked=False, l=_lines_copy, n=_name_copy: self._on_template_card_clicked(l, n)
+            )
+            cards_row.addWidget(btn)
+
+        browse_btn = QPushButton("🔍 Browse\nsaved…")
+        browse_btn.setMinimumHeight(62)
+        browse_btn.setMinimumWidth(80)
+        browse_btn.setToolTip("Browse saved cycle templates")
+        browse_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        browse_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: 1.5px dashed rgba(0,0,0,0.15);"
+            " border-radius: 8px; padding: 8px; font-size: 11px; color: #86868B; }"
+            " QPushButton:hover { border-color: #007AFF; color: #007AFF; }"
+        )
+        browse_btn.clicked.connect(self._on_browse_templates)
+        cards_row.addWidget(browse_btn)
+        gallery_layout.addLayout(cards_row)
+        layout.addWidget(self._template_gallery_frame)
+
+        # ═══════════════════════════════════════════════════════════════════
+        # ZONE C — Step List (the method; replaces dual-tab input + queue)
+        # ═══════════════════════════════════════════════════════════════════
+        steps_section = QVBoxLayout()
+        steps_section.setSpacing(4)
+
+        steps_hdr = QHBoxLayout()
+        steps_hdr_lbl = QLabel("Method Steps")
+        steps_hdr_lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F;")
+        steps_hdr.addWidget(steps_hdr_lbl)
+        steps_hdr.addStretch()
+        self.method_exp_time_value = QLabel("0 min")
+        self.method_exp_time_value.setStyleSheet("font-size: 11px; color: #86868B;")
+        steps_hdr.addWidget(self.method_exp_time_value)
+        steps_section.addLayout(steps_hdr)
+
+        table_style = (
+            "QTableWidget { background: white; border: 1px solid rgba(0,0,0,0.08);"
+            " border-radius: 6px; font-size: 12px; gridline-color: rgba(0,0,0,0.05); }"
+            " QHeaderView::section { background: rgba(0,0,0,0.03); padding: 4px 6px;"
+            " border: none; font-size: 11px; font-weight: 600; color: #86868B; }"
+            " QTableWidget::item { padding: 4px 6px; }"
+            " QTableWidget::item:selected { background: #E3EDFF; color: #1D1D1F; }"
+        )
+        self.method_table = QTableWidget()
+        self.method_table.setColumnCount(6)
+        self.method_table.setHorizontalHeaderLabels(
+            ["Type", "Duration", "Channel", "Concentration", "Contact", "Note"]
+        )
+        self.method_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.method_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.method_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.method_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.method_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self.method_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
+        self.method_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.method_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.method_table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.method_table.verticalHeader().setVisible(True)
+        self.method_table.setMinimumHeight(160)
+        self.method_table.setStyleSheet(table_style)
+        steps_section.addWidget(self.method_table)
+
+        # Step footer controls
+        step_footer = QHBoxLayout()
+        step_footer.setSpacing(6)
+
+        add_step_btn = QPushButton("+ Add step  ▾")
+        add_step_btn.setFixedHeight(28)
+        add_step_btn.setStyleSheet(
+            "QPushButton { background: #007AFF; color: white; border: none; border-radius: 6px;"
+            " padding: 4px 12px; font-size: 12px; font-weight: 600; }"
+            " QPushButton:hover { background: #0051D5; }"
+            " QPushButton:pressed { background: #003D99; }"
+        )
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QAction
+        add_step_menu = QMenu(add_step_btn)
+        for _step_type, _default_line in [
+            ("Baseline",       "Baseline 5min"),
+            ("Binding",        "Binding 15min [A:100nM] contact 180s"),
+            ("Kinetic",        "Kinetic 5min [A:100nM] contact 120s"),
+            ("Regeneration",   "Regeneration 30sec [ALL:50mM]"),
+            ("Immobilization", "Immobilization 10min [A:50µg/mL] contact 300s"),
+            ("Wash",           "Wash 30sec contact 30s"),
+            ("Other",          "Other 2min"),
+        ]:
+            _act = QAction(_step_type, add_step_btn)
+            _line_copy = _default_line
+            _act.triggered.connect(lambda checked=False, l=_line_copy: self._add_single_step(l))
+            add_step_menu.addAction(_act)
+        add_step_btn.setMenu(add_step_menu)
+        step_footer.addWidget(add_step_btn)
+
+        step_footer.addSpacing(8)
+
+        _SVG_COG = ('<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
+                    '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="#86868B" stroke-width="2"/>'
+                    '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06'
+                    'a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65'
+                    ' 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06'
+                    'A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65'
+                    ' 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65'
+                    ' 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0'
+                    ' 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65'
+                    ' 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"'
+                    ' stroke="#86868B" stroke-width="2"/></svg>')
+
+        _btn_ss = (
+            "QPushButton { background: white; color: #1D1D1F; border: 1px solid rgba(0,0,0,0.1);"
+            " border-radius: 4px; padding: 4px 10px; font-size: 12px; }"
+            " QPushButton:hover { background: #F5F5F7; }"
+            " QPushButton:disabled { color: #C7C7CC; border-color: rgba(0,0,0,0.05); }"
+        )
+
+        self.undo_btn = QPushButton("Undo")
+        self.undo_btn.setIcon(_create_svg_icon(_SVG_UNDO, 14))
+        self.undo_btn.setIconSize(QSize(14, 14))
+        self.undo_btn.setFixedHeight(28)
+        self.undo_btn.setEnabled(False)
+        self.undo_btn.setToolTip("Undo last action (Ctrl+Z)")
+        self.undo_btn.setStyleSheet(_btn_ss)
+        step_footer.addWidget(self.undo_btn)
+
+        self.redo_btn = QPushButton("Redo")
+        self.redo_btn.setIcon(_create_svg_icon(_SVG_REDO, 14))
+        self.redo_btn.setIconSize(QSize(14, 14))
+        self.redo_btn.setFixedHeight(28)
+        self.redo_btn.setEnabled(False)
+        self.redo_btn.setToolTip("Redo last action (Ctrl+Shift+Z)")
+        self.redo_btn.setStyleSheet(_btn_ss)
+        step_footer.addWidget(self.redo_btn)
+
+        _sep_v = QLabel("|")
+        _sep_v.setStyleSheet("color: rgba(0,0,0,0.15); margin: 0 2px;")
+        step_footer.addWidget(_sep_v)
+
+        self.delete_cycle_btn = QPushButton("Delete")
+        self.delete_cycle_btn.setIcon(_create_svg_icon(_SVG_TRASH, 14))
+        self.delete_cycle_btn.setIconSize(QSize(14, 14))
+        self.delete_cycle_btn.setFixedHeight(28)
+        self.delete_cycle_btn.setEnabled(False)
+        self.delete_cycle_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #FF3B30;"
+            " border: 1px solid rgba(255,59,48,0.3); border-radius: 4px;"
+            " padding: 4px 10px; font-size: 12px; }"
+            " QPushButton:hover { background: rgba(255,59,48,0.1); }"
+            " QPushButton:disabled { color: #C7C7CC; border-color: rgba(0,0,0,0.1); }"
+        )
+        self.delete_cycle_btn.clicked.connect(self._on_delete_selected)
+        step_footer.addWidget(self.delete_cycle_btn)
+
+        self.move_up_btn = QPushButton()
+        self.move_up_btn.setIcon(_create_svg_icon(_SVG_CHEVRON_UP, 16))
+        self.move_up_btn.setIconSize(QSize(16, 16))
+        self.move_up_btn.setFixedSize(28, 28)
+        self.move_up_btn.setEnabled(False)
+        self.move_up_btn.setStyleSheet(
+            "QPushButton { background: #F2F2F7; border: none; border-radius: 4px; }"
+            " QPushButton:hover { background: #E5E5EA; }"
+            " QPushButton:disabled { background: #F2F2F7; color: #C7C7CC; }"
+        )
+        self.move_up_btn.clicked.connect(self._on_move_up)
+        step_footer.addWidget(self.move_up_btn)
+
+        self.move_down_btn = QPushButton()
+        self.move_down_btn.setIcon(_create_svg_icon(_SVG_CHEVRON_DOWN, 16))
+        self.move_down_btn.setIconSize(QSize(16, 16))
+        self.move_down_btn.setFixedSize(28, 28)
+        self.move_down_btn.setEnabled(False)
+        self.move_down_btn.setStyleSheet(
+            "QPushButton { background: #F2F2F7; border: none; border-radius: 4px; }"
+            " QPushButton:hover { background: #E5E5EA; }"
+            " QPushButton:disabled { background: #F2F2F7; color: #C7C7CC; }"
+        )
+        self.move_down_btn.clicked.connect(self._on_move_down)
+        step_footer.addWidget(self.move_down_btn)
+
+        self.clear_method_btn = QPushButton("Clear All")
+        self.clear_method_btn.setIcon(_create_svg_icon(_SVG_CLEAR, 14))
+        self.clear_method_btn.setIconSize(QSize(14, 14))
+        self.clear_method_btn.setFixedHeight(28)
+        self.clear_method_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #86868B;"
+            " border: 1px solid rgba(0,0,0,0.1); border-radius: 4px;"
+            " padding: 4px 10px; font-size: 12px; }"
+            " QPushButton:hover { background: rgba(0,0,0,0.05); }"
+        )
+        self.clear_method_btn.clicked.connect(self._on_clear_method)
+        step_footer.addWidget(self.clear_method_btn)
+
+        self.method_count_label = QLabel("0 cycles")
+        self.method_count_label.setStyleSheet("font-size: 11px; color: #86868B;")
+        step_footer.addWidget(self.method_count_label)
+        step_footer.addStretch()
+
+        self._settings_btn = QPushButton()
+        self._settings_btn.setIcon(_create_svg_icon(_SVG_COG, 14))
+        self._settings_btn.setIconSize(QSize(14, 14))
+        self._settings_btn.setFixedSize(24, 24)
+        self._settings_btn.setToolTip("Method settings (mode, detection)")
+        self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._settings_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; }"
+            " QPushButton:hover { background: rgba(0,0,0,0.05); border-radius: 4px; }"
+        )
+        self._settings_btn.setCheckable(True)
+        self._settings_btn.toggled.connect(self._toggle_advanced_settings)
+        step_footer.addWidget(self._settings_btn)
+
+        steps_section.addLayout(step_footer)
+        layout.addLayout(steps_section)
+
+        # Hidden stub for details_table (keeps _refresh_method_table guards working)
+        self.details_table = QTableWidget()
+        self.details_table.hide()
+        self.method_cycle_count_value = QLabel()
+        self.method_cycle_count_value.hide()
+
+        # ── Advanced settings (collapsible via ⚙ button) ───────────────────
+        _combo_ss = (
+            "QComboBox { background: white; border: 1px solid rgba(0,0,0,0.12);"
+            " border-radius: 4px; padding: 2px 6px; font-size: 11px; color: #1D1D1F; }"
+            " QComboBox:focus { border-color: #007AFF; }"
+            " QComboBox::drop-down { border: none; width: 18px; }"
+            " QComboBox::down-arrow { image: none; border-left: 3px solid transparent;"
+            " border-right: 3px solid transparent; border-top: 4px solid #86868B; margin-right: 6px; }"
+        )
+        _lbl_ss = "font-size: 11px; color: #86868B; font-weight: 500;"
+
+        self._adv_settings_frame = QFrame()
+        self._adv_settings_frame.setObjectName("advSettings")
+        self._adv_settings_frame.setVisible(False)
+        self._adv_settings_frame.setStyleSheet(
+            "QFrame#advSettings { background: #F9F9FB; border: 1px solid rgba(0,0,0,0.08);"
+            " border-radius: 6px; }"
+        )
+        adv_lay = QHBoxLayout(self._adv_settings_frame)
+        adv_lay.setContentsMargins(10, 6, 10, 6)
+        adv_lay.setSpacing(8)
+
+        _m = QLabel("Mode:")
+        _m.setStyleSheet(_lbl_ss)
+        adv_lay.addWidget(_m)
+        self.mode_combo.setStyleSheet(_combo_ss)
+        adv_lay.addWidget(self.mode_combo)
+
+        _sep_adv = QFrame()
+        _sep_adv.setFrameShape(QFrame.Shape.VLine)
+        _sep_adv.setStyleSheet("color: rgba(0,0,0,0.08);")
+        _sep_adv.setFixedHeight(18)
+        adv_lay.addWidget(_sep_adv)
+
+        _dev = QLabel("Device:")
+        _dev.setStyleSheet(_lbl_ss)
+        adv_lay.addWidget(_dev)
+        self.hw_label.setStyleSheet("font-size: 11px; color: #1D1D1F; font-weight: 600;")
+        adv_lay.addWidget(self.hw_label)
+        adv_lay.addStretch()
+
+        _det = QLabel("Detection:")
+        _det.setStyleSheet(_lbl_ss)
+        adv_lay.addWidget(_det)
+        self.detection_combo.setStyleSheet(_combo_ss)
+        adv_lay.addWidget(self.detection_combo)
+        layout.addWidget(self._adv_settings_frame)
+
+        # ═══════════════════════════════════════════════════════════════════
+        # ZONE D — Sparq Bar (single always-visible query input)
+        # ═══════════════════════════════════════════════════════════════════
+        sparq_frame = QFrame()
+        sparq_frame.setObjectName("sparqFrame")
+        sparq_frame.setStyleSheet(
+            "QFrame#sparqFrame { background: #FFFBF0; border: 1.5px solid #FFD60A;"
+            " border-radius: 8px; }"
+        )
+        sparq_row = QHBoxLayout(sparq_frame)
+        sparq_row.setContentsMargins(10, 6, 10, 6)
+        sparq_row.setSpacing(8)
+
+        sparq_lbl = QLabel("⚡ Sparq:")
+        sparq_lbl.setStyleSheet(
+            "font-size: 12px; font-weight: 700; color: #B8860B; background: transparent;"
+            " font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
+        )
+        sparq_row.addWidget(sparq_lbl)
+
+        self._sparq_input = QLineEdit()
+        self._sparq_input.setPlaceholderText(
+            'e.g. "add 5 kinetic cycles"  ·  "titration"  ·  "amine coupling"  ·  "build 3"'
+        )
+        self._sparq_input.setStyleSheet(
+            "QLineEdit { background: transparent; border: none; font-size: 12px; color: #1D1D1F; }"
+        )
+        self._sparq_input.returnPressed.connect(self._on_sparq_ask)
+        sparq_row.addWidget(self._sparq_input, 1)
+
+        self._sparq_ask_btn = QPushButton("Ask")
+        self._sparq_ask_btn.setFixedSize(50, 26)
+        self._sparq_ask_btn.setStyleSheet(
+            "QPushButton { background: #FFD60A; color: #1D1D1F; border: none;"
+            " border-radius: 6px; font-size: 11px; font-weight: 700; }"
+            " QPushButton:hover { background: #E6C009; }"
+            " QPushButton:pressed { background: #CCB008; }"
+        )
+        self._sparq_ask_btn.clicked.connect(self._on_sparq_ask)
+        sparq_row.addWidget(self._sparq_ask_btn)
+        layout.addWidget(sparq_frame)
+
+        # ── Text Mode (hidden, power-user escape hatch) ────────────────────
+        self._text_mode_toggle = QPushButton("⋯ Text mode")
+        self._text_mode_toggle.setFlat(True)
+        self._text_mode_toggle.setCheckable(True)
+        self._text_mode_toggle.setStyleSheet(
+            "QPushButton { background: transparent; color: #86868B; border: none;"
+            " font-size: 11px; text-decoration: underline; padding: 0; }"
+            " QPushButton:hover { color: #007AFF; }"
+            " QPushButton:checked { color: #007AFF; }"
+        )
+        self._text_mode_toggle.toggled.connect(self._toggle_text_mode_panel)
+        layout.addWidget(self._text_mode_toggle, alignment=Qt.AlignmentFlag.AlignRight)
+
+        self._text_mode_panel = QFrame()
+        self._text_mode_panel.setVisible(False)
+        text_panel_lay = QVBoxLayout(self._text_mode_panel)
+        text_panel_lay.setContentsMargins(0, 0, 0, 0)
+        text_panel_lay.setSpacing(4)
+
+        _text_hdr = QHBoxLayout()
+        _text_hdr_lbl = QLabel("Power Mode — one cycle per line")
+        _text_hdr_lbl.setStyleSheet("font-size: 11px; color: #86868B;")
+        _text_hdr.addWidget(_text_hdr_lbl)
+        _text_hdr.addStretch()
+        _help_btn = QPushButton("?")
+        _help_btn.setFixedSize(20, 20)
+        _help_btn.setStyleSheet(
+            "QPushButton { background: #007AFF; color: white; border: none; border-radius: 10px;"
+            " font-size: 11px; font-weight: bold; }"
+            " QPushButton:hover { background: #0051D5; }"
+        )
+        _help_btn.clicked.connect(self._show_notes_help)
+        _text_hdr.addWidget(_help_btn)
+        text_panel_lay.addLayout(_text_hdr)
+
+        self.notes_input = NotesTextEdit()
+        self.notes_input._parent_dialog = self
+        self.notes_input.setPlaceholderText(
+            "Baseline 5min\n"
+            "Binding 15min A:100nM contact 180s\n"
+            "Regeneration 30sec ALL:50mM\n\n"
+            "Ctrl+Enter to add  ·  ↑/↓ history  ·  @preset_name  ·  !save name"
+        )
+        self.notes_input.setMinimumHeight(90)
+        self.notes_input.setStyleSheet(
+            "QPlainTextEdit { background: white; border: 1px solid rgba(0,0,0,0.1);"
+            " border-radius: 6px; padding: 8px; font-size: 12px;"
+            " font-family: 'Consolas', 'Monaco', monospace; }"
+            " QPlainTextEdit:focus { border-color: #007AFF; }"
+        )
+        self.notes_input.textChanged.connect(self._update_char_count)
+        text_panel_lay.addWidget(self.notes_input)
+
+        _add_txt_row = QHBoxLayout()
+        _add_txt_row.addStretch()
+        _add_from_text_btn = QPushButton("→ Add to method")
+        _add_from_text_btn.setFixedHeight(28)
+        _add_from_text_btn.setStyleSheet(
+            "QPushButton { background: #007AFF; color: white; border: none; border-radius: 6px;"
+            " padding: 4px 16px; font-size: 12px; font-weight: 600; }"
+            " QPushButton:hover { background: #0051D5; }"
+        )
+        _add_from_text_btn.clicked.connect(self._on_add_to_method)
+        _add_txt_row.addWidget(_add_from_text_btn)
+        text_panel_lay.addLayout(_add_txt_row)
+
+        _build_sc = QShortcut(QKeySequence("Ctrl+Return"), self.notes_input)
+        _build_sc.activated.connect(self._on_add_to_method)
+        layout.addWidget(self._text_mode_panel)
+
+        # ── Overnight Mode checkbox ────────────────────────────────────────
+        overnight_row = QHBoxLayout()
+        overnight_row.setContentsMargins(0, 2, 0, 0)
+        self.overnight_mode_check = QCheckBox("🌙 Overnight Mode")
+        self.overnight_mode_check.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.overnight_mode_check.setToolTip("System runs continuously without user interaction")
+        try:
+            import settings as root_settings
+            self.overnight_mode_check.setChecked(getattr(root_settings, "OVERNIGHT_MODE", False))
+        except Exception:
+            pass
+        self.overnight_mode_check.stateChanged.connect(self._on_overnight_mode_changed)
+        self.overnight_mode_check.setStyleSheet(
+            "QCheckBox { spacing: 4px; font-size: 10px; font-weight: 500; color: #86868B;"
+            " font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; }"
+            " QCheckBox::indicator { width: 14px; height: 14px; border-radius: 2px;"
+            " border: 1px solid rgba(0,0,0,0.15); background: white; }"
+            " QCheckBox::indicator:checked { background: #007AFF; border-color: #007AFF; }"
+            " QCheckBox::indicator:hover { border-color: #007AFF; }"
+        )
+        overnight_row.addWidget(self.overnight_mode_check)
+        overnight_row.addStretch()
+        layout.addLayout(overnight_row)
+
+        # ── Separator ──────────────────────────────────────────────────────
+        _sep_h = QFrame()
+        _sep_h.setFrameShape(QFrame.Shape.HLine)
+        _sep_h.setStyleSheet("background: rgba(0,0,0,0.08);")
+        layout.addWidget(_sep_h)
+
+        # ── Footer buttons ─────────────────────────────────────────────────
+        button_row = QHBoxLayout()
+
+        self.close_btn = QPushButton("Cancel")
+        self.close_btn.setFixedHeight(40)
+        self.close_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #86868B;"
+            " border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;"
+            " padding: 8px 20px; font-size: 13px; font-weight: 600; }"
+            " QPushButton:hover { background: rgba(0,0,0,0.05); }"
+        )
+        self.close_btn.clicked.connect(self.reject)
+        button_row.addWidget(self.close_btn)
+
+        self.save_btn = QPushButton("💾 Save")
+        self.save_btn.setFixedHeight(40)
+        self.save_btn.setToolTip("Save current method to file")
+        self.save_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #34C759;"
+            " border: 1px solid rgba(52,199,89,0.3); border-radius: 8px;"
+            " padding: 8px 14px; font-size: 13px; font-weight: 600; }"
+            " QPushButton:hover { background: rgba(52,199,89,0.1); border-color: #34C759; }"
+        )
+        self.save_btn.clicked.connect(self._on_save_method)
+        button_row.addWidget(self.save_btn)
+
+        self.load_btn = QPushButton("📂 Load")
+        self.load_btn.setFixedHeight(40)
+        self.load_btn.setToolTip("Load method from file")
+        self.load_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #007AFF;"
+            " border: 1px solid rgba(0,122,255,0.3); border-radius: 8px;"
+            " padding: 8px 14px; font-size: 13px; font-weight: 600; }"
+            " QPushButton:hover { background: rgba(0,122,255,0.1); border-color: #007AFF; }"
+        )
+        self.load_btn.clicked.connect(self._on_load_method)
+        button_row.addWidget(self.load_btn)
+
+        button_row.addStretch()
+
+        self._copy_schedule_btn = QPushButton("📋 Copy Schedule")
+        self._copy_schedule_btn.setFixedHeight(40)
+        self._copy_schedule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._copy_schedule_btn.setToolTip("Copy injection schedule to clipboard")
+        self._copy_schedule_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #007AFF;"
+            " border: 1px solid rgba(0,122,255,0.3); border-radius: 8px;"
+            " padding: 8px 14px; font-size: 13px; font-weight: 600; }"
+            " QPushButton:hover { background: rgba(0,122,255,0.08); }"
+        )
+        self._copy_schedule_btn.clicked.connect(self._copy_schedule_to_clipboard)
+        button_row.addWidget(self._copy_schedule_btn)
+
+        self.queue_btn = QPushButton("Add to Queue")
+        self.queue_btn.setIcon(_create_svg_icon(_SVG_CLIPBOARD_WHITE, 18))
+        self.queue_btn.setIconSize(QSize(18, 18))
+        self.queue_btn.setFixedHeight(40)
+        self.queue_btn.setStyleSheet(
+            "QPushButton { background: #007AFF; color: white; border: none; border-radius: 8px;"
+            " padding: 8px 20px; font-size: 14px; font-weight: 600; }"
+            " QPushButton:hover { background: #0051D5; }"
+            " QPushButton:pressed { background: #003D99; }"
+        )
+        self.queue_btn.clicked.connect(self._on_push_to_queue)
+        button_row.addWidget(self.queue_btn)
+
+        layout.addLayout(button_row)
+
+        # Apply initial settings state
+        self._on_mode_changed(self.mode_combo.currentText())
+        self._update_gallery_visibility()
+
+    # ── New 3-zone helper methods ──────────────────────────────────────────
+
+    def _on_template_card_clicked(self, lines: list, name: str):
+        """Load a built-in template into the step list."""
+        if self._local_cycles:
+            from PySide6.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                self, "Replace Method?",
+                f"Load '{name}' template? Current steps will be replaced.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        self._local_cycles.clear()
+        for line in lines:
+            if line.strip() and not line.strip().startswith("#"):
+                cycle, _ = self._build_cycle_from_text(line.strip())
+                self._local_cycles.append(cycle)
+        self.method_name_input.setText(name.replace("\n", " "))
+        self._refresh_method_table()
+
+    def _add_single_step(self, line: str):
+        """Add one pre-configured step from the '+ Add step' dropdown."""
+        cycle, _ = self._build_cycle_from_text(line)
+        self._local_cycles.append(cycle)
+        self._refresh_method_table()
+        # Select the newly added row
+        self.method_table.selectRow(self.method_table.rowCount() - 1)
+
+    def _on_sparq_ask(self):
+        """Handle Sparq bar query — generate cycles and append to step list."""
+        query = self._sparq_input.text().strip()
+        if not query:
+            return
+
+        self._sparq_ask_btn.setText("⏳")
+        self._sparq_ask_btn.setEnabled(False)
+
+        # Route through existing Sparq logic by feeding into notes_input and parsing
+        try:
+            suggestion = self._try_sparq_patterns(query)
+            if suggestion is None and self._answer_engine is not None:
+                try:
+                    suggestion, _ = self._answer_engine.generate_answer(query, context="method_builder")
+                except Exception:
+                    suggestion = None
+
+            if suggestion:
+                # Parse the suggestion lines and append cycles
+                lines_added = 0
+                for line in suggestion.split("\n"):
+                    s = line.strip()
+                    if s and not s.startswith("#"):
+                        cycle, _ = self._build_cycle_from_text(s)
+                        self._local_cycles.append(cycle)
+                        lines_added += 1
+                if lines_added:
+                    self._refresh_method_table()
+                    self._sparq_input.clear()
+                    # Brief confirmation
+                    self._sparq_ask_btn.setText(f"✓ +{lines_added}")
+                    QTimer.singleShot(1500, lambda: self._sparq_ask_btn.setText("Ask"))
+                    QTimer.singleShot(1500, lambda: self._sparq_ask_btn.setEnabled(True))
+                    return
+            # No suggestion matched
+            self._sparq_input.setPlaceholderText(
+                'Try: "binding", "kinetics", "titration", "amine coupling", "build 5"'
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Sparq bar error: {e}")
+
+        self._sparq_ask_btn.setText("Ask")
+        self._sparq_ask_btn.setEnabled(True)
+
+    def _try_sparq_patterns(self, text: str):
+        """Method-pattern matching for the Sparq bar (mirrors SparkMethodPopup logic)."""
+        t = text.lower().strip()
+        m = re.search(r'build.*?(\d+)', t)
+        if m:
+            n = int(m.group(1))
+            lines = []
+            for i in range(n):
+                lines.append(f"Binding 15min [A:100nM]  # Binding {i + 1}")
+                lines.append("Regeneration 2min [ALL:50mM]")
+                lines.append("Baseline 2min")
+            return "\n".join(lines)
+        if re.search(r'titration|dose.?response|serial dilution|concentration series', t):
+            return ("Baseline 5min\n"
+                    "Binding 2min [A:10nM] contact 120s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min\n"
+                    "Binding 2min [A:50nM] contact 120s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min\n"
+                    "Binding 2min [A:100nM] contact 120s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min\n"
+                    "Binding 2min [A:500nM] contact 120s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min")
+        if re.search(r'kinetics?|dissociation|off.?rate', t):
+            return ("Baseline 2min\n"
+                    "Kinetic 5min [A:100nM] contact 120s\n"
+                    "Baseline 10min  # Dissociation\n"
+                    "Regeneration 30sec [ALL:50mM]")
+        if re.search(r'amine coupling|amine|coupling', t):
+            n_match = re.search(r'(\d+)', t)
+            n = int(n_match.group(1)) if n_match else 5
+            lines = [
+                "Baseline 30sec",
+                "Other 4min  # Activation",
+                "Wash 30sec contact 30s",
+                "Immobilization 4min [A:50µg/mL] contact 180s",
+                "Wash 30sec contact 30s",
+                "Other 4min  # Blocking",
+                "Wash 30sec contact 30s",
+                "Baseline 15min",
+            ]
+            for i in range(n):
+                lines.append(f"Binding 15min [A:100nM]  # Binding {i + 1}")
+                lines.append("Regeneration 2min [ALL:50mM]")
+                lines.append("Baseline 2min")
+            return "\n".join(lines)
+        if re.search(r'baseline|start|equilibrat', t):
+            return "Baseline 5min"
+        if re.search(r'regenerat|regen|clean|wash|strip', t):
+            return "Regeneration 30sec [ALL:50mM]"
+        if re.search(r'binding|association|inject|sample', t):
+            return "Binding 15min [A:100nM] contact 180s"
+        if re.search(r'immobiliz|immob|attach|ligand', t):
+            return "Immobilization 10min [A:50µg/mL] contact 300s"
+        return None
+
+    def _update_gallery_visibility(self):
+        """Show template gallery when step list is empty; hide it once steps exist."""
+        if hasattr(self, '_template_gallery_frame'):
+            self._template_gallery_frame.setVisible(len(self._local_cycles) == 0)
+
+    def _toggle_text_mode_panel(self, checked: bool):
+        """Show or hide the power-user text input panel."""
+        if hasattr(self, '_text_mode_panel'):
+            self._text_mode_panel.setVisible(checked)
+
+    def _on_browse_templates(self):
+        """Open the full CycleTemplateDialog for user-saved templates."""
+        try:
+            from affilabs.widgets.cycle_template_dialog import CycleTemplateDialog
+            from affilabs.services.cycle_template_storage import CycleTemplateStorage
+            storage = CycleTemplateStorage()
+            dlg = CycleTemplateDialog(storage, parent=self)
+            if dlg.exec():
+                template = dlg.get_selected_template()
+                if template:
+                    cycle = template.to_cycle()
+                    self._local_cycles.append(cycle)
+                    self._refresh_method_table()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Browse templates failed: {e}")
+
     def _build_easy_mode_tab(self):
-        """Build the Easy Mode form UI (beginner-friendly structured input)."""
+        """LEGACY — Easy Mode form tab (kept as dead code after 3-zone redesign)."""
         from PySide6.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QSpinBox, QDoubleSpinBox, QCheckBox, QPushButton, QFrame
         from PySide6.QtCore import Qt
         
@@ -2471,87 +3289,99 @@ Binding 5min A:100nM contact 120s partial
         """Clear all cycles from local method."""
         self._local_cycles.clear()
         self._refresh_method_table()
+        self._update_gallery_visibility()
 
     def _refresh_method_table(self):
-        """Update both Overview and Details table displays."""
+        """Update the 6-column step list and gallery visibility."""
         self.method_table.setRowCount(0)
-        self.details_table.setRowCount(0)
 
-        for i, cycle in enumerate(self._local_cycles):
-            # --- Overview tab (Type, Duration, Notes) ---
+        for cycle in self._local_cycles:
             row = self.method_table.rowCount()
             self.method_table.insertRow(row)
 
-            # Column 0: Type (color-coded abbreviation)
+            # Col 0: Type (colour-coded abbreviation)
             abbr, color = CycleTypeStyle.get(cycle.type)
             type_item = QTableWidgetItem(abbr)
             type_item.setForeground(QColor(color))
             type_item.setToolTip(cycle.type)
+            type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.method_table.setItem(row, 0, type_item)
 
-            # Column 1: Duration
-            dur_item = QTableWidgetItem(f"{cycle.length_minutes:.1f}")
+            # Col 1: Duration (formatted)
+            mins = cycle.length_minutes
+            if mins >= 60:
+                dur_str = f"{int(mins // 60)}h {int(mins % 60)}m" if mins % 60 else f"{int(mins // 60)}h"
+            elif mins < 1:
+                dur_str = f"{mins * 60:.0f}s"
+            else:
+                dur_str = f"{mins:.1f} min"
+            dur_item = QTableWidgetItem(dur_str)
             dur_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            dur_item.setFlags(dur_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.method_table.setItem(row, 1, dur_item)
 
-            # Column 2: Notes
-            notes_item = QTableWidgetItem(cycle.note or "")
-            self.method_table.setItem(row, 2, notes_item)
-
-            # --- Details tab (Channels, Concentration, Contact) ---
-            drow = self.details_table.rowCount()
-            self.details_table.insertRow(drow)
-
-            # Column 0: Channels
+            # Col 2: Channel
             if cycle.target_channels:
                 ch_text = cycle.target_channels
             elif cycle.concentrations:
                 ch_text = "".join(sorted(cycle.concentrations.keys()))
+            elif cycle.type in ("Baseline", "Other"):
+                ch_text = "—"
             else:
                 ch_text = "ALL"
             ch_item = QTableWidgetItem(ch_text)
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.details_table.setItem(drow, 0, ch_item)
+            ch_item.setFlags(ch_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.method_table.setItem(row, 2, ch_item)
 
-            # Column 1: Concentration (wider — gets Stretch space)
+            # Col 3: Concentration
             if cycle.concentrations:
                 conc_parts = [f"{ch}:{v}{cycle.units}" for ch, v in cycle.concentrations.items()]
                 conc_text = "  ".join(conc_parts)
-            elif cycle.concentration_value is not None:
-                conc_text = f"{cycle.concentration_value} {cycle.concentration_units}"
+            elif getattr(cycle, 'concentration_value', None) is not None:
+                conc_text = f"{cycle.concentration_value} {getattr(cycle, 'concentration_units', '')}"
             else:
                 conc_text = "—"
             conc_item = QTableWidgetItem(conc_text)
-            self.details_table.setItem(drow, 1, conc_item)
+            conc_item.setFlags(conc_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.method_table.setItem(row, 3, conc_item)
 
-            # Column 2: Contact time
+            # Col 4: Contact time
             if cycle.contact_time is not None:
-                ct_text = f"{cycle.contact_time:.0f}s"
+                ct = cycle.contact_time
+                if ct >= 3600:
+                    ct_text = f"{ct / 3600:.1f}h"
+                elif ct >= 60:
+                    ct_text = f"{ct / 60:.0f}m"
+                else:
+                    ct_text = f"{ct:.0f}s"
             else:
                 ct_text = "—"
             ct_item = QTableWidgetItem(ct_text)
             ct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.details_table.setItem(drow, 2, ct_item)
+            ct_item.setFlags(ct_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.method_table.setItem(row, 4, ct_item)
 
-        # Update count label
+            # Col 5: Note (editable)
+            note_item = QTableWidgetItem(cycle.note or "")
+            self.method_table.setItem(row, 5, note_item)
+
+        # Update labels
         count = len(self._local_cycles)
         self.method_count_label.setText(f"{count} cycle{'s' if count != 1 else ''}")
 
-        # Update method summary (total experiment time and cycle count)
-        total_time = sum(cycle.length_minutes for cycle in self._local_cycles)
-        
-        # Format total time as hours and minutes if >= 60 minutes
+        total_time = sum(c.length_minutes for c in self._local_cycles)
         if total_time == 0:
-            time_str = "0 min"
+            time_str = "0 min total"
         elif total_time >= 60:
-            hours = int(total_time // 60)
-            minutes = int(total_time % 60)
-            time_str = f"{hours}h {minutes}m" if minutes > 0 else f"{hours}h"
+            h = int(total_time // 60)
+            m = int(total_time % 60)
+            time_str = f"Total: {h}h {m}m" if m else f"Total: {h}h"
         else:
-            time_str = f"{total_time:.1f} min"
-        
+            time_str = f"Total: {total_time:.1f} min"
         self.method_exp_time_value.setText(time_str)
-        self.method_cycle_count_value.setText(str(count))
+
+        self._update_gallery_visibility()
 
     def _on_details_selection_changed(self):
         """Sync selection from details table to overview table."""

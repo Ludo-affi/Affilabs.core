@@ -39,6 +39,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 
 from affilabs.core.experiment_clock import TimeBase
+from affilabs.domain.timeline import CycleMarker, EventContext
 
 # Logger is assumed to be available at module level in main.py context
 try:
@@ -338,6 +339,7 @@ class CycleMixin:
                 # Save to recording if active
                 if hasattr(self, 'recording_mgr') and self.recording_mgr.is_recording:
                     self.recording_mgr.add_cycle(cycle_export_data)
+                    self._emit_cycle_marker_to_timeline(cycle_export_data)
                     logger.info(f"✓ Incomplete cycle added to recording")
 
                 # Mark as completed in queue presenter
@@ -653,41 +655,64 @@ class CycleMixin:
         total_min = int(total_sec // 60)
         total_sec_rem = int(total_sec % 60)
 
+        # Build next-cycle label (always show, not just at <10s)
+        next_cycle_label = ""
         next_cycle_warning = ""
-        if remaining_sec <= 10 and remaining_sec > 0 and self.segment_queue:
+        if self.segment_queue:
             next_cycle = self.segment_queue[0]
             next_type = next_cycle.type
             if next_type == "Concentration":
                 next_type = "Binding"
-            elif next_type == "Binding":
-                next_type = "Bind."
             elif next_type == "Kinetic":
                 next_type = "Kin."
-
             if hasattr(next_cycle, '_concentrations') and next_cycle._concentrations:
                 if 'ALL' in next_cycle._concentrations:
                     conc_value = next_cycle._concentrations['ALL']
                     units = getattr(next_cycle, '_units', 'nM')
                     next_type = f"{next_type} {conc_value}{units}"
+            next_cycle_label = f"Next: {next_type}"
+            if remaining_sec <= 10 and remaining_sec > 0:
+                next_cycle_warning = f" → Next: {next_type} in {int(remaining_sec)}s"
 
-            next_cycle_warning = f" → Next: {next_type} in {int(remaining_sec)}s"
+        # Calculate total experiment time remaining (current cycle + all queued)
+        total_remaining_sec = remaining_sec
+        for queued in self.segment_queue:
+            total_remaining_sec += getattr(queued, 'length_minutes', 0) * 60.0
+        total_rem_min = int(total_remaining_sec // 60)
+        total_rem_sec = int(total_remaining_sec % 60)
 
-        if hasattr(self.main_window.sidebar, "intel_message_label"):
-            msg = (
-                f"⏱ {cycle_type} (Cycle {cycle_num}/{total_cycles}) - "
-                f"{elapsed_min:02d}:{elapsed_sec_rem:02d}/{total_min:02d}:{total_sec_rem:02d}"
-                f"{next_cycle_warning}"
-            )
-            self.main_window.sidebar.intel_message_label.setText(msg)
-            if next_cycle_warning:
-                self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px; color: #FF9500; background: transparent;"
-                    "font-weight: 600; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        # Update the Active Cycle card on the sidebar
+        sidebar = self.main_window.sidebar
+        if hasattr(sidebar, 'active_cycle_card'):
+            sidebar.active_cycle_card.setVisible(True)
+
+            # Cycle type badge
+            if hasattr(sidebar, 'active_cycle_type_label'):
+                sidebar.active_cycle_type_label.setText(cycle_type)
+            # Cycle index
+            if hasattr(sidebar, 'active_cycle_index_label'):
+                sidebar.active_cycle_index_label.setText(f"Cycle {cycle_num}/{total_cycles}")
+            # Countdown: remaining time in current cycle
+            rem_min = int(remaining_sec // 60)
+            rem_sec_rem = int(remaining_sec % 60)
+            if hasattr(sidebar, 'active_cycle_countdown_label'):
+                sidebar.active_cycle_countdown_label.setText(f"{rem_min:02d}:{rem_sec_rem:02d}")
+                color = "#FF9500" if remaining_sec <= 10 else "#007AFF"
+                sidebar.active_cycle_countdown_label.setStyleSheet(
+                    f"font-size: 18px; font-weight: 700; color: {color}; background: transparent;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 )
-            else:
-                self.main_window.sidebar.intel_message_label.setStyleSheet(
-                    "font-size: 12px; color: #007AFF; background: transparent;"
-                    "font-weight: 600; font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            # Next cycle
+            if hasattr(sidebar, 'active_next_cycle_label'):
+                if next_cycle_label:
+                    sidebar.active_next_cycle_label.setText(next_cycle_label)
+                    sidebar.active_next_cycle_label.setVisible(True)
+                else:
+                    sidebar.active_next_cycle_label.setVisible(False)
+            # Total experiment time remaining
+            if hasattr(sidebar, 'active_experiment_time_label'):
+                sidebar.active_experiment_time_label.setText(
+                    f"Exp: {total_rem_min}m {total_rem_sec:02d}s left"
                 )
 
         self._update_next_cycle_warning_visual(remaining_sec, total_sec)
@@ -798,6 +823,7 @@ class CycleMixin:
         # Save to recording if active
         if self.recording_mgr.is_recording:
             self.recording_mgr.add_cycle(cycle_export_data)
+            self._emit_cycle_marker_to_timeline(cycle_export_data)
 
         self._current_cycle = None
         self._cycle_end_time = None
@@ -826,7 +852,14 @@ class CycleMixin:
         else:
             # Queue completed - show retrieve button and unlock
             logger.info("✓ Queue execution completed - all cycles finished")
-            
+
+            # Hide the active cycle card — no more cycles to display
+            try:
+                if hasattr(self.main_window.sidebar, 'active_cycle_card'):
+                    self.main_window.sidebar.active_cycle_card.setVisible(False)
+            except Exception:
+                pass
+
             # Unlock the queue
             if hasattr(self, 'queue_presenter'):
                 self.queue_presenter.unlock_queue()
@@ -998,3 +1031,45 @@ class CycleMixin:
             self._cycle_end_timer.stop()
             logger.debug("✓ Cycle end timer stopped (Next Cycle pressed early)")
         self._on_cycle_completed()
+
+    # ------------------------------------------------------------------
+    # Timeline integration helpers
+    # ------------------------------------------------------------------
+
+    def _emit_cycle_marker_to_timeline(self, cycle_export_data: dict) -> None:
+        """Emit a CycleMarker END event to the timeline stream alongside recording_mgr.add_cycle().
+
+        Non-critical — wrapped in try/except so any failure leaves the legacy
+        recording path unaffected.
+
+        Args:
+            cycle_export_data: dict returned by Cycle.to_export_dict(clock=...).
+                               Expected keys: cycle_id, type, start_time_sensorgram,
+                               end_time_sensorgram, duration_minutes.
+        """
+        try:
+            from datetime import datetime as dt_cls
+
+            stream = self.recording_mgr.get_timeline_stream()
+            end_time: float = cycle_export_data.get('end_time_sensorgram') or 0.0
+            start_time: float = cycle_export_data.get('start_time_sensorgram') or 0.0
+            duration: float = (end_time - start_time) if end_time else (
+                cycle_export_data.get('duration_minutes', 0.0) * 60.0
+            )
+
+            stream.add_event(CycleMarker(
+                time=max(end_time, start_time),
+                channel='A',  # Cycles span all channels; 'A' used as representative
+                context=EventContext.LIVE,
+                created_at=dt_cls.now(),
+                cycle_id=str(cycle_export_data.get('cycle_id', '')),
+                cycle_type=str(cycle_export_data.get('type', '')),
+                is_start=False,  # Always the END boundary (cycle completes/stops here)
+                duration=duration,
+            ))
+            logger.debug(
+                f"✓ CycleMarker emitted to timeline: "
+                f"{cycle_export_data.get('type', '?')} @ {end_time:.2f}s"
+            )
+        except Exception as exc:
+            logger.warning(f"Timeline cycle marker failed (non-critical): {exc}")

@@ -39,6 +39,7 @@ class RecordingEventCoordinator:
 
         """
         self.app = app
+        self._last_recording_file: str | None = None  # Retained for post-stop prompt
 
     # =========================================================================
     # GENERAL RECORDING EVENTS (Cycle Data Recording)
@@ -52,6 +53,7 @@ class RecordingEventCoordinator:
 
         """
         logger.info(f"🎙️ Recording started: {filename}")
+        self._last_recording_file = filename  # Retain for post-stop prompt
 
         # Start tracking LED operation hours
         self.app.main_window.start_led_operation_tracking()
@@ -82,8 +84,118 @@ class RecordingEventCoordinator:
         except Exception:
             pass
 
+        # Show post-recording prompt: file saved + navigate to Edits
+        self._show_recording_saved_prompt()
+
         # Note: Removed redundant sidebar spectroscopy status update
         # Main recording indicator already handles state display
+
+    def _show_recording_saved_prompt(self) -> None:
+        """Show a brief non-blocking prompt after recording stops.
+
+        Tells the user where the file was saved and offers a one-click
+        shortcut to view results in the Edits tab.
+        """
+        from pathlib import Path
+        try:
+            from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+            from PySide6.QtCore import Qt, QTimer
+
+            saved_file = self._last_recording_file
+            display_name = Path(saved_file).name if saved_file else None
+
+            dlg = QDialog(self.app.main_window)
+            dlg.setWindowTitle("Recording saved")
+            dlg.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+            dlg.setStyleSheet(
+                "QDialog {"
+                "  background: #FFFFFF;"
+                "  border: 2px solid #34C759;"
+                "  border-radius: 10px;"
+                "}"
+                "QLabel { color: #1D1D1F; }"
+            )
+            dlg.setFixedWidth(400)
+
+            layout = QVBoxLayout(dlg)
+            layout.setContentsMargins(20, 16, 20, 16)
+            layout.setSpacing(8)
+
+            title = QLabel("Recording saved")
+            title.setStyleSheet("font-size: 15px; font-weight: 700; color: #34C759;")
+            layout.addWidget(title)
+
+            if display_name:
+                file_label = QLabel(f"Saved to:  {display_name}")
+                file_label.setStyleSheet("font-size: 12px; color: #86868B;")
+                file_label.setWordWrap(True)
+                layout.addWidget(file_label)
+
+            btn_row = QHBoxLayout()
+            btn_row.setSpacing(8)
+
+            if saved_file:
+                open_btn = QPushButton("Open file")
+                open_btn.setFixedHeight(32)
+                open_btn.setStyleSheet(
+                    "QPushButton { background: #F2F2F7; border: none; border-radius: 6px;"
+                    "  font-size: 13px; color: #1D1D1F; padding: 0 12px; }"
+                    "QPushButton:hover { background: #E5E5EA; }"
+                )
+                def _open_file(path=saved_file):
+                    import subprocess
+                    import os
+                    try:
+                        os.startfile(path)
+                    except Exception:
+                        subprocess.Popen(["explorer", "/select,", path])
+                open_btn.clicked.connect(_open_file)
+                open_btn.clicked.connect(dlg.close)
+                btn_row.addWidget(open_btn)
+
+            view_btn = QPushButton("View results →")
+            view_btn.setFixedHeight(32)
+            view_btn.setStyleSheet(
+                "QPushButton { background: #34C759; border: none; border-radius: 6px;"
+                "  font-size: 13px; font-weight: 600; color: white; padding: 0 12px; }"
+                "QPushButton:hover { background: #28A745; }"
+            )
+            def _go_to_edits():
+                try:
+                    self.app.main_window.navigation_presenter.switch_page(1)
+                except Exception:
+                    pass
+            view_btn.clicked.connect(_go_to_edits)
+            view_btn.clicked.connect(dlg.close)
+            btn_row.addWidget(view_btn)
+
+            dismiss_btn = QPushButton("Dismiss")
+            dismiss_btn.setFixedHeight(32)
+            dismiss_btn.setStyleSheet(
+                "QPushButton { background: transparent; border: none;"
+                "  font-size: 13px; color: #86868B; padding: 0 8px; }"
+                "QPushButton:hover { color: #1D1D1F; }"
+            )
+            dismiss_btn.clicked.connect(dlg.close)
+            btn_row.addWidget(dismiss_btn)
+
+            layout.addLayout(btn_row)
+
+            # Position bottom-right of main window
+            mw = self.app.main_window
+            mw_geo = mw.geometry()
+            dlg.adjustSize()
+            dlg.move(
+                mw_geo.right() - dlg.width() - 24,
+                mw_geo.bottom() - dlg.height() - 48,
+            )
+            dlg.show()
+
+            # Auto-dismiss after 12 seconds
+            QTimer.singleShot(12000, dlg.close)
+
+        except Exception as e:
+            logger.warning(f"Could not show post-recording prompt: {e}")
 
     def on_recording_error(self, error: str):
         """Handle recording error signal.

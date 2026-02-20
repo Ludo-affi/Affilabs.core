@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 from affilabs.utils.logger import logger
 
 if TYPE_CHECKING:
-    pass
+    from affilabs.domain.timeline import TimelineEventStream
 
 
 class ExcelExporter:
@@ -50,7 +50,8 @@ class ExcelExporter:
         metadata: dict,
         recording_start_time: float,
         alignment_data: dict | None = None,
-        channels_xy_dataframe = None,  # Optional: pre-built wide-format channels DataFrame
+        channels_xy_dataframe=None,  # Optional: pre-built wide-format channels DataFrame
+        timeline_stream: "TimelineEventStream | None" = None,  # Optional: timeline event stream
     ) -> None:
         """Export all data to Excel file with multiple sheets.
 
@@ -66,6 +67,7 @@ class ExcelExporter:
             alignment_data: Dict mapping cycle_index -> {'channel': str, 'shift': float}
             channels_xy_dataframe: Optional pre-built wide-format channels DataFrame 
                                    (if provided, replaces internal Channel Data sheet with Channels XY sheet)
+            timeline_stream: Optional TimelineEventStream — if provided, adds a "Timeline Events" sheet
 
         Raises:
             ImportError: If pandas/openpyxl not installed
@@ -225,6 +227,61 @@ class ExcelExporter:
                     df_alignment = pd.DataFrame(alignment_rows)
                     df_alignment.to_excel(writer, sheet_name="Alignment", index=False)
                     logger.debug(f"Exported alignment settings for {len(alignment_rows)} cycles")
+
+                # Sheet 9: Timeline Events
+                if timeline_stream is not None:
+                    try:
+                        from affilabs.domain.timeline import (
+                            AutoMarker, CycleMarker, InjectionFlag, SpikeFlag, WashFlag,
+                        )
+
+                        tl_rows = []
+                        for evt in timeline_stream:  # snapshot iteration — thread-safe
+                            row: dict = {
+                                "time_s": round(evt.time, 4),
+                                "event_type": evt.event_type.value,
+                                "channel": evt.channel,
+                                "context": evt.context.value,
+                                "created_at": evt.created_at.isoformat() if evt.created_at else "",
+                                "label": "",
+                                "details": "",
+                            }
+                            if isinstance(evt, InjectionFlag):
+                                row["label"] = "Injection"
+                                row["details"] = (
+                                    f"spr={evt.spr_value:.3f}nm conf={evt.confidence:.2f}"
+                                    + (" [ref]" if evt.is_reference else "")
+                                )
+                            elif isinstance(evt, WashFlag):
+                                row["label"] = "Wash"
+                                row["details"] = evt.description or evt.wash_type
+                            elif isinstance(evt, SpikeFlag):
+                                row["label"] = "Spike"
+                                row["details"] = f"{evt.severity}: {evt.description}"
+                            elif isinstance(evt, CycleMarker):
+                                boundary = "START" if evt.is_start else "END"
+                                row["label"] = f"Cycle {boundary}"
+                                row["details"] = (
+                                    f"id={evt.cycle_id} type={evt.cycle_type}"
+                                    + (f" dur={evt.duration:.1f}s" if evt.is_start and evt.duration else "")
+                                )
+                            elif isinstance(evt, AutoMarker):
+                                row["label"] = evt.label or evt.marker_kind
+                                row["details"] = evt.marker_kind
+
+                            tl_rows.append(row)
+
+                        if tl_rows:
+                            df_tl = pd.DataFrame(tl_rows)
+                            # Reorder columns for readability
+                            col_order = ["time_s", "event_type", "channel", "context", "label", "details", "created_at"]
+                            df_tl = df_tl[[c for c in col_order if c in df_tl.columns]]
+                            df_tl.to_excel(writer, sheet_name="Timeline Events", index=False)
+                            logger.debug(f"Exported {len(tl_rows)} timeline events")
+                        else:
+                            logger.debug("Timeline stream empty — Timeline Events sheet skipped")
+                    except Exception as _tl_err:
+                        logger.warning(f"Timeline Events sheet failed (non-critical): {_tl_err}")
 
             logger.info(f"✓ Exported to Excel: {filepath}")
 

@@ -2171,9 +2171,15 @@ class PumpMixin:
 
     def _on_build_method(self):
         """Build Method button clicked — open method builder dialog (non-modal, reused)."""
+        import traceback
+
         try:
             from affilabs.widgets.method_builder_dialog import MethodBuilderDialog
+        except ImportError as e:
+            logger.error(f"MethodBuilderDialog import failed: {e}\n{traceback.format_exc()}")
+            return
 
+        try:
             # Reuse existing dialog instance (keeps local cycles between opens)
             if not hasattr(self, '_method_builder_dialog') or not self._method_builder_dialog:
                 user_mgr = getattr(self, 'user_profile_manager', None)
@@ -2196,10 +2202,8 @@ class PumpMixin:
             self._method_builder_dialog.raise_()
             self._method_builder_dialog.activateWindow()
 
-        except ImportError:
-            logger.warning("MethodBuilderDialog not available")
         except Exception as e:
-            logger.error(f"_on_build_method error: {e}")
+            logger.error(f"_on_build_method error: {e}\n{traceback.format_exc()}")
 
     def _detect_hw_name(self) -> str:
         """Return hardware identifier string from connected controller."""

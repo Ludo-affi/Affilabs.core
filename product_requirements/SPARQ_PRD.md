@@ -112,7 +112,9 @@ Piper TTS (voice output)
 
 ## Success Metrics
 
+- **Sparq IQ score** ≥ 80/100 on formal [UX Workflow Test Protocol](../docs/user_guides/UX_WORKFLOW_TEST_PROTOCOL.md) — primary readiness gate
 - % of user questions answered without escalating to support
 - Time from power-on to first recording (target: <5 min for new users)
 - Voice usage rate (if enabled)
 - User satisfaction score (NPS from in-app survey)
+- Number of "Sparq gap" items identified per test run (target: 0 unmatched questions after v2.0.6)

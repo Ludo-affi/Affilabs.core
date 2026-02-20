@@ -12,10 +12,12 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QSplitter, QLabel, QPushButton,
     QTableWidget, QHeaderView, QAbstractItemView, QSlider,
     QGraphicsDropShadowEffect, QComboBox, QLineEdit, QTableWidgetItem,
-    QWidget, QGridLayout, QScrollArea,
+    QWidget, QGridLayout, QScrollArea, QToolButton, QMenu,
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QColor, QFont, QIcon, QPixmap, QPainter
+from PySide6.QtSvg import QSvgRenderer
+from affilabs.utils.resource_path import get_affilabs_resource
 
 from affilabs.utils.logger import logger
 from affilabs.ui_styles import Colors, Fonts
@@ -225,22 +227,33 @@ class UIBuildersMixin:
 
         main_splitter.addWidget(left_splitter)
 
-        # RIGHT: Graphs (70% width)
+        # RIGHT: Graphs + tools bar
+        right_container = QWidget()
+        right_vbox = QVBoxLayout(right_container)
+        right_vbox.setContentsMargins(0, 0, 0, 0)
+        right_vbox.setSpacing(0)
+
         graphs_splitter = QSplitter(Qt.Vertical)
 
-        # TOP: Active Cycle View with cursors (70%)
+        # TOP: Active Cycle View with cursors (55%)
         selection_widget = self._create_active_selection()
         graphs_splitter.addWidget(selection_widget)
 
-        # BOTTOM: Delta SPR Bar Chart (30%)
+        # BOTTOM: Delta SPR Bar Chart (45%)
         barchart_widget = self._create_delta_spr_barchart()
         graphs_splitter.addWidget(barchart_widget)
 
-        # Set vertical proportions: 70:30
-        graphs_splitter.setStretchFactor(0, 70)
-        graphs_splitter.setStretchFactor(1, 30)
+        # Set vertical proportions: 55:45 — bar chart deserves more space
+        graphs_splitter.setStretchFactor(0, 55)
+        graphs_splitter.setStretchFactor(1, 45)
 
-        main_splitter.addWidget(graphs_splitter)
+        right_vbox.addWidget(graphs_splitter, 1)
+
+        # TOOLS BAR: Smoothing + Create Processing + Export (below graphs)
+        tools_panel = self._create_tools_panel()
+        right_vbox.addWidget(tools_panel)
+
+        main_splitter.addWidget(right_container)
 
         # Set horizontal proportions: 50:50 (left:right)
         main_splitter.setStretchFactor(0, 50)
@@ -252,7 +265,7 @@ class UIBuildersMixin:
 
         # Export sidebar (collapsible left panel — consistent with main sidebar position)
         self.export_sidebar = self._create_export_sidebar()
-        self.export_sidebar.setVisible(True)  # Visible by default
+        self.export_sidebar.setVisible(False)  # Hidden by default — opened via Export button
         outer_layout.addWidget(self.export_sidebar)
 
         outer_layout.addWidget(main_splitter, 1)
@@ -790,9 +803,9 @@ class UIBuildersMixin:
 
         # Header with controls
         header = QHBoxLayout()
-        title = QLabel("Active Selection View")
-        title.setStyleSheet("font-size: 15px; font-weight: 600; color: #1D1D1F;")
-        header.addWidget(title)
+        self.cycle_context_label = QLabel("Select a cycle")
+        self.cycle_context_label.setStyleSheet("font-size: 15px; font-weight: 600; color: #1D1D1F;")
+        header.addWidget(self.cycle_context_label)
 
         # Channel toggles - store references for colorblind palette updates
         self.edits_channel_buttons = {}
@@ -944,7 +957,7 @@ class UIBuildersMixin:
         self.delta_spr_barchart.setYRange(0, 100)
         self.delta_spr_barchart.getAxis('bottom').setTicks([[(0, 'Ch A'), (1, 'Ch B'), (2, 'Ch C'), (3, 'Ch D')]])
         self.delta_spr_barchart.setLabel('left', 'ΔSPR (RU)')
-        self.delta_spr_barchart.setFixedHeight(220)
+        self.delta_spr_barchart.setMinimumHeight(160)  # Floor only — no ceiling
         self.delta_spr_barchart.showGrid(y=True, alpha=0.2)
 
         # Add baseline indicator at y=0
@@ -1014,7 +1027,18 @@ class UIBuildersMixin:
         layout.addSpacing(12)
 
         # Create Processing Cycle button
-        create_processing_btn = QPushButton("📊 Create Processing Cycle")
+        create_processing_btn = QPushButton(" Create Processing Cycle")
+        _merge_svg = get_affilabs_resource("ui/img/merge_icon.svg")
+        if _merge_svg and _merge_svg.exists():
+            _svg_white = _merge_svg.read_text(encoding="utf-8").replace("currentColor", "white")
+            _renderer = QSvgRenderer(_svg_white.encode("utf-8"))
+            _px = QPixmap(QSize(16, 16))
+            _px.fill(Qt.GlobalColor.transparent)
+            _p = QPainter(_px)
+            _renderer.render(_p)
+            _p.end()
+            create_processing_btn.setIcon(QIcon(_px))
+            create_processing_btn.setIconSize(QSize(16, 16))
         create_processing_btn.setToolTip(
             "Extract and combine selected channels from multiple cycles.\n\n"
             "1. Select cycles in table\n"
@@ -1033,15 +1057,68 @@ class UIBuildersMixin:
 
         layout.addSpacing(8)
 
-        # Export button
-        export_btn = QPushButton("📥 Export")
+        # Split export button: left = Export Package (all at once), right arrow = individual options
+        export_btn = QToolButton()
+        export_btn.setText(" Export")
+        _export_svg = get_affilabs_resource("ui/img/export_package_icon.svg")
+        if _export_svg and _export_svg.exists():
+            _svg_src = _export_svg.read_text(encoding="utf-8").replace("currentColor", "white")
+            _renderer2 = QSvgRenderer(_svg_src.encode("utf-8"))
+            _px2 = QPixmap(QSize(16, 16))
+            _px2.fill(Qt.GlobalColor.transparent)
+            _p2 = QPainter(_px2)
+            _renderer2.render(_p2)
+            _p2.end()
+            export_btn.setIcon(QIcon(_px2))
+            export_btn.setIconSize(QSize(16, 16))
+            export_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        else:
+            export_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         export_btn.setFixedHeight(32)
-        export_btn.setStyleSheet(
-            "QPushButton { background: #1D1D1F; color: white; border-radius: 8px; "
-            "font-size: 13px; font-weight: 600; padding: 4px 16px; }"
-            "QPushButton:hover { background: #3A3A3C; }"
-        )
-        export_btn.clicked.connect(self._export_selection)
+        export_btn.setMinimumWidth(120)
+        export_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        export_btn.setStyleSheet("""
+            QToolButton {
+                background: #1D1D1F; color: white; border-radius: 8px;
+                font-size: 13px; font-weight: 600; padding: 4px 16px;
+                border: none;
+            }
+            QToolButton:hover { background: #3A3A3C; }
+            QToolButton::menu-button {
+                border-left: 1px solid rgba(255,255,255,0.2);
+                border-radius: 0px 8px 8px 0px;
+                width: 20px;
+            }
+            QToolButton::menu-arrow { image: none; }
+        """)
+        # Primary action: export everything at once
+        export_btn.clicked.connect(self._export_package)
+
+        # Dropdown menu: individual options
+        export_menu = QMenu(self.main_window)
+        export_menu.setStyleSheet("""
+            QMenu {
+                background: white; border: 1px solid #E5E5EA;
+                border-radius: 8px; padding: 4px;
+            }
+            QMenu::item {
+                padding: 8px 16px; font-size: 12px; color: #1D1D1F;
+                border-radius: 6px;
+            }
+            QMenu::item:selected { background: #F0F0F0; }
+            QMenu::separator { height: 1px; background: #E5E5EA; margin: 4px 8px; }
+        """)
+        export_menu.addAction("📊  Excel + Charts",  self._export_post_edit_analysis_with_charts)
+        export_menu.addAction("💾  Excel only",       self._export_table_data)
+        export_menu.addSeparator()
+        export_menu.addAction("🖼  Sensorgram PNG",   self._export_graph_image)
+        export_menu.addAction("📈  ΔSPR Chart PNG",   self._export_barchart_image)
+        export_menu.addSeparator()
+        export_menu.addAction("📋  Copy to clipboard", self._copy_table_to_clipboard)
+        export_menu.addAction("🔗  External (Prism / Origin)", self._export_for_external_software)
+        export_menu.addAction("📋  Save as Method",   self._save_cycles_as_method)
+        export_btn.setMenu(export_menu)
+
         layout.addWidget(export_btn)
 
         return container

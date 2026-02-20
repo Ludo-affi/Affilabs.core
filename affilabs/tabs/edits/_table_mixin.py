@@ -7,7 +7,7 @@ column visibility, data loading/saving, and cycle editing.
 import pyqtgraph as pg
 import pandas as pd
 from PySide6.QtWidgets import QTableWidgetItem
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 
 from affilabs.utils.logger import logger
@@ -50,11 +50,8 @@ class TableMixin:
         for cycle_type in sorted_types:
             self.filter_combo.addItem(cycle_type)
 
-        # Set default to first cycle type (or "All" if none)
-        if sorted_types:
-            self.filter_combo.setCurrentText(sorted_types[0])
-        else:
-            self.filter_combo.setCurrentText("All")
+        # Always default to "All" — users scan the full list before narrowing
+        self.filter_combo.setCurrentText("All")
 
         # Reconnect signal
         self.filter_combo.currentTextChanged.connect(self._apply_cycle_filter)
@@ -134,6 +131,10 @@ class TableMixin:
         # Update metadata stats
         if hasattr(self, '_update_metadata_stats'):
             self._update_metadata_stats()
+
+        # Auto-select first row so graph is populated immediately on load
+        if self.cycle_data_table.rowCount() > 0:
+            QTimer.singleShot(0, lambda: self._select_cycle_by_index(0))
 
     def _create_export_checkbox(self, cycle_idx: int, checked: bool = True):
         """Create a centered QCheckBox widget for the export column.

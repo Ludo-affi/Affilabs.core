@@ -9,6 +9,7 @@ This class manages:
 - File management and auto-save
 - Event logging (injections, valve switches, etc.)
 - Cycle tracking and flag markers
+- Unified timeline event stream (all events in one place)
 
 All file operations are handled safely to avoid blocking the UI.
 """
@@ -18,6 +19,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
+from affilabs.domain.timeline import TimelineContext, TimelineEventStream
 from affilabs.services.data_collector import DataCollector
 from affilabs.services.excel_exporter import ExcelExporter
 from affilabs.utils.logger import logger
@@ -47,6 +49,10 @@ class RecordingManager(QObject):
         # Delegate services (Separation of Concerns)
         self.data_collector = DataCollector()  # Handles in-memory data accumulation
         self.excel_exporter = ExcelExporter()  # Handles Excel file I/O
+
+        # Timeline state (unified event system)
+        self._timeline_context: TimelineContext | None = None
+        self._timeline_stream = TimelineEventStream()  # Unified event repository
 
         # Recording state
         self.is_recording = False
@@ -78,7 +84,27 @@ class RecordingManager(QObject):
         user_dir.mkdir(parents=True, exist_ok=True)
         return user_dir
 
-        # Initialized silently
+    def get_timeline_context(self) -> TimelineContext | None:
+        """Get the current recording's timeline context.
+
+        Returns:
+            TimelineContext if recording, None otherwise.
+            Use this to convert times or check if recording is active.
+        """
+        return self._timeline_context
+
+    def get_timeline_stream(self) -> TimelineEventStream:
+        """Get the unified event stream (all timeline events in one place).
+
+        Returns:
+            TimelineEventStream for adding/querying events.
+            Managers and presenters query this stream for:
+            - Injection flags
+            - Wash/regeneration events
+            - Cycle boundaries
+            - Auto-markers and user annotations
+        """
+        return self._timeline_stream
 
     def start_recording(self, filename: str | None = None, time_offset: float = 0.0) -> None:
         """Start recording data to file (if filename provided) or memory only.
@@ -98,6 +124,15 @@ class RecordingManager(QObject):
             self.current_file = filename  # Store filename if provided
             self.recording_start_offset = time_offset  # Store offset for t=0 export
             self.last_save_time = time.time()
+
+            # Create timeline context for this recording session
+            self._timeline_context = TimelineContext(
+                recording_start_time=time.time(),
+                recording_start_offset=time_offset
+            )
+            # Reset timeline stream for new recording
+            self._timeline_stream = TimelineEventStream()
+            logger.info(f"Timeline context initialized (offset={time_offset}s)")
 
             # Start data collection
             self.data_collector.start_collection(start_time=time.time())
@@ -144,6 +179,7 @@ class RecordingManager(QObject):
             # Stop recording
             self.is_recording = False
             self.current_file = None
+            self._timeline_context = None  # Clear timeline context
             self.recording_stopped.emit()
 
         except Exception as e:
@@ -199,7 +235,8 @@ class RecordingManager(QObject):
                     metadata=self.data_collector.metadata,
                     recording_start_time=self.data_collector.recording_start_time,
                     alignment_data=None,  # Not used in recording flow
-                    channels_xy_dataframe=df_xy
+                    channels_xy_dataframe=df_xy,
+                    timeline_stream=self.get_timeline_stream(),
                 )
 
             elif filepath.suffix == ".csv":
@@ -229,6 +266,8 @@ class RecordingManager(QObject):
         """Clean up recording resources."""
         self.is_recording = False
         self.current_file = None
+        self._timeline_context = None
+        self._timeline_stream = TimelineEventStream()
         self.data_collector.clear_all()
 
     def record_data_point(self, data: dict) -> None:

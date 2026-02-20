@@ -26,6 +26,8 @@ from affilabs.utils.logger import logger
 from affilabs.utils.processing_pipeline import get_pipeline_registry
 from affilabs.utils.spr_signal_processing import (
     apply_centered_median_filter,
+)
+from affilabs.utils.spr_signal_processing_compat import (
     find_resonance_wavelength_fourier,
 )
 

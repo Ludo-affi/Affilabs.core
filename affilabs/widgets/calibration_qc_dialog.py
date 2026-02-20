@@ -629,17 +629,11 @@ class CalibrationQCDialog(QDialog):
             else:
                 table.setItem(idx, 3, QTableWidgetItem("N/A"))
 
-            # Convergence Iterations (S/P format)
+            # Convergence Iterations (S/P format) — plain text, no colour
             if s_iterations > 0 or p_iterations > 0:
                 iter_text = f"{s_iterations}/{p_iterations}"
                 iter_item = QTableWidgetItem(iter_text)
                 iter_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if s_iterations <= 5:
-                    iter_item.setForeground(QColor("#34C759"))
-                elif s_iterations <= 10:
-                    iter_item.setForeground(QColor("#FF9500"))
-                else:
-                    iter_item.setForeground(QColor("#FF3B30"))
                 table.setItem(idx, 4, iter_item)
             else:
                 table.setItem(idx, 4, QTableWidgetItem("N/A"))
@@ -654,9 +648,60 @@ class CalibrationQCDialog(QDialog):
             5,
             table.horizontalHeader().ResizeMode.Stretch,
         )  # Status
-        table.setMaximumHeight(160)
+        table.setMaximumHeight(130)
 
         layout.addWidget(table)
+
+        # Calibration notes / reminders
+        notes_frame = QFrame()
+        notes_frame.setStyleSheet(
+            "QFrame {"
+            "  background: #F9F9F9;"
+            "  border-top: 1px solid #E5E5EA;"
+            "  border-radius: 0px;"
+            "}"
+        )
+        notes_layout = QVBoxLayout(notes_frame)
+        notes_layout.setContentsMargins(10, 8, 10, 8)
+        notes_layout.setSpacing(4)
+
+        notes_title = QLabel("Before you start")
+        notes_title.setStyleSheet(
+            "font-size: 10px; font-weight: 700; color: #86868B; background: transparent;"
+            "text-transform: uppercase; letter-spacing: 0.3px; border: none;"
+        )
+        notes_layout.addWidget(notes_title)
+
+        notes = [
+            ("⚠", "Dry sensor will not produce usable data — ensure buffer is flowing before each run."),
+            ("♻", "Reused sensor chips often fail QC — dip depth degrades with each use."),
+            ("✗", "Channels not in use will show poor metrics — this is expected, not a fault."),
+            ("⊘", "Dip depth < 50% on a new chip? Check fiber connection and flow cell seating."),
+            ("~", "QC pass does not guarantee stable data — watch baseline drift in the first 5 min."),
+        ]
+
+        for icon, text in notes:
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            row.setContentsMargins(0, 0, 0, 0)
+
+            icon_lbl = QLabel(icon)
+            icon_lbl.setFixedWidth(14)
+            icon_lbl.setStyleSheet("font-size: 10px; color: #86868B; background: transparent; border: none;")
+            row.addWidget(icon_lbl)
+
+            text_lbl = QLabel(text)
+            text_lbl.setWordWrap(True)
+            text_lbl.setStyleSheet(
+                "font-size: 10px; color: #3A3A3C; background: transparent; border: none;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
+            row.addWidget(text_lbl, 1)
+
+            notes_layout.addLayout(row)
+
+        layout.addWidget(notes_frame)
+
         container_layout.addWidget(frame)
 
         return container

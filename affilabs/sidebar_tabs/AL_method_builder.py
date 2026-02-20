@@ -20,14 +20,12 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
 )
 
-from affilabs.sections import CollapsibleSection
-from affilabs.ui_styles import card_style, section_header_style, Colors, Fonts
+from affilabs.ui_styles import card_style
 from affilabs.widgets.queue_summary_widget import QueueSummaryWidget
-from affilabs.widgets.scrolling_label import ScrollingLabel
-from affilabs.widgets.ui_constants import CycleTypeStyle
 from affilabs.services.user_profile_manager import UserProfileManager
 
 
@@ -122,98 +120,138 @@ class MethodTabBuilder:
             tab_layout: QVBoxLayout to add widgets to
 
         """
-        self._build_intelligence_bar(tab_layout)
+        self._build_build_method_cta(tab_layout)
+        self._build_active_cycle_card(tab_layout)
         self._build_cycle_history_queue(tab_layout)
-        self._build_power_user_section(tab_layout)
 
-    def _build_intelligence_bar(self, tab_layout: QVBoxLayout):
-        """Build intelligence bar section."""
-        intel_section = QLabel("INTELLIGENCE BAR")
-        intel_section.setStyleSheet(section_header_style())
-        intel_section.setFixedHeight(20)
-        intel_section.setToolTip(
-            "Real-time system status and guidance powered by AI diagnostics",
+    def _build_active_cycle_card(self, tab_layout: QVBoxLayout):
+        """Build Active Cycle status card — shown during runs, hidden at idle."""
+        # Hidden compat labels (still written to by _update_cycle_display / _refresh_intelligence_bar)
+        self.sidebar.intel_status_label = QLabel()
+        self.sidebar.intel_status_label.setVisible(False)
+        self.sidebar.intel_separator = QLabel()
+        self.sidebar.intel_separator.setVisible(False)
+        self.sidebar.intel_message_label = QLabel()
+        self.sidebar.intel_message_label.setVisible(False)
+
+        # Visible card — shown only while a cycle is running
+        self.sidebar.active_cycle_card = QFrame()
+        self.sidebar.active_cycle_card.setVisible(False)
+        self.sidebar.active_cycle_card.setStyleSheet(
+            "QFrame {"
+            "  background: rgba(0, 122, 255, 0.06);"
+            "  border: 1px solid rgba(0, 122, 255, 0.2);"
+            "  border-radius: 10px;"
+            "}"
         )
-        tab_layout.addWidget(intel_section)
-        tab_layout.addSpacing(8)
+        card_layout = QVBoxLayout(self.sidebar.active_cycle_card)
+        card_layout.setContentsMargins(12, 10, 12, 10)
+        card_layout.setSpacing(6)
 
-        intel_bar = QFrame()
-        intel_bar.setStyleSheet(
-            "QFrame {  background: transparent;  border: none;}",
-        )
-        intel_bar_layout = QHBoxLayout(intel_bar)
-        intel_bar_layout.setContentsMargins(16, 12, 16, 8)
-        intel_bar_layout.setSpacing(12)
+        # Row 1: cycle type badge + countdown
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
 
-        # Status indicators
-        self.sidebar.intel_status_label = QLabel("✓ Good")
-        self.sidebar.intel_status_label.setStyleSheet(
+        self.sidebar.active_cycle_type_label = QLabel("Binding")
+        self.sidebar.active_cycle_type_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 12px;"
-            "  color: #34C759;"
-            "  background: transparent;"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border-radius: 6px;"
+            "  padding: 2px 8px;"
+            "  font-size: 11px;"
             "  font-weight: 700;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}",
+            "}"
         )
-        intel_bar_layout.addWidget(self.sidebar.intel_status_label)
+        row1.addWidget(self.sidebar.active_cycle_type_label)
 
-        # Separator bullet
-        self.sidebar.intel_separator = QLabel("•")
-        self.sidebar.intel_separator.setStyleSheet(
-            "QLabel { font-size: 12px; color: #86868B; background: transparent; }",
-        )
-        intel_bar_layout.addWidget(self.sidebar.intel_separator)
-
-        self.sidebar.intel_message_label = QLabel("→ Ready for injection")
-        self.sidebar.intel_message_label.setStyleSheet(
+        self.sidebar.active_cycle_index_label = QLabel("Cycle 1/4")
+        self.sidebar.active_cycle_index_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 12px;"
+            "  font-size: 11px;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        row1.addWidget(self.sidebar.active_cycle_index_label)
+        row1.addStretch()
+
+        self.sidebar.active_cycle_countdown_label = QLabel("00:00")
+        self.sidebar.active_cycle_countdown_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 18px;"
+            "  font-weight: 700;"
             "  color: #007AFF;"
             "  background: transparent;"
-            "  font-weight: 600;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}",
+            "}"
         )
-        intel_bar_layout.addWidget(self.sidebar.intel_message_label)
+        self.sidebar.active_cycle_countdown_label.setToolTip("Time remaining in current cycle")
+        row1.addWidget(self.sidebar.active_cycle_countdown_label)
 
-        intel_bar_layout.addStretch()
+        card_layout.addLayout(row1)
 
-        tab_layout.addWidget(intel_bar)
+        # Row 2: next cycle + total experiment time
+        row2 = QHBoxLayout()
+        row2.setSpacing(0)
 
-        # Queue progress bar removed - was visually unappealing
-        # tab_layout.addSpacing(8)
+        self.sidebar.active_next_cycle_label = QLabel()
+        self.sidebar.active_next_cycle_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 11px;"
+            "  color: #FF9500;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        self.sidebar.active_next_cycle_label.setVisible(False)
+        row2.addWidget(self.sidebar.active_next_cycle_label)
+        row2.addStretch()
 
-    def _build_power_user_section(self, tab_layout: QVBoxLayout):
-        """Build collapsible Power User section at the bottom with Build Method button."""
-        tab_layout.addSpacing(8)
+        self.sidebar.active_experiment_time_label = QLabel()
+        self.sidebar.active_experiment_time_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 11px;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        row2.addWidget(self.sidebar.active_experiment_time_label)
 
-        power_section = CollapsibleSection("POWER USER", is_expanded=False)
+        card_layout.addLayout(row2)
 
-        # Build Method button
-        self.sidebar.build_method_btn = QPushButton("Build Method")
-        self.sidebar.build_method_btn.setFixedHeight(40)
+        tab_layout.addWidget(self.sidebar.active_cycle_card)
+        tab_layout.addSpacing(4)
+
+    def _build_build_method_cta(self, tab_layout: QVBoxLayout):
+        """Build prominent Build Method CTA at the top of the Method tab."""
+        self.sidebar.build_method_btn = QPushButton("  Build Method")
+        self.sidebar.build_method_btn.setFixedHeight(48)
         self.sidebar.build_method_btn.setStyleSheet(
             "QPushButton {"
             "  background: #007AFF;"
             "  color: white;"
             "  border: none;"
-            "  border-radius: 8px;"
-            "  padding: 8px 14px;"
-            "  font-size: 14px;"
-            "  font-weight: 600;"
+            "  border-radius: 10px;"
+            "  font-size: 15px;"
+            "  font-weight: 700;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
+            "  text-align: left;"
+            "  padding-left: 16px;"
             "}"
             "QPushButton:hover { background: #0051D5; }"
             "QPushButton:pressed { background: #003D99; }"
+            "QPushButton:disabled { background: #C7C7CC; color: #F2F2F7; }"
         )
         add_icon = self._create_add_icon()
         self.sidebar.build_method_btn.setIcon(add_icon)
-        self.sidebar.build_method_btn.setIconSize(QSize(18, 18))
+        self.sidebar.build_method_btn.setIconSize(QSize(20, 20))
         self.sidebar.build_method_btn.setToolTip("Open method builder to create and queue cycles")
-        power_section.add_content_widget(self.sidebar.build_method_btn)
-
-        tab_layout.addWidget(power_section)
+        tab_layout.addWidget(self.sidebar.build_method_btn)
+        tab_layout.addSpacing(4)
 
     def _build_cycle_history_queue(self, tab_layout: QVBoxLayout):
         """Build cycle queue management section."""
@@ -237,123 +275,21 @@ class MethodTabBuilder:
         self.sidebar.user_combo.currentTextChanged.connect(self._on_user_changed)
         self.sidebar.user_combo.setVisible(False)
 
-        # Info banner about completed cycles
-        self.sidebar.completed_cycles_info = QFrame()
-        self.sidebar.completed_cycles_info.setStyleSheet(
-            "QFrame {"
-            "  background: rgba(142, 142, 147, 0.08);"
-            "  border: none;"
-            "  border-radius: 0px;"
-            "}"
-        )
-        info_layout = QHBoxLayout(self.sidebar.completed_cycles_info)
-        info_layout.setContentsMargins(10, 6, 10, 6)
-        info_layout.setSpacing(8)
+        # Hidden compat label (queue_status_label still written to by external code)
+        self.sidebar.queue_status_label = QLabel()
+        self.sidebar.queue_status_label.setVisible(False)
 
-        info_icon = QLabel("ℹ️")
-        info_icon.setStyleSheet("QLabel { background: transparent; font-size: 12px; }")
-        info_layout.addWidget(info_icon)
-
-        info_label = QLabel("Completed cycles appear in the Edit tab")
-        info_label.setStyleSheet(
-            "QLabel {"
-            "  font-size: 11px;"
-            "  font-weight: 500;"
-            "  color: #86868B;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-        )
-        info_layout.addWidget(info_label)
-        info_layout.addStretch()
-
-        tab_layout.addWidget(self.sidebar.completed_cycles_info)
-        tab_layout.addSpacing(4)
-
-        # Queue status row
-        queue_status_row = QHBoxLayout()
-        queue_status_row.setSpacing(12)
-
-        self.sidebar.queue_status_label = ScrollingLabel(
-            "Queue: 0 cycles | Click 'Build Method' to plan batch runs",
-        )
-        self.sidebar.queue_status_label.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        # Configure scroll speed (adjust these values to make it faster/slower)
-        self.sidebar.queue_status_label.setScrollSpeed(30)  # milliseconds between updates
-        self.sidebar.queue_status_label.setScrollStep(2)  # pixels per update
-        queue_status_row.addWidget(self.sidebar.queue_status_label)
-
-        # Clear Queue button
-        self.sidebar.clear_queue_btn = QPushButton("🗑 Clear Queue")
-        self.sidebar.clear_queue_btn.setFixedHeight(24)
+        # Hidden compat buttons (still wired in signal connections elsewhere)
+        self.sidebar.clear_queue_btn = QPushButton()
         self.sidebar.clear_queue_btn.setVisible(False)
         self.sidebar.clear_queue_btn.setToolTip("Remove all cycles from queue")
-        self.sidebar.clear_queue_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent;"
-            "  color: #FF3B30;"
-            "  border: 1px solid rgba(255, 59, 48, 0.3);"
-            "  border-radius: 4px;"
-            "  padding: 2px 8px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(255, 59, 48, 0.1);"
-            "  border-color: #FF3B30;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(255, 59, 48, 0.2);"
-            "}",
-        )
-        queue_status_row.addWidget(self.sidebar.clear_queue_btn)
-
-        # Pause/Resume Queue button
-        self.sidebar.pause_queue_btn = QPushButton("⏸ Pause Queue")
-        self.sidebar.pause_queue_btn.setFixedHeight(24)
-        self.sidebar.pause_queue_btn.setVisible(False)  # Hidden until queue is running
+        self.sidebar.pause_queue_btn = QPushButton()
+        self.sidebar.pause_queue_btn.setVisible(False)
         self.sidebar.pause_queue_btn.setToolTip("Pause queue after current cycle completes")
-        self.sidebar.pause_queue_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent;"
-            "  color: #FF9500;"
-            "  border: 1px solid rgba(255, 149, 0, 0.3);"
-            "  border-radius: 4px;"
-            "  padding: 2px 8px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(255, 149, 0, 0.1);"
-            "  border-color: #FF9500;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(255, 149, 0, 0.2);"
-            "}",
-        )
-        queue_status_row.addWidget(self.sidebar.pause_queue_btn)
 
-        queue_status_row.addStretch()
-
-        tab_layout.addLayout(queue_status_row)
-        tab_layout.addSpacing(8)
-
-        # Experiment Method section header
-        experiment_label = QLabel("EXPERIMENT METHOD")
-        experiment_label.setStyleSheet(
-            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
-            f"letter-spacing: 0.5px; background: transparent;"
-            f"font-family: {Fonts.SYSTEM};"
-        )
-        tab_layout.addWidget(experiment_label)
-        tab_layout.addSpacing(8)
+        # Hidden compat frame (referenced by external code)
+        self.sidebar.completed_cycles_info = QFrame()
+        self.sidebar.completed_cycles_info.setVisible(False)
 
         # Summary table card (directly on sidebar)
         self._build_summary_table(tab_layout)
@@ -368,8 +304,11 @@ class MethodTabBuilder:
 
         # NEW: Queue Summary Widget with drag-drop support - styled to match original
         self.sidebar.summary_table = QueueSummaryWidget()
-        self.sidebar.summary_table.setMaximumHeight(400)  # Expanded for 10 visible rows
-        self.sidebar.summary_table.setMinimumHeight(400)
+        self.sidebar.summary_table.setMinimumHeight(200)
+        self.sidebar.summary_table.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self.sidebar.summary_table.setStyleSheet(
             "QTableWidget {"
             "  background: white;"
@@ -544,37 +483,14 @@ class MethodTabBuilder:
         self.sidebar.retrieve_method_btn.clicked.connect(self._on_retrieve_method)
         table_footer_row.addWidget(self.sidebar.retrieve_method_btn)
 
-        # View All Cycles Button
-        self.sidebar.open_table_btn = QPushButton("📊 View All")
-        self.sidebar.open_table_btn.setFixedHeight(28)
-        self.sidebar.open_table_btn.setToolTip("View all completed/recorded cycles")
-        self.sidebar.open_table_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent;"
-            "  color: #636366;"
-            "  border: 1px solid rgba(99, 99, 102, 0.3);"
-            "  border-radius: 6px;"
-            "  padding: 4px 12px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(99, 99, 102, 0.08);"
-            "  border-color: #636366;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(99, 99, 102, 0.15);"
-            "}",
-        )
-        table_footer_row.addWidget(self.sidebar.open_table_btn)
+        # Hidden compat reference (open_table_btn still connected in main.py signal wiring)
+        self.sidebar.open_table_btn = QPushButton()
+        self.sidebar.open_table_btn.setVisible(False)
+        self.sidebar.open_table_btn.clicked.connect(self._open_cycle_table_dialog)
 
         summary_card_layout.addLayout(table_footer_row)
 
         parent_layout.addWidget(summary_card)
-
-        # Connect button signal
-        self.sidebar.open_table_btn.clicked.connect(self._open_cycle_table_dialog)
 
     def _open_cycle_table_dialog(self):
         """Open the full cycle table dialog for reviewing completed/recorded cycles.

@@ -52,6 +52,12 @@ from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import QMenu
 
 from affilabs.domain.flag import Flag, InjectionFlag, create_flag
+from affilabs.domain.timeline import (
+    EventContext,
+    InjectionFlag as TLInjectionFlag,
+    WashFlag as TLWashFlag,
+    SpikeFlag as TLSpikeFlag,
+)
 from affilabs.ui_styles import hex_to_rgb
 from affilabs.utils.logger import logger
 
@@ -303,6 +309,64 @@ class FlagManager:
         # Add to flag list
         self._flag_markers.append(flag)
 
+        # Also add to unified timeline stream (parallel system — keeps old _flag_markers intact)
+        self._add_to_timeline_stream(channel, time_val, spr_val, flag_type, is_reference)
+
+        # Hide "Flat baseline = ready for injection" hint on first injection flag
+        if flag_type == "injection":
+            try:
+                lbl = getattr(self.app.main_window, '_baseline_hint_label', None)
+                if lbl is not None and lbl.isVisible():
+                    lbl.setVisible(False)
+            except Exception:
+                pass
+
+        # Flash the marker: briefly enlarge it, then restore, to make it noticeable
+        try:
+            from PySide6.QtCore import QTimer as _QT
+            original_size = flag.marker_size
+            _flash_step = [0]
+            _flash_sizes = [original_size * 2.5, original_size * 1.8, original_size]
+            _flash_timer = _QT()
+            _flash_timer.setInterval(120)
+            def _flash():
+                try:
+                    idx = _flash_step[0]
+                    if idx < len(_flash_sizes):
+                        marker.setSize(_flash_sizes[idx])
+                        _flash_step[0] += 1
+                    else:
+                        _flash_timer.stop()
+                except Exception:
+                    _flash_timer.stop()
+            _flash_timer.timeout.connect(_flash)
+            _flash_timer.start()
+            flag._flash_timer = _flash_timer  # keep reference
+        except Exception:
+            pass
+
+        # One-time "SPR signals decrease on binding" tooltip (injection only, first time ever)
+        if flag_type == "injection":
+            try:
+                from PySide6.QtWidgets import QToolTip
+                from PySide6.QtCore import QPoint as _QP
+                _shown_key = '_binding_tooltip_shown'
+                if not getattr(self.app, _shown_key, False):
+                    setattr(self.app, _shown_key, True)
+                    mw = self.app.main_window
+                    # Show near the cycle graph
+                    graph = getattr(mw, 'cycle_of_interest_graph', mw)
+                    pos = graph.mapToGlobal(_QP(graph.width() // 2, 40))
+                    QToolTip.showText(
+                        pos,
+                        "SPR signals decrease on binding \u2014 a wavelength drop means your sample is interacting with the sensor.",
+                        graph,
+                        graph.rect(),
+                        8000,  # 8 seconds
+                    )
+            except Exception:
+                pass
+
         # Export flag to recording manager
         if self.app.recording_mgr.is_recording:
             import datetime as dt
@@ -317,6 +381,62 @@ class FlagManager:
         logger.info(
             f"🚩 {flag_type.capitalize()} flag added: Channel {channel.upper()} at t={time_val:.2f}s"
         )
+
+    def _add_to_timeline_stream(self, channel: str, time_val: float, spr_val: float, flag_type: str, is_reference: bool = False, context: EventContext = EventContext.LIVE) -> None:
+        """Add a flag event to the unified timeline stream (parallel to _flag_markers).
+
+        Called internally by add_flag_marker (LIVE) and add_edits_flag (EDITS).
+        Keeps timeline in sync without touching existing flag logic.
+
+        Args:
+            channel: Channel identifier (upper or lower case)
+            time_val: Time position for flag
+            spr_val: SPR value at flag position
+            flag_type: Type of flag ('injection', 'wash', 'spike')
+            is_reference: Whether this is the reference injection
+            context: EventContext.LIVE or EventContext.EDITS
+        """
+        try:
+            import datetime as dt
+
+            recording_mgr = self.app.recording_mgr
+            if not recording_mgr.is_recording:
+                return
+
+            stream = recording_mgr.get_timeline_stream()
+            ch = channel.upper()
+
+            if flag_type == "injection":
+                event = TLInjectionFlag(
+                    time=time_val,
+                    channel=ch,
+                    context=context,
+                    created_at=dt.datetime.now(),
+                    spr_value=spr_val,
+                    is_reference=is_reference,
+                )
+            elif flag_type == "wash":
+                event = TLWashFlag(
+                    time=time_val,
+                    channel=ch,
+                    context=context,
+                    created_at=dt.datetime.now(),
+                    wash_type="buffer_change",
+                )
+            elif flag_type == "spike":
+                event = TLSpikeFlag(
+                    time=time_val,
+                    channel=ch,
+                    context=context,
+                    created_at=dt.datetime.now(),
+                )
+            else:
+                return  # Unknown type — skip
+
+            stream.add_event(event)
+
+        except Exception as e:
+            logger.warning(f"Timeline stream update failed (non-critical): {e}")
 
     def remove_flag_near_click(self, time_clicked: float, spr_clicked: float):
         """Remove flag marker near the click position using 2D distance.
@@ -973,6 +1093,9 @@ class FlagManager:
 
             flag.marker = marker
             self._flag_markers.append(flag)
+
+            # Also add to unified timeline stream with EDITS context
+            self._add_to_timeline_stream(channel, time_val, spr_val, flag_type, context=EventContext.EDITS)
 
             logger.info(
                 f"🚩 {flag_type.capitalize()} flag added in Edits: "

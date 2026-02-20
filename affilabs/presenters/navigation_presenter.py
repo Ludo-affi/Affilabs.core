@@ -167,8 +167,12 @@ class NavigationPresenter:
 
     def _create_spark_toggle_button(self, layout):
         """Create Spark AI toggle button with SVG robot icon."""
-        # SVG robot icon
-        robot_svg = '''<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/><path d="M9 14h6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/><path d="M3 10v4M21 10v4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>'''
+        # Load canonical SVG from file; fallback to inline if missing
+        _svg_path = get_affilabs_resource("ui/img/sparq_icon.svg")
+        if _svg_path and _svg_path.exists():
+            robot_svg = _svg_path.read_text(encoding="utf-8")
+        else:
+            robot_svg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/><path d="M9 14h6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/><path d="M3 10v4M21 10v4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>'
 
         self.main_window.spark_toggle_btn = QPushButton()
         self.main_window.spark_toggle_btn.setFixedSize(36, 36)
@@ -219,7 +223,7 @@ class NavigationPresenter:
 
         # Connect signal THEN set checked (so handler fires after button is fully configured)
         self.main_window.spark_toggle_btn.toggled.connect(self.main_window._on_spark_toggle)
-        self.main_window.spark_toggle_btn.setChecked(True)  # Spark visible by default
+        self.main_window.spark_toggle_btn.setChecked(False)  # Spark hidden by default — user opens on demand
         layout.addWidget(self.main_window.spark_toggle_btn)
 
     def _create_timer_button(self, layout):
@@ -452,6 +456,32 @@ class NavigationPresenter:
                 self.main_window.sidebar.hide()
             else:
                 self.main_window.sidebar.show()
+
+        # One-time "What is a cycle?" explanation on first Edits tab visit
+        if page_index == 1 and not getattr(self.main_window, '_edits_cycle_tooltip_shown', False):
+            self.main_window._edits_cycle_tooltip_shown = True
+            try:
+                from PySide6.QtCore import QTimer, QPoint
+                from PySide6.QtWidgets import QToolTip
+                def _show_cycle_tip():
+                    try:
+                        widget = self.main_window.content_stack.currentWidget()
+                        if widget is None:
+                            widget = self.main_window
+                        pos = widget.mapToGlobal(QPoint(widget.width() // 2, 60))
+                        QToolTip.showText(
+                            pos,
+                            "A cycle is one complete injection + wash sequence.\n"
+                            "Each row in the table below represents one cycle from your recording.",
+                            widget,
+                            widget.rect(),
+                            9000,  # 9 seconds
+                        )
+                    except Exception:
+                        pass
+                QTimer.singleShot(600, _show_cycle_tip)
+            except Exception:
+                pass
 
     def get_buttons(self) -> list[QPushButton]:
         """Get the list of navigation buttons.

@@ -58,6 +58,9 @@ class AL_UIUpdateCoordinator(QObject):
         # Pending sensor IQ updates
         self._pending_sensor_iq_updates = {}
 
+        # Pending stability badge state (True = stable, False = not stable, None = unknown)
+        self._pending_stability_update: bool | None = None
+
         # Setup throttled update timer for Settings sidebar graphs (1 Hz = 1000ms)
         self._update_timer = QTimer()
         self._update_timer.timeout.connect(self.process_pending_updates)
@@ -123,6 +126,11 @@ class AL_UIUpdateCoordinator(QObject):
 
             # Process Sensor IQ diagnostic updates
             self._update_sensor_iq_displays()
+
+            # Process stability badge update
+            if self._pending_stability_update is not None:
+                self._update_stability_badge(self._pending_stability_update)
+                self._pending_stability_update = None
 
         except Exception as e:
             logger.exception(f"Error in UI update coordinator: {e}")
@@ -223,25 +231,28 @@ class AL_UIUpdateCoordinator(QObject):
 
                 label = getattr(self.main_window, label_attr)
 
-                # Get icon and color
+                # Get color for this IQ level
                 iq_level_key = sensor_iq.iq_level.value
-                icon = SENSOR_IQ_ICONS.get(iq_level_key, "❓")
-                color = SENSOR_IQ_COLORS.get(iq_level_key, "#86868B")
+                color = SENSOR_IQ_COLORS.get(iq_level_key, "#C7C7CC")
 
-                # Build display text
+                # Tooltip carries all detail — dot is silent
                 fwhm_text = f"{sensor_iq.fwhm:.1f}nm" if sensor_iq.fwhm else "N/A"
-                display_text = (
-                    f"{icon} {sensor_iq.iq_level.value.upper()} | "
-                    f"λ={sensor_iq.wavelength:.1f}nm, "
-                    f"FWHM={fwhm_text}, "
-                    f"Score={sensor_iq.quality_score:.2f}"
+                tooltip_text = (
+                    f"{iq_level_key.upper()} · {sensor_iq.wavelength:.1f} nm\n"
+                    f"FWHM: {fwhm_text} · Score: {sensor_iq.quality_score:.2f}"
                 )
+                if sensor_iq.warning_message:
+                    tooltip_text += f"\n⚠ {sensor_iq.warning_message}"
+                if sensor_iq.recommendation:
+                    tooltip_text += f"\n→ {sensor_iq.recommendation}"
 
-                # Update label
-                label.setText(display_text)
+                # Update dot: background color only, no text
+                label.setToolTip(tooltip_text)
                 label.setStyleSheet(
-                    f"font-size: 12px; color: {color}; font-weight: bold; "
-                    f"font-family: 'Consolas', 'Courier New', monospace;",
+                    f"QLabel {{"
+                    f"  background: {color};"
+                    f"  border-radius: 3px;"
+                    f"}}"
                 )
 
                 # Update static info labels (only once, not per channel)
@@ -260,6 +271,52 @@ class AL_UIUpdateCoordinator(QObject):
 
         # Clear processed updates
         self._pending_sensor_iq_updates.clear()
+
+    def queue_stability_update(self, stable: bool) -> None:
+        """Queue a baseline stability badge state change."""
+        self._pending_stability_update = stable
+
+    def _update_stability_badge(self, stable: bool) -> None:
+        """Apply the stability badge state to the main window widget."""
+        badge = getattr(self.main_window, "stability_badge", None)
+        if badge is None:
+            return
+        try:
+            if stable:
+                badge.setText("Ready to inject \u2713")
+                badge.setStyleSheet(
+                    "QLabel {"
+                    "  background: rgba(52, 199, 89, 0.15);"
+                    "  color: #1A7F37;"
+                    "  font-size: 11px;"
+                    "  font-weight: 700;"
+                    "  border-radius: 5px;"
+                    "  border: 1px solid rgba(52, 199, 89, 0.4);"
+                    "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                    "}"
+                )
+                badge.setToolTip(
+                    "Baseline is stable — safe to inject\n"
+                    "All active channels within \u00b10.075 nm for the last ~30 s"
+                )
+            else:
+                badge.setText("Stabilizing\u2026")
+                badge.setStyleSheet(
+                    "QLabel {"
+                    "  background: rgba(0,0,0,0.06);"
+                    "  color: #86868B;"
+                    "  font-size: 11px;"
+                    "  font-weight: 600;"
+                    "  border-radius: 5px;"
+                    "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+                    "}"
+                )
+                badge.setToolTip(
+                    "Baseline still drifting — wait for green before injecting"
+                )
+            badge.setVisible(True)
+        except Exception as e:
+            logger.debug(f"Stability badge update failed: {e}")
 
     def set_transmission_updates_enabled(self, enabled: bool):
         """Enable/disable transmission curve updates."""

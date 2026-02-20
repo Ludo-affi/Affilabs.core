@@ -238,6 +238,20 @@ class AcquisitionMixin:
         self.buffer_mgr.clear_all()
         logger.debug("Cleared all data buffers")
 
+        # Show "Flat baseline = ready for injection" hint on graph
+        if hasattr(self.main_window, '_baseline_hint_label'):
+            lbl = self.main_window._baseline_hint_label
+            lbl.setVisible(True)
+            # Re-position after graph has rendered
+            from PySide6.QtCore import QTimer as _QT
+            def _reposition():
+                try:
+                    g = self.main_window.full_timeline_graph
+                    lbl.move(g.width() - lbl.width() - 12, g.height() - lbl.height() - 8)
+                except Exception:
+                    pass
+            _QT.singleShot(500, _reposition)
+
         # Clear pause markers from previous run (schedule in main thread)
         try:
             if hasattr(self.main_window, "pause_markers") and hasattr(
@@ -268,6 +282,23 @@ class AcquisitionMixin:
         # Clear any pending recording marker (acquisition ended before it could be placed)
         if hasattr(self, '_pending_recording_marker'):
             self._pending_recording_marker = False
+
+        # Reset stability badge and rolling buffer
+        if hasattr(self, '_peak_history'):
+            self._peak_history = {"a": [], "b": [], "c": [], "d": []}
+        if hasattr(self.main_window, 'stability_badge'):
+            self.main_window.stability_badge.setVisible(False)
+
+        # Hide active cycle card (acquisition ended)
+        try:
+            if hasattr(self.main_window.sidebar, 'active_cycle_card'):
+                self.main_window.sidebar.active_cycle_card.setVisible(False)
+        except Exception:
+            pass
+
+        # Hide "flat baseline" hint (will reappear on next acquisition start)
+        if hasattr(self.main_window, '_baseline_hint_label'):
+            self.main_window._baseline_hint_label.setVisible(False)
         
         self.main_window.record_btn.setToolTip(
             "Start Recording\n(Enabled after calibration)"
@@ -359,16 +390,9 @@ class AcquisitionMixin:
                 }
                 self.recording_mgr.add_cycle(legacy_export_data)
 
-            if hasattr(self, "_flag_markers"):
-                for flag in self._flag_markers:
-                    flag_export_data = {
-                        "type": flag.get("type", ""),
-                        "channel": flag.get("channel", ""),
-                        "time": flag.get("time", ""),
-                        "spr": flag.get("spr", ""),
-                        "timestamp": time.time(),
-                    }
-                    self.recording_mgr.add_flag(flag_export_data)
+            # NOTE: Flag export handled directly by FlagManager.add_flag_marker()
+            # which calls recording_mgr.add_flag() at the point of flag placement.
+            # The legacy self._flag_markers dict list is no longer populated.
 
             logger.info("Initial experiment state exported to recording")
 

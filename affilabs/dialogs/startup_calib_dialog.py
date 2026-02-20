@@ -50,9 +50,9 @@ class StartupCalibProgressDialog(QDialog):
         self.setWindowTitle(title)
         self.setModal(False)  # Non-blocking - allows background processing
         self.setMinimumWidth(460)
-        self.setMinimumHeight(200)
+        self.setMinimumHeight(240)
         self.setMaximumWidth(520)
-        self.setMaximumHeight(480)
+        self.setMaximumHeight(540)
 
         # Track dialog state to prevent race conditions
         self._is_closing = False
@@ -100,10 +100,10 @@ class StartupCalibProgressDialog(QDialog):
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.title_label)
 
-        # Step description label (shows current calibration step with Working... indicator)
+        # Step description label (shows current calibration step + elapsed time)
         self.step_description_label = QLabel("")
         self.step_description_label.setStyleSheet(
-            "font-size: 13px; color: #007AFF; font-weight: 600; padding: 4px;",
+            "font-size: 12px; color: #86868B; font-weight: 400; padding: 2px;",
         )
         self.step_description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.step_description_label.setWordWrap(True)
@@ -155,8 +155,32 @@ class StartupCalibProgressDialog(QDialog):
         self._dot_timer.timeout.connect(self._animate_dots)
         self._dot_timer.start(1000)  # 1s interval for elapsed time ticking
 
-        # Status message
-        self.status_label = QLabel(message)
+        # Warning banner — shown when message starts with ⚠ (e.g. "water in device")
+        # Extracts the warning lines (up to the first blank line) and displays them
+        # in a high-visibility amber box; the rest goes in status_label below.
+        warning_text, body_text = self._split_warning(message)
+
+        if warning_text:
+            self.warning_label = QLabel(warning_text)
+            self.warning_label.setStyleSheet(
+                "QLabel {"
+                "  font-size: 12px;"
+                "  font-weight: 500;"
+                "  color: #8B6914;"
+                "  background: #FFFBEC;"
+                "  border: 1px solid #F0C840;"
+                "  border-radius: 6px;"
+                "  padding: 6px 12px;"
+                "}",
+            )
+            self.warning_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            self.warning_label.setWordWrap(True)
+            main_layout.addWidget(self.warning_label)
+        else:
+            self.warning_label = None
+
+        # Status message (checklist items and timing note)
+        self.status_label = QLabel(body_text if warning_text else message)
         self.status_label.setStyleSheet(
             "font-size: 14px;color: #86868B;padding: 0px;",
         )
@@ -229,6 +253,21 @@ class StartupCalibProgressDialog(QDialog):
         # Center on parent when dialog is initialized
         if self.parent_window:
             self._center_on_parent()
+
+    @staticmethod
+    def _split_warning(message: str) -> tuple[str, str]:
+        """Split message into (warning_text, body_text).
+
+        If message starts with '⚠', everything up to the first blank line
+        is the warning; the rest is the body.  If no leading '⚠', returns
+        ('', message) so all text goes into status_label unchanged.
+        """
+        if not message.startswith("⚠"):
+            return "", message
+        parts = message.split("\n\n", 1)
+        warning = parts[0].strip()
+        body = parts[1].strip() if len(parts) > 1 else ""
+        return warning, body
 
     def _on_start_clicked(self) -> None:
         """Handle start button click."""
@@ -356,9 +395,8 @@ class StartupCalibProgressDialog(QDialog):
         """Actually update step description label (runs in main thread)."""
         if not self._is_closing and self.isVisible():
             try:
-                # Store base text and add Working... suffix
                 self._current_step_text = description
-                self.step_description_label.setText(f"{description} - Working...")
+                self.step_description_label.setText(description)
                 self.step_description_label.setVisible(True)
             except RuntimeError:
                 pass  # Widget deleted
@@ -403,7 +441,11 @@ class StartupCalibProgressDialog(QDialog):
                 self.progress_bar.show()
                 self.progress_bar.setMaximum(100)
                 self.progress_bar.setValue(0)
-                self.activity_label.setVisible(True)
+                # Hide warning + checklist — no longer relevant once calibration runs
+                if self.warning_label:
+                    self.warning_label.setVisible(False)
+                self.status_label.setVisible(False)
+                self.activity_label.setVisible(False)
                 self._calibration_running = True
                 self._elapsed_timer.start()
                 self._dot_timer.start(1000)
@@ -411,25 +453,20 @@ class StartupCalibProgressDialog(QDialog):
                 pass  # Widget deleted
 
     def _animate_dots(self) -> None:
-        """Cycle dots and show elapsed time so users see the process is alive."""
-        self._dot_count = (self._dot_count % 3) + 1
-        dots = "." * self._dot_count
+        """Update step description with elapsed time so users see the process is alive."""
         if self._calibration_running:
             elapsed_ms = self._elapsed_timer.elapsed()
             total_secs = elapsed_ms // 1000
             mins = total_secs // 60
             secs = total_secs % 60
-            if mins > 0:
-                elapsed_str = f"{mins}m {secs:02d}s"
-            else:
-                elapsed_str = f"{secs}s"
-            self.activity_label.setText(f"Calibrating{dots}  ({elapsed_str} elapsed)")
-
-            # Also update step description with animated dots
+            elapsed_str = f"{mins}m {secs:02d}s" if mins > 0 else f"{secs}s"
             if self._current_step_text and self.step_description_label.isVisible():
-                self.step_description_label.setText(f"{self._current_step_text} - Working{dots}")
+                self.step_description_label.setText(
+                    f"{self._current_step_text}  \u00b7  {elapsed_str}"
+                )
         else:
-            self.activity_label.setText(f"Working{dots}")
+            self._dot_count = (self._dot_count % 3) + 1
+            self.activity_label.setText(f"Working{'.' * self._dot_count}")
 
     def _stop_activity_animation(self) -> None:
         """Stop the dot animation and elapsed time tracking."""
@@ -470,6 +507,13 @@ class StartupCalibProgressDialog(QDialog):
                 # Stop activity animation - calibration is done
                 self._stop_activity_animation()
                 self.step_description_label.setVisible(False)
+
+                # Ensure warning banner is dismissed
+                if self.warning_label:
+                    self.warning_label.setVisible(False)
+
+                # Show the completion status
+                self.status_label.setVisible(True)
 
                 # Hide retry/continue buttons if they exist (from previous error state)
                 if self.retry_button:

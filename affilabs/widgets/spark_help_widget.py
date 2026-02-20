@@ -1147,10 +1147,10 @@ class SparkHelpWidget(QWidget):
         self._handle_question_inner()
 
     def _submit_bug_report(self, description: str, attached_images: list = None):
-        """Send bug report in background; show status in chat."""
-        self.push_system_message("Sending report…")
+        """Generate bug report draft and display for user to copy."""
+        self.push_system_message("Generating bug report…")
 
-        def _send():
+        def _generate():
             try:
                 from affilabs.services.bug_reporter import send_bug_report
                 user_name = ""
@@ -1159,18 +1159,27 @@ class SparkHelpWidget(QWidget):
                         user_name = self._user_manager.get_active_user() or ""
                     except Exception:
                         pass
-                ok, msg = send_bug_report(
+                ok, draft_text = send_bug_report(
                     description, 
                     user_name=user_name, 
                     additional_images=attached_images or []
                 )
             except Exception as e:
-                ok, msg = False, f"Failed to send: {e}"
-            QTimer.singleShot(0, lambda: self.push_system_message(
-                f"{'✅' if ok else '❌'} {msg}"
-            ))
+                ok, draft_text = False, f"Failed to generate: {e}"
+            
+            def show_draft():
+                if ok:
+                    self.push_system_message("✅ Bug report draft ready! Copy the text below and email it to info@affiniteinstruments.com")
+                    # Push the draft in a code block so it's easy to select/copy
+                    bubble = MessageBubble(f"```\n{draft_text}\n```", is_user=False)
+                    self.chat_layout.addWidget(bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+                    QTimer.singleShot(50, self._scroll_to_bottom)
+                else:
+                    self.push_system_message(f"❌ {draft_text}")
+            
+            QTimer.singleShot(0, show_draft)
 
-        threading.Thread(target=_send, daemon=True).start()
+        threading.Thread(target=_generate, daemon=True).start()
 
     def push_system_message(self, text: str):
         """Push a system-initiated message into the SPARK chat (not user-initiated).

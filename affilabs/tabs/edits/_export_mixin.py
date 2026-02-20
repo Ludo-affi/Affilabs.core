@@ -25,6 +25,38 @@ class ExportMixin:
 
     # ── Core Export Methods ──────────────────────────────────────────────────
 
+    def _export_package(self):
+        """Export Package: Excel+Charts + Sensorgram PNG + ΔSPR Chart PNG in one action."""
+        from affilabs.utils.logger import logger
+        from PySide6.QtWidgets import QMessageBox
+
+        errors = []
+
+        try:
+            self._export_post_edit_analysis_with_charts()
+        except Exception as e:
+            logger.warning(f"Export package — Excel+Charts failed: {e}")
+            errors.append(f"Excel: {e}")
+
+        try:
+            self._export_graph_image()
+        except Exception as e:
+            logger.warning(f"Export package — Sensorgram PNG failed: {e}")
+            errors.append(f"Sensorgram PNG: {e}")
+
+        try:
+            self._export_barchart_image()
+        except Exception as e:
+            logger.warning(f"Export package — ΔSPR chart PNG failed: {e}")
+            errors.append(f"ΔSPR PNG: {e}")
+
+        if errors:
+            QMessageBox.warning(
+                self,
+                "Export Package — Partial Failure",
+                "Some exports failed:\n" + "\n".join(f"  • {e}" for e in errors),
+            )
+
     def _export_selection(self):
         """Export data from Edits tab to Excel.
 

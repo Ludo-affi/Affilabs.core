@@ -155,6 +155,7 @@ from affilabs.dialogs.advanced_settings_dialog import AdvancedSettingsDialog
 from affilabs.plot_helpers import add_channel_curves, create_time_plot
 from affilabs.widgets.cycle_intelligence_footer import CycleIntelligenceFooter
 from affilabs.widgets.spark_sidebar import SparkSidebar
+from affilabs.widgets.spark_bubble import SparkBubble
 # EditsTab lazy loaded when needed to speed up startup
 from affilabs.ui_styles import (
     Colors,
@@ -357,7 +358,7 @@ class AffilabsMainWindow(
         )
 
         self.sidebar = AffilabsSidebar()
-        self.sidebar.setMinimumWidth(55)  # Allow window to resize very small
+        self.sidebar.setMinimumWidth(50)  # ~tab bar width — always keeps icon strip visible
         self.sidebar.setMaximumWidth(900)  # Maximum width for sidebar
         # Give sidebar reference to device_config for S/P position syncing
         self.sidebar.device_config = self.device_config
@@ -475,12 +476,12 @@ class AffilabsMainWindow(
         self.splitter.addWidget(self.spark_sidebar)
         self.splitter.addWidget(right_widget)
         self.splitter.addWidget(self.sidebar)
-        self.splitter.setCollapsible(0, True)  # Allow Spark sidebar to collapse
+        self.splitter.setCollapsible(0, True)   # Allow Spark sidebar to collapse
         self.splitter.setCollapsible(1, False)  # Prevent content from collapsing
-        self.splitter.setCollapsible(2, False)  # Prevent right sidebar from collapsing
+        self.splitter.setCollapsible(2, True)   # Allow right sidebar to collapse via tab
 
-        # Set initial sizes: 320px Spark sidebar, 775px content, 405px right sidebar
-        self.splitter.setSizes([320, 775, 405])
+        # Spark sidebar starts collapsed — user opens it intentionally via Spark button
+        self.splitter.setSizes([0, 1095, 405])
 
         # Lazy load Spark widget when sidebar is first shown — never crashes
         try:
@@ -492,6 +493,14 @@ class AffilabsMainWindow(
 
         # Add splitter directly to main layout
         main_layout.addWidget(self.splitter)
+
+        # Floating Sparq bubble — child widget, zero layout impact
+        try:
+            self.spark_bubble = SparkBubble(self)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"SparkBubble creation failed (non-fatal): {e}")
+            self.spark_bubble = None
 
         # Ensure Sensorgram page (index 0) is shown by default
         self.content_stack.setCurrentIndex(0)
@@ -562,6 +571,34 @@ class AffilabsMainWindow(
                 self._on_cursor_moved,
             )
 
+        # ── "Flat baseline = ready for injection" annotation ────────────────
+        # Shown inside the timeline graph until the first injection is detected.
+        # Implemented as a QLabel overlay (stays fixed regardless of data pan/zoom).
+        self._baseline_hint_label = QLabel(
+            "Flat baseline = instrument ready for injection",
+            self.full_timeline_graph,
+        )
+        self._baseline_hint_label.setStyleSheet(
+            "QLabel {"
+            "  color: rgba(134,134,139,0.85);"
+            "  font-size: 11px;"
+            "  font-style: italic;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        self._baseline_hint_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._baseline_hint_label.adjustSize()
+        # Position bottom-right of the graph after it has a size — use a singleShot
+        def _position_hint():
+            if hasattr(self, '_baseline_hint_label') and self._baseline_hint_label.isVisible():
+                g = self.full_timeline_graph
+                lbl = self._baseline_hint_label
+                lbl.move(g.width() - lbl.width() - 12, g.height() - lbl.height() - 8)
+        QTimer.singleShot(300, _position_hint)
+        self._baseline_hint_label.setVisible(True)
+        self._baseline_hint_shown = True
+
         splitter.addWidget(top_graph)
         splitter.addWidget(bottom_graph)
 
@@ -608,7 +645,9 @@ class AffilabsMainWindow(
                 # Only set cursor if not already set to avoid stacking
                 if not hasattr(self, "_busy_cursor_active") or not self._busy_cursor_active:
                     self._connecting_anim_step = 0
-                    self.connecting_label.setText("Connecting to hardware...")
+                    import time as _time
+                    self._connecting_start_time = _time.monotonic()
+                    self.connecting_label.setText("Searching for instrument...")
 
                     # Show dimming backdrop over entire window
                     self._connecting_backdrop.setParent(self)
@@ -668,17 +707,14 @@ class AffilabsMainWindow(
             logger.error(f"Error in show_connecting_indicator: {e}")
 
     def _update_connecting_animation(self) -> None:
-        """Tick the 'Connecting to hardware...' animated ellipsis."""
+        """Tick the 'Connecting to hardware...' animated ellipsis with elapsed time."""
         try:
             if not hasattr(self, "connecting_label") or not self.connecting_label.isVisible():
                 return
-            frames = [
-                "Connecting to hardware",
-                "Connecting to hardware.",
-                "Connecting to hardware..",
-                "Connecting to hardware..."
-            ]
-            self.connecting_label.setText(frames[self._connecting_anim_step % len(frames)])
+            import time as _time
+            elapsed = int(_time.monotonic() - self._connecting_start_time) if hasattr(self, '_connecting_start_time') else 0
+            dots = "." * (self._connecting_anim_step % 4)
+            self.connecting_label.setText(f"Searching for instrument{dots}  {elapsed}s")
             self._connecting_anim_step += 1
         except Exception:
             pass
@@ -852,23 +888,30 @@ class AffilabsMainWindow(
         channels_label.setToolTip("Toggle channels")
         first_row_layout.addWidget(channels_label)
 
-        # Channel toggles - show/hide channels on graphs
+        # Channel toggles — button with overlaid IQ dot in bottom-right corner
+        # Container matches button size exactly; dot is absolutely positioned inside it
         self.channel_toggles = {}
+        self.sensor_iq_badges = {}  # {ch: QLabel} — IQ dot per channel
         channel_names = {
             "A": ("#1D1D1F", "Channel A (Black)"),
             "B": ("#FF3B30", "Channel B (Red)"),
             "C": ("#007AFF", "Channel C (Blue)"),
             "D": ("#34C759", "Channel D (Green)"),
         }
+        _DOT_SIZE = 7
+        _BTN_W, _BTN_H = 32, 28
+
         for ch, (color, tooltip) in channel_names.items():
-            ch_btn = QPushButton(ch)
+            # Fixed-size container — same footprint as the button
+            ch_container = QWidget()
+            ch_container.setFixedSize(_BTN_W, _BTN_H)
+
+            ch_btn = QPushButton(ch, ch_container)
             ch_btn.setCheckable(True)
-            ch_btn.setChecked(True)  # All visible by default
-            ch_btn.setFixedSize(32, 28)
+            ch_btn.setChecked(True)
+            ch_btn.setGeometry(0, 0, _BTN_W, _BTN_H)
             ch_btn.setToolTip(tooltip)
             ch_btn.setStyleSheet(get_channel_button_style(color))
-
-            # Store reference and connect to visibility toggle
             self.channel_toggles[ch] = ch_btn
             ch_btn.toggled.connect(
                 lambda checked, channel=ch: self.sensogram_presenter.toggle_channel_visibility(
@@ -877,7 +920,29 @@ class AffilabsMainWindow(
                 ),
             )
 
-            first_row_layout.addWidget(ch_btn)
+            # IQ dot — overlaid bottom-right corner of the button
+            iq_dot = QLabel(ch_container)
+            iq_dot.setFixedSize(_DOT_SIZE, _DOT_SIZE)
+            iq_dot.move(_BTN_W - _DOT_SIZE - 4, _BTN_H - _DOT_SIZE - 4)
+            iq_dot.setStyleSheet(
+                "QLabel {"
+                "  background: rgba(255,255,255,0.35);"  # semi-transparent white — visible on colored button, neutral before data
+                "  border-radius: 3px;"
+                "  border: 1px solid rgba(0,0,0,0.15);"
+                "}"
+            )
+            iq_dot.setToolTip(f"Channel {ch}: no signal yet")
+            iq_dot.raise_()  # ensure dot renders on top of button
+
+            # Hide dot when channel is toggled off — no point tracking a hidden channel
+            ch_btn.toggled.connect(lambda checked, dot=iq_dot: dot.setVisible(checked))
+
+            first_row_layout.addWidget(ch_container)
+
+            # Register on self so coordinator can find it by name
+            ch_lower = ch.lower()
+            setattr(self, f"sensor_iq_{ch_lower}_diag", iq_dot)
+            self.sensor_iq_badges[ch] = iq_dot
 
         first_row_layout.addStretch()
 
@@ -1793,36 +1858,44 @@ class AffilabsMainWindow(
 
             delta_display.setText(self._get_delta_spr_display_text(delta_values))
 
+    def _toggle_sidebar_collapse(self, collapsed: bool):
+        """Collapse right sidebar to icon strip only, or restore to full width."""
+        sizes = self.splitter.sizes()
+        _ICON_STRIP = 50  # width that shows just the tab bar icons
+        if collapsed:
+            self._sidebar_saved_width = sizes[2] if sizes[2] > _ICON_STRIP else 405
+            self.splitter.setSizes([sizes[0], sizes[1] + sizes[2] - _ICON_STRIP, _ICON_STRIP])
+        else:
+            w = getattr(self, '_sidebar_saved_width', 405)
+            total = sizes[0] + sizes[1] + sizes[2]
+            self.splitter.setSizes([sizes[0], total - sizes[0] - w, w])
+
     def _on_spark_toggle(self, checked: bool):
-        """Handle Spark toggle button in nav bar — show/hide the spark sidebar. Never crashes."""
+        """Handle Spark toggle button — opens/closes the floating Sparq bubble. Never crashes."""
         try:
-            if not hasattr(self, 'spark_sidebar'):
-                return  # Sidebar not yet created during init
+            bubble = getattr(self, 'spark_bubble', None)
+            if bubble is None:
+                return
+            # Drive bubble from button state directly rather than toggle(), so they stay in sync
             if checked:
-                # Show Spark sidebar
-                self.spark_sidebar.setVisible(True)
-                self.spark_sidebar.setMinimumWidth(250)
-                self.spark_sidebar.setMaximumWidth(400)
-                sizes = self.splitter.sizes()
-                if len(sizes) == 3:
-                    expanded_width = 320
-                    needed_space = expanded_width - sizes[0]
-                    sizes[1] -= needed_space
-                    sizes[0] = expanded_width
-                    self.splitter.setSizes(sizes)
-                    logger.debug(f"Spark sidebar shown: {sizes}")
+                if not bubble.isVisible():
+                    bubble._reposition()
+                    bubble.show()
+                    bubble.raise_()
             else:
-                # Hide Spark sidebar completely
-                sizes = self.splitter.sizes()
-                if len(sizes) == 3:
-                    freed_space = sizes[0]
-                    sizes[1] += freed_space
-                    sizes[0] = 0
-                    self.splitter.setSizes(sizes)
-                self.spark_sidebar.setVisible(False)
+                bubble.hide()
         except Exception as e:
             logger.error(f"Spark toggle failed (non-fatal): {e}")
-            logger.debug("Spark sidebar hidden")
+
+    def resizeEvent(self, event):
+        """Reposition floating Sparq bubble to stay anchored bottom-right on resize."""
+        super().resizeEvent(event)
+        try:
+            bubble = getattr(self, 'spark_bubble', None)
+            if bubble is not None:
+                bubble.reposition()
+        except Exception:
+            pass
 
     def _create_graph_container(
         self,
@@ -2570,33 +2643,43 @@ class AffilabsMainWindow(
         self.record_btn.setChecked(is_recording)
 
         if is_recording:
-            # Update button tooltip
             display_name = Path(filename).name if filename else "data.csv"
+
+            # Update button tooltip
             self.record_btn.setToolTip(
                 f"Stop Recording\n(Recording to: {display_name})",
             )
 
-            # Recording indicator - update if it exists
+            # Recording dot — start pulsing via timer
             if hasattr(self, 'rec_status_dot'):
+                if not hasattr(self, '_rec_pulse_timer'):
+                    self._rec_pulse_timer = QTimer(self)
+                    self._rec_pulse_timer.setInterval(800)
+                    self._rec_pulse_timer_state = False
+                    def _pulse():
+                        self._rec_pulse_timer_state = not self._rec_pulse_timer_state
+                        if hasattr(self, 'rec_status_dot'):
+                            color = "#FF3B30" if self._rec_pulse_timer_state else "rgba(255,59,48,0.25)"
+                            self.rec_status_dot.setStyleSheet(
+                                f"QLabel {{ color: {color}; font-size: 16px; background: transparent; }}"
+                            )
+                    self._rec_pulse_timer.timeout.connect(_pulse)
+                self._rec_pulse_timer_state = True
                 self.rec_status_dot.setStyleSheet(
-                    "QLabel {"
-                    "  color: #FF3B30;"
-                    "  font-size: 16px;"
-                    "  background: {Colors.TRANSPARENT};"
-                    "}",
+                    "QLabel { color: #FF3B30; font-size: 16px; background: transparent; }"
                 )
+                self._rec_pulse_timer.start()
 
+            # Status text — show filename
             if hasattr(self, 'rec_status_text'):
-                display_name = Path(filename).name if filename else "data.csv"
-                self.rec_status_text.setText(f"Recording to: {display_name}")
+                self.rec_status_text.setText(f"\u23fa  Saving to: {display_name}")
                 self.rec_status_text.setStyleSheet(
                     "QLabel {"
                     "  font-size: 12px;"
                     "  color: #FF3B30;"
-                    "  background: {Colors.TRANSPARENT};"
-                    "  font-family: {Fonts.SYSTEM};"
+                    "  background: transparent;"
                     "  font-weight: 600;"
-                    "}",
+                    "}"
                 )
 
             if hasattr(self, 'recording_indicator'):
@@ -2607,28 +2690,35 @@ class AffilabsMainWindow(
                     "}",
                 )
         else:
+            # Stop pulse timer
+            if hasattr(self, '_rec_pulse_timer') and self._rec_pulse_timer.isActive():
+                self._rec_pulse_timer.stop()
+
             # Update button tooltip back to viewing mode
             self.record_btn.setToolTip(
                 "Start Recording\n(Currently viewing - not saved)",
             )
 
-            # Update recording indicator back to viewing mode (if exists)
+            # Reset dot
             if hasattr(self, 'rec_status_dot'):
                 self.rec_status_dot.setStyleSheet(
-                    "QLabel {"
-                    "  color: {Colors.SECONDARY_TEXT};"
-                    "  font-size: 16px;"
-                    "  background: {Colors.TRANSPARENT};"
-                    "}",
+                    "QLabel { color: #86868B; font-size: 16px; background: transparent; }"
+                )
+
+            # Clear status text
+            if hasattr(self, 'rec_status_text'):
+                self.rec_status_text.setText("Not Recording")
+                self.rec_status_text.setStyleSheet(
+                    "QLabel { font-size: 12px; color: #86868B; background: transparent; }"
                 )
 
             if hasattr(self, 'recording_indicator'):
                 self.recording_indicator.setStyleSheet(
                     "QFrame {"
-                "  background: rgba(0, 0, 0, 0.04);"
-                "  border-radius: 16px;"
-                "}",
-            )
+                    "  background: rgba(0, 0, 0, 0.04);"
+                    "  border-radius: 16px;"
+                    "}",
+                )
 
     def _init_device_config(self, device_serial: str | None = None):
         """Initialize device configuration (delegates to DeviceConfigManager).
@@ -3649,6 +3739,9 @@ class AffilabsMainWindow(
         self.sidebar.advanced_settings_btn.clicked.connect(self.open_advanced_settings)
         self.sidebar.apply_settings_btn.clicked.connect(self._apply_settings)
         self.sidebar.polarizer_toggle_btn.clicked.connect(self._toggle_polarizer_mode)
+        if hasattr(self, 'spark_bubble'):
+            self.sidebar.spark_help_requested.connect(self.spark_bubble.toggle)
+        self.sidebar.collapse_requested.connect(self._toggle_sidebar_collapse)
 
         # NOTE: ref_combo connection is done in main.py Application class
         # Cannot connect here because self.app is not available during UI init

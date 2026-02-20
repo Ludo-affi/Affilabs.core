@@ -35,6 +35,7 @@ from affilabs.sidebar_tabs.AL_flow_builder import FlowTabBuilder
 from affilabs.sidebar_tabs.AL_graphic_control_builder import GraphicControlTabBuilder
 from affilabs.sidebar_tabs.AL_settings_builder import SettingsTabBuilder
 from affilabs.sidebar_tabs.AL_method_builder import MethodTabBuilder
+from affilabs.utils.resource_path import get_affilabs_resource
 from affilabs.ui_styles import (
     Colors,
     Fonts,
@@ -137,6 +138,7 @@ class AffilabsSidebar(QWidget):
     debug_log_requested = Signal()
     polarizer_toggle_requested = Signal()
     settings_apply_requested = Signal()
+    spark_help_requested = Signal()
     led_brightness_changed = Signal(str, str)  # channel, value (live update)
     synced_flowrate_changed = Signal()  # Synced pump flowrate changed (live update)
 
@@ -147,6 +149,7 @@ class AffilabsSidebar(QWidget):
     queued_run_started = Signal()
     queue_cancel_requested = Signal()  # Cancel running queue
     next_cycle_requested = Signal()  # Skip to next cycle
+    collapse_requested = Signal(bool)  # True = collapse sidebar, False = expand
 
     def __init__(self, parent=None, detector_type="USB4000", app=None):
         super().__init__(parent)
@@ -392,15 +395,86 @@ class AffilabsSidebar(QWidget):
 
             tab_index += 1
 
+        # Sparq icon tab — bottom of tab bar, acts as a button (not a real tab)
+        _sparq_path = get_affilabs_resource("ui/img/sparq_icon.svg")
+        if _sparq_path and _sparq_path.exists():
+            _sparq_icon = create_icon_from_svg(_sparq_path.read_text(encoding="utf-8"), color="#FF9500", selected_color="#FF9500")
+        else:
+            _sparq_icon = QIcon()
+        _sparq_placeholder = QWidget()  # empty panel — never shown
+        self._sparq_tab_index = tab_index
+        self._prev_tab_index = 0
+        self.tab_widget.addTab(_sparq_placeholder, _sparq_icon, "")
+        self.tab_widget.setTabToolTip(tab_index, "Ask Sparq AI")
+
         container_layout.addWidget(self.tab_widget)
         # Compatibility alias expected by main code
         self.tabs = self.tab_widget
+
+        # Collapse button embedded in the top-right corner of the tab bar
+        self._is_collapsed = False
+        self._collapse_btn = QPushButton("\u25b6")  # \u25b6 = \u25b6 (collapse = push away)
+        self._collapse_btn.setFixedSize(32, 28)
+        self._collapse_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._collapse_btn.setToolTip("Collapse sidebar")
+        self._collapse_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  color: #86868B;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  font-size: 11px;"
+            "  font-weight: 700;"
+            "}"
+            "QPushButton:hover { background: #E5E5EA; color: #1D1D1F; }"
+        )
+        self._collapse_btn.clicked.connect(self._on_collapse_clicked)
+        self.tab_widget.setCornerWidget(self._collapse_btn, Qt.Corner.TopRightCorner)
+
+        # Spark AI hint strip — persistent footer nudge, clickable to open bubble
+        from PySide6.QtWidgets import QPushButton
+        self.spark_hint_label = QPushButton(" Ask Sparq")
+        self.spark_hint_label.setFixedHeight(36)
+        self.spark_hint_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.spark_hint_label.setFlat(True)
+        _sparq_icon_path = get_affilabs_resource("ui/img/sparq_icon.svg")
+        if _sparq_icon_path and _sparq_icon_path.exists():
+            self.spark_hint_label.setIcon(QIcon(str(_sparq_icon_path)))
+            self.spark_hint_label.setIconSize(QSize(14, 14))
+        self.spark_hint_label.setStyleSheet(
+            "QPushButton {"
+            "  font-size: 11px;"
+            "  color: rgba(46, 48, 227, 0.75);"
+            "  background: rgba(46, 48, 227, 0.06);"
+            "  border: none;"
+            "  border-top: 1px solid rgba(46, 48, 227, 0.15);"
+            "  text-align: left;"
+            "  padding-left: 16px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(46, 48, 227, 0.12);"
+            "  color: rgba(46, 48, 227, 1.0);"
+            "}"
+        )
+        self.spark_hint_label.clicked.connect(self.spark_help_requested.emit)
+        container_layout.addWidget(self.spark_hint_label)
+
         main_layout.addWidget(container)
 
         # Connect tab change to lazy-load Settings tab plots
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
 
         self.setUpdatesEnabled(True)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+
+    def _on_collapse_clicked(self):
+        self._is_collapsed = not self._is_collapsed
+        self._collapse_btn.setText("\u25c0" if self._is_collapsed else "\u25b6")  # ◀=expand ▶=collapse
+        self._collapse_btn.setToolTip("Expand sidebar" if self._is_collapsed else "Collapse sidebar")
+        self.collapse_requested.emit(self._is_collapsed)
 
     def _connect_internal_signals(self):
         """Connect internal button clicks to outgoing signals (Change #3: Signal abstraction).
@@ -789,9 +863,15 @@ class AffilabsSidebar(QWidget):
         tab_layout.addWidget(placeholder, stretch=1)
 
     def _on_tab_changed(self, index: int):
-        """Handle tab change events."""
-        # Spark tab removed - no special handling needed
-        pass
+        """Handle tab change events. Sparq tab acts as a button — revert and emit."""
+        if index == getattr(self, '_sparq_tab_index', -1):
+            # Revert to previous tab immediately, then open Sparq
+            self.tab_widget.blockSignals(True)
+            self.tab_widget.setCurrentIndex(self._prev_tab_index)
+            self.tab_widget.blockSignals(False)
+            self.spark_help_requested.emit()
+            return
+        self._prev_tab_index = index
 
     def _build_deferred_spectroscopy_plots(self):
         """Build spectroscopy plots on-demand when Settings tab is first opened."""

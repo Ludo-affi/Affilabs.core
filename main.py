@@ -2054,6 +2054,26 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         logger.info(f"✓ Cycle initialized: {cycle_type}, end_time set to {self._cycle_end_time}")
         logger.debug(f"   cycle_num={cycle_num}, total={total_cycles}, duration={duration_min}min")
 
+        # Emit CycleMarker START to timeline stream (non-critical)
+        if self.recording_mgr.is_recording:
+            try:
+                from datetime import datetime as _dt_cls
+                from affilabs.domain.timeline import CycleMarker, EventContext
+                _tl_stream = self.recording_mgr.get_timeline_stream()
+                _tl_stream.add_event(CycleMarker(
+                    time=_cycle_start_raw,
+                    channel='A',
+                    context=EventContext.LIVE,
+                    created_at=_dt_cls.now(),
+                    cycle_id=str(cycle.cycle_id),
+                    cycle_type=cycle.type,
+                    is_start=True,
+                    duration=duration_min * 60.0,
+                ))
+                logger.debug(f"✓ CycleMarker START emitted: {cycle.type}")
+            except Exception as _exc:
+                logger.warning(f"Timeline CycleMarker START failed (non-critical): {_exc}")
+
         # Highlight the running cycle in the queue table
         if tbl := self._sidebar_widget('summary_table'):
             tbl.set_running_cycle(cycle.cycle_id)
@@ -2918,6 +2938,53 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         if not hasattr(self, '_latest_peaks'):
             self._latest_peaks = {}
         self._latest_peaks[channel] = peak_wavelength
+
+        # Store pipeline QC metrics (fwhm, dip depth) from adaptive pipeline metadata
+        if not hasattr(self, '_latest_iq_metrics'):
+            self._latest_iq_metrics = {}
+        self._latest_iq_metrics[channel] = {
+            'fwhm': metadata.get('fwhm') if metadata else None,
+            'dip_depth': metadata.get('depth') if metadata else None,
+        }
+
+        # ── Baseline stability rolling buffer ─────────────────────────────────
+        # Keep the last 30 peak values per channel (~30 s at ~1 Hz effective).
+        # When ALL active channels have p2p < 0.15 nm for their full window,
+        # flag as STABLE → show green "Ready to inject ✓" badge.
+        _STABILITY_WINDOW = 30   # samples
+        _STABLE_P2P_NM   = 0.15  # nm threshold for "flat enough"
+        _STABLE_MIN_PTS  = 20    # must have at least this many points before judging
+
+        if not hasattr(self, '_peak_history'):
+            self._peak_history = {"a": [], "b": [], "c": [], "d": []}
+
+        buf = self._peak_history[channel]
+        buf.append(peak_wavelength)
+        if len(buf) > _STABILITY_WINDOW:
+            buf.pop(0)
+
+        # Re-evaluate stability across active channels and push badge update
+        try:
+            active = [
+                ch for ch in ("a", "b", "c", "d")
+                if hasattr(self, 'main_window')
+                and hasattr(self.main_window, 'channel_toggles')
+                and self.main_window.channel_toggles.get(ch.upper(), None) is not None
+                and self.main_window.channel_toggles[ch.upper()].isChecked()
+                and self._latest_peaks.get(ch) is not None
+            ]
+            if not active:
+                stable = False
+            else:
+                stable = all(
+                    len(self._peak_history.get(ch, [])) >= _STABLE_MIN_PTS
+                    and (max(self._peak_history[ch]) - min(self._peak_history[ch])) <= _STABLE_P2P_NM
+                    for ch in active
+                )
+            if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+                self.ui_updates.queue_stability_update(stable)
+        except Exception:
+            pass
 
     def _on_raw_spectrum_updated(
         self,

@@ -13,7 +13,6 @@ Methods:
 """
 
 import numpy as np
-import pyqtgraph as pg
 
 from affilabs.utils.logger import logger
 
@@ -29,127 +28,19 @@ class FlagMixin:
     """
 
     def _remove_flag_near_click(self, time_clicked: float, spr_clicked: float, tolerance: float = 2.0):
-        """Remove flag marker near the click position using 2D distance.
-
-        Args:
-            time_clicked: Time coordinate of click
-            spr_clicked: SPR coordinate of click
-            tolerance: Not used (kept for compatibility)
-        """
-        if not hasattr(self, '_flag_markers') or not self._flag_markers:
-            return
-
-        # Find flag closest to click position using 2D distance
-        min_distance = float('inf')
-        closest_flag_idx = None
-
-        # Get view range for normalization
-        view_range = self.main_window.cycle_of_interest_graph.viewRange()
-        time_range = view_range[0][1] - view_range[0][0]
-        spr_range = view_range[1][1] - view_range[1][0]
-
-        for idx, flag in enumerate(self._flag_markers):
-            # Calculate normalized 2D distance
-            time_dist = abs(flag['time'] - time_clicked) / time_range
-            spr_dist = abs(flag['spr'] - spr_clicked) / spr_range
-            distance = np.sqrt(time_dist**2 + spr_dist**2)
-
-            if distance < min_distance:
-                min_distance = distance
-                closest_flag_idx = idx
-
-        # Remove the closest flag if within tolerance (2% of screen diagonal)
-        if closest_flag_idx is not None and min_distance < 0.02:
-            flag = self._flag_markers[closest_flag_idx]
-
-            # Remove from graph - clear the marker data first to ensure complete cleanup
-            try:
-                flag['marker'].clear()  # Clear any internal data/points
-            except Exception:
-                pass
-
-            self.main_window.cycle_of_interest_graph.removeItem(flag['marker'])
-
-            # Remove from storage
-            self._flag_markers.pop(closest_flag_idx)
-
-            # If we removed an injection flag, check if we need to clear alignment
-            if flag['type'] == 'injection':
-                # Count remaining injection flags
-                remaining_injections = [f for f in self._flag_markers if f['type'] == 'injection']
-                if len(remaining_injections) == 0:
-                    # No more injections - clear alignment line and time shifts
-                    if self._injection_alignment_line is not None:
-                        self.main_window.cycle_of_interest_graph.removeItem(self._injection_alignment_line)
-                        self._injection_alignment_line = None
-                    self._injection_reference_time = None
-                    self._injection_reference_channel = None
-
-                    # CRITICAL: Reset all channel time shifts
-                    self._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
-
-                    # Refresh graph to show unshifted data
-                    self._update_cycle_of_interest_graph()
-
-                    logger.info("✓ Injection alignment and time shifts cleared")
-
-            logger.info(f"🚩 {flag['type'].capitalize()} flag removed: Channel {flag['channel'].upper()} at t={flag['time']:.2f}s")
-
-            # Recalculate and display time deltas with remaining flags
-            self._calculate_and_display_flag_deltas()
+        """Delegate to FlagManager (interactive flag removal on cycle graph)."""
+        if hasattr(self, 'flag_mgr') and self.flag_mgr is not None:
+            self.flag_mgr.remove_flag_near_click(time_clicked, spr_clicked)
 
     def _try_select_flag_for_movement(self, time_clicked: float, spr_clicked: float):
-        """Check if click is near a flag and select it for keyboard movement."""
-        if not hasattr(self, '_flag_markers') or not self._flag_markers:
-            return
-
-        # Find flag closest to click
-        min_distance = float('inf')
-        closest_flag_idx = None
-
-        # Get view range for normalization
-        view_range = self.main_window.cycle_of_interest_graph.viewRange()
-        time_range = view_range[0][1] - view_range[0][0]
-        spr_range = view_range[1][1] - view_range[1][0]
-
-        for idx, flag in enumerate(self._flag_markers):
-            # Calculate normalized 2D distance
-            time_dist = abs(flag['time'] - time_clicked) / time_range
-            spr_dist = abs(flag['spr'] - spr_clicked) / spr_range
-            distance = np.sqrt(time_dist**2 + spr_dist**2)
-
-            if distance < min_distance:
-                min_distance = distance
-                closest_flag_idx = idx
-
-        # Select flag if within tolerance (3% of screen diagonal)
-        if closest_flag_idx is not None and min_distance < 0.03:
-            self._selected_flag_idx = closest_flag_idx
-            flag = self._flag_markers[closest_flag_idx]
-
-            # Visual feedback: highlight selected flag
-            self._highlight_selected_flag(closest_flag_idx)
-
-            logger.info(f"🎯 Selected {flag['type']} flag at t={flag['time']:.2f}s (use arrow keys ← → to move, ESC to deselect)")
+        """Delegate to FlagManager (select flag for keyboard nudge)."""
+        if hasattr(self, 'flag_mgr') and self.flag_mgr is not None:
+            self.flag_mgr.try_select_flag_for_movement(time_clicked, spr_clicked)
 
     def _highlight_selected_flag(self, flag_idx: int):
-        """Highlight the selected flag with a yellow ring."""
-        # Remove previous highlight if any
-        if self._flag_highlight_ring is not None:
-            self.main_window.cycle_of_interest_graph.removeItem(self._flag_highlight_ring)
-
-        flag = self._flag_markers[flag_idx]
-
-        # Create a ring around the selected flag
-        self._flag_highlight_ring = pg.ScatterPlotItem(
-            [flag['time']],
-            [flag['spr']],
-            symbol='o',
-            size=25,
-            pen=pg.mkPen('y', width=3),  # Yellow ring
-            brush=None
-        )
-        self.main_window.cycle_of_interest_graph.addItem(self._flag_highlight_ring)
+        """Delegate to FlagManager."""
+        if hasattr(self, 'flag_mgr') and self.flag_mgr is not None:
+            self.flag_mgr._highlight_selected_flag(flag_idx)
 
     def _setup_keyboard_event_filter(self):
         """Install event filter on main window to capture keyboard events for flag movement."""
@@ -201,103 +92,14 @@ class FlagMixin:
         logger.debug("✓ Keyboard event filter installed for flag movement")
 
     def _move_selected_flag(self, direction: int):
-        """Move the selected flag left (-1) or right (+1) by one data point.
-
-        Args:
-            direction: -1 for left, +1 for right
-        """
-        if self._selected_flag_idx is None or self._selected_flag_idx >= len(self._flag_markers):
-            return
-
-        flag = self._flag_markers[self._selected_flag_idx]
-        channel = flag['channel']
-
-        # Get DISPLAY data (rebased time)
-        cycle_time_raw = self.buffer_mgr.cycle_data[channel].time
-        cycle_spr_raw = self.buffer_mgr.cycle_data[channel].spr
-
-        if len(cycle_time_raw) < 2:
-            return
-
-        # Match display logic: skip first point and rebase
-        first_time = cycle_time_raw[1]
-        cycle_time_display = cycle_time_raw[1:] - first_time
-        cycle_spr_display = cycle_spr_raw[1:]
-
-        # Find current flag position in data array
-        current_idx = np.argmin(np.abs(cycle_time_display - flag['time']))
-
-        # Move to adjacent data point
-        new_idx = current_idx + direction
-        new_idx = max(0, min(len(cycle_time_display) - 1, new_idx))  # Clamp to valid range
-
-        # Update flag position
-        new_time = cycle_time_display[new_idx]
-        new_spr = cycle_spr_display[new_idx]
-
-        # Remove old marker
-        self.main_window.cycle_of_interest_graph.removeItem(flag['marker'])
-
-        # Create new marker at new position
-        flag_styles = {
-            'injection': {'symbol': 't', 'size': 15, 'color': (255, 50, 50, 230)},
-            'wash': {'symbol': 's', 'size': 12, 'color': (50, 150, 255, 230)},
-            'spike': {'symbol': 'star', 'size': 18, 'color': (255, 200, 0, 230)}
-        }
-        style = flag_styles.get(flag['type'], flag_styles['injection'])
-
-        new_marker = pg.ScatterPlotItem(
-            [new_time],
-            [new_spr],
-            symbol=style['symbol'],
-            size=style['size'],
-            brush=pg.mkBrush(*style['color']),
-            pen=pg.mkPen('w', width=2)
-        )
-        self.main_window.cycle_of_interest_graph.addItem(new_marker)
-
-        # Update flag data
-        flag['time'] = new_time
-        flag['spr'] = new_spr
-        flag['marker'] = new_marker
-
-        # Update highlight ring position
-        self._highlight_selected_flag(self._selected_flag_idx)
-
-        # If this is an injection flag and NOT the reference, recalculate alignment
-        if flag['type'] == 'injection' and self._injection_reference_time is not None:
-            if flag['channel'] != self._injection_reference_channel:
-                time_diff = new_time - self._injection_reference_time
-                shift_amount = -time_diff
-                self._channel_time_shifts[channel] = shift_amount
-
-                # Export updated time shift to recording metadata
-                if self.recording_mgr.is_recording:
-                    self.recording_mgr.update_metadata(f'channel_{channel}_time_shift', shift_amount)
-
-                self._update_cycle_of_interest_graph()
-                logger.info(f"→ Moved & realigned Channel {channel.upper()}: shift={shift_amount:+.2f}s")
-            else:
-                # Moving the reference flag - update reference time
-                old_ref = self._injection_reference_time
-                self._injection_reference_time = new_time
-
-                # Update alignment line
-                if self._injection_alignment_line is not None:
-                    self._injection_alignment_line.setPos(new_time)
-
-                logger.info(f"→ Moved reference flag: {old_ref:.2f}s → {new_time:.2f}s")
-        else:
-            logger.debug(f"Flag moved: t={new_time:.2f}s, SPR={new_spr:.2f} RU")
+        """Delegate to FlagManager (arrow-key flag nudge)."""
+        if hasattr(self, 'flag_mgr') and self.flag_mgr is not None:
+            self.flag_mgr.move_selected_flag(direction)
 
     def _deselect_flag(self):
-        """Deselect currently selected flag."""
-        if self._flag_highlight_ring is not None:
-            self.main_window.cycle_of_interest_graph.removeItem(self._flag_highlight_ring)
-            self._flag_highlight_ring = None
-
-        self._selected_flag_idx = None
-        logger.debug("Flag deselected")
+        """Delegate to FlagManager."""
+        if hasattr(self, 'flag_mgr') and self.flag_mgr is not None:
+            self.flag_mgr.deselect_flag()
 
     def _shift_selected_channel(self, delta_seconds: float):
         """Shift the selected channel's display time by delta_seconds.

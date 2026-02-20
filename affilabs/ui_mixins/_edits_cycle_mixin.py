@@ -543,6 +543,14 @@ class EditsCycleMixin:
                 cycle_num = row_idx + 1  # 1-indexed for display
                 self.edits_tab.alignment_title.setText(f"Cycle {cycle_num} Details & Editing")
 
+                # Update graph context label with cycle type + concentration
+                if hasattr(self.edits_tab, 'cycle_context_label') and row_idx < len(self._loaded_cycles_data):
+                    _c = self._loaded_cycles_data[row_idx]
+                    _type = _c.get('type', 'Cycle')
+                    _conc = _c.get('concentration_value', '')
+                    _conc_str = f" — {_conc}" if _conc and str(_conc).strip() not in ('', 'nan') else ''
+                    self.edits_tab.cycle_context_label.setText(f"{_type} #{cycle_num}{_conc_str}")
+
                 # Populate flags display
                 if row_idx < len(self._loaded_cycles_data):
                     cycle = self._loaded_cycles_data[row_idx]

@@ -441,20 +441,23 @@ class ExportHelpers:
                 "injection_time": None
             }
 
-            # Extract flag data if it exists
-            if hasattr(app, '_flag_markers') and app._flag_markers:
-                for flag in app._flag_markers:
-                    metadata["flags"].append({
-                        "channel": flag["channel"],
-                        "time": flag["time"],
-                        "spr": flag["spr"],
-                        "type": flag["type"]
-                    })
-
-                # Find injection time (first injection flag)
-                injection_flags = [f for f in app._flag_markers if f["type"] == "injection"]
-                if injection_flags:
-                    metadata["injection_time"] = injection_flags[0]["time"]
+            # Extract flag data from FlagManager (unified flag system)
+            # NOTE: app._flag_markers (legacy dict list) is never populated; use flag_mgr instead.
+            if hasattr(app, 'flag_mgr') and app.flag_mgr is not None:
+                try:
+                    for flag in app.flag_mgr.get_live_flags():
+                        metadata["flags"].append({
+                            "channel": flag.channel,
+                            "time": flag.time,
+                            "spr": flag.spr,
+                            "type": flag.flag_type,
+                        })
+                    # Find injection time (first injection flag)
+                    injection_flags = [f for f in metadata["flags"] if f["type"] == "injection"]
+                    if injection_flags:
+                        metadata["injection_time"] = injection_flags[0]["time"]
+                except Exception as _fe:
+                    logger.debug(f"Could not extract flags for autosave metadata: {_fe}")
 
             # Extract channel offsets if they exist
             if hasattr(app, '_channel_offsets'):
@@ -690,6 +693,14 @@ class ExportHelpers:
                         except Exception as e:
                             print(f"Warning: Could not build Channels XY sheet: {e}")
                         
+                        # Get timeline stream if recording_mgr available
+                        _tl_stream = None
+                        try:
+                            if hasattr(app, 'recording_mgr') and app.recording_mgr is not None:
+                                _tl_stream = app.recording_mgr.get_timeline_stream()
+                        except Exception:
+                            pass
+
                         excel_exporter.export_to_excel(
                             filepath=full_path,
                             raw_data_rows=raw_data_rows_for_export,
@@ -700,7 +711,8 @@ class ExportHelpers:
                             metadata=metadata_data,
                             recording_start_time=recording_start_time,
                             alignment_data=None,
-                            channels_xy_dataframe=channels_xy_df
+                            channels_xy_dataframe=channels_xy_df,
+                            timeline_stream=_tl_stream,
                         )
                 elif format_type == "csv":
                     df_raw.to_csv(str(full_path), index=False)

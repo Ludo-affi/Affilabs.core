@@ -103,6 +103,14 @@ class HardwareEventCoordinator:
                 f"Scan successful - found: {', '.join(valid_hardware)}",
             )
             self._main_window.set_power_state("connected")
+            # Pulse Calibrate button to guide user to next step (only if not already calibrated)
+            try:
+                cal = getattr(self._app, 'calibration', None)
+                already_cal = cal is not None and getattr(cal, '_calibration_data', None) is not None
+                if not already_cal:
+                    self._pulse_calibrate_button()
+            except Exception:
+                pass
         else:
             logger.warning(
                 "Scan FAILED - no valid hardware combinations found",
@@ -277,6 +285,40 @@ class HardwareEventCoordinator:
             valid_hardware.append("AffiPump")
 
         return valid_hardware
+
+    def _pulse_calibrate_button(self) -> None:
+        """Briefly highlight the Calibrate button to guide the user after connecting."""
+        try:
+            from PySide6.QtCore import QTimer
+            btn = getattr(getattr(self._main_window, 'sidebar', None), 'full_calibration_btn', None)
+            if btn is None:
+                return
+
+            original_style = btn.styleSheet()
+            highlight_style = (
+                original_style +
+                "QPushButton { border: 2px solid #34C759; }"
+            )
+            _step = [0]
+            _timer = QTimer()
+            _timer.setInterval(500)
+
+            def _toggle():
+                _step[0] += 1
+                if _step[0] % 2 == 1:
+                    btn.setStyleSheet(highlight_style)
+                else:
+                    btn.setStyleSheet(original_style)
+                if _step[0] >= 6:  # 3 flashes = 3s
+                    _timer.stop()
+                    btn.setStyleSheet(original_style)
+
+            _timer.timeout.connect(_toggle)
+            _timer.start()
+            # Keep reference so it isn't GC'd
+            self._calibrate_pulse_timer = _timer
+        except Exception:
+            pass
 
     def _handle_scan_failure(self, status: dict):
         """Handle scan failure - no valid hardware found."""
