@@ -126,6 +126,30 @@ class ExportTabBuilder:
         file_card_layout.setContentsMargins(12, 8, 12, 8)
         file_card_layout.setSpacing(6)
 
+        # Sensor chip type
+        chip_row = QHBoxLayout()
+        chip_row.setSpacing(8)
+        chip_label = QLabel("Sensor Chip:")
+        chip_label.setFixedWidth(80)
+        chip_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))
+        chip_row.addWidget(chip_label)
+
+        self.sidebar.sensor_chip_combo = QComboBox()
+        self.sidebar.sensor_chip_combo.addItems([
+            "Carboxyl (MHDA or AffiCoat)",
+            "NTA",
+            "Biotin",
+            "Au",
+            "Dextran",
+            "Other",
+        ])
+        self.sidebar.sensor_chip_combo.setStyleSheet(self._combo_style())
+        self.sidebar.sensor_chip_combo.setToolTip("Sensor chip surface chemistry")
+        chip_row.addWidget(self.sidebar.sensor_chip_combo)
+        file_card_layout.addLayout(chip_row)
+
+        file_card_layout.addSpacing(4)
+
         # File name
         filename_label = QLabel("File Name:")
         filename_label.setStyleSheet(label_style(12, Colors.SECONDARY_TEXT))

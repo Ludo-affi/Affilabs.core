@@ -3605,6 +3605,8 @@ class AffilabsMainWindow(
         self.sidebar.scan_btn.clicked.connect(self._handle_scan_hardware)
         self.sidebar.add_hardware_btn.clicked.connect(self._handle_add_hardware)
         self.sidebar.debug_log_btn.clicked.connect(self._handle_debug_log_download)
+        if hasattr(self.sidebar, 'issue_tracker_btn'):
+            self.sidebar.issue_tracker_btn.clicked.connect(self._handle_open_issue_tracker)
 
         # Connect keyboard shortcuts
         from PySide6.QtGui import QKeySequence, QShortcut
@@ -3615,6 +3617,10 @@ class AffilabsMainWindow(
         # Demo data loader (Ctrl+Shift+D) for promotional screenshots
         demo_data_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
         demo_data_shortcut.activated.connect(self._load_demo_data)
+
+        # OEM Issue Tracker (Ctrl+Shift+I)
+        issue_shortcut = QShortcut(QKeySequence("Ctrl+Shift+I"), self)
+        issue_shortcut.activated.connect(self._handle_open_issue_tracker)
 
         # Channel selection shortcuts (Alt+A, Alt+B, Alt+C, Alt+D)
         for ch_idx, ch_letter in enumerate(['A', 'B', 'C', 'D']):

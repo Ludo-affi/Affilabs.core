@@ -480,9 +480,19 @@ class CycleMixin:
         # User confirmed - start recording with file
         logger.info(f"Starting recording to file: {full_path}")
 
-        # Store current elapsed time as recording start marker
-        # This allows us to: (1) draw vertical line on graph, (2) save data with t=0 at recording start
-        recording_start_elapsed = self.clock.raw_elapsed_now()
+        # Get the live data front directly from the buffer (RAW_ELAPSED coords).
+        # NOTE: clock.raw_elapsed_now() returns 0 because start_experiment() is never
+        # called — the clock is disconnected from the buffer's own timestamp origin.
+        # The live front is simply the latest raw timestamp in any channel's timeline.
+        raw_now = 0.0
+        try:
+            for _ch in ['a', 'b', 'c', 'd']:
+                _buf = getattr(self.buffer_mgr, 'timeline_data', {}).get(_ch)
+                if _buf is not None and hasattr(_buf, 'time') and len(_buf.time) > 0:
+                    raw_now = max(raw_now, float(_buf.time[-1]))
+        except Exception:
+            pass
+        recording_start_elapsed = raw_now
 
         # Tell the clock where recording t=0 is, then pass to recording manager
         self.clock.start_recording_at(recording_start_elapsed)
@@ -494,8 +504,9 @@ class CycleMixin:
                 import pyqtgraph as pg
                 from PySide6.QtGui import QColor
 
-                # Convert raw elapsed to display coords for marker placement
-                marker_position = self.clock.convert(recording_start_elapsed, TimeBase.RAW_ELAPSED, TimeBase.DISPLAY)
+                # Marker sits at the live data front in DISPLAY coords:
+                # display = raw - display_offset  (same formula the graph uses)
+                marker_position = raw_now - self.clock.display_offset
 
                 logger.info(f"Recording marker: raw_time={recording_start_elapsed:.3f}s, offset={self.clock.display_offset:.3f}s, display_pos={marker_position:.3f}s")
 
@@ -749,34 +760,86 @@ class CycleMixin:
         logger.info(f"✓ Cycle {cycle_num} completed: {cycle_type}")
 
         self._cycle_timer.stop()
+        # Ensure the one-shot end timer doesn't fire again (e.g. if Next Cycle was pressed early)
+        if hasattr(self, '_cycle_end_timer') and self._cycle_end_timer.isActive():
+            self._cycle_end_timer.stop()
         self.flag_mgr.clear_flags_for_new_cycle()
 
         end_sensorgram_time = None
         if hasattr(self.main_window, 'full_timeline_graph'):
             timeline = self.main_window.full_timeline_graph
             if hasattr(timeline, 'stop_cursor'):
-                end_sensorgram_time = timeline.stop_cursor.value()
+                # stop_cursor is in DISPLAY coords — convert to RAW_ELAPSED
+                # to match sensorgram_time (set at cycle start in RAW_ELAPSED)
+                from affilabs.core.experiment_clock import TimeBase
+                display_val = timeline.stop_cursor.value()
+                end_sensorgram_time = self.clock.convert(
+                    display_val, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED
+                )
 
         self._current_cycle.complete(end_time_sensorgram=end_sensorgram_time or 0.0)
         self._completed_cycles.append(self._current_cycle)
 
+        # Advance method progress counter (for snapshot-based execution)
+        if hasattr(self, 'queue_presenter') and self.queue_presenter.has_method_snapshot():
+            self.queue_presenter.advance_method_progress()
+            logger.debug("✓ Method progress advanced")
+
+        # Export cycle data for recording and Edits table
+        # Pass clock so times are converted from RAW_ELAPSED to RECORDING coords
+        _clock = getattr(self, 'clock', None)
+        cycle_export_data = self._current_cycle.to_export_dict(clock=_clock)
+
+        # Save to Edits table
+        if hasattr(self.main_window, 'edits_tab'):
+            self.main_window.edits_tab.add_cycle(cycle_export_data)
+            logger.info(f"✓ {cycle_export_data.get('type', 'cycle')} saved to Edits table")
+
+        # Save to recording if active
         if self.recording_mgr.is_recording:
-            self.recording_mgr.add_cycle(self._current_cycle.to_export_dict())
+            self.recording_mgr.add_cycle(cycle_export_data)
 
         self._current_cycle = None
         self._cycle_end_time = None
 
-        try:
-            self._update_summary_table()
-        except Exception:
-            pass
+        # QueueSummaryWidget auto-refreshes via queue_changed signal — no manual update needed
 
-        if self.segment_queue:
-            next_cycle = self.segment_queue[0]
-            logger.info(f"Auto-starting next cycle: {next_cycle.type}")
+        # Check if we should continue with the next cycle or finish the run
+        # Use method progress if available, otherwise fall back to segment_queue
+        if hasattr(self, 'queue_presenter') and self.queue_presenter.has_method_snapshot():
+            progress = self.queue_presenter.get_method_progress()
+            original_len = len(self.queue_presenter.get_original_method())
+            remaining = original_len - progress
+        else:
+            remaining = len(self.segment_queue)
+        
+        # Clear running cycle highlight from queue table
+        if tbl := self._sidebar_widget('summary_table'):
+            tbl.set_running_cycle(None)
+        
+        if remaining > 0:
+            # More cycles to run - auto-start next
+            next_cycle_type = self.segment_queue[0].type if self.segment_queue else "Unknown"
+            logger.info(f"Auto-starting next cycle: {next_cycle_type} ({remaining} cycles remaining)")
             from PySide6.QtCore import QTimer
             QTimer.singleShot(1000, self._on_start_button_clicked)
         else:
+            # Queue completed - show retrieve button and unlock
+            logger.info("✓ Queue execution completed - all cycles finished")
+            
+            # Unlock the queue
+            if hasattr(self, 'queue_presenter'):
+                self.queue_presenter.unlock_queue()
+            
+            # Show retrieve method button
+            if btn := self._sidebar_widget('retrieve_method_btn'):
+                btn.setVisible(True)
+                logger.debug("✓ Retrieve Method button shown")
+            
+            # Change Stop button back to Start
+            self._set_start_button_to_start_mode()
+            
+            # Start auto-read cycle
             import time
             from affilabs.domain.cycle import Cycle
             autoread_cycle = Cycle(
@@ -927,4 +990,11 @@ class CycleMixin:
 
     def _on_next_cycle(self):
         """Skip to next cycle in queue (triggered by sidebar next_cycle_requested signal)."""
+        if not self._current_cycle:
+            logger.debug("Next Cycle: no active cycle, ignoring")
+            return
+        # Stop the cycle end timer so it doesn't fire again after the new cycle starts
+        if hasattr(self, '_cycle_end_timer') and self._cycle_end_timer.isActive():
+            self._cycle_end_timer.stop()
+            logger.debug("✓ Cycle end timer stopped (Next Cycle pressed early)")
         self._on_cycle_completed()

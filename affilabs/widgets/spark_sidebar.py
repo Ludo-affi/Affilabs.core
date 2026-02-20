@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QWidget,
 )
 from PySide6.QtGui import QPixmap, QPainter
@@ -29,8 +30,6 @@ class SparkSidebar(QFrame):
             self._setup_ui()
         except Exception as e:
             logger.error(f"SparkSidebar UI setup failed (non-fatal): {e}")
-        # Start hidden to avoid visual glitch during load
-        self.hide()
 
     def _setup_ui(self):
         """Initialize the Spark sidebar UI."""
@@ -45,6 +44,8 @@ class SparkSidebar(QFrame):
 
         # Spark content (lazy loaded)
         self._build_spark_content()
+
+        # Report Bug button moved to spark_help_widget (below Clear/Send buttons)
 
         # Styling
         self.setStyleSheet(
@@ -91,7 +92,7 @@ class SparkSidebar(QFrame):
         except Exception as e:
             logger.warning(f"Spark robot icon failed (non-fatal): {e}")
 
-        title = QLabel("SPARK AI assistant")
+        title = QLabel("SPARQ AI assistant")
         title.setFixedHeight(27)
         title.setStyleSheet(
             "font-size: 20px;"
@@ -107,46 +108,41 @@ class SparkSidebar(QFrame):
         return header
 
     def _build_spark_content(self):
-        """Build Spark AI content (lazy loaded)."""
-        # Placeholder that will be replaced when first shown
-        self.placeholder = QLabel("Loading Spark AI…")
-        self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.placeholder.setStyleSheet(
-            "color: #86868B; font-size: 12px; font-style: italic; background: transparent; padding: 40px 20px;"
-        )
-        self.main_layout.addWidget(self.placeholder, 1)
-
-    def load_spark_widget(self):
-        """Lazy load the actual Spark widget on first use. Never crashes the UI."""
-        if self._spark_loaded:
-            return
-
-        self._spark_loaded = True
-
+        """Build Spark AI content (eager load on startup)."""
+        # Load Spark immediately on startup (users can ask questions without hardware)
         try:
-            # Remove placeholder
-            if self.placeholder:
-                self.placeholder.deleteLater()
-                self.placeholder = None
-
-            # Load the real Spark widget
             from affilabs.widgets.spark_help_widget import SparkHelpWidget
             self.spark_widget = SparkHelpWidget()
             self.main_layout.addWidget(self.spark_widget, 1)
-            logger.debug("Spark widget loaded successfully")
-            # Show sidebar after widget is fully loaded (prevents visual glitch)
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(100, self.show)
+            self._spark_loaded = True
+            logger.debug("Spark widget loaded successfully on startup")
         except Exception as e:
-            logger.error(f"Failed to load Spark widget (non-fatal): {e}")
+            logger.error(f"Failed to load Spark widget on startup (non-fatal): {e}")
+            # Fallback: show placeholder if loading fails
+            placeholder = QLabel("Sparq AI loading failed")
+            placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            placeholder.setStyleSheet(
+                "color: #86868B; font-size: 12px; background: transparent; padding: 40px 20px;"
+            )
+            self.main_layout.addWidget(placeholder, 1)
+            self._spark_loaded = False
+
+    def load_spark_widget(self):
+        """Ensure Spark widget is loaded. Called by event handlers."""
+        # Spark is now eagerly loaded on startup, so just verify it exists
+        if self._spark_loaded and self.spark_widget is not None:
+            return
+        
+        # If for some reason it failed to load initially, try again
+        if not self._spark_loaded:
             try:
-                error_label = QLabel(f"Spark unavailable")
-                error_label.setStyleSheet("color: #FF3B30; font-size: 11px; padding: 20px;")
-                error_label.setWordWrap(True)
-                self.main_layout.addWidget(error_label, 1)
-            except Exception:
-                pass
-            self.show()  # Show even on error
+                from affilabs.widgets.spark_help_widget import SparkHelpWidget
+                self.spark_widget = SparkHelpWidget()
+                self.main_layout.addWidget(self.spark_widget, 1)
+                self._spark_loaded = True
+                logger.debug("Spark widget loaded on-demand")
+            except Exception as e:
+                logger.error(f"Failed to load Spark widget on-demand: {e}")
 
     def push_troubleshooting(self, diagnosis: dict, controller) -> None:
         """Auto-open SPARK sidebar and start the guided LED troubleshooting flow.

@@ -69,8 +69,17 @@ affilabs/ui/ai_rc.py
 affilabs/ui/img/
 affilabs/ui/sounds/
 
-# === Documentation (reference, not code) ===
+# === Documentation ===
+# Blocked from auto-search (keeps grep results clean — no markdown hits).
+# Still READABLE via explicit read_file. Use the FRS Documentation Map in
+# CLAUDE.md to find the right doc for each subsystem before grepping source.
 docs/
+
+# Low-value affilabs/ subdirectories (runtime outputs, not source)
+affilabs/logs/
+affilabs/data/
+affilabs/baseline_data/
+generated-files/
 
 # === AffiPump (only affipump_controller.py + readme matter) ===
 AffiPump/test_*.py

@@ -81,6 +81,12 @@ class QueueManager(QObject):
         # REMOVED: lock check - allow adding cycles during execution
         # Users should be able to append new cycles to a running method
 
+        # Queue-level validation (defense-in-depth)
+        validation_warnings = self._validate_cycle(cycle)
+        if validation_warnings:
+            logger.warning(f"⚠️ Cycle validation warnings: {', '.join(validation_warnings)}")
+            # Non-blocking — add anyway but log warnings
+
         # Assign permanent unique ID
         self._cycle_counter += 1
         cycle.cycle_id = self._cycle_counter
@@ -97,6 +103,40 @@ class QueueManager(QObject):
 
         logger.info(f"✅ Added cycle to queue: {cycle.name} (ID: {cycle.cycle_id})")
         return True
+
+    def _validate_cycle(self, cycle: Cycle) -> List[str]:
+        """Validate cycle before adding to queue (defense-in-depth).
+
+        Args:
+            cycle: Cycle to validate
+
+        Returns:
+            List of warning messages (empty if no issues)
+        """
+        warnings = []
+
+        # Check duration
+        if cycle.length_minutes <= 0:
+            warnings.append(f"Invalid duration: {cycle.length_minutes} minutes")
+        if cycle.length_minutes > 60:
+            warnings.append(f"Very long cycle: {cycle.length_minutes} minutes (> 1 hour)")
+
+        # Check contact time vs duration
+        if cycle.contact_time and cycle.contact_time >= cycle.length_minutes * 60:
+            warnings.append(
+                f"Contact time ({cycle.contact_time}s) >= cycle duration ({cycle.length_minutes * 60}s)"
+            )
+
+        # Check for mixed units in queue
+        if self._queue and cycle.units:
+            existing_units = {c.units for c in self._queue if c.units}
+            if existing_units and cycle.units not in existing_units:
+                warnings.append(
+                    f"Unit mismatch: new cycle uses '{cycle.units}' but queue has {existing_units}. "
+                    "Consider using consistent units for easier data analysis."
+                )
+
+        return warnings
 
     def delete_cycle(self, index: int) -> Optional[Cycle]:
         """Delete a cycle at the specified index.

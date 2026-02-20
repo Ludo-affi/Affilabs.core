@@ -1,5 +1,9 @@
 # Sensor IQ - SPR Data Quality Classification System
 
+**Document Status:** ✅ Code-verified  
+**Last Updated:** February 19, 2026  
+**Source File:** `affilabs/utils/sensor_iq.py` (430 lines)
+
 ## Overview
 
 The **Sensor IQ (Intelligence Quotient)** system provides real-time quality assessment for SPR sensorgram data. It automatically classifies data quality based on wavelength position and FWHM (Full Width at Half Maximum) characteristics, helping users identify sensor issues before they affect data quality.
@@ -98,7 +102,7 @@ Every SPR data point is automatically classified during acquisition:
 
 ```python
 # In data_acquisition_manager.py
-from utils.sensor_iq import classify_spr_quality, log_sensor_iq
+from affilabs.utils.sensor_iq import classify_spr_quality, log_sensor_iq
 
 # After peak finding
 sensor_iq = classify_spr_quality(
@@ -137,7 +141,7 @@ Each processed data point includes sensor IQ metrics:
 ### Manual Quality Check
 
 ```python
-from utils.sensor_iq import classify_spr_quality
+from affilabs.utils.sensor_iq import classify_spr_quality
 
 # Check a single measurement
 iq = classify_spr_quality(wavelength=642.5, fwhm=25.0, channel='a')
@@ -155,7 +159,7 @@ if iq.recommendation:
 ### Trend Analysis
 
 ```python
-from utils.sensor_iq import get_sensor_iq_classifier
+from affilabs.utils.sensor_iq import get_sensor_iq_classifier
 
 classifier = get_sensor_iq_classifier()
 
@@ -334,6 +338,6 @@ Container for quality assessment results.
 
 ---
 
-**Version**: 1.0
-**Date**: November 25, 2025
-**Module**: `utils/sensor_iq.py`
+**Version**: 2.0  
+**Date**: February 19, 2026  
+**Module**: `affilabs/utils/sensor_iq.py`

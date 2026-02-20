@@ -741,20 +741,29 @@ class EditsCycleMixin:
 
                 if use_live_buffer:
                     # --- Path B: Live buffer (numpy arrays, efficient slicing) ---
+                    # Buffer stores RAW_ELAPSED coords but cycle times from to_export_dict()
+                    # are in RECORDING coords.  Convert back to RAW for searchsorted.
+                    _clock = getattr(self.app, 'clock', None)
+                    if _clock is not None:
+                        from affilabs.core.experiment_clock import TimeBase
+                        _buf_start = _clock.convert(start_time, TimeBase.RECORDING, TimeBase.RAW_ELAPSED)
+                        _buf_end = _clock.convert(end_time, TimeBase.RECORDING, TimeBase.RAW_ELAPSED)
+                    else:
+                        _buf_start, _buf_end = start_time, end_time
                     for ch in ['a', 'b', 'c', 'd']:
                         buf = self.app.buffer_mgr.timeline_data.get(ch)
                         if buf is None or len(buf.time) == 0:
                             continue
-                        i_start = np.searchsorted(buf.time, start_time, side='left')
-                        i_end = np.searchsorted(buf.time, end_time, side='right')
+                        i_start = np.searchsorted(buf.time, _buf_start, side='left')
+                        i_end = np.searchsorted(buf.time, _buf_end, side='right')
                         if i_start >= i_end:
                             continue
                         t_slice = buf.time[i_start:i_end]
                         w_slice = buf.wavelength[i_start:i_end]
                         if target_channel is None or ch == target_channel:
-                            rel_times = (t_slice - start_time + cycle_shift).tolist()
+                            rel_times = (t_slice - _buf_start + cycle_shift).tolist()
                         else:
-                            rel_times = (t_slice - start_time).tolist()
+                            rel_times = (t_slice - _buf_start).tolist()
                         all_cycle_data[ch]['time'].extend(rel_times)
                         all_cycle_data[ch]['wavelength'].extend(w_slice.tolist())
                         points_found += len(t_slice)

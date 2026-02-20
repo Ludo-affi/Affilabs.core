@@ -104,8 +104,9 @@ class SparkMethodPopup(QDialog):
         self.resize(460, 520)
         self.setModal(False)  # Non-blocking
         self._last_ai_text = ""  # Most recent AI answer (for Insert button)
-        self._answer_engine = None  # Lazy-loaded
+        self._answer_engine = None
         self._setup_ui()
+        self._init_engine_background()
 
     # -- UI ----------------------------------------------------------------
 
@@ -204,6 +205,21 @@ class SparkMethodPopup(QDialog):
 
         root.addLayout(action_row)
 
+    # -- Engine initialization ---------------------------------------------
+
+    def _init_engine_background(self):
+        """Initialize SparkAnswerEngine in background so it's ready on first question."""
+        import threading
+        def _init():
+            try:
+                from affilabs.services.spark import SparkAnswerEngine
+                engine = SparkAnswerEngine()
+                self._answer_engine = engine
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Spark engine init failed: {e}")
+        threading.Thread(target=_init, daemon=True).start()
+
     # -- Event filter for Enter-to-send ------------------------------------
 
     def eventFilter(self, obj, event):
@@ -269,9 +285,9 @@ class SparkMethodPopup(QDialog):
                     answer = f"Could not load Spark engine: {e}"
             if answer is None:
                 try:
-                    answer, _ = self._answer_engine.generate_answer(question)
+                    answer, _ = self._answer_engine.generate_answer(question, context="method_builder")
                 except Exception as e:
-                    answer = f"Sorry, I had trouble generating an answer. Please try again."
+                    answer = "Sorry, I had trouble generating an answer. Please try again."
 
         # Replace thinking bubble
         try:
@@ -392,9 +408,21 @@ class NotesTextEdit(QPlainTextEdit):
         self._parent_dialog = None  # Will be set by parent
 
     def keyPressEvent(self, event: QKeyEvent):
-        """Handle Up/Down arrow keys for history navigation and ENTER for @spark commands."""
+        """Handle Up/Down arrow keys for history navigation, ENTER for @spark commands, and [ for auto-complete."""
         if not self._parent_dialog:
             super().keyPressEvent(event)
+            return
+
+        # Auto-complete [:]  when user types [
+        # Cursor positioned here: [▮:]  for fast concentration tag entry
+        if event.text() == '[':
+            from PySide6.QtGui import QTextCursor
+            cursor = self.textCursor()
+            cursor.insertText('[:]')
+            # Move cursor back 2 positions to land between [ and :
+            cursor.movePosition(QTextCursor.MoveOperation.Left, QTextCursor.MoveMode.MoveAnchor, 2)
+            self.setTextCursor(cursor)
+            event.accept()
             return
 
         # ENTER key → If @spark command OR waiting for response, trigger processing
@@ -489,7 +517,7 @@ class MethodBuilderDialog(QDialog):
         self._preset_storage = QueuePresetStorage()  # For @preset and !save commands
         self._waiting_for_response = False  # Track if we're waiting for user answer
         self._pending_command = None  # Store the command waiting for answer (e.g., "amine_coupling", "build")
-        self._answer_engine = None  # Lazy-loaded Spark engine for pattern matching
+        self._answer_engine = None  # Initialized in background thread at startup
 
         # Use shared user manager if provided, otherwise create fallback
         if user_manager:
@@ -499,6 +527,19 @@ class MethodBuilderDialog(QDialog):
             self._user_manager = UserProfileManager()
 
         self._setup_ui()
+        self._init_engine_background()
+
+    def _init_engine_background(self):
+        """Initialize SparkAnswerEngine in background so it's ready on first question."""
+        import threading
+        def _init():
+            try:
+                from affilabs.services.spark import SparkAnswerEngine
+                self._answer_engine = SparkAnswerEngine()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Spark engine init failed: {e}")
+        threading.Thread(target=_init, daemon=True).start()
 
     def _detect_and_respond_to_question(self):
         """Detect if user is asking a question and provide helpful suggestions.
@@ -568,8 +609,8 @@ class MethodBuilderDialog(QDialog):
             if self._answer_engine is None:
                 self._answer_engine = SparkAnswerEngine()
             
-            answer, matched = self._answer_engine.generate_answer(text)
-            
+            answer, matched = self._answer_engine.generate_answer(text, context="method_builder")
+
             if matched:
                 self._show_suggestion(answer)
                 return
@@ -837,11 +878,30 @@ class MethodBuilderDialog(QDialog):
         note_panel = QVBoxLayout()
         note_panel.setSpacing(4)
 
-        notes_header = QHBoxLayout()
-        notes_label = QLabel("Note:")
-        notes_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F;")
-        notes_header.addWidget(notes_label)
+        # ── Tab widget: Easy Mode (form) vs Power Mode (text) ──
+        from PySide6.QtWidgets import QTabWidget
+        self.input_tabs = QTabWidget()
+        self.input_tabs.setStyleSheet(
+            "QTabWidget::pane { border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 4px; background: white; }"
+            "QTabBar::tab { background: #F5F5F7; padding: 6px 12px; margin-right: 2px; border-top-left-radius: 4px; border-top-right-radius: 4px; }"
+            "QTabBar::tab:selected { background: white; border-bottom: 2px solid #007AFF; }"
+        )
+        note_panel.addWidget(self.input_tabs)
 
+        # Tab 0: Easy Mode (form builder)
+        easy_tab = self._build_easy_mode_tab()
+        self.input_tabs.addTab(easy_tab, "📝 Easy Mode")
+
+        # Tab 1: Power Mode (text input)
+        power_tab = QWidget()
+        power_layout = QVBoxLayout(power_tab)
+        power_layout.setContentsMargins(8, 8, 8, 8)
+        
+        # Header row with help button
+        power_header = QHBoxLayout()
+        power_header.addStretch()
+        
+        # Help button in Power Mode
         help_btn = QPushButton("?")
         help_btn.setFixedSize(20, 20)
         help_btn.setStyleSheet(
@@ -857,19 +917,9 @@ class MethodBuilderDialog(QDialog):
         )
         help_btn.setToolTip("Show notes syntax help")
         help_btn.clicked.connect(self._show_notes_help)
-        notes_header.addWidget(help_btn)
-        notes_header.addStretch()
-        note_panel.addLayout(notes_header)
-
-        syntax_guide = QLabel(
-            "Syntax: A:100nM B:50nM ALL:25µM  |  [A:100nM] also works  |  #3 contact 60s"
-        )
-        syntax_guide.setStyleSheet(
-            "font-size: 10px; color: #007AFF; "
-            "background: rgba(0, 122, 255, 0.05); padding: 3px 6px; border-radius: 3px;"
-        )
-        note_panel.addWidget(syntax_guide)
-
+        power_header.addWidget(help_btn)
+        power_layout.addLayout(power_header)
+        
         self.notes_input = NotesTextEdit()
         self.notes_input._parent_dialog = self
         self.notes_input.setPlaceholderText(
@@ -880,31 +930,48 @@ class MethodBuilderDialog(QDialog):
             "⚡ Spark:  @spark titration  ·  @spark kinetics\n"
             "           @spark amine coupling  ·  build 5\n\n"
             "#3 contact 60s    — edit cycle 3 in-place\n"
-            "📦 @preset_name   💾 !save name   ↑/↓ history"
+            "📦 @preset_name   💾 !save name   ↑/↓ history\n\n"
+            "💡 Ctrl+Enter to build quickly"
         )
         self.notes_input.setMinimumHeight(100)
-        note_panel.addWidget(self.notes_input)
+        self.notes_input.setMinimumWidth(350)
+        power_layout.addWidget(self.notes_input)
         self.notes_input.textChanged.connect(self._update_char_count)
+        
+        self.input_tabs.addTab(power_tab, "✏️ Power Mode")
+        
+        # Set Easy Mode as default (Tab 0)
+        self.input_tabs.setCurrentIndex(0)
 
-        content_row.addLayout(note_panel, 2)
+        content_row.addLayout(note_panel, 1)
 
-        # Center: → send button
+        # Center: Build button with keyboard shortcut support
         self.add_to_method_btn = QPushButton("→")
-        self.add_to_method_btn.setFixedSize(32, 32)
-        self.add_to_method_btn.setToolTip("Add to Method")
+        self.add_to_method_btn.setFixedSize(56, 56)
+        self.add_to_method_btn.setToolTip("Build method cycles (Ctrl+Enter)")
         self.add_to_method_btn.setStyleSheet(
             "QPushButton {"
-            "  background: #007AFF;"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #007AFF, stop:1 #0051D5);"
             "  color: white;"
             "  border: none;"
-            "  border-radius: 16px;"
-            "  font-size: 16px;"
-            "  font-weight: 600;"
+            "  border-radius: 8px;"
+            "  font-size: 26px;"
+            "  font-weight: 400;"
+            "  padding: 0px;"
             "}"
-            "QPushButton:hover { background: #0051D5; }"
-            "QPushButton:pressed { background: #003D99; }"
+            "QPushButton:hover {"
+            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0051D5, stop:1 #003D99);"
+            "}"
+            "QPushButton:pressed {"
+            "  background: #003D99;"
+            "}"
         )
         self.add_to_method_btn.clicked.connect(self._on_add_to_method)
+
+        # Add Ctrl+Enter shortcut to notes input
+        from PySide6.QtGui import QShortcut, QKeySequence
+        build_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self.notes_input)
+        build_shortcut.activated.connect(self._on_add_to_method)
 
         arrow_col = QVBoxLayout()
         arrow_col.addStretch()
@@ -938,7 +1005,7 @@ class MethodBuilderDialog(QDialog):
         )
 
         self.method_tabs = QTabWidget()
-        self.method_tabs.setMaximumHeight(320)
+        self.method_tabs.setMinimumWidth(350)
         self.method_tabs.setStyleSheet(
             "QTabWidget::pane { border: none; }"
             "QTabBar::tab {"
@@ -1019,27 +1086,29 @@ class MethodBuilderDialog(QDialog):
         details_layout.setContentsMargins(0, 0, 0, 0)
 
         self.details_table = QTableWidget()
-        self.details_table.setColumnCount(4)
+        self.details_table.setColumnCount(3)
         self.details_table.setHorizontalHeaderLabels([
-            "#", "Channels", "Concentration", "Contact Time"
+            "Channels", "Concentration", "Contact Time"
         ])
-        self.details_table.horizontalHeader().resizeSection(0, 30)
+        self.details_table.horizontalHeader().resizeSection(0, 70)
         self.details_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.details_table.horizontalHeader().resizeSection(1, 70)
-        self.details_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.details_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.details_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.details_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.details_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.details_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.details_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.details_table.itemSelectionChanged.connect(self._on_details_selection_changed)
-        self.details_table.verticalHeader().setVisible(False)
+        self.details_table.verticalHeader().setVisible(True)
         self.details_table.setStyleSheet(table_style)
         details_layout.addWidget(self.details_table)
 
         self.method_tabs.addTab(details_widget, "Details")
 
         queue_panel.addWidget(self.method_tabs)
-        content_row.addLayout(queue_panel, 3)
+        
+        # Add spacing before buttons
+        queue_panel.addSpacing(8)
+        
+        content_row.addLayout(queue_panel, 1)
         layout.addLayout(content_row)
 
         # SVG for settings cog (used in controls row below)
@@ -1110,7 +1179,7 @@ class MethodBuilderDialog(QDialog):
 
         layout.addWidget(self._adv_settings_frame)
 
-        # Queue control buttons
+        # Queue control buttons (right side, under method table)
         queue_btn_row = QHBoxLayout()
 
         self.undo_btn = QPushButton("Undo")
@@ -1242,7 +1311,8 @@ class MethodBuilderDialog(QDialog):
         self._settings_btn.toggled.connect(self._toggle_advanced_settings)
         queue_btn_row.addWidget(self._settings_btn)
 
-        layout.addLayout(queue_btn_row)
+        # Add button row to queue panel (right side only)
+        queue_panel.addLayout(queue_btn_row)
 
         # Overnight Mode checkbox (below button row, left-aligned, subtle)
         overnight_row = QHBoxLayout()
@@ -1287,8 +1357,6 @@ class MethodBuilderDialog(QDialog):
         overnight_row.addWidget(self.overnight_mode_check)
         overnight_row.addStretch()
         layout.addLayout(overnight_row)
-
-        layout.addStretch()
 
         # Separator
         separator = QFrame()
@@ -1401,6 +1469,151 @@ class MethodBuilderDialog(QDialog):
         button_row.addWidget(self.queue_btn)
 
         layout.addLayout(button_row)
+
+    def _build_easy_mode_tab(self):
+        """Build the Easy Mode form UI (beginner-friendly structured input)."""
+        from PySide6.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QSpinBox, QDoubleSpinBox, QCheckBox, QPushButton, QFrame
+        from PySide6.QtCore import Qt
+        
+        widget = QWidget()
+        main_layout = QVBoxLayout(widget)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(12)
+
+        # Form layout for inputs
+        form = QFormLayout()
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # Cycle Type
+        self.easy_cycle_type = QComboBox()
+        self.easy_cycle_type.addItems(["Binding", "Baseline", "Kinetic", "Regeneration", "Rinse"])
+        self.easy_cycle_type.currentTextChanged.connect(self._update_easy_preview)
+        form.addRow("Cycle Type:", self.easy_cycle_type)
+
+        # Duration
+        duration_row = QHBoxLayout()
+        self.easy_duration_value = QDoubleSpinBox()
+        self.easy_duration_value.setRange(0.1, 999)
+        self.easy_duration_value.setValue(5.0)
+        self.easy_duration_value.setDecimals(1)
+        self.easy_duration_value.valueChanged.connect(self._update_easy_preview)
+        duration_row.addWidget(self.easy_duration_value)
+        
+        self.easy_duration_unit = QComboBox()
+        self.easy_duration_unit.addItems(["s", "min", "h"])
+        self.easy_duration_unit.setCurrentIndex(1)  # Default to "min"
+        self.easy_duration_unit.currentTextChanged.connect(self._update_easy_preview)
+        duration_row.addWidget(self.easy_duration_unit)
+        duration_row.addStretch()
+        form.addRow("Duration:", duration_row)
+
+        # Channels (checkboxes)
+        channels_row = QHBoxLayout()
+        self.easy_channel_a = QCheckBox("A")
+        self.easy_channel_b = QCheckBox("B")
+        self.easy_channel_c = QCheckBox("C")
+        self.easy_channel_d = QCheckBox("D")
+        for cb in [self.easy_channel_a, self.easy_channel_b, self.easy_channel_c, self.easy_channel_d]:
+            cb.stateChanged.connect(self._update_easy_preview)
+            channels_row.addWidget(cb)
+        channels_row.addStretch()
+        form.addRow("Channels:", channels_row)
+
+        # Concentration
+        conc_row = QHBoxLayout()
+        self.easy_concentration_value = QDoubleSpinBox()
+        self.easy_concentration_value.setRange(0, 999999)
+        self.easy_concentration_value.setValue(100.0)
+        self.easy_concentration_value.setDecimals(2)
+        self.easy_concentration_value.valueChanged.connect(self._update_easy_preview)
+        conc_row.addWidget(self.easy_concentration_value)
+        
+        self.easy_concentration_unit = QComboBox()
+        self.easy_concentration_unit.addItems(["nM", "µM", "mM", "M", "pM", "µg/mL", "ng/mL", "mg/mL"])
+        self.easy_concentration_unit.currentTextChanged.connect(self._update_easy_preview)
+        conc_row.addWidget(self.easy_concentration_unit)
+        conc_row.addStretch()
+        form.addRow("Concentration:", conc_row)
+
+        # Contact Time
+        contact_row = QHBoxLayout()
+        self.easy_contact_value = QSpinBox()
+        self.easy_contact_value.setRange(0, 99999)
+        self.easy_contact_value.setValue(180)
+        self.easy_contact_value.valueChanged.connect(self._update_easy_preview)
+        contact_row.addWidget(self.easy_contact_value)
+        
+        self.easy_contact_unit = QComboBox()
+        self.easy_contact_unit.addItems(["s", "min", "h"])
+        self.easy_contact_unit.currentTextChanged.connect(self._update_easy_preview)
+        contact_row.addWidget(self.easy_contact_unit)
+        contact_row.addStretch()
+        form.addRow("Contact Time:", contact_row)
+
+        # Flow Rate
+        flow_row = QHBoxLayout()
+        self.easy_flow_value = QSpinBox()
+        self.easy_flow_value.setRange(0, 9999)
+        self.easy_flow_value.setValue(25)
+        self.easy_flow_value.valueChanged.connect(self._update_easy_preview)
+        flow_row.addWidget(self.easy_flow_value)
+        
+        self.easy_flow_unit = QComboBox()
+        self.easy_flow_unit.addItems(["µL/min", "mL/min"])
+        self.easy_flow_unit.currentTextChanged.connect(self._update_easy_preview)
+        flow_row.addWidget(self.easy_flow_unit)
+        flow_row.addStretch()
+        form.addRow("Flow Rate:", flow_row)
+
+        main_layout.addLayout(form)
+        
+        # Separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setStyleSheet("background: rgba(0, 0, 0, 0.1);")
+        main_layout.addWidget(separator)
+
+        # Preview
+        preview_label = QLabel("Preview:")
+        preview_label.setStyleSheet("font-size: 11px; color: #86868B; font-weight: 600;")
+        main_layout.addWidget(preview_label)
+        
+        self.easy_preview_text = QLabel("Binding 5min [ABCD:100nM] contact 180s flow 25µL/min")
+        self.easy_preview_text.setStyleSheet(
+            "background: #F5F5F7; padding: 8px; border-radius: 4px; "
+            "font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: #1D1D1F;"
+        )
+        self.easy_preview_text.setWordWrap(True)
+        main_layout.addWidget(self.easy_preview_text)
+
+        # Insert button
+        insert_btn = QPushButton("Insert to Power Mode →")
+        insert_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #007AFF;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  padding: 10px 20px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "}"
+            "QPushButton:hover { background: #0051D5; }"
+            "QPushButton:pressed { background: #003D99; }"
+        )
+        insert_btn.clicked.connect(self._on_insert_to_power_mode)
+        main_layout.addWidget(insert_btn)
+        
+        main_layout.addStretch()
+        
+        # Generate initial preview
+        self._update_easy_preview()
+
+        # Apply initial field state based on current mode
+        self._on_mode_changed(self.mode_combo.currentText())
+
+        return widget
 
     def _update_char_count(self):
         """Enforce 1500 character limit."""
@@ -1684,7 +1897,85 @@ Binding 5min A:100nM contact 120s partial
 
         dialog.show()  # Non-blocking show instead of exec()
 
-    def _build_cycle_from_text(self, text: str) -> Cycle:
+    def _update_easy_preview(self):
+        """Generate preview text from Easy Mode form fields."""
+        # Cycle type
+        cycle_type = self.easy_cycle_type.currentText()
+        
+        # Duration
+        duration_value = self.easy_duration_value.value()
+        duration_unit = self.easy_duration_unit.currentText()
+        duration_str = f"{duration_value:.0f}{duration_unit}" if duration_unit == "s" else f"{duration_value:.1f}{duration_unit}".rstrip('0').rstrip('.')
+        
+        # Channels - collect checked channels
+        channels = []
+        if self.easy_channel_a.isChecked():
+            channels.append("A")
+        if self.easy_channel_b.isChecked():
+            channels.append("B")
+        if self.easy_channel_c.isChecked():
+            channels.append("C")
+        if self.easy_channel_d.isChecked():
+            channels.append("D")
+        
+        # Concentration
+        conc_value = self.easy_concentration_value.value()
+        conc_unit = self.easy_concentration_unit.currentText()
+        
+        # Build concentration tag if channels selected
+        conc_tag = ""
+        if channels and conc_value > 0:
+            channel_str = "".join(channels)
+            conc_tag = f"[{channel_str}:{conc_value:.0f}{conc_unit}]" if conc_value == int(conc_value) else f"[{channel_str}:{conc_value:.2f}{conc_unit}]"
+        
+        # Contact time
+        contact_value = self.easy_contact_value.value()
+        contact_unit = self.easy_contact_unit.currentText()
+        contact_str = ""
+        if contact_value > 0:
+            contact_str = f"contact {contact_value}{contact_unit}"
+        
+        # Flow rate
+        flow_value = self.easy_flow_value.value()
+        flow_unit = self.easy_flow_unit.currentText()
+        flow_str = ""
+        if flow_value > 0:
+            flow_str = f"flow {flow_value}{flow_unit}"
+        
+        # Assemble preview
+        parts = [cycle_type, duration_str]
+        if conc_tag:
+            parts.append(conc_tag)
+        if contact_str:
+            parts.append(contact_str)
+        if flow_str:
+            parts.append(flow_str)
+        
+        preview = " ".join(parts)
+        self.easy_preview_text.setText(preview)
+
+    def _on_insert_to_power_mode(self):
+        """Copy preview text to Power Mode tab and switch to it."""
+        preview_text = self.easy_preview_text.text()
+        
+        # Get current text from Power Mode
+        current_text = self.notes_input.toPlainText().strip()
+        
+        # Append preview to existing text (new line if not empty)
+        if current_text:
+            new_text = current_text + "\n" + preview_text
+        else:
+            new_text = preview_text
+        
+        self.notes_input.setPlainText(new_text)
+        
+        # Switch to Power Mode tab (Tab 1)
+        self.input_tabs.setCurrentIndex(1)
+        
+        # Focus on notes_input
+        self.notes_input.setFocus()
+
+    def _build_cycle_from_text(self, text: str) -> tuple[Cycle, list[str]]:
         """Build Cycle object from a single line of text.
 
         Notes (after #) are strictly informational and never parsed.
@@ -1692,6 +1983,9 @@ Binding 5min A:100nM contact 120s partial
 
         Args:
             text: Single line like "Baseline 5min A:100nM  # my note"
+            
+        Returns:
+            tuple: (Cycle object, list of warning strings from parsing)
         """
         import re
 
@@ -1755,9 +2049,13 @@ Binding 5min A:100nM contact 120s partial
         # Supports comma-separated concentrations: ABCD:100,50,25,10 maps A=100, B=50, C=25, D=10
         tags_with_units = re.findall(r"\[?([A-Da-d]+|ALL|all):([\d.,\s]+)([a-zA-Zµ/]+)?\]?", text, re.IGNORECASE)
 
+        # Unit validation whitelist
+        VALID_UNITS = {"nM", "µM", "uM", "mM", "M", "pM", "µg/mL", "ug/mL", "ng/mL", "mg/mL", "g/L"}
+
         # Extract concentrations and detect units
         concentrations = {}
         detected_unit = "nM"  # default
+        unit_warnings = []  # Track invalid units for warning
 
         for ch_group, val_str, unit_str in tags_with_units:
             # Normalize channel group to uppercase
@@ -1791,8 +2089,17 @@ Binding 5min A:100nM contact 120s partial
                 for ch in channels_to_set:
                     concentrations[ch] = val
                 
-            if unit_str:  # If units specified in tag, use it
-                detected_unit = unit_str
+            if unit_str:  # If units specified in tag, validate and use it
+                # Normalize unit for comparison (handle µ vs u)
+                unit_normalized = unit_str.replace('µ', 'µ').replace('μ', 'µ')  # Normalize greek mu
+                
+                # Check whitelist
+                if unit_normalized in VALID_UNITS or unit_str in VALID_UNITS:
+                    detected_unit = unit_str
+                else:
+                    # Invalid unit - add warning but accept the parse (non-blocking)
+                    unit_warnings.append(f"⚠️ Invalid unit '{unit_str}' — Valid units: nM, µM, mM, M, pM, µg/mL, ng/mL, mg/mL")
+                    detected_unit = unit_str  # Store anyway for user to see/fix
 
         # Parse contact time (e.g., "contact 180s", "contact180s", "contact 3min", "ct 2min", "ct3m")
         contact_time = None
@@ -1898,7 +2205,7 @@ Binding 5min A:100nM contact 120s partial
         method_mode = self._get_method_mode()
         detection_priority = detection_priority_override or self._get_detection_priority()
 
-        return Cycle(
+        cycle = Cycle(
             type=cycle_type,
             name=name,
             length_minutes=duration_minutes,
@@ -1920,6 +2227,9 @@ Binding 5min A:100nM contact 120s partial
             detection_priority=detection_priority,
             target_channels=target_channels,
         )
+        
+        # Return cycle along with any unit warnings from parsing
+        return cycle, unit_warnings
 
     def _on_add_to_method(self):
         """Add cycles to local method queue (supports multiple cycles, one per line)."""
@@ -1967,9 +2277,9 @@ Binding 5min A:100nM contact 120s partial
 
         # Process new cycle lines
         for line in cycle_lines:
-            cycle = self._build_cycle_from_text(line)
+            cycle, parse_warnings = self._build_cycle_from_text(line)
             self._local_cycles.append(cycle)
-            self._validate_and_warn_cycle(cycle, raw_text=line)
+            self._validate_and_warn_cycle(cycle, raw_text=line, parse_warnings=parse_warnings)
 
         self._refresh_method_table()
 
@@ -2188,16 +2498,11 @@ Binding 5min A:100nM contact 120s partial
             notes_item = QTableWidgetItem(cycle.note or "")
             self.method_table.setItem(row, 2, notes_item)
 
-            # --- Details tab (#, Channels, Concentration, Contact, Injection, Detection) ---
+            # --- Details tab (Channels, Concentration, Contact) ---
             drow = self.details_table.rowCount()
             self.details_table.insertRow(drow)
 
-            # Column 0: #
-            num_item = QTableWidgetItem(str(i + 1))
-            num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.details_table.setItem(drow, 0, num_item)
-
-            # Column 1: Channels
+            # Column 0: Channels
             if cycle.target_channels:
                 ch_text = cycle.target_channels
             elif cycle.concentrations:
@@ -2206,9 +2511,9 @@ Binding 5min A:100nM contact 120s partial
                 ch_text = "ALL"
             ch_item = QTableWidgetItem(ch_text)
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.details_table.setItem(drow, 1, ch_item)
+            self.details_table.setItem(drow, 0, ch_item)
 
-            # Column 2: Concentration (wider — gets Stretch space)
+            # Column 1: Concentration (wider — gets Stretch space)
             if cycle.concentrations:
                 conc_parts = [f"{ch}:{v}{cycle.units}" for ch, v in cycle.concentrations.items()]
                 conc_text = "  ".join(conc_parts)
@@ -2217,16 +2522,16 @@ Binding 5min A:100nM contact 120s partial
             else:
                 conc_text = "—"
             conc_item = QTableWidgetItem(conc_text)
-            self.details_table.setItem(drow, 2, conc_item)
+            self.details_table.setItem(drow, 1, conc_item)
 
-            # Column 3: Contact time
+            # Column 2: Contact time
             if cycle.contact_time is not None:
                 ct_text = f"{cycle.contact_time:.0f}s"
             else:
                 ct_text = "—"
             ct_item = QTableWidgetItem(ct_text)
             ct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.details_table.setItem(drow, 3, ct_item)
+            self.details_table.setItem(drow, 2, ct_item)
 
         # Update count label
         count = len(self._local_cycles)
@@ -2316,6 +2621,19 @@ Binding 5min A:100nM contact 120s partial
         # Detection stays 'Auto' — the sensitivity_factor in
         # manual_injection_dialog adapts automatically (2.0 for manual, 0.75 for pump)
         self.detection_combo.setCurrentText("Auto")
+
+        # Easy mode: disable flow-specific fields when injection mode is Manual
+        # (no pump → contact time and flow rate don't apply)
+        is_manual = mode_text.lower() == "manual"
+        for widget in [
+            getattr(self, 'easy_contact_value', None),
+            getattr(self, 'easy_contact_unit', None),
+            getattr(self, 'easy_flow_value', None),
+            getattr(self, 'easy_flow_unit', None),
+        ]:
+            if widget is not None:
+                widget.setEnabled(not is_manual)
+                widget.setToolTip("Not applicable in Manual injection mode" if is_manual else "")
 
     def configure_for_hardware(self, hw_name: str, has_affipump: bool = False):
         """Configure mode selector based on detected hardware.
@@ -2565,9 +2883,41 @@ Binding 5min A:100nM contact 120s partial
 
     # -- Validation & clipboard helpers ------------------------------------
 
-    def _validate_and_warn_cycle(self, cycle: Cycle, raw_text: str = ""):
+    def _validate_and_warn_cycle(self, cycle: Cycle, raw_text: str = "", parse_warnings: list = None):
         """Show non-blocking warnings for potential cycle issues."""
         warnings = []
+        
+        # Add any parsing warnings (e.g., invalid units)
+        if parse_warnings:
+            warnings.extend(parse_warnings)
+
+        # Check 0a: Empty concentrations (all channels filtered out)
+        if cycle.injection_method and raw_text and '[' in raw_text:
+            # User specified concentration tags but no valid channels parsed
+            if not getattr(cycle, 'concentrations', None) or len(cycle.concentrations) == 0:
+                warnings.append(
+                    "⚠️ Concentration tags found but no valid channels — check for typos\n"
+                    "   → Valid channels: A, B, C, D or ALL"
+                )
+
+        # Check 0b: Duration limit (> 60 min)
+        if cycle.length_minutes > 60:
+            warnings.append(
+                f"⚠️ Very long cycle ({cycle.length_minutes:.0f} min = {cycle.length_minutes / 60:.1f} hr)\n"
+                "   → Long cycles may block queue for hours\n"
+                "   → Consider breaking into shorter segments"
+            )
+
+        # Check 0c: Mixed units in method (compare with previous cycles)
+        if self._local_cycles and hasattr(cycle, 'units'):
+            prev_units = {c.units for c in self._local_cycles if hasattr(c, 'units') and c.units}
+            if prev_units and cycle.units not in prev_units:
+                prev_unit_str = ", ".join(sorted(prev_units))
+                warnings.append(
+                    f"⚠️ Unit change detected — previous cycles used {prev_unit_str}, this cycle uses {cycle.units}\n"
+                    "   → Mixed units make data analysis harder\n"
+                    "   → Consider using consistent units throughout method"
+                )
 
         # T6 Check: No contact time on Binding/Kinetic cycles
         if cycle.type in ("Binding", "Kinetic") and cycle.injection_method and not cycle.contact_time:
@@ -2672,14 +3022,24 @@ Binding 5min A:100nM contact 120s partial
                         f"   → Consider {((cycle.contact_time or 0) + 120) * n / 60:.1f} min"
                     )
 
-        # Check 4: Detection explicitly off
+        # Check 4: Detection explicitly off (with mode conflict check)
         det = getattr(cycle, 'detection_priority', 'auto')
+        manual_mode = getattr(cycle, 'manual_injection_mode', None)
+        
         if cycle.injection_method and det == 'off':
-            warnings.append(
-                "⚠️ Injection detection is OFF\n"
-                "   → You must manually place all flags\n"
-                "   → Set to 'Auto' for assisted detection"
-            )
+            # Detection off - warn if not in manual injection mode
+            if manual_mode != 'manual':
+                warnings.append(
+                    "⚠️ Injection detection is OFF but manual injection mode is not enabled\n"
+                    "   → Detection won't auto-flag injections\n"
+                    "   → Either enable 'Manual Injection Mode' or set detection to 'Auto'"
+                )
+            else:
+                warnings.append(
+                    "⚠️ Injection detection is OFF\n"
+                    "   → You must manually place all flags\n"
+                    "   → Set to 'Auto' for assisted detection"
+                )
 
         # Check 5: High sensitivity factor
         mode = getattr(cycle, 'method_mode', 'manual')

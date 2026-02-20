@@ -134,6 +134,32 @@ Ignored by Claude Code (use --no-ignore to access):
 - Hardware abstraction via HAL interfaces
 - Domain models are plain dataclasses
 
+## FRS Documentation Map — Read Before Grepping
+
+> `docs/` is excluded from Claude Code search, but **read_file always works**. Each entry below is a verified, condensed spec — faster than grepping 1000+ line Python files.
+
+| Working on... | Read this first | Source file(s) |
+|---------------|----------------|----------------|
+| EditsTab — table, columns, filtering | [EDITS_TABLE_FRS.md](docs/features/EDITS_TABLE_FRS.md) | `affilabs/tabs/edits/_table_manager.py` |
+| EditsTab — layout, widget refs | [EDITS_UI_BUILDERS_FRS.md](docs/features/EDITS_UI_BUILDERS_FRS.md) | `affilabs/tabs/edits/_ui_builders.py` |
+| EditsTab — export, Save as Method | [EDITS_EXPORT_FRS.md](docs/features/EDITS_EXPORT_FRS.md) | `affilabs/tabs/edits/_export_mixin.py` |
+| EditsTab — alignment, delta SPR cursors | [EDITS_ALIGNMENT_DELTA_SPR_FRS.md](docs/features/EDITS_ALIGNMENT_DELTA_SPR_FRS.md) | `affilabs/tabs/edits/_interaction_mixin.py` |
+| EditsTab — cycle display, graph rendering | [EDITS_CYCLE_DISPLAY_FRS.md](docs/features/EDITS_CYCLE_DISPLAY_FRS.md) | `main.py` (`_display_cycle_in_edits*`) |
+| EditsTab — data loading utilities | [EDITS_DATA_LOADING_FRS.md](docs/features/EDITS_DATA_LOADING_FRS.md) | `affilabs/tabs/edits/_data_utils.py` |
+| Recording, auto-save, Excel export | [RECORDING_MANAGER_FRS.md](docs/features/RECORDING_MANAGER_FRS.md) | `affilabs/managers/recording_manager.py` |
+| Excel chart generation | [EXCEL_CHART_BUILDER_FRS.md](docs/features/EXCEL_CHART_BUILDER_FRS.md) | `affilabs/services/excel_exporter.py` |
+| Controller HAL, servo commands, adapters | [CONTROLLER_HAL_FRS.md](docs/features/CONTROLLER_HAL_FRS.md) | `affilabs/utils/hal/controller_hal.py` |
+| Pump HAL, AffiPump, Cavro protocol | [PUMP_HAL_FRS.md](docs/features/PUMP_HAL_FRS.md) | `affilabs/utils/hal/pump_hal.py` |
+| Hardware scanning, USB connect flow | [HARDWARE_SCANNING_FRS.md](docs/features/HARDWARE_SCANNING_FRS.md) | `affilabs/core/hardware_manager.py` |
+| Injection flags, AutoMarker, contact timer | [FLAGGING_SYSTEM_GUIDE.md](docs/features/FLAGGING_SYSTEM_GUIDE.md) | `affilabs/managers/flag_manager.py` |
+| Calibration flow, servo auto-cal | [CALIBRATION_ORCHESTRATOR_FRS.md](docs/calibration/CALIBRATION_ORCHESTRATOR_FRS.md) | `affilabs/core/calibration_orchestrator.py` |
+| Signal quality, IQ levels, wavelength zones | [SENSOR_IQ_SYSTEM.md](docs/features/SENSOR_IQ_SYSTEM.md) | `affilabs/utils/sensor_iq.py` |
+| Cycle templates, queue presets | [METHOD_PRESETS_SYSTEM.md](docs/features/METHOD_PRESETS_SYSTEM.md) | `affilabs/services/cycle_template_storage.py` |
+
+**Rule:** If the task touches a subsystem listed above, read the FRS doc first. Only open the source file if the doc doesn't answer the question.
+
+---
+
 ## Common Tasks
 - **Add a new widget**: Create in `affilabs/widgets/`, wire through relevant coordinator
 - **Add a new pipeline**: Add to `affilabs/utils/pipelines/`
@@ -208,7 +234,8 @@ Detector profiles override deprecated constants in settings.py at runtime via `g
 | Pipelines | `*_pipeline.py` | `centroid_pipeline.py` |
 
 ## Key Gotchas
-1. **Large files — use grep, never read whole:**
+1. **Check FRS docs before grepping source:** `docs/features/` has 15+ verified FRS docs. Reading a 300-line FRS doc is faster than grepping a 3000-line Python file. See **FRS Documentation Map** above.
+2. **Large files — use grep, never read whole:**
    - `main.py` (3.4k lines after mixin extraction), `affilabs_core_ui.py` (3.7k after mixin extraction), `controller.py` (3.6k), `datawindow.py` (2.8k)
    - 25+ files exceed 1000 lines in `affilabs/`
 2. **Never edit generated files:** `affilabs/ui/ui_*.py` and `affilabs/ui/ai_rc.py` are auto-generated from `.ui` files
@@ -282,6 +309,24 @@ When creating or updating documentation:
 - `'p4proplus' in firmware_id.lower()` is the guard for internal pump features
 - `configure_for_hardware(hw_name, has_affipump)` in `MethodBuilderDialog` sets mode combo based on model
 - P4SPR mode_combo is **disabled** (locked to "Manual"); PRO/PROPLUS defaults to "Semi-Automated"
+
+## UI Request Protocol
+
+When the user writes **`REQ: [one sentence]`**, treat it as a UI change request. Execute immediately — no backlog, no ticketing.
+
+**Steps:**
+1. Check [UI_STATE_MACHINE.md](docs/ui/UI_STATE_MACHINE.md) — does this affect a state or transition?
+2. Check [UI_COMPONENT_INVENTORY.md](docs/ui/UI_COMPONENT_INVENTORY.md) — which widget / presenter / sidebar tab owns it?
+3. Check [UI_DESIGN_SYSTEM.md](docs/ui/UI_DESIGN_SYSTEM.md) — what style rules apply (color token, button variant, spacing)?
+4. Check [UI_HARDWARE_MODEL_REQUIREMENTS.md](docs/ui/UI_HARDWARE_MODEL_REQUIREMENTS.md) — is this hardware-conditional?
+5. Check [UI_GRAPH_VISUALIZATION_SPEC.md](docs/ui/UI_GRAPH_VISUALIZATION_SPEC.md) — does this touch a graph?
+6. Implement in the correct file(s).
+7. Validate against the §New Component Checklist in UI_COMPONENT_INVENTORY.md.
+8. Update whichever UI doc(s) changed.
+
+**UI docs live in:** `docs/ui/` (5 files — Design System, Component Inventory, State Machine, Graph Spec, Hardware Model Requirements)
+
+---
 
 ## Active Context (update at end of each session)
 

@@ -4,7 +4,7 @@
     "Ludo",
     "Sandy"
   ],
-  "current_user": "Sandy",
+  "current_user": "Ludo",
   "user_data": {
     "Sandy": {
       "experiment_count": 2,
@@ -15,12 +15,13 @@
       }
     },
     "Ludo": {
-      "experiment_count": 2,
+      "experiment_count": 5,
       "compression_training": {
         "completed": false,
         "score": null,
         "date": null
-      }
+      },
+      "last_used": "2026-02-19T00:13:11.857224+00:00"
     }
   }
 }

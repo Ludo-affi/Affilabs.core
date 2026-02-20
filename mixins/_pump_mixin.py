@@ -271,6 +271,9 @@ class PumpMixin:
 
         Called when injection_coordinator.injection_completed fires. Marks the
         point at which sample contact ended so the user can measure response.
+
+        When no contact timer is configured (timer off), also immediately places
+        wash flags — the timer path won't fire, so we do it here.
         """
         try:
             graph = self.main_window.cycle_of_interest_graph
@@ -294,6 +297,23 @@ class PumpMixin:
             logger.debug(f"Contact time marker placed at t={stop_time:.1f}s")
         except Exception as e:
             logger.debug(f"Could not place contact time marker: {e}")
+
+        # When contact timer is OFF (no contact_time on cycle), place wash flags immediately.
+        # When timer IS running, _place_automatic_wash_flags() fires on timer expiry instead.
+        contact_time = (
+            getattr(self._current_cycle, 'contact_time', None)
+            if hasattr(self, '_current_cycle') and self._current_cycle
+            else None
+        )
+        timer_running = (
+            hasattr(self.main_window, '_manual_timer')
+            and self.main_window._manual_timer is not None
+            and self.main_window._manual_timer.isActive()
+        )
+        if not contact_time and not timer_running:
+            logger.debug("Contact timer OFF — placing wash flags immediately at injection end")
+            if hasattr(self.main_window, '_place_automatic_wash_flags'):
+                self.main_window._place_automatic_wash_flags()
 
     def _place_injection_flag(self, channel: str, injection_time: float, confidence: float):
         """Place injection flag directly from dialog's pre-detected result.
@@ -345,6 +365,35 @@ class PumpMixin:
                 f"✓ Injection flag placed on Channel {ch.upper()} "
                 f"at display t={injection_display_time:.2f}s (SPR={spr_val:.1f} RU)"
             )
+
+            # Start contact timer ONCE if cycle has contact_time defined
+            # Guard: only start if no manual timer is already running (avoids restart
+            # when injection_flag_requested fires for each detected channel)
+            timer_already_running = (
+                hasattr(self.main_window, '_manual_timer')
+                and self.main_window._manual_timer
+                and self.main_window._manual_timer.isActive()
+            )
+            if (not timer_already_running
+                    and hasattr(self, '_current_cycle') and self._current_cycle
+                    and hasattr(self._current_cycle, 'contact_time')
+                    and self._current_cycle.contact_time
+                    and self._current_cycle.contact_time > 0):
+                contact_seconds = int(self._current_cycle.contact_time)
+                logger.info(f"⏱ Starting contact timer: {contact_seconds}s")
+                
+                # Start manual timer countdown (which auto-shows popout if "Contact" in label)
+                if hasattr(self.main_window, '_start_manual_timer_countdown'):
+                    cycle_num = getattr(self._current_cycle, 'cycle_num', 1)
+                    timer_label = f"Contact Time #{cycle_num}"
+                    # Set next action hint so PopOutTimerWindow shows "Perform wash" on expiry
+                    self.main_window._manual_timer_next_action = "Perform wash"
+                    self.main_window._start_manual_timer_countdown(
+                        timer_label, 
+                        contact_seconds, 
+                        sound_enabled=True
+                    )
+                    logger.info(f"✓ Contact timer started: {timer_label} ({contact_seconds}s)")
 
         except Exception as e:
             logger.error(f"❌ Error placing injection flag: {e}")
@@ -2190,12 +2239,15 @@ class PumpMixin:
         except Exception:
             pass
 
-        # Add all cycles to queue
+        # Tag all cycles with source method name
+        for cycle in cycles:
+            cycle.source_method = method_name
+
+        # Add all cycles to queue as a batch (single undo removes entire method)
         try:
-            for cycle in cycles:
-                self.queue_presenter.add_cycle(cycle)
+            self.queue_presenter.add_method(cycles, method_name)
         except Exception as e:
-            logger.error(f"_on_method_ready: add cycles failed: {e}")
+            logger.error(f"_on_method_ready: add method failed: {e}")
             return
 
         # Refresh summary table
@@ -2206,8 +2258,23 @@ class PumpMixin:
         except Exception:
             pass
 
-        # Start immediately if requested
+        # Start immediately if requested (one-click "build and run")
         if action == "start":
+            logger.info(f"Auto-starting acquisition after queueing method '{method_name}'")
+            try:
+                # Check if acquisition coordinator exists
+                if hasattr(self, 'acq_coordinator'):
+                    # Start acquisition (will begin first cycle automatically)
+                    success = self.acq_coordinator._start_acquisition()
+                    if success:
+                        self.acq_coordinator._update_ui_after_start()
+                        logger.info(f"✅ Auto-start successful for method '{method_name}'")
+                    else:
+                        logger.error("Auto-start failed: acquisition coordinator returned False")
+                else:
+                    logger.warning("Auto-start skipped: acquisition coordinator not available")
+            except Exception as e:
+                logger.error(f"Auto-start failed: {e}", exc_info=True)
             try:
                 self._on_start_button_clicked()
             except Exception as e:

@@ -4,6 +4,7 @@ A lightweight AI assistant for answering questions about Affilabs.core software.
 Uses TinyLM AI with pattern matching fallback for intelligent responses.
 """
 
+import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QScrollArea, QFrame, QSizePolicy
@@ -15,6 +16,8 @@ import threading
 import subprocess
 import wave
 import io
+
+logger = logging.getLogger(__name__)
 
 # Spark answer engine for hybrid AI + pattern matching (deferred to _setup_knowledge_base)
 # from affilabs.services.spark import SparkAnswerEngine
@@ -46,7 +49,7 @@ def _format_spark_text(text: str) -> str:
 
 
 class QuestionInput(QTextEdit):
-    """Text input that submits on Ctrl+Enter."""
+    """Text input that submits on Ctrl+Enter. Supports drag-and-drop images."""
 
     submit_requested = Signal()
 
@@ -54,6 +57,8 @@ class QuestionInput(QTextEdit):
         super().__init__(parent)
         self.setPlaceholderText("Type your question... (Ctrl+Enter to send)")
         self.setMaximumHeight(80)
+        self.setAcceptDrops(True)
+        self.attached_images = []  # List of image file paths
         self.setStyleSheet("""
             QTextEdit {
                 background: white;
@@ -76,6 +81,49 @@ class QuestionInput(QTextEdit):
                 event.accept()
                 return
         super().keyPressEvent(event)
+
+    def dragEnterEvent(self, event):
+        """Accept drag events with image files."""
+        if event.mimeData().hasUrls():
+            # Check if any URLs are image files
+            urls = event.mimeData().urls()
+            for url in urls:
+                path = url.toLocalFile()
+                if path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        """Accept drag move events."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        """Handle dropped image files."""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            for url in urls:
+                path = url.toLocalFile()
+                if path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                    self.attached_images.append(path)
+                    # Show feedback in the text input
+                    current_text = self.toPlainText()
+                    import os
+                    filename = os.path.basename(path)
+                    if current_text and not current_text.endswith('\n'):
+                        current_text += '\n'
+                    self.setPlainText(current_text + f"📎 Attached: {filename}")
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def clear(self):
+        """Clear text and attached images."""
+        super().clear()
+        self.attached_images = []
 
 
 class MessageBubble(QFrame):
@@ -384,7 +432,11 @@ class SparkHelpWidget(QWidget):
         self._thinking_start_time = None
         self._thinking_dots = 0
         self._thinking_bubble = None
+        self._query_token = 0          # incremented per query; stale threads compare before writing
+        self._timeout_timer = None     # kills thinking bubble if answer never arrives
         self.answer_engine = None
+        self._engine_ready = False     # set True once background init completes
+        self._awaiting_bug_description = False
 
         # TTS setup (Piper TTS - lightweight model)
         self.tts_enabled = False  # Start with TTS off by default
@@ -496,7 +548,33 @@ class SparkHelpWidget(QWidget):
 
         # Buttons - responsive for narrow sidebar
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(8)
+        button_layout.setSpacing(6)
+
+        # Report Bug button - small icon-only, left of Clear
+        bug_btn = QPushButton("🐛")
+        bug_btn.setFixedSize(36, 36)
+        bug_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        bug_btn.setToolTip("Report a Bug (screenshot + logs included automatically)")
+        bug_btn.setStyleSheet("""
+            QPushButton {
+                background: #FFF3CD;
+                color: #7D5A00;
+                border: 1px solid #F0C040;
+                border-radius: 6px;
+                font-size: 16px;
+                font-weight: 600;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background: #FFE699;
+                border-color: #D4A000;
+            }
+            QPushButton:pressed {
+                background: #F5D800;
+            }
+        """)
+        bug_btn.clicked.connect(self._on_report_bug_clicked)
+        button_layout.addWidget(bug_btn)
 
         # Clear chat button - flexible sizing
         clear_btn = QPushButton("Clear")
@@ -584,15 +662,23 @@ class SparkHelpWidget(QWidget):
         self._add_welcome_message()
 
     def _setup_knowledge_base(self):
-        """Initialize answer engine (replaces embedded patterns)."""
-        # SparkAnswerEngine coordinates pattern matching + AI
-        try:
-            from affilabs.services.spark import SparkAnswerEngine
-            self.answer_engine = SparkAnswerEngine()
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Spark engine init failed: {e}")
-            self.answer_engine = None
+        """Initialize answer engine in a background thread so it doesn't block the UI."""
+        def _init_engine():
+            try:
+                from affilabs.services.spark import SparkAnswerEngine
+                engine = SparkAnswerEngine()
+                # Post back to UI thread
+                QTimer.singleShot(0, lambda: self._on_engine_ready(engine))
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Spark engine init failed: {e}")
+
+        threading.Thread(target=_init_engine, daemon=True).start()
+
+    def _on_engine_ready(self, engine):
+        """Called on UI thread when engine background init completes."""
+        self.answer_engine = engine
+        self._engine_ready = True
 
     def _add_welcome_message(self):
         """Add welcome message to chat."""
@@ -631,72 +717,99 @@ class SparkHelpWidget(QWidget):
         # Add fresh welcome message
         self._add_welcome_message()
 
-    def _handle_question(self):
+    def _set_input_enabled(self, enabled: bool):
+        """Enable/disable question input and send button."""
+        try:
+            self.question_input.setEnabled(enabled)
+            self.send_btn.setEnabled(enabled)
+        except Exception:
+            pass
+
+    def _handle_question_inner(self):
         """Process user question and generate response (never crashes)."""
         try:
             question = self.question_input.toPlainText().strip()
-
             if not question:
                 return
 
-            # Clear input
+            # Disable input to prevent double-submit while in flight
+            self._set_input_enabled(False)
             self.question_input.clear()
 
-            # Add user question bubble (right-aligned like modern chat apps)
+            # Bump query token — stale threads will see a mismatch and no-op
+            self._query_token += 1
+            my_token = self._query_token
+
+            # Add user question bubble
             try:
                 user_bubble = MessageBubble(question, is_user=True)
                 self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignRight)
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Spark user bubble failed: {e}")
+                self._set_input_enabled(True)
                 return
 
-            # Add "thinking" indicator with animated dots
+            # Add thinking bubble
             try:
                 thinking_bubble = MessageBubble("💭 Thinking...", is_user=False, is_thinking=True)
                 self.chat_layout.addWidget(thinking_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
-                self._thinking_bubble = thinking_bubble  # Store reference
+                self._thinking_bubble = thinking_bubble
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Spark thinking bubble failed: {e}")
+                self._set_input_enabled(True)
                 return
 
-            # Start thinking animation timer (safely)
+            # Start animation timer (create fresh each query)
             try:
                 import time
                 self._thinking_start_time = time.time()
                 self._thinking_dots = 0
-                if not hasattr(self, '_thinking_timer') or self._thinking_timer is None:
-                    self._thinking_timer = QTimer()
-                    self._thinking_timer.timeout.connect(self._update_thinking_indicator)
-                self._thinking_timer.start(500)  # Update every 500ms
+                if self._thinking_timer is not None:
+                    self._thinking_timer.stop()
+                    self._thinking_timer = None
+                self._thinking_timer = QTimer()
+                self._thinking_timer.timeout.connect(self._update_thinking_indicator)
+                self._thinking_timer.start(500)
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Spark thinking timer failed: {e}")
 
-            # Scroll to show thinking bubble
+            # Safety timeout — clears thinking state after 15s regardless
             try:
-                QTimer.singleShot(50, self._scroll_to_bottom)
+                if self._timeout_timer is not None:
+                    self._timeout_timer.stop()
+                self._timeout_timer = QTimer()
+                self._timeout_timer.setSingleShot(True)
+                self._timeout_timer.timeout.connect(
+                    lambda: self._display_answer(
+                        "Sorry, I took too long to respond. Please try again.", question, my_token
+                    )
+                )
+                self._timeout_timer.start(15000)
             except Exception:
                 pass
 
-            # Generate answer in background thread (never blocks UI)
+            QTimer.singleShot(50, self._scroll_to_bottom)
+
+            # Run answer generation in background
             try:
                 self._answer_worker = threading.Thread(
-                    target=self._generate_answer_async, args=(question,), daemon=True
+                    target=self._generate_answer_async, args=(question, my_token), daemon=True
                 )
                 self._answer_worker.start()
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Spark answer thread failed: {e}")
-                # Fallback: show error inline
-                self._display_answer("Sorry, something went wrong. Please try again.")
+                self._display_answer("Sorry, something went wrong. Please try again.", question, my_token)
 
         except Exception as e:
             import logging
-            logging.getLogger(__name__).error(f"Spark _handle_question crashed: {e}")
+            logging.getLogger(__name__).error(f"Spark _handle_question_inner crashed: {e}")
+            self._set_input_enabled(True)
 
-    def _generate_answer_async(self, question: str):
+    def _generate_answer_async(self, question: str, token: int):
         """Run answer generation in background thread, post result to UI thread."""
         try:
             answer_text = self._find_answer(question)
@@ -705,14 +818,25 @@ class SparkHelpWidget(QWidget):
             logging.getLogger(__name__).error(f"Spark _find_answer crashed: {e}")
             answer_text = "Sorry, something went wrong. Please try again."
 
-        # Post result back to UI thread safely via QTimer, passing question for history
         try:
-            QTimer.singleShot(0, lambda: self._display_answer(answer_text, question))
+            QTimer.singleShot(0, lambda: self._display_answer(answer_text, question, token))
         except Exception:
             pass
 
-    def _display_answer(self, answer_text: str, question: str = ""):
-        """Display answer on UI thread (called from timer after background generation)."""
+    def _display_answer(self, answer_text: str, question: str = "", token: int = -1):
+        """Display answer on UI thread. token guards against stale threads."""
+        # Ignore if a newer query already took over
+        if token != -1 and token != self._query_token:
+            return
+
+        # Cancel the safety timeout
+        try:
+            if self._timeout_timer is not None:
+                self._timeout_timer.stop()
+                self._timeout_timer = None
+        except Exception:
+            pass
+
         # Stop thinking timer
         try:
             if self._thinking_timer:
@@ -723,12 +847,15 @@ class SparkHelpWidget(QWidget):
 
         # Remove thinking bubble
         try:
-            if hasattr(self, '_thinking_bubble') and self._thinking_bubble:
+            if self._thinking_bubble:
                 self.chat_layout.removeWidget(self._thinking_bubble)
                 self._thinking_bubble.deleteLater()
                 self._thinking_bubble = None
         except Exception:
             self._thinking_bubble = None
+
+        # Re-enable input
+        self._set_input_enabled(True)
 
         # Add actual answer
         try:
@@ -739,19 +866,18 @@ class SparkHelpWidget(QWidget):
             logging.getLogger(__name__).error(f"Spark bubble creation failed: {e}")
             return
 
-        # Save Q&A to per-user history if question is provided
+        # Save Q&A to per-user history
         if question:
             try:
                 self._save_qa_entry(question, answer_text)
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).debug(f"Q&A history save failed (non-fatal): {e}")
+            except Exception:
+                pass
 
         # Speak the answer with Piper TTS
         try:
             self._speak_text(answer_text)
         except Exception:
-            pass  # TTS failure should never crash the app
+            pass
 
         self._scroll_to_bottom()
 
@@ -761,12 +887,18 @@ class SparkHelpWidget(QWidget):
         """Generate answer using SparkAnswerEngine."""
         try:
             if self.answer_engine is None:
-                return "Spark engine is not available. Please restart the application."
+                # Engine still initializing — wait up to 8s
+                import time
+                deadline = time.time() + 8.0
+                while self.answer_engine is None and time.time() < deadline:
+                    time.sleep(0.1)
+            if self.answer_engine is None:
+                return "Still starting up — please try again in a moment."
             answer, matched = self.answer_engine.generate_answer(question)
             return answer
         except Exception as e:
             import logging
-            logging.getLogger(__name__).error(f"Spark answer error: {e}")
+            logging.getLogger(__name__).error(f"Sparq answer error: {e}")
             return "Sorry, I had trouble generating an answer. Please try again."
 
     def _save_qa_entry(self, question: str, answer: str):
@@ -948,10 +1080,15 @@ class SparkHelpWidget(QWidget):
     def closeEvent(self, event):
         """Clean up resources on widget close (never crash on shutdown)."""
         try:
-            # Stop thinking timer
-            if hasattr(self, '_thinking_timer') and self._thinking_timer:
+            if self._thinking_timer:
                 self._thinking_timer.stop()
                 self._thinking_timer = None
+        except Exception:
+            pass
+        try:
+            if self._timeout_timer:
+                self._timeout_timer.stop()
+                self._timeout_timer = None
         except Exception:
             pass
 
@@ -968,6 +1105,72 @@ class SparkHelpWidget(QWidget):
             pass
 
     # ── SPARK Troubleshooting Flow ───────────────────────────────────────
+
+    # ── Bug Report Flow ───────────────────────────────────────────────────────
+
+    def start_bug_report_flow(self):
+        """Start a conversational bug report flow in the Spark chat."""
+        try:
+            self.push_system_message(
+                "**Report a Bug**\n\n"
+                "Describe what went wrong in as much detail as you can. "
+                "You can drag and drop images into the text box. "
+                "I'll also attach a screenshot and the recent log automatically.\n\n"
+                "What happened?"
+            )
+            self._awaiting_bug_description = True
+            # Re-use the normal input — next submit goes to bug flow
+            self.question_input.setPlaceholderText("Describe the bug… (Ctrl+Enter to send)")
+            self.question_input.setFocus()
+        except Exception as e:
+            logger.error(f"Bug report flow start failed: {e}")
+
+    def _on_report_bug_clicked(self):
+        """Handle Report Bug button click."""
+        self.start_bug_report_flow()
+
+    def _handle_question(self):
+        """Process user question — routes to bug report flow if active."""
+        # Bug report intercept
+        if getattr(self, '_awaiting_bug_description', False):
+            self._awaiting_bug_description = False
+            description = self.question_input.toPlainText().strip()
+            # Capture attached images before clearing
+            attached_images = getattr(self.question_input, 'attached_images', []).copy()
+            self.question_input.clear()
+            self.question_input.setPlaceholderText("Type your question… (Ctrl+Enter to send)")
+            if description:
+                user_bubble = MessageBubble(description, is_user=True)
+                self.chat_layout.addWidget(user_bubble, alignment=Qt.AlignmentFlag.AlignRight)
+                self._submit_bug_report(description, attached_images)
+            return
+        self._handle_question_inner()
+
+    def _submit_bug_report(self, description: str, attached_images: list = None):
+        """Send bug report in background; show status in chat."""
+        self.push_system_message("Sending report…")
+
+        def _send():
+            try:
+                from affilabs.services.bug_reporter import send_bug_report
+                user_name = ""
+                if self._user_manager:
+                    try:
+                        user_name = self._user_manager.get_active_user() or ""
+                    except Exception:
+                        pass
+                ok, msg = send_bug_report(
+                    description, 
+                    user_name=user_name, 
+                    additional_images=attached_images or []
+                )
+            except Exception as e:
+                ok, msg = False, f"Failed to send: {e}"
+            QTimer.singleShot(0, lambda: self.push_system_message(
+                f"{'✅' if ok else '❌'} {msg}"
+            ))
+
+        threading.Thread(target=_send, daemon=True).start()
 
     def push_system_message(self, text: str):
         """Push a system-initiated message into the SPARK chat (not user-initiated).

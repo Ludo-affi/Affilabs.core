@@ -21,7 +21,8 @@
       "Bash(python3:*)",
       "Bash(ls:*)",
       "Bash(cd:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(.venv/Scripts/python.exe:*)"
     ]
   }
 }

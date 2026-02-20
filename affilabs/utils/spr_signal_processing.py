@@ -1,182 +1,18 @@
 from __future__ import annotations
 
-"""SPR signal processing utilities.
+"""Injection and SPR signal utilities — live acquisition path.
 
-This module provides signal processing functions for Surface Plasmon Resonance (SPR)
-data analysis, including transmission calculation, resonance peak detection using
-Fourier transform methods, and median filtering.
+Live callers:
+- auto_detect_injection_point   ← ManualInjectionDialog (per-channel injection detection)
+- detect_injection_all_channels ← InjectionCoordinator (retroactive multi-channel scan)
+- measure_delta_spr             ← cycle result reporting
+- validate_sp_orientation       ← calibration orchestrator
+- apply_centered_median_filter  ← sensorgram smoothing utility
 """
 
 import numpy as np
-from scipy.fftpack import dst, idct
-from scipy.signal import savgol_filter
-from scipy.stats import linregress
 
 from affilabs.utils.logger import logger
-
-
-def calculate_transmission(
-    intensity: np.ndarray,
-    reference: np.ndarray,
-    p_led_intensity: float | None = None,
-    s_led_intensity: float | None = None,
-) -> np.ndarray:
-    """Calculate transmission percentage from intensity and reference signals.
-
-    Accounts for different LED intensities used in P-mode (live data) vs S-mode (calibration).
-
-    Formula:
-    - Without LED correction: Transmission = (P_counts / S_counts) × 100  [WRONG if LEDs differ]
-    - With LED correction: Transmission = (P_counts / P_LED) / (S_counts / S_LED) × 100
-                                        = (P_counts × S_LED) / (S_counts × P_LED) × 100
-
-    Why this matters:
-    - S-mode calibration: LED=80, detector sees 52k counts
-    - P-mode live data: LED=220 (boosted 2.75x), detector sees variable counts
-    - Raw P/S ratio would be artificially inflated by 2.75x!
-    - Correction: multiply by (S_LED / P_LED) = (80 / 220) ≈ 0.36 to normalize
-
-    Args:
-        intensity: Measured P-mode intensity spectrum (after dark noise subtraction)
-        reference: S-mode reference spectrum (from calibration)
-        p_led_intensity: P-mode LED intensity (0-255), optional for backward compatibility
-        s_led_intensity: S-mode LED intensity (0-255), optional for backward compatibility
-
-    Returns:
-        np.ndarray: Transmission spectrum as percentage (typically 10-70% for SPR)
-
-    Raises:
-        ValueError: If arrays have incompatible shapes
-
-    """
-    if intensity.shape != reference.shape:
-        msg = f"Shape mismatch: intensity {intensity.shape} vs reference {reference.shape}"
-        raise ValueError(msg)
-
-    # Avoid division by zero
-    with np.errstate(divide="ignore", invalid="ignore"):
-        # Calculate raw ratio
-        transmission = (intensity / reference) * 100
-
-        # Apply LED intensity correction if provided
-        if (
-            p_led_intensity is not None
-            and s_led_intensity is not None
-            and p_led_intensity > 0
-        ):
-            led_correction_factor = s_led_intensity / p_led_intensity
-            transmission = transmission * led_correction_factor
-
-        # Handle division by zero
-        return np.where(reference == 0, 0, transmission)
-
-
-def find_resonance_wavelength_fourier(
-    transmission_spectrum: np.ndarray,
-    wavelengths: np.ndarray,
-    fourier_weights: np.ndarray,
-    window_size: int = 165,
-    apply_sg_filter: bool = False,  # Changed to False - SG applied in pipeline before this
-    sg_window: int = 21,
-    sg_polyorder: int = 3,
-    s_reference: np.ndarray = None,  # SNR-aware weighting
-    snr_strength: float = 0.3,
-) -> float:
-    """Find SPR resonance wavelength using Fourier transform method.
-
-    This method uses Discrete Sine Transform (DST) and Inverse Discrete Cosine
-    Transform (IDCT) to find the derivative zero-crossing point, which corresponds
-    to the resonance dip minimum.
-
-    NOTE: The input transmission_spectrum should already be SG-filtered in the
-    data processing pipeline. The apply_sg_filter parameter is provided for
-    backward compatibility or special cases where additional smoothing is needed.
-
-    Algorithm:
-    1. (Optional) Apply additional Savitzky-Golay filter if requested
-    2. (Optional) Apply SNR-aware weighting based on S-reference intensity
-    3. Linear detrending: Remove baseline slope
-    4. DST (Discrete Sine Transform): Transform to frequency domain with Fourier weights
-    5. IDCT (Inverse DCT): Calculate smoothed derivative
-    6. Zero-crossing: Find where derivative = 0 (peak minimum)
-    7. Linear Regression: Refine position in window around zero-crossing
-
-    Args:
-        transmission_spectrum: Transmission data (%) - SHOULD BE PRE-FILTERED
-        wavelengths: Wavelength array corresponding to spectrum
-        fourier_weights: Pre-calculated Fourier weights for denoising
-        window_size: Window size around zero-crossing for refinement (default: 165)
-        apply_sg_filter: Apply additional SG filter (default: False, already done in pipeline)
-        sg_window: Savitzky-Golay window length (default: 21, must be odd)
-        sg_polyorder: Savitzky-Golay polynomial order (default: 3)
-        s_reference: S-pol reference spectrum for SNR-aware weighting (optional)
-        snr_strength: Strength of SNR weighting, 0-1 (default: 0.3)
-
-    Returns:
-        float: Resonance wavelength in nm, or np.nan if not found
-
-    """
-    try:
-        spectrum = transmission_spectrum
-
-        # OPTIONAL: Apply additional Savitzky-Golay filter if requested
-        # Note: Transmission should already be SG-filtered in the main pipeline
-        if apply_sg_filter and len(spectrum) >= sg_window:
-            spectrum = savgol_filter(spectrum, sg_window, sg_polyorder)
-
-        # Apply SNR-aware weighting if S-reference is provided
-        if s_reference is not None and len(s_reference) == len(spectrum):
-            # Normalize S-reference to 0-1 range
-            s_min = np.min(s_reference)
-            s_max = np.max(s_reference)
-            if s_max > s_min:
-                normalized_s_ref = (s_reference - s_min) / (s_max - s_min)
-            else:
-                normalized_s_ref = np.ones_like(s_reference)
-
-            # Calculate SNR weights: high S-pol intensity = more weight (better SNR)
-            snr_weights = 1.0 + snr_strength * normalized_s_ref
-
-            # Normalize to mean ~1.0
-            mean_weight = np.mean(snr_weights)
-            if mean_weight > 0:
-                snr_weights = snr_weights / mean_weight
-
-            # Apply weights to transmission
-            spectrum = spectrum * snr_weights
-
-        # Linear detrending: Remove baseline slope
-        fourier_coeff = np.zeros_like(spectrum)
-        fourier_coeff[0] = 2 * (spectrum[-1] - spectrum[0])
-
-        # Apply DST with linear detrending and Fourier weights
-        fourier_coeff[1:-1] = fourier_weights * dst(
-            spectrum[1:-1]
-            - np.linspace(spectrum[0], spectrum[-1], len(spectrum))[1:-1],
-            1,
-        )
-
-        # Calculate derivative using IDCT
-        derivative = idct(fourier_coeff, 1)
-
-        # Find zero-crossing (resonance minimum)
-        zero = derivative.searchsorted(0)
-
-        # Define window around zero-crossing
-        start = max(zero - window_size, 0)
-        end = min(zero + window_size, len(spectrum) - 1)
-
-        # Refine position using linear regression
-        line = linregress(wavelengths[start:end], derivative[start:end])
-
-        # Calculate resonance wavelength from line intercept
-        fit_lambda = -line.intercept / line.slope
-
-        return float(fit_lambda)
-
-    except Exception as e:
-        logger.debug(f"Error finding resonance wavelength: {e}")
-        return np.nan
 
 
 def apply_centered_median_filter(
@@ -220,94 +56,6 @@ def apply_centered_median_filter(
 
     return float(np.nanmedian(window_data))
 
-
-def calculate_fourier_weights(num_points: int, alpha: float = 2e3) -> np.ndarray:
-    """Calculate Fourier weights for signal denoising.
-
-    These weights are used in the Fourier-based peak finding algorithm to
-    suppress high-frequency noise while preserving the resonance dip feature.
-
-    Args:
-        num_points: Number of points in spectrum
-        alpha: Regularization parameter (higher = more smoothing, default: 2e3)
-
-    Returns:
-        np.ndarray: Fourier weights array of length (num_points - 1)
-
-    """
-    n = num_points - 1
-    phi = np.pi / n * np.arange(1, n)
-    phi2 = phi**2
-    return phi / (1 + alpha * phi2 * (1 + phi2))
-
-
-def calculate_snr_aware_fourier_weights(
-    ref_spectrum: np.ndarray,
-    wavelengths: np.ndarray,
-    alpha: float = 2e3,
-    snr_weight_strength: float = 0.5,
-) -> np.ndarray:
-    """Calculate SNR-aware Fourier weights from LED reference spectrum.
-
-    Instead of flattening the spectrum (which creates artifacts when S-mode
-    and P-mode have different LED profiles), use the S-ref spectrum as metadata
-    to guide peak finding toward high-SNR regions.
-
-    Key insights:
-    - S-ref shows LED spectral strength per wavelength (proxy for SNR)
-    - Higher LED intensity = higher SNR = more reliable peak data
-    - Lower wavelengths (blue) have lower noise than red end
-    - Weight peak finding to trust high-SNR regions more
-
-    Algorithm:
-    1. Calculate base Fourier denoising weights (frequency domain)
-    2. Calculate SNR weights from ref_spectrum (spatial domain)
-    3. Combine: weights = base_weights * (1 + snr_strength * snr_weights)
-
-    Args:
-        ref_spectrum: S-mode reference spectrum (LED profile, dark-subtracted)
-        wavelengths: Wavelength array corresponding to spectrum
-        alpha: Fourier regularization parameter (default: 2e3)
-        snr_weight_strength: How much to weight toward high-SNR regions (0-1, default: 0.5)
-                           0 = uniform weighting, 1 = full SNR weighting
-
-    Returns:
-        np.ndarray: Combined Fourier weights (length = num_points - 1)
-
-    Example:
-        >>> ref_spectrum = np.array([1000, 1500, 2000, 1800, 1200, 800, 500])  # LED profile
-        >>> wavelengths = np.linspace(550, 700, 7)
-        >>> weights = calculate_snr_aware_fourier_weights(ref_spectrum, wavelengths)
-        >>> # weights will favor the 600-650nm region (peak LED intensity)
-
-    """
-    n = len(ref_spectrum) - 1
-
-    # 1. Calculate base Fourier weights (frequency-domain denoising)
-    phi = np.pi / n * np.arange(1, n)
-    phi2 = phi**2
-    base_weights = phi / (1 + alpha * phi2 * (1 + phi2))
-
-    # 2. Calculate SNR weights from LED profile
-    # Higher LED intensity = higher SNR = more reliable data
-    # Normalize ref_spectrum to 0-1 range
-    ref_normalized = ref_spectrum.copy()
-    ref_min = np.min(ref_normalized)
-    ref_max = np.max(ref_normalized)
-
-    if ref_max > ref_min:
-        ref_normalized = (ref_normalized - ref_min) / (ref_max - ref_min)
-    else:
-        ref_normalized = np.ones_like(ref_normalized)
-
-    # SNR weights: higher where LED is strong
-    # Apply to interior points (matching Fourier coefficient indexing)
-    snr_weights = ref_normalized[1:-1]
-
-    # 3. Combine base weights with SNR guidance
-    # snr_weight_strength controls how much to favor high-SNR regions
-    # 0 = uniform (base weights only), 1 = full SNR weighting
-    return base_weights * (1.0 + snr_weight_strength * snr_weights)
 
 
 def validate_sp_orientation(
@@ -376,7 +124,6 @@ def validate_sp_orientation(
     max_idx = np.argmax(transmission)
 
     min_val = transmission[min_idx]
-    transmission[max_idx]
 
     # Determine which is more prominent
     spectrum_range = np.ptp(transmission)  # peak-to-peak amplitude
@@ -584,7 +331,7 @@ def auto_detect_injection_point(
             baseline_coeffs = np.polyfit(baseline_times, baseline_values, 1)
             baseline_trend = np.poly1d(baseline_coeffs)
             baseline_slope = baseline_coeffs[0]  # Drift rate
-        except:
+        except Exception:
             baseline_trend = lambda t: baseline_mean
             baseline_slope = 0.0
 
@@ -646,21 +393,8 @@ def auto_detect_injection_point(
         injection_time = times[injection_idx]
 
         # Calculate slope at injection point for reporting
-        if injection_idx > 0 and injection_idx < len(values) - 1:
-            dt = times[injection_idx + 1] - times[injection_idx - 1]
-            dy = values[injection_idx + 1] - values[injection_idx - 1]
-            max_slope_value = dy / dt if dt > 0 else 0.0
-        elif injection_idx == 0 and len(values) > 1:
-            dt = times[1] - times[0]
-            dy = values[1] - values[0]
-            max_slope_value = dy / dt if dt > 0 else 0.0
-        elif injection_idx > 0:
-            # Last point — use backward difference
-            dt = times[injection_idx] - times[injection_idx - 1]
-            dy = values[injection_idx] - values[injection_idx - 1]
-            max_slope_value = dy / dt if dt > 0 else 0.0
-        else:
-            max_slope_value = 0.0
+        # np.gradient uses centered diff for interior points, forward/backward at edges
+        max_slope_value = float(np.gradient(values, times)[injection_idx])
 
         # Determine injection direction
         injection_direction = 1 if max_slope_value >= 0 else -1
@@ -793,31 +527,22 @@ def measure_delta_spr(
             logger.warning("Insufficient data for delta SPR measurement")
             return result
 
+        def _avg_at(target: float) -> tuple[int, int, float, float]:
+            """Return (lo, hi, spr_mean, actual_time) for a centered avg_points window."""
+            center = int(np.argmin(np.abs(times - target)))
+            half = avg_points // 2
+            lo = max(0, center - half)
+            hi = min(len(spr_values), lo + avg_points)
+            lo = max(0, hi - avg_points)  # re-clamp if near end
+            return lo, hi, float(np.mean(spr_values[lo:hi])), float(times[center])
+
         # --- Start measurement: injection_time - pre_offset ---
-        start_target = injection_time - pre_offset
-        start_center_idx = int(np.argmin(np.abs(times - start_target)))
-
-        # Gather avg_points centered on the closest index
-        half = avg_points // 2
-        start_lo = max(0, start_center_idx - half)
-        start_hi = min(len(spr_values), start_lo + avg_points)
-        start_lo = max(0, start_hi - avg_points)  # re-clamp if near end
-
+        start_lo, start_hi, start_spr, start_time = _avg_at(injection_time - pre_offset)
         start_indices = list(range(start_lo, start_hi))
-        start_spr = float(np.mean(spr_values[start_lo:start_hi]))
-        start_time = float(times[start_center_idx])
 
         # --- End measurement: injection_time + contact_time ---
-        end_target = injection_time + contact_time
-        end_center_idx = int(np.argmin(np.abs(times - end_target)))
-
-        end_lo = max(0, end_center_idx - half)
-        end_hi = min(len(spr_values), end_lo + avg_points)
-        end_lo = max(0, end_hi - avg_points)
-
+        end_lo, end_hi, end_spr, end_time = _avg_at(injection_time + contact_time)
         end_indices = list(range(end_lo, end_hi))
-        end_spr = float(np.mean(spr_values[end_lo:end_hi]))
-        end_time = float(times[end_center_idx])
 
         # Quality check: how close are actual times to targets?
         start_gap = abs(start_time - start_target)

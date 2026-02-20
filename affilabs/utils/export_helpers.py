@@ -72,24 +72,37 @@ class ExportHelpers:
         Creates wide-format DataFrame with Time_A, SPR_A, Time_B, SPR_B columns.
         All arrays padded to same length with NaN for alignment.
         
+        Uses timeline_data (full experiment) NOT cycle_data (cursor window) so the
+        exported sheet always contains the complete recording, not just whatever
+        happened to be visible in the "Cycle of Interest" panel at save time.
+        
+        SPR (delta from baseline) is computed using baseline_wavelengths if available,
+        falling back to the first valid point in each channel's timeline.
+        
         This is a shared utility to eliminate duplication across export paths.
         Used by: recording_manager, export_helpers (2 places)
         
         Args:
-            buffer_mgr: DataBufferManager instance with cycle_data attribute
+            buffer_mgr: DataBufferManager instance with timeline_data attribute
             channels: List of channel letters (default: ['a', 'b', 'c', 'd'])
             
         Returns:
             DataFrame with Channels XY data, or empty DataFrame if no data
         """
+        from affilabs.app_config import WAVELENGTH_TO_RU_CONVERSION
+
         if channels is None:
             channels = ['a', 'b', 'c', 'd']
         
+        # Use timeline_data (full experiment) — cycle_data only holds the cursor
+        # window which is at most the last cycle visible in the bottom graph.
+        source = buffer_mgr.timeline_data
+
         # Find max length across all channels
         max_len = 0
         for ch in channels:
-            if hasattr(buffer_mgr.cycle_data[ch], 'time'):
-                max_len = max(max_len, len(buffer_mgr.cycle_data[ch].time))
+            if ch in source and hasattr(source[ch], 'time'):
+                max_len = max(max_len, len(source[ch].time))
         
         if max_len == 0:
             return pd.DataFrame()  # Empty DataFrame - no channel data
@@ -99,15 +112,30 @@ class ExportHelpers:
         for ch in channels:
             ch_upper = ch.upper()
             
-            # Get time and SPR data for this channel
-            if hasattr(buffer_mgr.cycle_data[ch], 'time'):
-                ch_time = np.array(buffer_mgr.cycle_data[ch].time)
-                ch_spr = np.array(buffer_mgr.cycle_data[ch].spr)
-                
+            buf = source.get(ch) if isinstance(source, dict) else getattr(source, ch, None)
+            if buf is not None and hasattr(buf, 'time') and len(buf.time) > 0:
+                ch_time = np.array(buf.time)
+                ch_wavelength = np.array(buf.wavelength)
+
+                # Compute delta SPR from baseline
+                # Prefer calibrated baseline; fall back to first valid wavelength in timeline
+                baseline = None
+                if hasattr(buffer_mgr, 'baseline_wavelengths'):
+                    baseline = buffer_mgr.baseline_wavelengths.get(ch)
+                if baseline is None:
+                    for wl in ch_wavelength:
+                        if 560.0 <= wl <= 720.0:
+                            baseline = float(wl)
+                            break
+                if baseline is None and len(ch_wavelength) > 0:
+                    baseline = float(ch_wavelength[0])
+                baseline = baseline or 0.0
+
+                ch_spr = (ch_wavelength - baseline) * WAVELENGTH_TO_RU_CONVERSION
+
                 # Pad to max length if needed (ensures all columns same length)
                 if len(ch_time) < max_len:
                     ch_time = np.pad(ch_time, (0, max_len - len(ch_time)), constant_values=np.nan)
-                if len(ch_spr) < max_len:
                     ch_spr = np.pad(ch_spr, (0, max_len - len(ch_spr)), constant_values=np.nan)
             else:
                 # Channel has no data - fill entire column with NaN

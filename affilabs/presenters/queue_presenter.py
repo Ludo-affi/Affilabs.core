@@ -47,6 +47,7 @@ from affilabs.managers.queue_manager import QueueManager
 from affilabs.managers.command_history import (
     CommandHistory,
     AddCycleCommand,
+    AddMethodCommand,
     DeleteCycleCommand,
     DeleteCyclesCommand,
     ReorderCycleCommand,
@@ -133,6 +134,23 @@ class QueuePresenter(QObject):
             True if added successfully
         """
         cmd = AddCycleCommand(self._queue_manager, cycle)
+        return self._history.execute(cmd)
+
+    def add_method(self, cycles: List[Cycle], method_name: str = "Untitled Method") -> bool:
+        """Add multiple cycles as a batch (one undo removes entire method).
+
+        Args:
+            cycles: List of cycles to add
+            method_name: Display name for the method
+
+        Returns:
+            True if method added successfully
+        """
+        if not cycles:
+            logger.warning("add_method: empty cycle list")
+            return False
+
+        cmd = AddMethodCommand(self._queue_manager, cycles, method_name)
         return self._history.execute(cmd)
 
     @Slot(int)

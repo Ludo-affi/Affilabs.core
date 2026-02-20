@@ -123,8 +123,8 @@ class MethodTabBuilder:
 
         """
         self._build_intelligence_bar(tab_layout)
-        self._build_cycle_settings(tab_layout)
         self._build_cycle_history_queue(tab_layout)
+        self._build_power_user_section(tab_layout)
 
     def _build_intelligence_bar(self, tab_layout: QVBoxLayout):
         """Build intelligence bar section."""
@@ -184,24 +184,13 @@ class MethodTabBuilder:
         # Queue progress bar removed - was visually unappealing
         # tab_layout.addSpacing(8)
 
-    def _build_cycle_settings(self, tab_layout: QVBoxLayout):
-        """Build method builder section (replaced with button to open popup)."""
-        # Container for Build Method section
-        from PySide6.QtWidgets import QFrame
+    def _build_power_user_section(self, tab_layout: QVBoxLayout):
+        """Build collapsible Power User section at the bottom with Build Method button."""
+        tab_layout.addSpacing(8)
 
-        method_container = QFrame()
-        method_container.setStyleSheet(
-            "QFrame {"
-            "  background: transparent;"
-            "  border: none;"
-            "  padding: 0px;"
-            "}"
-        )
-        method_layout = QVBoxLayout(method_container)
-        method_layout.setContentsMargins(0, 0, 0, 0)
-        method_layout.setSpacing(0)
+        power_section = CollapsibleSection("POWER USER", is_expanded=False)
 
-        # Build Method button with SVG icon
+        # Build Method button
         self.sidebar.build_method_btn = QPushButton("Build Method")
         self.sidebar.build_method_btn.setFixedHeight(40)
         self.sidebar.build_method_btn.setStyleSheet(
@@ -215,23 +204,16 @@ class MethodTabBuilder:
             "  font-weight: 600;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
             "}"
-            "QPushButton:hover {"
-            "  background: #0051D5;"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #003D99;"
-            "}"
+            "QPushButton:hover { background: #0051D5; }"
+            "QPushButton:pressed { background: #003D99; }"
         )
-        # Add SVG icon
         add_icon = self._create_add_icon()
         self.sidebar.build_method_btn.setIcon(add_icon)
         self.sidebar.build_method_btn.setIconSize(QSize(18, 18))
         self.sidebar.build_method_btn.setToolTip("Open method builder to create and queue cycles")
-        method_layout.addWidget(self.sidebar.build_method_btn)
+        power_section.add_content_widget(self.sidebar.build_method_btn)
 
-        # Add container to main layout
-        tab_layout.addWidget(method_container)
-        tab_layout.addSpacing(12)
+        tab_layout.addWidget(power_section)
 
     def _build_cycle_history_queue(self, tab_layout: QVBoxLayout):
         """Build cycle queue management section."""
@@ -535,6 +517,33 @@ class MethodTabBuilder:
         table_footer_row.addWidget(self.sidebar.queue_size_label)
         table_footer_row.addStretch()
 
+        # Retrieve Method Button (restore queue after run completion)
+        self.sidebar.retrieve_method_btn = QPushButton("↻ Retrieve Method")
+        self.sidebar.retrieve_method_btn.setFixedHeight(28)
+        self.sidebar.retrieve_method_btn.setVisible(False)  # Only show after run completes
+        self.sidebar.retrieve_method_btn.setToolTip("Restore the completed method to queue for re-running")
+        self.sidebar.retrieve_method_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  color: #007AFF;"
+            "  border: 1px solid rgba(0, 122, 255, 0.3);"
+            "  border-radius: 6px;"
+            "  padding: 4px 12px;"
+            "  font-size: 11px;"
+            "  font-weight: 600;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(0, 122, 255, 0.08);"
+            "  border-color: #007AFF;"
+            "}"
+            "QPushButton:pressed {"
+            "  background: rgba(0, 122, 255, 0.15);"
+            "}",
+        )
+        self.sidebar.retrieve_method_btn.clicked.connect(self._on_retrieve_method)
+        table_footer_row.addWidget(self.sidebar.retrieve_method_btn)
+
         # View All Cycles Button
         self.sidebar.open_table_btn = QPushButton("📊 View All")
         self.sidebar.open_table_btn.setFixedHeight(28)
@@ -649,6 +658,80 @@ class MethodTabBuilder:
             logger.info(f"✓ Duplicated last cycle: {new_cycle.type} ({new_cycle.length_minutes} min)")
         else:
             logger.warning("Failed to duplicate cycle (queue may be locked)")
+
+    def _on_retrieve_method(self):
+        """Retrieve (restore) the completed method back to the queue for re-running."""
+        from affilabs.utils.logger import logger
+
+        if not hasattr(self, '_app_reference') or self._app_reference is None:
+            logger.warning("Cannot retrieve method - no app reference")
+            return
+
+        app = self._app_reference
+        if not hasattr(app, 'queue_presenter'):
+            logger.warning("Cannot retrieve method - no queue_presenter")
+            return
+
+        # Check if there's a method snapshot to retrieve
+        if not app.queue_presenter.has_method_snapshot():
+            logger.warning("No method to retrieve - run a queued method first")
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                None,
+                "No Method to Retrieve",
+                "There is no completed method to retrieve.\n\n"
+                "This button appears after a queue run completes, allowing you to re-run the same method."
+            )
+            return
+
+        # Get the original method from snapshot
+        original_method = app.queue_presenter.get_original_method()
+
+        if not original_method:
+            logger.warning("Method snapshot is empty")
+            return
+
+        # Clear current queue first
+        app.queue_presenter.clear_queue()
+
+        # Re-add all cycles from the original method (as fresh copies)
+        from affilabs.domain.cycle import Cycle
+        import time as _time
+
+        for cycle in original_method:
+            # Create a fresh copy with reset state
+            new_cycle = Cycle(
+                type=cycle.type,
+                length_minutes=cycle.length_minutes,
+                name=cycle.name,
+                note=cycle.note,
+                concentration_value=cycle.concentration_value,
+                concentration_units=cycle.concentration_units,
+                units=cycle.units,
+                concentrations=dict(cycle.concentrations) if cycle.concentrations else {},
+                flow_rate=cycle.flow_rate,
+                pump_type=cycle.pump_type,
+                channels=cycle.channels,
+                injection_method=cycle.injection_method,
+                injection_delay=cycle.injection_delay,
+                contact_time=cycle.contact_time,
+                manual_injection_mode=cycle.manual_injection_mode,
+                planned_concentrations=list(cycle.planned_concentrations),
+                status="pending",
+                timestamp=_time.time(),
+            )
+            app.queue_presenter.add_cycle(new_cycle)
+
+        # Clear the snapshot now that it's been retrieved
+        app.queue_presenter.clear_method_snapshot()
+
+        # Hide the retrieve button
+        self.sidebar.retrieve_method_btn.setVisible(False)
+
+        # Sync backward compatibility list
+        app.segment_queue = app.queue_presenter.get_queue_snapshot()
+
+        logger.info(f"✓ Retrieved method: {len(original_method)} cycles restored to queue")
 
     def _combo_style(self):
         """Return consistent combobox style."""

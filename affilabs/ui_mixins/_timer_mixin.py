@@ -161,8 +161,20 @@ class TimerMixin:
             self._popout_timer.set_paused(is_paused)
         else:
             # No timer running — open in configurable mode
-            last_minutes = getattr(self, '_last_timer_minutes', 5)
-            last_seconds = getattr(self, '_last_timer_seconds', 0)
+            # Use last-set time if available; otherwise fall back to current cycle's contact_time
+            if hasattr(self, '_last_timer_minutes'):
+                last_minutes = self._last_timer_minutes
+                last_seconds = getattr(self, '_last_timer_seconds', 0)
+            else:
+                # Pre-populate from the active cycle's contact_time (if set)
+                current_cycle = getattr(getattr(self, 'app', None), '_current_cycle', None)
+                if current_cycle and getattr(current_cycle, 'contact_time', None) and current_cycle.contact_time > 0:
+                    ct = int(current_cycle.contact_time)
+                    last_minutes = ct // 60
+                    last_seconds = ct % 60
+                else:
+                    last_minutes = 5
+                    last_seconds = 0
             last_label = getattr(self, '_last_timer_label', "Timer")
 
             self._popout_timer.set_configurable(
@@ -379,59 +391,110 @@ class TimerMixin:
         """Automatically place wash flags when contact time expires.
 
         Places wash flags on all channels that have injection flags.
-        Wash time = current sensorgram time (when contact timer expired).
+        Wash time = injection_flag.time + contact_time (cycle-relative display coords).
+
+        Uses FlagManager (self.app.flag_mgr) — the single source of truth for flags.
         """
         from affilabs.utils.logger import logger
 
         try:
-            # Get current sensorgram time
-            if not hasattr(self, 'full_timeline_graph'):
+            app = getattr(self, 'app', None)
+            if not app:
                 return
 
-            timeline = self.full_timeline_graph
-            if not hasattr(timeline, 'stop_cursor'):
+            flag_mgr = getattr(app, 'flag_mgr', None)
+            if not flag_mgr:
+                logger.debug("No FlagManager available - skipping automatic wash flags")
                 return
 
-            wash_time = timeline.stop_cursor.value()
-
-            # Access flag markers from main app instance
-            if not hasattr(self.app, '_flag_markers'):
-                logger.debug("No flag markers found - skipping automatic wash flags")
+            buffer_mgr = getattr(app, 'buffer_mgr', None)
+            clock = getattr(app, 'clock', None)
+            if not buffer_mgr or not clock:
+                logger.debug("No buffer_mgr or clock - skipping automatic wash flags")
                 return
 
-            # Find all channels with injection flags
-            injection_flags = {f['channel']: f for f in self.app._flag_markers if f['type'] == 'injection'}
+            # Read injection flags from FlagManager (Flag domain model instances)
+            from affilabs.domain.flag import InjectionFlag
+            injection_flags = [
+                f for f in flag_mgr._flag_markers if isinstance(f, InjectionFlag)
+            ]
 
             if not injection_flags:
                 logger.debug("No injection flags found - skipping automatic wash flags")
                 return
 
+            # Get current cycle display time for wash position
+            # The wash time = now in cycle-relative display coordinates
+            if not hasattr(self, 'full_timeline_graph'):
+                return
+            timeline = self.full_timeline_graph
+            if not hasattr(timeline, 'stop_cursor') or not hasattr(timeline, 'start_cursor'):
+                return
+
+            from affilabs.core.experiment_clock import TimeBase
+            stop_display = timeline.stop_cursor.value()
+            start_display = timeline.start_cursor.value()
+            start_raw = clock.convert(start_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
+            stop_raw = clock.convert(stop_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
+            # Wash time in cycle-relative display coords (same coords the injection flag uses)
+            wash_display_time = stop_raw - start_raw
+
+            import numpy as np
+
             # Place wash flag on each channel that has an injection flag
-            for channel, inj_flag in injection_flags.items():
-                # Get SPR value at wash time for this channel
+            for inj_flag in injection_flags:
+                ch = inj_flag.channel.lower()
                 try:
-                    if channel not in self.buffer_mgr.cycle_data:
+                    if ch not in buffer_mgr.cycle_data:
                         continue
 
-                    channel_data = self.buffer_mgr.cycle_data[channel]
+                    channel_data = buffer_mgr.cycle_data[ch]
                     if len(channel_data.time) == 0 or len(channel_data.spr) == 0:
                         continue
 
-                    # Convert wash time from display to raw for lookup
-                    from affilabs.domain import TimeBase
-                    wash_time_raw = self.clock.convert(wash_time, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
-
-                    # Find SPR value at wash time
-                    import numpy as np
-                    time_idx = np.argmin(np.abs(channel_data.time - wash_time_raw))
+                    # Look up SPR value at wash time (raw elapsed coords in buffer)
+                    time_idx = np.argmin(np.abs(channel_data.time - stop_raw))
                     spr_val = channel_data.spr[time_idx]
 
-                    # Place wash flag using main app's flag system
-                    self.app._add_flag_marker(channel, wash_time, spr_val, 'wash')
-                    logger.info(f"🧼 Automatic wash flag placed on channel {channel.upper()} at t={wash_time:.1f}s")
+                    # Place wash flag via FlagManager (modern path)
+                    flag_mgr.add_flag_marker(
+                        channel=ch,
+                        time_val=wash_display_time,
+                        spr_val=spr_val,
+                        flag_type='wash'
+                    )
+                    logger.info(
+                        f"🧼 Automatic wash flag placed on channel {ch.upper()} "
+                        f"at display t={wash_display_time:.1f}s (SPR={spr_val:.1f})"
+                    )
 
                 except Exception as e:
-                    logger.debug(f"Could not place wash flag on channel {channel}: {e}")
+                    logger.debug(f"Could not place wash flag on channel {ch}: {e}")
+
+            # Also draw a single wash event line on the live sensorgram (full_timeline_graph)
+            # stop_display is already in DISPLAY coords (the stop cursor position)
+            try:
+                import pyqtgraph as pg
+                from PySide6.QtCore import Qt
+                wash_line = pg.InfiniteLine(
+                    pos=stop_display,
+                    angle=90,
+                    pen=pg.mkPen(color=(30, 144, 255), width=2, style=Qt.PenStyle.DashLine),
+                    movable=False,
+                    label='🧼 Wash',
+                    labelOpts={
+                        'position': 0.92,
+                        'color': (30, 144, 255),
+                        'fill': (255, 255, 255, 180),
+                    }
+                )
+                timeline.addItem(wash_line)
+                if not hasattr(self, '_wash_timeline_lines'):
+                    self._wash_timeline_lines = []
+                self._wash_timeline_lines.append(wash_line)
+                logger.debug(f"🧼 Wash line added to live sensorgram at display={stop_display:.1f}s")
+            except Exception as e:
+                logger.debug(f"Could not add wash line to live sensorgram: {e}")
 
         except Exception as e:
             logger.debug(f"Could not place automatic wash flags: {e}")

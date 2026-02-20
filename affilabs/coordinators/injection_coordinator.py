@@ -40,6 +40,8 @@ import asyncio
 import threading
 from typing import TYPE_CHECKING, Optional
 
+import numpy as np
+
 from PySide6.QtCore import QObject, Signal
 
 from affilabs.utils.logger import logger
@@ -208,15 +210,7 @@ class InjectionCoordinator(QObject):
             total_injections = len(cycle.planned_concentrations)
             logger.info(f"  {cycle.type} Cycle: Injection {injection_num}/{total_injections}")
 
-        # Prepare channels for real-time detection
-        # Use cycle's target_channels if explicitly set, otherwise derive from concentrations or fall back to hardware default
-        if getattr(cycle, 'target_channels', None):
-            self._detection_channels = cycle.target_channels
-        elif getattr(cycle, 'concentrations', None):
-            # Auto-derive from concentrations dict (e.g., {"A": 50, "C": 40} → "AC")
-            self._detection_channels = "".join(sorted(cycle.concentrations.keys()))
-        else:
-            self._detection_channels = "ABCD" if self._is_p4spr else (sample_info.get("channels") or "AC")
+        self._detection_channels = self._resolve_detection_channels(cycle, sample_info)
 
         # Save current cycle for detection completion
         self._current_cycle = cycle
@@ -280,16 +274,11 @@ class InjectionCoordinator(QObject):
         from affilabs.dialogs.manual_injection_dialog import ManualInjectionDialog
 
         if dialog.detected_injection_time is not None:
-            # Dialog auto-detected injection — place flag for primary channel
+            # Dialog auto-detected injection — place flags for ALL detected channels
             logger.info(
-                f"✓ Injection auto-detected: channel {dialog.detected_channel.upper()} "
+                f"✓ Injection auto-detected: primary channel {dialog.detected_channel.upper()} "
                 f"at t={dialog.detected_injection_time:.1f}s "
                 f"(confidence: {dialog.detected_confidence:.0%})"
-            )
-            self.injection_flag_requested.emit(
-                dialog.detected_channel,
-                dialog.detected_injection_time,
-                dialog.detected_confidence,
             )
 
             # Use dialog's per-channel results (already scanned during grace period)
@@ -305,8 +294,21 @@ class InjectionCoordinator(QObject):
                     f"{list(cycle.injection_time_by_channel.keys())} "
                     f"(confidences: {cycle.injection_confidence_by_channel})"
                 )
+
+                # Emit injection flag for EVERY detected channel (not just primary)
+                for ch, result in dialog._detected_channels_results.items():
+                    self.injection_flag_requested.emit(
+                        ch.lower(),
+                        result['time'],
+                        result['confidence'],
+                    )
             else:
-                # Fallback: retroactive scan if dialog didn't capture per-channel
+                # Fallback: emit flag for primary channel only, then retroactive scan
+                self.injection_flag_requested.emit(
+                    dialog.detected_channel,
+                    dialog.detected_injection_time,
+                    dialog.detected_confidence,
+                )
                 self._window_start_time = dialog.window_start_time
                 self._scan_all_channels_for_injection()
 
@@ -322,6 +324,24 @@ class InjectionCoordinator(QObject):
             logger.warning("60s window expired — no injection peak detected")
             if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
                 cycle.injection_count += 1
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_detection_channels(self, cycle, sample_info: dict) -> str:
+        """Resolve which channels to monitor for injection detection.
+
+        Priority:
+        1. cycle.target_channels (explicit override)
+        2. Keys of cycle.concentrations (auto-derive, e.g. {"A": 50} → "A")
+        3. Hardware default: "ABCD" for P4SPR, else sample_info channels or "AC"
+        """
+        if getattr(cycle, 'target_channels', None):
+            return cycle.target_channels
+        if getattr(cycle, 'concentrations', None):
+            return "".join(sorted(cycle.concentrations.keys()))
+        return "ABCD" if self._is_p4spr else (sample_info.get("channels") or "AC")
 
     # ------------------------------------------------------------------
     # Per-channel injection scan
@@ -340,7 +360,6 @@ class InjectionCoordinator(QObject):
             return
 
         try:
-            import numpy as np
             from affilabs.utils.spr_signal_processing import detect_injection_all_channels
 
             # Determine window end = current latest time
@@ -482,12 +501,6 @@ class InjectionCoordinator(QObject):
                 logger.info(
                     f"✓ Valves opened for manual injection (channels: {channels})"
                 )
-
-            # Optionally open 6-port valves to INJECT position
-            # This depends on your hardware setup - may or may not be needed
-            # Uncomment if 6-port should be open during manual injection:
-            # if hasattr(ctrl, 'knx_six_both'):
-            #     ctrl.knx_six_both(state=1)
 
         except Exception as e:
             logger.error(f"Failed to open valves: {e}")

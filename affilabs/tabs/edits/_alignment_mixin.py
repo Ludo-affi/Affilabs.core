@@ -54,104 +54,6 @@ class AlignmentMixin:
         if hasattr(self.main_window, '_on_cycle_selected_in_table'):
             self.main_window._on_cycle_selected_in_table()
 
-    def _on_alignment_shift_changed(self, shift):
-        """Handle time shift change in alignment panel."""
-        # Get selected row
-        selected_items = self.cycle_data_table.selectedItems()
-        if not selected_items:
-            return
-
-        row_idx = selected_items[0].row()
-
-        # Update alignment data
-        if row_idx not in self._cycle_alignment:
-            self._cycle_alignment[row_idx] = {'channel': 'All', 'shift': 0.0}
-
-        self._cycle_alignment[row_idx]['shift'] = shift
-
-        logger.info(f"Cycle {row_idx + 1} time shift changed to: {shift}s")
-
-        # Trigger graph update
-        if hasattr(self.main_window, '_on_cycle_selected_in_table'):
-            self.main_window._on_cycle_selected_in_table()
-
-    # ------------------------------------------------------------------
-    # Cycle start / end time editing
-    # ------------------------------------------------------------------
-    def _on_cycle_start_changed(self, start_time):
-        """Handle cycle start time change."""
-        # Get selected row
-        selected_items = self.cycle_data_table.selectedItems()
-        if not selected_items:
-            return
-
-        row_idx = selected_items[0].row()
-
-        # Update cycle data
-        if row_idx < len(self.main_window._loaded_cycles_data):
-            cycle = self.main_window._loaded_cycles_data[row_idx]
-            old_start = cycle.get('start_time_sensorgram', 0)
-            cycle['start_time_sensorgram'] = start_time
-
-            # Ensure end time is after start time
-            end_time = cycle.get('end_time_sensorgram', start_time + 300)
-            if end_time <= start_time:
-                end_time = start_time + 300
-                cycle['end_time_sensorgram'] = end_time
-                self.cycle_end_spinbox.blockSignals(True)
-                self.cycle_end_spinbox.setValue(end_time)
-                self.cycle_end_spinbox.blockSignals(False)
-
-            # Update duration
-            duration_min = (end_time - start_time) / 60.0
-            cycle['duration_minutes'] = duration_min
-
-            logger.info(f"Cycle {row_idx + 1} start time: {old_start:.2f}s -> {start_time:.2f}s")
-
-            # Update table
-            self._update_cycle_table_row(row_idx, cycle)
-
-            # Trigger graph update
-            if hasattr(self.main_window, '_on_cycle_selected_in_table'):
-                self.main_window._on_cycle_selected_in_table()
-
-    def _on_cycle_end_changed(self, end_time):
-        """Handle cycle end time change."""
-        # Get selected row
-        selected_items = self.cycle_data_table.selectedItems()
-        if not selected_items:
-            return
-
-        row_idx = selected_items[0].row()
-
-        # Update cycle data
-        if row_idx < len(self.main_window._loaded_cycles_data):
-            cycle = self.main_window._loaded_cycles_data[row_idx]
-            start_time = cycle.get('start_time_sensorgram', 0)
-
-            # Ensure end time is after start time
-            if end_time <= start_time:
-                end_time = start_time + 300
-                self.cycle_end_spinbox.blockSignals(True)
-                self.cycle_end_spinbox.setValue(end_time)
-                self.cycle_end_spinbox.blockSignals(False)
-
-            old_end = cycle.get('end_time_sensorgram', end_time)
-            cycle['end_time_sensorgram'] = end_time
-
-            # Update duration
-            duration_min = (end_time - start_time) / 60.0
-            cycle['duration_minutes'] = duration_min
-
-            logger.info(f"Cycle {row_idx + 1} end time: {old_end:.2f}s -> {end_time:.2f}s")
-
-            # Update table
-            self._update_cycle_table_row(row_idx, cycle)
-
-            # Trigger graph update
-            if hasattr(self.main_window, '_on_cycle_selected_in_table'):
-                self.main_window._on_cycle_selected_in_table()
-
     # ------------------------------------------------------------------
     # Processing cycle creation
     # ------------------------------------------------------------------
@@ -542,7 +444,7 @@ class AlignmentMixin:
             for ch_idx, delta_val in enumerate(self.current_delta_values):
                 cycle[f'delta_ch{ch_idx + 1}'] = round(delta_val, 2)
                 delta_parts.append(f"{ch_labels[ch_idx]}:{delta_val:.0f}")
-            # Update ΔSPR column in the table (col 4 — after Export, Type, Time, Conc.)
+            # Update ΔSPR column in the table (col 4 — last column)
             delta_str = " ".join(delta_parts)
             self.cycle_data_table.setItem(row_idx, self.TABLE_COL_DELTA_SPR, QTableWidgetItem(delta_str))
 

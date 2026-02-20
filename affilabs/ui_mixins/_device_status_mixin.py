@@ -709,3 +709,14 @@ class DeviceStatusMixin:
             error_msg.exec()
 
             logger.error(f"Error downloading debug log: {e}")
+
+    def _handle_open_issue_tracker(self) -> None:
+        """Open the OEM internal Issue Tracker dialog."""
+        try:
+            from affilabs.dialogs.issue_tracker_dialog import IssueTrackerDialog
+            dlg = IssueTrackerDialog(parent=self)
+            dlg.show()
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Issue Tracker", f"Could not open Issue Tracker:\n{e}")
+            logger.error(f"Issue tracker open failed: {e}")

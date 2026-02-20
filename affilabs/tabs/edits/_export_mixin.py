@@ -861,7 +861,8 @@ class ExportMixin:
         # ── External Software ──
         external_btn = self._export_sidebar_button(
             "🔗", "External Software",
-            "Export formatted for Prism / Origin / other"
+            "Export concentration vs. ΔSPR table (CSV) for Prism / Origin. "
+            "For TraceDrawer, use the raw recording export on the main tab."
         )
         external_btn.clicked.connect(self._export_for_external_software)
         layout.addWidget(external_btn)
@@ -1028,12 +1029,13 @@ class ExportMixin:
             if self.cycle_data_table.isRowHidden(row):
                 continue
 
-            # Extract data from table columns
+            # Extract data from table columns (5-column table: Export/Type/Time/Conc/ΔSPR)
             type_item = self.cycle_data_table.item(row, 1)
             time_item = self.cycle_data_table.item(row, 2)
             conc_item = self.cycle_data_table.item(row, 3)
-            flags_item = self.cycle_data_table.item(row, 5)
-            notes_item = self.cycle_data_table.item(row, 6)
+
+            # Flags and notes come from _cycle_details_data, not the table
+            cycle_details = getattr(self, '_cycle_details_data', {}).get(row, {})
 
             # Parse cycle type from display text (e.g., '● BL 1' → 'Baseline')
             raw_type = type_item.text().strip() if type_item else "Custom"
@@ -1081,7 +1083,7 @@ class ExportMixin:
             cycle_dict = {
                 "type": cycle_type,
                 "length_minutes": duration_minutes,
-                "note": notes_item.text().strip() if notes_item else "",
+                "note": cycle_details.get('note', ''),
                 "pumps": {},
                 "contact_times": {},
             }
@@ -1092,8 +1094,9 @@ class ExportMixin:
                 cycle_dict["concentration_units"] = conc_units
 
             # Add flags if present
-            if flags_item and flags_item.text().strip():
-                cycle_dict["flags"] = flags_item.text().strip()
+            flags_display = cycle_details.get('flags', '')
+            if flags_display:
+                cycle_dict["flags"] = flags_display
 
             cycle_dicts.append(cycle_dict)
 

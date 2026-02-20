@@ -467,6 +467,21 @@ class DeviceStatusTabBuilder:
         self.sidebar.send_diagnostics_btn.clicked.connect(self._handle_send_diagnostics)
         btn_row.addWidget(self.sidebar.send_diagnostics_btn)
 
+        self.sidebar.issue_tracker_btn = QPushButton("🐛 Issues")
+        self.sidebar.issue_tracker_btn.setFixedHeight(28)
+        self.sidebar.issue_tracker_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar.issue_tracker_btn.setToolTip("OEM Issue Tracker — create & view GitHub Issues (Ctrl+Shift+I)")
+        self.sidebar.issue_tracker_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: #34C759; color: white;"
+            f"  border: none; border-radius: 6px;"
+            f"  font-size: 11px; font-weight: 600;"
+            f"  padding: 4px 10px; font-family: {Fonts.SYSTEM};"
+            f"}}"
+            f"QPushButton:hover {{ background: #28A745; }}"
+        )
+        btn_row.addWidget(self.sidebar.issue_tracker_btn)
+
         btn_row.addStretch()
         layout.addLayout(btn_row)
 

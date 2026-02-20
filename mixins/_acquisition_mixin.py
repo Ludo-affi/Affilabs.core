@@ -92,6 +92,9 @@ class AcquisitionMixin:
 
             if self.experiment_start_time is None:
                 self.experiment_start_time = data["timestamp"]
+                # Bridge to ExperimentClock so clock.raw_elapsed_now() works
+                if hasattr(self, 'clock') and self.clock is not None:
+                    self.clock.start_experiment(data["timestamp"])
 
             data["elapsed_time"] = data["timestamp"] - self.experiment_start_time
             data["_epoch"] = self._session_epoch
@@ -200,6 +203,17 @@ class AcquisitionMixin:
         """Acquisition has started — enable record and pause buttons."""
         self.acquisition_events.on_acquisition_started()
 
+        # Add pending "Recording Started" marker if recording was enabled before acquisition
+        if hasattr(self, '_pending_recording_marker') and self._pending_recording_marker:
+            try:
+                if hasattr(self.main_window, 'add_event_marker'):
+                    self.main_window.add_event_marker(0.0, "Recording Started", "#00C853")
+                    logger.info("Added pending 'Recording Started' marker at t=0")
+            except Exception as e:
+                logger.error(f"Failed to add pending recording marker: {e}")
+            finally:
+                self._pending_recording_marker = False
+
         # Update Spectroscopy sidebar status
         if (
             hasattr(self.main_window, "sidebar")
@@ -250,6 +264,11 @@ class AcquisitionMixin:
     def _on_acquisition_stopped(self):
         """Acquisition has stopped — disable record and pause buttons."""
         self.acquisition_events.on_acquisition_stopped()
+        
+        # Clear any pending recording marker (acquisition ended before it could be placed)
+        if hasattr(self, '_pending_recording_marker'):
+            self._pending_recording_marker = False
+        
         self.main_window.record_btn.setToolTip(
             "Start Recording\n(Enabled after calibration)"
         )
@@ -289,23 +308,43 @@ class AcquisitionMixin:
         self.recording_mgr.log_event("Recording Started")
 
         if self.recording_mgr.is_recording:
-            device_id = getattr(self.hardware_mgr, "device_id", "Unknown")
+            # device_id: prefer device_config, fall back to hardware_mgr attribute
+            device_id = "Unknown"
+            try:
+                dc = getattr(self.hardware_mgr, "device_config", None)
+                if dc and hasattr(dc, "config"):
+                    device_id = dc.config.get("device_info", {}).get("device_id") or "Unknown"
+            except Exception:
+                pass
+            if device_id == "Unknown":
+                device_id = getattr(self.hardware_mgr, "device_id", "Unknown") or "Unknown"
             self.recording_mgr.update_metadata("device_id", device_id)
 
-            if hasattr(self.main_window, "full_timeline_graph"):
-                timeline = self.main_window.full_timeline_graph
-                if hasattr(timeline, "stop_cursor"):
-                    sensorgram_offset = timeline.stop_cursor.value()
-                    self.recording_mgr.update_metadata(
-                        "sensorgram_offset_seconds", sensorgram_offset
-                    )
-                    logger.info(
-                        f"Recording offset: sensorgram t={sensorgram_offset:.1f}s"
-                    )
+            # operator — current logged-in user
+            try:
+                operator = self._get_current_user() or "Unknown"
+            except Exception:
+                operator = "Unknown"
+            self.recording_mgr.update_metadata("operator", operator)
 
-            for ch in ["a", "b", "c", "d"]:
-                shift = self._channel_time_shifts.get(ch, 0.0)
-                self.recording_mgr.update_metadata(f"channel_{ch}_time_shift", shift)
+            # method_name — from sidebar method name label
+            try:
+                method_label = self._sidebar_widget("method_name_label")
+                method_name = method_label.text().strip() if method_label else "Untitled Method"
+                method_name = method_name or "Untitled Method"
+            except Exception:
+                method_name = "Untitled Method"
+            self.recording_mgr.update_metadata("method_name", method_name)
+
+            # sensor_type — chip surface chemistry selected by operator
+            try:
+                chip_combo = getattr(
+                    getattr(self.main_window, "sidebar", None), "sensor_chip_combo", None
+                )
+                sensor_type = chip_combo.currentText() if chip_combo else "Unknown"
+            except Exception:
+                sensor_type = "Unknown"
+            self.recording_mgr.update_metadata("sensor_type", sensor_type)
 
             for cycle in self._completed_cycles:
                 legacy_export_data = {
@@ -354,9 +393,18 @@ class AcquisitionMixin:
                     elapsed_time = self.get_elapsed_time()
 
                 if elapsed_time is None:
-                    logger.warning(
-                        f"Skipping event marker - acquisition not started yet: {event}"
-                    )
+                    # If acquisition not started yet and this is "Recording Started", queue it
+                    if "Recording Started" in event:
+                        if not hasattr(self, '_pending_recording_marker'):
+                            self._pending_recording_marker = False
+                        self._pending_recording_marker = True
+                        logger.info(
+                            "Recording marker pending - will appear at t=0 when acquisition starts"
+                        )
+                    else:
+                        logger.warning(
+                            f"Skipping event marker - acquisition not started yet: {event}"
+                        )
                     return
 
                 if "Recording Started" in event:
@@ -434,12 +482,16 @@ class AcquisitionMixin:
             else:
                 delta_values[ch] = 0.0
 
-        self.main_window.cycle_of_interest_graph.delta_display.setText(
-            f"<b>Δ SPR: Ch A: {delta_values['a']:+.1f} RU  |  "
-            f"Ch B: {delta_values['b']:+.1f} RU  |  "
-            f"Ch C: {delta_values['c']:+.1f} RU  |  "
-            f"Ch D: {delta_values['d']:+.1f} RU</b>",
-        )
+        if hasattr(self.main_window, '_get_delta_spr_display_text'):
+            html = self.main_window._get_delta_spr_display_text(delta_values)
+        else:
+            html = (
+                f"<b>Δ SPR: Ch A: {delta_values['a']:+.1f} RU  |  "
+                f"Ch B: {delta_values['b']:+.1f} RU  |  "
+                f"Ch C: {delta_values['c']:+.1f} RU  |  "
+                f"Ch D: {delta_values['d']:+.1f} RU</b>"
+            )
+        self.main_window.cycle_of_interest_graph.delta_display.setText(html)
 
     # ------------------------------------------------------------------ #
     # Polarizer                                                            #

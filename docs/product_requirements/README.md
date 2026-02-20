@@ -9,7 +9,7 @@ This folder contains Product Requirements Documents (PRDs) for Affilabs.core fea
 | PRD | Status | Owner | Last Updated | Phase |
 |-----|--------|-------|--------------|-------|
 | [SPARQ_PRD.md](SPARQ_PRD.md) | 🟢 Active | Affinite | Feb 18, 2026 | Phase 1 Complete ✅, Phase 2 Planned |
-| [LENSLESS_SPR_PRD.md](LENSLESS_SPR_PRD.md) | ✅ Complete | Affinite | Feb 18, 2026 | Retroactive Documentation (v2.0.5) |
+| [LENSLESS_SPECTRAL_SPR_SYSTEM_REQUIREMENTS.md](LENSLESS_SPECTRAL_SPR_SYSTEM_REQUIREMENTS.md) | ✅ Complete | Affinite | Feb 18, 2026 | Retroactive Documentation (v2.0.5) |
 
 ---
 
@@ -74,17 +74,17 @@ All PRDs follow this structure:
 
 ## 🤝 How to Contribute
 
-When creating a new PRD:
+When creating a new document:
 
-1. Create `{FEATURE_NAME}_PRD.md` in this folder
-2. Add entry to PRD Index table above
-3. Follow the PRD template structure
-4. Link to related technical docs
-5. Update task tracking if implementation starts
+1. Choose the right type: PRD (feature vision) / FRS (software behavior) / SRS (system specs) / Arch Spec (internal design)
+2. Name it `{FEATURE_NAME}_PRD.md`, `{FEATURE_NAME}_FRS.md`, or `{FEATURE_NAME}_SRS.md` accordingly
+3. Add entry to the Document Index table above with correct type
+4. Follow the template structure for that document type
+5. Link to related docs in other `docs/` subfolders
 
 ---
 
 ## 📧 Contact
 
-- PRD questions: Lucia (OEM)
+- Requirements questions: Lucia (OEM)
 - Implementation status: Check git commits + CLAUDE.md

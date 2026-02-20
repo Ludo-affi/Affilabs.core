@@ -7,7 +7,7 @@ This folder contains PRDs (Product Requirements Documents) for all major initiat
 | Document | Area | Status |
 |----------|------|--------|
 | [SPARQ_PRD.md](SPARQ_PRD.md) | Spark AI assistant | In Progress |
-| [LENSLESS_SPR_PRD.md](LENSLESS_SPR_PRD.md) | Lensless SPR technology | Planning |
+| [LENSLESS_SPECTRAL_SPR_SYSTEM_REQUIREMENTS.md](../docs/product_requirements/LENSLESS_SPECTRAL_SPR_SYSTEM_REQUIREMENTS.md) | Lensless SPR technology | Complete |
 
 ## Conventions
 

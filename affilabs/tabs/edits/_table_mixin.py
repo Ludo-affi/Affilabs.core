@@ -61,9 +61,9 @@ class TableMixin:
 
     def _populate_cycles_table(self, cycles_data):
         """Populate the cycles table with loaded cycle data with export selection checkboxes."""
-        from PySide6.QtGui import QColor
         self.cycle_data_table.setRowCount(0)  # Clear existing rows
         self._cycle_export_selection = {}  # Reset selection tracking
+        self._cycle_type_counts = {}  # Reset live type counter (for add_cycle)
 
         type_counts = {}  # Track numbering per type
 
@@ -128,19 +128,6 @@ class TableMixin:
             delta_str = " ".join(delta_parts) if delta_parts else ''
             self.cycle_data_table.setItem(row_idx, self.TABLE_COL_DELTA_SPR, QTableWidgetItem(delta_str))
 
-            # --- Col 5: Flags ---
-            flags_display = self._format_flags_display(cycle)
-            self.cycle_data_table.setItem(row_idx, self.TABLE_COL_FLAGS, QTableWidgetItem(flags_display))
-
-            # --- Col 6: Notes ---
-            notes = cycle.get('note', '')
-            cycle_id = cycle.get('cycle_id', '')
-            if cycle_id:
-                notes_display = f"[{cycle_id}] {notes}" if notes else f"[{cycle_id}]"
-            else:
-                notes_display = str(notes) if notes else ''
-            self.cycle_data_table.setItem(row_idx, self.TABLE_COL_NOTES, QTableWidgetItem(notes_display))
-
         # Update empty state visibility
         self._update_empty_state()
 
@@ -174,21 +161,11 @@ class TableMixin:
         """Track export checkbox state changes."""
         self._cycle_export_selection[cycle_idx] = (state == Qt.CheckState.Checked.value)
 
-    def _on_cycle_export_checkbox_changed(self, item):
-        """Track changes to export selection checkboxes (legacy item-based)."""
-        if item.column() == 0:  # Only track checkbox column
-            cycle_idx = item.data(Qt.ItemDataRole.UserRole)
-            if cycle_idx is not None:
-                self._cycle_export_selection[cycle_idx] = (item.checkState() == Qt.CheckState.Checked)
-
     def _update_cycle_table_row(self, row_idx, cycle):
         """Update a single row in the cycle table.
 
-        Column layout (7 columns): Export(0), Type(1), Time(2), Conc.(3), ΔSPR(4), Flags(5), Notes(6)
+        Column layout (5 columns): Export(0), Type(1), Time(2), Conc.(3), ΔSPR(4)
         """
-        from PySide6.QtWidgets import QTableWidgetItem
-        from PySide6.QtGui import QColor
-
         # Col 1: Type icon
         cycle_type = cycle.get('type', 'Custom')
         cycle_num = cycle.get('cycle_number', row_idx + 1)
@@ -232,19 +209,6 @@ class TableMixin:
                     parts.append(f"{ch_label}:{val:.0f}")
         self.cycle_data_table.setItem(row_idx, self.TABLE_COL_DELTA_SPR, QTableWidgetItem(" ".join(parts)))
 
-        # Col 5: Flags
-        flags_display = self._format_flags_display(cycle)
-        self.cycle_data_table.setItem(row_idx, self.TABLE_COL_FLAGS, QTableWidgetItem(flags_display))
-
-        # Col 6: Notes
-        notes = cycle.get('note', '')
-        cycle_id = cycle.get('cycle_id', '')
-        if cycle_id:
-            notes_display = f"[{cycle_id}] {notes}" if notes else f"[{cycle_id}]"
-        else:
-            notes_display = str(notes) if notes else ''
-            self.cycle_data_table.setItem(row_idx, self.TABLE_COL_NOTES, QTableWidgetItem(notes_display))
-
     def add_cycle(self, cycle_dict):
         """Add a single completed cycle to the table (public API called by main.py).
 
@@ -254,10 +218,6 @@ class TableMixin:
         Args:
             cycle_dict: Dictionary from Cycle.to_export_dict() containing cycle data
         """
-        from PySide6.QtWidgets import QTableWidgetItem
-        from PySide6.QtGui import QColor
-        from affilabs.utils.logger import logger
-
         # Get current row count (where we'll add the new row)
         row_idx = self.cycle_data_table.rowCount()
         self.cycle_data_table.insertRow(row_idx)
@@ -331,6 +291,20 @@ class TableMixin:
             'note': notes,
             'cycle_id': cycle_id
         }
+
+        # Update UI state and metadata
+        self._update_empty_state()
+        if hasattr(self, '_update_metadata_stats'):
+            self._update_metadata_stats()
+        
+        # Update filter dropdown if new cycle type encountered
+        if hasattr(self, 'filter_combo'):
+            current_types = [self.filter_combo.itemText(i) for i in range(self.filter_combo.count())]
+            if cycle_type not in current_types:
+                self.filter_combo.addItem(cycle_type)
+        
+        # Auto-scroll to show newest cycle
+        self.cycle_data_table.scrollToBottom()
 
         logger.info(f"✓ Added {cycle_type} {cycle_num} to cycle table (row {row_idx + 1})")
 
@@ -775,20 +749,20 @@ class TableMixin:
     def _apply_compact_view_initial(self):
         """Apply initial column visibility based on compact_view flag."""
         if self.compact_view:
-            self.cycle_data_table.setColumnHidden(1, True)  # Time
-            self.cycle_data_table.setColumnHidden(5, True)  # Notes
+            self.cycle_data_table.setColumnHidden(self.TABLE_COL_TIME, True)
+            self.cycle_data_table.setColumnHidden(self.TABLE_COL_CONC, True)
 
     def _toggle_compact_view(self):
         """Toggle between compact and expanded table view."""
         self.compact_view = not self.compact_view
 
         if self.compact_view:
-            # Hide less important columns in compact view
-            self.cycle_data_table.setColumnHidden(1, True)   # Time
-            self.cycle_data_table.setColumnHidden(5, True)   # Notes
+            # Hide less-important columns in compact view
+            self.cycle_data_table.setColumnHidden(self.TABLE_COL_TIME, True)
+            self.cycle_data_table.setColumnHidden(self.TABLE_COL_CONC, True)
         else:
             # Show all columns in expanded view
-            for col in range(6):
+            for col in range(5):
                 self.cycle_data_table.setColumnHidden(col, False)
 
     def _apply_cycle_filter(self, filter_text):
@@ -873,15 +847,12 @@ class TableMixin:
             if self.cycle_data_table.isRowHidden(row):
                 continue
 
-            # Check for missing concentration (col 3) or notes (col 6)
-            conc_item = self.cycle_data_table.item(row, 3)
-            notes_item = self.cycle_data_table.item(row, 6)
-
+            # Check for missing concentration (col 3)
+            conc_item = self.cycle_data_table.item(row, self.TABLE_COL_CONC)
             conc_missing = not conc_item or not conc_item.text().strip()
-            notes_missing = not notes_item or not notes_item.text().strip()
 
-            # Apply red background if critical data is missing
-            if conc_missing or notes_missing:
+            # Apply red background if concentration is missing
+            if conc_missing:
                 for col in range(self.cycle_data_table.columnCount()):
                     item = self.cycle_data_table.item(row, col)
                     if item:
@@ -916,13 +887,16 @@ class TableMixin:
             }
         """)
 
-        # Get column names (6-column layout)
+        # Toggle-able columns: Type(1), Time(2), Conc.(3), ΔSPR(4). Export(0) is not hideable.
         column_names = [
-            "Type", "Time", "Conc.", "ΔSPR", "Flags", "Notes"
+            ("Type",  self.TABLE_COL_TYPE),
+            ("Time",  self.TABLE_COL_TIME),
+            ("Conc.", self.TABLE_COL_CONC),
+            ("ΔSPR",  self.TABLE_COL_DELTA_SPR),
         ]
 
         # Create checkable actions for each column
-        for col, name in enumerate(column_names):
+        for name, col in column_names:
             action = menu.addAction(name)
             action.setCheckable(True)
             action.setChecked(not self.cycle_data_table.isColumnHidden(col))

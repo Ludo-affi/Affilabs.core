@@ -428,35 +428,17 @@ class FlagMixin:
             self.main_window._on_flag_channel_selected(channel)
 
     def _add_flag_marker(self, channel: str, time_val: float, spr_val: float, flag_type: str):
-        """Add a visual flag marker to the cycle-of-interest graph."""
-        import pyqtgraph as pg
+        """DEPRECATED — use self.flag_mgr.add_flag_marker() instead.
 
-        if not hasattr(self, '_flag_markers'):
-            self._flag_markers = []
-
-        flag_styles = {
-            'injection': {'symbol': 't', 'size': 15, 'color': (255, 50, 50, 230)},
-            'wash':      {'symbol': 's', 'size': 18, 'color': (50, 150, 255, 255)},
-            'spike':     {'symbol': 'star', 'size': 24, 'color': (255, 200, 0, 255)},
-        }
-        style = flag_styles.get(flag_type, flag_styles['injection'])
-
-        marker = pg.ScatterPlotItem(
-            [time_val], [spr_val],
-            symbol=style['symbol'], size=style['size'],
-            brush=pg.mkBrush(*style['color']),
-            pen=pg.mkPen('w', width=2),
+        This legacy method maintained a separate dict-based _flag_markers list
+        that was out of sync with FlagManager. All callers should use FlagManager.
+        """
+        from affilabs.utils.logger import logger
+        logger.warning(
+            f"_add_flag_marker called (DEPRECATED) — routing to flag_mgr.add_flag_marker: "
+            f"channel={channel}, type={flag_type}"
         )
-        self.main_window.cycle_of_interest_graph.addItem(marker)
-        self._flag_markers.append({
-            'channel': channel, 'time': time_val,
-            'spr': spr_val, 'marker': marker, 'type': flag_type,
-        })
-
-        if hasattr(self, 'recording_mgr') and self.recording_mgr.is_recording:
-            import time as _time
-            self.recording_mgr.add_flag({
-                'type': flag_type, 'channel': channel,
-                'time': time_val, 'spr': spr_val,
-                'timestamp': _time.time(),
-            })
+        if hasattr(self, 'flag_mgr'):
+            self.flag_mgr.add_flag_marker(channel, time_val, spr_val, flag_type)
+        else:
+            logger.error("Cannot add flag: flag_mgr not initialized")

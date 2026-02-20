@@ -63,7 +63,6 @@ class DataCollector:
             "recording_start": dt.datetime.fromtimestamp(self.recording_start_time).strftime(
                 "%Y-%m-%d %H:%M:%S"
             ),
-            "recording_start_iso": dt.datetime.fromtimestamp(self.recording_start_time).isoformat(),
         }
 
         logger.debug(f"Data collection started at {self.recording_start_time}")

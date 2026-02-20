@@ -1989,16 +1989,25 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         # Lock queue during execution (prevents edits)
         self.queue_presenter.lock_queue()
 
-        # Pop first cycle from queue via presenter
-        cycle = self.queue_presenter.pop_next_cycle()
-
+        # Get the next cycle to run WITHOUT removing it from queue
+        # Use method snapshot + progress counter instead of popping
+        original_method = self.queue_presenter.get_original_method()
+        progress = self.queue_presenter.get_method_progress()
+        
+        if progress >= len(original_method):
+            logger.error("❌ No more cycles to run (progress >= method length)")
+            self.queue_presenter.unlock_queue()
+            return
+            
+        cycle = original_method[progress]  # Get cycle at current progress index
+        
         if cycle is None:
-            logger.error("❌ Failed to pop cycle from queue")
+            logger.error("❌ Failed to get cycle from method snapshot")
             self.queue_presenter.unlock_queue()
             return
 
         # Sync backward compatibility list
-        self.segment_queue = self.queue_presenter.get_queue_snapshot()
+        self.segment_queue = self.queue_presenter.get_remaining_from_method()
 
         cycle_type = cycle.type
         duration_min = cycle.length_minutes
@@ -2009,6 +2018,14 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
         logger.info(f"Starting Cycle {cycle_num}/{total_cycles}: {cycle_type}, {duration_min} min")
 
+        # Log cycle start event for blue marker on sensorgram
+        if self.recording_mgr.is_recording:
+            event_name = f"Cycle Start: {cycle_type}"
+            if cycle.note and cycle.note != 'No notes':
+                event_name += f" - {cycle.note}"
+            self.recording_mgr.log_event(event_name)
+            logger.debug(f"✓ Logged cycle start event: {event_name}")
+
         # Start acquisition if not already running
         if not self.data_mgr._acquiring:
             logger.info("Starting data acquisition...")
@@ -2016,10 +2033,22 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
         # Initialize cycle tracking using Cycle.start() method
         self._current_cycle = cycle
+        # Get sensorgram start time from live buffer (RAW_ELAPSED coords).
+        # clock.raw_elapsed_now() may return 0 if start_experiment() hasn't fired yet,
+        # so read the latest raw timestamp directly from the buffer as a reliable source.
+        _cycle_start_raw = self.clock.raw_elapsed_now()
+        if _cycle_start_raw == 0.0:
+            try:
+                for _ch in ['a', 'b', 'c', 'd']:
+                    _buf = getattr(self.buffer_mgr, 'timeline_data', {}).get(_ch)
+                    if _buf is not None and hasattr(_buf, 'time') and len(_buf.time) > 0:
+                        _cycle_start_raw = max(_cycle_start_raw, float(_buf.time[-1]))
+            except Exception:
+                pass
         self._current_cycle.start(
             cycle_num=cycle_num,
             total_cycles=total_cycles,
-            sensorgram_time=self.clock.raw_elapsed_now()  # RAW_ELAPSED; corrected in _add_cycle_marker
+            sensorgram_time=_cycle_start_raw  # RAW_ELAPSED
         )
         self._cycle_end_time = time.time() + (duration_min * 60)
         logger.info(f"✓ Cycle initialized: {cycle_type}, end_time set to {self._cycle_end_time}")
@@ -2146,8 +2175,30 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         except Exception as e:
             logger.debug(f"Could not reset cursors: {e}")
 
-        # Cycle marker disabled per user request - no visual markers on live sensorgram
-        # self._add_cycle_marker()
+        # Add blue vertical marker on Full Sensorgram at cycle start
+        try:
+            if hasattr(self.main_window, 'full_timeline_graph'):
+                import pyqtgraph as pg
+                timeline = self.main_window.full_timeline_graph
+                marker_pos = timeline.stop_cursor.value() if hasattr(timeline, 'stop_cursor') else self.clock.raw_elapsed_now() - self.clock.display_offset
+                cycle_abbr = {
+                    "Baseline": "BL", "Binding": "Bind.", "Kinetic": "Kin.",
+                    "Concentration": "Bind.", "Immobilization": "Immob.",
+                    "Regeneration": "Regen.", "Wash": "Wash",
+                }.get(cycle.type, cycle.type[:5])
+                line = pg.InfiniteLine(
+                    pos=marker_pos, angle=90,
+                    pen=pg.mkPen(color='#0A84FF', width=2),
+                    movable=False,
+                    label=cycle_abbr,
+                    labelOpts={'position': 0.92, 'color': '#0A84FF',
+                               'fill': (255, 255, 255, 180), 'movable': False}
+                )
+                timeline.addItem(line)
+                self._cycle_markers[cycle.cycle_id] = {'line': line}
+                logger.debug(f"✓ Cycle marker added at t={marker_pos:.1f}s ({cycle_abbr})")
+        except Exception as e:
+            logger.debug(f"Could not add cycle marker: {e}")
 
     # === Channel Time Shift (Arrow Keys) ===
 

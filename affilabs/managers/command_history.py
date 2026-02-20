@@ -254,6 +254,59 @@ class ClearQueueCommand(Command):
         return f"Clear queue ({len(self.cleared_cycles)} cycles)"
 
 
+class AddMethodCommand(Command):
+    """Command to add multiple cycles as a batch (one undo removes entire method)."""
+
+    def __init__(self, queue_mgr: QueueManager, cycles: List[Cycle], method_name: str = "Untitled Method"):
+        """Initialize add method command.
+
+        Args:
+            queue_mgr: QueueManager instance
+            cycles: List of cycles to add as a batch
+            method_name: Display name for the method
+        """
+        self.queue_mgr = queue_mgr
+        self.cycles = cycles
+        self.method_name = method_name
+        self.added_indices = []  # Track indices for undo
+
+    def execute(self) -> bool:
+        """Add all cycles to queue."""
+        if not self.cycles:
+            return False
+
+        start_idx = self.queue_mgr.get_queue_size()
+        success = True
+
+        for cycle in self.cycles:
+            if not self.queue_mgr.add_cycle(cycle):
+                success = False
+                break
+            self.added_indices.append(self.queue_mgr.get_queue_size() - 1)
+
+        if success:
+            logger.debug(f"Execute: Added method '{self.method_name}' with {len(self.cycles)} cycles")
+        return success
+
+    def undo(self) -> bool:
+        """Remove all added cycles (in reverse order to preserve indices)."""
+        if not self.added_indices:
+            return False
+
+        # Delete in reverse order to preserve indices
+        for idx in reversed(self.added_indices):
+            if idx < self.queue_mgr.get_queue_size():
+                self.queue_mgr.delete_cycle(idx)
+
+        logger.debug(f"Undo: Removed method '{self.method_name}' ({len(self.added_indices)} cycles)")
+        self.added_indices.clear()
+        return True
+
+    def get_description(self) -> str:
+        """Get command description."""
+        return f"Add method '{self.method_name}' ({len(self.cycles)} cycles)"
+
+
 class CommandHistory(QObject):
     """Manages undo/redo stack for queue operations.
 

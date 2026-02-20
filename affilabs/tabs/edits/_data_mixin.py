@@ -61,40 +61,27 @@ class DataMixin:
         return delta_by_ch if isinstance(delta_by_ch, dict) else {}
 
     def _format_flags_display(self, cycle: dict) -> str:
-        """Format flag data for table display with icons.
-
-        Handles multiple flag formats:
-        - flag_data (list of dicts with type and time)
-        - flags (list or string representation of list)
+        """Format flag_data for table display with icons.
 
         Args:
-            cycle: Cycle dictionary containing 'flag_data' or 'flags' key
+            cycle: Cycle dictionary containing 'flag_data' key
+                   (list of dicts with 'type' and 'time' fields)
 
         Returns:
-            Formatted string for display (e.g., "▲120s ■240s")
+            Formatted string for display (e.g., "▲120s ■240s ◆360s"),
+            or empty string if no flag_data present.
         """
         FLAG_ICONS = {'injection': '▲', 'wash': '■', 'spike': '◆'}
 
         flag_data = cycle.get('flag_data', [])
-        if flag_data:
-            parts = []
-            for f in flag_data:
-                icon = FLAG_ICONS.get(f.get('type', ''), '●')
-                parts.append(f"{icon}{f.get('time', 0):.0f}s")
-            return " ".join(parts)
+        if not flag_data:
+            return ''
 
-        # Fallback to 'flags' field
-        raw_flags = cycle.get('flags', '')
-        if isinstance(raw_flags, list):
-            return ', '.join(str(f) for f in raw_flags) if raw_flags else ''
-        elif isinstance(raw_flags, str) and raw_flags.startswith('['):
-            try:
-                parsed = ast.literal_eval(raw_flags)
-                return ', '.join(str(f) for f in parsed) if isinstance(parsed, list) and parsed else ''
-            except Exception:
-                return raw_flags if raw_flags else ''
-        else:
-            return str(raw_flags) if raw_flags and pd.notna(raw_flags) else ''
+        parts = []
+        for f in flag_data:
+            icon = FLAG_ICONS.get(f.get('type', ''), '●')
+            parts.append(f"{icon}{f.get('time', 0):.0f}s")
+        return " ".join(parts)
 
     def _get_save_path(self, title: str, file_filter: str = "Excel Files (*.xlsx)", subfolder: str = "Analysis") -> str:
         """Get save file path with consistent dialog and default location.

@@ -40,11 +40,11 @@ class UIBuildersMixin:
         self.cycle_filter = "All"  # Default: show all cycle types
         self._cycle_export_selection = {}  # Track checkbox state: {cycle_idx: True/False}
 
-        # Initialize table widget — 7-column layout with export selection checkboxes
+        # Initialize table widget — 5-column layout with export selection checkboxes
         # STARTS EMPTY - will be populated ONLY when cycles complete during live acquisition
-        self.cycle_data_table = QTableWidget(0, 7)
+        self.cycle_data_table = QTableWidget(0, 5)
         self.cycle_data_table.setHorizontalHeaderLabels(
-            ["Export", "Type", "Time", "Conc.", "ΔSPR", "Flags", "Notes"]
+            ["Export", "Type", "Time", "Conc.", "ΔSPR"]
         )
         # Set column widths: stretch to fill available space
         header = self.cycle_data_table.horizontalHeader()
@@ -182,7 +182,7 @@ class UIBuildersMixin:
         # Flags tab
         self.details_flags_text = QLabel("")
         self.details_flags_text.setWordWrap(True)
-        self.details_flags_text.setStyleSheet("QLabel { padding: 8px; color: #1D1D1F; font-family: monospace; font-size: 10px; }")
+        self.details_flags_text.setStyleSheet("QLabel { padding: 8px; color: #1D1D1F; font-size: 12px; }")
         flags_scroll = QScrollArea()
         flags_scroll.setWidget(self.details_flags_text)
         flags_scroll.setWidgetResizable(True)
@@ -191,7 +191,7 @@ class UIBuildersMixin:
         # Notes tab
         self.details_notes_text = QLabel("")
         self.details_notes_text.setWordWrap(True)
-        self.details_notes_text.setStyleSheet("QLabel { padding: 8px; color: #1D1D1F; }")
+        self.details_notes_text.setStyleSheet("QLabel { padding: 8px; color: #1D1D1F; font-size: 12px; }")
         notes_scroll = QScrollArea()
         notes_scroll.setWidget(self.details_notes_text)
         notes_scroll.setWidgetResizable(True)

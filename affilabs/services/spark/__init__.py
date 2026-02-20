@@ -1,14 +1,13 @@
 """
 Spark AI Service - Internal service for AI-powered help system
 
-This package provides the core functionality for the Spark AI assistant,
-including pattern matching, knowledge base search, and AI model integration.
+2-layer hybrid: pattern matching (instant) + knowledge base (curated).
+TinyLM removed — caused 30+ second UI freezes on CPU.
 
 Components:
 - answer_engine.py: Main coordinator for answer generation
 - pattern_matcher.py: Fast regex-based pattern matching
 - knowledge_base.py: TinyDB-based knowledge storage and search
-- tinylm.py: TinyLlama AI model integration
 - patterns.py: Pattern definitions (single source of truth)
 
 Usage:
@@ -21,11 +20,9 @@ Usage:
 from .answer_engine import SparkAnswerEngine
 from .pattern_matcher import SparkPatternMatcher
 from .knowledge_base import SparkKnowledgeBase
-from .tinylm import SparkTinyLM
 
 __all__ = [
     'SparkAnswerEngine',
     'SparkPatternMatcher',
     'SparkKnowledgeBase',
-    'SparkTinyLM',
 ]

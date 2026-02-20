@@ -72,11 +72,11 @@ PATTERNS = {
     },
 
     "basic": {
-        r"how.*start.*acquisition|begin.*recording": {
+        r"how.*(start|begin|run).*(acquisition|test|experiment|run)|begin.*recording|start.*a.*(test|run|experiment)": {
             "answer": "Click the **Live** tab, make sure your detector is connected (check **Device Status**), "
             "and hit the green **Start** button. Data streams in real-time.",
             "category": "basic",
-            "keywords": ["start", "acquisition", "begin", "recording"],
+            "keywords": ["start", "acquisition", "begin", "recording", "test", "experiment", "run"],
             "priority": "high"
         },
         r"how.*stop.*acquisition|end.*recording": {

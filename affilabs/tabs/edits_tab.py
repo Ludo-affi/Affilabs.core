@@ -33,8 +33,6 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
     TABLE_COL_TIME = 2
     TABLE_COL_CONC = 3
     TABLE_COL_DELTA_SPR = 4
-    TABLE_COL_FLAGS = 5
-    TABLE_COL_NOTES = 6
 
     def __init__(self, main_window):
         """Initialize Edits tab with reference to main window.

@@ -280,11 +280,12 @@ class QueueSummaryWidget(QTableWidget):
         abbr, fg_color = CycleTypeStyle.get(cycle.type)
 
         if status == "running":
-            prefix, bg = "\u25b6 ", QColor("#E3F2FD")   # ▶ light blue
+            prefix, bg = "", QColor("#1565C0")   # Solid blue background (no arrow)
             bold = True
+            fg_color = "#FFFFFF"
         elif status == "completed":
-            prefix, bg = "\u2713 ", QColor("#E8F5E9")    # ✓ light green
-            bold = False
+            prefix, bg = "", QColor("#E8F5E9")    # light green, bold
+            bold = True
             fg_color = "#4CAF50"
         else:
             prefix, bg = "", None
@@ -305,6 +306,8 @@ class QueueSummaryWidget(QTableWidget):
             if col == 1:
                 item.setForeground(QColor(fg_color))
                 item.setToolTip(f"{cycle.type} ({status})")
+            elif status == "running":
+                item.setForeground(QColor("#FFFFFF"))
             if bg:
                 item.setBackground(QBrush(bg))
             if bold:
@@ -335,20 +338,29 @@ class QueueSummaryWidget(QTableWidget):
         num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         num_item.setFlags(num_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
-            num_item.setBackground(QBrush(QColor("#E3F2FD")))  # Light blue for running
+            num_item.setBackground(QBrush(QColor("#1565C0")))  # Solid blue for running
+            num_item.setForeground(QColor("#FFFFFF"))  # White text
+            font = num_item.font()
+            font.setBold(True)
+            num_item.setFont(font)
         elif bg_color:
             num_item.setBackground(QBrush(QColor(bg_color)))
         self.setItem(row, self.COL_NUM, num_item)
 
         # Column 1: Type (color-coded abbreviation)
         type_item = QTableWidgetItem(abbr)
-        type_item.setForeground(QColor(fg_color))
         type_item.setToolTip(cycle.type)
         type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
-            type_item.setBackground(QBrush(QColor("#E3F2FD")))
-        elif bg_color:
-            type_item.setBackground(QBrush(QColor(bg_color)))
+            type_item.setBackground(QBrush(QColor("#1565C0")))
+            type_item.setForeground(QColor("#FFFFFF"))  # White text
+            font = type_item.font()
+            font.setBold(True)
+            type_item.setFont(font)
+        else:
+            type_item.setForeground(QColor(fg_color))
+            if bg_color:
+                type_item.setBackground(QBrush(QColor(bg_color)))
         self.setItem(row, self.COL_TYPE, type_item)
 
         # Column 2: Duration
@@ -356,7 +368,11 @@ class QueueSummaryWidget(QTableWidget):
         duration_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         duration_item.setFlags(duration_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
-            duration_item.setBackground(QBrush(QColor("#E3F2FD")))
+            duration_item.setBackground(QBrush(QColor("#1565C0")))
+            duration_item.setForeground(QColor("#FFFFFF"))  # White text
+            font = duration_item.font()
+            font.setBold(True)
+            duration_item.setFont(font)
         elif bg_color:
             duration_item.setBackground(QBrush(QColor(bg_color)))
         self.setItem(row, self.COL_DURATION, duration_item)
@@ -365,7 +381,11 @@ class QueueSummaryWidget(QTableWidget):
         notes_item = QTableWidgetItem(cycle.note or "")
         notes_item.setFlags(notes_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
-            notes_item.setBackground(QBrush(QColor("#E3F2FD")))
+            notes_item.setBackground(QBrush(QColor("#1565C0")))
+            notes_item.setForeground(QColor("#FFFFFF"))  # White text
+            font = notes_item.font()
+            font.setBold(True)
+            notes_item.setFont(font)
         elif bg_color:
             notes_item.setBackground(QBrush(QColor(bg_color)))
         self.setItem(row, self.COL_NOTES, notes_item)

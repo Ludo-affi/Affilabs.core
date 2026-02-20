@@ -81,7 +81,7 @@ Paste this into a new Notion page called **"Affilabs.core — Product Requiremen
 
 **PRD Documents (Local):**
 - `docs/product_requirements/SPARQ_PRD.md`
-- `docs/product_requirements/LENSLESS_SPR_PRD.md`
+- `docs/product_requirements/LENSLESS_SPECTRAL_SPR_SYSTEM_REQUIREMENTS.md`
 - `docs/product_requirements/README.md`
 
 **Modified Source Files (Phase 1):**
@@ -548,7 +548,7 @@ Resonance Wavelength (nm) → Sensorgram Y-axis
 
 ---
 
-**Full PRD Location:** `docs/product_requirements/LENSLESS_SPR_PRD.md` (local file)
+**Full PRD Location:** `docs/product_requirements/LENSLESS_SPECTRAL_SPR_SYSTEM_REQUIREMENTS.md` (local file)
 ```
 
 ---

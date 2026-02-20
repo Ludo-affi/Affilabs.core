@@ -86,8 +86,16 @@ class Cycle(BaseModel):
     # Optional fields with defaults
     name: str = Field(default="", description="User-friendly cycle name")
     note: str = Field(default="", description="Optional notes/comments")
-    concentration_value: Optional[float] = Field(default=None, description="Concentration value")
-    concentration_units: str = Field(default="nM", description="Concentration units (nM or ug/mL)")
+    
+    # ⚠️ DEPRECATED: Use concentrations dict instead
+    concentration_value: Optional[float] = Field(
+        default=None, 
+        description="[DEPRECATED] Single-channel concentration value. Use concentrations dict for multi-channel support."
+    )
+    concentration_units: str = Field(
+        default="nM", 
+        description="[DEPRECATED] Legacy unit field. Use units field instead."
+    )
 
     # Concentration metadata (for multi-channel experiments)
     units: str = Field(default="nM", description="Unit type for concentrations")
@@ -115,8 +123,10 @@ class Cycle(BaseModel):
     )
 
     # Analysis data (calculated after cycle completion)
+    # ⚠️ DEPRECATED: Use delta_spr_by_channel instead
     delta_spr: Optional[float] = Field(
-        default=None, description="SPR change during cycle (legacy single channel)"
+        default=None, 
+        description="[DEPRECATED] SPR change for single channel. Use delta_spr_by_channel dict for multi-channel data."
     )
     delta_spr_by_channel: Dict[str, float] = Field(
         default_factory=dict,
@@ -182,14 +192,22 @@ class Cycle(BaseModel):
         "'manual' (user injects via syringe, system prompts at flags), "
         "None = use hardware default. Used by Binding (manual) and Kinetic (flow) cycles.",
     )
+    # ⚠️ CANDIDATE FOR REMOVAL: Minimal usage
     planned_concentrations: List[str] = Field(
         default_factory=list,
-        description="List of concentration values planned for this cycle "
+        description="[RARELY USED] List of concentration values planned for this cycle "
         "(e.g., ['100 nM', '50 nM', '10 nM']). Used for multi-injection workflows.",
+    )
+
+    # Method tracking (for multi-method queues)
+    source_method: Optional[str] = Field(
+        default=None,
+        description="Name of the method this cycle originated from (e.g., 'Kinetics Run 1'). "
+        "Helps track which cycles belong together in large queues with multiple methods.",
     )
     injection_count: int = Field(
         default=0,
-        description="Number of manual injections completed so far in this binding cycle",
+        description="[RARELY USED] Number of manual injections completed so far in this binding cycle",
     )
 
     # Method mode and detection fields
@@ -206,15 +224,9 @@ class Cycle(BaseModel):
         "'off' (no auto-detection, rely on timer/manual). "
         "In manual mode auto→priority; in semi-automated auto→auto; in automated auto→off.",
     )
-    detection_sensitivity: Optional[float] = Field(
-        default=None,
-        description="Detection sensitivity multiplier (0.5=more sensitive, 2.0=less sensitive). "
-        "Applied to min_rise_threshold in auto_detect_injection_point(). "
-        "None = use mode default.",
-    )
     target_channels: Optional[str] = Field(
         default=None,
-        description="Explicit target channels for detection (e.g., 'AC', 'BD', 'ABCD'). "
+        description="Target channels for detection (e.g., 'AC', 'BD', 'ABCD'). "
         "When set, injection detection focuses on these channels first. "
         "None = detect on all active channels.",
     )
@@ -314,7 +326,6 @@ class Cycle(BaseModel):
             "injection_mislabel_flags": self.injection_mislabel_flags,
             "method_mode": self.method_mode,
             "detection_priority": self.detection_priority,
-            "detection_sensitivity": self.detection_sensitivity,
             "target_channels": self.target_channels,
         }
 
