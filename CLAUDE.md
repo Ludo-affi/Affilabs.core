@@ -134,12 +134,23 @@ Ignored by Claude Code (use --no-ignore to access):
 - Hardware abstraction via HAL interfaces
 - Domain models are plain dataclasses
 
+### Button Icons — SVG Rule
+**All buttons with icons must use SVG, not emoji or PNG.**
+- Store SVGs in `affilabs/ui/img/*.svg` (24×24 viewBox, `fill="none"` with explicit stroke/fill on paths)
+- Load via `get_affilabs_resource("ui/img/foo.svg")` → `QIcon(str(path))` (from `affilabs.utils.resource_path`)
+- Set size with `button.setIconSize(QSize(16, 16))` (use 14px for compact/inline buttons)
+- Emoji in button text (`"📦 Export"`) are acceptable as a **temporary placeholder only** — replace with SVG before release
+- `_create_svg_icon(svg_string, size)` in `method_builder_dialog.py` can generate `QIcon` from inline SVG markup (no file needed for one-off icons)
+- For two-state buttons (checkable), render the SVG twice with different `currentColor` substitutions via `QSvgRenderer` → `QPainter` → `QIcon.addPixmap(state=Off/On)` — see `navigation_presenter._create_spark_toggle_button` as the canonical example
+- **Canonical icons:** `sparq_icon.svg` = Sparq AI robot (used in nav bar + sidebar footer); always load from file, never duplicate inline
+
 ## FRS Documentation Map — Read Before Grepping
 
 > `docs/` is excluded from Claude Code search, but **read_file always works**. Each entry below is a verified, condensed spec — faster than grepping 1000+ line Python files.
 
 | Working on... | Read this first | Source file(s) |
 |---------------|----------------|----------------|
+| UX testing, Sparq IQ scoring, workflow readiness | [UX_WORKFLOW_TEST_PROTOCOL.md](docs/user_guides/UX_WORKFLOW_TEST_PROTOCOL.md) | `docs/ui/UX_USER_JOURNEY.md`, `product_requirements/SPARQ_PRD.md` |
 | EditsTab — table, columns, filtering | [EDITS_TABLE_FRS.md](docs/features/EDITS_TABLE_FRS.md) | `affilabs/tabs/edits/_table_manager.py` |
 | EditsTab — layout, widget refs | [EDITS_UI_BUILDERS_FRS.md](docs/features/EDITS_UI_BUILDERS_FRS.md) | `affilabs/tabs/edits/_ui_builders.py` |
 | EditsTab — export, Save as Method | [EDITS_EXPORT_FRS.md](docs/features/EDITS_EXPORT_FRS.md) | `affilabs/tabs/edits/_export_mixin.py` |
@@ -155,6 +166,9 @@ Ignored by Claude Code (use --no-ignore to access):
 | Calibration flow, servo auto-cal | [CALIBRATION_ORCHESTRATOR_FRS.md](docs/calibration/CALIBRATION_ORCHESTRATOR_FRS.md) | `affilabs/core/calibration_orchestrator.py` |
 | Signal quality, IQ levels, wavelength zones | [SENSOR_IQ_SYSTEM.md](docs/features/SENSOR_IQ_SYSTEM.md) | `affilabs/utils/sensor_iq.py` |
 | Cycle templates, queue presets | [METHOD_PRESETS_SYSTEM.md](docs/features/METHOD_PRESETS_SYSTEM.md) | `affilabs/services/cycle_template_storage.py` |
+| Method Builder UI redesign (3-zone layout, template gallery, Sparq bar) | [METHOD_BUILDER_REDESIGN_FRS.md](docs/features/METHOD_BUILDER_REDESIGN_FRS.md) | `affilabs/widgets/method_builder_dialog.py` |
+| Timeline events, CycleMarker, stream API | [TIMELINE_QUICK_START.md](docs/architecture/TIMELINE_QUICK_START.md) | `affilabs/domain/timeline.py`, `affilabs/core/recording_manager.py`, `affilabs/managers/flag_manager.py`, `mixins/_cycle_mixin.py` |
+| Timeline Phase 5+ roadmap, proposed improvements | [TIMELINE_ROADMAP.md](docs/future_plans/TIMELINE_ROADMAP.md) | `affilabs/domain/timeline.py` |
 
 **Rule:** If the task touches a subsystem listed above, read the FRS doc first. Only open the source file if the doc doesn't answer the question.
 
@@ -324,7 +338,9 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 7. Validate against the §New Component Checklist in UI_COMPONENT_INVENTORY.md.
 8. Update whichever UI doc(s) changed.
 
-**UI docs live in:** `docs/ui/` (5 files — Design System, Component Inventory, State Machine, Graph Spec, Hardware Model Requirements)
+**UI docs live in:** `docs/ui/` (6 files — Design System, Component Inventory, State Machine, Graph Spec, Hardware Model Requirements, **UX User Journey**)
+
+> When designing or evaluating any UI element, check [UX_USER_JOURNEY.md](docs/ui/UX_USER_JOURNEY.md) first — it defines what users need at each of the 6 experiment stages (Connect → Calibrate → Acquire → Inject → Record → Export).
 
 ---
 
@@ -336,16 +352,23 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 ### Current Focus
 - UX polish / feature-completion phase post-mixin refactor — app boots cleanly
 - v2.0.5 beta released 2026-02-17
+- **Timeline system implementation** — Phases 1–4 + improvements B/C/D/E/F complete ✅
 
 ### In-Progress / Known Issues
 - `ApplicationState` migration incomplete — `app_state.py` defines target but `main.py` not yet converted
+- Timeline Phase 5 (Presenters: SensogramPresenter + EditsTab query from stream) — ready to start
 
 ### Recently Completed
-- **User management**: `rename_user()` + `last_used`/`created_date` tracking in `UserProfileManager`; Settings UI gains Rename + Set Active buttons, double-click to switch user, ★ bold highlight on active user; progression banner auto-refreshes after recording stops via `recording_event_coordinator.py`
-- **Spark hardening**: answer generation moved to background thread; all entry points wrapped in try/except; `_settings_builder` ref stored on sidebar for external refresh
-- **Build Method button**: fixed import path (`affilabs.widgets`), non-modal `show()`, `_on_method_ready` + `_detect_hw_name` added to `PumpMixin`
-- **Icon SVGs**: 9 SVGs created in `affilabs/ui/img/`; all broken path references fixed to use `get_affilabs_resource()`
-- **Python 3.12**: enforced in `pyproject.toml` (`>=3.12,<3.13`) and documented in `README.md`
+- **Method tab redesign** ✅ (Feb 20 2026)
+  - `IntelligenceBar` removed; replaced with **Active Cycle Card** (`sidebar.active_cycle_card`) — cycle type badge, index, countdown, next cycle, total experiment time; shown only while cycle running
+  - "Build Method" CTA: full-width 48px blue button, always visible at top of Method tab
+  - Queue table (`QueueSummaryWidget`) expands to fill space; "View All" button removed; "EXPERIMENT METHOD" header removed
+  - After QC dialog closes: sidebar auto-switches to Method tab
+  - Spark panel starts hidden; sidebar footer hint strip added ("💬 Ask Spark AI")
+  - `CalibrationQCDialog`: Conv Iter column plain text (no color); notes panel added (5 practical reminders)
+  - `MethodBuilderDialog` import error fixed: split try/except; removed top-level `SparkAnswerEngine` import
+- **UI docs updated** ✅ — `UI_COMPONENT_INVENTORY.md`, `UI_STATE_MACHINE.md`, `UX_USER_JOURNEY.md` reflect all changes above
+- **Improvements E/F** ✅ — Timeline Sheet 9 "Timeline Events" export; `remove_event()` + `update_event_time()` on stream
 
 ### Context Maintenance Workflow
 **At the end of each work session**, update this "Active Context" section:

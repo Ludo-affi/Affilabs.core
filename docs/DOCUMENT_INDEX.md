@@ -1,6 +1,6 @@
 # Affilabs.core — Documentation Index
 
-Last updated: 2026-02-19 (5 stale audit/plan docs deleted; features section split into FRS / User Guides / Roadmaps)
+Last updated: 2026-02-19 (Timeline docs added: TIMELINE_INTEGRATION_GUIDE, TIMELINE_QUICK_START, TIMELINE_ROADMAP; Roadmaps section moved to own category with future_plans/ path)
 Add a row whenever a new document is created; update Verified column after each code-verification pass.
 
 **Verification key:**
@@ -34,6 +34,8 @@ Add a row whenever a new document is created; update Verified column after each 
 | [SATURATION_HANDLING.md](architecture/SATURATION_HANDLING.md) | Detector saturation detection; fallback logic | unknown | ⚠️ |
 | [SERVO_POSITIONS_CLEAN.md](architecture/SERVO_POSITIONS_CLEAN.md) | Servo PWM units; S/P position storage; barrel vs round polarizers | unknown | ⚠️ |
 | [METHOD_CYCLE_SYSTEM.md](architecture/METHOD_CYCLE_SYSTEM.md) | Semi-automated cycle engine; method presets; queue system | unknown | ⚠️ |
+| [TIMELINE_INTEGRATION_GUIDE.md](architecture/TIMELINE_INTEGRATION_GUIDE.md) | Timeline domain model integration: migration checklist (Phases 1–4 complete), 3 migration paths, integration point examples, backward compatibility | Feb 19 2026 | ✅ |
+| [TIMELINE_QUICK_START.md](architecture/TIMELINE_QUICK_START.md) | Timeline API quick reference: core classes, event types, phase-by-phase change checklist (Phases 1–4 ✅), common operations, testing | Feb 19 2026 | ✅ |
 | [WORKFLOW_ARCHITECTURE.md](architecture/WORKFLOW_ARCHITECTURE.md) | Overall application workflow; phase diagram | unknown | ⚠️ |
 | [UI_ARCHITECTURE.md](architecture/UI_ARCHITECTURE.md) | MVP pattern; presenters; coordinators; mixin structure | unknown | ⚠️ |
 | [SIGNAL_REGISTRY_GUIDE.md](architecture/SIGNAL_REGISTRY_GUIDE.md) | Qt signal inventory; cross-thread connection patterns | unknown | ⚠️ |
@@ -94,12 +96,22 @@ Add a row whenever a new document is created; update Verified column after each 
 
 ---
 
-## Roadmaps & Future Plans (`docs/features/` — speculative, not current behavior)
+## Roadmaps & Future Plans (`docs/future_plans/`)
 
 > These describe planned or aspirational features. Do NOT assume they reflect current code.
 
 | Document | Coverage Area |
-|----------|--------------|
+|----------|-------------|
+| [TIMELINE_ROADMAP.md](future_plans/TIMELINE_ROADMAP.md) | Phase 5+ timeline integration roadmap: presenter queries, InjectionCoordinator, clean refactor, 6 improvement proposals (thread safety, normalize_time, start markers, AutoMarker, Excel export, edit/remove API) |
+| [FUTURE_ENHANCEMENTS.md](future_plans/FUTURE_ENHANCEMENTS.md) | General feature backlog |
+| [MAIN_PY_REFACTORING_OPPORTUNITIES.md](future_plans/MAIN_PY_REFACTORING_OPPORTUNITIES.md) | main.py decomposition opportunities |
+| [AFFILABS_ANALYZE_UI_SPEC.md](future_plans/AFFILABS_ANALYZE_UI_SPEC.md) | AffiLabs Analyze companion app UI spec |
+| [AFFILABS_DATA_ANALYSIS_MODULE.md](future_plans/AFFILABS_DATA_ANALYSIS_MODULE.md) | Data analysis module design |
+| [ANIML_SILA_IMPLEMENTATION_PLAN.md](future_plans/ANIML_SILA_IMPLEMENTATION_PLAN.md) | AnIML / SiLA 2 protocol integration plan |
+| [ONLINE_DEPLOYMENT_GUIDE.md](future_plans/ONLINE_DEPLOYMENT_GUIDE.md) | Cloud/remote deployment guide |
+| [SHAREPOINT_UPLOAD_SETUP.md](future_plans/SHAREPOINT_UPLOAD_SETUP.md) | SharePoint auto-upload setup |
+| [SHAREPOINT_WIX_INTEGRATION_GUIDE.md](future_plans/SHAREPOINT_WIX_INTEGRATION_GUIDE.md) | SharePoint + Wix integration |
+| [TICKET_SYSTEM_DESIGN.md](future_plans/TICKET_SYSTEM_DESIGN.md) | In-app support ticket system design |
 | [SPARK_WORKFLOW_ROADMAP.md](features/SPARK_WORKFLOW_ROADMAP.md) | Spark AI assistant planned capabilities |
 | [SYSTEM_INTELLIGENCE_INTEGRATION.md](features/SYSTEM_INTELLIGENCE_INTEGRATION.md) | SensorIQ + Spark AI integration architecture (planned) |
 | [SYSTEM_INTELLIGENCE_QUICKSTART.md](features/SYSTEM_INTELLIGENCE_QUICKSTART.md) | Quick-start for Spark / SensorIQ features |

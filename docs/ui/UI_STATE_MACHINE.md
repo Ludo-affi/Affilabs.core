@@ -78,7 +78,7 @@ These are not exclusive: calibrated + idle, calibrated + acquiring, calibrated +
 | Record button | Disabled | |
 | Pause button | Disabled | |
 | Subunit indicators | Gray "Not Ready" | Same as DISCONNECTED |
-| Connecting indicator | Visible | Animated or visible spinner |
+| Connecting indicator | Visible | Animated text: "Searching for instrument… Ns" — elapsed seconds updated every 300ms via `_update_connecting_animation()` |
 
 ### Transition: SEARCHING → CONNECTED
 
@@ -131,6 +131,11 @@ These are not exclusive: calibrated + idle, calibrated + acquiring, calibrated +
 - `_reset_subunit_status()` called
 - `power_off_requested` signal emitted → Application disconnects hardware
 
+### Transition: SEARCHING → CONNECTED (additional UX step)
+
+After `set_power_state("connected")`, if calibration has not yet been completed:
+- `_pulse_calibrate_button()` fires in `hardware_event_coordinator.py` — `full_calibration_btn` border flashes green 3× at 500ms intervals to guide the user to the next required action
+
 ### Transition: CONNECTED → CALIBRATED
 
 **Trigger**: `CalibrationService.calibration_complete` → `_on_calibration_complete_status_update(calibration_data)`
@@ -141,7 +146,10 @@ These are not exclusive: calibrated + idle, calibrated + acquiring, calibrated +
   - `record_btn.setEnabled(True)` + tooltip "Start Recording"
   - `pause_btn.setEnabled(True)` + tooltip "Pause Live Acquisition"
 - `CalibrationQCDialog` shown **modally** (`exec()`) — blocks UI until user dismisses
-- After QC dialog closes: LEDs turned off, graph cleared
+- After QC dialog closes:
+  - Sidebar **auto-switches to Method tab** (`sidebar.tab_widget.setCurrentIndex(method_idx)`) so the "Build Method" CTA is immediately visible
+  - LEDs turned off (`hardware_mgr.ctrl.turn_off_channels()`)
+  - Graph cleared
 - Live spectrum updates resumed (`set_transmission_updates_enabled(True)`)
 - LED intensities set from `calibration_data.p_mode_intensities`
 - Settings panel repopulated (`_load_current_settings`)
@@ -176,6 +184,10 @@ These are not exclusive: calibrated + idle, calibrated + acquiring, calibrated +
 - Data buffers cleared (`buffer_mgr.clear_all()`)
 - Pause markers from previous run cleared (via `QTimer.singleShot`)
 - `experiment_start_time` reset to None (set on first spectrum)
+- `_baseline_hint_label` shown on `full_timeline_graph`: "Flat baseline = instrument ready for injection" — positioned bottom-right, transparent to mouse events
+- `stability_badge` hidden (shown/updated by `ui_update_coordinator` once peak data arrives)
+- `_peak_history` rolling buffers cleared for all 4 channels
+- `active_cycle_card` in Method tab: shown on first `_update_cycle_display()` tick (1s timer); hidden on cycle queue exhausted or acquisition stopped
 
 ---
 
@@ -195,6 +207,7 @@ These are not exclusive: calibrated + idle, calibrated + acquiring, calibrated +
 | Hardware params | Locked | |
 | Method tab Start | Disabled if cycle running | |
 | Method tab Stop | Enabled | |
+| **Active Cycle Card** | Visible (while cycle running) / Hidden (between cycles) | Driven by 1s `_cycle_timer` → `_update_cycle_display()`; shows cycle type badge, index, countdown, next cycle, total experiment time |
 
 ### Transition: ACQUIRING → RECORDING (overlay)
 
@@ -262,9 +275,11 @@ Recording is not a standalone state — it overlays ACQUIRING or PAUSED.
 
 | Element | State |
 |---------|-------|
-| Record button | Checked, text may show "⏺ Recording" |
+| Record button | Checked, tooltip shows filename |
+| `rec_status_dot` | Pulses red at 800ms (bright `#FF3B30` ↔ faded `rgba(255,59,48,0.25)`) via `_rec_pulse_timer` |
+| `rec_status_text` | "⏺  Saving to: filename.xlsx" in red |
+| `recording_indicator` frame | Red-tinted background `rgba(255, 59, 48, 0.1)` |
 | Timeline | Shows "Recording Started" event marker |
-| Status bar | May show recording filename |
 
 ### Transition: RECORDING → ACQUIRING (recording stopped, acquisition continues)
 
@@ -273,14 +288,16 @@ Recording is not a standalone state — it overlays ACQUIRING or PAUSED.
 
 **UI changes**:
 - Record button unchecked
+- `_rec_pulse_timer` stopped; `rec_status_dot` → grey; `rec_status_text` → "Not Recording"
 - `recording_event_coordinator` fires → progression banner auto-refreshes
+- Post-stop toast shown bottom-right: filename, "Open file", "View results →" (→ Edits tab), auto-dismiss 12s
 
 ### Transition: RECORDING → CALIBRATED (acquisition + recording both stop)
 
 **Trigger**: Acquisition stops while recording active
 **Handler**: `_on_acquisition_stopped()` detects `recording_mgr.is_recording` → calls `stop_recording()`
 
-**UI changes**: Same as ACQUIRING → CALIBRATED transition (above), plus recording cleanup
+**UI changes**: Same as ACQUIRING → CALIBRATED transition (above), plus recording cleanup; `_baseline_hint_label` hidden; `stability_badge` hidden; `_peak_history` cleared; `active_cycle_card` hidden
 
 ---
 

@@ -48,6 +48,14 @@
 - User can drag to resize — **never use `setFixedWidth()` on either pane**
 - Minimum window: 1400 × 800
 
+#### Sidebar Footer Strip
+
+**Attribute**: `spark_hint` QFrame on `AffilabsSidebar`
+**Location**: Fixed 36px strip below `tab_widget`, always visible
+**Content**: `spark_hint_label` — "💬 Ask Spark AI — click the robot icon for help"
+**Style**: `rgba(46, 48, 227, 0.06)` background; `border-top: 1px solid rgba(46,48,227,0.15)`; 11px font; `color: rgba(46,48,227,0.75)`
+**Purpose**: Discovery hint so users know Spark exists even when the panel is closed
+
 ---
 
 ## 2. Main Content Pages
@@ -78,6 +86,18 @@ Managed by `QStackedWidget` (`content_stack`). Navigation via `NavigationPresent
 - Delta-SPR overlay (`DeltaSPROverlay`) appears only when alignment is set in Edits tab
 - Injection flags render as vertical markers — added by `InjectionCoordinator`
 - Cycle shading (colored background regions) — added by `SensogramPresenter`
+
+**Graph header widgets** (row above `full_timeline_graph`, built by `_create_graph_header()`):
+
+| Widget | Attribute | Purpose |
+|--------|-----------|---------|
+| Channel toggles A/B/C/D | `channel_toggles[ch]` | Show/hide channels; checkable |
+| Signal IQ dots | `sensor_iq_{ch}_diag` / `sensor_iq_badges[ch]` | Colored 7×7px square overlaid on each channel button; updated by `AL_UIUpdateCoordinator` |
+| Baseline stability badge | `stability_badge` | Grey "Stabilizing…" → green "Ready to inject ✓" when all active channels p2p ≤ 0.15 nm for 30 samples; hidden when not acquiring |
+| Live Data toggle | `live_data_btn` | Enables/disables auto-scroll of sensorgram cursor |
+| Clear Graph button | `clear_graph_btn` | Resets all graph data |
+
+**Baseline hint label** (`_baseline_hint_label`): `QLabel` overlaid on `full_timeline_graph`, bottom-right corner, transparent to mouse events. Text: "Flat baseline = instrument ready for injection". Shown on acquisition start, hidden on first injection flag placed.
 
 ---
 
@@ -126,48 +146,45 @@ Managed by `QStackedWidget` (`content_stack`). Navigation via `NavigationPresent
 
 ---
 
-### Tab 1 — Graphic Control
-**Builder**: [`AL_graphic_control_builder.py`](../../affilabs/sidebar_tabs/AL_graphic_control_builder.py)
-
-| Control | Widget | Effect |
-|---------|--------|--------|
-| Y-axis mode | Segmented (Auto / Manual) | Switches `enableAutoRange()` on/off |
-| Y min / Y max | `QDoubleSpinBox` × 2 | Sets `setYRange()` on sensorgram graphs |
-| EMA filter | Segmented (None / Light / Medium / Heavy) | Sets EMA alpha in `SensogramPresenter` |
-| Colorblind mode | `QCheckBox` | Switches channel colors to Tol bright palette |
-| Grid | `QCheckBox` | Calls `showGrid()` on graphs |
-| Show raw spectrum | `QPushButton` | Opens spectroscopy popup window |
-| Show transmission | `QPushButton` | Opens transmission spectrum popup |
-
-**Rules**:
-- Y-axis controls are disabled when "Auto" is selected
-- Filter changes take effect on the next graph update cycle — no retroactive smoothing
-- Colorblind toggle must update all 4 channel curves immediately
-
----
-
-### Tab 2 — Method
+### Tab 1 — Method
 **Builder**: [`AL_method_builder.py`](../../affilabs/sidebar_tabs/AL_method_builder.py)
 
-| Section | Components |
-|---------|-----------|
-| Queue summary | `QueueSummaryWidget` — drag-to-reorder table of queued cycles |
-| Cycle editor | Type dropdown (`CycleConfig.TYPES`), duration, comment field |
-| Actions | Add to Queue, Start, Stop, Clear buttons |
-| Templates | Browse / Save / Load via `CycleTemplateDialog` |
-| Spark | "Build with Spark" button → `MethodBuilderDialog` |
+> **Note**: The "Graphic Control" tab was removed from the tab bar (content moved to Settings → Display Controls). Tab indices shifted: Method=1, Flow=2, Export=3, Settings=4.
+
+**Layout top-to-bottom**:
+
+| Section | Components | Visibility |
+|---------|-----------|------------|
+| **Build Method CTA** | Full-width 48px blue `QPushButton` ("Build Method"), icon + label | Always visible |
+| **Active Cycle Card** | Blue-tinted card: cycle type badge, cycle index, countdown timer, next-cycle preview, total experiment time remaining | **Only when a cycle is running** |
+| **Queue table** | `QueueSummaryWidget` — drag-to-reorder, highlights running cycle | Always |
+| **Queue controls** | Start Run (green), Duplicate (orange), Next Cycle (blue) | Always; Next disabled when no cycle running |
+| **Retrieve Method** | `↻ Retrieve Method` button | **Only after queue completes** |
+
+**Active Cycle Card** (`sidebar.active_cycle_card`):
+
+| Label | Attribute | Content |
+|-------|-----------|---------|
+| Cycle type badge | `active_cycle_type_label` | e.g. "Binding" — blue pill |
+| Cycle index | `active_cycle_index_label` | e.g. "Cycle 1/4" — grey |
+| Countdown | `active_cycle_countdown_label` | Remaining time MM:SS — blue; turns orange at <10s |
+| Next cycle | `active_next_cycle_label` | e.g. "Next: Wash" — orange; hidden when queue empty |
+| Experiment time | `active_experiment_time_label` | Total remaining across all queued cycles |
+
+Update path: `_cycle_timer` (1s) → `_update_cycle_display()` → card labels
+Show/hide: shown by `_update_cycle_display()` on first tick; hidden by `_on_cycle_completed()` when queue exhausted and by `_on_acquisition_stopped()`
 
 **Rules**:
-- "Start" is disabled when: no cycles in queue, not calibrated, or acquisition already running
-- "Stop" terminates the current cycle immediately — confirm dialog before firing
+- "Build Method" button is the **first interactive element** in this tab — opens `MethodBuilderDialog` non-modally (`show()` not `exec()`)
+- "Start Run" is disabled when: no cycles in queue, not calibrated, or acquisition already running
+- "Next Cycle" skips to next cycle in queue immediately (no confirm)
 - Drag reorder in `QueueSummaryWidget` updates queue order in `QueueManager`
-- Cycle comment is optional (can be empty)
-- Time dropdown (`CycleConfig.TIME_OPTIONS`) is enabled only for Flow and Static types
-- "Build Method" button opens `MethodBuilderDialog` non-modally (`show()` not `exec()`)
+- After calibration completes (QC dialog dismissed), sidebar **auto-switches** to this tab so "Build Method" is immediately visible
+- Intel bar labels (`intel_status_label`, `intel_message_label`) still exist as **hidden** widgets for backward compat — they are not rendered
 
 ---
 
-### Tab 3 — Flow
+### Tab 2 — Flow
 **Builder**: [`AL_flow_builder.py`](../../affilabs/sidebar_tabs/AL_flow_builder.py)
 
 | Section | Components | Visibility |
@@ -186,7 +203,7 @@ Managed by `QStackedWidget` (`content_stack`). Navigation via `NavigationPresent
 
 ---
 
-### Tab 4 — Export
+### Tab 3 — Export
 **Builder**: [`AL_export_builder.py`](../../affilabs/sidebar_tabs/AL_export_builder.py)
 
 | Control | Widget | Rule |
@@ -205,7 +222,7 @@ Managed by `QStackedWidget` (`content_stack`). Navigation via `NavigationPresent
 
 ---
 
-### Tab 5 — Settings
+### Tab 4 — Settings
 **Builder**: [`AL_settings_builder.py`](../../affilabs/sidebar_tabs/AL_settings_builder.py)
 
 | Section | Controls |
@@ -225,24 +242,10 @@ Managed by `QStackedWidget` (`content_stack`). Navigation via `NavigationPresent
 
 ---
 
-### Tab 6 — Data Replay
-**Builder**: [`AL_data_replay_builder.py`](../../affilabs/sidebar_tabs/AL_data_replay_builder.py)
-
-| Control | Purpose |
-|---------|---------|
-| File picker | Load a `.json` / `.xlsx` session file |
-| Playback controls | Play / Pause / Rewind / Speed multiplier |
-| Channel selector | Which channels to replay |
-
-**Rules**:
-- Replay mode disables hardware controls (Power, Record, Pause toolbar buttons)
-- Replay data populates the same sensorgram graphs as live mode
-- Exiting replay mode restores hardware controls to their pre-replay state
-
----
-
-### Tab 7 — Spark AI
+### Spark AI Panel
 **Widget**: [`affilabs/widgets/spark_sidebar.py`](../../affilabs/widgets/spark_sidebar.py) → contains `SparkHelpWidget`
+
+> **Not a sidebar tab** — Spark is a separate `QWidget` in the main `QSplitter` (left pane). It is toggled by the robot-icon button (`spark_toggle_btn`) in the nav bar.
 
 | Element | Behavior |
 |---------|---------|
@@ -251,15 +254,38 @@ Managed by `QStackedWidget` (`content_stack`). Navigation via `NavigationPresent
 | Voice toggle (🔊) | TTS on/off — **default: OFF** |
 | Feedback buttons | 👍/👎 per answer — logged for improvement |
 
+**Default state**: **Hidden** (`spark_toggle_btn.setChecked(False)` at startup). Users open on demand.
+
+**Discovery**: Sidebar footer strip ("💬 Ask Spark AI — click the robot icon for help") is always visible at the bottom of the sidebar, pointing users to the nav bar toggle.
+
 **Rules**:
 - Answer generation is always on a background thread — UI never blocks
 - If answer generation fails, show a graceful fallback: "I couldn't find an answer. Try rephrasing."
-- TTS disabled by default (`spark_help_widget.py:387`)
+- TTS disabled by default (`spark_help_widget.py`)
 - All Spark entry points wrapped in try/except — Spark failure must never crash the main app
+- `switch_to_spark_tab()` on sidebar is a no-op stub kept for backward compat
 
 ---
 
 ## 4. Reusable Widgets
+
+### Signal IQ Dots
+**Attribute**: `sensor_iq_{ch}_diag` (e.g. `sensor_iq_a_diag`) on `AffilabsMainWindow`; also collected in `sensor_iq_badges` dict
+**Location**: Overlaid bottom-right corner of each channel toggle button in the graph header
+**Size**: 7×7px colored square (`border-radius: 3px`)
+**Colors**: green (`#34C759`) = good, amber (`#FF9500`) = questionable, red (`#FF3B30`) = poor, neutral = no data yet
+**Update path**: `main.py:_on_peak_updated` → `spectrum_helpers.classify_spr_quality` → `app._update_sensor_iq_display` → `ui_updates.queue_sensor_iq_update` → `AL_UIUpdateCoordinator._update_sensor_iq_displays` (500ms timer)
+**Metrics used** (4-check cascade, worst result wins): wavelength zone → FWHM → dip depth → baseline noise (p2p)
+**Rules**: Dot hidden when channel is toggled off. Tooltip shows full detail. No text on dot — color only.
+
+### Baseline Stability Badge
+**Attribute**: `stability_badge` on `AffilabsMainWindow`
+**Location**: Graph header row, left of "Live Data" toggle
+**States**: hidden (not acquiring) → grey "Stabilizing…" → green "Ready to inject ✓"
+**Stability threshold**: all active channels have p2p ≤ 0.15 nm over last 30 peak values (~30s at 1 Hz)
+**Minimum samples**: 20 samples required before judging (avoids premature green at startup)
+**Update path**: `main.py:_on_peak_updated` → rolling buffer → `ui_updates.queue_stability_update` → `AL_UIUpdateCoordinator._update_stability_badge` (500ms timer)
+**Reset**: hidden and buffers cleared on `_on_acquisition_stopped`
 
 ### `QueueSummaryWidget`
 **File**: [`affilabs/widgets/queue_summary_widget.py`](../../affilabs/widgets/queue_summary_widget.py)
@@ -291,12 +317,10 @@ Managed by `QStackedWidget` (`content_stack`). Navigation via `NavigationPresent
 - Animated: `AnimatedTimerDisplay` widget for rolling numbers
 - Rules: Timer starts when cycle starts, counts down to zero. On completion: fires cycle-end event.
 
-### `IntelligenceBar`
+### ~~`IntelligenceBar`~~ (removed from Method tab)
 **File**: [`affilabs/widgets/intelligence_bar.py`](../../affilabs/widgets/intelligence_bar.py)
 
-- Horizontal status bar showing acquisition / calibration system state
-- Updates on every acquisition tick
-- Rules: Never show errors here — use status bar for errors. Bar shows operational state only.
+> **Deprecated in v2.0.5**: The inline intelligence bar in the Method tab was replaced by the **Active Cycle Card** (see Tab 1 — Method). The `intel_status_label` and `intel_message_label` attributes still exist on the sidebar as hidden widgets for backward compat with `_refresh_intelligence_bar()` in `affilabs_core_ui.py`, but they are not rendered.
 
 ### `DeltaSPROverlay`
 **File**: [`affilabs/widgets/delta_spr_overlay.py`](../../affilabs/widgets/delta_spr_overlay.py)
@@ -322,9 +346,17 @@ Managed by `QStackedWidget` (`content_stack`). Navigation via `NavigationPresent
 ### `CalibrationQCDialog`
 **File**: [`affilabs/widgets/calibration_qc_dialog.py`](../../affilabs/widgets/calibration_qc_dialog.py)
 
-- 4-graph QC view: S-pol, P-pol, dark spectrum, transmission
-- Opened after calibration completes
+- 4-graph layout: S-pol spectrum (top-left), P-pol spectrum (top-right), combined QC metrics table (bottom-left), notes panel (bottom-right)
+- **QC metrics table**: per-channel rows — Dip Depth, Dip FWHM, Noise, Conv Iter — all in plain text (no color coding)
+- **Notes panel**: 5 fixed reminders for the user:
+  - ⚠ Dry sensor produces no usable data
+  - ♻ Reused sensor chips often fail QC
+  - ✗ Unused channels show poor metrics — expected, not a fault
+  - ⊘ Dip depth < 50% on new chip → check fiber and flow cell seating
+  - ~ QC pass ≠ stable data; watch baseline drift in first 5 min
+- Opened automatically after calibration completes
 - Non-modal — user can dismiss and continue
+- **After dismissal**: sidebar auto-switches to Method tab so "Build Method" is immediately visible
 
 ### `DeviceStatus`
 **File**: [`affilabs/widgets/device_status.py`](../../affilabs/widgets/device_status.py)
@@ -344,7 +376,7 @@ All dialogs lazy-loaded (created on first access, then cached). Use `show()` for
 | `MethodBuilderDialog` | `widgets/method_builder_dialog.py` | No | "Build Method" button in Method tab |
 | `CycleTemplateDialog` | `widgets/cycle_template_dialog.py` | No | "Templates" button |
 | `CycleTableDialog` | `widgets/cycle_table_dialog.py` | No | Double-click cycle in Edits tab |
-| `CalibrationQCDialog` | `widgets/calibration_qc_dialog.py` | No | Auto-shown after calibration |
+| `CalibrationQCDialog` | `widgets/calibration_qc_dialog.py` | **Yes** (`exec()`) | Auto-shown after calibration |
 | `QCHistoryDialog` | `widgets/qc_history_dialog.py` | No | "View History" in Device Status |
 | `KaKdWizard` | `widgets/ka_kd_wizard.py` | No | Kinetics button in Analysis tab |
 | `KdWizard` | `widgets/kd_wizard.py` | No | Dissociation fit button |

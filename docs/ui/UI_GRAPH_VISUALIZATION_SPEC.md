@@ -69,6 +69,12 @@ setConfigOptions(antialias=True, useNumba=False, exitCleanup=True, enableExperim
 
 4 `PlotDataItem` curves, one per channel (A, B, C, D), using pens from `ACTIVE_GRAPH_COLORS`. Curve visibility toggled by channel checkboxes above the graph. Performance flags on each curve: `clipToView=True`, `autoDownsample=True`, `skipFiniteCheck=True`, `connect='finite'`.
 
+### Graph header controls (`_create_graph_header()`)
+
+Row above the plot area containing: **Channel toggles A/B/C/D** (with Signal IQ dots), **Baseline stability badge** (`stability_badge`), **Live Data** toggle, **Clear Graph** button.
+
+The stability badge transitions: hidden → grey "Stabilizing…" → green "Ready to inject ✓". It uses a 30-sample rolling buffer of peak wavelengths per channel; all active channels must have p2p ≤ 0.15 nm for at least 20 samples before turning green. Updated via `AL_UIUpdateCoordinator.queue_stability_update()` on the 500ms timer.
+
 ### Update rate
 
 | Graph | Rate | Timer |
@@ -115,6 +121,15 @@ Vertical colored lines for logged events ("Recording Started", pause/resume). Co
 ### Injection flags
 
 Vertical markers at the detected injection point per channel. Color matches channel color. Added by `InjectionCoordinator` via `injection_flag_requested` signal → `SensogramPresenter`.
+
+On placement, each new flag marker is briefly animated: size pulses from `size × 2.5` → `size × 1.8` → `size` in 120ms steps (via `_flash_timer` stored on the flag object in `FlagManager.add_flag_marker`).
+
+### Baseline hint label
+
+`_baseline_hint_label`: `QLabel` overlaid on the `full_timeline_graph` widget, positioned bottom-right, transparent to mouse events (`WA_TransparentForMouseEvents`). Text: *"Flat baseline = instrument ready for injection"*. Style: italic, muted grey, 11px.
+
+- **Shown**: on acquisition start (`_on_acquisition_started`)
+- **Hidden**: when first injection flag is placed (`flag_manager.add_flag_marker`), or when acquisition stops
 
 ### Optics warning state
 
