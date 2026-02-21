@@ -61,6 +61,9 @@ class AL_UIUpdateCoordinator(QObject):
         # Pending stability badge state (True = stable, False = not stable, None = unknown)
         self._pending_stability_update: bool | None = None
 
+        # Colorblind mode flag — updated by set_colorblind_mode()
+        self._colorblind_mode: bool = False
+
         # Setup throttled update timer for Settings sidebar graphs (1 Hz = 1000ms)
         self._update_timer = QTimer()
         self._update_timer.timeout.connect(self.process_pending_updates)
@@ -210,66 +213,127 @@ class AL_UIUpdateCoordinator(QObject):
             "d": None,
         }
 
+    # Short status word per IQ level — shown inside each pill
+    _IQ_PILL_LABELS = {
+        "excellent": "Good",
+        "good":      "Good",
+        "questionable": "Weak",
+        "poor":      "Poor",
+        "critical":  "ERROR",
+    }
+    # Pill background / border colors per IQ level
+    _IQ_PILL_BG = {
+        "excellent":    ("rgba(52,199,89,0.15)",  "#34C759"),
+        "good":         ("rgba(52,199,89,0.15)",  "#34C759"),
+        "questionable": ("rgba(255,149,0,0.15)",  "#FF9500"),
+        "poor":         ("rgba(255,59,48,0.15)",  "#FF3B30"),
+        "critical":     ("rgba(255,59,48,0.22)",  "#FF3B30"),
+    }
+    # Channel letter colors for pill text — standard palette
+    _CH_COLORS = {"a": "#1D1D1F", "b": "#FF3B30", "c": "#007AFF", "d": "#34C759"}
+    # Channel letter colors — colorblind palette (matches CHANNEL_COLORS_COLORBLIND)
+    _CH_COLORS_CB = {"a": "#e66101", "b": "#fdb863", "c": "#b2abd2", "d": "#5e3c99"}
+
+    def set_colorblind_mode(self, enabled: bool) -> None:
+        """Switch pill text channel colors to match the active palette."""
+        self._colorblind_mode = enabled
+
     def _update_sensor_iq_displays(self):
-        """Update Sensor IQ diagnostic displays from pending queue."""
+        """Update Sensor IQ displays: signal quality pills + Δ SPR bar (interactive legend shows channel state)."""
         if not self._pending_sensor_iq_updates:
             return
 
         try:
-            from affilabs.utils.sensor_iq import (
-                FWHM_THRESHOLDS_DISPLAY,
-                SENSOR_IQ_COLORS,
-                SENSOR_IQ_ICONS,
-                ZONE_BOUNDARIES_DISPLAY,
-            )
+            from affilabs.utils.sensor_iq import SENSOR_IQ_COLORS
+
+            ch_color_map = self._CH_COLORS_CB if self._colorblind_mode else self._CH_COLORS
 
             for channel, sensor_iq in self._pending_sensor_iq_updates.items():
-                # Get the appropriate label widget
-                label_attr = f"sensor_iq_{channel}_diag"
-                if not hasattr(self.main_window, label_attr):
-                    continue
+                iq_key = sensor_iq.iq_level.value
+                color = SENSOR_IQ_COLORS.get(iq_key, "#C7C7CC")
+                ch_upper = channel.upper()
 
-                label = getattr(self.main_window, label_attr)
-
-                # Get color for this IQ level
-                iq_level_key = sensor_iq.iq_level.value
-                color = SENSOR_IQ_COLORS.get(iq_level_key, "#C7C7CC")
-
-                # Tooltip carries all detail — dot is silent
+                # ── Build shared tooltip ───────────────────────────────────
                 fwhm_text = f"{sensor_iq.fwhm:.1f}nm" if sensor_iq.fwhm else "N/A"
+                depth_text = f"{sensor_iq.dip_depth*100:.0f}%" if sensor_iq.dip_depth is not None else "N/A"
                 tooltip_text = (
-                    f"{iq_level_key.upper()} · {sensor_iq.wavelength:.1f} nm\n"
-                    f"FWHM: {fwhm_text} · Score: {sensor_iq.quality_score:.2f}"
+                    f"Channel {ch_upper} — {iq_key.upper()}\n"
+                    f"λ: {sensor_iq.wavelength:.1f} nm  |  FWHM: {fwhm_text}  |  Dip: {depth_text}"
                 )
                 if sensor_iq.warning_message:
-                    tooltip_text += f"\n⚠ {sensor_iq.warning_message}"
+                    tooltip_text += f"\n⚠  {sensor_iq.warning_message}"
                 if sensor_iq.recommendation:
-                    tooltip_text += f"\n→ {sensor_iq.recommendation}"
+                    tooltip_text += f"\n→  {sensor_iq.recommendation}"
 
-                # Update dot: background color only, no text
-                label.setToolTip(tooltip_text)
-                label.setStyleSheet(
-                    f"QLabel {{"
-                    f"  background: {color};"
-                    f"  border-radius: 3px;"
-                    f"}}"
-                )
+                # ── 1. Signal quality pill ─────────────────────────────────
+                pills = getattr(self.main_window, 'signal_quality_pills', {})
+                pill = pills.get(ch_upper)
+                if pill is not None:
+                    bg, border = self._IQ_PILL_BG.get(iq_key, ("#F2F2F7", "#E5E5EA"))
+                    status = self._IQ_PILL_LABELS.get(iq_key, "—")
+                    ch_color = ch_color_map.get(channel, "#1D1D1F")
+                    pill.setText(
+                        f"<b style='color:{ch_color};'>{ch_upper}</b>"
+                        f" <span style='color:{border};'>{status}</span>"
+                    )
+                    pill.setToolTip(tooltip_text)
+                    pill.setStyleSheet(
+                        f"QLabel {{"
+                        f"  background: {bg};"
+                        f"  border-radius: 5px;"
+                        f"  border: 1px solid {border};"
+                        f"  padding: 0px 6px;"
+                        f"  font-size: 10px;"
+                        f"  font-weight: 600;"
+                        f"  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                        f"}}"
+                    )
 
-                # Update static info labels (only once, not per channel)
-                if channel == "a":
-                    if hasattr(self.main_window, "sensor_iq_zones_diag"):
-                        self.main_window.sensor_iq_zones_diag.setText(
-                            ZONE_BOUNDARIES_DISPLAY,
-                        )
-                    if hasattr(self.main_window, "sensor_iq_fwhm_diag"):
-                        self.main_window.sensor_iq_fwhm_diag.setText(
-                            FWHM_THRESHOLDS_DISPLAY,
-                        )
+                # ── 3. Mirror color to Δ SPR bar dict ─────────────────────
+                if hasattr(self.main_window, 'sensor_iq_colors'):
+                    self.main_window.sensor_iq_colors[ch_upper] = color
+
+                # ── 4. Update interactive legend IQ dot (color + shape) ───
+                graph = getattr(self.main_window, 'cycle_of_interest_graph', None)
+                legend = getattr(graph, 'interactive_spr_legend', None)
+                if legend is not None:
+                    legend.set_iq_state(ch_upper, color, iq_key)
+
+            # ── 5. Update footer signal science panel ─────────────────────
+            # Only send data for the currently selected timing channel so
+            # the footer always reflects the channel the scientist is watching.
+            graph = getattr(self.main_window, 'cycle_of_interest_graph', None)
+            footer = getattr(graph, 'intelligence_footer', None)
+            if footer is not None:
+                sel_letter = getattr(self.main_window, 'selected_channel_letter', 'A')
+                sel_lower = sel_letter.lower()
+                sel_iq = self._pending_sensor_iq_updates.get(sel_lower)
+                if sel_iq is not None:
+                    # p2p is computed from Active Cycle sensorgram data (per channel),
+                    # not from the global SensorIQ history — matches exactly what is
+                    # plotted in the Active Cycle graph window.
+                    p2p_val = None
+                    try:
+                        import numpy as np
+                        buf = getattr(self.app, 'buffer_mgr', None)
+                        if buf is not None:
+                            spr_data = buf.cycle_data[sel_lower].spr
+                            if len(spr_data) >= 2:
+                                p2p_val = float(np.max(spr_data) - np.min(spr_data))
+                    except Exception:
+                        pass
+                    stable = (p2p_val < 5.0) if p2p_val is not None else None
+                    footer.update_signal_metrics(
+                        channel=sel_lower,
+                        wavelength=sel_iq.wavelength,
+                        fwhm=sel_iq.fwhm,
+                        p2p=p2p_val,
+                        stable=stable,
+                    )
 
         except Exception as e:
             logger.debug(f"Sensor IQ display update failed: {e}")
 
-        # Clear processed updates
         self._pending_sensor_iq_updates.clear()
 
     def queue_stability_update(self, stable: bool) -> None:

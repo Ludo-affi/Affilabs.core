@@ -103,15 +103,15 @@ class ExcelExporter:
 
                     for ch in sorted(channels):
                         ch_data = df_raw[df_raw["channel"] == ch][["time", "value"]].copy()
-                        ch_data.columns = [f"Time {ch.upper()} (s)", f"Channel {ch.upper()} (nm)"]
+                        ch_data.columns = [f"Time_{ch.upper()}", f"SPR_{ch.upper()}"]
                         channel_dfs.append(ch_data.reset_index(drop=True))
 
                     # Concatenate horizontally (side by side)
                     df_channel_specific = pd.concat(channel_dfs, axis=1)
 
-                    df_channel_specific.to_excel(writer, sheet_name="Channel Data", index=False)
+                    df_channel_specific.to_excel(writer, sheet_name="Channels XY", index=False)
                     logger.debug(
-                        f"Exported channel-specific data with {len(df_channel_specific)} rows"
+                        f"Exported Channels XY sheet with {len(df_channel_specific)} rows"
                     )
 
                 # Sheet 3: Cycles

@@ -32,6 +32,56 @@ from affilabs.utils.spr_signal_processing_compat import (
 )
 
 
+def _compute_fwhm_and_depth(
+    transmission: np.ndarray,
+    wavelengths: np.ndarray,
+    peak_nm: float,
+) -> tuple[float | None, float | None]:
+    """Compute FWHM and dip depth from a transmission spectrum at a known peak.
+
+    Args:
+        transmission: 1-D transmission array (0–100 %).
+        wavelengths: Corresponding wavelength array (nm).
+        peak_nm: Resonance wavelength found by the pipeline (nm).
+
+    Returns:
+        (fwhm_nm, dip_depth) where dip_depth is a fraction 0–1.
+        Both are None if computation fails.
+    """
+    try:
+        if transmission is None or wavelengths is None or len(transmission) < 5:
+            return None, None
+
+        peak_idx = int(np.argmin(np.abs(wavelengths - peak_nm)))
+        dip_val = float(transmission[peak_idx])
+        baseline = float(np.percentile(transmission, 90))  # upper envelope ≈ baseline
+
+        depth = max(0.0, (baseline - dip_val) / baseline) if baseline > 0 else None
+
+        # FWHM: find half-maximum level and walk outward from peak
+        half_max = dip_val + (baseline - dip_val) * 0.5
+        # Walk left
+        left_idx = peak_idx
+        while left_idx > 0 and transmission[left_idx] < half_max:
+            left_idx -= 1
+        # Walk right
+        right_idx = peak_idx
+        while right_idx < len(transmission) - 1 and transmission[right_idx] < half_max:
+            right_idx += 1
+
+        if right_idx > left_idx:
+            fwhm = float(wavelengths[right_idx] - wavelengths[left_idx])
+            # Sanity-check: SPR dip should be 10–80 nm wide
+            fwhm = fwhm if 5.0 <= fwhm <= 100.0 else None
+        else:
+            fwhm = None
+
+        return fwhm, depth
+
+    except Exception:
+        return None, None
+
+
 @dataclass
 class ProcessingResult:
     """Result of processing a single spectrum.
@@ -240,6 +290,13 @@ class SpectrumProcessor:
 
             # Dip tracking complete
 
+            # Compute FWHM and dip depth from transmission at the found peak.
+            # Done here so all pipelines (fourier, centroid, adaptive, etc.) produce
+            # these metrics consistently, regardless of what the pipeline itself returns.
+            fwhm_nm, dip_depth = _compute_fwhm_and_depth(
+                transmission, wavelengths, resonance_wavelength
+            )
+
             # Success - create result (only calculate timing every 10th cycle for efficiency)
             self._stats_update_counter[channel] += 1
             if self._stats_update_counter[channel] % self._stats_update_interval == 0:
@@ -254,7 +311,11 @@ class SpectrumProcessor:
                 pipeline_used=pipeline_metadata.name,
                 fallback_used=False,
                 processing_time_ms=processing_time,
-                metadata={"pipeline_id": pipeline_id},
+                metadata={
+                    "pipeline_id": pipeline_id,
+                    "fwhm": fwhm_nm,
+                    "depth": dip_depth,
+                },
             )
 
             # Update statistics (lightweight)

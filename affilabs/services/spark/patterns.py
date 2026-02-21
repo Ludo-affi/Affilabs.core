@@ -477,7 +477,7 @@ PATTERNS = {
             "3. Click **➕ Add to Method**\n"
             "4. Reorder with ↑/↓ as needed\n"
             "5. Click **📋 Push to Queue** → **▶ Start Run**\n\n"
-            "Example: `Concentration 5min A:100nM contact 180s`",
+            "Example: `Binding 8.5min A:100nM contact 300s`",
             "category": "method",
             "keywords": ["create", "cycle", "new", "build", "method", "how"],
             "priority": "high"
@@ -485,7 +485,7 @@ PATTERNS = {
         r"how.*build.*method|how.*make.*method|how.*create.*method|method.*builder|build.*method": {
             "answer": "Open **+ Build Method** from the sidebar and type cycles one per line:\n\n"
             "`Baseline 5min`\n"
-            "`Concentration 5min A:100nM contact 180s`\n"
+            "`Binding 8.5min A:100nM contact 300s`\n"
             "`Regeneration 30sec ALL:50mM`\n\n"
             "Click **➕ Add to Method** → **📋 Push to Queue** → **▶ Start Run**.\n\n"
             "Shortcuts: `build 5` for auto-generated series, `@spark amine coupling` for templates.",
@@ -494,13 +494,14 @@ PATTERNS = {
             "priority": "high"
         },
         r"cycle.*type|what.*types|available.*types|type.*cycle": {
-            "answer": "There are 6 cycle types:\n\n"
-            "• **Baseline** — Running buffer, stable signal\n"
-            "• **Concentration** — Inject analyte, measure binding\n"
-            "• **Regeneration** — Strip bound analyte (auto 30s contact)\n"
-            "• **Immobilization** — Attach ligand to sensor\n"
-            "• **Wash** — Rinse flow path\n"
-            "• **Other** — Custom (activation, blocking, etc.)\n\n"
+            "answer": "There are 7 cycle types for P4SPR manual injection:\n\n"
+            "• **Baseline** — Running buffer, no injection\n"
+            "• **Binding** — Manual injection, 5 min contact, 8.5 min total window\n"
+            "• **Regeneration** — Strip bound analyte (30s contact)\n"
+            "• **Immobilization** — 30 min freestyle window for ligand attachment (no injection prompt)\n"
+            "• **Blocking** — Block unreacted surface sites, no injection\n"
+            "• **Wash** — Rinse flow path, no injection\n"
+            "• **Other** — Custom step (activation, etc.)\n\n"
             "All injections start 20 seconds into the cycle.",
             "category": "method",
             "keywords": ["cycle", "types", "available", "what"],
@@ -510,9 +511,9 @@ PATTERNS = {
             "answer": "Format: `Type Duration Channel:ValueUnits contact Ns`\n\n"
             "Examples:\n"
             "• `Baseline 5min`\n"
-            "• `Concentration 5min A:100nM contact 180s`\n"
+            "• `Binding 8.5min A:100nM contact 300s`\n"
             "• `Regeneration 30sec ALL:50mM`\n"
-            "• `Concentration 5min A:100nM contact 120s partial injection`\n\n"
+            "• `Binding 8.5min A:100nM contact 300s partial`\n\n"
             "Channels: A, B, C, D, ALL. Units: nM, µM, mM, mg/mL, etc.",
             "category": "method",
             "keywords": ["syntax", "write", "cycle", "note", "format", "type"],
@@ -527,10 +528,11 @@ PATTERNS = {
             "priority": "medium"
         },
         r"what.*injection|injection.*method|simple.*inject|partial.*inject|how.*inject": {
-            "answer": "**Simple injection** (default): Full sample loop injection via valve switching.\n"
+            "answer": "**Simple injection** (default): Manual syringe — user pipettes sample at the prompt.\n"
             "**Partial injection**: 30 µL spike — add `partial injection` to the cycle line.\n\n"
-            "Concentration, Immobilization, Wash, and Regeneration auto-inject. "
-            "Baseline and Other don't. All injections start 20 seconds into the cycle.",
+            "Binding and Regeneration cycles expect a manual injection. "
+            "Baseline, Immobilization, Blocking, Wash, and Other have no injection prompt. "
+            "All injections start 20 seconds into the cycle.",
             "category": "method",
             "keywords": ["injection", "simple", "partial", "inject", "method"],
             "priority": "medium"
@@ -568,10 +570,10 @@ PATTERNS = {
         },
         r"method.*example|example.*method|show.*example|sample.*method": {
             "answer": "**Simple Binding:**\n"
-            "`Baseline 5min` → `Concentration 5min A:100nM contact 180s` → `Regeneration 30sec ALL:50mM`\n\n"
+            "`Baseline 5min` → `Binding 8.5min A:100nM contact 300s` → `Regeneration 30sec ALL:50mM`\n\n"
             "**Dose-Response:**\n"
-            "`Baseline 5min` → Concentration cycles at 10nM, 50nM, 100nM, 500nM → `Regeneration 30sec`\n\n"
-            "💡 Type `build 5` for an auto-generated concentration series.",
+            "`Baseline 5min` → Binding cycles at 10nM, 50nM, 100nM, 500nM (8.5min each) → `Regeneration 30sec`\n\n"
+            "💡 Type `build 5` for an auto-generated binding series.",
             "category": "method",
             "keywords": ["example", "method", "sample", "show"],
             "priority": "medium"
@@ -582,14 +584,10 @@ PATTERNS = {
             "• **BN** — Binding\n"
             "• **IM** — Immobilization\n"
             "• **BK** — Blocking\n"
-            "• **KN** — Kinetic\n"
-            "• **CN** — Concentration\n"
             "• **RG** — Regeneration\n"
-            "• **AS** — Association\n"
-            "• **DS** — Dissociation\n"
             "• **WS** — Wash\n"
             "• **OT** — Other\n\n"
-            "Example: `BN 5min A:100nM contact 180s` (short for Binding)",
+            "Example: `BN 8.5min A:100nM contact 300s` (short for Binding)",
             "category": "method",
             "keywords": ["abbreviation", "short", "form", "BL", "BN", "IM", "BK", "KN", "CN", "RG"],
             "priority": "high"
@@ -610,9 +608,9 @@ PATTERNS = {
             "• `flow 50` or `fr 50` — Set flow rate to 50 µL/min\n"
             "• `iv 25` — Set injection volume to 25 µL\n\n"
             "Examples:\n"
-            "`Kinetic 5min A:100nM fr 50` (flow rate shorthand)\n"
-            "`Binding 5min A:100nM iv 25` (injection volume shorthand)\n"
-            "`Kinetic 5min A:100nM fr 50 iv 25 contact 3min` (both)",
+            "`Binding 8.5min A:100nM contact 300s` (standard)\n"
+            "`Binding 8.5min A:100nM iv 25 contact 300s` (injection volume)\n"
+            "`Binding 8.5min A:100nM contact 300s partial` (partial injection)",
             "category": "method",
             "keywords": ["flow", "rate", "injection", "volume", "shorthand", "parameter", "fr", "iv"],
             "priority": "high"
@@ -623,8 +621,8 @@ PATTERNS = {
             "`contact 3h 30min` → 2+ hours shown as contact time\n"
             "⚠️ **Auto-enables Overnight Mode if > 3 hours**\n\n"
             "Examples:\n"
-            "`Binding 5min A:100nM contact 5h` (long overnight binding)\n"
-            "`Immobilization 4min contact 2hr` (controlled surface prep)",
+            "`Binding 8.5min A:100nM contact 5h` (extended binding)\n"
+            "`Baseline overnight` (long stability run)",
             "category": "method",
             "keywords": ["contact", "time", "hour", "h", "hr", "3h", "5h"],
             "priority": "high"
@@ -633,7 +631,7 @@ PATTERNS = {
             "answer": "**Injection Types** (modifiers):\n\n"
             "• `partial` — 30 µL spike (quick test, less reagent)\n"
             "• No modifier (default) — Full sample loop injection\n\n"
-            "Usage: `Binding 5min A:100nM contact 180s partial`\n"
+            "Usage: `Binding 8.5min A:100nM contact 300s partial`\n"
             "Also works with: `manual` or `automated` to override injection mode",
             "category": "method",
             "keywords": ["partial", "injection", "simple", "type"],
@@ -708,8 +706,8 @@ PATTERNS = {
         },
         r"build.*quick|build.*5|build.*10|auto.*generate|automate": {
             "answer": "**Build Quick Series** (auto-generates):\n\n"
-            "`build 5` → 5 × (Binding 15min + Regeneration + Baseline)\n"
-            "`build 10` → 10 × (Binding 15min + Regeneration + Baseline)\n\n"
+            "`build 5` → 5 × (Binding 8.5min + Regeneration + Baseline)\n"
+            "`build 10` → 10 × (Binding 8.5min + Regeneration + Baseline)\n\n"
             "Perfect for dose-response or replicate binding runs.\n"
             "Click **➕ Add to Method**, adjust concentrations as needed.",
             "category": "method",
@@ -720,19 +718,20 @@ PATTERNS = {
             "answer": "**Full Method Examples:**\n\n"
             "**Dose-Response Titration:**\n"
             "`Baseline 5min`\n"
-            "`Binding 5min A:10nM contact 180s`\n"
+            "`Binding 8.5min A:10nM contact 300s`\n"
             "`Regen 30sec ALL:50mM`\n"
             "`Baseline 2min`\n"
-            "`Binding 5min A:50nM contact 180s`\n"
+            "`Binding 8.5min A:50nM contact 300s`\n"
             "`< repeat at 100nM, 500nM >`\n\n"
             "**Overnight Stability:**\n"
             "`Baseline overnight` (8 hours, auto-enables Overnight Mode)\n"
             "`Baseline 12h` (12 hours)\n\n"
             "**Amine Coupling:**\n"
-            "`Baseline 30sec`\n"
+            "`Baseline 5min`\n"
             "`Other 4min` (EDC/NHS activation)\n"
-            "`Immobilization 4min A:50µg/mL contact 180s`\n"
-            "`< blocking & titration >`",
+            "`Immobilization 30min` (30 min freestyle — pipette ligand manually)\n"
+            "`Blocking 4min` (ethanolamine)\n"
+            "`< Wash + Binding + Regen series >`",
             "category": "method",
             "keywords": ["example", "dose", "response", "titration", "amine", "coupling", "overnight"],
             "priority": "high"
@@ -741,9 +740,8 @@ PATTERNS = {
             "answer": "**Quick Syntax Cheat Sheet:**\n\n"
             "**Type Duration Channel Contact Modifiers**\n\n"
             "Examples:\n"
-            "`BN 5min A:100nM contact 180s` (short for Binding)\n"
-            "`KN 5min A:100nM fr 50 contact 3min` (Kinetic with flow rate)\n"
-            "`IM 4min A:50µg/mL contact 2h` (2-hour immobilization)\n"
+            "`BN 8.5min A:100nM contact 300s` (short for Binding)\n"
+            "`IM 30min` (Immobilization — 30 min freestyle, no injection)\n"
             "`RG 30sec ALL:50mM` (Regeneration)\n"
             "`BL 5min` (Baseline)\n\n"
             "**Modifiers:** `partial`, `manual`, `automated`, `detection priority/off`\n"
@@ -761,8 +759,8 @@ PATTERNS = {
             "answer": "P4SPR has **4 fully independent optical + fluidic channels (A, B, C, D)**.\n\n"
             "You can inject 4 **different analytes simultaneously** — one per channel!\n\n"
             "In Method Builder, specify channels per cycle:\n"
-            "`Binding 5min [A:100nM] [B:50nM] [C:25nM] [D:10nM] contact 180s`\n\n"
-            "Or use all channels: `Binding 5min ALL:100nM contact 180s`",
+            "`Binding 8.5min [A:100nM] [B:50nM] [C:25nM] [D:10nM] contact 300s`\n\n"
+            "Or use all channels: `Binding 8.5min ALL:100nM contact 300s`",
             "category": "p4spr",
             "keywords": ["4", "channel", "independent", "analyte", "parallel"],
             "priority": "high"
@@ -791,13 +789,14 @@ PATTERNS = {
         },
         r"p4spr.*immobiliz|which.*channel.*ligand|how.*immobiliz": {
             "answer": "In P4SPR, you typically immobilize ligand on **channel A only** (or any one channel).\n\n"
+            "**Immobilization** is a 30-minute freestyle window — the system runs the timer while you manually "
+            "pipette your ligand solution into the flow cell inlet. No injection prompt is shown.\n\n"
             "Example workflow:\n"
             "`Baseline 5min ALL`\n"
-            "`Immobilization 10min [A:50µg/mL] contact 300s` (only A gets ligand)\n"
+            "`Immobilization 30min` (pipette ligand manually into the cell)\n"
             "`Wash 30sec ALL`\n"
             "`Baseline 5min ALL`\n\n"
-            "Then channels B, C, D remain in buffer as references while you inject analyte into **all 4 channels**, "
-            "and only A shows binding (because A has the ligand).",
+            "Channels B, C, D remain in buffer as references.",
             "category": "p4spr",
             "keywords": ["p4spr", "immobilize", "ligand", "channel"],
             "priority": "medium"
@@ -847,7 +846,7 @@ PATTERNS = {
             "answer": "**Yes! P4SPR channels are independent.** Each can have a different analyte.\n\n"
             "Example method:\n"
             "`Baseline 5min ALL`\n"
-            "`Binding 5min [A:100nM] [B:50nM] [C:25nM] [D:10nM] contact 180s`\n"
+            "`Binding 8.5min [A:100nM] [B:50nM] [C:25nM] [D:10nM] contact 300s`\n"
             "`Regeneration 30sec ALL:50mM`\n\n"
             "At injection time, you pipette:\n"
             "• Channel A gets 100 nM solution\n"
@@ -861,7 +860,7 @@ PATTERNS = {
     },
 
     "analysis": {
-        r"baseline.*drift|baseline.*unstable": {
+        r"baseline.*drift|baseline.*unstable|drift.*baseline": {
             "answer": "Allow 30-60 minutes of warmup, check for bubbles in the flow cell, "
             "and verify consistent flow rate and temperature.\n\n"
             "You can capture a new baseline in **Settings** or apply baseline correction in the **Analysis** tab.",
@@ -869,18 +868,916 @@ PATTERNS = {
             "keywords": ["baseline", "drift", "unstable"],
             "priority": "medium"
         },
+        r"signal.*noise|noisy.*signal|signal.*quality|signal.*weak|weak.*signal": {
+            "answer": "Noisy or weak signal? Try:\n\n"
+            "• **Run Full Calibration** — recaptures S/P references with current sensor\n"
+            "• **Check sensor chip** — is it dry, scratched, or oxidized?\n"
+            "• **Allow warmup** — 30-60 min before first experiment\n"
+            "• **Remove air bubbles** — Cleanup → Prime in Flow tab\n"
+            "• **Check prism contact** — ensure chip seats flush\n\n"
+            "Signal quality shows in the **Signal Quality bar** (channel pills A/B/C/D above the sensorgram).\n"
+            "Green = good, yellow = monitor, red = action needed.",
+            "category": "analysis",
+            "keywords": ["signal", "noise", "noisy", "quality", "weak"],
+            "priority": "high"
+        },
+        r"how.*read.*sensorgram|read.*graph|sensorgram.*mean|what.*sensorgram": {
+            "answer": "The **sensorgram** shows resonance wavelength (nm) vs time.\n\n"
+            "• **Flat line** = stable baseline\n"
+            "• **Downward shift** (blue shift) = analyte binding ✅ (SPR signal goes DOWN on binding)\n"
+            "• **Return to baseline** = dissociation\n"
+            "• **Partial recovery after regen** = some analyte still bound\n\n"
+            "Each colored line = one channel (A, B, C, D). "
+            "Watch for correlated drops across channels — that confirms real binding vs noise.",
+            "category": "analysis",
+            "keywords": ["sensorgram", "read", "graph", "mean", "interpret"],
+            "priority": "high"
+        },
+        r"blue.*shift|signal.*goes.*down|binding.*signal|why.*down|wavelength.*decrease": {
+            "answer": "**SPR signal goes DOWN when analyte binds.** This is called a blue shift.\n\n"
+            "Why? When the refractive index at the sensor surface increases (from analyte binding), "
+            "the plasmon resonance wavelength decreases (shifts to shorter wavelength = blue shift).\n\n"
+            "This is the opposite of angular SPR (Biacore). In Affilabs, **a downward dip = binding.**",
+            "category": "analysis",
+            "keywords": ["blue", "shift", "signal", "down", "binding", "wavelength", "decrease"],
+            "priority": "high"
+        },
+        r"kd|affinity|dissociation.*constant|binding.*affinity|how.*calculate.*kd": {
+            "answer": "**Kd (dissociation constant)** tells you binding affinity.\n\n"
+            "**Method:**\n"
+            "1. Run 5–7 concentrations (dose-response)\n"
+            "2. Plot equilibrium signal vs concentration → fit to: Signal = Signal_max × [A] / (Kd + [A])\n"
+            "3. Kd = concentration at half-maximum binding\n\n"
+            "**Quick estimate:** Kd ≈ concentration where signal is 50% of maximum.\n\n"
+            "Export your data to Excel (Export tab) and use the built-in fitting in the Analysis tab.",
+            "category": "analysis",
+            "keywords": ["kd", "affinity", "dissociation", "constant", "binding", "calculate"],
+            "priority": "high"
+        },
+        r"ka|kon|kd.*off|koff|kinetic.*rate|association.*rate|dissociation.*rate": {
+            "answer": "**Kinetic rate constants:**\n\n"
+            "• **ka (kon)** = association rate — how fast analyte binds (M⁻¹s⁻¹)\n"
+            "• **kd (koff)** = dissociation rate — how fast analyte leaves (s⁻¹)\n"
+            "• **Kd** = kd/ka = equilibrium affinity (M)\n\n"
+            "**To measure kinetics:**\n"
+            "Run a Kinetic cycle with an association phase (injection) + dissociation phase (buffer wash).\n"
+            "Fit the association curve to 1:1 Langmuir model to extract ka and kd.\n\n"
+            "The Analysis tab provides kinetic fitting tools.",
+            "category": "analysis",
+            "keywords": ["ka", "kon", "koff", "kinetic", "rate", "association", "dissociation"],
+            "priority": "medium"
+        },
+        r"reference.*channel|blank.*channel|negative.*control|reference.*subtract": {
+            "answer": "**Reference channel subtraction** removes bulk refractive index changes (temperature, buffer).\n\n"
+            "**Setup:** Immobilize ligand on channel A only. Leave B (or C/D) in buffer — it's your reference.\n\n"
+            "**What to subtract:** Signal(reference) from Signal(sample).\n"
+            "Result = pure binding signal, corrected for non-specific effects.\n\n"
+            "In the Analysis tab, select reference channel(s) for auto-subtraction.",
+            "category": "analysis",
+            "keywords": ["reference", "channel", "blank", "negative", "control", "subtract"],
+            "priority": "high"
+        },
+        r"non.*specific.*binding|nsp|surface.*blocking|blocking.*step": {
+            "answer": "**Non-specific binding (NSB)** is analyte sticking to the chip surface (not the ligand).\n\n"
+            "**Reduce NSB:**\n"
+            "1. **Blocking step:** `Other 4min [ALL:1mg/mL BSA]` or `[ALL:1% Tween-20]` after immobilization\n"
+            "2. **Running buffer:** Add 0.05% Tween-20 to running buffer\n"
+            "3. **Sample preparation:** Use same buffer composition for samples\n"
+            "4. **Reference subtraction:** Use un-modified reference channel to subtract background\n\n"
+            "NSB appears as signal on your reference channel — subtract it out.",
+            "category": "analysis",
+            "keywords": ["non", "specific", "binding", "nsp", "block", "blocking"],
+            "priority": "medium"
+        },
+        r"regeneration.*condition|regen.*condition|strip.*surface|how.*regen": {
+            "answer": "**Common regeneration conditions:**\n\n"
+            "| Application | Regeneration solution |\n"
+            "| --- | --- |\n"
+            "| Antibody-antigen | 10 mM glycine pH 1.5–2.5 (30 sec) |\n"
+            "| Protein-protein | 1 M NaCl (60 sec) |\n"
+            "| Biotin-streptavidin | Not reversible (use fresh chip) |\n"
+            "| DNA hybridization | 0.5% SDS or 8 M urea (30 sec) |\n\n"
+            "**Tips:** Start mild (glycine pH 2.5), go harsher only if needed. Check that baseline returns fully.",
+            "category": "analysis",
+            "keywords": ["regeneration", "condition", "regen", "strip", "surface", "glycine"],
+            "priority": "medium"
+        },
     },
 
-    "general": {
-        r"keyboard.*shortcuts|hotkeys": {
-            "answer": "Useful shortcuts: **Ctrl+S** (stop), **Ctrl+E** (export), "
-            "**Ctrl+Z** (undo), **Ctrl+Shift+Z** (redo), **F5** (refresh detector).",
-            "category": "general",
-            "keywords": ["keyboard", "shortcuts", "hotkeys"],
+    "troubleshooting": {
+        r"no.*signal|zero.*signal|flat.*line.*always|nothing.*happening": {
+            "answer": "No signal at all? Check these in order:\n\n"
+            "1. **Device Status** — is the detector connected (green dot)?\n"
+            "2. **Power On** — did startup calibration complete successfully?\n"
+            "3. **Live tab** → **Start** — is acquisition running?\n"
+            "4. **Sensor chip** — is it installed and in contact with the prism?\n"
+            "5. **Signal Quality bar** — are channel pills showing red (P2P >8nm = sensor issue)?\n\n"
+            "If calibration passed but sensorgram is flat: check sensor chip seating and prism cleanliness.",
+            "category": "troubleshooting",
+            "keywords": ["no", "signal", "zero", "flat", "nothing", "happening"],
+            "priority": "high"
+        },
+        r"sensor.*dry|dry.*sensor|light.*path.*blocked|sensor.*bad|chip.*bad": {
+            "answer": "**Sensor may be dry or light path blocked.**\n\n"
+            "Symptoms: P2P noise > 8 nm (red pill in Signal Quality bar), no SPR dip visible.\n\n"
+            "**Fix:**\n"
+            "1. Check sensor chip is wet — add a drop of buffer if dry\n"
+            "2. Verify chip is seated flush on the prism (no tilt, no gap)\n"
+            "3. Inspect prism — clean with lens tissue if dirty\n"
+            "4. Run **Full Calibration** to recapture references\n\n"
+            "If problem persists: try a fresh sensor chip.",
+            "category": "troubleshooting",
+            "keywords": ["sensor", "dry", "light", "blocked", "chip", "bad"],
+            "priority": "high"
+        },
+        r"bubble.*flow.*cell|bubble.*sensor|air.*in.*flow|air.*bubble": {
+            "answer": "Air bubbles cause spikes and noise in the sensorgram.\n\n"
+            "**Remove bubbles:**\n"
+            "1. Flow tab → **Cleanup** (pulse + prime, ~3-4 min)\n"
+            "2. If still noisy: **Prime** again, wait 2-3 min\n"
+            "3. Check inlet tubing — no kinks, fully submerged in buffer\n"
+            "4. **Degas your buffer** — heat to 37°C and cool, or use vacuum degasser\n\n"
+            "Bubbles show as sharp transient spikes, not slow drift.",
+            "category": "troubleshooting",
+            "keywords": ["bubble", "flow", "cell", "sensor", "air", "spike"],
+            "priority": "high"
+        },
+        r"spike.*sensorgram|sharp.*spike|transient.*spike|spike.*signal": {
+            "answer": "**Spikes** are usually:\n\n"
+            "• **Air bubbles** → Cleanup/Prime (Flow tab)\n"
+            "• **Loose connection** → Check USB and fluidic connections\n"
+            "• **Valve switching** → Normal at injection start (brief, < 2 sec)\n"
+            "• **Mechanical vibration** → Move instrument away from vibration sources\n\n"
+            "If spikes are random and frequent: run **Cleanup** first, then check connections.",
+            "category": "troubleshooting",
+            "keywords": ["spike", "sharp", "transient", "signal", "glitch"],
+            "priority": "medium"
+        },
+        r"software.*crash|app.*crash|crash|froze|not.*respond": {
+            "answer": "App crashed or frozen?\n\n"
+            "1. Force close (Task Manager if needed)\n"
+            "2. Restart Affilabs\n"
+            "3. Hardware auto-reconnects — click **Power On** again\n"
+            "4. Your last recorded data is safe (auto-saved)\n\n"
+            "If it crashes repeatedly: check logs in `_data/logs/` and send to info@affiniteinstruments.com.",
+            "category": "troubleshooting",
+            "keywords": ["crash", "freeze", "not", "respond", "software"],
+            "priority": "high"
+        },
+        r"error.*message|what.*error|error.*code|error.*mean": {
+            "answer": "**Common error messages:**\n\n"
+            "• **'LED model not found'** → Settings → Train LED Model\n"
+            "• **'Calibration failed'** → Click Retry; check for bubbles\n"
+            "• **'Detector not found'** → Reconnect USB, try different port\n"
+            "• **'Pump blocked'** → Check tubing, then Home Pumps\n"
+            "• **'Hardware disconnected'** → USB issue; reconnect and Power On\n\n"
+            "If the error is not listed, contact support at info@affiniteinstruments.com.",
+            "category": "troubleshooting",
+            "keywords": ["error", "message", "code", "mean"],
+            "priority": "high"
+        },
+        r"temperature.*control|temp.*stability|temperature.*drift|set.*temperature": {
+            "answer": "**Temperature control** helps reduce baseline drift from refractive index changes.\n\n"
+            "• SPR signal is sensitive to temperature (refractive index changes with temp)\n"
+            "• Allow 30-60 min warmup before experiments\n"
+            "• Ideal: 25°C ± 0.1°C for most protein experiments\n"
+            "• Keep instrument away from drafts, vents, and sunlight\n\n"
+            "Temperature settings (if available) are in **Settings → Advanced**.",
+            "category": "troubleshooting",
+            "keywords": ["temperature", "control", "stability", "drift", "set"],
+            "priority": "medium"
+        },
+        r"recording.*stop|data.*lost|data.*not.*saved|where.*data": {
+            "answer": "Data is **auto-saved** during acquisition. If recording stopped unexpectedly:\n\n"
+            "1. Check `_data/` folder — raw data files are saved there automatically\n"
+            "2. Open the **Export** tab → **Load from file** to recover a session\n"
+            "3. If you see data in the sensorgram, it can still be exported\n\n"
+            "For future sessions: always click **Record** before starting cycles to ensure named saving.",
+            "category": "troubleshooting",
+            "keywords": ["recording", "stop", "data", "lost", "saved", "where"],
+            "priority": "high"
+        },
+    },
+
+    "sensor_chip": {
+        r"sensor.*chip|gold.*chip|spr.*chip|chip.*type|which.*chip": {
+            "answer": "**Sensor chips** are gold-coated glass slides for SPR measurements.\n\n"
+            "**Common types:**\n"
+            "• **Bare gold** — For custom surface chemistry\n"
+            "• **Carboxymethyl (CM)** — Amine coupling ready; most common\n"
+            "• **Streptavidin** — For biotin-tagged ligands\n"
+            "• **Neutravidin** — Similar to streptavidin, lower NSB\n"
+            "• **NiNTA** — For His-tagged ligands\n\n"
+            "Contact Affinité Instruments for chip recommendations: info@affiniteinstruments.com",
+            "category": "sensor_chip",
+            "keywords": ["sensor", "chip", "gold", "type", "surface"],
+            "priority": "medium"
+        },
+        r"how.*install.*chip|install.*sensor|replace.*chip|chip.*installation": {
+            "answer": "**Installing a sensor chip:**\n\n"
+            "1. Power down flow (stop pump if running)\n"
+            "2. Remove old chip (slide out from prism contact surface)\n"
+            "3. Clean prism with lens tissue (isopropanol, wipe dry)\n"
+            "4. Place new chip — index-matched contact with prism\n"
+            "5. Run **Simple Calibration** (same chip type) or **Full Calibration** (new type)\n\n"
+            "⚠️ Never touch the gold side — oils from fingers kill the SPR response.",
+            "category": "sensor_chip",
+            "keywords": ["install", "chip", "sensor", "replace", "installation"],
+            "priority": "high"
+        },
+        r"chip.*lifetime|how.*long.*chip|reuse.*chip|chip.*reusable": {
+            "answer": "**Sensor chip lifetime:**\n\n"
+            "• Typically **5–20 cycles** depending on regeneration harshness\n"
+            "• Carboxymethyl (CM) chips: up to 50 regeneration cycles with gentle conditions\n"
+            "• Replace when: baseline drifts excessively, signal decreases >30%, or surface is scratched\n\n"
+            "**Signs it's time to replace:** very low FWHM (<40nm), signal quality bar shows red, "
+            "baseline won't stabilize even after warmup.",
+            "category": "sensor_chip",
+            "keywords": ["chip", "lifetime", "long", "reuse", "reusable"],
+            "priority": "medium"
+        },
+        r"amine.*coupling|NHS.*EDC|EDC.*NHS|immobiliz.*amine|surface.*activation": {
+            "answer": "**Amine coupling on CM chip:**\n\n"
+            "1. `Other 4min` → inject EDC/NHS (activates -COOH → -NHS ester)\n"
+            "2. `Immobilization 30min` → pipette ligand manually (low-pH buffer, pH 4.5–5.5); 30 min freestyle window\n"
+            "3. `Blocking 4min` → ethanolamine (blocks unreacted sites)\n"
+            "4. `Wash 30sec` → rinse\n"
+            "5. `Baseline 10min` → verify stable post-immobilization baseline\n\n"
+            "**EDC/NHS prep:** Mix equal volumes, use immediately. Ligand buffer: 10 mM sodium acetate pH 4.5–5.0.\n"
+            "**Target:** 100–500 RU immobilized (SPR units equivalent ~1-5nm shift).",
+            "category": "sensor_chip",
+            "keywords": ["amine", "coupling", "NHS", "EDC", "immobilize", "activation"],
+            "priority": "high"
+        },
+        r"biotinylated|streptavidin.*chip|biotin.*chip|his.*tag|ninta.*chip": {
+            "answer": "**Affinity capture approaches:**\n\n"
+            "**Biotin-Streptavidin:**\n"
+            "`Immobilization 5min [A:100nM_biotinylated_ligand]` on Streptavidin chip\n"
+            "(No EDC/NHS needed — biotin binds directly to streptavidin)\n\n"
+            "**His-tag NiNTA:**\n"
+            "`Immobilization 5min [A:100nM_His-protein]` on NiNTA chip\n"
+            "(Reversible — regenerate with imidazole or EDTA)\n\n"
+            "Both are non-covalent captures — gentler than amine coupling but ligand may leach.",
+            "category": "sensor_chip",
+            "keywords": ["biotin", "streptavidin", "his", "tag", "NiNTA", "capture"],
+            "priority": "medium"
+        },
+    },
+
+    "buffer": {
+        r"what.*buffer|running.*buffer|buffer.*spr|pbs.*hbs|hepes.*buffer": {
+            "answer": "**Standard SPR running buffers:**\n\n"
+            "• **PBS-T:** 137 mM NaCl, 2.7 mM KCl, 10 mM phosphate, 0.05% Tween-20 (pH 7.4) — most common\n"
+            "• **HBS-EP+:** 10 mM HEPES pH 7.4, 150 mM NaCl, 3 mM EDTA, 0.05% P20 — Biacore-style\n"
+            "• **HBS-N:** HBS without EDTA (for metal-ion sensitive experiments)\n\n"
+            "**Key rule:** Sample buffer = running buffer (match exactly to avoid bulk shifts).",
+            "category": "buffer",
+            "keywords": ["buffer", "running", "PBS", "HBS", "HEPES", "saline"],
+            "priority": "high"
+        },
+        r"buffer.*prep|prepare.*buffer|degas.*buffer|filter.*buffer": {
+            "answer": "**Buffer preparation for SPR:**\n\n"
+            "1. **Filter:** 0.22 µm filter (removes particles that clog tubing)\n"
+            "2. **Degas:** Warm to 37°C, cool to room temp — removes dissolved gas\n"
+            "3. **Match:** Sample buffer = running buffer composition (critical!)\n"
+            "4. **Fresh:** Use within 24h (bacterial growth, pH shift)\n\n"
+            "**Degas shortcut:** Heat water to 37°C before dissolving salts. Avoids degassing step.",
+            "category": "buffer",
+            "keywords": ["buffer", "prepare", "degas", "filter"],
+            "priority": "medium"
+        },
+        r"tween|surfactant|detergent.*buffer|0\.05%|polysorbate": {
+            "answer": "**Tween-20 (0.05%) in running buffer:**\n\n"
+            "• Reduces **non-specific binding** to tubing and flow cell\n"
+            "• Prevents analyte sticking to surfaces before reaching sensor\n"
+            "• Standard: 0.05% P20 (Polysorbate-20 = Tween-20)\n"
+            "• Too much (> 0.1%): disrupts hydrophobic interactions, may interfere with binding\n\n"
+            "Always use same surfactant concentration in running buffer AND sample.",
+            "category": "buffer",
+            "keywords": ["tween", "surfactant", "detergent", "0.05", "polysorbate"],
+            "priority": "medium"
+        },
+        r"sample.*preparation|dilute.*sample|dissolve.*sample|protein.*buffer": {
+            "answer": "**Sample preparation for P4SPR:**\n\n"
+            "1. **Dissolve** in running buffer (not water — pH and ionic strength must match)\n"
+            "2. **Dilute** to working concentration (start at 100 nM for proteins)\n"
+            "3. **Centrifuge** 5 min at 10,000 rpm (removes aggregates)\n"
+            "4. **Check volume:** need 100-200 µL per channel\n"
+            "5. **Temperature:** equilibrate to room temp before injecting\n\n"
+            "**Golden rule:** Sample buffer = running buffer. Any mismatch = bulk refractive index shift.",
+            "category": "buffer",
+            "keywords": ["sample", "preparation", "dilute", "dissolve", "protein"],
+            "priority": "high"
+        },
+    },
+
+    "data_management": {
+        r"export.*excel|excel.*export|save.*excel|how.*export": {
+            "answer": "**Export to Excel:**\n\n"
+            "1. Go to **Export** tab\n"
+            "2. Select data to export (all cycles or specific ones)\n"
+            "3. Click **Export to Excel** → choose save location\n\n"
+            "The Excel file includes:\n"
+            "• Sensorgram data (time + wavelength per channel)\n"
+            "• Cycle annotations (type, timestamps, notes)\n"
+            "• Signal quality metrics\n"
+            "• Built-in charts\n\n"
+            "For CSV: **Export to CSV** exports raw wavelength-vs-time data.",
+            "category": "data_management",
+            "keywords": ["export", "excel", "save", "download"],
+            "priority": "high"
+        },
+        r"csv.*export|export.*csv|raw.*data.*export": {
+            "answer": "**CSV export** gives raw sensorgram data (time, wavelength per channel).\n\n"
+            "Export tab → **Export to CSV** → choose location.\n\n"
+            "Format: timestamp, channel A wavelength, B, C, D — one row per acquisition point.\n\n"
+            "Use this for custom analysis in Python, R, MATLAB, or GraphPad.",
+            "category": "data_management",
+            "keywords": ["csv", "export", "raw", "data"],
+            "priority": "medium"
+        },
+        r"load.*data|open.*data|load.*previous|previous.*session|open.*file": {
+            "answer": "**Load previous session data:**\n\n"
+            "1. Export tab → **Load from File**\n"
+            "2. Select your saved Excel or data file\n"
+            "3. Data appears in the Edits tab for review and cycle analysis\n\n"
+            "All sessions auto-save to the `_data/` folder with timestamps.",
+            "category": "data_management",
+            "keywords": ["load", "data", "open", "previous", "session", "file"],
+            "priority": "medium"
+        },
+        r"recording.*start|start.*recording|record.*data|how.*record": {
+            "answer": "**Start Recording:**\n\n"
+            "1. Build your method in **Method Builder** (sidebar)\n"
+            "2. Click **📋 Push to Queue**\n"
+            "3. Click **▶ Start Run** — acquisition + recording begins\n\n"
+            "Recording saves all data to a file automatically.\n\n"
+            "**Auto-Read mode** (without a method) shows live data but doesn't save named cycles. "
+            "Use Record for experiments you want to keep.",
+            "category": "data_management",
+            "keywords": ["record", "start", "recording", "data", "save"],
+            "priority": "high"
+        },
+        r"animl.*format|animl.*export|xml.*export|data.*format": {
+            "answer": "**AnIML export** (Analytical Information Markup Language):\n\n"
+            "AnIML is a standardized XML format for analytical instrument data, enabling:\n"
+            "• Lab data management system (LIMS) integration\n"
+            "• Long-term archival\n"
+            "• Cross-instrument comparison\n\n"
+            "Export tab → **Export to AnIML** → choose location.\n\n"
+            "For most users, Excel export is simpler and includes charts.",
+            "category": "data_management",
+            "keywords": ["animl", "format", "export", "xml"],
             "priority": "low"
         },
     },
+
+    "edits_tab": {
+        r"edits.*tab|analysis.*tab|review.*data|cycle.*review": {
+            "answer": "**The Edits tab** lets you review and annotate recorded data:\n\n"
+            "• Click any cycle in the table to display it on the graph\n"
+            "• Drag cycle boundaries to re-align injection markers\n"
+            "• Add or edit notes per cycle\n"
+            "• View all 4 channels simultaneously\n"
+            "• Calculate delta SPR (binding response) between cursors\n\n"
+            "Load data with **Load from File** if reviewing a past session.",
+            "category": "edits_tab",
+            "keywords": ["edits", "tab", "analysis", "review", "cycle"],
+            "priority": "medium"
+        },
+        r"delta.*spr|delta.*signal|binding.*response|how.*measure.*binding": {
+            "answer": "**Delta SPR** = binding response (nm shift from baseline to plateau).\n\n"
+            "**In Edits tab:**\n"
+            "1. Click a cycle to display it\n"
+            "2. Place the **left cursor** on the pre-injection baseline\n"
+            "3. Place the **right cursor** on the binding plateau\n"
+            "4. Delta SPR = right - left (shown in the panel)\n\n"
+            "Negative delta = blue shift (binding). More negative = stronger binding.",
+            "category": "edits_tab",
+            "keywords": ["delta", "spr", "signal", "binding", "response", "measure"],
+            "priority": "high"
+        },
+        r"save.*method.*edits|save.*as.*method|export.*method": {
+            "answer": "**Save as Method** lets you turn a recorded experiment into a reusable method template.\n\n"
+            "Edits tab → **Save as Method** → name it → the cycle sequence is saved as a preset.\n\n"
+            "Load it later with `@method_name` in the Method Builder.",
+            "category": "edits_tab",
+            "keywords": ["save", "method", "edits", "export"],
+            "priority": "low"
+        },
+    },
+
+    "general": {
+        r"keyboard.*shortcuts|hotkeys|ctrl.*shortcut": {
+            "answer": "Useful shortcuts:\n\n"
+            "• **Ctrl+S** — Stop acquisition\n"
+            "• **Ctrl+E** — Export data\n"
+            "• **Ctrl+Z** / **Ctrl+Shift+Z** — Undo / Redo (Edits tab)\n"
+            "• **F5** — Refresh detector scan\n"
+            "• **Ctrl+Click** on sensorgram — Place injection flag (manual injection)\n"
+            "• **Space** — Pause/resume acquisition (if supported)\n\n"
+            "Full list: **Help → Keyboard Shortcuts**.",
+            "category": "general",
+            "keywords": ["keyboard", "shortcuts", "hotkeys", "ctrl"],
+            "priority": "low"
+        },
+        r"what.*spark|who.*spark|spark.*ai|what.*can.*you.*do|what.*can.*spark": {
+            "answer": "I'm **Spark**, your Affilabs AI assistant! 🤖\n\n"
+            "I'm specially trained on:\n"
+            "• **Method building** — cycle syntax, abbreviations, templates, examples\n"
+            "• **Calibration** — which type to use, troubleshooting\n"
+            "• **Pump & flow** — priming, cleanup, valve control\n"
+            "• **SPR science** — sensorgram reading, binding kinetics, surface prep\n"
+            "• **Troubleshooting** — common errors and fixes\n"
+            "• **Data export** — Excel, CSV, AnIML\n\n"
+            "Just ask a question in plain language — I'll do my best!",
+            "category": "general",
+            "keywords": ["spark", "ai", "what", "can", "do", "assistant"],
+            "priority": "high"
+        },
+        r"contact.*support|email.*support|help.*support|technical.*support": {
+            "answer": "**Contact Affinité Instruments support:**\n\n"
+            "📧 Email: info@affiniteinstruments.com\n"
+            "🌐 Website: https://www.affiniteinstruments.com/\n\n"
+            "Include:\n"
+            "• Your instrument serial number\n"
+            "• Description of the problem\n"
+            "• Screenshots or log files if available\n\n"
+            "Support typically responds within 1 business day.",
+            "category": "general",
+            "keywords": ["contact", "support", "email", "help", "technical"],
+            "priority": "high"
+        },
+        r"version.*software|software.*version|what.*version|affilabs.*version": {
+            "answer": "Check the software version in **Help → About Affilabs** or in the title bar.\n\n"
+            "Current branch: **v2.0.5 beta**\n\n"
+            "For updates, contact support at info@affiniteinstruments.com.",
+            "category": "general",
+            "keywords": ["version", "software", "affilabs"],
+            "priority": "low"
+        },
+        r"settings.*tab|where.*settings|advanced.*settings|configure": {
+            "answer": "**Settings tab** contains:\n\n"
+            "• **Power On / Off** (starts startup calibration)\n"
+            "• **Calibration Controls** — Simple, Full, Polarizer, OEM, LED Model Training\n"
+            "• **Device Status** — detector + hardware connection info\n"
+            "• **Signal processing** settings (baseline mode, pipeline, smoothing)\n"
+            "• **Overnight Mode** toggle\n"
+            "• **Advanced** — developer/diagnostic settings\n\n"
+            "Open from the left sidebar navigation bar.",
+            "category": "general",
+            "keywords": ["settings", "tab", "where", "advanced", "configure"],
+            "priority": "medium"
+        },
+        r"overnight.*mode|long.*run|8.*hour|12.*hour|unattended": {
+            "answer": "**Overnight Mode** keeps acquisition running safely for hours:\n\n"
+            "• Auto-enabled when contact time > 3h or you type `Baseline overnight`\n"
+            "• Reduces display refresh rate to save resources\n"
+            "• Auto-saves data periodically\n"
+            "• Alarm sounds if signal drops out of expected range\n\n"
+            "**Enable manually:** Settings → Overnight Mode toggle.\n"
+            "**In method:** `Baseline overnight` (= 8h), `Baseline 12h`, `Baseline 24hr`",
+            "category": "general",
+            "keywords": ["overnight", "mode", "long", "run", "hour", "unattended"],
+            "priority": "medium"
+        },
+        r"spr.*basics|what.*spr|surface.*plasmon|how.*spr.*work|spr.*principle": {
+            "answer": "**Surface Plasmon Resonance (SPR)** measures biomolecular interactions label-free in real-time.\n\n"
+            "**How it works:**\n"
+            "1. Light hits a gold-coated sensor at a specific angle\n"
+            "2. At the **resonance wavelength**, light couples into surface plasmons (electron oscillations)\n"
+            "3. When molecules bind at the gold surface, the refractive index changes\n"
+            "4. → resonance wavelength shifts (blue shift on binding)\n"
+            "5. We track this wavelength shift over time = the sensorgram\n\n"
+            "**What you measure:** binding kinetics (ka, kd), affinity (Kd), thermodynamics.\n"
+            "**No labels needed** — measure binding directly, no fluorescent tags required.",
+            "category": "general",
+            "keywords": ["spr", "basics", "surface", "plasmon", "how", "work", "principle"],
+            "priority": "high"
+        },
+        r"how.*affilabs.*different|affinite.*instruments|what.*instrument|p4spr.*vs.*biacore|compared.*biacore": {
+            "answer": "**Affilabs / Affinité Instruments vs conventional SPR (e.g. Biacore):**\n\n"
+            "| Feature | Affilabs P4SPR | Biacore/conventional |\n"
+            "| --- | --- | --- |\n"
+            "| Interrogation | Wavelength (spectral) | Angle |\n"
+            "| Signal unit | nm shift | RU (resonance units) |\n"
+            "| Optics | Lensless | Lens-based |\n"
+            "| Channels | 4 independent | 2-4 (fluidically coupled) |\n"
+            "| Size | Compact | Large |\n"
+            "| Price | Lower | Higher |\n\n"
+            "Both measure the same binding events — just via different optical readout.",
+            "category": "general",
+            "keywords": ["affilabs", "different", "biacore", "comparison", "instrument"],
+            "priority": "medium"
+        },
+    },
+
+    # -------------------------------------------------------------------------
+    # FLAGS (FRS-sourced: FLAGGING_SYSTEM_GUIDE.md)
+    # -------------------------------------------------------------------------
+    "flags": {
+        r"what.*flag|flag.*type|injection.*flag|wash.*flag|spike.*flag|type.*flag": {
+            "answer": "Affilabs uses three flag types to annotate events on your sensorgram:\n\n"
+            "- **Injection** (red triangle ▲) — marks when analyte is applied to the sensor\n"
+            "- **Wash** (blue square ■) — marks a wash or regeneration step\n"
+            "- **Spike** (orange star ★) — marks a transient artifact or noise event\n\n"
+            "Flags appear as markers on the sensorgram timeline.",
+            "category": "flags",
+            "keywords": ["flag", "type", "injection", "wash", "spike", "marker"],
+            "priority": "high"
+        },
+        r"how.*add.*flag|add.*flag|place.*flag|create.*flag|mark.*injection": {
+            "answer": "To add a flag in the **Edits** tab:\n\n"
+            "- **Right-click** on the sensorgram at the point you want to mark\n"
+            "- Select the flag type (Injection, Wash, or Spike) from the context menu\n\n"
+            "Flags added this way snap to the nearest data point. "
+            "You can also use the Flag toolbar buttons above the graph.",
+            "category": "flags",
+            "keywords": ["add", "flag", "place", "mark", "right-click", "edits"],
+            "priority": "high"
+        },
+        r"remove.*flag|delete.*flag|clear.*flag|ctrl.*right.?click": {
+            "answer": "To remove a flag in the **Edits** tab:\n\n"
+            "- **Ctrl + right-click** near the flag to remove it\n\n"
+            "Flags are removed by proximity — click close to the flag marker and it will be deleted.",
+            "category": "flags",
+            "keywords": ["remove", "delete", "clear", "flag", "ctrl", "right-click"],
+            "priority": "medium"
+        },
+        r"move.*flag|flag.*position|arrow.*key.*flag|adjust.*flag|nudge.*flag": {
+            "answer": "To move a flag in the **Edits** tab:\n\n"
+            "1. Click the flag marker to select it\n"
+            "2. Use the **← →** arrow keys to shift it left or right\n\n"
+            "The flag snaps to adjacent data points with each keypress — it won't land between data points.",
+            "category": "flags",
+            "keywords": ["move", "flag", "arrow", "key", "position", "adjust", "nudge"],
+            "priority": "medium"
+        },
+        r"injection.*alignment|align.*channel|flag.*align|multi.*channel.*flag": {
+            "answer": "In multi-channel experiments, injection flags can be automatically aligned:\n\n"
+            "- The **first channel's injection** is used as the reference position\n"
+            "- Subsequent channels snap their injection flags to the same relative position\n\n"
+            "This corrects for the ~15 second inter-channel delay when injecting P4SPR channels sequentially by hand.",
+            "category": "flags",
+            "keywords": ["injection", "alignment", "align", "channel", "flag", "multi", "sequential"],
+            "priority": "medium"
+        },
+        r"contact.*time|contact.*timer|timer.*flag|how.*long.*injection": {
+            "answer": "The **contact timer** shows how long the analyte has been in contact with the sensor surface.\n\n"
+            "It starts when the injection flag is placed and can be displayed as an overlay on the live sensorgram. "
+            "Use it to track association phase duration during manual injections.",
+            "category": "flags",
+            "keywords": ["contact", "time", "timer", "injection", "duration", "overlay"],
+            "priority": "low"
+        },
+        r"live.*flag|flag.*live|auto.*flag|automatic.*flag|software.*flag": {
+            "answer": "On the **live sensorgram**, injection flags are placed automatically by the software "
+            "when it detects a signal change (injection detection algorithm).\n\n"
+            "You cannot manually place flags on the live graph — manual flag editing is done in the **Edits** tab "
+            "after the run, where you can add, move, or remove flags freely.",
+            "category": "flags",
+            "keywords": ["live", "flag", "automatic", "auto", "software", "detection"],
+            "priority": "medium"
+        },
+    },
+
+    # -------------------------------------------------------------------------
+    # PRESETS & TEMPLATES (FRS-sourced: METHOD_PRESETS_SYSTEM.md)
+    # -------------------------------------------------------------------------
+    "presets_templates": {
+        r"cycle.*template|template.*cycle|save.*template|preset.*template": {
+            "answer": "A **cycle template** saves a single cycle configuration (flow rate, contact time, volumes) "
+            "so you can reuse it without re-entering settings.\n\n"
+            "Cycle templates appear in the **Template Gallery** in the Method Builder.\n\n"
+            "They are separate from **Queue Presets**, which save an entire experiment sequence.",
+            "category": "presets_templates",
+            "keywords": ["cycle", "template", "save", "preset", "reuse", "method"],
+            "priority": "high"
+        },
+        r"queue.*preset|save.*preset|full.*sequence.*preset|preset.*queue": {
+            "answer": "A **queue preset** saves your entire experiment queue (multiple cycles in sequence). "
+            "Use it to repeat a full protocol across experiments.\n\n"
+            "Queue presets are distinct from single-cycle templates — they capture the complete run order.",
+            "category": "presets_templates",
+            "keywords": ["queue", "preset", "sequence", "full", "protocol", "experiment"],
+            "priority": "high"
+        },
+        r"how.*save.*preset|save.*method.*preset|!save": {
+            "answer": "To save a preset, use the **!save** command in the Method Builder queue:\n\n"
+            "```\n!save my_protocol_name\n```\n\n"
+            "This saves the current queue as a named preset. "
+            "To save a single cycle as a template, use the save button in the cycle editor.",
+            "category": "presets_templates",
+            "keywords": ["save", "preset", "!save", "command", "queue", "method"],
+            "priority": "high"
+        },
+        r"how.*load.*preset|load.*template|@.*preset|use.*preset|apply.*preset": {
+            "answer": "To load a saved preset into the Method Builder:\n\n"
+            "- Type **@preset_name** in the queue to load a queue preset\n"
+            "- Or click a template card in the **Template Gallery** to load a cycle template\n\n"
+            "Loading a queue preset **replaces the current queue** (this action can be undone).",
+            "category": "presets_templates",
+            "keywords": ["load", "preset", "template", "apply", "@", "queue"],
+            "priority": "high"
+        },
+        r"export.*preset|import.*preset|share.*preset|json.*preset|preset.*file": {
+            "answer": "Presets and templates can be exported/imported as **JSON files**:\n\n"
+            "- **Export**: Use the export button in the Template Gallery or Presets panel\n"
+            "- **Import**: Drag-and-drop a JSON file or use the import button\n\n"
+            "This lets you share protocols between instruments or users.",
+            "category": "presets_templates",
+            "keywords": ["export", "import", "share", "json", "preset", "template", "file"],
+            "priority": "medium"
+        },
+        r"built.?in.*template|default.*template|example.*template|example.*method": {
+            "answer": "Affilabs includes built-in templates for common P4SPR experiments:\n\n"
+            "- **Binding** — Baseline → Binding 8.5 min → Regen → Baseline\n"
+            "- **Amine Coupling** — EDC/NHS activation → 30 min Immobilization → Blocking → Binding series\n"
+            "- **Titration** — 4-concentration dose-response series\n"
+            "- **Custom** — Start with a blank step list\n\n"
+            "Browse them in the **Template Gallery** (Method Builder opens with gallery when list is empty).",
+            "category": "presets_templates",
+            "keywords": ["built-in", "template", "default", "example", "gallery", "method"],
+            "priority": "medium"
+        },
+    },
+
+    # -------------------------------------------------------------------------
+    # RECORDING & DATA SAVING (FRS-sourced: RECORDING_MANAGER_FRS.md)
+    # -------------------------------------------------------------------------
+    "recording": {
+        r"how.*record|start.*recording|record.*data|begin.*recording|recording.*mode": {
+            "answer": "To start recording:\n\n"
+            "1. Press the **Record** button (red circle) in the top controls\n"
+            "2. Choose a filename or accept the auto-generated name\n"
+            "3. Data is saved to `~/Documents/Affilabs Data/<your name>/SPR_data/`\n\n"
+            "Recording auto-saves every **60 seconds** — no manual save needed.",
+            "category": "recording",
+            "keywords": ["record", "start", "recording", "data", "save", "begin"],
+            "priority": "high"
+        },
+        r"where.*save|save.*location|data.*folder|file.*location|find.*data.*file": {
+            "answer": "Experiment data files are saved to:\n\n"
+            "**`~/Documents/Affilabs Data/<username>/SPR_data/`**\n\n"
+            "Files are named automatically with a timestamp. "
+            "You can also find the current file path shown in the Recording status bar.",
+            "category": "recording",
+            "keywords": ["save", "location", "folder", "file", "find", "data", "path"],
+            "priority": "high"
+        },
+        r"auto.*save|autosave|auto-save|data.*lost|recording.*crash": {
+            "answer": "Affilabs auto-saves your recording every **60 seconds** when in file recording mode.\n\n"
+            "If the software closes unexpectedly, you won't lose more than 60 seconds of data. "
+            "The file is written incrementally — not just at the end.",
+            "category": "recording",
+            "keywords": ["auto", "save", "autosave", "crash", "lost", "data", "60"],
+            "priority": "high"
+        },
+        r"memory.*only|no.*file|record.*without.*file|in.*memory.*mode": {
+            "answer": "**Memory-only mode** records data in RAM without writing to disk.\n\n"
+            "- No file is created until you manually export\n"
+            "- The experiment counter does **not** increment\n"
+            "- Data is lost if the software closes before you export\n\n"
+            "Use this for exploratory runs. Switch to file mode for real experiments.",
+            "category": "recording",
+            "keywords": ["memory", "only", "no file", "in memory", "mode", "export"],
+            "priority": "medium"
+        },
+        r"excel.*sheet|excel.*tab|what.*excel|excel.*export.*contain|excel.*file": {
+            "answer": "The exported Excel file contains **7 sheets**:\n\n"
+            "1. **Raw Data** — all raw wavelength values per channel per timepoint\n"
+            "2. **Channels XY** — processed X/Y data per channel (time vs wavelength)\n"
+            "3. **Cycles** — cycle-by-cycle summary table\n"
+            "4. **Events** — timestamped event log (start, stop, injections, etc.)\n"
+            "5. **Flags** — all annotation flags with positions\n"
+            "6. **Analysis** — reserved for kinetics results (populated by analysis tools)\n"
+            "7. **Metadata** — instrument info, user, date, settings",
+            "category": "recording",
+            "keywords": ["excel", "sheet", "tab", "export", "contain", "file", "data"],
+            "priority": "medium"
+        },
+        r"experiment.*count|run.*number|experiment.*number|session.*count": {
+            "answer": "The **experiment counter** increments each time you start a new recording in **file mode**.\n\n"
+            "If you use memory-only mode, the counter does not increment. "
+            "The counter is per user profile and persists across sessions.",
+            "category": "recording",
+            "keywords": ["experiment", "count", "number", "run", "session", "counter"],
+            "priority": "low"
+        },
+        r"stop.*recording|end.*recording|finish.*recording|pause.*recording": {
+            "answer": "To stop recording:\n\n"
+            "- Press the **Stop** button (■) in the top controls\n\n"
+            "The file is finalized and closed. You can then export or review data in the Edits tab. "
+            "You can start a new recording immediately after stopping.",
+            "category": "recording",
+            "keywords": ["stop", "end", "finish", "recording", "pause"],
+            "priority": "medium"
+        },
+    },
+
+    # -------------------------------------------------------------------------
+    # EDITS TAB & EXPORT (FRS-sourced: EDITS_EXPORT_FRS.md + EDITS_TABLE_FRS.md)
+    # -------------------------------------------------------------------------
+    "edits_export": {
+        r"edits.*tab|edit.*tab|what.*edits.*tab|edits.*panel": {
+            "answer": "The **Edits tab** is your post-acquisition analysis workspace:\n\n"
+            "- Browse and overlay cycles from your experiment\n"
+            "- Add, move, or remove annotation flags\n"
+            "- Measure delta SPR (∆λ) between two cursor positions\n"
+            "- Export data in multiple formats\n\n"
+            "Open it from the tab bar after starting acquisition (or load a saved file).",
+            "category": "edits_export",
+            "keywords": ["edits", "tab", "panel", "analysis", "browse", "cycle"],
+            "priority": "high"
+        },
+        r"export.*data|how.*export|export.*button|save.*data.*file": {
+            "answer": "The Edits tab has **7 export options** in the right sidebar:\n\n"
+            "1. **Excel** — full 7-sheet workbook\n"
+            "2. **CSV / External Software** — comma-separated for Prism or Origin\n"
+            "3. **TraceDrawer** — tab-delimited `.txt` for TraceDrawer software\n"
+            "4. **Save as Method** — save cycle parameters as a reusable Method Builder template\n"
+            "5. **Copy to Clipboard** — paste data directly into another app\n"
+            "6. **Image (PNG)** — high-resolution 2400px graph export\n"
+            "7. **AnIML** — open standard XML format for archiving\n\n"
+            "Select cycles in the table first to export only those cycles.",
+            "category": "edits_export",
+            "keywords": ["export", "data", "button", "save", "options", "format"],
+            "priority": "high"
+        },
+        r"tracedrawer|trace.?drawer|tracedrawer.*format|export.*tracedrawer": {
+            "answer": "The **TraceDrawer export** produces a tab-delimited `.txt` file compatible with TraceDrawer analysis software.\n\n"
+            "**Format:**\n"
+            "- Columns: `X_RawDataA`, `Y_RawDataA`, `X_RawDataB`, `Y_RawDataB` ... (one pair per channel)\n"
+            "- Y values are in **RU (resonance units)** — converted automatically from nm shift\n"
+            "- Conversion factor: 1 nm = 355 RU\n\n"
+            "Use this format if your analysis workflow is in TraceDrawer.",
+            "category": "edits_export",
+            "keywords": ["tracedrawer", "trace", "drawer", "format", "txt", "RU", "export"],
+            "priority": "medium"
+        },
+        r"prism.*export|origin.*export|csv.*export|external.*software.*export": {
+            "answer": "The **External Software** export button produces a standard **CSV file** "
+            "compatible with GraphPad Prism, OriginPro, or any spreadsheet.\n\n"
+            "Columns include time and wavelength shift per channel. "
+            "This is different from the TraceDrawer export (which uses a specific column naming convention and RU units).",
+            "category": "edits_export",
+            "keywords": ["prism", "origin", "csv", "external", "software", "graphpad"],
+            "priority": "medium"
+        },
+        r"save.*as.*method|export.*method|cycle.*to.*method|reuse.*cycle": {
+            "answer": "**Save as Method** captures the parameters of selected cycle(s) and saves them as a reusable template in the Method Builder.\n\n"
+            "Use it when you've run a good experiment and want to repeat it exactly — flow rates, contact times, volumes, and cycle order are all preserved.\n\n"
+            "Find this button in the Edits tab export sidebar.",
+            "category": "edits_export",
+            "keywords": ["save", "method", "export", "cycle", "template", "reuse", "repeat"],
+            "priority": "medium"
+        },
+        r"delta.*spr|delta.*lambda|∆.*lambda|∆.*spr|measure.*shift|cursor.*measurement": {
+            "answer": "The **Delta SPR** tool measures the wavelength shift between two points:\n\n"
+            "1. Place **Cursor 1** at your baseline reference point\n"
+            "2. Place **Cursor 2** at the measurement point\n"
+            "3. The ∆λ value (in nm) and ∆RU are shown in the measurement panel\n\n"
+            "Use this to quantify binding responses, regeneration efficiency, or signal drift.",
+            "category": "edits_export",
+            "keywords": ["delta", "SPR", "lambda", "shift", "cursor", "measure", "nm", "RU"],
+            "priority": "high"
+        },
+        r"image.*export|export.*image|screenshot.*graph|save.*graph.*image|png.*export": {
+            "answer": "To export a high-resolution image of the sensorgram:\n\n"
+            "- Click **Export Image** in the Edits tab sidebar\n"
+            "- A **2400px PNG** is saved to your Documents folder\n\n"
+            "The exported image includes all visible traces, flags, and cursor annotations as displayed.",
+            "category": "edits_export",
+            "keywords": ["image", "export", "screenshot", "graph", "png", "save", "high-resolution"],
+            "priority": "low"
+        },
+        r"clipboard.*copy|copy.*data|paste.*excel|copy.*to.*clipboard": {
+            "answer": "The **Copy to Clipboard** button in the Edits tab copies the currently visible data in tabular format.\n\n"
+            "You can paste directly into Excel, Google Sheets, or any text editor. "
+            "Only data for the cycles selected in the table is copied.",
+            "category": "edits_export",
+            "keywords": ["clipboard", "copy", "paste", "excel", "sheets", "tabular"],
+            "priority": "low"
+        },
+    },
+
+    # -------------------------------------------------------------------------
+    # SIGNAL QUALITY / SENSOR IQ (FRS-sourced: SENSOR_IQ_SYSTEM.md)
+    # -------------------------------------------------------------------------
+    "signal_quality": {
+        r"sensor.*iq|signal.*quality|quality.*score|iq.*level|sensor.*quality": {
+            "answer": "**Sensor IQ** is the real-time signal quality rating for each SPR channel:\n\n"
+            "- 🌟 **Excellent** — optimal signal (590–690 nm, very tight dip)\n"
+            "- ✅ **Good** — normal operation (590–690 nm, ~70 nm dip width)\n"
+            "- ⚠️ **Questionable** — edge zone or broadening dip — monitor closely\n"
+            "- 🔶 **Poor** — weak coupling or sensor dry — stop and check\n"
+            "- ⛔ **Critical** — out of valid range — immediate action required\n\n"
+            "The colored pill next to each channel updates in real time.",
+            "category": "signal_quality",
+            "keywords": ["sensor", "IQ", "quality", "score", "level", "rating", "channel"],
+            "priority": "high"
+        },
+        r"wavelength.*range|valid.*range|out.*of.*range|expected.*wavelength": {
+            "answer": "The valid SPR wavelength range for this system is **560–720 nm**:\n\n"
+            "| Zone | Range | Status |\n"
+            "| --- | --- | --- |\n"
+            "| Expected | 590–690 nm | ✅ Normal |\n"
+            "| Edge low | 560–590 nm | ⚠️ Monitor |\n"
+            "| Edge high | 690–720 nm | ⚠️ Monitor |\n"
+            "| Out of bounds | <560 or >720 nm | ⛔ Critical |\n\n"
+            "If your wavelength is outside 560–720 nm, stop and check the sensor.",
+            "category": "signal_quality",
+            "keywords": ["wavelength", "range", "valid", "expected", "out of bounds", "zone"],
+            "priority": "high"
+        },
+        r"fwhm|dip.*width|peak.*width|full.*width|broad.*dip": {
+            "answer": "**FWHM (Full Width at Half Maximum)** describes the width of the SPR dip:\n\n"
+            "| FWHM | Quality |\n"
+            "| --- | --- |\n"
+            "| <60 nm | 🌟 Excellent |\n"
+            "| 60–80 nm | ✅ Good (target ~70 nm) |\n"
+            "| 80–100 nm | ⚠️ Poor — weak coupling |\n"
+            "| >100 nm | ⛔ Critical — check sensor |\n\n"
+            "A broad dip (>100 nm) usually means an air bubble, dry surface, or contamination.",
+            "category": "signal_quality",
+            "keywords": ["FWHM", "dip", "width", "full", "half", "maximum", "broad"],
+            "priority": "medium"
+        },
+        r"critical.*signal|red.*signal|signal.*red|signal.*critical|stop.*signal": {
+            "answer": "A **Critical** signal means the SPR wavelength is outside the valid range (<560 nm or >720 nm).\n\n"
+            "**Stop acquisition immediately and check:**\n"
+            "1. Is there water/buffer in the flow cell?\n"
+            "2. Are there air bubbles on the sensor?\n"
+            "3. Is the sensor chip properly installed?\n"
+            "4. Is the optical path clear?\n\n"
+            "Replace the sensor chip if the problem persists after priming.",
+            "category": "signal_quality",
+            "keywords": ["critical", "signal", "red", "stop", "out of range", "check"],
+            "priority": "high"
+        },
+        r"poor.*signal|signal.*poor|orange.*signal|p2p|peak.?to.?peak|noisy.*signal": {
+            "answer": "A **Poor** signal (orange indicator) means one or more of:\n\n"
+            "- FWHM >100 nm (very broad dip — weak coupling)\n"
+            "- Dip depth <30% (low contrast)\n"
+            "- Peak-to-peak noise ≥8 nm (sensor dry or light blocked)\n\n"
+            "**Action:**\n"
+            "1. Prime the flow cell to remove air bubbles\n"
+            "2. Check that the sensor surface is wetted\n"
+            "3. Verify the optical path is unobstructed",
+            "category": "signal_quality",
+            "keywords": ["poor", "signal", "orange", "P2P", "peak-to-peak", "noisy", "weak"],
+            "priority": "high"
+        },
+        r"questionable.*signal|yellow.*signal|signal.*yellow|edge.*zone|monitor.*signal": {
+            "answer": "A **Questionable** signal (yellow indicator) means the sensor is in an edge condition:\n\n"
+            "- Wavelength in 560–590 nm or 690–720 nm (edge zones)\n"
+            "- FWHM 80–100 nm (broadening)\n"
+            "- Peak-to-peak noise 5–8 nm\n\n"
+            "**Action:** Monitor closely. Data is still usable but quality is reduced. "
+            "Check temperature stability and flow rate.",
+            "category": "signal_quality",
+            "keywords": ["questionable", "signal", "yellow", "edge", "zone", "monitor"],
+            "priority": "medium"
+        },
+        r"good.*signal|excellent.*signal|green.*signal|signal.*good|signal.*excellent": {
+            "answer": "A **Good** or **Excellent** signal means the sensor is operating normally:\n\n"
+            "- ✅ **Good**: wavelength 590–690 nm, FWHM ~60–80 nm, P2P <5 nm\n"
+            "- 🌟 **Excellent**: same zone, FWHM <60 nm, dip depth ≥50%\n\n"
+            "No action required — proceed with your experiment.",
+            "category": "signal_quality",
+            "keywords": ["good", "excellent", "signal", "green", "optimal", "normal"],
+            "priority": "low"
+        },
+        r"signal.*drift|wavelength.*drift|baseline.*drift|drift.*over.*time": {
+            "answer": "Slow wavelength drift over time can indicate:\n\n"
+            "1. **Temperature instability** — check thermostat, allow more equilibration time\n"
+            "2. **Buffer refractive index change** — verify buffer composition\n"
+            "3. **Real binding** — expected during assay association phase\n"
+            "4. **Sensor degradation** — if drift continues without recovery\n\n"
+            "Drift toward edge zones (approaching <590 nm or >690 nm) will trigger a Questionable IQ rating.",
+            "category": "signal_quality",
+            "keywords": ["drift", "wavelength", "baseline", "shift", "time", "instability"],
+            "priority": "medium"
+        },
+    },
 }
+
+
+def get_all_patterns():
+    """Get flattened dict of all patterns across categories."""
+    all_patterns = {}
+    for category, patterns in PATTERNS.items():
+        all_patterns.update(patterns)
+    return all_patterns
+
+
+def get_patterns_by_category(category: str):
+    """Get all patterns for a specific category."""
+    return PATTERNS.get(category, {})
+
+
+def get_all_categories():
+    """Get list of all pattern categories."""
 
 
 def get_all_patterns():

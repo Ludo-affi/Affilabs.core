@@ -146,44 +146,15 @@ class DeviceStatusMixin:
             warning = QMessageBox(self)
             warning.setWindowTitle("Power Off Device")
             warning.setIcon(QMessageBox.Icon.Warning)
-            warning.setText("Are you sure you want to disconnect the device?")
-            warning.setInformativeText("All hardware connections will be closed.")
+            warning.setText("Are you sure you want to disconnect the device?\n\nAll hardware connections will be closed.")
             warning.setStandardButtons(
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             )
             warning.setDefaultButton(QMessageBox.StandardButton.Cancel)
 
-            # Style the warning dialog
             warning.setStyleSheet(
-                "QMessageBox {"
-                "  background: {Colors.BACKGROUND_WHITE};"
-                "  font-family: {Fonts.SYSTEM};"
-                "}"
-                "QLabel {"
-                "  color: {Colors.PRIMARY_TEXT};"
-                "  font-size: 13px;"
-                "}"
-                "QPushButton {"
-                "  background: rgba(0, 0, 0, 0.06);"
-                "  color: {Colors.PRIMARY_TEXT};"
-                "  border: none;"
-                "  border-radius: 10px;"
-                "  padding: 6px 16px;"
-                "  font-size: 13px;"
-                "  min-width: 60px;"
-                "  min-height: 28px;"
-                "}"
-                "QPushButton:hover {"
-                "  background: rgba(0, 0, 0, 0.1);"
-                "}"
-                "QPushButton:default {"
-                "  background: #FF3B30;"
-                "  color: white;"
-                "  font-weight: 600;"
-                "}"
-                "QPushButton:default:hover {"
-                "  background: #E6342A;"
-                "}",
+                "QPushButton:default { background: #FF3B30; color: white; font-weight: 600; border-radius: 10px; padding: 6px 16px; min-width: 60px; min-height: 28px; }"
+                "QPushButton:default:hover { background: #E6342A; }"
             )
 
             result = warning.exec()
@@ -262,6 +233,14 @@ class DeviceStatusMixin:
                     "color: {Colors.SECONDARY_TEXT};"  # Gray
                     "background: {Colors.TRANSPARENT};"
                     "font-family: {Fonts.SYSTEM};",
+                )
+
+        # Phase 1: Reset status bar dots to gray
+        for _dot_attr in ("subunit_sensor_dot", "subunit_optics_dot"):
+            if hasattr(self, _dot_attr):
+                getattr(self, _dot_attr).setStyleSheet(
+                    "color: #C7C7CC; margin: 0 8px; font-size: 11px;"
+                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 )
 
         # Also disable all operation modes when disconnecting
@@ -514,6 +493,16 @@ class DeviceStatusMixin:
 
             logger.debug(f"{subunit_name}: {'Ready' if is_ready else 'Not Ready'}")
 
+        # Phase 1: Mirror to status bar dot
+        _dot_map = {"Sensor": "subunit_sensor_dot", "Optics": "subunit_optics_dot"}
+        if subunit_name in _dot_map and hasattr(self, _dot_map[subunit_name]):
+            dot = getattr(self, _dot_map[subunit_name])
+            _color = "#34C759" if is_ready else "#FF3B30"
+            dot.setStyleSheet(
+                f"color: {_color}; margin: 0 8px; font-size: 11px;"
+                "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            )
+
     def _set_optics_warning(self) -> None:
         """Apply light red background to live sensorgram when proceeding with unready optics."""
         # Only set warning if we actually have optics issues (not just unverified)
@@ -645,36 +634,14 @@ class DeviceStatusMixin:
             msg = QMessageBox(self)
             msg.setWindowTitle("Debug Log Downloaded")
             msg.setIcon(QMessageBox.Icon.Information)
-            msg.setText("Debug log downloaded successfully")
-            msg.setInformativeText(
-                f"File saved to:\n{dest_path}\n\n"
-                "Click OK to open the folder."
+            msg.setText(
+                f"Debug log downloaded successfully\n\nFile saved to:\n{dest_path}\n\nClick OK to open the folder."
             )
             msg.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
             msg.setDefaultButton(QMessageBox.StandardButton.Ok)
             msg.setStyleSheet(
-                "QMessageBox {"
-                "  background: {Colors.BACKGROUND_WHITE};"
-                "  font-family: {Fonts.SYSTEM};"
-                "}"
-                "QLabel {"
-                "  color: {Colors.PRIMARY_TEXT};"
-                "  font-size: 13px;"
-                "}"
-                "QPushButton {"
-                "  background: #1D1D1F;"
-                "  color: white;"
-                "  border: none;"
-                "  border-radius: 10px;"
-                "  padding: 6px 16px;"
-                "  font-size: 13px;"
-                "  font-weight: 600;"
-                "  min-width: 60px;"
-                "  min-height: 28px;"
-                "}"
-                "QPushButton:hover {"
-                "  background: #3A3A3C;"
-                "}",
+                "QPushButton { background: #1D1D1F; color: white; border: none; border-radius: 10px; padding: 6px 16px; font-size: 13px; font-weight: 600; min-width: 60px; min-height: 28px; }"
+                "QPushButton:hover { background: #3A3A3C; }"
             )
             result = msg.exec()
 
@@ -691,20 +658,10 @@ class DeviceStatusMixin:
             error_msg = QMessageBox(self)
             error_msg.setWindowTitle("Error")
             error_msg.setIcon(QMessageBox.Icon.Critical)
-            error_msg.setText("Failed to download debug log")
-            error_msg.setInformativeText(f"Error: {e!s}")
+            error_msg.setText(f"Failed to download debug log\n\nError: {e!s}")
             error_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             error_msg.setStyleSheet(
-                "QMessageBox {"
-                "  background: {Colors.BACKGROUND_WHITE};"
-                "}"
-                "QPushButton {"
-                "  background: #FF3B30;"
-                "  color: white;"
-                "  border: none;"
-                "  border-radius: 10px;"
-                "  padding: 6px 16px;"
-                "}",
+                "QPushButton { background: #FF3B30; color: white; border: none; border-radius: 10px; padding: 6px 16px; }"
             )
             error_msg.exec()
 

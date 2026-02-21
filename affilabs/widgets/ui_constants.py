@@ -19,26 +19,16 @@ class CycleTypeStyle:
 
     # Map of cycle type → (abbreviation, hex color)
     MAP: Final[dict[str, tuple[str, str]]] = {
-        "Baseline": ("BL", "#007AFF"),
+        "Baseline":       ("BL", "#007AFF"),
+        "Binding":        ("BN", "#FF9500"),
+        "Kinetic":        ("KN", "#5856D6"),
+        "Regeneration":   ("RG", "#FF3B30"),
         "Immobilization": ("IM", "#AF52DE"),
-        "Blocking": ("BK", "#FF2D55"),
-        "Binding": ("BN", "#FF9500"),
-        "Kinetic": ("KN", "#5856D6"),
-        "Concentration": ("CN", "#FF9500"),  # Legacy alias → treat as Binding
-        "Regeneration": ("RG", "#FF3B30"),
-        "Association": ("AS", "#34C759"),
-        "Dissociation": ("DS", "#5856D6"),
-        "Wash": ("WS", "#00C7BE"),
-        "Equilibration": ("EQ", "#86868B"),
-        "Other": ("OT", "#636366"),
-        "Custom": ("CU", "#8E8E93"),
-        "Flow": ("FL", "#007AFF"),
-        "Static": ("ST", "#AF52DE"),
-        "Auto-read": ("AR", "#FF2D55"),
-        "Injection": ("IN", "#FF9500"),
-        "Buffer": ("BF", "#34C759"),
-        "Sample": ("SM", "#FF9500"),
-        "Kinetic": ("KN", "#5856D6"),
+        "Blocking":       ("BK", "#FF2D55"),
+        "Wash":           ("WS", "#00C7BE"),
+        "Other":          ("OT", "#636366"),
+        # Legacy alias — old saved files may contain "Concentration"; treat as Binding
+        "Concentration":  ("CN", "#FF9500"),
     }
 
     _DEFAULT: Final[tuple[str, str]] = ("●", "#86868B")
@@ -132,22 +122,27 @@ class ChannelColors:
 class CycleConfig:
     """Configuration for cycle type and time controls."""
 
-    # Cycle types
-    TYPES: Final[list[str]] = ["Auto-read", "Baseline", "Flow", "Static"]
+    # Canonical cycle types for the Method Builder (P4SPR / manual injection context)
+    TYPES: Final[list[str]] = [
+        "Baseline",
+        "Binding",
+        "Regeneration",
+        "Immobilization",
+        "Blocking",
+        "Wash",
+        "Other",
+    ]
 
-    # Cycle time options (minutes)
-    TIME_OPTIONS: Final[list[int]] = [5, 15, 30, 60]
-
-    # Default cycle times by type (minutes)
-    DEFAULT_TIMES: Final[dict[str, int | None]] = {
-        "Auto-read": None,  # No time limit
-        "Baseline": 5,  # Fixed 5 minutes
-        "Flow": 15,  # Default to 15 minutes
-        "Static": 15,  # Default to 15 minutes
+    # Default durations (minutes) used by the Add Step menu
+    DEFAULT_TIMES: Final[dict[str, float]] = {
+        "Baseline":       5.0,
+        "Binding":        8.5,   # 5 min contact + 3.5 min buffer
+        "Regeneration":   0.5,   # 30 sec
+        "Immobilization": 30.0,  # 30 min freestyle window (no injection prompt currently)
+        "Blocking":       4.0,
+        "Wash":           0.5,   # 30 sec
+        "Other":          2.0,
     }
-
-    # Types where time dropdown should be enabled
-    TIME_ENABLED_TYPES: Final[set[str]] = {"Flow", "Static"}
 
     @classmethod
     def get_default_time(cls, cycle_type: str) -> int | None:

@@ -167,6 +167,7 @@ Ignored by Claude Code (use --no-ignore to access):
 | Signal quality, IQ levels, wavelength zones | [SENSOR_IQ_SYSTEM.md](docs/features/SENSOR_IQ_SYSTEM.md) | `affilabs/utils/sensor_iq.py` |
 | Cycle templates, queue presets | [METHOD_PRESETS_SYSTEM.md](docs/features/METHOD_PRESETS_SYSTEM.md) | `affilabs/services/cycle_template_storage.py` |
 | Method Builder UI redesign (3-zone layout, template gallery, Sparq bar) | [METHOD_BUILDER_REDESIGN_FRS.md](docs/features/METHOD_BUILDER_REDESIGN_FRS.md) | `affilabs/widgets/method_builder_dialog.py` |
+| Compression Assistant — guided chip compression, gauge, QC leak check | [COMPRESSION_ASSISTANT_FRS.md](docs/features/COMPRESSION_ASSISTANT_FRS.md) | `standalone_tools/compression_trainer_ui.py` |
 | Timeline events, CycleMarker, stream API | [TIMELINE_QUICK_START.md](docs/architecture/TIMELINE_QUICK_START.md) | `affilabs/domain/timeline.py`, `affilabs/core/recording_manager.py`, `affilabs/managers/flag_manager.py`, `mixins/_cycle_mixin.py` |
 | Timeline Phase 5+ roadmap, proposed improvements | [TIMELINE_ROADMAP.md](docs/future_plans/TIMELINE_ROADMAP.md) | `affilabs/domain/timeline.py` |
 
@@ -235,6 +236,43 @@ All cross-thread signals use `Qt.QueuedConnection` explicitly (wired in main.py 
 `settings/__init__.py` does `from .settings import *` — importing bare `from settings import X` works because root is on `sys.path`.
 Detector profiles override deprecated constants in settings.py at runtime via `get_current_detector_profile()`.
 
+## Device Databases (2 systems — both required going forward)
+
+> **This is the canonical approach for tracking all shipped and in-house devices.** Any new device must be added to both databases.
+
+| Database | Path | Format | Purpose |
+|----------|------|--------|---------|
+| **device_registry.json** | `_data/calibration_data/device_registry.json` | JSON | Customer + shipping identity (who owns each unit, invoice, country) |
+| **device_history.db** | `tools/ml_training/device_history.db` | SQLite | Per-device calibration performance history for ML training (FWHM, SNR, convergence stats) |
+
+### device_registry.json (identity/CRM)
+- One entry per serial, keyed by serial string (e.g. `"FLMT09788"`)
+- Fields: `customer.name`, `customer.country`, `order.invoice`, `shipped_date`, `calibration_files[]`, `ml_training_include`
+- Add new device by inserting a new key into the `"devices"` object
+- `ml_training_include: false` to exclude prototypes or returned units
+
+### device_history.db (ML training)
+- Managed by `DeviceHistoryDatabase` in `tools/ml_training/device_history.py`
+- Records added via `record_calibration_to_database()` in `tools/ml_training/record_calibration_result.py`
+- Keyed by `detector_serial` (integer — numeric portion of serial, e.g. `9788` for `FLMT09788`)
+- Schema: one row per calibration run — `success`, `s_mode_iterations`, `p_mode_iterations`, `final_fwhm_avg`, `final_snr_avg`, etc.
+- Used by `train_convergence_predictor.py` to add 17 per-device history features to the ML model
+- Run `tools/ml_training/train_all_models.py` to rebuild all models (includes device history export step)
+
+### Workflow when provisioning a new device
+1. Run OEM calibration: `.venv\Scripts\python.exe scripts/provisioning/oem_calibrate.py`
+   - **Phase 1a — Servo calibration:** auto-detects S and P polarizer positions → writes to `affilabs/config/devices/{SERIAL}/device_config.json` (S/P PWM values). EEPROM write may fail on some units — safe to ignore, app reads from JSON on every connect.
+   - **Phase 1b — LED model training:** measures LED intensity response across 3 integration times at 5 intensity levels each. Automatically detects ultra-sensitive devices (saturate at I=60 with 10ms) and switches to shorter times `[5, 10, 15]ms` + lower intensities `[10, 20, 30, 40, 60]`. Writes `led_model.json`.
+   - **Phase 2 — Startup calibration:** LED convergence + S-pol reference capture → writes `startup_config.json`. Uses the same `run_startup_calibration()` function as the main app (no difference in behavior).
+   - Auto-saves full record to `_data/calibration_data/device_SERIAL_DATE.json`
+   - Auto-adds serial to `_data/calibration_data/device_registry.json` (status: "in-house")
+2. Open `device_registry.json`, fill in customer name/country/invoice for the serial
+3. Retrain models if enough new devices: `python tools/ml_training/train_all_models.py`
+
+**CLI flags:** `--skip-oem-model` (LED model already exists, skip Phase 1), `--skip-phase2` (skip startup cal), `--serial OVERRIDE` (force serial instead of auto-detect)
+
+> **Standalone vs main app:** Both call the same functions — `run_oem_model_training_workflow()` and `run_startup_calibration()` from `affilabs/core/`. The standalone script is a CLI wrapper with no Qt UI. Any fix to `oem_model_training.py` applies to both automatically.
+
 ## Naming Conventions
 | Component | Pattern | Example |
 |-----------|---------|---------|
@@ -263,6 +301,7 @@ Detector profiles override deprecated constants in settings.py at runtime via `g
 7. **4 LED channels (a, b, c, d)** — each operates independently. Channel index mapping in `CHANNEL_INDICES`
 8. **Two acquisition modes:** `CYCLE_SYNC` (V2.4 firmware, default) vs `EVENT_RANK` (fallback) — toggled by `USE_CYCLE_SYNC` flag
 9. **Supported detectors:** Ocean Optics Flame-T (primary) and USB4000 — profiles in `detector_profiles/`
+10. **Phantom USB devices on Windows:** When Ocean Optics detectors are unplugged/replugged, Windows leaves "phantom" device entries in Device Manager (Status: Unknown). **Don't try to clean them up** — instead, implement a **handshake test** in `usb4000_wrapper.py` that tries to read device properties (wavelengths, serial, etc.) on each device in `list_devices()`. Only the real device will respond. This avoids the need for manual registry cleanup. See **usb4000_wrapper.py:360-385** for implementation.
 
 ## Import Conventions
 - **Absolute imports** from `affilabs.*` are the standard: `from affilabs.core.spectrum_processor import SpectrumProcessor`
@@ -357,18 +396,17 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 ### In-Progress / Known Issues
 - `ApplicationState` migration incomplete — `app_state.py` defines target but `main.py` not yet converted
 - Timeline Phase 5 (Presenters: SensogramPresenter + EditsTab query from stream) — ready to start
+- Exit code 1 on last run — cause unknown, investigate before next session
 
 ### Recently Completed
-- **Method tab redesign** ✅ (Feb 20 2026)
-  - `IntelligenceBar` removed; replaced with **Active Cycle Card** (`sidebar.active_cycle_card`) — cycle type badge, index, countdown, next cycle, total experiment time; shown only while cycle running
-  - "Build Method" CTA: full-width 48px blue button, always visible at top of Method tab
-  - Queue table (`QueueSummaryWidget`) expands to fill space; "View All" button removed; "EXPERIMENT METHOD" header removed
-  - After QC dialog closes: sidebar auto-switches to Method tab
-  - Spark panel starts hidden; sidebar footer hint strip added ("💬 Ask Spark AI")
-  - `CalibrationQCDialog`: Conv Iter column plain text (no color); notes panel added (5 practical reminders)
-  - `MethodBuilderDialog` import error fixed: split try/except; removed top-level `SparkAnswerEngine` import
-- **UI docs updated** ✅ — `UI_COMPONENT_INVENTORY.md`, `UI_STATE_MACHINE.md`, `UX_USER_JOURNEY.md` reflect all changes above
-- **Improvements E/F** ✅ — Timeline Sheet 9 "Timeline Events" export; `remove_event()` + `update_event_time()` on stream
+- **Active Cycle graph embeds** ✅ (Feb 21 2026)
+  - `InteractiveSPRLegend` (top-left): IQ `●` dots now live-wired to `ui_update_coordinator._update_sensor_iq_displays()` via `set_iq_color()`
+  - `CycleStatusOverlay` (top-right): replaces floating popup — shows cycle type, "N/total", MM:SS countdown, next-cycle label. Auto right-anchors on resize. `WA_TransparentForMouseEvents=True`.
+  - Signal quality pill bar (`_create_signal_quality_bar`) removed entirely
+  - IQ dots removed from A/B/C/D channel toggle buttons (`sensor_iq_badges` deleted)
+- **Notes button** ✅ — moved from title row (hidden by default) → Display row (always visible)
+- **Live Sensorgram X-axis → minutes** ✅ — `MinutesAxisItem` in `plot_helpers.py`; data/cursors unchanged in seconds
+- **UI/FRS docs updated** ✅ — `UI_COMPONENT_INVENTORY.md`, `UI_GRAPH_VISUALIZATION_SPEC.md`, `SENSOR_IQ_SYSTEM.md`, `UX_USER_JOURNEY.md`
 
 ### Context Maintenance Workflow
 **At the end of each work session**, update this "Active Context" section:

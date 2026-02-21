@@ -1941,13 +1941,13 @@ def _validate_calibration_prerequisites(device_config, detector_serial, result):
                 msg,
             )
 
-        # Validate model has good R² scores (bilinear_model is a dict)
+        # Validate model has good R² scores (led_model is a dict)
         channels_valid = []
         channels_invalid = []
 
-        # Check in bilinear_models section for per-channel R² scores
-        if "bilinear_models" in bilinear_model:
-            models = bilinear_model["bilinear_models"]
+        # Check in led_models section for per-channel R² scores
+        if "led_models" in bilinear_model:
+            models = bilinear_model["led_models"]
             for ch in ["A", "B", "C", "D"]:
                 if ch in models:
                     ch_models = models[ch]

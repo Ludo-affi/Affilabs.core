@@ -465,7 +465,6 @@ class CycleMixin:
 
         msg.setText(message_html)
         msg.setTextFormat(Qt.TextFormat.RichText)
-        msg.setInformativeText("Change settings in Export tab if needed, or start live recording now.")
 
         start_btn = msg.addButton("▶️ Start Recording", QMessageBox.AcceptRole)
         cancel_btn = msg.addButton("Cancel", QMessageBox.RejectRole)
@@ -697,10 +696,22 @@ class CycleMixin:
             rem_sec_rem = int(remaining_sec % 60)
             if hasattr(sidebar, 'active_cycle_countdown_label'):
                 sidebar.active_cycle_countdown_label.setText(f"{rem_min:02d}:{rem_sec_rem:02d}")
-                color = "#FF9500" if remaining_sec <= 10 else "#007AFF"
+                color = "#FF9500" if remaining_sec <= 10 else "#2E30E3"
                 sidebar.active_cycle_countdown_label.setStyleSheet(
-                    f"font-size: 18px; font-weight: 700; color: {color}; background: transparent;"
-                    "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+                    f"font-size: 17px; font-weight: 700; color: {color}; background: transparent;"
+                    "font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;"
+                )
+            # Progress bar
+            if hasattr(sidebar, 'active_cycle_progress') and total_sec > 0:
+                pct = int(min(100, (elapsed_sec / total_sec) * 100))
+                chunk_color = "#FF9500" if remaining_sec <= 10 else "#2E30E3"
+                sidebar.active_cycle_progress.setValue(pct)
+                sidebar.active_cycle_progress.setStyleSheet(
+                    "QProgressBar {"
+                    "  background: rgba(46, 48, 227, 0.12);"
+                    "  border: none; border-radius: 2px;"
+                    "}"
+                    f"QProgressBar::chunk {{ background: {chunk_color}; border-radius: 2px; }}"
                 )
             # Next cycle
             if hasattr(sidebar, 'active_next_cycle_label'):
@@ -717,20 +728,21 @@ class CycleMixin:
 
         self._update_next_cycle_warning_visual(remaining_sec, total_sec)
 
+        # Update embedded cycle status overlay (top-right of Active Cycle graph)
         try:
             if hasattr(self.main_window, 'cycle_of_interest_graph'):
                 graph = self.main_window.cycle_of_interest_graph
-                if hasattr(graph, 'update_delta_overlay'):
-                    overlay_type = f"{cycle_type} (Cycle {cycle_num}/{total_cycles})"
-                    if next_cycle_warning:
-                        overlay_type += next_cycle_warning
-                    graph.update_delta_overlay(
-                        cycle_type=overlay_type,
-                        elapsed_sec=elapsed_sec,
-                        total_sec=total_sec,
+                overlay = getattr(graph, 'cycle_status_overlay', None)
+                if overlay is not None:
+                    overlay.update_status(
+                        cycle_type=cycle_type,
+                        cycle_num=cycle_num,
+                        total_cycles=total_cycles,
+                        remaining_sec=remaining_sec,
+                        next_label=next_cycle_label,
                     )
         except Exception as e:
-            logger.warning(f"Could not update cycle overlay: {e}")
+            logger.warning(f"Could not update cycle status overlay: {e}")
 
     def _update_next_cycle_warning_visual(self, remaining_sec: float, total_sec: float):
         """Show/hide orange warning line on active cycle graph when <10s to next cycle."""
@@ -785,6 +797,14 @@ class CycleMixin:
         logger.info(f"✓ Cycle {cycle_num} completed: {cycle_type}")
 
         self._cycle_timer.stop()
+        # Clear the embedded graph overlay
+        try:
+            graph = getattr(self.main_window, 'cycle_of_interest_graph', None)
+            overlay = getattr(graph, 'cycle_status_overlay', None)
+            if overlay is not None:
+                overlay.clear()
+        except Exception:
+            pass
         # Ensure the one-shot end timer doesn't fire again (e.g. if Next Cycle was pressed early)
         if hasattr(self, '_cycle_end_timer') and self._cycle_end_timer.isActive():
             self._cycle_end_timer.stop()

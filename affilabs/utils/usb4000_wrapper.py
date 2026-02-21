@@ -35,6 +35,34 @@ try:
 
         usb.core.find = _patched_find
         logger.info("[OK] libusb backend configured for Ocean Optics spectrometers")
+
+        # Patch seabreeze USBTransport.list_devices to skip phantom Windows USB entries.
+        # On Windows, replugging creates a phantom device entry (same VID/PID, wrong driver)
+        # that seabreeze crashes on instead of skipping. We pre-filter: only yield handles
+        # whose underlying pyusb device responds to set_configuration() (real device).
+        try:
+            from seabreeze.pyseabreeze.transport import USBTransport
+
+            _original_usb_list = USBTransport.list_devices.__func__
+
+            @classmethod  # type: ignore[misc]
+            def _patched_usb_list(cls, **kwargs):
+                for handle in _original_usb_list(cls, **kwargs):
+                    try:
+                        handle.pyusb_device.set_configuration()
+                        yield handle
+                    except Exception:
+                        logger.debug(
+                            f"Skipping phantom USB device (set_configuration failed): "
+                            f"VID={hex(handle.pyusb_device.idVendor)} "
+                            f"PID={hex(handle.pyusb_device.idProduct)}"
+                        )
+
+            USBTransport.list_devices = _patched_usb_list
+            logger.info("[OK] SeaBreeze phantom-device filter installed")
+        except Exception as patch_err:
+            logger.debug(f"SeaBreeze phantom patch skipped: {patch_err}")
+
     else:
         logger.debug(
             "libusb backend not available (this is OK for non-Ocean Optics detectors)",

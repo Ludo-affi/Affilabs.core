@@ -766,7 +766,7 @@ class ExportMixin:
     def _create_export_sidebar(self):
         """Create the collapsible export sidebar panel for the Edit tab."""
         sidebar = QFrame()
-        sidebar.setFixedWidth(260)
+        sidebar.setFixedWidth(280)
         sidebar.setStyleSheet("""
             QFrame#ExportSidebar {
                 background: #FFFFFF;
@@ -795,8 +795,8 @@ class ExportMixin:
         content = QWidget()
         content.setStyleSheet("background: #FFFFFF;")
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
 
         # ── Header ──
         header_row = QHBoxLayout()
@@ -906,43 +906,47 @@ class ExportMixin:
         stats_frame = QFrame()
         stats_frame.setStyleSheet("""
             QFrame {
-                background: #F8F9FA;
-                border: 1px solid #E5E5EA;
+                background: rgba(0, 0, 0, 0.03);
                 border-radius: 8px;
             }
         """)
         stats_layout = QVBoxLayout(stats_frame)
-        stats_layout.setContentsMargins(12, 10, 12, 10)
+        stats_layout.setContentsMargins(12, 8, 12, 8)
         stats_layout.setSpacing(6)
 
         stats_title = QLabel("Summary")
         stats_title.setStyleSheet(
             "font-size: 12px; font-weight: 600; color: #1D1D1F; "
-            "background: transparent; border: none;"
+            "background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         stats_layout.addWidget(stats_title)
 
         self.export_stats_cycles = QLabel("Cycles: 0")
         self.export_stats_cycles.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent; border: none;"
+            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         stats_layout.addWidget(self.export_stats_cycles)
 
         self.export_stats_selected = QLabel("Selected: 0")
         self.export_stats_selected.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent; border: none;"
+            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         stats_layout.addWidget(self.export_stats_selected)
 
         self.export_stats_channels = QLabel("Channels: A, B, C, D")
         self.export_stats_channels.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent; border: none;"
+            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         stats_layout.addWidget(self.export_stats_channels)
 
         self.export_stats_duration = QLabel("Duration: —")
         self.export_stats_duration.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent; border: none;"
+            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         stats_layout.addWidget(self.export_stats_duration)
 
@@ -970,28 +974,26 @@ class ExportMixin:
             QPushButton with consistent styling
         """
         btn = QPushButton(f"  {icon_text}  {label_text}")
-        btn.setFixedHeight(40)
+        btn.setFixedHeight(36)
         btn.setToolTip(tooltip_text)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet("""
             QPushButton {
-                background: #F8F9FA;
+                background: white;
                 color: #1D1D1F;
-                border: 1px solid #E5E5EA;
+                border: 1px solid rgba(0, 0, 0, 0.1);
                 border-radius: 8px;
-                font-size: 12px;
-                font-weight: 500;
-                padding: 8px 12px;
+                font-size: 13px;
+                font-weight: 600;
+                padding: 8px 16px;
                 text-align: left;
                 font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
             }
             QPushButton:hover {
-                background: #E8F0FE;
-                border-color: #007AFF;
-                color: #007AFF;
+                background: rgba(0, 0, 0, 0.06);
             }
             QPushButton:pressed {
-                background: #D1E4FF;
+                background: rgba(0, 0, 0, 0.1);
             }
         """)
         return btn

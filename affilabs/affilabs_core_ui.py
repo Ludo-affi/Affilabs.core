@@ -247,7 +247,7 @@ class AffilabsMainWindow(
                 logger.warning(f"Failed to create icon from file: {icon_path}")
         else:
             logger.warning(f"Icon file not found: {icon_path}")
-        self.setGeometry(50, 50, 1800, 950)
+        self.setGeometry(50, 50, 1400, 800)
         self.is_recording = False
         self.recording_indicator = None
         self.record_button = None
@@ -397,28 +397,14 @@ class AffilabsMainWindow(
         if hasattr(self.sidebar, 'colorblind_mode_signal'):
             self.sidebar.colorblind_mode_signal.connect(self._on_colorblind_mode_changed)
 
-        # Forward spectroscopy plots (if they exist)
-        logger.debug("Checking for transmission_plot in sidebar...")
-
-        if hasattr(self.sidebar, "transmission_plot"):
-            self.transmission_plot = self.sidebar.transmission_plot
-            self.transmission_curves = self.sidebar.transmission_curves
-            logger.debug(
-                f"✓ Forwarded transmission plot ({len(self.transmission_curves)} curves)",
-            )
-        else:
-            logger.warning(
-                "⚠️ transmission_plot NOT found in sidebar - plots will not work",
-            )
-
-        if hasattr(self.sidebar, "raw_data_plot"):
-            self.raw_data_plot = self.sidebar.raw_data_plot
-            self.raw_data_curves = self.sidebar.raw_data_curves
-            logger.debug(
-                f"✓ Forwarded raw plot ({len(self.raw_data_curves)} curves)",
-            )
-        else:
-            logger.warning("⚠️ raw_data_plot NOT found in sidebar - plots will not work")
+        # Spectroscopy plots live in SpectrumBubble (floating overlay, dark-themed popup).
+        # Attributes are aliased after SpectrumBubble is created in the floating-widgets block below.
+        self.live_context_panel = None  # removed — replaced by SpectrumBubble
+        self.transmission_plot = None
+        self.transmission_curves: list = []
+        self.raw_data_plot = None
+        self.raw_data_curves: list = []
+        self.baseline_capture_btn = None
 
         # Forward calibration buttons
         self.simple_led_calibration_btn = self.sidebar.simple_led_calibration_btn
@@ -427,12 +413,8 @@ class AffilabsMainWindow(
         self.oem_led_calibration_btn = self.sidebar.oem_led_calibration_btn
         self.led_model_training_btn = self.sidebar.led_model_training_btn
 
-        # Forward baseline capture button (REBUILT)
-        if hasattr(self.sidebar, "baseline_capture_btn"):
-            self.baseline_capture_btn = self.sidebar.baseline_capture_btn
-            logger.debug("✓ Forwarded baseline capture button")
-        else:
-            logger.warning("⚠️ baseline_capture_btn NOT found in sidebar")
+        # baseline_capture_btn is aliased from SpectrumBubble (created in floating-widgets block below)
+        # sidebar no longer has spectroscopy plots
 
         right_widget = QWidget()
         right_widget.setMinimumWidth(
@@ -441,8 +423,15 @@ class AffilabsMainWindow(
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
-        nav_bar = self.navigation_presenter.create_navigation_bar()
-        right_layout.addWidget(nav_bar)
+        # TransportBar replaces the old nav_bar (44px, includes all control buttons)
+        from affilabs.widgets.transport_bar import TransportBar
+        self.transport_bar = TransportBar(self)
+        right_layout.addWidget(self.transport_bar)
+        # Wire build_method_btn on transport bar → actual sidebar button (main.py uses sidebar ref)
+        self.build_method_btn = self.transport_bar.build_method_btn
+        self.transport_bar.build_method_btn.clicked.connect(
+            lambda: self.sidebar.build_method_btn.click()
+        )
 
         # Stacked widget to hold different content pages
         from PySide6.QtWidgets import QStackedWidget
@@ -459,39 +448,43 @@ class AffilabsMainWindow(
 
         # Analysis and Report tabs disabled - not used in this software version
 
+        # Phase 2: Live Right Panel — shown/hidden by acquisition start/stop
+        # live_right_panel removed — the splitter's right pane is now the Run Queue panel.
+        self.live_right_panel = None
         right_layout.addWidget(self.content_stack, 1)
 
-        # Create Spark sidebar on the left (narrow, collapsible) — guarded so Spark never crashes init
+        # SparkSidebar kept alive (off-screen) — SparkBubble is the active floating Spark UI
         try:
             self.spark_sidebar = SparkSidebar()
-            self.spark_sidebar.setMinimumWidth(250)  # Narrow sidebar
-            self.spark_sidebar.setMaximumWidth(400)
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"SparkSidebar creation failed (non-fatal): {e}")
-            self.spark_sidebar = QWidget()  # Invisible fallback
-            self.spark_sidebar.hide()
+            self.spark_sidebar = QWidget()
+        self.spark_sidebar.hide()
 
-        # Add widgets to splitter: Spark sidebar (left) | Content (center) | Right sidebar (right)
-        self.splitter.addWidget(self.spark_sidebar)
-        self.splitter.addWidget(right_widget)
+        # Build collapsible right Run Queue panel (populated with sidebar.queue_panel below)
+        self._queue_right_panel = self._build_queue_right_panel()
+        # Populate it with the queue widget now — sidebar is fully built at this point
+        if hasattr(self.sidebar, 'queue_panel') and hasattr(self, '_queue_content_layout'):
+            self._queue_content_layout.addWidget(self.sidebar.queue_panel, 1)
+
+        # Splitter: Sidebar (left) | TransportBar+Content (center) | Run Queue (right)
         self.splitter.addWidget(self.sidebar)
-        self.splitter.setCollapsible(0, True)   # Allow Spark sidebar to collapse
-        self.splitter.setCollapsible(1, False)  # Prevent content from collapsing
-        self.splitter.setCollapsible(2, True)   # Allow right sidebar to collapse via tab
+        self.splitter.addWidget(right_widget)
+        self.splitter.addWidget(self._queue_right_panel)
+        self.splitter.setCollapsible(0, True)   # Sidebar can collapse
+        self.splitter.setCollapsible(1, False)  # Content panel never collapses
+        self.splitter.setCollapsible(2, True)   # Run Queue panel can collapse
 
-        # Spark sidebar starts collapsed — user opens it intentionally via Spark button
-        self.splitter.setSizes([0, 1095, 405])
-
-        # Lazy load Spark widget when sidebar is first shown — never crashes
-        try:
-            if hasattr(self.spark_sidebar, 'load_spark_widget'):
-                self.spark_sidebar.load_spark_widget()
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Spark widget load failed (non-fatal): {e}")
+        # Sidebar collapsed by default (0px); run queue starts collapsed until a run begins
+        self.splitter.setSizes([0, 1500, 0])
 
         # Add splitter directly to main layout
+        # IconRail sits at far left (48px fixed), controls sidebar tab selection
+        from affilabs.widgets.icon_rail import IconRail
+        self.icon_rail = IconRail(parent=self)
+        self.icon_rail.set_sidebar(self.sidebar)
+        main_layout.addWidget(self.icon_rail)
         main_layout.addWidget(self.splitter)
 
         # Floating Sparq bubble — child widget, zero layout impact
@@ -502,8 +495,56 @@ class AffilabsMainWindow(
             logging.getLogger(__name__).error(f"SparkBubble creation failed (non-fatal): {e}")
             self.spark_bubble = None
 
+        # Floating Spectrum bubble — dark-themed popup, bottom-left corner
+        try:
+            from affilabs.widgets.spectrum_bubble import SpectrumBubble
+            self.spectrum_bubble = SpectrumBubble(self)
+            self.transmission_plot = self.spectrum_bubble.transmission_plot
+            self.transmission_curves = self.spectrum_bubble.transmission_curves
+            self.raw_data_plot = self.spectrum_bubble.raw_data_plot
+            self.raw_data_curves = self.spectrum_bubble.raw_data_curves
+            self.baseline_capture_btn = self.spectrum_bubble.baseline_capture_btn
+            logger.debug(
+                f"✓ SpectrumBubble: {len(self.transmission_curves)} transmission, "
+                f"{len(self.raw_data_curves)} raw curves"
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"SpectrumBubble creation failed (non-fatal): {e}")
+            self.spectrum_bubble = None
+
         # Ensure Sensorgram page (index 0) is shown by default
         self.content_stack.setCurrentIndex(0)
+
+        # Phase 1: Status bar subunit dots
+        self._setup_status_bar()
+
+    def _setup_status_bar(self) -> None:
+        """Phase 1: Create status bar with Sensor and Optics dot indicators."""
+        sb = self.statusBar()
+        sb.setSizeGripEnabled(False)
+        sb.setStyleSheet(
+            "QStatusBar {"
+            "  background: #F5F5F7;"
+            "  border-top: 1px solid #D5D5D7;"
+            "  font-size: 11px;"
+            "}"
+            "QStatusBar::item { border: none; }"
+        )
+
+        self.subunit_sensor_dot = QLabel("● Sensor")
+        self.subunit_sensor_dot.setStyleSheet(
+            "color: #C7C7CC; margin: 0 8px; font-size: 11px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        sb.addPermanentWidget(self.subunit_sensor_dot)
+
+        self.subunit_optics_dot = QLabel("● Optics")
+        self.subunit_optics_dot.setStyleSheet(
+            "color: #C7C7CC; margin: 0 8px; font-size: 11px;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        sb.addPermanentWidget(self.subunit_optics_dot)
 
     def _create_sensorgram_content(self):
         """Create the Sensorgram tab content with dual-graph layout (master-detail pattern)."""
@@ -528,7 +569,6 @@ class AffilabsMainWindow(
             "Live Sensorgram",
             height=200,
             show_delta_spr=False,
-            include_controls=True,
         )
 
         # Bottom graph (Detail/Cycle of Interest) - 70%
@@ -571,34 +611,6 @@ class AffilabsMainWindow(
                 self._on_cursor_moved,
             )
 
-        # ── "Flat baseline = ready for injection" annotation ────────────────
-        # Shown inside the timeline graph until the first injection is detected.
-        # Implemented as a QLabel overlay (stays fixed regardless of data pan/zoom).
-        self._baseline_hint_label = QLabel(
-            "Flat baseline = instrument ready for injection",
-            self.full_timeline_graph,
-        )
-        self._baseline_hint_label.setStyleSheet(
-            "QLabel {"
-            "  color: rgba(134,134,139,0.85);"
-            "  font-size: 11px;"
-            "  font-style: italic;"
-            "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-        )
-        self._baseline_hint_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self._baseline_hint_label.adjustSize()
-        # Position bottom-right of the graph after it has a size — use a singleShot
-        def _position_hint():
-            if hasattr(self, '_baseline_hint_label') and self._baseline_hint_label.isVisible():
-                g = self.full_timeline_graph
-                lbl = self._baseline_hint_label
-                lbl.move(g.width() - lbl.width() - 12, g.height() - lbl.height() - 8)
-        QTimer.singleShot(300, _position_hint)
-        self._baseline_hint_label.setVisible(True)
-        self._baseline_hint_shown = True
-
         splitter.addWidget(top_graph)
         splitter.addWidget(bottom_graph)
 
@@ -626,6 +638,7 @@ class AffilabsMainWindow(
         )
 
         content_layout.addWidget(splitter, 1)
+
         return content_widget
 
     def show_connecting_indicator(self, active: bool) -> None:
@@ -859,173 +872,62 @@ class AffilabsMainWindow(
                     "QLabel { color: #FF3B30; font-size: 14px; }",
                 )
 
-    def _create_graph_header(self):
-        """Create channel toggle controls, Live Data, and Clear Graph buttons."""
-        # ===== Controls Row: Channel toggles, Timer, Live Data, Clear Graph =====
-        first_row = QWidget()
-        first_row.setFixedHeight(Dimensions.HEIGHT_BUTTON_XL)
-        first_row_layout = QHBoxLayout(first_row)
-        first_row_layout.setContentsMargins(0, 0, 0, 0)
-        first_row_layout.setSpacing(8)
+    def _create_signal_quality_bar(self) -> QWidget:
+        """Slim quality indicator row — one pill per channel showing live signal quality.
 
-        # Channel selection label
-        from affilabs.ui_styles import (
-            get_channel_button_style,
-            get_live_checkbox_style,
-            get_clear_button_style,
-        )
+        Green = Good/Excellent  |  Yellow = Questionable  |  Red = Poor/Critical
+        Updated by ui_update_coordinator via self.signal_quality_pills[ch].
+        """
+        bar = QWidget()
+        bar.setFixedHeight(22)
+        bar.setStyleSheet("QWidget { background: transparent; }")
 
-        channels_label = QLabel("Display:")
-        channels_label.setStyleSheet(
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        quality_label = QLabel("Signal:")
+        quality_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 12px;"
+            "  font-size: 10px;"
             "  font-weight: 600;"
-            "  color: #1D1D1F;"
-            "  padding-right: 4px;"
-            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "  color: #86868B;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
         )
-        channels_label.setToolTip("Toggle channels")
-        first_row_layout.addWidget(channels_label)
+        layout.addWidget(quality_label)
 
-        # Channel toggles — button with overlaid IQ dot in bottom-right corner
-        # Container matches button size exactly; dot is absolutely positioned inside it
-        self.channel_toggles = {}
-        self.sensor_iq_badges = {}  # {ch: QLabel} — IQ dot per channel
-        channel_names = {
-            "A": ("#1D1D1F", "Channel A (Black)"),
-            "B": ("#FF3B30", "Channel B (Red)"),
-            "C": ("#007AFF", "Channel C (Blue)"),
-            "D": ("#34C759", "Channel D (Green)"),
+        self.signal_quality_pills = {}
+        _PILL_LABELS = {
+            "A": "#1D1D1F",
+            "B": "#FF3B30",
+            "C": "#007AFF",
+            "D": "#34C759",
         }
-        _DOT_SIZE = 7
-        _BTN_W, _BTN_H = 32, 28
-
-        for ch, (color, tooltip) in channel_names.items():
-            # Fixed-size container — same footprint as the button
-            ch_container = QWidget()
-            ch_container.setFixedSize(_BTN_W, _BTN_H)
-
-            ch_btn = QPushButton(ch, ch_container)
-            ch_btn.setCheckable(True)
-            ch_btn.setChecked(True)
-            ch_btn.setGeometry(0, 0, _BTN_W, _BTN_H)
-            ch_btn.setToolTip(tooltip)
-            ch_btn.setStyleSheet(get_channel_button_style(color))
-            self.channel_toggles[ch] = ch_btn
-            ch_btn.toggled.connect(
-                lambda checked, channel=ch: self.sensogram_presenter.toggle_channel_visibility(
-                    channel,
-                    checked,
-                ),
-            )
-
-            # IQ dot — overlaid bottom-right corner of the button
-            iq_dot = QLabel(ch_container)
-            iq_dot.setFixedSize(_DOT_SIZE, _DOT_SIZE)
-            iq_dot.move(_BTN_W - _DOT_SIZE - 4, _BTN_H - _DOT_SIZE - 4)
-            iq_dot.setStyleSheet(
+        for ch, ch_color in _PILL_LABELS.items():
+            pill = QLabel(f"<b style='color:{ch_color};'>{ch}</b> —")
+            pill.setTextFormat(Qt.TextFormat.RichText)
+            pill.setFixedHeight(18)
+            pill.setMinimumWidth(52)
+            pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pill.setStyleSheet(
                 "QLabel {"
-                "  background: rgba(255,255,255,0.35);"  # semi-transparent white — visible on colored button, neutral before data
-                "  border-radius: 3px;"
-                "  border: 1px solid rgba(0,0,0,0.15);"
+                "  background: #F2F2F7;"
+                "  border-radius: 5px;"
+                "  border: 1px solid #E5E5EA;"
+                "  padding: 0px 6px;"
+                "  font-size: 10px;"
+                "  font-weight: 600;"
+                "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 "}"
             )
-            iq_dot.setToolTip(f"Channel {ch}: no signal yet")
-            iq_dot.raise_()  # ensure dot renders on top of button
+            pill.setToolTip(f"Channel {ch}: signal quality — no data yet")
+            layout.addWidget(pill)
+            self.signal_quality_pills[ch] = pill
 
-            # Hide dot when channel is toggled off — no point tracking a hidden channel
-            ch_btn.toggled.connect(lambda checked, dot=iq_dot: dot.setVisible(checked))
-
-            first_row_layout.addWidget(ch_container)
-
-            # Register on self so coordinator can find it by name
-            ch_lower = ch.lower()
-            setattr(self, f"sensor_iq_{ch_lower}_diag", iq_dot)
-            self.sensor_iq_badges[ch] = iq_dot
-
-        first_row_layout.addStretch()
-
-        # Live Data toggle button
-        self.live_data_btn = QPushButton("Live Data")
-        self.live_data_btn.setCheckable(True)
-        self.live_data_btn.setChecked(True)
-        self.live_data_btn.setMinimumHeight(32)
-        self.live_data_btn.setToolTip(
-            "Enabled: cursor follows latest data\n"
-            "Disabled: cursor freezes"
-        )
-        self.live_data_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: rgba(0, 0, 0, 0.06);"
-            "  color: #86868B;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  padding: 0px 12px;"
-            "  border-radius: 6px;"
-            "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:checked {"
-            "  background: rgba(0, 122, 255, 0.15);"
-            "  color: #007AFF;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "}"
-            "QPushButton:hover:checked {"
-            "  background: rgba(0, 122, 255, 0.25);"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(0, 122, 255, 0.3);"
-            "}"
-        )
-        self.live_data_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.live_data_btn.toggled.connect(
-            self.sensogram_presenter.set_live_data_enabled,
-        )
-        first_row_layout.addWidget(self.live_data_btn)
-
-        # Add spacing
-        first_row_layout.addSpacing(8)
-
-        # Clear Graph button (uses trash icon)
-        self.clear_graph_btn = QPushButton()
-        self.clear_graph_btn.setFixedHeight(32)
-        self.clear_graph_btn.setFixedWidth(32)
-        self.clear_graph_btn.setToolTip(
-            "Clear all graph data"
-        )
-        # Load trash icon from project resources
-        from PySide6.QtCore import QSize as _QSize
-        from PySide6.QtGui import QIcon as _QIcon
-        from affilabs.utils.resource_path import get_affilabs_resource
-        _trash_icon_path = str(get_affilabs_resource("ui/img/trash_icon.svg"))
-        import os
-        if os.path.exists(_trash_icon_path):
-            self.clear_graph_btn.setIcon(_QIcon(_trash_icon_path))
-            self.clear_graph_btn.setIconSize(_QSize(18, 18))
-        else:
-            self.clear_graph_btn.setText("??")  # Fallback to emoji
-        self.clear_graph_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: rgba(255, 59, 48, 0.1);"
-            "  border-radius: 6px;"
-            "  padding: 0px;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(255, 59, 48, 0.18);"
-            "}"
-            "QPushButton:pressed {"
-            "  background: rgba(255, 59, 48, 0.3);"
-            "}"
-        )
-        self.clear_graph_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # Connect to DataWindow's reset_graphs() method (triggers proper clear chain)
-        self.clear_graph_btn.clicked.connect(self._on_clear_graph_clicked)
-        first_row_layout.addWidget(self.clear_graph_btn)
-
-        # Return just the first row (controls)
-        return first_row
+        layout.addStretch()
+        return bar
 
     def _show_transmission_spectrum(self):
         """Show the transmission spectrum dialog."""
@@ -1358,6 +1260,27 @@ class AffilabsMainWindow(
             else:
                 logger.debug("Live data updates disabled - graph frozen")
 
+    def _position_active_cycle_legend(self, plot_widget):
+        """Position the interactive SPR legend inside the Active Cycle plot_widget."""
+        legend = getattr(plot_widget, 'interactive_spr_legend', None)
+        if legend is None:
+            return
+        legend.adjustSize()
+        # Left axis ≈ 55px wide; sit just inside the data area at top-left
+        legend.move(62, 10)
+        legend.raise_()
+
+    def _position_cycle_status_overlay(self, plot_widget):
+        """Position the cycle status overlay inside the Active Cycle plot_widget (top-right)."""
+        overlay = getattr(plot_widget, 'cycle_status_overlay', None)
+        if overlay is None:
+            return
+        overlay.adjustSize()
+        # Right edge: widget width minus overlay width minus ~10px right margin
+        x = max(62, plot_widget.width() - overlay.width() - 10)
+        overlay.move(x, 10)
+        overlay.raise_()
+
     def _toggle_channel_visibility(self, channel, visible):
         """Toggle visibility of a channel on both graphs."""
         if hasattr(self, "sensogram_presenter"):
@@ -1404,7 +1327,7 @@ class AffilabsMainWindow(
         return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
     def _get_delta_spr_display_text(self, delta_values: dict = None) -> str:
-        """Generate color-coded delta SPR display text.
+        """Generate color-coded delta SPR display text (stacked vertically for better visibility).
 
         Args:
             delta_values: Dict with keys 'a', 'b', 'c', 'd' containing RU values
@@ -1426,17 +1349,21 @@ class AffilabsMainWindow(
 
         colors = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
 
-        # Build channel displays
-        separator = " <span style='color: rgba(0,0,0,0.3);'>•</span> "
+        # Build channel displays (vertical stack for better visibility)
         channel_parts = []
+        iq_colors = getattr(self, 'sensor_iq_colors', {})
         for i, ch in enumerate(['a', 'b', 'c', 'd']):
             ch_upper = ch.upper()
+            iq_color = iq_colors.get(ch_upper, '#C7C7CC')
             channel_parts.append(
-                f"<b style='color: {colors[i]};'>{ch_upper}:</b> "
-                f"<span style='color: {colors[i]}; font-size: 14px; font-weight: 700;'>{delta_values[ch]:.1f}</span>"
+                f"<div style='margin: 3px 0; padding: 2px 0;'>"
+                f"<span style='color: {iq_color}; font-size: 11px;'>&#9679;</span> "
+                f"<b style='color: {colors[i]}; font-size: 13px;'>{ch_upper}:</b> "
+                f"<span style='color: {colors[i]}; font-size: 16px; font-weight: 700;'>{delta_values[ch]:.1f}</span>"
+                f"</div>"
             )
 
-        return f"<b>Δ SPR (RU):</b>  {separator.join(channel_parts)}"
+        return f"<b style='font-size: 12px;'>Δ SPR (RU)</b><br>{''.join(channel_parts)}"
 
     def _clear_cycle_markers(self):
         """Clear all flags from the Active Cycle graph and markers from Full Sensorgram timeline."""
@@ -1740,34 +1667,27 @@ class AffilabsMainWindow(
         self._cycle_note_has_content = has_note
 
         if has_note:
-            self.cycle_note_btn.setText("Note *")
+            # Blue tint when note exists
             self.cycle_note_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: rgba(0, 122, 255, 0.12);"
-                "  padding: 0px 10px;"
-                "  font-size: 11px;"
-                "  font-weight: 600;"
-                "  color: #007AFF;"
+                "  background: rgba(0,122,255,0.15);"
+                "  border: none;"
                 "  border-radius: 6px;"
-                "  border: 1px solid rgba(0, 122, 255, 0.3);"
+                "  padding: 0px;"
                 "}"
-                "QPushButton:hover { background: rgba(0, 122, 255, 0.2); }"
-                "QPushButton:pressed { background: rgba(0, 122, 255, 0.3); }"
+                "QPushButton:hover { background: rgba(0,122,255,0.25); }"
+                "QPushButton:pressed { background: rgba(0,122,255,0.35); }"
             )
         else:
-            self.cycle_note_btn.setText("Note")
             self.cycle_note_btn.setStyleSheet(
                 "QPushButton {"
-                "  background: rgba(0, 0, 0, 0.05);"
-                "  padding: 0px 10px;"
-                "  font-size: 11px;"
-                "  font-weight: 500;"
-                "  color: #86868B;"
+                "  background: rgba(0,0,0,0.05);"
+                "  border: none;"
                 "  border-radius: 6px;"
-                "  border: 1px solid #D1D1D6;"
+                "  padding: 0px;"
                 "}"
-                "QPushButton:hover { background: rgba(0, 0, 0, 0.08); color: #1D1D1F; }"
-                "QPushButton:pressed { background: rgba(0, 0, 0, 0.12); }"
+                "QPushButton:hover { background: rgba(0,0,0,0.10); }"
+                "QPushButton:pressed { background: rgba(0,0,0,0.18); }"
             )
 
     def _close_cycle_notes_popup(self):
@@ -1813,20 +1733,27 @@ class AffilabsMainWindow(
         """Update button colors and curve colors when colorblind mode is toggled."""
         from affilabs.ui_styles import get_channel_button_style
         from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+        from affilabs.settings import settings as _settings
         import pyqtgraph as pg
 
         # Select color palette based on mode
         colors = CHANNEL_COLORS_COLORBLIND if enabled else CHANNEL_COLORS
         channel_colors_rgb = [self._hex_to_rgb(c) for c in colors]
 
+        # Keep settings.ACTIVE_GRAPH_COLORS in sync so legend.update_colors() reads correct palette
+        _ch_keys = ['a', 'b', 'c', 'd']
+        for i, ch in enumerate(_ch_keys):
+            _settings.ACTIVE_GRAPH_COLORS[ch] = colors[i]
+
+        # Notify legend of colorblind mode for shape encoding
+        if hasattr(self, 'cycle_of_interest_graph'):
+            legend = getattr(self.cycle_of_interest_graph, 'interactive_spr_legend', None)
+            if legend is not None:
+                legend.set_colorblind_mode(enabled)
+
         # Update channel visibility toggle buttons
         if hasattr(self, 'channel_toggles'):
             for i, (ch, btn) in enumerate(self.channel_toggles.items()):
-                btn.setStyleSheet(get_channel_button_style(colors[i]))
-
-        # Update flag selection buttons
-        if hasattr(self, 'channel_selection_buttons'):
-            for i, (ch, btn) in enumerate(self.channel_selection_buttons.items()):
                 btn.setStyleSheet(get_channel_button_style(colors[i]))
 
         # Update Full Timeline graph curve colors (Live Sensorgram - top graph)
@@ -1845,30 +1772,120 @@ class AffilabsMainWindow(
         if hasattr(self, 'edits_tab') and hasattr(self.edits_tab, 'update_barchart_colors'):
             self.edits_tab.update_barchart_colors(enabled)
 
-        # Update Delta SPR display colors
-        if hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'delta_display'):
-            import re
-            delta_display = self.cycle_of_interest_graph.delta_display
-            delta_values = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
-
-            # Extract current values from display text
-            matches = re.findall(r'([ABCD]):</b>.*?(\d+\.\d+)', delta_display.text())
-            for ch_letter, value in matches:
-                delta_values[ch_letter.lower()] = float(value)
-
-            delta_display.setText(self._get_delta_spr_display_text(delta_values))
+        # Refresh interactive SPR legend colors (colorblind mode toggle)
+        if hasattr(self, 'cycle_of_interest_graph'):
+            legend = getattr(self.cycle_of_interest_graph, 'interactive_spr_legend', None)
+            if legend is not None and legend.isVisible():
+                legend.update_colors()
 
     def _toggle_sidebar_collapse(self, collapsed: bool):
-        """Collapse right sidebar to icon strip only, or restore to full width."""
+        """Collapse left sidebar to icon strip only, or restore to full width."""
         sizes = self.splitter.sizes()
         _ICON_STRIP = 50  # width that shows just the tab bar icons
         if collapsed:
-            self._sidebar_saved_width = sizes[2] if sizes[2] > _ICON_STRIP else 405
-            self.splitter.setSizes([sizes[0], sizes[1] + sizes[2] - _ICON_STRIP, _ICON_STRIP])
+            self._sidebar_saved_width = sizes[0] if sizes[0] > _ICON_STRIP else 280
+            self.splitter.setSizes([_ICON_STRIP, sizes[0] + sizes[1] - _ICON_STRIP, sizes[2]])
         else:
-            w = getattr(self, '_sidebar_saved_width', 405)
+            w = getattr(self, '_sidebar_saved_width', 280)
             total = sizes[0] + sizes[1] + sizes[2]
-            self.splitter.setSizes([sizes[0], total - sizes[0] - w, w])
+            self.splitter.setSizes([w, total - w - sizes[2], sizes[2]])
+
+    def _build_queue_right_panel(self) -> "QFrame":
+        """Build the collapsible right Run Queue panel.
+
+        The panel is a QFrame styled to match the app surface. Its content
+        area is stored as self._queue_content_layout so the queue widget can
+        be inserted after the sidebar finishes building.
+        """
+        from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
+
+        panel = QFrame()
+        panel.setObjectName("rightQueuePanel")
+        panel.setMinimumWidth(0)
+        panel.setMaximumWidth(560)
+        panel.setStyleSheet(
+            "QFrame#rightQueuePanel {"
+            "  background: #F5F5F7;"
+            "  border-left: 1px solid #E5E5EA;"
+            "}"
+        )
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ── header strip ────────────────────────────────────────────────
+        header = QFrame()
+        header.setFixedHeight(40)
+        header.setStyleSheet(
+            "QFrame { background: #EBEBF0; border-bottom: 1px solid #E5E5EA; }"
+        )
+        hdr_row = QHBoxLayout(header)
+        hdr_row.setContentsMargins(14, 0, 14, 0)
+        title_lbl = QLabel("Run Queue")
+        title_lbl.setStyleSheet(
+            "font-size: 12px; font-weight: 600; color: #1D1D1F; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        hdr_row.addWidget(title_lbl)
+        hdr_row.addStretch()
+        outer.addWidget(header)
+
+        # ── content area (queue widget inserted here after sidebar builds) ──
+        self._queue_content_layout = outer
+        return panel
+
+    def expand_queue_panel(self, width: int = 320) -> None:
+        """Expand the right run-queue panel (called when acquisition starts)."""
+        try:
+            sizes = self.splitter.sizes()
+            total = sum(sizes)
+            left = sizes[0]
+            center = max(400, total - left - width)
+            self.splitter.setSizes([left, center, width])
+        except Exception as e:
+            logger.debug(f"expand_queue_panel: {e}")
+
+    def collapse_queue_panel(self) -> None:
+        """Collapse the right run-queue panel (called when acquisition stops)."""
+        try:
+            sizes = self.splitter.sizes()
+            total = sum(sizes)
+            left = sizes[0]
+            self.splitter.setSizes([left, total - left, 0])
+        except Exception as e:
+            logger.debug(f"collapse_queue_panel: {e}")
+
+    def expand_sidebar(self, width: int = 300) -> None:
+        """Expand the left sidebar (called when icon rail tab is clicked)."""
+        try:
+            sizes = self.splitter.sizes()
+            if sizes[0] >= width:
+                return  # Already expanded
+            total = sum(sizes)
+            right = sizes[2]
+            center = max(400, total - width - right)
+            self.splitter.setSizes([width, center, right])
+        except Exception as e:
+            logger.debug(f"expand_sidebar: {e}")
+
+    def collapse_sidebar(self) -> None:
+        """Collapse the left sidebar to 0px (called when icon rail tab is clicked again)."""
+        try:
+            sizes = self.splitter.sizes()
+            if sizes[0] == 0:
+                return  # Already collapsed
+            total = sum(sizes)
+            right = sizes[2]
+            self.splitter.setSizes([0, total - right, right])
+        except Exception as e:
+            logger.debug(f"collapse_sidebar: {e}")
+
+    def is_sidebar_collapsed(self) -> bool:
+        """Check if sidebar is currently collapsed."""
+        try:
+            return self.splitter.sizes()[0] == 0
+        except Exception:
+            return True
 
     def _on_spark_toggle(self, checked: bool):
         """Handle Spark toggle button — opens/closes the floating Sparq bubble. Never crashes."""
@@ -1887,13 +1904,35 @@ class AffilabsMainWindow(
         except Exception as e:
             logger.error(f"Spark toggle failed (non-fatal): {e}")
 
+    def _on_spectrum_toggle(self, checked: bool):
+        """Handle Spectrum toggle button — opens/closes the floating SpectrumBubble. Never crashes."""
+        try:
+            spec = getattr(self, 'spectrum_bubble', None)
+            if spec is None:
+                return
+            if checked:
+                if not spec.isVisible():
+                    spec.reposition()
+                    spec.show()
+                    spec.raise_()
+            else:
+                spec.hide()
+        except Exception as e:
+            logger.error(f"Spectrum toggle failed (non-fatal): {e}")
+
     def resizeEvent(self, event):
-        """Reposition floating Sparq bubble to stay anchored bottom-right on resize."""
+        """Reposition floating bubbles (Sparq + Spectrum) anchored to window corners on resize."""
         super().resizeEvent(event)
         try:
             bubble = getattr(self, 'spark_bubble', None)
             if bubble is not None:
                 bubble.reposition()
+        except Exception:
+            pass
+        try:
+            spec = getattr(self, 'spectrum_bubble', None)
+            if spec is not None:
+                spec.reposition()
         except Exception:
             pass
 
@@ -1902,7 +1941,6 @@ class AffilabsMainWindow(
         title: str,
         height: int,
         show_delta_spr: bool = False,
-        include_controls: bool = False,
     ) -> QFrame:
         """Create a graph container with title and controls."""
         import pyqtgraph as pg
@@ -1924,7 +1962,7 @@ class AffilabsMainWindow(
 
         # Title row with controls
         title_row = QHBoxLayout()
-        title_row.setSpacing(12)
+        title_row.setSpacing(8)
 
         title_label = QLabel(title)
         title_label.setStyleSheet(
@@ -1940,24 +1978,76 @@ class AffilabsMainWindow(
         title_row.addWidget(title_label)
         title_row.addStretch()
 
-        layout.addLayout(title_row)
+        # Action buttons — icon-only 28×28, right-aligned in title row (Active Cycle only)
+        if show_delta_spr:
+            import os as _os2
+            from PySide6.QtGui import QIcon as _QIcon3
+            from PySide6.QtCore import QSize as _QSize3
+            from affilabs.utils.resource_path import get_affilabs_resource as _get_res2
 
-        # Add channel controls row (only for Live Sensorgram)
-        if include_controls:
-            controls_row = self._create_graph_header()
-            layout.addWidget(controls_row)
+            _ICON_BTN_STYLE = (
+                "QPushButton {"
+                "  background: rgba(0,0,0,0.05);"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  padding: 0px;"
+                "}"
+                "QPushButton:hover {"
+                "  background: rgba(0,0,0,0.10);"
+                "}"
+                "QPushButton:pressed {"
+                "  background: rgba(0,0,0,0.18);"
+                "}"
+            )
+            _LIVE_BTN_STYLE = (
+                "QPushButton {"
+                "  background: rgba(0,0,0,0.05);"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  padding: 0px;"
+                "}"
+                "QPushButton:checked {"
+                "  background: rgba(0,122,255,0.15);"
+                "}"
+                "QPushButton:hover {"
+                "  background: rgba(0,0,0,0.10);"
+                "}"
+                "QPushButton:hover:checked {"
+                "  background: rgba(0,122,255,0.22);"
+                "}"
+                "QPushButton:pressed {"
+                "  background: rgba(0,122,255,0.30);"
+                "}"
+            )
+
+            def _make_icon_btn(svg_name, tooltip, style=_ICON_BTN_STYLE):
+                btn = QPushButton()
+                btn.setFixedSize(28, 28)
+                btn.setToolTip(tooltip)
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn.setStyleSheet(style)
+                _path = str(_get_res2(f"ui/img/{svg_name}"))
+                if _os2.path.exists(_path):
+                    btn.setIcon(_QIcon3(_path))
+                    btn.setIconSize(_QSize3(16, 16))
+                return btn
+
+            pass  # action buttons are added to timing_row below
+
+        layout.addLayout(title_row)
 
         # Initialize delta_display as None (only created if show_delta_spr is True)
         delta_display = None
 
-        # Add Timing Adjustment controls row (only for Active Cycle graph)
+        # Add controls row (only for Active Cycle graph) — display toggles + action buttons
         if show_delta_spr:
             timing_row = QHBoxLayout()
             timing_row.setSpacing(8)
 
-            # Timing adjustment channel selection label with improved styling
-            timing_label = QLabel("Timing Adjustment:")
-            timing_label.setStyleSheet(
+            # Display label
+            from affilabs.ui_styles import get_channel_button_style
+            display_label = QLabel("Display:")
+            display_label.setStyleSheet(
                 "QLabel {"
                 "  font-size: 12px;"
                 "  font-weight: 600;"
@@ -1966,163 +2056,37 @@ class AffilabsMainWindow(
                 "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
                 "}"
             )
-            timing_label.setToolTip("Timing adjustment controls - Select channel for visual alignment")
-            timing_row.addWidget(timing_label)
+            display_label.setToolTip("Toggle channel visibility on both graphs")
+            timing_row.addWidget(display_label)
 
-            # Timing adjustment channel selection buttons (radio-style)
-            self.channel_selection_buttons = {}
-
-            timing_channel_names = ["A", "B", "C", "D"]
-            timing_tooltips = [
-                "Select Channel A for timing adjustment",
-                "Select Channel B for timing adjustment",
-                "Select Channel C for timing adjustment",
-                "Select Channel D for timing adjustment",
-            ]
-
-            for i, ch in enumerate(timing_channel_names):
-                tooltip = timing_tooltips[i]
-                ch_btn = QPushButton(ch)
+            # Channel visibility toggle buttons (moved from Live Sensorgram header)
+            self.channel_toggles = {}
+            self.sensor_iq_colors = {'A': '#C7C7CC', 'B': '#C7C7CC', 'C': '#C7C7CC', 'D': '#C7C7CC'}
+            _toggle_colors = {
+                "A": ("#1D1D1F", "Toggle Channel A"),
+                "B": ("#FF3B30", "Toggle Channel B"),
+                "C": ("#007AFF", "Toggle Channel C"),
+                "D": ("#34C759", "Toggle Channel D"),
+            }
+            _BTN_W, _BTN_H = 32, 28
+            for ch, (color, tooltip) in _toggle_colors.items():
+                ch_container = QWidget()
+                ch_container.setFixedSize(_BTN_W, _BTN_H)
+                ch_btn = QPushButton(ch, ch_container)
                 ch_btn.setCheckable(True)
-                ch_btn.setChecked(ch == "A")  # Channel A selected by default
-                ch_btn.setFixedSize(32, 28)  # Matches display button sizing
+                ch_btn.setChecked(True)
+                ch_btn.setGeometry(0, 0, _BTN_W, _BTN_H)
                 ch_btn.setToolTip(tooltip)
-
-                # Monochrome radio-style button with softer selected state
-                standard_style = (
-                    "QPushButton {"
-                    "  background: #F5F5F5;"
-                    "  color: #666666;"
-                    "  border: 1px solid #D0D0D0;"
-                    "  border-radius: 4px;"
-                    "  font-size: 12px;"
-                    "  font-weight: 600;"
-                    "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-                    "}"
-                    "QPushButton:checked {"
-                    "  background: #6B6B6B;"
-                    "  color: #FFFFFF;"
-                    "  border: 1px solid #6B6B6B;"
-                    "}"
-                    "QPushButton:hover {"
-                    "  border: 1px solid #999999;"
-                    "}"
+                ch_btn.setStyleSheet(get_channel_button_style(color))
+                self.channel_toggles[ch] = ch_btn
+                ch_btn.toggled.connect(
+                    lambda checked, channel=ch: self.sensogram_presenter.toggle_channel_visibility(channel, checked)
                 )
-                ch_btn.setStyleSheet(standard_style)
-                ch_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                timing_row.addWidget(ch_container)
 
-                # Store reference and connect to channel selection for timing adjustment
-                self.channel_selection_buttons[ch] = ch_btn
-                channel_letter_lower = ch.lower()  # 'A'→'a', 'B'→'b', etc.
-                ch_btn.clicked.connect(
-                    lambda _, channel=channel_letter_lower: self._on_timing_channel_selected(channel)
-                )
+            timing_row.addStretch()
 
-                timing_row.addWidget(ch_btn)
-
-            # Spacing between channel buttons and controls
-            timing_row.addSpacing(12)
-
-            # Spacing before action buttons
-            timing_row.addSpacing(8)
-
-            # Clear Flags button with SVG icon
-            self.clear_flags_btn = QPushButton()
-            self.clear_flags_btn.setFixedHeight(28)
-            self.clear_flags_btn.setFixedWidth(28)
-            self.clear_flags_btn.setToolTip(
-                "Clear All Flags\n"
-                "Remove all flags from Live Sensorgram\n"
-                "• Clears all flag markers\n"
-                "• Removes injection alignment line\n"
-                "• Resets channel timing to default\n"
-                "• Does not affect recorded data"
-            )
-            import os as _os
-            from PySide6.QtGui import QIcon as _QIcon2
-            from PySide6.QtCore import QSize as _QSize2
-            from affilabs.utils.resource_path import get_affilabs_resource as _get_res
-            _clear_svg = str(_get_res("ui/img/clear_icon.svg"))
-            if _os.path.exists(_clear_svg):
-                self.clear_flags_btn.setIcon(_QIcon2(_clear_svg))
-                self.clear_flags_btn.setIconSize(_QSize2(16, 16))
-            else:
-                self.clear_flags_btn.setText("?")
-            self.clear_flags_btn.setStyleSheet(
-                "QPushButton {"
-                "  background: rgba(255, 59, 48, 0.1);"
-                "  border-radius: 6px;"
-                "  padding: 0px;"
-                "}"
-                "QPushButton:hover {"
-                "  background: rgba(255, 59, 48, 0.18);"
-                "}"
-                "QPushButton:pressed {"
-                "  background: rgba(255, 59, 48, 0.3);"
-                "}"
-            )
-            self.clear_flags_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.clear_flags_btn.clicked.connect(self._clear_cycle_markers)
-            timing_row.addWidget(self.clear_flags_btn)
-
-            # Reset Timing button with SVG icon
-            self.reset_timing_btn = QPushButton()
-            self.reset_timing_btn.setFixedHeight(28)
-            self.reset_timing_btn.setFixedWidth(28)
-            self.reset_timing_btn.setToolTip(
-                "Reset Timing\n"
-                "Reset all channel time shifts to default\n"
-                "• Removes injection alignment offsets\n"
-                "• Restores original timing"
-            )
-            _reset_svg = str(_get_res("ui/img/reset_icon.svg"))
-            if _os.path.exists(_reset_svg):
-                self.reset_timing_btn.setIcon(_QIcon2(_reset_svg))
-                self.reset_timing_btn.setIconSize(_QSize2(16, 16))
-            else:
-                self.reset_timing_btn.setText("R")
-            self.reset_timing_btn.setStyleSheet(
-                "QPushButton {"
-                "  background: rgba(0, 0, 0, 0.06);"
-                "  border: none;"
-                "  border-radius: 6px;"
-                "  padding: 0px;"
-                "}"
-                "QPushButton:hover {"
-                "  background: rgba(255, 149, 0, 0.15);"
-                "}"
-                "QPushButton:pressed {"
-                "  background: rgba(255, 149, 0, 0.25);"
-                "}"
-            )
-            self.reset_timing_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.reset_timing_btn.clicked.connect(self._reset_channel_timing)
-            timing_row.addWidget(self.reset_timing_btn)
-
-            # Cycle Notes button - add/edit notes for the currently running cycle
-            self.cycle_note_btn = QPushButton("Note")
-            self.cycle_note_btn.setFixedHeight(28)
-            self.cycle_note_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.cycle_note_btn.setToolTip("Add or edit notes for the current cycle")
-            self.cycle_note_btn.setVisible(False)  # Hidden until a cycle starts
-            self._cycle_note_has_content = False
-            self.cycle_note_btn.setStyleSheet(
-                "QPushButton {"
-                "  background: rgba(0, 0, 0, 0.05);"
-                "  padding: 0px 10px;"
-                "  font-size: 11px;"
-                "  font-weight: 500;"
-                "  color: #86868B;"
-                "  border-radius: 6px;"
-                "  border: 1px solid #D1D1D6;"
-                "}"
-                "QPushButton:hover { background: rgba(0, 0, 0, 0.08); color: #1D1D1F; }"
-                "QPushButton:pressed { background: rgba(0, 0, 0, 0.12); }"
-            )
-            self.cycle_note_btn.clicked.connect(self._open_cycle_notes_popup)
-            timing_row.addWidget(self.cycle_note_btn)
-
-            # Channel time-shift indicator (hidden until a shift is applied)
+            # Channel time-shift bubble (hidden until a shift is applied)
             self.channel_shift_label = QLabel("")
             self.channel_shift_label.setVisible(False)
             self.channel_shift_label.setStyleSheet(
@@ -2140,36 +2104,51 @@ class AffilabsMainWindow(
             self.channel_shift_label.setToolTip(
                 "Channel time shift (visual only)\n"
                 "← / → Arrow keys: shift ±0.1s\n"
-                "Shift + Arrow: shift ±1.0s\n"
-                "Esc: reset selected channel\n"
-                "Reset Timing button: reset all"
+                "Shift + Arrow: shift ±1.0s"
             )
             timing_row.addWidget(self.channel_shift_label)
 
-            # Add spacing before delta SPR display
-            timing_row.addSpacing(16)
+            timing_row.addSpacing(4)
 
-            # Delta SPR display on the right side (where users' eyes naturally look)
-            delta_display = QLabel(self._get_delta_spr_display_text())
-            delta_display.setStyleSheet(
-                "QLabel {"
-                "  background: transparent;"
-                "  border: 1px solid #D0D0D0;"
-                "  border-radius: 6px;"
-                "  padding: 5px 10px;"
-                "  font-size: 13px;"
-                f"  color: {Colors.PRIMARY_TEXT};"
-                f"  font-family: {Fonts.MONOSPACE};"
-                "  font-weight: 600;"
-                "}",
-            )
-            delta_display.setTextFormat(Qt.TextFormat.RichText)
-            delta_display.setToolTip(
-                "Real-time change in SPR signal in Response Units (RU)\nMeasured relative to cycle start",
-            )
-            timing_row.addWidget(delta_display)
+            # Cycle Note button
+            self.cycle_note_btn = _make_icon_btn("pen_icon.svg", "Add or edit notes for the current cycle")
+            self.cycle_note_btn.setVisible(True)
+            self._cycle_note_has_content = False
+            self.cycle_note_btn.clicked.connect(self._open_cycle_notes_popup)
+            timing_row.addWidget(self.cycle_note_btn)
 
-            timing_row.addStretch()
+            timing_row.addSpacing(4)
+
+            # Live Data toggle
+            self.live_data_btn = _make_icon_btn("live_icon.svg", "Live Data — cursor follows latest data", _LIVE_BTN_STYLE)
+            self.live_data_btn.setCheckable(True)
+            self.live_data_btn.setChecked(True)
+            self.live_data_btn.toggled.connect(self.sensogram_presenter.set_live_data_enabled)
+            timing_row.addWidget(self.live_data_btn)
+
+            # Reset Timing
+            self.reset_timing_btn = _make_icon_btn(
+                "reset_icon.svg",
+                "Reset Timing\nReset all channel time shifts to default"
+            )
+            self.reset_timing_btn.clicked.connect(self._reset_channel_timing)
+            timing_row.addWidget(self.reset_timing_btn)
+
+            # Clear Flags
+            self.clear_flags_btn = _make_icon_btn(
+                "clear_icon.svg",
+                "Clear All Flags\nRemove all flags and reset channel timing"
+            )
+            self.clear_flags_btn.clicked.connect(self._clear_cycle_markers)
+            timing_row.addWidget(self.clear_flags_btn)
+
+            # Clear Graph (trash)
+            self.clear_graph_btn = _make_icon_btn(
+                "trash_icon.svg",
+                "Clear all graph data"
+            )
+            self.clear_graph_btn.clicked.connect(self._on_clear_graph_clicked)
+            timing_row.addWidget(self.clear_graph_btn)
 
             layout.addLayout(timing_row)
 
@@ -2177,7 +2156,10 @@ class AffilabsMainWindow(
         left_label = "Δ SPR (RU)" if show_delta_spr else "λ (nm)"
         # Use larger fonts for Active Cycle graph
         axis_size = "14pt" if show_delta_spr else "11pt"
-        plot_widget = create_time_plot(left_label, size=axis_size)
+        plot_widget = create_time_plot(
+            left_label, size=axis_size, transparent=not show_delta_spr,
+            use_minutes=not show_delta_spr,
+        )
 
         # Create plot curves for 4 channels with distinct colors
         # Ch A: Black, Ch B: Red, Ch C: Blue, Ch D: Green
@@ -2213,7 +2195,7 @@ class AffilabsMainWindow(
                 angle=90,
                 pen=pg.mkPen(color="#1D1D1F", width=3),  # 3px for easier click target
                 movable=True,
-                label="Start: {value:.1f}s",
+                label="Start: {value:.0f} s",
                 labelOpts={
                     "position": 0.5,  # Center of graph
                     "color": "#1D1D1F",
@@ -2234,7 +2216,7 @@ class AffilabsMainWindow(
                 angle=90,
                 pen=pg.mkPen(color="#1D1D1F", width=3),  # 3px for easier click target
                 movable=True,
-                label="Stop: {value:.1f}s",
+                label="Stop: {value:.0f} s",
                 labelOpts={
                     "position": 0.5,  # Center of graph
                     "color": "#1D1D1F",
@@ -2278,7 +2260,7 @@ class AffilabsMainWindow(
 
         # Store references to curves and cursors on the plot widget
         plot_widget.curves = curves
-        plot_widget.delta_display = delta_display
+        plot_widget.delta_display = None  # Removed — replaced by interactive_spr_legend overlay
         plot_widget.start_cursor = start_cursor
         plot_widget.stop_cursor = stop_cursor
         # DEPRECATED: Legacy flag attrs kept for backward compat only.
@@ -2300,10 +2282,31 @@ class AffilabsMainWindow(
 
         layout.addWidget(plot_widget, 1)
 
+        # Embed interactive SPR legend inside the Active Cycle graph
+        if show_delta_spr:
+            from affilabs.widgets.interactive_spr_legend import InteractiveSPRLegend
+            spr_legend = InteractiveSPRLegend(parent=plot_widget, title="Δ SPR (RU)")
+            spr_legend.setVisible(True)  # Visible on startup
+            spr_legend.channel_timing_selected.connect(
+                lambda ch: self._on_timing_channel_selected(ch)
+            )
+            plot_widget.interactive_spr_legend = spr_legend
+            # Position after layout settles
+            from PySide6.QtCore import QTimer as _QTimer
+            _QTimer.singleShot(200, lambda w=plot_widget: self._position_active_cycle_legend(w))
+
+            # Cycle status overlay — top-right of Active Cycle graph
+            from affilabs.widgets.cycle_status_overlay import CycleStatusOverlay
+            cycle_overlay = CycleStatusOverlay(parent=plot_widget)
+            plot_widget.cycle_status_overlay = cycle_overlay
+            _QTimer.singleShot(200, lambda w=plot_widget: self._position_cycle_status_overlay(w))
+        else:
+            plot_widget.interactive_spr_legend = None
+            plot_widget.cycle_status_overlay = None
+
         # Add Cycle Intelligence Footer to bottom graph (Active Cycle)
         if show_delta_spr:
             footer = CycleIntelligenceFooter()
-            # Initialize with empty cycle data (will be updated by main app)
             footer.update_cycle_info(None)
             footer.update_status({
                 'build': '⚪ Not built',
@@ -2312,8 +2315,30 @@ class AffilabsMainWindow(
                 'injection': '⚪ Ready',
             })
             layout.addWidget(footer)
-            # Store reference for updates from main app
             plot_widget.intelligence_footer = footer
+
+            # Wire live clocks — use a deferred getter so main.py can register
+            # _get_elapsed_time and _get_recording_elapsed after construction.
+            def _make_clock_getter(mw):
+                def _getter():
+                    exp_fn = getattr(mw, '_get_elapsed_time', None)
+                    rec_fn = getattr(mw, '_get_recording_elapsed', None)
+                    exp = exp_fn() if callable(exp_fn) else None
+                    rec = rec_fn() if callable(rec_fn) else None
+                    return (exp if exp is not None else 0.0, rec)
+                return _getter
+
+            footer.set_clock_getter(_make_clock_getter(self))
+
+            # Wire recording state changes to show/hide rec clock
+            if hasattr(self, 'recording_start_requested'):
+                self.recording_start_requested.connect(
+                    lambda: footer.set_recording_active(True)
+                )
+            if hasattr(self, 'recording_stop_requested'):
+                self.recording_stop_requested.connect(
+                    lambda: footer.set_recording_active(False)
+                )
 
         return plot_widget, container
 
@@ -2338,10 +2363,13 @@ class AffilabsMainWindow(
         self.selected_channel_for_timing = channel_idx
         self.selected_channel_letter = channel_letter
 
-        # Update button states (radio button behavior - only one checked)
-        if hasattr(self, "channel_selection_buttons"):
-            for ch, btn in self.channel_selection_buttons.items():
-                btn.setChecked(ch == channel_letter)
+        # Sync legend selection highlight (legend is now the channel selector)
+        if hasattr(self, "cycle_of_interest_graph") and hasattr(self.cycle_of_interest_graph, "interactive_spr_legend"):
+            legend = self.cycle_of_interest_graph.interactive_spr_legend
+            if legend is not None:
+                legend.selected_channel = channel
+                for ch_key in ['a', 'b', 'c', 'd']:
+                    legend._update_channel_appearance(ch_key, ch_key == channel)
 
         # Store selected channel in main app (will be used by flag placement logic)
         if hasattr(self, "app"):
@@ -3792,8 +3820,19 @@ class AffilabsMainWindow(
             from PySide6.QtWidgets import QApplication, QMessageBox
             app_instance = QApplication.instance()
 
+            # Capture connected device names BEFORE cleanup nulls-out the references
+            devices_to_unplug = []
+            if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
+                hw_mgr = app_instance.hardware_mgr
+                # HardwareManager stores the HAL-wrapped controller as 'ctrl' (not 'controller')
+                if hasattr(hw_mgr, 'ctrl') and hw_mgr.ctrl is not None:
+                    controller_name = getattr(hw_mgr.ctrl, 'name', 'Controller')
+                    devices_to_unplug.append(controller_name)
+                if hasattr(hw_mgr, 'pump') and hw_mgr.pump is not None:
+                    devices_to_unplug.append('AffiPump')
+
             # CRITICAL: Always call application cleanup to ensure:
-            # 1. LEDs are turned off
+            # 1. LEDs are turned off (via disconnect_all → turn_off_channels → 'lx' command)
             # 2. Valves are powered off (prevent overheating)
             # 3. Pumps are stopped
             # NO EXIT PATH bypasses this graceful shutdown
@@ -3802,14 +3841,6 @@ class AffilabsMainWindow(
                 app_instance.close()
                 logger.debug("Hardware shutdown complete")
 
-            devices_to_unplug = []
-            if app_instance and hasattr(app_instance, 'hardware_mgr') and app_instance.hardware_mgr:
-                hw_mgr = app_instance.hardware_mgr
-                if hasattr(hw_mgr, 'controller') and hw_mgr.controller is not None:
-                    controller_name = getattr(hw_mgr.controller, 'name', 'Controller')
-                    devices_to_unplug.append(controller_name)
-                if hasattr(hw_mgr, 'pump') and hw_mgr.pump is not None:
-                    devices_to_unplug.append('AffiPump')
             if devices_to_unplug:
                 try:
                     QMessageBox.information(

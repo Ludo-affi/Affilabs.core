@@ -134,30 +134,43 @@ class MethodTabBuilder:
         self.sidebar.intel_message_label = QLabel()
         self.sidebar.intel_message_label.setVisible(False)
 
-        # Visible card — shown only while a cycle is running
-        self.sidebar.active_cycle_card = QFrame()
+        # Use pre-built card from sidebar._setup_ui() (Phase 2)
         self.sidebar.active_cycle_card.setVisible(False)
         self.sidebar.active_cycle_card.setStyleSheet(
             "QFrame {"
-            "  background: rgba(0, 122, 255, 0.06);"
-            "  border: 1px solid rgba(0, 122, 255, 0.2);"
+            "  background: #F0F4FF;"
+            "  border: 1.5px solid rgba(46, 48, 227, 0.25);"
             "  border-radius: 10px;"
             "}"
         )
         card_layout = QVBoxLayout(self.sidebar.active_cycle_card)
         card_layout.setContentsMargins(12, 10, 12, 10)
-        card_layout.setSpacing(6)
+        card_layout.setSpacing(5)
 
-        # Row 1: cycle type badge + countdown
+        # Section label
+        running_lbl = QLabel("NOW RUNNING")
+        running_lbl.setStyleSheet(
+            "QLabel {"
+            "  font-size: 9px;"
+            "  font-weight: 700;"
+            "  color: rgba(46, 48, 227, 0.7);"
+            "  letter-spacing: 0.8px;"
+            "  background: transparent;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        card_layout.addWidget(running_lbl)
+
+        # Row 1: cycle type badge + index + countdown
         row1 = QHBoxLayout()
         row1.setSpacing(8)
 
         self.sidebar.active_cycle_type_label = QLabel("Binding")
         self.sidebar.active_cycle_type_label.setStyleSheet(
             "QLabel {"
-            "  background: #007AFF;"
+            "  background: #2E30E3;"
             "  color: white;"
-            "  border-radius: 6px;"
+            "  border-radius: 5px;"
             "  padding: 2px 8px;"
             "  font-size: 11px;"
             "  font-weight: 700;"
@@ -181,17 +194,37 @@ class MethodTabBuilder:
         self.sidebar.active_cycle_countdown_label = QLabel("00:00")
         self.sidebar.active_cycle_countdown_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 18px;"
+            "  font-size: 17px;"
             "  font-weight: 700;"
-            "  color: #007AFF;"
+            "  color: #2E30E3;"
             "  background: transparent;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;"
             "}"
         )
         self.sidebar.active_cycle_countdown_label.setToolTip("Time remaining in current cycle")
         row1.addWidget(self.sidebar.active_cycle_countdown_label)
 
         card_layout.addLayout(row1)
+
+        # Progress bar
+        from PySide6.QtWidgets import QProgressBar
+        self.sidebar.active_cycle_progress = QProgressBar()
+        self.sidebar.active_cycle_progress.setFixedHeight(4)
+        self.sidebar.active_cycle_progress.setRange(0, 100)
+        self.sidebar.active_cycle_progress.setValue(0)
+        self.sidebar.active_cycle_progress.setTextVisible(False)
+        self.sidebar.active_cycle_progress.setStyleSheet(
+            "QProgressBar {"
+            "  background: rgba(46, 48, 227, 0.12);"
+            "  border: none;"
+            "  border-radius: 2px;"
+            "}"
+            "QProgressBar::chunk {"
+            "  background: #2E30E3;"
+            "  border-radius: 2px;"
+            "}"
+        )
+        card_layout.addWidget(self.sidebar.active_cycle_progress)
 
         # Row 2: next cycle + total experiment time
         row2 = QHBoxLayout()
@@ -200,7 +233,7 @@ class MethodTabBuilder:
         self.sidebar.active_next_cycle_label = QLabel()
         self.sidebar.active_next_cycle_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 11px;"
+            "  font-size: 10px;"
             "  color: #FF9500;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
@@ -213,7 +246,7 @@ class MethodTabBuilder:
         self.sidebar.active_experiment_time_label = QLabel()
         self.sidebar.active_experiment_time_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 11px;"
+            "  font-size: 10px;"
             "  color: #86868B;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
@@ -223,6 +256,7 @@ class MethodTabBuilder:
 
         card_layout.addLayout(row2)
 
+        # Card lives in the Method tab sidebar (not in LiveRightPanel)
         tab_layout.addWidget(self.sidebar.active_cycle_card)
         tab_layout.addSpacing(4)
 
@@ -490,7 +524,9 @@ class MethodTabBuilder:
 
         summary_card_layout.addLayout(table_footer_row)
 
-        parent_layout.addWidget(summary_card)
+        # Queue panel is NOT added to the sidebar Method tab.
+        # It is reparented into the collapsible right splitter pane by affilabs_core_ui.
+        self.sidebar.queue_panel = summary_card
 
     def _open_cycle_table_dialog(self):
         """Open the full cycle table dialog for reviewing completed/recorded cycles.

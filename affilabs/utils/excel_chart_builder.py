@@ -168,45 +168,71 @@ class ExcelChartBuilder:
         # Create Charts_Flags sheet
         chart_sheet = self.workbook.create_sheet("Charts_Flags")
         
-        # Prepare flag data for charting
-        flag_chart_data = []
-        
-        # Group flags by type
+        # Map flag types to numeric Y values for scatter chart (openpyxl requires numeric axes)
         flag_types = ['injection', 'wash', 'spike']
+        type_y_value = {'injection': 1, 'wash': 2, 'spike': 3}
         type_colors = {'injection': 'FF0000', 'wash': '0000FF', 'spike': '00FF00'}
-        
+
+        # Write a legend table so user knows which Y value = which flag type
+        chart_sheet.append(["Flag Type", "Y Value"])
+        for ft in flag_types:
+            chart_sheet.append([ft.title(), type_y_value[ft]])
+        chart_sheet.append([])  # blank spacer row
+
+        # Track row ranges per flag type for Reference objects
+        # Data starts at row 5 (rows 1-3 = legend, row 4 = spacer)
+        series_ranges = {}  # flag_type -> (start_row, end_row)
+        current_row = 5
+
         for flag_type in flag_types:
-            type_flags = flag_data[flag_data['Flag_Type'] == flag_type] if 'Flag_Type' in flag_data.columns else pd.DataFrame()
-            
-            if not type_flags.empty:
-                # Write flag data
-                start_row = len(flag_chart_data) + 2
-                header_row = [f"{flag_type.title()} Flags", "Time (s)", "Cycle"]
-                chart_sheet.append(header_row)
-                
-                for _, flag_row in type_flags.iterrows():
-                    time_pos = flag_row.get('Time_Position', 0)
-                    cycle_id = flag_row.get('Cycle_ID', 'Unknown')
-                    chart_sheet.append([flag_type, time_pos, cycle_id])
-                    flag_chart_data.append([flag_type, time_pos, cycle_id])
-        
-        if not flag_chart_data:
+            type_flags = (
+                flag_data[flag_data['Flag_Type'] == flag_type]
+                if 'Flag_Type' in flag_data.columns
+                else pd.DataFrame()
+            )
+            if type_flags.empty:
+                continue
+
+            # Write header
+            chart_sheet.append(["Time (s)", "Y", "Cycle"])
+            current_row += 1
+            block_start = current_row
+
+            for _, flag_row in type_flags.iterrows():
+                time_pos = flag_row.get('Time_Position', 0)
+                cycle_id = flag_row.get('Cycle_ID', 'Unknown')
+                chart_sheet.append([time_pos, type_y_value[flag_type], str(cycle_id)])
+                current_row += 1
+
+            series_ranges[flag_type] = (block_start, current_row - 1)
+            chart_sheet.append([])  # blank spacer between blocks
+            current_row += 1
+
+        if not series_ranges:
             return
-            
-        # Create scatter chart
+
+        # Create scatter chart with numeric Y axis
         scatter_chart = ScatterChart()
         scatter_chart.title = "Flag Positions Timeline"
         scatter_chart.style = 2
         scatter_chart.x_axis.title = "Time (s)"
-        scatter_chart.y_axis.title = "Flag Type"
-        
-        # Add data series for each flag type
-        for flag_type, color in type_colors.items():
-            type_data = [row for row in flag_chart_data if row[0] == flag_type]
-            if type_data:
-                # Add series (simplified - would need proper reference setup)
-                pass
-                
+        scatter_chart.y_axis.title = "Flag Type (1=Injection, 2=Wash, 3=Spike)"
+        scatter_chart.y_axis.numFmt = '0'
+        scatter_chart.y_axis.scaling.min = 0
+        scatter_chart.y_axis.scaling.max = 4
+        scatter_chart.width = 20
+        scatter_chart.height = 10
+
+        for flag_type, (start_row, end_row) in series_ranges.items():
+            x_values = Reference(chart_sheet, min_col=1, min_row=start_row, max_row=end_row)
+            y_values = Reference(chart_sheet, min_col=2, min_row=start_row, max_row=end_row)
+            series = Series(y_values, x_values, title=flag_type.title())
+            series.marker.symbol = "circle"
+            series.marker.size = 8
+            series.graphicalProperties.line.noFill = True
+            series.graphicalProperties.solidFill = type_colors[flag_type]
+            scatter_chart.series.append(series)
+
         chart_sheet.add_chart(scatter_chart, "F2")
         
     def add_overview_chart(self, processed_data: pd.DataFrame, cycles_data: pd.DataFrame) -> None:

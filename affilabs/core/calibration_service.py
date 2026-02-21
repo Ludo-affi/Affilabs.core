@@ -445,16 +445,16 @@ class CalibrationService(QObject):
         if dialog is None:
             return
 
-        btn = QPushButton("Compression Assistant")
-        btn.setFixedSize(190, 32)
+        btn = QPushButton("CA")
+        btn.setFixedSize(32, 32)
         btn.setStyleSheet(
             "QPushButton {"
             "  background: transparent;"
             "  color: #5856D6;"
             "  border: 1px solid #C7C6EA;"
             "  border-radius: 6px;"
-            "  font-size: 12px;"
-            "  font-weight: 500;"
+            "  font-size: 11px;"
+            "  font-weight: 600;"
             "}"
             "QPushButton:hover {"
             "  background: #F0F0FA;"
@@ -462,6 +462,7 @@ class CalibrationService(QObject):
             "}"
         )
         btn.setToolTip(
+            "Compression Assistant\n\n"
             "Launch the guided Compression Assistant to help\n"
             "position your sensor chip before calibration.\n"
             "Requires polarizer to be already calibrated."
@@ -1073,6 +1074,19 @@ class CalibrationService(QObject):
             return
 
         logger.debug("Starting calibration...")
+
+        # Pause live spectrum updates and clear graph immediately on Start click
+        if hasattr(self.app, "main_window") and self.app.main_window:
+            mw = self.app.main_window
+            ui_updates = getattr(mw, "ui_updates", None)
+            if ui_updates is not None:
+                ui_updates.set_transmission_updates_enabled(False)
+                ui_updates.set_raw_spectrum_updates_enabled(False)
+                logger.debug("Paused live spectrum updates for calibration")
+            graph = getattr(mw, "graph", None)
+            if graph is not None:
+                graph.clear_plot()
+                logger.debug("Cleared sensorgram on calibration start")
 
         # Update dialog
         if self._calibration_dialog:
@@ -1879,7 +1893,7 @@ class CalibrationService(QObject):
             if self._calibration_dialog:
                 self._calibration_dialog.update_title("✅ Calibration Successful!")
                 self._calibration_dialog.update_status(
-                    "Sensor is live and ready.\n\nReview the QC graphs below to confirm signal quality,\nthen click Start to begin acquiring data — or open Method Builder\nto set up your experiment first.",
+                    "Sensor is live and ready.\n\nClick Start to begin acquiring data,\nor open Method Builder to set up your experiment first.",
                 )
                 self._calibration_dialog.set_progress(100, 100)
                 self._calibration_dialog.enable_start_button()

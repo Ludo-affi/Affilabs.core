@@ -102,6 +102,7 @@ class SensorIQMetrics:
     quality_score: float  # 0.0-1.0
     warning_message: str | None
     recommendation: str | None
+    p2p: float | None = None  # Baseline peak-to-peak noise (nm) over last ~10 s; None if <10 samples
 
 
 class SensorIQClassifier:
@@ -117,10 +118,11 @@ class SensorIQClassifier:
     }
 
     # FWHM quality thresholds (nm)
-    FWHM_EXCELLENT = 30.0  # <30nm = Excellent sensor coupling
-    FWHM_GOOD = 60.0  # 30-60nm = Good coupling
-    FWHM_POOR = 80.0  # 60-80nm = Poor coupling (warning)
-    # >80nm = Critical coupling issues
+    # SPR dip on this system is broad (~70nm target). Wide = GOOD; narrow or very wide = issue.
+    FWHM_EXCELLENT = 60.0   # 50-60nm = Excellent (tight, well-coupled)
+    FWHM_GOOD = 80.0        # 60-80nm = Good (normal operating range, ~70nm target)
+    FWHM_POOR = 100.0       # 80-100nm = Poor (broadening, weak coupling)
+    # >100nm = Critical coupling issues
 
     def __init__(self) -> None:
         """Initialize the sensor IQ classifier."""
@@ -187,10 +189,10 @@ class SensorIQClassifier:
         score = max(0.1, 0.3 - (fwhm - self.FWHM_POOR) / 100.0)
         return "critical", score
 
-    # Dip depth thresholds (transmission fraction: 0.0 = no signal, 1.0 = full transmission)
-    # SPR dip depth is the fraction of transmission removed at the resonance minimum
-    DIP_DEPTH_GOOD = 0.05       # ≥5% dip = acceptable coupling
-    DIP_DEPTH_QUESTIONABLE = 0.02  # 2-5% = weak, monitor
+    # Dip depth thresholds (transmission fraction removed at resonance minimum)
+    # Target ~70% dip depth for healthy SPR coupling on this system.
+    DIP_DEPTH_GOOD = 0.50          # ≥50% dip = acceptable coupling
+    DIP_DEPTH_QUESTIONABLE = 0.30  # 30-50% = weak, monitor; <30% = dry sensor / blocked light
 
     def compute_sensor_iq(
         self,
@@ -238,17 +240,17 @@ class SensorIQClassifier:
         # Applied after zone/FWHM; can only downgrade
         if dip_depth is not None:
             if dip_depth < self.DIP_DEPTH_QUESTIONABLE:
-                # Very shallow dip → POOR: SPR coupling almost absent
+                # <30% dip → POOR: sensor likely dry or light blocked
                 depth_level = SensorIQLevel.POOR
                 depth_score = min(quality_score, 0.3)
-                depth_warning = f"Very shallow SPR dip ({dip_depth*100:.1f}%) — weak coupling"
-                depth_rec = "Check water contact, flow cell, sensor chip surface"
+                depth_warning = f"Very weak SPR dip ({dip_depth*100:.0f}%) — sensor may be dry or chip missing"
+                depth_rec = "Check sensor chip is wetted; inspect optical path"
             elif dip_depth < self.DIP_DEPTH_GOOD:
-                # Shallow dip → QUESTIONABLE: coupling present but weak
+                # 30-50% dip → QUESTIONABLE: coupling present but below target (~70%)
                 depth_level = SensorIQLevel.QUESTIONABLE
                 depth_score = min(quality_score, 0.55)
-                depth_warning = f"Shallow SPR dip ({dip_depth*100:.1f}%) — coupling is weak"
-                depth_rec = "Monitor; ensure good water contact before injecting"
+                depth_warning = f"Weak SPR dip ({dip_depth*100:.0f}%, target ~70%) — coupling below expected"
+                depth_rec = "Check water contact and sensor chip quality before injecting"
             else:
                 depth_level = None  # Dip depth is acceptable — no downgrade
 
@@ -258,34 +260,35 @@ class SensorIQClassifier:
                 warning = depth_warning if not warning else f"{warning}; {depth_warning}"
                 recommendation = depth_rec if not recommendation else recommendation
 
-        # Baseline noise check — peak-to-peak vs std over last 10 points
-        # Requires BOTH a statistically significant ratio AND a clinically meaningful
-        # absolute magnitude — prevents flagging sub-0.3nm noise as "poor quality".
-        # Thresholds: QUESTIONABLE at p2p>0.3nm AND p2p>5×std; POOR at p2p>0.8nm AND p2p>8×std
+        # Baseline noise check — absolute peak-to-peak of last 10 wavelength readings (~10s).
+        # Physical meaning: p2p > 8nm = sensor dry or light blocked (RED);
+        #                   p2p 5-8nm = unstable / noisy baseline (YELLOW);
+        #                   p2p < 5nm = acceptable (GREEN).
+        P2P_POOR = 8.0          # nm — sensor dry or light path blocked
+        P2P_QUESTIONABLE = 5.0  # nm — noisy baseline
+        p2p: float | None = None  # populated below if ≥10 history samples exist
         if channel and channel in self._history and len(self._history[channel]) >= 10:
             recent_wl = [m["wavelength"] for m in self._history[channel][-10:]]
-            std = float(np.std(recent_wl))
             p2p = float(np.max(recent_wl) - np.min(recent_wl))
 
-            if std > 0 and p2p > 5.0 * std and p2p > 0.3:
-                noise_warning = f"Noisy baseline: peak-to-peak={p2p:.2f}nm, std={std:.2f}nm"
+            if p2p >= P2P_POOR:
+                noise_warning = f"Sensor may be dry or light blocked (p2p={p2p:.1f}nm)"
+                noise_rec = "Check sensor chip is wetted and optical path is clear"
+                noise_level = SensorIQLevel.POOR
+                noise_score = min(quality_score, 0.3)
+            elif p2p >= P2P_QUESTIONABLE:
+                noise_warning = f"Noisy baseline: peak-to-peak={p2p:.1f}nm"
                 noise_rec = "Wait for baseline to stabilise before injecting"
+                noise_level = SensorIQLevel.QUESTIONABLE
+                noise_score = min(quality_score, 0.55)
+            else:
+                noise_level = None  # p2p acceptable
 
-                if p2p > 8.0 * std and p2p > 0.8:
-                    # Severe noise → at least POOR
-                    noise_level = SensorIQLevel.POOR
-                    noise_score = min(quality_score, 0.3)
-                else:
-                    # Moderate noise → at least QUESTIONABLE
-                    noise_level = SensorIQLevel.QUESTIONABLE
-                    noise_score = min(quality_score, 0.55)
-
-                # Only downgrade
-                if _level_order.index(noise_level) > _level_order.index(iq_level):
-                    iq_level = noise_level
-                    quality_score = noise_score
-                    warning = noise_warning if not warning else f"{warning}; {noise_warning}"
-                    recommendation = noise_rec if not recommendation else recommendation
+            if noise_level is not None and _level_order.index(noise_level) > _level_order.index(iq_level):
+                iq_level = noise_level
+                quality_score = noise_score
+                warning = noise_warning if not warning else f"{warning}; {noise_warning}"
+                recommendation = noise_rec if not recommendation else recommendation
 
         # Track history for trend analysis
         if channel:
@@ -313,6 +316,7 @@ class SensorIQClassifier:
             quality_score=quality_score,
             warning_message=warning,
             recommendation=recommendation,
+            p2p=p2p,
         )
 
     def _determine_iq_level(

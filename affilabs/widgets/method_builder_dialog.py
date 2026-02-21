@@ -142,7 +142,6 @@ class SparkMethodPopup(QDialog):
         self._add_bubble(
             "Hi! I can help you build methods. Try asking:\n\n"
             "• @spark titration — dose-response series\n"
-            "• @spark kinetics — association + dissociation\n"
             "• @spark amine coupling — full immobilization workflow\n"
             "• build 5 — generate 5 binding cycles\n"
             "• @spark regeneration / baseline / immobilization\n\n"
@@ -315,71 +314,71 @@ class SparkMethodPopup(QDialog):
         """Return a method suggestion string, or None to fall back to the engine."""
         t = text.lower().strip()
 
-        # "build N" pattern
+        # "build N" pattern — N binding cycles with regen + baseline
         m = re.search(r'build.*?(\d+)', t)
         if m:
             n = int(m.group(1))
-            lines = []
+            lines = ["Baseline 5min"]
             for i in range(n):
-                lines.append(f"Binding 15min [A]  # Binding {i+1}")
-                lines.append("Regeneration 2min [ALL]")
-                lines.append("Baseline 2min [ALL]")
+                lines.append(f"Binding 8.5min [A:100nM] contact 300s  # Binding {i+1}")
+                lines.append("Regeneration 30sec [ALL:50mM]")
+                lines.append("Baseline 2min")
             return "\n".join(lines)
 
         if re.search(r'titration|dose.?response|concentration series|serial dilution', t):
-            return ("Baseline 5min ALL\n"
-                    "Binding 2min A:10nM contact 120s\n"
-                    "Binding 2min A:50nM contact 120s\n"
-                    "Binding 2min A:100nM contact 120s\n"
-                    "Binding 2min A:500nM contact 120s\n"
-                    "Regeneration 30sec ALL:50mM")
-
-        if re.search(r'kinetics|kinetic|dissociation|off.?rate', t):
-            return ("Baseline 2min ALL\n"
-                    "Kinetic 2min A:100nM contact 120s\n"
-                    "Baseline 10min ALL  # Dissociation phase\n"
-                    "Regeneration 30sec ALL:50mM")
+            return ("Baseline 5min\n"
+                    "Binding 8.5min [A:10nM] contact 300s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min\n"
+                    "Binding 8.5min [A:50nM] contact 300s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min\n"
+                    "Binding 8.5min [A:100nM] contact 300s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min\n"
+                    "Binding 8.5min [A:500nM] contact 300s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min")
 
         if re.search(r'full cycle|complete cycle|entire run|whole method', t):
-            return ("Baseline 5min ALL\n"
-                    "Binding 2min A:100nM contact 120s\n"
-                    "Regeneration 30sec ALL:50mM")
+            return ("Baseline 5min\n"
+                    "Binding 8.5min [A:100nM] contact 300s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min")
 
-        if re.search(r'regeneration|regen|clean|wash|remove', t):
-            return "Regeneration 30sec ALL:50mM"
+        if re.search(r'regenerat|regen|clean|strip', t):
+            return "Regeneration 30sec [ALL:50mM]"
 
         if re.search(r'binding|association|inject|sample|analyte', t):
-            return ("Binding 2min A:100nM B:50nM contact 120s\n"
-                    "Binding 5min A:200nM contact 180s\n"
-                    "Binding 10min A:500nM contact 300s")
+            return ("Baseline 2min\n"
+                    "Binding 8.5min [A:100nM] contact 300s\n"
+                    "Regeneration 30sec [ALL:50mM]\n"
+                    "Baseline 2min")
 
         if re.search(r'amine coupling|amine|coupling', t):
-            # Default to 5 concentrations; user can adjust
             n_match = re.search(r'(\d+)', t)
-            n = int(n_match.group(1)) if n_match else 5
+            n = int(n_match.group(1)) if n_match else 3
             lines = [
-                "Baseline 30sec [ALL]",
-                "Other 4min  # Activation",
-                "Other 30sec  # Wash",
-                "Immobilization 4min [A]",
-                "Other 30sec  # Wash",
-                "Other 4min  # Blocking",
-                "Other 30sec  # Wash",
-                "Baseline 15min [ALL]",
-                "",
-                "# Binding series",
+                "Baseline 5min",
+                "Other 4min  # EDC/NHS activation",
+                "Wash 30sec",
+                "Immobilization 30min  # Ligand attachment",
+                "Wash 30sec",
+                "Blocking 4min  # Ethanolamine",
+                "Wash 30sec",
+                "Baseline 15min",
             ]
             for i in range(n):
-                lines.append(f"Binding 15min [A]  # Binding {i+1}")
-                lines.append("Regeneration 2min [ALL]")
-                lines.append("Baseline 2min [ALL]")
+                lines.append(f"Binding 8.5min [A:100nM] contact 300s  # Binding {i+1}")
+                lines.append("Regeneration 30sec [ALL:50mM]")
+                lines.append("Baseline 2min")
             return "\n".join(lines)
 
-        if re.search(r'immobilization|immobilize|immob|attach', t):
-            return "Immobilization 10min A:50µg/mL contact 180s"
+        if re.search(r'immobiliz|immob|attach|ligand', t):
+            return "Immobilization 30min"
 
-        if re.search(r'baseline|start|begin|initial', t):
-            return "Baseline 5min ALL"
+        if re.search(r'baseline|start|begin|initial|equilibrat', t):
+            return "Baseline 5min"
 
         return None  # No match — fall back to engine
 
@@ -500,9 +499,11 @@ class MethodBuilderDialog(QDialog):
     Signals:
         method_ready: Emitted when user wants to push method (action, method_name, cycles)
             action is either "queue" or "start"
+        method_saved: Emitted when user saves method to file (method_name, file_path)
     """
 
     method_ready = Signal(str, str, list)  # (action, method_name, list of cycles)
+    method_saved = Signal(str, str)  # (method_name, file_path)
 
     def __init__(self, parent=None, user_manager=None):
         super().__init__(parent)
@@ -754,721 +755,6 @@ class MethodBuilderDialog(QDialog):
         )
         self._helper_active = False
 
-    def _setup_ui_LEGACY(self):
-        """LEGACY — full 7-region layout replaced by 3-zone redesign in _setup_ui."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
-
-        # Header with title and preset button
-        header_row = QHBoxLayout()
-        title = QLabel("Build Cycle Method")
-        title.setStyleSheet(
-            "font-size: 18px; font-weight: 700; color: #1D1D1F; "
-            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;"
-        )
-        header_row.addWidget(title)
-        header_row.addStretch()
-        layout.addLayout(header_row)
-        layout.addSpacing(8)
-
-        # Method name and operator row
-        meta_row = QHBoxLayout()
-        meta_row.setSpacing(12)
-
-        method_name_label = QLabel("📋 Method:")
-        method_name_label.setStyleSheet(
-            "font-size: 12px; color: #86868B; font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
-        )
-        meta_row.addWidget(method_name_label)
-
-        self.method_name_input = QLineEdit("Untitled Method")
-        self.method_name_input.setFixedHeight(28)
-        self.method_name_input.setStyleSheet(
-            "QLineEdit {"
-            "  background: white;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 4px;"
-            "  padding: 4px 8px;"
-            "  font-size: 12px;"
-            "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
-            "}"
-            "QLineEdit:focus { border-color: #007AFF; }"
-        )
-        meta_row.addWidget(self.method_name_input)
-
-        operator_label = QLabel("👤 Operator:")
-        operator_label.setStyleSheet(
-            "font-size: 12px; color: #86868B; font-weight: 500;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
-        )
-        meta_row.addWidget(operator_label)
-
-        self.operator_combo = QComboBox()
-        self.operator_combo.setFixedHeight(28)
-        self.operator_combo.addItems(self._user_manager.get_profiles())
-        # Set to current user
-        current_user = self._user_manager.get_current_user()
-        if current_user:
-            index = self.operator_combo.findText(current_user)
-            if index >= 0:
-                self.operator_combo.setCurrentIndex(index)
-        self.operator_combo.setStyleSheet(
-            "QComboBox {"
-            "  background: white;"
-            "  border: 1px solid rgba(0, 0, 0, 0.1);"
-            "  border-radius: 4px;"
-            "  padding: 4px 8px;"
-            "  font-size: 12px;"
-            "  color: #1D1D1F;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
-            "}"
-            "QComboBox:focus { border-color: #007AFF; }"
-            "QComboBox::drop-down {"
-            "  border: none;"
-            "  width: 20px;"
-            "}"
-            "QComboBox::down-arrow {"
-            "  image: none;"
-            "  border-left: 4px solid transparent;"
-            "  border-right: 4px solid transparent;"
-            "  border-top: 5px solid #86868B;"
-            "  margin-right: 8px;"
-            "}"
-        )
-        # When operator changes, propagate to user profile manager + export path
-        self.operator_combo.currentTextChanged.connect(self._on_operator_changed)
-        meta_row.addWidget(self.operator_combo)
-
-        layout.addLayout(meta_row)
-        layout.addSpacing(8)
-
-        # Mode/Device/Detection combos — created here, placed in settings panel below table
-        self.mode_combo = QComboBox()
-        self.mode_combo.setFixedHeight(24)
-        self.mode_combo.addItems(["Manual", "Semi-Automated"])
-        self.mode_combo.setCurrentIndex(0)
-        self.mode_combo.setToolTip(
-            "Manual: User injects by syringe, detection helps find injection point\n"
-            "Semi-Automated: Pump handles flow, valves switch automatically"
-        )
-        self.mode_combo.currentTextChanged.connect(self._on_mode_changed)
-
-        self.hw_label = QLabel("P4SPR")
-        self.hw_label.setToolTip("Detected hardware platform")
-
-        self.detection_combo = QComboBox()
-        self.detection_combo.setFixedHeight(24)
-        self.detection_combo.addItems(["Auto", "Priority", "Off"])
-        self.detection_combo.setCurrentIndex(0)
-        self.detection_combo.setToolTip(
-            "Auto: Sensitivity adapts to mode (×2.0 manual, ×0.75 pump)\n"
-            "Priority: Most sensitive (×1.0 — 2.5σ threshold)\n"
-            "Off: No auto-detection, rely on timer"
-        )
-
-        # ── Side-by-side: Note panel (left) | → button (center) | Queue panel (right) ──
-        content_row = QHBoxLayout()
-        content_row.setSpacing(8)
-
-        # Left: Note panel
-        note_panel = QVBoxLayout()
-        note_panel.setSpacing(4)
-
-        # ── Tab widget: Easy Mode (form) vs Power Mode (text) ──
-        from PySide6.QtWidgets import QTabWidget
-        self.input_tabs = QTabWidget()
-        self.input_tabs.setStyleSheet(
-            "QTabWidget::pane { border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 4px; background: white; }"
-            "QTabBar::tab { background: #F5F5F7; padding: 6px 12px; margin-right: 2px; border-top-left-radius: 4px; border-top-right-radius: 4px; }"
-            "QTabBar::tab:selected { background: white; border-bottom: 2px solid #007AFF; }"
-        )
-        note_panel.addWidget(self.input_tabs)
-
-        # Tab 0: Easy Mode (form builder)
-        easy_tab = self._build_easy_mode_tab()
-        self.input_tabs.addTab(easy_tab, "📝 Easy Mode")
-
-        # Tab 1: Power Mode (text input)
-        power_tab = QWidget()
-        power_layout = QVBoxLayout(power_tab)
-        power_layout.setContentsMargins(8, 8, 8, 8)
-        
-        # Header row with help button
-        power_header = QHBoxLayout()
-        power_header.addStretch()
-        
-        # Help button in Power Mode
-        help_btn = QPushButton("?")
-        help_btn.setFixedSize(20, 20)
-        help_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 10px;"
-            "  font-size: 11px;"
-            "  font-weight: bold;"
-            "}"
-            "QPushButton:hover { background: #0051D5; }"
-        )
-        help_btn.setToolTip("Show notes syntax help")
-        help_btn.clicked.connect(self._show_notes_help)
-        power_header.addWidget(help_btn)
-        power_layout.addLayout(power_header)
-        
-        self.notes_input = NotesTextEdit()
-        self.notes_input._parent_dialog = self
-        self.notes_input.setPlaceholderText(
-            "Write cycles (one per line) or ask Spark:\n\n"
-            "Baseline 5min\n"
-            "Binding 5min A:100nM B:50nM contact 120s\n"
-            "Regeneration 30sec ALL:50mM\n\n"
-            "⚡ Spark:  @spark titration  ·  @spark kinetics\n"
-            "           @spark amine coupling  ·  build 5\n\n"
-            "#3 contact 60s    — edit cycle 3 in-place\n"
-            "📦 @preset_name   💾 !save name   ↑/↓ history\n\n"
-            "💡 Ctrl+Enter to build quickly"
-        )
-        self.notes_input.setMinimumHeight(100)
-        self.notes_input.setMinimumWidth(350)
-        power_layout.addWidget(self.notes_input)
-        self.notes_input.textChanged.connect(self._update_char_count)
-        
-        self.input_tabs.addTab(power_tab, "✏️ Power Mode")
-        
-        # Set Easy Mode as default (Tab 0)
-        self.input_tabs.setCurrentIndex(0)
-
-        content_row.addLayout(note_panel, 1)
-
-        # Center: Build button with keyboard shortcut support
-        self.add_to_method_btn = QPushButton("→")
-        self.add_to_method_btn.setFixedSize(56, 56)
-        self.add_to_method_btn.setToolTip("Build method cycles (Ctrl+Enter)")
-        self.add_to_method_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #007AFF, stop:1 #0051D5);"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
-            "  font-size: 26px;"
-            "  font-weight: 400;"
-            "  padding: 0px;"
-            "}"
-            "QPushButton:hover {"
-            "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0051D5, stop:1 #003D99);"
-            "}"
-            "QPushButton:pressed {"
-            "  background: #003D99;"
-            "}"
-        )
-        self.add_to_method_btn.clicked.connect(self._on_add_to_method)
-
-        # Add Ctrl+Enter shortcut to notes input
-        from PySide6.QtGui import QShortcut, QKeySequence
-        build_shortcut = QShortcut(QKeySequence("Ctrl+Return"), self.notes_input)
-        build_shortcut.activated.connect(self._on_add_to_method)
-
-        arrow_col = QVBoxLayout()
-        arrow_col.addStretch()
-        arrow_col.addWidget(self.add_to_method_btn)
-        arrow_col.addStretch()
-        content_row.addLayout(arrow_col)
-
-        # Right: Queue panel
-        queue_panel = QVBoxLayout()
-        queue_panel.setSpacing(4)
-
-        queue_label = QLabel("Method Queue:")
-        queue_label.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F;")
-        queue_panel.addWidget(queue_label)
-
-        # Local queue table — two-tab layout (Overview + Details)
-        table_style = (
-            "QTableWidget {"
-            "  background: white;"
-            "  border: 1px solid rgba(0,0,0,0.1);"
-            "  border-radius: 4px;"
-            "  font-size: 12px;"
-            "}"
-            "QHeaderView::section {"
-            "  background: rgba(0,0,0,0.03);"
-            "  padding: 4px;"
-            "  border: none;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "}"
-        )
-
-        self.method_tabs = QTabWidget()
-        self.method_tabs.setMinimumWidth(350)
-        self.method_tabs.setStyleSheet(
-            "QTabWidget::pane { border: none; }"
-            "QTabBar::tab {"
-            "  background: rgba(0,0,0,0.03);"
-            "  border: none;"
-            "  padding: 4px 16px;"
-            "  font-size: 11px;"
-            "  font-weight: 600;"
-            "  color: #86868B;"
-            "}"
-            "QTabBar::tab:selected {"
-            "  background: white;"
-            "  color: #007AFF;"
-            "  border-bottom: 2px solid #007AFF;"
-            "}"
-        )
-
-        # Tab 1: Overview (Type, Duration, Notes)
-        overview_widget = QWidget()
-        overview_layout = QVBoxLayout(overview_widget)
-        overview_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.method_table = QTableWidget()
-        self.method_table.setColumnCount(3)
-        self.method_table.setHorizontalHeaderLabels(["Type", "Duration (min)", "Notes"])
-        self.method_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.method_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.method_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.method_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.method_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.method_table.itemSelectionChanged.connect(self._on_selection_changed)
-        self.method_table.verticalHeader().setVisible(True)
-        self.method_table.setStyleSheet(table_style)
-        overview_layout.addWidget(self.method_table)
-
-        # Method summary section at bottom
-        summary_frame = QFrame()
-        summary_frame.setStyleSheet(
-            "QFrame {"
-            "  background: #F9F9FB;"
-            "  border-top: 1px solid rgba(0,0,0,0.08);"
-            "  border-radius: 0px;"
-            "}"
-        )
-        summary_layout = QHBoxLayout(summary_frame)
-        summary_layout.setContentsMargins(8, 4, 8, 4)
-        summary_layout.setSpacing(16)
-
-        # Experiment time
-        exp_time_label = QLabel("Total Experiment Time:")
-        exp_time_label.setStyleSheet("font-size: 11px; color: #86868B; font-weight: 500;")
-        self.method_exp_time_value = QLabel("0 min")
-        self.method_exp_time_value.setStyleSheet("font-size: 11px; color: #1D1D1F; font-weight: 600;")
-        exp_time_box = QHBoxLayout()
-        exp_time_box.addWidget(exp_time_label)
-        exp_time_box.addWidget(self.method_exp_time_value)
-        exp_time_box.addStretch()
-        summary_layout.addLayout(exp_time_box, 1)
-
-        # Cycle count
-        cycle_count_label = QLabel("Total Cycles:")
-        cycle_count_label.setStyleSheet("font-size: 11px; color: #86868B; font-weight: 500;")
-        self.method_cycle_count_value = QLabel("0")
-        self.method_cycle_count_value.setStyleSheet("font-size: 11px; color: #1D1D1F; font-weight: 600;")
-        cycle_count_box = QHBoxLayout()
-        cycle_count_box.addWidget(cycle_count_label)
-        cycle_count_box.addWidget(self.method_cycle_count_value)
-        cycle_count_box.addStretch()
-        summary_layout.addLayout(cycle_count_box, 1)
-
-        overview_layout.addWidget(summary_frame)
-
-        self.method_tabs.addTab(overview_widget, "Overview")
-
-        # Tab 2: Details (Channels, Conc, Contact Time)
-        details_widget = QWidget()
-        details_layout = QVBoxLayout(details_widget)
-        details_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.details_table = QTableWidget()
-        self.details_table.setColumnCount(3)
-        self.details_table.setHorizontalHeaderLabels([
-            "Channels", "Concentration", "Contact Time"
-        ])
-        self.details_table.horizontalHeader().resizeSection(0, 70)
-        self.details_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.details_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.details_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.details_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.details_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.details_table.itemSelectionChanged.connect(self._on_details_selection_changed)
-        self.details_table.verticalHeader().setVisible(True)
-        self.details_table.setStyleSheet(table_style)
-        details_layout.addWidget(self.details_table)
-
-        self.method_tabs.addTab(details_widget, "Details")
-
-        queue_panel.addWidget(self.method_tabs)
-        
-        # Add spacing before buttons
-        queue_panel.addSpacing(8)
-        
-        content_row.addLayout(queue_panel, 1)
-        layout.addLayout(content_row)
-
-        # SVG for settings cog (used in controls row below)
-        _SVG_COG = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="#86868B" stroke-width="2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="#86868B" stroke-width="2"/></svg>'
-
-        # Collapsible settings panel
-        self._adv_settings_frame = QFrame()
-        self._adv_settings_frame.setVisible(False)
-        self._adv_settings_frame.setStyleSheet(
-            "QFrame#advSettings {"
-            "  background: #F9F9FB;"
-            "  border: 1px solid rgba(0,0,0,0.08);"
-            "  border-radius: 6px;"
-            "}"
-        )
-        self._adv_settings_frame.setObjectName("advSettings")
-
-        _combo_ss = (
-            "QComboBox {"
-            "  background: white;"
-            "  border: 1px solid rgba(0,0,0,0.12);"
-            "  border-radius: 4px;"
-            "  padding: 2px 6px;"
-            "  font-size: 11px;"
-            "  color: #1D1D1F;"
-            "}"
-            "QComboBox:focus { border-color: #007AFF; }"
-            "QComboBox::drop-down { border: none; width: 18px; }"
-            "QComboBox::down-arrow {"
-            "  image: none;"
-            "  border-left: 3px solid transparent;"
-            "  border-right: 3px solid transparent;"
-            "  border-top: 4px solid #86868B;"
-            "  margin-right: 6px;"
-            "}"
-        )
-        _lbl_ss = "font-size: 11px; color: #86868B; font-weight: 500;"
-
-        adv_lay = QHBoxLayout(self._adv_settings_frame)
-        adv_lay.setContentsMargins(10, 6, 10, 6)
-        adv_lay.setSpacing(8)
-
-        _mode_lbl = QLabel("Mode:")
-        _mode_lbl.setStyleSheet(_lbl_ss)
-        adv_lay.addWidget(_mode_lbl)
-        self.mode_combo.setStyleSheet(_combo_ss)
-        adv_lay.addWidget(self.mode_combo)
-
-        _sep = QFrame()
-        _sep.setFrameShape(QFrame.Shape.VLine)
-        _sep.setStyleSheet("color: rgba(0,0,0,0.08);")
-        _sep.setFixedHeight(18)
-        adv_lay.addWidget(_sep)
-
-        _dev_lbl = QLabel("Device:")
-        _dev_lbl.setStyleSheet(_lbl_ss)
-        adv_lay.addWidget(_dev_lbl)
-        self.hw_label.setStyleSheet("font-size: 11px; color: #1D1D1F; font-weight: 600;")
-        adv_lay.addWidget(self.hw_label)
-
-        adv_lay.addStretch()
-
-        _det_lbl = QLabel("Detection:")
-        _det_lbl.setStyleSheet(_lbl_ss)
-        adv_lay.addWidget(_det_lbl)
-        self.detection_combo.setStyleSheet(_combo_ss)
-        adv_lay.addWidget(self.detection_combo)
-
-        layout.addWidget(self._adv_settings_frame)
-
-        # Queue control buttons (right side, under method table)
-        queue_btn_row = QHBoxLayout()
-
-        self.undo_btn = QPushButton("Undo")
-        self.undo_btn.setIcon(_create_svg_icon(_SVG_UNDO, 14))
-        self.undo_btn.setIconSize(QSize(14, 14))
-        self.undo_btn.setFixedHeight(28)
-        self.undo_btn.setEnabled(False)
-        self.undo_btn.setToolTip("Undo last action (Ctrl+Z)")
-        self.undo_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: white;"
-            "  color: #1D1D1F;"
-            "  border: 1px solid rgba(0,0,0,0.1);"
-            "  border-radius: 4px;"
-            "  padding: 4px 12px;"
-            "  font-size: 12px;"
-            "}"
-            "QPushButton:hover { background: #F5F5F7; }"
-            "QPushButton:disabled { color: #C7C7CC; border-color: rgba(0,0,0,0.05); }"
-        )
-        queue_btn_row.addWidget(self.undo_btn)
-
-        self.redo_btn = QPushButton("Redo")
-        self.redo_btn.setIcon(_create_svg_icon(_SVG_REDO, 14))
-        self.redo_btn.setIconSize(QSize(14, 14))
-        self.redo_btn.setFixedHeight(28)
-        self.redo_btn.setEnabled(False)
-        self.redo_btn.setToolTip("Redo last action (Ctrl+Shift+Z)")
-        self.redo_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: white;"
-            "  color: #1D1D1F;"
-            "  border: 1px solid rgba(0,0,0,0.1);"
-            "  border-radius: 4px;"
-            "  padding: 4px 12px;"
-            "  font-size: 12px;"
-            "}"
-            "QPushButton:hover { background: #F5F5F7; }"
-            "QPushButton:disabled { color: #C7C7CC; border-color: rgba(0,0,0,0.05); }"
-        )
-        queue_btn_row.addWidget(self.redo_btn)
-
-        # Separator
-        separator = QLabel("|")
-        separator.setStyleSheet("color: rgba(0,0,0,0.1); font-size: 14px; margin: 0 4px;")
-        queue_btn_row.addWidget(separator)
-
-        self.delete_cycle_btn = QPushButton("Delete")
-        self.delete_cycle_btn.setIcon(_create_svg_icon(_SVG_TRASH, 14))
-        self.delete_cycle_btn.setIconSize(QSize(14, 14))
-        self.delete_cycle_btn.setFixedHeight(28)
-        self.delete_cycle_btn.setEnabled(False)
-        self.delete_cycle_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent;"
-            "  color: #FF3B30;"
-            "  border: 1px solid rgba(255,59,48,0.3);"
-            "  border-radius: 4px;"
-            "  padding: 4px 12px;"
-            "  font-size: 12px;"
-            "}"
-            "QPushButton:hover { background: rgba(255,59,48,0.1); }"
-            "QPushButton:disabled { color: #C7C7CC; border-color: rgba(0,0,0,0.1); }"
-        )
-        self.delete_cycle_btn.clicked.connect(self._on_delete_selected)
-        queue_btn_row.addWidget(self.delete_cycle_btn)
-
-        self.move_up_btn = QPushButton()
-        self.move_up_btn.setIcon(_create_svg_icon(_SVG_CHEVRON_UP, 16))
-        self.move_up_btn.setIconSize(QSize(16, 16))
-        self.move_up_btn.setFixedSize(28, 28)
-        self.move_up_btn.setEnabled(False)
-        self.move_up_btn.setStyleSheet(
-            "QPushButton { background: #F2F2F7; border: none; border-radius: 4px; font-size: 14px; }"
-            "QPushButton:hover { background: #E5E5EA; }"
-            "QPushButton:disabled { background: #F2F2F7; color: #C7C7CC; }"
-        )
-        self.move_up_btn.clicked.connect(self._on_move_up)
-        queue_btn_row.addWidget(self.move_up_btn)
-
-        self.move_down_btn = QPushButton()
-        self.move_down_btn.setIcon(_create_svg_icon(_SVG_CHEVRON_DOWN, 16))
-        self.move_down_btn.setIconSize(QSize(16, 16))
-        self.move_down_btn.setFixedSize(28, 28)
-        self.move_down_btn.setEnabled(False)
-        self.move_down_btn.setStyleSheet(
-            "QPushButton { background: #F2F2F7; border: none; border-radius: 4px; font-size: 14px; }"
-            "QPushButton:hover { background: #E5E5EA; }"
-            "QPushButton:disabled { background: #F2F2F7; color: #C7C7CC; }"
-        )
-        self.move_down_btn.clicked.connect(self._on_move_down)
-        queue_btn_row.addWidget(self.move_down_btn)
-
-        self.clear_method_btn = QPushButton("Clear All")
-        self.clear_method_btn.setIcon(_create_svg_icon(_SVG_CLEAR, 14))
-        self.clear_method_btn.setIconSize(QSize(14, 14))
-        self.clear_method_btn.setFixedHeight(28)
-        self.clear_method_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent;"
-            "  color: #86868B;"
-            "  border: 1px solid rgba(0,0,0,0.1);"
-            "  border-radius: 4px;"
-            "  padding: 4px 12px;"
-            "  font-size: 12px;"
-            "}"
-            "QPushButton:hover { background: rgba(0,0,0,0.05); }"
-        )
-        self.clear_method_btn.clicked.connect(self._on_clear_method)
-        queue_btn_row.addWidget(self.clear_method_btn)
-
-        self.method_count_label = QLabel("0 cycles")
-        self.method_count_label.setStyleSheet("font-size: 11px; color: #86868B;")
-        queue_btn_row.addWidget(self.method_count_label)
-        queue_btn_row.addStretch()
-
-        # Settings cog — right end of controls row
-        self._settings_btn = QPushButton()
-        self._settings_btn.setIcon(_create_svg_icon(_SVG_COG, 14))
-        self._settings_btn.setIconSize(QSize(14, 14))
-        self._settings_btn.setFixedSize(24, 24)
-        self._settings_btn.setToolTip("Method settings")
-        self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._settings_btn.setStyleSheet(
-            "QPushButton { background: transparent; border: none; }"
-            "QPushButton:hover { background: rgba(0,0,0,0.05); border-radius: 4px; }"
-        )
-        self._settings_btn.setCheckable(True)
-        self._settings_btn.toggled.connect(self._toggle_advanced_settings)
-        queue_btn_row.addWidget(self._settings_btn)
-
-        # Add button row to queue panel (right side only)
-        queue_panel.addLayout(queue_btn_row)
-
-        # Overnight Mode checkbox (below button row, left-aligned, subtle)
-        overnight_row = QHBoxLayout()
-        overnight_row.setContentsMargins(0, 4, 0, 0)
-
-        self.overnight_mode_check = QCheckBox("🌙 Overnight Mode")
-        self.overnight_mode_check.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.overnight_mode_check.setToolTip(
-            "Enable overnight mode - system will run continuously without user interaction"
-        )
-        # Load current setting from settings module
-        try:
-            import settings as root_settings
-            self.overnight_mode_check.setChecked(getattr(root_settings, "OVERNIGHT_MODE", False))
-        except Exception:
-            pass
-        # Connect to update settings when toggled
-        self.overnight_mode_check.stateChanged.connect(self._on_overnight_mode_changed)
-        self.overnight_mode_check.setStyleSheet(
-            "QCheckBox {"
-            "  spacing: 4px;"
-            "  font-size: 10px;"
-            "  font-weight: 500;"
-            "  color: #86868B;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QCheckBox::indicator {"
-            "  width: 14px;"
-            "  height: 14px;"
-            "  border-radius: 2px;"
-            "  border: 1px solid rgba(0, 0, 0, 0.15);"
-            "  background: white;"
-            "}"
-            "QCheckBox::indicator:checked {"
-            "  background: #007AFF;"
-            "  border-color: #007AFF;"
-            "}"
-            "QCheckBox::indicator:hover {"
-            "  border-color: #007AFF;"
-            "}"
-        )
-        overnight_row.addWidget(self.overnight_mode_check)
-        overnight_row.addStretch()
-        layout.addLayout(overnight_row)
-
-        # Separator
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setStyleSheet("background: rgba(0,0,0,0.1);")
-        layout.addWidget(separator)
-
-        # Action buttons
-        button_row = QHBoxLayout()
-
-        # Close button (left side)
-        self.close_btn = QPushButton("Close")
-        self.close_btn.setFixedHeight(40)
-        self.close_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent;"
-            "  color: #86868B;"
-            "  border: 1px solid rgba(0,0,0,0.1);"
-            "  border-radius: 8px;"
-            "  padding: 8px 24px;"
-            "  font-size: 14px;"
-            "  font-weight: 600;"
-            "}"
-            "QPushButton:hover { background: rgba(0,0,0,0.05); }"
-            "QPushButton:pressed { background: rgba(0,0,0,0.1); }"
-        )
-        self.close_btn.clicked.connect(self.reject)
-        button_row.addWidget(self.close_btn)
-
-        # Save/Load buttons (compact, left side)
-        self.save_btn = QPushButton("💾 Save")
-        self.save_btn.setFixedHeight(40)
-        self.save_btn.setToolTip("Save current method to file")
-        self.save_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent;"
-            "  color: #34C759;"
-            "  border: 1px solid rgba(52,199,89,0.3);"
-            "  border-radius: 8px;"
-            "  padding: 8px 16px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "}"
-            "QPushButton:hover { background: rgba(52,199,89,0.1); border-color: #34C759; }"
-            "QPushButton:pressed { background: rgba(52,199,89,0.2); }"
-        )
-        self.save_btn.clicked.connect(self._on_save_method)
-        button_row.addWidget(self.save_btn)
-
-        self.load_btn = QPushButton("📂 Load")
-        self.load_btn.setFixedHeight(40)
-        self.load_btn.setToolTip("Load method from file")
-        self.load_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent;"
-            "  color: #007AFF;"
-            "  border: 1px solid rgba(0,122,255,0.3);"
-            "  border-radius: 8px;"
-            "  padding: 8px 16px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "}"
-            "QPushButton:hover { background: rgba(0,122,255,0.1); border-color: #007AFF; }"
-            "QPushButton:pressed { background: rgba(0,122,255,0.2); }"
-        )
-        self.load_btn.clicked.connect(self._on_load_method)
-        button_row.addWidget(self.load_btn)
-
-        button_row.addStretch()
-
-        # Copy Schedule button
-        self._copy_schedule_btn = QPushButton("📋 Copy Schedule")
-        self._copy_schedule_btn.setFixedHeight(40)
-        self._copy_schedule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._copy_schedule_btn.setToolTip("Copy injection schedule to clipboard")
-        self._copy_schedule_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent;"
-            "  color: #007AFF;"
-            "  border: 1px solid rgba(0,122,255,0.3);"
-            "  border-radius: 8px;"
-            "  padding: 8px 16px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "}"
-            "QPushButton:hover { background: rgba(0,122,255,0.08); }"
-        )
-        self._copy_schedule_btn.clicked.connect(self._copy_schedule_to_clipboard)
-        button_row.addWidget(self._copy_schedule_btn)
-
-        # Push to Queue button
-        self.queue_btn = QPushButton("Push to Queue")
-        self.queue_btn.setIcon(_create_svg_icon(_SVG_CLIPBOARD_WHITE, 18))
-        self.queue_btn.setIconSize(QSize(18, 18))
-        self.queue_btn.setFixedHeight(40)
-        self.queue_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 8px;"
-            "  padding: 8px 24px;"
-            "  font-size: 14px;"
-            "  font-weight: 600;"
-            "}"
-            "QPushButton:hover { background: #0051D5; }"
-            "QPushButton:pressed { background: #003D99; }"
-        )
-        self.queue_btn.clicked.connect(self._on_push_to_queue)
-        button_row.addWidget(self.queue_btn)
-
-        layout.addLayout(button_row)
-
     def _setup_ui(self):
         """Build the redesigned 3-zone dialog UI (Method Builder v2)."""
         from PySide6.QtWidgets import QMenu
@@ -1576,7 +862,7 @@ class MethodBuilderDialog(QDialog):
         gallery_layout.setContentsMargins(14, 10, 14, 10)
         gallery_layout.setSpacing(8)
 
-        gallery_hdr = QLabel("Start from a template:")
+        gallery_hdr = QLabel("Quick starts:")
         gallery_hdr.setStyleSheet(
             "font-size: 12px; font-weight: 600; color: #86868B; background: transparent;"
         )
@@ -1588,40 +874,35 @@ class MethodBuilderDialog(QDialog):
         _TEMPLATES = [
             ("Binding", "Baseline → Binding\n→ Regeneration", [
                 "Baseline 5min",
-                "Binding 15min [A:100nM] contact 180s",
+                "Binding 8.5min [A:100nM] contact 300s",
                 "Regeneration 30sec [ALL:50mM]",
-            ]),
-            ("Kinetics", "Association +\nDissociation + Regen", [
-                "Baseline 2min",
-                "Kinetic 5min [A:100nM] contact 120s",
-                "Baseline 10min  # Dissociation",
-                "Regeneration 30sec [ALL:50mM]",
-            ]),
-            ("Amine\nCoupling", "Full immobilization\nworkflow (11 steps)", [
-                "Baseline 30sec",
-                "Other 4min  # Activation",
-                "Wash 30sec contact 30s",
-                "Immobilization 4min [A:50µg/mL] contact 180s",
-                "Wash 30sec contact 30s",
-                "Other 4min  # Blocking",
-                "Wash 30sec contact 30s",
-                "Baseline 15min",
-                "Binding 15min [A:100nM] contact 180s",
-                "Regeneration 2min [ALL:50mM]",
                 "Baseline 2min",
             ]),
-            ("Titration", "Dose-response series\n(5 concentrations)", [
+            ("Amine Coupling", "EDC/NHS activation →\nligand → binding series", [
                 "Baseline 5min",
-                "Binding 2min [A:10nM] contact 120s",
+                "Other 4min  # EDC/NHS activation",
+                "Wash 30sec",
+                "Immobilization 30min  # Ligand attachment — freestyle window",
+                "Wash 30sec",
+                "Blocking 4min  # Ethanolamine",
+                "Wash 30sec",
+                "Baseline 15min",
+                "Binding 8.5min [A:100nM] contact 300s",
                 "Regeneration 30sec [ALL:50mM]",
                 "Baseline 2min",
-                "Binding 2min [A:50nM] contact 120s",
+            ]),
+            ("Titration", "Dose-response series\n(4 concentrations)", [
+                "Baseline 5min",
+                "Binding 5min [A:10nM] contact 120s",
                 "Regeneration 30sec [ALL:50mM]",
                 "Baseline 2min",
-                "Binding 2min [A:100nM] contact 120s",
+                "Binding 5min [A:50nM] contact 120s",
                 "Regeneration 30sec [ALL:50mM]",
                 "Baseline 2min",
-                "Binding 2min [A:500nM] contact 120s",
+                "Binding 5min [A:100nM] contact 120s",
+                "Regeneration 30sec [ALL:50mM]",
+                "Baseline 2min",
+                "Binding 5min [A:500nM] contact 120s",
                 "Regeneration 30sec [ALL:50mM]",
                 "Baseline 2min",
             ]),
@@ -1640,7 +921,7 @@ class MethodBuilderDialog(QDialog):
         for name, subtitle, lines in _TEMPLATES:
             btn = QPushButton(f"{name}\n{subtitle}")
             btn.setToolTip(subtitle.replace("\n", " "))
-            btn.setMinimumHeight(62)
+            btn.setMinimumHeight(80)
             btn.setMinimumWidth(100)
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             btn.setStyleSheet(_card_ss)
@@ -1652,7 +933,7 @@ class MethodBuilderDialog(QDialog):
             cards_row.addWidget(btn)
 
         browse_btn = QPushButton("🔍 Browse\nsaved…")
-        browse_btn.setMinimumHeight(62)
+        browse_btn.setMinimumHeight(80)
         browse_btn.setMinimumWidth(80)
         browse_btn.setToolTip("Browse saved cycle templates")
         browse_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -1693,7 +974,7 @@ class MethodBuilderDialog(QDialog):
         self.method_table = QTableWidget()
         self.method_table.setColumnCount(6)
         self.method_table.setHorizontalHeaderLabels(
-            ["Type", "Duration", "Channel", "Concentration", "Contact", "Note"]
+            ["Type", "Duration", "Channel", "Concentration", "Contact time", "Note"]
         )
         self.method_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.method_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -1726,11 +1007,11 @@ class MethodBuilderDialog(QDialog):
         add_step_menu = QMenu(add_step_btn)
         for _step_type, _default_line in [
             ("Baseline",       "Baseline 5min"),
-            ("Binding",        "Binding 15min [A:100nM] contact 180s"),
-            ("Kinetic",        "Kinetic 5min [A:100nM] contact 120s"),
+            ("Binding",        "Binding 8.5min [A:100nM] contact 300s"),
             ("Regeneration",   "Regeneration 30sec [ALL:50mM]"),
-            ("Immobilization", "Immobilization 10min [A:50µg/mL] contact 300s"),
-            ("Wash",           "Wash 30sec contact 30s"),
+            ("Immobilization", "Immobilization 30min"),
+            ("Blocking",       "Blocking 4min"),
+            ("Wash",           "Wash 30sec"),
             ("Other",          "Other 2min"),
         ]:
             _act = QAction(_step_type, add_step_btn)
@@ -1994,7 +1275,7 @@ class MethodBuilderDialog(QDialog):
         self.notes_input._parent_dialog = self
         self.notes_input.setPlaceholderText(
             "Baseline 5min\n"
-            "Binding 15min A:100nM contact 180s\n"
+            "Binding 8.5min A:100nM contact 300s\n"
             "Regeneration 30sec ALL:50mM\n\n"
             "Ctrl+Enter to add  ·  ↑/↓ history  ·  @preset_name  ·  !save name"
         )
@@ -2203,62 +1484,61 @@ class MethodBuilderDialog(QDialog):
         self._sparq_ask_btn.setEnabled(True)
 
     def _try_sparq_patterns(self, text: str):
-        """Method-pattern matching for the Sparq bar (mirrors SparkMethodPopup logic)."""
+        """Method-pattern matching for the Sparq bar."""
         t = text.lower().strip()
         m = re.search(r'build.*?(\d+)', t)
         if m:
             n = int(m.group(1))
-            lines = []
+            lines = ["Baseline 5min"]
             for i in range(n):
-                lines.append(f"Binding 15min [A:100nM]  # Binding {i + 1}")
-                lines.append("Regeneration 2min [ALL:50mM]")
+                lines.append(f"Binding 8.5min [A:100nM] contact 300s  # Binding {i + 1}")
+                lines.append("Regeneration 30sec [ALL:50mM]")
                 lines.append("Baseline 2min")
             return "\n".join(lines)
         if re.search(r'titration|dose.?response|serial dilution|concentration series', t):
             return ("Baseline 5min\n"
-                    "Binding 2min [A:10nM] contact 120s\n"
+                    "Binding 8.5min [A:10nM] contact 300s\n"
                     "Regeneration 30sec [ALL:50mM]\n"
                     "Baseline 2min\n"
-                    "Binding 2min [A:50nM] contact 120s\n"
+                    "Binding 8.5min [A:50nM] contact 300s\n"
                     "Regeneration 30sec [ALL:50mM]\n"
                     "Baseline 2min\n"
-                    "Binding 2min [A:100nM] contact 120s\n"
+                    "Binding 8.5min [A:100nM] contact 300s\n"
                     "Regeneration 30sec [ALL:50mM]\n"
                     "Baseline 2min\n"
-                    "Binding 2min [A:500nM] contact 120s\n"
+                    "Binding 8.5min [A:500nM] contact 300s\n"
                     "Regeneration 30sec [ALL:50mM]\n"
                     "Baseline 2min")
-        if re.search(r'kinetics?|dissociation|off.?rate', t):
-            return ("Baseline 2min\n"
-                    "Kinetic 5min [A:100nM] contact 120s\n"
-                    "Baseline 10min  # Dissociation\n"
-                    "Regeneration 30sec [ALL:50mM]")
         if re.search(r'amine coupling|amine|coupling', t):
             n_match = re.search(r'(\d+)', t)
-            n = int(n_match.group(1)) if n_match else 5
+            n = int(n_match.group(1)) if n_match else 3
             lines = [
-                "Baseline 30sec",
-                "Other 4min  # Activation",
-                "Wash 30sec contact 30s",
-                "Immobilization 4min [A:50µg/mL] contact 180s",
-                "Wash 30sec contact 30s",
-                "Other 4min  # Blocking",
-                "Wash 30sec contact 30s",
+                "Baseline 5min",
+                "Other 4min  # EDC/NHS activation",
+                "Wash 30sec",
+                "Immobilization 30min  # Ligand attachment",
+                "Wash 30sec",
+                "Blocking 4min  # Ethanolamine",
+                "Wash 30sec",
                 "Baseline 15min",
             ]
             for i in range(n):
-                lines.append(f"Binding 15min [A:100nM]  # Binding {i + 1}")
-                lines.append("Regeneration 2min [ALL:50mM]")
+                lines.append(f"Binding 8.5min [A:100nM] contact 300s  # Binding {i + 1}")
+                lines.append("Regeneration 30sec [ALL:50mM]")
                 lines.append("Baseline 2min")
             return "\n".join(lines)
         if re.search(r'baseline|start|equilibrat', t):
             return "Baseline 5min"
-        if re.search(r'regenerat|regen|clean|wash|strip', t):
+        if re.search(r'regenerat|regen|clean|strip', t):
             return "Regeneration 30sec [ALL:50mM]"
         if re.search(r'binding|association|inject|sample', t):
-            return "Binding 15min [A:100nM] contact 180s"
+            return "Binding 8.5min [A:100nM] contact 300s"
         if re.search(r'immobiliz|immob|attach|ligand', t):
-            return "Immobilization 10min [A:50µg/mL] contact 300s"
+            return "Immobilization 30min"
+        if re.search(r'wash|rinse', t):
+            return "Wash 30sec"
+        if re.search(r'block', t):
+            return "Blocking 4min"
         return None
 
     def _update_gallery_visibility(self):
@@ -2287,151 +1567,6 @@ class MethodBuilderDialog(QDialog):
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Browse templates failed: {e}")
-
-    def _build_easy_mode_tab(self):
-        """LEGACY — Easy Mode form tab (kept as dead code after 3-zone redesign)."""
-        from PySide6.QtWidgets import QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, QSpinBox, QDoubleSpinBox, QCheckBox, QPushButton, QFrame
-        from PySide6.QtCore import Qt
-        
-        widget = QWidget()
-        main_layout = QVBoxLayout(widget)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(12)
-
-        # Form layout for inputs
-        form = QFormLayout()
-        form.setSpacing(10)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        # Cycle Type
-        self.easy_cycle_type = QComboBox()
-        self.easy_cycle_type.addItems(["Binding", "Baseline", "Kinetic", "Regeneration", "Rinse"])
-        self.easy_cycle_type.currentTextChanged.connect(self._update_easy_preview)
-        form.addRow("Cycle Type:", self.easy_cycle_type)
-
-        # Duration
-        duration_row = QHBoxLayout()
-        self.easy_duration_value = QDoubleSpinBox()
-        self.easy_duration_value.setRange(0.1, 999)
-        self.easy_duration_value.setValue(5.0)
-        self.easy_duration_value.setDecimals(1)
-        self.easy_duration_value.valueChanged.connect(self._update_easy_preview)
-        duration_row.addWidget(self.easy_duration_value)
-        
-        self.easy_duration_unit = QComboBox()
-        self.easy_duration_unit.addItems(["s", "min", "h"])
-        self.easy_duration_unit.setCurrentIndex(1)  # Default to "min"
-        self.easy_duration_unit.currentTextChanged.connect(self._update_easy_preview)
-        duration_row.addWidget(self.easy_duration_unit)
-        duration_row.addStretch()
-        form.addRow("Duration:", duration_row)
-
-        # Channels (checkboxes)
-        channels_row = QHBoxLayout()
-        self.easy_channel_a = QCheckBox("A")
-        self.easy_channel_b = QCheckBox("B")
-        self.easy_channel_c = QCheckBox("C")
-        self.easy_channel_d = QCheckBox("D")
-        for cb in [self.easy_channel_a, self.easy_channel_b, self.easy_channel_c, self.easy_channel_d]:
-            cb.stateChanged.connect(self._update_easy_preview)
-            channels_row.addWidget(cb)
-        channels_row.addStretch()
-        form.addRow("Channels:", channels_row)
-
-        # Concentration
-        conc_row = QHBoxLayout()
-        self.easy_concentration_value = QDoubleSpinBox()
-        self.easy_concentration_value.setRange(0, 999999)
-        self.easy_concentration_value.setValue(100.0)
-        self.easy_concentration_value.setDecimals(2)
-        self.easy_concentration_value.valueChanged.connect(self._update_easy_preview)
-        conc_row.addWidget(self.easy_concentration_value)
-        
-        self.easy_concentration_unit = QComboBox()
-        self.easy_concentration_unit.addItems(["nM", "µM", "mM", "M", "pM", "µg/mL", "ng/mL", "mg/mL"])
-        self.easy_concentration_unit.currentTextChanged.connect(self._update_easy_preview)
-        conc_row.addWidget(self.easy_concentration_unit)
-        conc_row.addStretch()
-        form.addRow("Concentration:", conc_row)
-
-        # Contact Time
-        contact_row = QHBoxLayout()
-        self.easy_contact_value = QSpinBox()
-        self.easy_contact_value.setRange(0, 99999)
-        self.easy_contact_value.setValue(180)
-        self.easy_contact_value.valueChanged.connect(self._update_easy_preview)
-        contact_row.addWidget(self.easy_contact_value)
-        
-        self.easy_contact_unit = QComboBox()
-        self.easy_contact_unit.addItems(["s", "min", "h"])
-        self.easy_contact_unit.currentTextChanged.connect(self._update_easy_preview)
-        contact_row.addWidget(self.easy_contact_unit)
-        contact_row.addStretch()
-        form.addRow("Contact Time:", contact_row)
-
-        # Flow Rate
-        flow_row = QHBoxLayout()
-        self.easy_flow_value = QSpinBox()
-        self.easy_flow_value.setRange(0, 9999)
-        self.easy_flow_value.setValue(25)
-        self.easy_flow_value.valueChanged.connect(self._update_easy_preview)
-        flow_row.addWidget(self.easy_flow_value)
-        
-        self.easy_flow_unit = QComboBox()
-        self.easy_flow_unit.addItems(["µL/min", "mL/min"])
-        self.easy_flow_unit.currentTextChanged.connect(self._update_easy_preview)
-        flow_row.addWidget(self.easy_flow_unit)
-        flow_row.addStretch()
-        form.addRow("Flow Rate:", flow_row)
-
-        main_layout.addLayout(form)
-        
-        # Separator
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setStyleSheet("background: rgba(0, 0, 0, 0.1);")
-        main_layout.addWidget(separator)
-
-        # Preview
-        preview_label = QLabel("Preview:")
-        preview_label.setStyleSheet("font-size: 11px; color: #86868B; font-weight: 600;")
-        main_layout.addWidget(preview_label)
-        
-        self.easy_preview_text = QLabel("Binding 5min [ABCD:100nM] contact 180s flow 25µL/min")
-        self.easy_preview_text.setStyleSheet(
-            "background: #F5F5F7; padding: 8px; border-radius: 4px; "
-            "font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; color: #1D1D1F;"
-        )
-        self.easy_preview_text.setWordWrap(True)
-        main_layout.addWidget(self.easy_preview_text)
-
-        # Insert button
-        insert_btn = QPushButton("Insert to Power Mode →")
-        insert_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 10px 20px;"
-            "  font-size: 13px;"
-            "  font-weight: 600;"
-            "}"
-            "QPushButton:hover { background: #0051D5; }"
-            "QPushButton:pressed { background: #003D99; }"
-        )
-        insert_btn.clicked.connect(self._on_insert_to_power_mode)
-        main_layout.addWidget(insert_btn)
-        
-        main_layout.addStretch()
-        
-        # Generate initial preview
-        self._update_easy_preview()
-
-        # Apply initial field state based on current mode
-        self._on_mode_changed(self.mode_combo.currentText())
-
-        return widget
 
     def _update_char_count(self):
         """Enforce 1500 character limit."""
@@ -2588,18 +1723,10 @@ When <b>contact time expires</b>, a wash flag is automatically placed to mark th
 <h4>Examples — One Line per Cycle</h4>
 <pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
 Baseline 5min
-Binding 5min A:100nM contact 180s
-Binding 5min A:500nM contact 180s
+Binding 8.5min A:100nM contact 300s
+Binding 8.5min A:500nM contact 300s
 Regeneration 30sec ALL:50mM
 Baseline 2min
-</pre>
-
-<h4>Kinetics Example (Association + Dissociation)</h4>
-<pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
-Baseline 2min
-Kinetic 5min A:100nM contact 120s
-Baseline 10min                            # dissociation phase
-Regeneration 30sec ALL:50mM
 </pre>
 
 <h4>Overnight Stability Test</h4>
@@ -2609,21 +1736,18 @@ Baseline 12h         # 12 hours
 Baseline 24hr        # 24 hours
 </pre>
 
-<h4>Amine Coupling + Titration</h4>
+<h4>Amine Coupling</h4>
 <pre style="background:#f5f5f7; padding:8px; border-radius:4px; font-size:12px;">
-Baseline 30sec
+Baseline 5min
 Other 4min                                 # EDC/NHS activation
-Wash 30sec contact 30s
-Immobilization 4min A:50µg/mL contact 180s
-Wash 30sec contact 30s
-Other 4min                                 # ethanolamine blocking
-Wash 30sec contact 30s
+Wash 30sec
+Immobilization 30min                       # ligand attachment — freestyle window
+Wash 30sec
+Blocking 4min                              # ethanolamine
+Wash 30sec
 Baseline 15min
-Binding 15min A:10nM contact 180s
-Regeneration 2min ALL:50mM
-Baseline 2min
-Binding 15min A:50nM contact 180s
-Regeneration 2min ALL:50mM
+Binding 8.5min A:100nM contact 300s
+Regeneration 30sec ALL:50mM
 Baseline 2min
 </pre>
 
@@ -2637,14 +1761,13 @@ Binding 5min A:100nM contact 120s partial
 <h4>⚡ Spark AI Shortcuts</h4>
 <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
 <tr style="background:#f0f0f0;"><th>Command</th><th>What it generates</th></tr>
-<tr><td><code>@spark titration</code></td><td>Dose-response series (5 concentrations + regen)</td></tr>
-<tr><td><code>@spark kinetics</code></td><td>Association → long dissociation → regeneration</td></tr>
+<tr><td><code>@spark titration</code></td><td>Dose-response series (4 concentrations + regen)</td></tr>
 <tr><td><code>@spark amine coupling</code></td><td>Full amine coupling workflow (asks how many binding cycles)</td></tr>
-<tr><td><code>build 5</code></td><td>5 × (Binding 15 min + Regen + Baseline)</td></tr>
-<tr><td><code>build 10</code></td><td>10 × (Binding 15 min + Regen + Baseline)</td></tr>
+<tr><td><code>build 5</code></td><td>5 × (Binding 8.5 min + Regen + Baseline)</td></tr>
+<tr><td><code>build 10</code></td><td>10 × (Binding 8.5 min + Regen + Baseline)</td></tr>
 <tr><td><code>@spark binding</code></td><td>Multi-concentration binding template</td></tr>
 <tr><td><code>@spark regeneration</code></td><td>Single regeneration cycle</td></tr>
-<tr><td><code>@spark immobilization</code></td><td>Single immobilization cycle</td></tr>
+<tr><td><code>@spark immobilization</code></td><td>Single immobilization cycle (30 min freestyle)</td></tr>
 <tr><td><code>@spark baseline</code></td><td>Single baseline cycle</td></tr>
 <tr><td><code>@spark full cycle</code></td><td>Baseline + Binding + Regen</td></tr>
 </table>
@@ -2714,84 +1837,6 @@ Binding 5min A:100nM contact 120s partial
         layout.addWidget(close_btn)
 
         dialog.show()  # Non-blocking show instead of exec()
-
-    def _update_easy_preview(self):
-        """Generate preview text from Easy Mode form fields."""
-        # Cycle type
-        cycle_type = self.easy_cycle_type.currentText()
-        
-        # Duration
-        duration_value = self.easy_duration_value.value()
-        duration_unit = self.easy_duration_unit.currentText()
-        duration_str = f"{duration_value:.0f}{duration_unit}" if duration_unit == "s" else f"{duration_value:.1f}{duration_unit}".rstrip('0').rstrip('.')
-        
-        # Channels - collect checked channels
-        channels = []
-        if self.easy_channel_a.isChecked():
-            channels.append("A")
-        if self.easy_channel_b.isChecked():
-            channels.append("B")
-        if self.easy_channel_c.isChecked():
-            channels.append("C")
-        if self.easy_channel_d.isChecked():
-            channels.append("D")
-        
-        # Concentration
-        conc_value = self.easy_concentration_value.value()
-        conc_unit = self.easy_concentration_unit.currentText()
-        
-        # Build concentration tag if channels selected
-        conc_tag = ""
-        if channels and conc_value > 0:
-            channel_str = "".join(channels)
-            conc_tag = f"[{channel_str}:{conc_value:.0f}{conc_unit}]" if conc_value == int(conc_value) else f"[{channel_str}:{conc_value:.2f}{conc_unit}]"
-        
-        # Contact time
-        contact_value = self.easy_contact_value.value()
-        contact_unit = self.easy_contact_unit.currentText()
-        contact_str = ""
-        if contact_value > 0:
-            contact_str = f"contact {contact_value}{contact_unit}"
-        
-        # Flow rate
-        flow_value = self.easy_flow_value.value()
-        flow_unit = self.easy_flow_unit.currentText()
-        flow_str = ""
-        if flow_value > 0:
-            flow_str = f"flow {flow_value}{flow_unit}"
-        
-        # Assemble preview
-        parts = [cycle_type, duration_str]
-        if conc_tag:
-            parts.append(conc_tag)
-        if contact_str:
-            parts.append(contact_str)
-        if flow_str:
-            parts.append(flow_str)
-        
-        preview = " ".join(parts)
-        self.easy_preview_text.setText(preview)
-
-    def _on_insert_to_power_mode(self):
-        """Copy preview text to Power Mode tab and switch to it."""
-        preview_text = self.easy_preview_text.text()
-        
-        # Get current text from Power Mode
-        current_text = self.notes_input.toPlainText().strip()
-        
-        # Append preview to existing text (new line if not empty)
-        if current_text:
-            new_text = current_text + "\n" + preview_text
-        else:
-            new_text = preview_text
-        
-        self.notes_input.setPlainText(new_text)
-        
-        # Switch to Power Mode tab (Tab 1)
-        self.input_tabs.setCurrentIndex(1)
-        
-        # Focus on notes_input
-        self.notes_input.setFocus()
 
     def _build_cycle_from_text(self, text: str) -> tuple[Cycle, list[str]]:
         """Build Cycle object from a single line of text.
@@ -2954,36 +1999,20 @@ Binding 5min A:100nM contact 120s partial
         injection_method = None
         pump_type = None  # Will be auto-detected during execution
 
-        # Injection rules by cycle type
-        if cycle_type == "Immobilization":
-            # In manual mode, no injection_method (runs like Baseline)
-            # In automated mode, use simple injection
-            injection_method = None if manual_injection_mode == "manual" else "simple"
-            # contact_time from parsing (required by user)
-        elif cycle_type == "Blocking":
-            # In manual mode, no injection_method (runs like Baseline)
-            injection_method = None if manual_injection_mode == "manual" else "simple"
-            # contact_time from parsing (required by user)
-        elif cycle_type == "Wash":
-            # In manual mode, no injection_method (runs like Baseline)
-            injection_method = None if manual_injection_mode == "manual" else "simple"
-            # contact_time from parsing (required by user)
-        elif cycle_type == "Binding":
-            injection_method = "partial" if is_partial else "simple"  # Allow override
+        # Injection rules by cycle type (P4SPR / manual injection context)
+        if cycle_type == "Binding":
+            injection_method = "partial" if is_partial else "simple"
             if contact_time is None:
-                contact_time = 300.0  # Fixed 300s default for Binding (5 minutes)
-        elif cycle_type == "Kinetic":
-            injection_method = "partial" if is_partial else "simple"  # Allow override
-            if contact_time is None:
-                contact_time = 300.0  # Fixed 300s default for Kinetic (5 minutes)
+                contact_time = 300.0  # 5 min default contact time (P4SPR manual injection)
         elif cycle_type == "Regeneration":
             injection_method = "simple"
             if contact_time is None:
-                contact_time = 30.0  # Fixed 30s default for Regeneration
-        elif cycle_type in ("Baseline", "Other"):
-            # Baseline and Other: No injection, no contact time
+                contact_time = 30.0   # 30 s default contact time
+        elif cycle_type in ("Baseline", "Immobilization", "Wash", "Blocking", "Other"):
+            # No automated injection. Immobilization is a 30-min freestyle window —
+            # injection prompts within that window are a future improvement.
             injection_method = None
-            contact_time = None  # Explicitly clear any accidentally parsed contact_time
+            contact_time = None
 
         # Build planned_concentrations list for concentration cycles
         # Format: Individual channel entries for proper injection counting and detection
@@ -3601,6 +2630,9 @@ Binding 5min A:100nM contact 120s partial
 
             QMessageBox.information(self, "Method Saved", f"Method saved successfully to:\n{file_path}")
 
+            # Emit signal so main app can respond (e.g., expand Run Queue panel)
+            self.method_saved.emit(method_name, file_path)
+
         except Exception as e:
             QMessageBox.critical(self, "Save Error", f"Failed to save method:\n{e}")
 
@@ -3884,9 +2916,9 @@ Binding 5min A:100nM contact 120s partial
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Icon.Warning)
             msg.setWindowTitle("Cycle Validation")
-            msg.setText("Potential issues detected:")
-            msg.setInformativeText("\n\n".join(warnings))
+            msg.setText("Potential issues detected:\n\n" + "\n\n".join(warnings))
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg.setMinimumWidth(480)
             msg.exec()
 
     def _copy_schedule_to_clipboard(self):

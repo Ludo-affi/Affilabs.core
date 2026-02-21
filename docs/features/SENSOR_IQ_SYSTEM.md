@@ -35,23 +35,20 @@ The sensorgram wavelength range is divided into quality zones based on typical S
 
 ## FWHM Quality Thresholds
 
-FWHM (Full Width at Half Maximum) indicates the sharpness of the SPR dip, correlating with sensor surface quality:
+FWHM (Full Width at Half Maximum) — the SPR dip on this system is broad by design (~70 nm target). Narrower or much wider than expected indicates a problem:
 
 | FWHM Range | Quality | Sensor Status |
 |------------|---------|---------------|
-| <30 nm | ⭐ **EXCELLENT** | Sharp peak, optimal coupling |
-| 30-60 nm | ✅ **GOOD** | Normal operating range |
-| 60-80 nm | ⚠️ **POOR** | Degraded coupling, monitor |
-| >80 nm | ⛔ **CRITICAL** | Severe coupling issues |
+| <60 nm | ⭐ **EXCELLENT** | Well-coupled, tight dip |
+| 60-80 nm | ✅ **GOOD** | Normal operating range (~70 nm target) |
+| 80-100 nm | ⚠️ **POOR** | Broadening — weak coupling, monitor |
+| >100 nm | ⛔ **CRITICAL** | Severe coupling issues |
 
 ### FWHM Interpretation
 
-- **Narrow FWHM (15-30nm)**: Indicates good water contact, high sensitivity sensor
-- **Broad FWHM (>50nm)**: May indicate:
-  - Poor water contact
-  - Air bubbles on sensor surface
-  - Sensor contamination or degradation
-  - Dry sensor (no water in flow cell)
+- **Target FWHM ~70 nm**: Expected for healthy SPR coupling on this lensless system
+- **FWHM >100 nm**: Air bubble, dry sensor, or contaminated surface
+- **FWHM <40 nm**: Unusually narrow — possible alignment issue or wrong sensor chip
 
 ## Sensor IQ Levels
 
@@ -59,31 +56,26 @@ The system combines wavelength zone and FWHM to produce an overall **Sensor IQ L
 
 ### 🌟 EXCELLENT
 - Wavelength: 590-690 nm
-- FWHM: <30 nm
+- FWHM: <60 nm, Dip depth ≥50%, P2P <5 nm
 - Quality Score: 0.9-1.0
 - **Action**: Continue experiment, optimal conditions
 
 ### ✅ GOOD
 - Wavelength: 590-690 nm
-- FWHM: 30-60 nm
+- FWHM: 60-80 nm (~70 nm target), Dip depth ≥50%, P2P <5 nm
 - Quality Score: 0.6-0.9
 - **Action**: Normal operation, data is reliable
 
-### ⚠️ QUESTIONABLE
+### ⚠️ QUESTIONABLE (Yellow)
 - Wavelength: 560-590 nm OR 690-720 nm
-- FWHM: Any reasonable value
-- OR: Good wavelength zone but FWHM 60-80 nm
+- OR: FWHM 80-100 nm, Dip depth 30-50%, OR P2P 5-8 nm
 - Quality Score: 0.3-0.6
-- **Action**: Monitor closely, may indicate:
-  - Binding event (wavelength shift)
-  - Gradual sensor drift
-  - Early coupling degradation
+- **Action**: Monitor closely — unstable baseline or weak coupling
 
-### 🔶 POOR
-- Wavelength: Edge zones with high FWHM
-- OR: Good zone but FWHM >80 nm
+### 🔶 POOR (Red)
+- FWHM >100 nm, Dip depth <30%, OR **P2P ≥8 nm** (sensor dry / light blocked)
 - Quality Score: 0.1-0.3
-- **Action**: Check sensor surface quality, verify water contact
+- **Action**: Stop — check sensor chip is wetted and optical path is clear
 
 ### ⛔ CRITICAL
 - Wavelength: <560 nm OR >720 nm
@@ -307,27 +299,17 @@ Container for quality assessment results.
 
 ## Future Enhancements
 
+### Implemented in v2.0.5
+- ✅ **IQ dots in `InteractiveSPRLegend`** — colored `●` next to each channel (A/B/C/D) in the Active Cycle graph (top-left overlay). Updated by `ui_update_coordinator._update_sensor_iq_displays()` → `legend.set_iq_color(channel, hex_color)`. Colors map directly to `SENSOR_IQ_COLORS` (green → excellent/good, yellow → questionable, red → poor/critical, gray → no data).
+- ✅ **Signal quality pill bar removed** — `_create_signal_quality_bar()` and `signal_quality_pills` dict eliminated. All IQ display consolidated into the legend dots.
+
 ### Planned Features
 
-1. **Real-time UI Indicators**
-   - Color-coded quality badges on sensorgram display
-   - FWHM trend graph in diagnostics
-   - Quality history chart per channel
-
-2. **Predictive Alerts**
-   - Detect gradual quality degradation
-   - Predict sensor failure before critical
-   - Suggest maintenance windows
-
-3. **Automated Responses**
-   - Pause acquisition on critical quality
-   - Auto-adjust LED delays for poor FWHM
-   - Smart recalibration triggers
-
-4. **Quality Reports**
-   - Session quality summary
-   - Per-channel quality statistics
-   - Export quality metrics with data
+1. **FWHM trend graph** in diagnostics — live FWHM per channel over time
+2. **Quality history chart** — per-channel quality score trend for session review
+3. **Predictive alerts** — detect gradual quality degradation, predict sensor failure before critical
+4. **Automated responses** — pause acquisition on critical quality, smart recalibration triggers
+5. **Quality reports** — session quality summary, per-channel statistics, export with data
 
 ## Related Systems
 

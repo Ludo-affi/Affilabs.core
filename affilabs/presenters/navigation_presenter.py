@@ -118,6 +118,11 @@ class NavigationPresenter:
 
         nav_layout.addSpacing(8)
 
+        # Spectrum toggle button (floating spectroscopy popup)
+        self._create_spectrum_toggle_button(nav_layout)
+
+        nav_layout.addSpacing(4)
+
         # Spark toggle button (left of timer)
         self._create_spark_toggle_button(nav_layout)
 
@@ -164,6 +169,68 @@ class NavigationPresenter:
         self._create_company_logo(nav_layout)
 
         return nav_widget
+
+    def _create_spectrum_toggle_button(self, layout):
+        """Create Spectrum floating popup toggle button with sine-wave SVG icon."""
+        _wave_svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">'
+            '<path d="M2 12 C4 6 6 6 8 12 C10 18 12 18 14 12 C16 6 18 6 20 12 L22 12"'
+            ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+            "</svg>"
+        )
+
+        self.main_window.spectrum_toggle_btn = QPushButton()
+        self.main_window.spectrum_toggle_btn.setFixedSize(36, 36)
+        self.main_window.spectrum_toggle_btn.setCheckable(True)
+        self.main_window.spectrum_toggle_btn.setToolTip("Show / hide spectroscopy panel")
+
+        # Unchecked (Off) — cyan waveform
+        icon = QIcon()
+        svg_off = _wave_svg.replace("currentColor", "#5AC8FA")
+        renderer_off = QSvgRenderer(svg_off.encode("utf-8"))
+        px_off = QPixmap(QSize(20, 20))
+        px_off.fill(Qt.GlobalColor.transparent)
+        p_off = QPainter(px_off)
+        renderer_off.render(p_off)
+        p_off.end()
+        icon.addPixmap(px_off, QIcon.Mode.Normal, QIcon.State.Off)
+
+        # Checked (On) — blue waveform (matches SpectrumBubble tab accent)
+        svg_on = _wave_svg.replace("currentColor", "#0A84FF")
+        renderer_on = QSvgRenderer(svg_on.encode("utf-8"))
+        px_on = QPixmap(QSize(20, 20))
+        px_on.fill(Qt.GlobalColor.transparent)
+        p_on = QPainter(px_on)
+        renderer_on.render(p_on)
+        p_on.end()
+        icon.addPixmap(px_on, QIcon.Mode.Normal, QIcon.State.On)
+
+        self.main_window.spectrum_toggle_btn.setIcon(icon)
+        self.main_window.spectrum_toggle_btn.setIconSize(QSize(20, 20))
+
+        self.main_window.spectrum_toggle_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(90, 200, 250, 0.10);"
+            "  border: 1px solid rgba(90, 200, 250, 0.30);"
+            "  border-radius: 8px;"
+            "  padding: 0px;"
+            "}"
+            "QPushButton:hover {"
+            "  background: rgba(90, 200, 250, 0.18);"
+            "  border: 1px solid rgba(90, 200, 250, 0.45);"
+            "}"
+            "QPushButton:pressed { background: rgba(90, 200, 250, 0.28); }"
+            "QPushButton:checked {"
+            "  background: rgba(10, 132, 255, 0.15);"
+            "  border: 1px solid rgba(10, 132, 255, 0.45);"
+            "}"
+        )
+
+        self.main_window.spectrum_toggle_btn.toggled.connect(
+            self.main_window._on_spectrum_toggle
+        )
+        self.main_window.spectrum_toggle_btn.setChecked(False)
+        layout.addWidget(self.main_window.spectrum_toggle_btn)
 
     def _create_spark_toggle_button(self, layout):
         """Create Spark AI toggle button with SVG robot icon."""

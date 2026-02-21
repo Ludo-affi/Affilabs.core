@@ -203,6 +203,11 @@ class AcquisitionMixin:
         """Acquisition has started — enable record and pause buttons."""
         self.acquisition_events.on_acquisition_started()
 
+        # Note: active_cycle_card is shown only when a cycle is actually running
+        # (via _update_cycle_display), not on mere acquisition start.
+
+        # Queue panel is now expanded only when a method is saved, not on acquisition start
+
         # Add pending "Recording Started" marker if recording was enabled before acquisition
         if hasattr(self, '_pending_recording_marker') and self._pending_recording_marker:
             try:
@@ -296,6 +301,12 @@ class AcquisitionMixin:
         except Exception:
             pass
 
+        # Collapse right queue panel now that acquisition has ended
+        try:
+            self.main_window.collapse_queue_panel()
+        except Exception:
+            pass
+
         # Hide "flat baseline" hint (will reappear on next acquisition start)
         if hasattr(self.main_window, '_baseline_hint_label'):
             self.main_window._baseline_hint_label.setVisible(False)
@@ -328,6 +339,10 @@ class AcquisitionMixin:
         if self.recording_mgr.is_recording:
             logger.info("Stopping recording due to acquisition stop...")
             self.recording_mgr.stop_recording()
+
+        # Stop any active timer alarm (sound should not outlive acquisition)
+        if hasattr(self, '_stop_alarm_loop'):
+            self._stop_alarm_loop()
 
     # ------------------------------------------------------------------ #
     # Recording callbacks                                                  #
@@ -479,43 +494,34 @@ class AcquisitionMixin:
         UIUpdateHelpers.update_cycle_of_interest_graph(self)
 
     def _update_delta_display(self):
-        """Update the delta SPR display between start and stop cursors."""
-        if self.main_window.cycle_of_interest_graph.delta_display is None:
-            return
+        """Update the interactive SPR legend with Δ SPR between start and stop cursors.
 
-        start_time = self.main_window.full_timeline_graph.start_cursor.value()
-        stop_time = self.main_window.full_timeline_graph.stop_cursor.value()
+        cycle_data[ch].spr already contains the delta-SPR values for the cursor
+        region (computed in ui_update_helpers and stored via update_cycle_data).
+        The first point corresponds to the start cursor and the last point to the
+        stop cursor, so Δ = last − first directly — no coordinate conversion needed.
+        """
+        legend = getattr(self.main_window.cycle_of_interest_graph, 'interactive_spr_legend', None)
+        if legend is None:
+            return
 
         delta_values = {}
         for ch in self._idx_to_channel:
-            time_data = self.buffer_mgr.cycle_data[ch].time
             spr_data = self.buffer_mgr.cycle_data[ch].spr
 
-            if len(time_data) > 0 and len(spr_data) > 0:
-                start_idx = np.argmin(np.abs(time_data - start_time))
-                stop_idx = np.argmin(np.abs(time_data - stop_time))
-
-                def get_averaged_value(center_idx, data):
-                    s = max(0, center_idx - 2)
-                    e = min(len(data), center_idx + 3)
-                    return np.mean(data[s:e])
-
-                start_value = get_averaged_value(start_idx, spr_data)
-                stop_value = get_averaged_value(stop_idx, spr_data)
-                delta_values[ch] = stop_value - start_value
+            if len(spr_data) >= 2:
+                # Average a small window at each end for stability
+                n = len(spr_data)
+                window = min(3, n)
+                start_val = float(np.mean(spr_data[:window]))
+                stop_val = float(np.mean(spr_data[n - window:]))
+                delta_values[ch] = stop_val - start_val
+            elif len(spr_data) == 1:
+                delta_values[ch] = 0.0
             else:
                 delta_values[ch] = 0.0
 
-        if hasattr(self.main_window, '_get_delta_spr_display_text'):
-            html = self.main_window._get_delta_spr_display_text(delta_values)
-        else:
-            html = (
-                f"<b>Δ SPR: Ch A: {delta_values['a']:+.1f} RU  |  "
-                f"Ch B: {delta_values['b']:+.1f} RU  |  "
-                f"Ch C: {delta_values['c']:+.1f} RU  |  "
-                f"Ch D: {delta_values['d']:+.1f} RU</b>"
-            )
-        self.main_window.cycle_of_interest_graph.delta_display.setText(html)
+        legend.update_values(delta_values)
 
     # ------------------------------------------------------------------ #
     # Polarizer                                                            #

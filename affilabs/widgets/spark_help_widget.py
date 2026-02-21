@@ -421,8 +421,16 @@ class InteractiveMessageBubble(QFrame):
 class SparkHelpWidget(QWidget):
     """Main Spark AI assistant widget. All methods guarded — Spark never crashes the UI."""
 
+    # Thread-safe signals — emitted from background threads, connected to UI-thread slots
+    _engine_ready_signal = Signal(object)   # carries the SparkAnswerEngine instance
+    _answer_ready_signal = Signal(str, str, int)  # answer_text, question, token
+
     def __init__(self, parent=None, user_manager=None):
         super().__init__(parent)
+
+        # Wire thread-safe signals → UI-thread slots
+        self._engine_ready_signal.connect(self._on_engine_ready)
+        self._answer_ready_signal.connect(self._on_answer_ready)
 
         # User context for personalization
         self._user_manager = user_manager
@@ -667,8 +675,8 @@ class SparkHelpWidget(QWidget):
             try:
                 from affilabs.services.spark import SparkAnswerEngine
                 engine = SparkAnswerEngine()
-                # Post back to UI thread
-                QTimer.singleShot(0, lambda: self._on_engine_ready(engine))
+                # Emit signal — automatically queued to UI thread (Qt Signal is thread-safe)
+                self._engine_ready_signal.emit(engine)
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Spark engine init failed: {e}")
@@ -812,16 +820,22 @@ class SparkHelpWidget(QWidget):
     def _generate_answer_async(self, question: str, token: int):
         """Run answer generation in background thread, post result to UI thread."""
         try:
-            answer_text = self._find_answer(question)
+            answer_text, matched = self._find_answer(question)
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Spark _find_answer crashed: {e}")
-            answer_text = "Sorry, something went wrong. Please try again."
+            answer_text, matched = "Sorry, something went wrong. Please try again.", False
 
-        try:
-            QTimer.singleShot(0, lambda: self._display_answer(answer_text, question, token))
-        except Exception:
-            pass
+        # Auto-log misses so we know what questions need new patterns
+        if not matched:
+            self._log_miss(question)
+
+        # Emit signal — thread-safe, queued to UI thread automatically
+        self._answer_ready_signal.emit(answer_text, question, token)
+
+    def _on_answer_ready(self, answer_text: str, question: str, token: int):
+        """Slot called on UI thread when background answer generation completes."""
+        self._display_answer(answer_text, question, token)
 
     def _display_answer(self, answer_text: str, question: str = "", token: int = -1):
         """Display answer on UI thread. token guards against stale threads."""
@@ -861,6 +875,11 @@ class SparkHelpWidget(QWidget):
         try:
             answer_bubble = MessageBubble(answer_text, is_user=False)
             self.chat_layout.addWidget(answer_bubble, alignment=Qt.AlignmentFlag.AlignLeft)
+            # Wire feedback button → write feedback log entry
+            if question:
+                answer_bubble.feedback_given.connect(
+                    lambda rating, q=question, a=answer_text: self._write_feedback(q, a, rating)
+                )
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Spark bubble creation failed: {e}")
@@ -883,23 +902,23 @@ class SparkHelpWidget(QWidget):
 
 
 
-    def _find_answer(self, question: str) -> str:
-        """Generate answer using SparkAnswerEngine."""
+    def _find_answer(self, question: str) -> tuple:
+        """Generate answer using SparkAnswerEngine. Returns (answer, matched)."""
         try:
             if self.answer_engine is None:
-                # Engine still initializing — wait up to 8s
+                # Engine still loading — brief wait (should be ready within 1-2s)
                 import time
-                deadline = time.time() + 8.0
+                deadline = time.time() + 3.0
                 while self.answer_engine is None and time.time() < deadline:
-                    time.sleep(0.1)
+                    time.sleep(0.05)
             if self.answer_engine is None:
-                return "Still starting up — please try again in a moment."
+                return ("Still starting up — please try again in a moment.", False)
             answer, matched = self.answer_engine.generate_answer(question)
-            return answer
+            return (answer, matched)
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Sparq answer error: {e}")
-            return "Sorry, I had trouble generating an answer. Please try again."
+            return ("Sorry, I had trouble generating an answer. Please try again.", False)
 
     def _save_qa_entry(self, question: str, answer: str):
         """Save Q&A entry to per-user JSON history file (non-fatal)."""
@@ -952,6 +971,52 @@ class SparkHelpWidget(QWidget):
             import logging
             logging.getLogger(__name__).debug(f"Failed to save Q&A history: {e}")
             # Silent fail - never crash on history save
+
+    def _write_feedback(self, question: str, answer: str, rating: str):
+        """Append a thumbs up/down feedback entry to spark_feedback.json."""
+        import json
+        from pathlib import Path
+        from datetime import datetime
+        try:
+            from affilabs.utils.resource_path import get_resource_path
+            feedback_file = Path(get_resource_path("data/spark")) / "spark_feedback.json"
+            entries = []
+            if feedback_file.exists():
+                try:
+                    entries = json.loads(feedback_file.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, IOError):
+                    entries = []
+            entries.append({
+                "timestamp": datetime.now().isoformat(),
+                "question": question.strip(),
+                "answer": answer.strip(),
+                "rating": rating  # "helpful" or "not_helpful"
+            })
+            feedback_file.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass  # never crash on feedback write
+
+    def _log_miss(self, question: str):
+        """Append an unmatched question to spark_misses.json for pattern development."""
+        import json
+        from pathlib import Path
+        from datetime import datetime
+        try:
+            from affilabs.utils.resource_path import get_resource_path
+            miss_file = Path(get_resource_path("data/spark")) / "spark_misses.json"
+            entries = []
+            if miss_file.exists():
+                try:
+                    entries = json.loads(miss_file.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, IOError):
+                    entries = []
+            entries.append({
+                "timestamp": datetime.now().isoformat(),
+                "question": question.strip()
+            })
+            miss_file.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass  # never crash on miss log write
 
     def _toggle_tts(self):
         """Toggle TTS on/off."""

@@ -126,6 +126,8 @@ class UIUpdateHelpers:
                     else:
                         # No valid wavelengths - use first point anyway
                         baseline = cycle_wavelength[0]
+                    # Persist so that moving the cursor doesn't shift the baseline
+                    app.buffer_mgr.baseline_wavelengths[ch_letter] = baseline
                 elif baseline is None:
                     baseline = 0
 
@@ -162,7 +164,13 @@ class UIUpdateHelpers:
                     display_offset = app.clock.display_offset
                     cycle_time_display = cycle_time - display_offset
                     display_cycle_time = cycle_time_display - start_time_display
-                    display_delta_spr = delta_spr
+                    
+                    # CRITICAL: Rebase SPR delta to start at 0 when start cursor is moved
+                    # All channels share a common baseline at the start cursor position (0, 0)
+                    if len(delta_spr) > 0:
+                        display_delta_spr = delta_spr - delta_spr[0]
+                    else:
+                        display_delta_spr = delta_spr
 
                     # Apply injection alignment time shift if set (Phase 2)
                     if hasattr(app, '_channel_time_shifts') and ch_letter in app._channel_time_shifts:

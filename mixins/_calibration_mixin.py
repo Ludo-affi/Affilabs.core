@@ -153,12 +153,12 @@ class CalibrationMixin:
 
             logger.debug("QC report displayed and closed (modal)")
 
-            # Switch sidebar to Method tab so user sees Build Method CTA immediately
+            # Switch sidebar to Flow tab (index 0) since Method was removed from sidebar
+            # Method button now lives in transport bar
             try:
                 sidebar = self.main_window.sidebar
-                method_idx = sidebar.tab_indices.get("Method")
-                if method_idx is not None:
-                    sidebar.tab_widget.setCurrentIndex(method_idx)
+                flow_idx = sidebar.tab_indices.get("Flow", 0)
+                sidebar.tab_widget.setCurrentIndex(flow_idx)
             except Exception:
                 pass
 
@@ -176,28 +176,10 @@ class CalibrationMixin:
 
     def _restart_acquisition_after_calibration(self):
         """Helper method to restart acquisition from main thread after calibration."""
-        # Collapse Sparq sidebar so the sensorgram gets full attention
+        # Close Sparq bubble so the sensorgram gets full attention
         try:
-            if hasattr(self, 'splitter') and hasattr(self, 'spark_sidebar'):
-                sizes = self.splitter.sizes()
-                if len(sizes) == 3:
-                    self.splitter.setSizes([0, sizes[1] + sizes[0], sizes[2]])
             if hasattr(self, 'spark_toggle_btn'):
                 self.spark_toggle_btn.setChecked(False)
-                # Brief tooltip hinting where to find Sparq
-                from PySide6.QtWidgets import QToolTip
-                from PySide6.QtCore import QTimer
-                btn = self.spark_toggle_btn
-                QTimer.singleShot(
-                    600,
-                    lambda: QToolTip.showText(
-                        btn.mapToGlobal(btn.rect().center()),
-                        "Click here to open the Sparq assistant",
-                        btn,
-                        btn.rect(),
-                        4000,
-                    ),
-                )
         except Exception as e:
             logger.debug(f"Could not collapse Sparq sidebar: {e}")
 
@@ -488,6 +470,10 @@ class CalibrationMixin:
             progress.close()
             logger.error(f"Polarizer calibration failed: {e}")
             logger.exception("Servo calibration error")
+            # Resume spectrum updates even on failure
+            if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+                self.ui_updates.set_transmission_updates_enabled(True)
+                self.ui_updates.set_raw_spectrum_updates_enabled(True)
             from affilabs.ui.ui_message import error as ui_error
             ui_error(
                 self.main_window,
@@ -529,6 +515,10 @@ class CalibrationMixin:
                 logger.debug("Pausing live spectrum updates during calibration...")
                 self.ui_updates.set_transmission_updates_enabled(False)
                 self.ui_updates.set_raw_spectrum_updates_enabled(False)
+
+            # Clear sensorgram immediately — don't leave stale data visible during 10-15 min run
+            if hasattr(self, 'graph') and self.graph:
+                self.graph.clear_plot()
 
             # CRITICAL: Pass the dialog to calibration service to avoid creating a second dialog
             # Set the existing dialog as the calibration dialog before starting

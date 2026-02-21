@@ -2188,6 +2188,7 @@ class PumpMixin:
                     user_manager=user_mgr,
                 )
                 self._method_builder_dialog.method_ready.connect(self._on_method_ready)
+                self._method_builder_dialog.method_saved.connect(self._on_method_saved)
 
             # Configure for currently connected hardware
             try:
@@ -2283,6 +2284,21 @@ class PumpMixin:
                 self._on_start_button_clicked()
             except Exception as e:
                 logger.error(f"_on_method_ready: start failed: {e}")
+
+    def _on_method_saved(self, method_name: str, file_path: str):
+        """Handle method save from Method Builder dialog.
+
+        Expands the Run Queue panel so the user can see the queue after saving.
+
+        Args:
+            method_name: Name of the saved method
+            file_path: Full path to the saved .json file
+        """
+        logger.info(f"Method saved: '{method_name}' → {file_path}")
+        try:
+            self.main_window.expand_queue_panel()
+        except Exception as e:
+            logger.error(f"Failed to expand queue panel on method save: {e}")
 
     def _on_save_preset(self):
         """Save current cycle queue as a preset file."""

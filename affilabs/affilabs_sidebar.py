@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtGui import QPainter, QIcon, QPixmap
+from PySide6.QtGui import QPainter, QIcon, QPixmap, QTransform
 from PySide6.QtSvg import QSvgRenderer
 
 # Tab builders
@@ -290,32 +290,31 @@ class AffilabsSidebar(QWidget):
             }}
         """)
 
-        # Tab definitions with builder method mapping and subtitles
+        # Pre-build active_cycle_card here (Phase 2) — before tab builders run
+        # This widget is relocated to LiveRightPanel during Phase 2; Method tab just adds it to its layout
+        self.active_cycle_card = QFrame()
+        self.active_cycle_card.setVisible(False)
+        self.active_cycle_card.setStyleSheet(
+            "QFrame { background: #F0F4FF; border: 1.5px solid rgba(46,48,227,0.25); border-radius: 10px; }"
+        )
+        # Content will be added by MethodTabBuilder._build_active_cycle_card()
+
+        # Build Method button (no longer in a sidebar tab; referenced by transport bar icons)
+        # Created as stub so transport bar can click() it to open method builder dialog
+        from PySide6.QtWidgets import QPushButton
+        self.build_method_btn = QPushButton()
+        self.build_method_btn.setVisible(False)  # never shown in sidebar
+
+        # Tab definitions — Flow=0, Export=1, Settings=2
+        # Method removed from sidebar (button moved to transport bar next to Spark)
+        # Device Status tab removed — widgets built inside Settings > Hardware Status (Phase 5)
         tab_definitions = [
-            (
-                "Device Status",
-                "Device Status",
-                "Hardware readiness check",
-                self._build_device_status_tab,
-            ),
-            # HIDDEN: Graphic Control tab - content moved to Settings > Display Controls
-            # (
-            #     "Graphic Control",
-            #     "Display Setup",
-            #     "Configure cycle of interest graph",
-            #     self._build_graphic_control_tab,
-            # ),
-            (
-                "Method",
-                "Build and run method",
-                "Build and manage assay methods",
-                self._build_method_tab,
-            ),
+            # Flow tab shown only for P4PRO/P4PROPLUS hardware
             ("Flow", "Flow Control", "Fluidics experiments", self._build_flow_tab),
             (
+                "Export",          # internal key kept for tab_indices compat ("Export")
                 "Export",
-                "Export Data",
-                "Save and export experiment results",
+                "Export data and results to file",
                 self._build_export_tab,
             ),
             (
@@ -395,10 +394,30 @@ class AffilabsSidebar(QWidget):
 
             tab_index += 1
 
+        # Set Export as the default tab (index 1, since Flow is 0)
+        if "Export" in self.tab_indices:
+            self.tab_widget.setCurrentIndex(self.tab_indices["Export"])
+
+        # Build Method tab widgets (intel labels, active_cycle_card, queue_panel)
+        # even though Method is no longer a visible sidebar tab — widgets are used throughout the app
+        _dummy_layout = QVBoxLayout()
+        self._build_method_tab(_dummy_layout)
+
+        # Phase 5: Build Device Status widgets (subunit_status, scan_btn, etc.) into Settings
+        # They're constructed lazily when the Settings tab builder calls them — no extra call needed here.
+
         # Sparq icon tab — bottom of tab bar, acts as a button (not a real tab)
         _sparq_path = get_affilabs_resource("ui/img/sparq_icon.svg")
         if _sparq_path and _sparq_path.exists():
-            _sparq_icon = create_icon_from_svg(_sparq_path.read_text(encoding="utf-8"), color="#FF9500", selected_color="#FF9500")
+            _svg_raw = _sparq_path.read_text(encoding="utf-8")
+            # Wrap content in rotate(-90°) group to match all other tab icons on East tab bar
+            _svg_for_tab = (
+                _svg_raw.replace(
+                    'xmlns="http://www.w3.org/2000/svg">',
+                    'xmlns="http://www.w3.org/2000/svg"><g transform="rotate(-90 12 12)">'
+                ).replace('</svg>', '</g></svg>')
+            )
+            _sparq_icon = create_icon_from_svg(_svg_for_tab, color="#FF9500", selected_color="#FF9500")
         else:
             _sparq_icon = QIcon()
         _sparq_placeholder = QWidget()  # empty panel — never shown
@@ -431,8 +450,22 @@ class AffilabsSidebar(QWidget):
         self._collapse_btn.clicked.connect(self._on_collapse_clicked)
         self.tab_widget.setCornerWidget(self._collapse_btn, Qt.Corner.TopRightCorner)
 
+        # Active user indicator — passive display (user is set at launch via the user selector)
+        self.active_user_label = QLabel("Running as: —")
+        self.active_user_label.setFixedHeight(22)
+        self.active_user_label.setStyleSheet(
+            "QLabel {"
+            "  font-size: 10px;"
+            "  color: #86868B;"
+            "  background: #F2F2F7;"
+            "  border-top: 1px solid #E5E5EA;"
+            "  padding-left: 16px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        container_layout.addWidget(self.active_user_label)
+
         # Spark AI hint strip — persistent footer nudge, clickable to open bubble
-        from PySide6.QtWidgets import QPushButton
         self.spark_hint_label = QPushButton(" Ask Sparq")
         self.spark_hint_label.setFixedHeight(36)
         self.spark_hint_label.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -469,11 +502,18 @@ class AffilabsSidebar(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        if hasattr(self, '_collapse_btn'):
+            btn = self._collapse_btn
+            y = max(0, (self.height() - btn.height()) // 2)
+            btn.move(0, y)
+            btn.raise_()
 
     def _on_collapse_clicked(self):
         self._is_collapsed = not self._is_collapsed
-        self._collapse_btn.setText("\u25c0" if self._is_collapsed else "\u25b6")  # ◀=expand ▶=collapse
+        self._collapse_btn.setText("\u25c0" if self._is_collapsed else "\u25b6")
         self._collapse_btn.setToolTip("Expand sidebar" if self._is_collapsed else "Collapse sidebar")
+        if hasattr(self, 'spark_hint_label'):
+            self.spark_hint_label.setVisible(not self._is_collapsed)
         self.collapse_requested.emit(self._is_collapsed)
 
     def _connect_internal_signals(self):
@@ -613,26 +653,29 @@ class AffilabsSidebar(QWidget):
 
     def set_operation_mode(self, mode: str):
         """Set the active operation mode (method or flow) and update tab states."""
+        flow_idx = self.tab_indices.get("Flow", -1)
+        method_idx = self.tab_indices.get("Method", -1)
         if mode.lower() == "method":
-            # Enable Method, disable Flow
-            self.tab_widget.setTabEnabled(self.tab_indices["Method"], True)
-            self.tab_widget.setTabEnabled(self.tab_indices["Flow"], False)
-            self.tab_widget.setTabToolTip(
-                self.tab_indices["Flow"],
-                "Flow mode unavailable - requires pump hardware",
-            )
+            # Enable Method, hide Flow (P4SPR scope: Flow not relevant)
+            if method_idx >= 0:
+                self.tab_widget.setTabEnabled(method_idx, True)
+            if flow_idx >= 0:
+                self.tab_widget.setTabVisible(flow_idx, False)
         elif mode.lower() == "flow":
-            # Enable Flow, disable Method
-            self.tab_widget.setTabEnabled(self.tab_indices["Flow"], True)
-            self.tab_widget.setTabEnabled(self.tab_indices["Method"], False)
-            self.tab_widget.setTabToolTip(
-                self.tab_indices["Method"],
-                "Method mode unavailable - flow mode active",
-            )
+            # Show and enable Flow, disable Method (PRO/PROPLUS with pump hardware)
+            if flow_idx >= 0:
+                self.tab_widget.setTabVisible(flow_idx, True)
+                self.tab_widget.setTabEnabled(flow_idx, True)
+            if method_idx >= 0:
+                self.tab_widget.setTabEnabled(method_idx, False)
+                self.tab_widget.setTabToolTip(method_idx, "Method mode unavailable — flow mode active")
         else:
-            # Enable both (default fallback)
-            self.tab_widget.setTabEnabled(self.tab_indices["Method"], True)
-            self.tab_widget.setTabEnabled(self.tab_indices["Flow"], True)
+            # Enable both (default fallback — e.g. PRO with user choice)
+            if method_idx >= 0:
+                self.tab_widget.setTabEnabled(method_idx, True)
+            if flow_idx >= 0:
+                self.tab_widget.setTabVisible(flow_idx, True)
+                self.tab_widget.setTabEnabled(flow_idx, True)
 
     def set_operation_mode_availability(self, static_available: bool, flow_available: bool):
         """Update operation mode indicators in Device Status tab.

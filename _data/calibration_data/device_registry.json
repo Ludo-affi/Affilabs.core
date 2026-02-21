@@ -1,0 +1,85 @@
+{
+  "_schema_version": "1.0",
+  "_description": "Device registry mapping serial numbers to customer, shipping, and calibration metadata. One entry per shipped unit.",
+  "devices": {
+    "FLMT09788": {
+      "serial": "FLMT09788",
+      "device_type": "PicoP4SPR",
+      "detector_model": "USB4000",
+      "status": "shipped",
+      "shipped_date": "2026-02-20",
+      "customer": {
+        "name": "Amit Pandey",
+        "organization": null,
+        "country": "Switzerland",
+        "email": null,
+        "phone": null
+      },
+      "order": {
+        "invoice": "#1325",
+        "po_number": null,
+        "notes": null
+      },
+      "calibration_files": [
+        "device_FLMT09788_20251217.json",
+        "device_FLMT09788_20251218.json",
+        "device_FLMT09788_20260204.json",
+        "device_FLMT09788_20260205.json",
+        "device_FLMT09788_20260206.json",
+        "device_FLMT09788_20260208.json",
+        "device_FLMT09788_20260209.json",
+        "device_FLMT09788_20260210.json",
+        "device_FLMT09788_20260220.json"
+      ],
+      "latest_calibration": "device_FLMT09788_20260220.json",
+      "ml_training_include": true,
+      "notes": null
+    },
+    "FLMT09116": {
+      "serial": "FLMT09116",
+      "device_type": "PicoP4SPR",
+      "detector_model": "USB4000",
+      "status": "unknown",
+      "shipped_date": null,
+      "customer": null,
+      "order": null,
+      "calibration_files": [
+        "device_FLMT09116_20251218.json"
+      ],
+      "latest_calibration": "device_FLMT09116_20251218.json",
+      "ml_training_include": true,
+      "notes": null
+    },
+    "ST00012": {
+      "serial": "ST00012",
+      "device_type": "PicoP4SPR",
+      "detector_model": "USB4000",
+      "status": "unknown",
+      "shipped_date": null,
+      "customer": null,
+      "order": null,
+      "calibration_files": [
+        "device_ST00012_20260126.json"
+      ],
+      "latest_calibration": "device_ST00012_20260126.json",
+      "ml_training_include": true,
+      "notes": null
+    },
+    "ST00014": {
+      "serial": "ST00014",
+      "device_type": "PicoP4SPR",
+      "detector_model": "USB4000",
+      "status": "unknown",
+      "shipped_date": null,
+      "customer": null,
+      "order": null,
+      "calibration_files": [
+        "device_ST00014_20260203.json",
+        "device_ST00014_20260204.json"
+      ],
+      "latest_calibration": "device_ST00014_20260204.json",
+      "ml_training_include": true,
+      "notes": null
+    }
+  }
+}

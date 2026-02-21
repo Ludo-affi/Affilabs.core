@@ -374,7 +374,7 @@ class HardwareEventCoordinator:
         if not ctrl_type:
             error_msg += "• Plug in Pico controller (USB)\n"
         if not has_detector:
-            error_msg += "• Plug in USB4000/PhasePhotonics spectrometer\n"
+            error_msg += "• Plug in detector\n"
 
         error_msg += "• Wait 5 seconds for Windows to detect\n"
         error_msg += "• Press Power button to scan again"

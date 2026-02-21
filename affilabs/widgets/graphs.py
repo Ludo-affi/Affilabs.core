@@ -618,7 +618,10 @@ class SensorgramGraph(GraphicsLayoutWidget):
         self.unit_factor = UNIT_LIST[self.unit]
         self.latest_time = 0
         self.plot.setLabel("left", text=f"λ ({self.unit})")  # Lambda symbol
-
+        
+        # Hide the interactive legend until new data arrives
+        if hasattr(self, 'interactive_spr_legend') and self.interactive_spr_legend:
+            self.interactive_spr_legend.setVisible(False)
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
         self.static[ch].setVisible(bool(flag))
@@ -952,185 +955,62 @@ class SegmentGraph(GraphicsLayoutWidget):
         if show_title:
             self._create_legend_with_checkboxes(title_string)
 
-        # Add Delta SPR overlay widget for real-time biosensing measurements
+        # Delta SPR overlay removed — interactive legend now handles channel value display
         self.delta_overlay = None
-        self._create_delta_overlay()
 
     def _create_legend_with_checkboxes(self, title_string):
-        """Create a custom legend with title and channel checkboxes."""
-        # Create container widget for legend
-        legend_widget = QWidget()
-        legend_layout = QHBoxLayout(legend_widget)
-        legend_layout.setContentsMargins(8, 2, 8, 2)
-        legend_layout.setSpacing(12)
+        """Create interactive SPR legend — parented directly to the graph widget."""
+        try:
+            from affilabs.widgets.interactive_spr_legend import InteractiveSPRLegend
 
-        # Add title label (styled to match the plot title)
-        from PySide6.QtWidgets import QLabel
+            # Parent directly to self (the SegmentGraph QWidget) so it overlays the plot
+            self.interactive_spr_legend = InteractiveSPRLegend(parent=self, title=title_string)
+            self.interactive_spr_legend.setVisible(False)  # Hidden until first data arrives
+            self.interactive_spr_legend.raise_()  # Float above the pyqtgraph canvas
 
-        title_label = QLabel(title_string)
-        title_label.setStyleSheet("""
-            QLabel {
-                color: rgb(30, 30, 30);
-                font-size: 11pt;
-                font-weight: bold;
-                background: transparent;
-            }
-        """)
-        legend_layout.addWidget(title_label)
-
-        # Add spacer to push checkboxes to the right
-        legend_layout.addStretch()
-
-        # Create checkboxes for each channel with appropriate colors
-        for ch in CH_LIST:
-            checkbox = QCheckBox(f"Ch {ch.upper()}")
-            checkbox.setChecked(True)  # All channels visible by default
-
-            # Get color from settings
-            color = settings.ACTIVE_GRAPH_COLORS[ch]
-            if isinstance(color, tuple):
-                color_str = f"rgb({color[0]}, {color[1]}, {color[2]})"
-            else:
-                color_str = color
-
-            checkbox.setStyleSheet(f"""
-                QCheckBox {{
-                    color: {color_str};
-                    font-weight: bold;
-                    font-size: 9pt;
-                    background: transparent;
-                    spacing: 5px;
-                }}
-                QCheckBox::indicator {{
-                    width: 16px;
-                    height: 16px;
-                }}
-            """)
-
-            # Store reference to checkbox
-            self.legend_checkboxes[ch] = checkbox
-
-            # Connect to display_channel_changed method
-            checkbox.stateChanged.connect(
-                lambda state, channel=ch: self.display_channel_changed(
-                    channel,
-                    state == Qt.CheckState.Checked.value,
-                ),
+            # Connect channel visibility toggle signal
+            self.interactive_spr_legend.channel_visibility_changed.connect(
+                self.display_channel_changed
             )
 
-            legend_layout.addWidget(checkbox)
+            # Hide the default pyqtgraph title
+            if hasattr(self.plot, "titleLabel"):
+                self.plot.titleLabel.setVisible(False)
 
-        # Make widget background transparent
-        legend_widget.setStyleSheet("background: transparent;")
-        legend_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Fixed,
-        )
-        legend_widget.setMaximumHeight(40)
+            # Position inside the widget bounds
+            self._position_legend()
 
-        # Replace the title label with our custom legend widget
-        # Hide the default title
-        if hasattr(self.plot, "titleLabel"):
-            self.plot.titleLabel.setVisible(False)
+        except ImportError as e:
+            logger.warning(f"Could not import InteractiveSPRLegend: {e}")
 
-        # Add the legend widget as a graphics proxy to the plot
-        proxy = QGraphicsProxyWidget()
-        proxy.setWidget(legend_widget)
-
-        # Position it at the top of the plot area
-        self.legend_proxy = proxy
-        self.plot.scene().addItem(proxy)
-
-        # Position the legend - will be adjusted in layout
+    def resizeEvent(self, event):
+        """Reposition the overlay legend whenever the widget is resized."""
+        super().resizeEvent(event)
         self._position_legend()
 
     def _position_legend(self):
-        """Position the legend widget at the top of the graph."""
-        if hasattr(self, "legend_proxy"):
-            # Get the view box coordinates
-            vb = self.plot.getViewBox()
-            plot_rect = self.plot.sceneBoundingRect()
-
-            # Position at top-left of the plot area
-            x = plot_rect.left() + 10
-            y = plot_rect.top() + 5
-
-            self.legend_proxy.setPos(x, y)
+        """Pin the interactive legend to the top-left corner inside the graph widget."""
+        if hasattr(self, 'interactive_spr_legend') and self.interactive_spr_legend:
+            legend = self.interactive_spr_legend
+            legend.adjustSize()
+            # Left axis is ~55px wide; offset inward so legend sits inside the data area
+            left_axis_w = 58
+            top_offset = 8
+            legend.move(left_axis_w + 8, top_offset)
+            legend.raise_()
 
     def _create_delta_overlay(self):
-        """Create and position the Delta SPR overlay widget."""
-        try:
-            from affilabs.widgets.delta_spr_overlay import DeltaSPROverlay
-
-            self.delta_overlay = DeltaSPROverlay()
-
-            # Add as graphics proxy to plot
-            overlay_proxy = QGraphicsProxyWidget()
-            overlay_proxy.setWidget(self.delta_overlay)
-
-            self.delta_overlay_proxy = overlay_proxy
-            self.plot.scene().addItem(overlay_proxy)
-
-            # Position in top-right corner
-            self._position_delta_overlay()
-
-        except Exception as e:
-            logger.warning(f"Failed to create Delta SPR overlay: {e}")
-            self.delta_overlay = None
+        """Delta overlay creation disabled — interactive legend now handles display."""
+        self.delta_overlay = None
 
     def _position_delta_overlay(self):
-        """Position Delta SPR overlay in top-right corner of graph."""
-        if hasattr(self, "delta_overlay_proxy") and self.delta_overlay:
-            try:
-                vb = self.plot.getViewBox()
-                plot_rect = self.plot.sceneBoundingRect()
-
-                # Position at top-right with padding
-                x = plot_rect.right() - self.delta_overlay.width() - 15
-                y = plot_rect.top() + 10
-
-                self.delta_overlay_proxy.setPos(x, y)
-            except Exception as e:
-                logger.debug(f"Error positioning delta overlay: {e}")
+        """Delta overlay positioning disabled — interactive legend now handles display."""
+        pass
 
     def update_delta_overlay(self, cycle_type=None, elapsed_sec=None, total_sec=None,
                            start_cursor_pos=None, end_cursor_pos=None):
-        """Update Delta SPR overlay with current cycle information and measurements.
-
-        Args:
-            cycle_type: Type of cycle (Baseline, Association, etc.)
-            elapsed_sec: Elapsed time in seconds
-            total_sec: Total cycle duration in seconds
-            start_cursor_pos: Start cursor time position in seconds
-            end_cursor_pos: End cursor time position in seconds
-        """
-        if not self.delta_overlay:
-            return
-
-        try:
-            # Update cycle info if provided
-            if cycle_type and elapsed_sec is not None and total_sec is not None:
-                self.delta_overlay.update_cycle_info(cycle_type, elapsed_sec, total_sec)
-
-            # Calculate and update delta RU if cursor positions provided
-            if start_cursor_pos is not None and end_cursor_pos is not None:
-                delta_time = abs(end_cursor_pos - start_cursor_pos)
-                self.delta_overlay.update_delta_time(delta_time)
-
-                # Calculate delta RU for each channel (with ±2s averaging window)
-                delta_values = {}
-                for ch in CH_LIST:
-                    if self.plots[ch].isVisible():
-                        start_val = self._get_averaged_value(ch, start_cursor_pos, window_sec=2.0)
-                        end_val = self._get_averaged_value(ch, end_cursor_pos, window_sec=2.0)
-                        if start_val is not None and end_val is not None:
-                            delta_values[ch] = end_val - start_val
-
-                if delta_values:
-                    self.delta_overlay.update_delta_ru(delta_values)
-
-        except Exception as e:
-            logger.debug(f"Error updating delta overlay: {e}")
+        """Update Delta SPR overlay disabled — interactive legend now handles display."""
+        pass
 
     def _get_averaged_value(self, channel, time_pos, window_sec=2.0):
         """Get averaged value at time position using ±window_sec averaging.
@@ -1236,6 +1116,32 @@ class SegmentGraph(GraphicsLayoutWidget):
                         )
         except Exception as e:
             logger.debug(f"Error updating SegmentGraph colors: {e}")
+
+    def update_interactive_legend_values(self, delta_values: dict):
+        """Update interactive SPR legend with current delta RU values.
+        
+        Args:
+            delta_values: Dictionary with keys 'a', 'b', 'c', 'd' containing RU values
+        """
+        if hasattr(self, 'interactive_spr_legend') and self.interactive_spr_legend:
+            try:
+                self.interactive_spr_legend.setVisible(True)  # Show on first data
+                self.interactive_spr_legend.update_values(delta_values)
+            except Exception as e:
+                logger.debug(f"Error updating interactive legend values: {e}")
+
+    def update_interactive_legend_iq_color(self, channel: str, hex_color: str):
+        """Update IQ dot color in the interactive legend.
+        
+        Args:
+            channel: Channel letter ('a', 'b', 'c', 'd', or uppercase)
+            hex_color: Hex color string (e.g., '#34C759')
+        """
+        if hasattr(self, 'interactive_spr_legend') and self.interactive_spr_legend:
+            try:
+                self.interactive_spr_legend.set_iq_color(channel.lower(), hex_color)
+            except Exception as e:
+                logger.debug(f"Error updating IQ color in legend: {e}")
 
     def en_dissoc_cursors(self, en):
         self.dissoc_cursor_en = bool(en)

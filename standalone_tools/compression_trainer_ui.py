@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -628,14 +629,17 @@ class CompressionGauge(QWidget):
 def _card(child_layout: QVBoxLayout | QHBoxLayout) -> QFrame:
     """Wrap a layout in a white rounded card with subtle shadow."""
     card = QFrame()
+    card.setObjectName("affi_card")
     card.setLayout(child_layout)
+    # Use #affi_card to avoid cascading to any nested QFrame children
     card.setStyleSheet(
-        f"QFrame {{ background: {COL_CARD}; border-radius: 14px; }}"
+        f"QFrame#affi_card {{ background: {COL_CARD}; border-radius: 14px; "
+        f"border: none; }}"
     )
     shadow = QGraphicsDropShadowEffect()
-    shadow.setBlurRadius(24)
-    shadow.setOffset(0, 4)
-    shadow.setColor(QColor(0, 0, 0, 25))
+    shadow.setBlurRadius(20)
+    shadow.setOffset(0, 3)
+    shadow.setColor(QColor(0, 0, 0, 20))
     card.setGraphicsEffect(shadow)
     return card
 
@@ -753,7 +757,8 @@ class CompressionTrainerWindow(QMainWindow):
         self.cfg = cfg or TrainerConfig()
         self.setWindowTitle("AffiLabs  \u2014  Compression Assistant")
         self.setGeometry(180, 80, 1060, 720)
-        self.setStyleSheet(f"background: {COL_BG};")
+        self.setMinimumSize(860, 640)
+        self.setStyleSheet(f"QMainWindow {{ background: {COL_BG}; }}")
 
         # Use pre-connected hardware if provided, else standalone link
         if hardware_mgr is not None:
@@ -811,6 +816,7 @@ class CompressionTrainerWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         central = QWidget()
+        central.setStyleSheet(f"background: {COL_BG};")
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
         root.setContentsMargins(24, 16, 24, 12)
@@ -854,21 +860,25 @@ class CompressionTrainerWindow(QMainWindow):
 
         self.step_badge = QLabel("")
         self.step_badge.setFixedHeight(24)
-        self.step_badge.setFixedWidth(86)
+        self.step_badge.setMinimumWidth(100)
+        self.step_badge.setMaximumWidth(140)
         self.step_badge.setStyleSheet(
             f"font-size: 11px; font-weight: 700; color: white; "
             f"background: {COL_PURPLE}; border-radius: 12px; "
-            f"padding: 2px 12px; font-family: {FONT};"
+            f"padding: 2px 14px; font-family: {FONT}; border: none;"
         )
         instr_inner.addWidget(self.step_badge)
 
         self.instruction = QLabel("")
         self.instruction.setWordWrap(True)
         self.instruction.setStyleSheet(
-            f"font-size: 16px; font-weight: 400; color: {COL_TEXT}; "
-            f"font-family: {FONT}; background: transparent;"
+            f"font-size: 14px; font-weight: 400; color: {COL_TEXT}; "
+            f"font-family: {FONT}; background: transparent; border: none;"
         )
-        self.instruction.setMinimumHeight(70)
+        self.instruction.setMinimumHeight(108)
+        self.instruction.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         instr_inner.addWidget(self.instruction)
 
         # Compression range settings (collapsible, visible only in Step 2)
@@ -989,10 +999,10 @@ class CompressionTrainerWindow(QMainWindow):
         # Big feedback label
         self.feedback = QLabel("")
         self.feedback.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.feedback.setMinimumHeight(60)
+        self.feedback.setFixedHeight(56)
         self.feedback.setStyleSheet(
-            f"font-size: 40px; font-weight: 800; color: {COL_SUBTLE}; "
-            f"font-family: {FONT}; background: transparent;"
+            f"font-size: 36px; font-weight: 800; color: {COL_SUBTLE}; "
+            f"font-family: {FONT}; background: transparent; border: none;"
         )
         left.addWidget(self.feedback)
 
@@ -1001,8 +1011,8 @@ class CompressionTrainerWindow(QMainWindow):
         self.live_plot.setLabel("left", "Intensity")
         self.live_plot.setLabel("bottom", "Wavelength (nm)")
         self.live_plot.showGrid(x=True, y=True, alpha=0.15)
-        self.live_plot.setFixedHeight(160)
-        self.live_plot.setBackground("#FAFAFA")
+        self.live_plot.setFixedHeight(140)
+        self.live_plot.setBackground(COL_CARD)
         self.live_curve = self.live_plot.plot(
             [], [], pen=pg.mkPen("#5856D6", width=1.5),
         )
@@ -1013,8 +1023,8 @@ class CompressionTrainerWindow(QMainWindow):
         self.evo_plot.setLabel("left", "mid / low ratio")
         self.evo_plot.setLabel("bottom", "Samples")
         self.evo_plot.showGrid(x=True, y=True, alpha=0.15)
-        self.evo_plot.setFixedHeight(160)
-        self.evo_plot.setBackground("#FAFAFA")
+        self.evo_plot.setFixedHeight(140)
+        self.evo_plot.setBackground(COL_CARD)
         self.evo_curve = self.evo_plot.plot(
             [], [], pen=pg.mkPen(COL_RED, width=2),
         )
@@ -1195,8 +1205,8 @@ class CompressionTrainerWindow(QMainWindow):
             self.skip_btn.hide()
             self.feedback.setText("TIGHTEN SLOWLY")
             self.feedback.setStyleSheet(
-                f"font-size: 40px; font-weight: 800; color: {COL_ORANGE}; "
-                f"font-family: {FONT}; background: transparent;"
+                f"font-size: 36px; font-weight: 800; color: {COL_ORANGE}; "
+                f"font-family: {FONT}; background: transparent; border: none;"
             )
 
         elif s == STAGE_QC_LEAK_CHECK:
@@ -1223,8 +1233,8 @@ class CompressionTrainerWindow(QMainWindow):
                 self.skip_btn.hide()  # Hide skip button during monitoring
                 self.feedback.setText("Monitoring...")
                 self.feedback.setStyleSheet(
-                    f"font-size: 40px; font-weight: 800; color: {COL_ORANGE}; "
-                    f"font-family: {FONT}; background: transparent;"
+                    f"font-size: 36px; font-weight: 800; color: {COL_ORANGE}; "
+                    f"font-family: {FONT}; background: transparent; border: none;"
                 )
             else:
                 if has_pump:
@@ -1260,15 +1270,15 @@ class CompressionTrainerWindow(QMainWindow):
             self.skip_btn.hide()
             self.feedback.setText("\u2713  DONE")
             self.feedback.setStyleSheet(
-                f"font-size: 40px; font-weight: 800; color: {COL_GREEN}; "
-                f"font-family: {FONT}; background: transparent;"
+                f"font-size: 36px; font-weight: 800; color: {COL_GREEN}; "
+                f"font-family: {FONT}; background: transparent; border: none;"
             )
 
     def _set_badge_color(self, col: str) -> None:
         self.step_badge.setStyleSheet(
             f"font-size: 11px; font-weight: 700; color: white; "
-            f"background: {col}; border-radius: 12px; "
-            f"padding: 2px 12px; font-family: {FONT};"
+            f"background: {col}; border-radius: 12px; border: none; "
+            f"padding: 2px 14px; font-family: {FONT};"
         )
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1576,8 +1586,8 @@ class CompressionTrainerWindow(QMainWindow):
                 self._qc_passed = False
                 self.feedback.setText("\u26a0  LEAK DETECTED")
                 self.feedback.setStyleSheet(
-                    f"font-size: 40px; font-weight: 800; color: {COL_RED}; "
-                    f"font-family: {FONT}; background: transparent;"
+                    f"font-size: 36px; font-weight: 800; color: {COL_RED}; "
+                    f"font-family: {FONT}; background: transparent; border: none;"
                 )
                 self.action_btn.setText("Retry Leak Check")
                 self.action_btn.setEnabled(True)
@@ -1595,8 +1605,8 @@ class CompressionTrainerWindow(QMainWindow):
                 self._qc_passed = True
                 self.feedback.setText("\u2713  No Leak")
                 self.feedback.setStyleSheet(
-                    f"font-size: 40px; font-weight: 800; color: {COL_GREEN}; "
-                    f"font-family: {FONT}; background: transparent;"
+                    f"font-size: 36px; font-weight: 800; color: {COL_GREEN}; "
+                    f"font-family: {FONT}; background: transparent; border: none;"
                 )
                 self.action_btn.setText("Proceed to Experiment")
                 self.action_btn.setEnabled(True)
@@ -1695,20 +1705,20 @@ class CompressionTrainerWindow(QMainWindow):
         if zone == "tighten":
             self.feedback.setText("TIGHTEN")
             self.feedback.setStyleSheet(
-                f"font-size: 40px; font-weight: 800; color: {COL_ORANGE}; "
-                f"font-family: {FONT}; background: transparent;"
+                f"font-size: 36px; font-weight: 800; color: {COL_ORANGE}; "
+                f"font-family: {FONT}; background: transparent; border: none;"
             )
         elif zone == "sweet":
             self.feedback.setText("\u25cf  SWEET SPOT  \u25cf")
             self.feedback.setStyleSheet(
-                f"font-size: 40px; font-weight: 800; color: {COL_GREEN}; "
-                f"font-family: {FONT}; background: transparent;"
+                f"font-size: 36px; font-weight: 800; color: {COL_GREEN}; "
+                f"font-family: {FONT}; background: transparent; border: none;"
             )
         elif zone == "backoff":
             self.feedback.setText("\u26a0  LOOSEN UP!")
             self.feedback.setStyleSheet(
-                f"font-size: 40px; font-weight: 800; color: {COL_RED}; "
-                f"font-family: {FONT}; background: transparent;"
+                f"font-size: 36px; font-weight: 800; color: {COL_RED}; "
+                f"font-family: {FONT}; background: transparent; border: none;"
             )
 
     # ══════════════════════════════════════════════════════════════════════

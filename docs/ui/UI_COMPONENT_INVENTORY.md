@@ -87,15 +87,33 @@ Managed by `QStackedWidget` (`content_stack`). Navigation via `NavigationPresent
 - Injection flags render as vertical markers — added by `InjectionCoordinator`
 - Cycle shading (colored background regions) — added by `SensogramPresenter`
 
+**Display row** (below title bar; `timing_row` layout; only present in the Active Cycle graph pane, `show_delta_spr=True`):
+
+| Widget | Attribute | Purpose | Visibility |
+|--------|-----------|---------|------------|
+| "Display:" label | — | Section label | Always |
+| Channel toggles A/B/C/D | `channel_toggles[ch]` | Toggle visibility on both graphs | Always |
+| Notes button | `cycle_note_btn` | Open cycle notes floating popup | **Always visible** (changed from v2.0.4 where it was hidden until a cycle started) |
+
+**Active Cycle graph overlay widgets** (child `QWidget`s of `cycle_of_interest_graph` PlotWidget, positioned absolutely):
+
+| Widget | Class | Attribute | Position | Visibility |
+|--------|-------|-----------|----------|------------|
+| IQ/value legend | `InteractiveSPRLegend` | `plot.interactive_spr_legend` | Top-left `(62, 10)` | Always visible; IQ `●` dots update live from `ui_update_coordinator._update_sensor_iq_displays()` |
+| Cycle status | `CycleStatusOverlay` | `plot.cycle_status_overlay` | Top-right (auto right-anchored) | Hidden until cycle starts; `transparent_for_mouse_events=True` — does not block graph interaction |
+
+`CycleStatusOverlay` shows: cycle type, cycle index (`N / total`), countdown `MM:SS` (turns orange at ≤10 s), and next-cycle label. Hidden by `_on_cycle_completed()`. Re-anchors to right edge on every 1-second tick to handle window resize.
+
 **Graph header widgets** (row above `full_timeline_graph`, built by `_create_graph_header()`):
 
 | Widget | Attribute | Purpose |
 |--------|-----------|---------|
 | Channel toggles A/B/C/D | `channel_toggles[ch]` | Show/hide channels; checkable |
-| Signal IQ dots | `sensor_iq_{ch}_diag` / `sensor_iq_badges[ch]` | Colored 7×7px square overlaid on each channel button; updated by `AL_UIUpdateCoordinator` |
 | Baseline stability badge | `stability_badge` | Grey "Stabilizing…" → green "Ready to inject ✓" when all active channels p2p ≤ 0.15 nm for 30 samples; hidden when not acquiring |
 | Live Data toggle | `live_data_btn` | Enables/disables auto-scroll of sensorgram cursor |
 | Clear Graph button | `clear_graph_btn` | Resets all graph data |
+
+> **Removed (v2.0.5)**: Signal IQ dots that were overlaid on the A/B/C/D channel toggle buttons (`sensor_iq_badges[ch]`). IQ quality is now shown via the colored `●` dots inside `InteractiveSPRLegend` in the Active Cycle graph.
 
 **Baseline hint label** (`_baseline_hint_label`): `QLabel` overlaid on `full_timeline_graph`, bottom-right corner, transparent to mouse events. Text: "Flat baseline = instrument ready for injection". Shown on acquisition start, hidden on first injection flag placed.
 
@@ -328,6 +346,23 @@ Show/hide: shown by `_update_cycle_display()` on first tick; hidden by `_on_cycl
 - Real-time biosensing measurement display overlay on Live graph
 - Visible only when alignment reference is set
 - Shows current Δλ (nm) per channel
+
+### `InteractiveSPRLegend`
+**File**: [`affilabs/widgets/interactive_spr_legend.py`](../../affilabs/widgets/interactive_spr_legend.py)
+
+- `QWidget` child of `cycle_of_interest_graph` PlotWidget; positioned top-left `(62, 10)` via `_position_active_cycle_legend()`
+- Shows per-channel `●` IQ dot (live color from `ui_update_coordinator`) + Δ SPR value + click-to-toggle visibility
+- Always visible (set on startup, not hidden at idle)
+- `set_iq_color(channel, hex_color)` — called by coordinator on each IQ update
+- `update_values(delta_values: dict)` — called by `_acquisition_mixin._update_delta_display()`
+
+### `CycleStatusOverlay`
+**File**: [`affilabs/widgets/cycle_status_overlay.py`](../../affilabs/widgets/cycle_status_overlay.py)
+
+- `QWidget` child of `cycle_of_interest_graph` PlotWidget; positioned top-right (auto right-anchored with 10px margin on every `update_status()` call)
+- `WA_TransparentForMouseEvents=True` — never blocks graph interaction
+- **Hidden at startup**; shown on first `update_status()` call from `_update_cycle_display()`; hidden by `clear()` from `_on_cycle_completed()`
+- Displays: cycle type label, "N / total" index, `MM:SS` countdown (blue → orange at ≤10 s), optional next-cycle name
 
 ### `SparkHelpWidget`
 **File**: [`affilabs/widgets/spark_help_widget.py`](../../affilabs/widgets/spark_help_widget.py)

@@ -759,11 +759,24 @@ def run_startup_calibration(
             max_pct = (max_signal / target) * 100
             min_pct = (min_signal / target) * 100
 
-            # Accept if: max > 75% AND min > 50% (practical convergence)
-            if max_pct >= 75.0 and min_pct >= 50.0:
+            # Accept if: max > 75% AND min > 50% AND no channel is already at/near saturation.
+            # If any channel's signal is ≥97% of saturation, averaging N scans for the reference
+            # will push it over the edge — reject partial convergence in that case.
+            sat_threshold = detector_params.saturation_threshold
+            any_near_sat = any(
+                sig >= sat_threshold * 0.97
+                for sig in s_final_signals.values()
+            )
+            if max_pct >= 75.0 and min_pct >= 50.0 and not any_near_sat:
                 logger.warning("⚠️  Accepting partial S-pol convergence (practical tolerance)")
                 logger.warning(f"   Signal range: {min_pct:.1f}% - {max_pct:.1f}% of target")
                 s_success = True  # Override failure - this is good enough for calibration
+            elif any_near_sat:
+                logger.warning(
+                    f"   Partial convergence rejected: channel(s) near saturation "
+                    f"({max_pct:.1f}% of target, max={max_signal:.0f}/{sat_threshold} counts). "
+                    "Reference capture would saturate."
+                )
 
         if not s_success:
             # Provide detailed error message aligned with ACTUAL target percent used in convergence
@@ -848,6 +861,27 @@ def run_startup_calibration(
         # Use final LED intensities from convergence engine
         # These are the converged values, NOT the initial values
         s_mode_leds = s_converged_leds if s_converged_leds else initial_leds
+
+        # Safety pass: back off any LED whose single-scan signal is already at risk of saturating
+        # during multi-scan reference capture (N scans averaged = same peak counts, but transient
+        # detector noise can tip an already-high signal over the threshold).
+        if s_final_signals:
+            sat_threshold = detector_params.saturation_threshold
+            for ch in ch_list:
+                sig = s_final_signals.get(ch, 0)
+                if sig >= sat_threshold * 0.95:  # within 5% of saturation
+                    old_intensity = s_mode_leds.get(ch, 0)
+                    # Scale LED down proportionally to bring signal to ~85% of saturation
+                    safe_target = sat_threshold * 0.85
+                    scale = safe_target / sig if sig > 0 else 0.85
+                    new_intensity = max(1, int(old_intensity * scale))
+                    s_mode_leds = dict(s_mode_leds)  # make mutable copy if needed
+                    s_mode_leds[ch] = new_intensity
+                    logger.warning(
+                        f"   Channel {ch.upper()} near saturation ({sig:.0f}/{sat_threshold} counts): "
+                        f"backing off LED {old_intensity} -> {new_intensity} (scale={scale:.2f})"
+                    )
+
         result.s_mode_intensity = s_mode_leds
         result.s_integration_time = s_integration_time
 

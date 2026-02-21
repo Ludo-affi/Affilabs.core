@@ -147,6 +147,16 @@ class QtWarningFilter:
 # Install exception hook
 sys.excepthook = qt_exception_handler
 
+# Suppress seabreeze USBTransportHandle.__del__ noise on Windows.
+# libusb_reset() is not supported on Windows with WinUSB/libusb1 — safely ignorable.
+def _unraisable_hook(unraisable):
+    if unraisable.exc_type is NotImplementedError:
+        obj_str = str(unraisable.object)
+        if "seabreeze" in obj_str or "USBTransportHandle" in obj_str:
+            return  # swallow
+    sys.__unraisablehook__(unraisable)
+sys.unraisablehook = _unraisable_hook
+
 # Install stderr filter (unless verbose mode)
 if not _env_flag("AFFILABS_VERBOSE_QT", default=False):
     sys.stderr = QtWarningFilter(sys.stderr)
@@ -903,13 +913,24 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             # Share centralized user profile manager with sidebar
             self.main_window.sidebar.user_profile_manager = self.user_profile_manager
 
-        # Wire up elapsed time getter for pause markers
+        # Wire up elapsed time getter for pause markers + footer clocks
         def get_elapsed_time():
             if not self.clock.experiment_started:
                 return None
             return self.clock.raw_elapsed_now()
 
+        def get_recording_elapsed():
+            """Seconds since recording started, or None if not recording."""
+            if not self.clock.experiment_started:
+                return None
+            raw = self.clock.raw_elapsed_now()
+            rec_offset = self.clock._recording_offset
+            if rec_offset <= 0:
+                return None
+            return max(0.0, raw - rec_offset)
+
         self.main_window._get_elapsed_time = get_elapsed_time
+        self.main_window._get_recording_elapsed = get_recording_elapsed
 
         # Store app reference for CalibrationManager to access calibration methods
         self.main_window.app = self
@@ -1026,6 +1047,15 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             logger.debug("✓ Coordinators (5 loaded)")
             logger.warning("  Running without UI coordinators (compatibility mode)")
 
+        # Guidance coordinator — adaptive hints based on user experience level (Phase 6)
+        try:
+            from affilabs.coordinators.guidance_coordinator import GuidanceCoordinator
+            self.guidance_coordinator = GuidanceCoordinator(self)
+            logger.debug("✓ GuidanceCoordinator")
+        except Exception as _gc_err:
+            logger.warning(f"GuidanceCoordinator not loaded: {_gc_err}")
+            self.guidance_coordinator = None
+
     def _init_viewmodels(self):
         """Initialize ViewModels (UI-aware, require coordinators and services)."""
         logger.debug("Initializing viewmodels...")
@@ -1101,6 +1131,173 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         self._connect_ui_event_signals()
 
         logger.debug("✓ All signals connected")
+
+    def _show_user_selector_if_needed(self) -> None:
+        """Show a compact user-selector modal if multiple profiles exist.
+
+        Shown before the window becomes interactive so the guidance level is
+        known before any hardware / UI state transitions fire.
+        Skipped silently when only one profile exists (preserves current behaviour).
+        """
+        try:
+            um = self.user_profile_manager
+            profiles = um.get_profiles()
+            if len(profiles) <= 1:
+                # Show greeting for single user
+                current_user = um.get_current_user()
+                if current_user:
+                    self._show_user_greeting(current_user)
+                return
+
+            from PySide6.QtCore import Qt
+            from PySide6.QtWidgets import (
+                QComboBox,
+                QDialog,
+                QLabel,
+                QPushButton,
+                QVBoxLayout,
+            )
+
+            dlg = QDialog(self.main_window)
+            dlg.setWindowTitle("Who's running today's experiment?")
+            dlg.setWindowFlags(
+                Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint
+            )
+            dlg.setFixedWidth(320)
+            dlg.setStyleSheet(
+                "QDialog {"
+                "  background: #FFFFFF;"
+                "  border: 1px solid #D1D1D6;"
+                "  border-radius: 12px;"
+                "}"
+            )
+
+            layout = QVBoxLayout(dlg)
+            layout.setContentsMargins(24, 20, 24, 20)
+            layout.setSpacing(12)
+
+            lbl = QLabel("Who's running today's experiment?")
+            lbl.setWordWrap(True)
+            lbl.setStyleSheet("font-size: 14px; font-weight: 600; color: #1D1D1F;")
+            layout.addWidget(lbl)
+
+            combo = QComboBox()
+            combo.addItems(profiles)
+            combo.addItem("+ New profile (rename later)")  # creates a placeholder user
+            current_idx = combo.findText(um.get_current_user())
+            if current_idx >= 0:
+                combo.setCurrentIndex(current_idx)
+            combo.setFixedHeight(36)
+            combo.setStyleSheet(
+                "QComboBox {"
+                "  background: #F5F5F7; border: 1px solid #D1D1D6;"
+                "  border-radius: 8px; padding: 4px 10px;"
+                "  font-size: 13px; color: #1D1D1F;"
+                "}"
+                "QComboBox::drop-down { border: none; }"
+                "QComboBox QAbstractItemView {"
+                "  background: #FFFFFF; color: #1D1D1F;"
+                "  selection-background-color: #E5E5EA;"
+                "}"
+            )
+            layout.addWidget(combo)
+
+            btn = QPushButton("Start")
+            btn.setFixedHeight(40)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #2E30E3; color: white; border: none;"
+                "  border-radius: 8px; font-size: 14px; font-weight: 600;"
+                "}"
+                "QPushButton:hover { background: #1E20C3; }"
+            )
+            btn.clicked.connect(dlg.accept)
+            layout.addWidget(btn)
+
+            dlg.exec()
+
+            selected = combo.currentText()
+            if selected == "+ New profile (rename later)":
+                # Create a unique placeholder name; user renames in Settings > Manage Users
+                base = "New User"
+                candidate = base
+                n = 2
+                while candidate in profiles:
+                    candidate = f"{base} {n}"
+                    n += 1
+                um.add_user(candidate)
+                um.set_current_user(candidate)
+                self._show_user_greeting(candidate)
+            elif selected and selected != um.get_current_user():
+                um.set_current_user(selected)
+                self._show_user_greeting(selected)
+                # GuidanceCoordinator._on_user_changed fires automatically via callback
+        except Exception as _sel_err:
+            logger.warning(f"User selector skipped: {_sel_err}")
+
+    def _show_user_greeting(self, username: str) -> None:
+        """Show a welcome greeting for the selected user.
+        
+        Args:
+            username: The name of the user who was selected
+        """
+        try:
+            from PySide6.QtCore import QTimer, Qt, QRect
+            from PySide6.QtWidgets import QLabel
+            from PySide6.QtGui import QFont
+            
+            # Delay to ensure main window is fully rendered
+            def show_toast():
+                if not self.main_window:
+                    return
+                    
+                # Special greeting for default user
+                if username.lower() in ["default", "default user"]:
+                    greeting = "👋 Welcome back to Affilabs.core!"
+                else:
+                    greeting = f"👋 Hello, {username}!"
+                
+                # Create toast notification as top-level window (no parent)
+                toast = QLabel(greeting)
+                toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                font = QFont()
+                font.setPointSize(13)
+                font.setWeight(QFont.Weight.Bold)
+                toast.setFont(font)
+                toast.setStyleSheet(
+                    "QLabel {"
+                    "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
+                    "              stop:0 rgba(46,48,227,0.95), stop:1 rgba(90,200,250,0.95));"
+                    "  color: white;"
+                    "  border-radius: 8px;"
+                    "  padding: 14px 28px;"
+                    "  border: 1px solid rgba(255,255,255,0.2);"
+                    "}"
+                )
+                toast.adjustSize()
+                
+                # Position at top-center of main window
+                try:
+                    main_geometry = self.main_window.geometry()
+                    x = main_geometry.x() + (main_geometry.width() - toast.width()) // 2
+                    y = main_geometry.y() + 100  # Below transport bar
+                    toast.move(x, y)
+                except Exception:
+                    pass
+                
+                # Show toast
+                toast.show()
+                toast.raise_()
+                
+                # Auto-hide after 3 seconds
+                QTimer.singleShot(3000, lambda: (toast.hide(), toast.deleteLater()) if toast else None)
+            
+            # Wait 800ms for window to be fully rendered and visible
+            QTimer.singleShot(800, show_toast)
+            
+        except Exception as e:
+            logger.debug(f"Could not show user greeting: {e}")
 
     def _finalize_and_show(self):
         """Finalize initialization and show main window."""
@@ -1346,6 +1543,27 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         self.recording_mgr.recording_stopped.connect(self._on_recording_stopped)
         self.recording_mgr.recording_error.connect(self._on_recording_error)
         self.recording_mgr.event_logged.connect(self._on_event_logged)
+
+        # === GUIDANCE COORDINATOR SIGNALS (Phase 6) ===
+        if getattr(self, 'guidance_coordinator', None):
+            _gc = self.guidance_coordinator
+            self.hardware_mgr.hardware_connected.connect(
+                _gc.on_hardware_connected, Qt.QueuedConnection
+            )
+            self.calibration.calibration_complete.connect(
+                _gc.on_calibration_complete, Qt.QueuedConnection
+            )
+            self.data_mgr.acquisition_started.connect(
+                _gc.on_acquisition_started, Qt.QueuedConnection
+            )
+            self.recording_mgr.recording_started.connect(
+                _gc.on_recording_started, Qt.QueuedConnection
+            )
+            if hasattr(self, 'injection_coordinator') and self.injection_coordinator:
+                self.injection_coordinator.injection_flag_requested.connect(
+                    _gc.on_injection_flag, Qt.QueuedConnection
+                )
+            logger.debug("✓ GuidanceCoordinator signals wired")
 
         # === KINETIC MANAGER SIGNALS ===
         self.kinetic_mgr.pump_initialized.connect(self._on_pump_initialized)
@@ -2491,6 +2709,10 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
                             "QPushButton:!checked { background: rgba(0, 0, 0, 0.06); color: #86868B; }"
                         )
 
+        # Notify UI coordinator so pill channel-letter colors match active palette
+        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+            self.ui_updates.set_colorblind_mode(checked)
+
         logger.info("[OK] Graph colors updated successfully")
 
 
@@ -3595,7 +3817,11 @@ def main():
         """Close splash screen after deferred loading completes."""
         if hasattr(app, "splash_screen") and app.splash_screen.isVisible():
             app.update_splash_message("Ready!")
-            QTimer.singleShot(300, lambda: app.splash_screen.finish(app.main_window))
+            def _after_splash():
+                app.splash_screen.finish(app.main_window)
+                # Phase 6: user selector shown immediately after splash dismisses
+                app._show_user_selector_if_needed()
+            QTimer.singleShot(300, _after_splash)
 
     # Close splash after at least 3 seconds for branding visibility
     QTimer.singleShot(3000, close_splash)

@@ -112,7 +112,7 @@ A user who cannot immediately identify which stage they are in — and what to d
 - The Live tab should have a brief collapsible "What am I seeing?" explainer panel — hidden by default, dismissable permanently
 
 **Implemented**:
-- ✅ Signal IQ dots (colored squares) on A/B/C/D channel toggle buttons — zone + FWHM + dip depth + baseline noise (`sensor_iq.py`, `spectrum_helpers.py`, `ui_update_coordinator.py`)
+- ✅ **Signal IQ dots** in `InteractiveSPRLegend` (top-left overlay of Active Cycle graph) — colored `●` per channel showing live zone + FWHM + dip depth quality. Updated from `ui_update_coordinator._update_sensor_iq_displays()` → `legend.set_iq_color()`. (Removed from channel toggle buttons in v2.0.5; consolidated into the legend.)
 - ✅ "Flat baseline = instrument ready for injection" label on timeline graph; hides on first injection (`affilabs_core_ui.py:_baseline_hint_label`, `flag_manager.py`)
 - ✅ **Active Cycle Card** in Method tab sidebar — shows cycle type badge, cycle index, countdown MM:SS, next cycle preview, total experiment time remaining; visible only while a cycle is running (`AL_method_builder.py`, `mixins/_cycle_mixin.py`)
 - ✅ Queue table (`QueueSummaryWidget`) visible at all times in Method tab; expands to fill available space with no cap (`AL_method_builder.py`)
@@ -146,6 +146,7 @@ A user who cannot immediately identify which stage they are in — and what to d
 - ✅ Injection flag marker flashes on placement (3-step size pulse at 120ms intervals) (`flag_manager.py`)
 - ✅ One-time tooltip "SPR signals decrease on binding — a drop means your sample is interacting with the sensor" on first injection ever (`flag_manager.py`)
 - ✅ **Active Cycle Card** in sidebar shows current cycle type, countdown, and next cycle — partial coverage of "method step progress" for P4PRO/PROPLUS (`mixins/_cycle_mixin.py:_update_cycle_display`)
+- ✅ **Cycle Status Overlay** embedded in the Active Cycle graph (top-right chip, `WA_TransparentForMouseEvents`) — shows cycle type, "N / total" index, `MM:SS` countdown (turns orange at ≤10 s), and next-cycle name. No separate popup or sidebar required. (`affilabs/widgets/cycle_status_overlay.py`, `mixins/_cycle_mixin.py:_update_cycle_display`)
 - ⬜ Prominent "Mark Injection" button for P4SPR — not yet built
 - ⬜ Full P4PRO/PROPLUS method step status (step X of Y, next: "Wait 120s") — not yet built
 

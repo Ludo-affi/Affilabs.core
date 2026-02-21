@@ -135,6 +135,7 @@ def train_led_model(
 
     # Train model at each integration time (with potential restart for ultra-sensitive devices)
     max_training_attempts = 2  # Allow one restart if saturation detected
+    already_ultra_sensitive = False  # Prevent double-trigger on short integration times
 
     for attempt in range(max_training_attempts):
         total_measurements = len(integration_times) * 4 * len(base_intensities)
@@ -284,9 +285,9 @@ def train_led_model(
                         raise ModelTrainingError(msg)
 
             # Check if we should switch to shorter integration times
-            # If 50%+ of LEDs saturated early at ≥20ms, device is ultra-sensitive
-            # Lower threshold to 1 LED (25%) to catch ultra-bright single channels
-            if time_ms >= 20 and saturation_count >= 1 and not needs_shorter_times:
+            # If any LED saturated early at ≥10ms, device is ultra-sensitive
+            # Threshold at 10ms: detectors saturating at 10ms will never work at 20ms+
+            if time_ms >= 10 and saturation_count >= 1 and not needs_shorter_times and not already_ultra_sensitive:
                 logger.warning("")
                 logger.warning("=" * 80)
                 logger.warning("⚠ ULTRA-SENSITIVE DEVICE DETECTED:")
@@ -294,13 +295,16 @@ def train_led_model(
                     f"  {saturation_count}/{total_leds} LED(s) saturated at low intensities with {time_ms}ms"
                 )
                 logger.warning("  Switching to shorter integration times: [5, 10, 15]ms")
+                logger.warning("  Switching to lower intensities: [10, 20, 30, 40, 60]")
                 logger.warning("=" * 80)
                 logger.warning("")
 
-                # Clear existing models and restart with shorter times
+                # Clear existing models and restart with shorter times and lower intensities
                 led_models = {"A": [], "B": [], "C": [], "D": []}
                 integration_times = [5, 10, 15]
+                base_intensities = [10, 20, 30, 40, 60]  # Lower intensities for ultra-sensitive devices
                 needs_shorter_times = True
+                already_ultra_sensitive = True
 
                 # Dark current already measured at top - no need to re-measure!
                 logger.info(
@@ -466,7 +470,7 @@ def run_oem_model_training_workflow(
             import sys
             from pathlib import Path as PathLib
 
-            servo_cal_dir = PathLib(__file__).parent.parent.parent / "servo_polarizer_calibration"
+            servo_cal_dir = PathLib(__file__).parent.parent.parent / "calibrations" / "servo_polarizer"
             if str(servo_cal_dir) not in sys.path:
                 sys.path.insert(0, str(servo_cal_dir))
 
@@ -506,9 +510,10 @@ def run_oem_model_training_workflow(
                 logger.info("\n[OK] Servo polarizer calibration complete")
 
             except ImportError as e:
-                logger.warning(f"⚠️  Could not import servo calibration module: {e}")
-                logger.warning("Servo calibration will be skipped")
-                logger.warning("Ensure device_config.json has valid S/P positions")
+                logger.error(f"❌ Could not import servo calibration module: {e}")
+                logger.error(f"Expected path: {servo_cal_dir}")
+                logger.error("Cannot proceed without servo calibration - fix the path and retry")
+                return False
             except Exception as e:
                 logger.error(f"❌ Servo calibration crashed with error: {e}")
                 logger.exception("Full traceback:")

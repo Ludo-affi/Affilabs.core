@@ -39,6 +39,7 @@ class UserProfileManager:
         self.config_file = Path(config_file)
         self.profiles: List[str] = []
         self.current_user: str = ""
+        self.on_user_changed = None  # Optional callback: fn(username: str) — set by GuidanceCoordinator
         self._load_profiles()
 
     def _load_profiles(self) -> None:
@@ -111,6 +112,12 @@ class UserProfileManager:
             self._update_user_data_field(username, "last_used", datetime.now(timezone.utc).isoformat())
             self._save_profiles()
             logger.info(f"Current user set to: {username}")
+            # Notify GuidanceCoordinator (plain callback avoids QObject dependency)
+            if callable(self.on_user_changed):
+                try:
+                    self.on_user_changed(username)
+                except Exception as _cb_err:
+                    logger.warning(f"on_user_changed callback raised: {_cb_err}")
         else:
             logger.warning(f"User '{username}' not found in profiles")
 
@@ -231,6 +238,7 @@ class UserProfileManager:
                 user_data[username] = {
                     "experiment_count": 0,
                     "compression_training": {"completed": False, "score": None, "date": None},
+                    "hints_shown": {},
                     "created_date": datetime.now(timezone.utc).isoformat(),
                     "last_used": None,
                 }
@@ -518,3 +526,82 @@ class UserProfileManager:
         Training requirement has been removed — always returns False.
         """
         return False
+
+    # ------------------------------------------------------------------
+    # Adaptive Guidance — Phase 6
+    # ------------------------------------------------------------------
+
+    def get_guidance_level(self, username: str = None) -> str:
+        """Return guidance level for the given user.
+
+        Returns:
+            'full'     → Novice (0–4 experiments)
+            'standard' → Operator (5–19 experiments)
+            'minimal'  → Specialist / Expert / Master (20+ experiments)
+        """
+        summary = self.get_progression_summary(username or self.current_user)
+        title = summary.get("title", "Novice")
+        if title == "Novice":
+            return "full"
+        if title == "Operator":
+            return "standard"
+        return "minimal"
+
+    def is_hint_shown(self, hint_key: str, username: str = None) -> bool:
+        """Check whether a one-time guidance hint has been shown for this user.
+
+        Args:
+            hint_key: e.g. 'hint_connect_shown'
+            username: If None, uses current_user.
+
+        Returns:
+            True if the hint has already been shown and dismissed.
+        """
+        uname = username or self.current_user
+        try:
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    data = json.load(f)
+                hints = data.get("user_data", {}).get(uname, {}).get("hints_shown", {})
+                return bool(hints.get(hint_key, False))
+        except Exception:
+            pass
+        return False
+
+    def mark_hint_shown(self, hint_key: str, username: str = None) -> None:
+        """Record that a one-time guidance hint has been shown for this user.
+
+        Args:
+            hint_key: e.g. 'hint_connect_shown'
+            username: If None, uses current_user.
+        """
+        uname = username or self.current_user
+        self._update_user_data_nested(uname, "hints_shown", hint_key, True)
+
+    def _update_user_data_nested(self, username: str, section: str, key: str, value) -> None:
+        """Update a nested key inside user_data[username][section][key].
+
+        Args:
+            username: Target user.
+            section:  Sub-dict key inside user_data[username] (e.g. 'hints_shown').
+            key:      Key inside the sub-dict.
+            value:    Value to set.
+        """
+        try:
+            file_data: dict = {}
+            if self.config_file.exists():
+                with open(self.config_file, "r") as f:
+                    file_data = json.load(f)
+            user_data = file_data.get("user_data", {})
+            if username not in user_data:
+                user_data[username] = {}
+            if section not in user_data[username]:
+                user_data[username][section] = {}
+            user_data[username][section][key] = value
+            file_data["users"] = self.profiles
+            file_data["current_user"] = self.current_user
+            file_data["user_data"] = user_data
+            with open(self.config_file, "w") as f:
+                json.dump(file_data, indent=2, fp=f)
+        except Exception as e:
+            logger.error(f"Failed to update user_data[{username}][{section}][{key}]: {e}")

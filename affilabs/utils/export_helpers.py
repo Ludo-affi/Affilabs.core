@@ -580,9 +580,8 @@ class ExportHelpers:
             msg.setWindowTitle("Export Data")
             # Show destination based on unified path
             msg.setText(
-                f"Ready to save recorded data.\n\nFile: {full_path.name}\nLocation: {str(full_path.parent)}"
+                f"Ready to save recorded data.\n\nFile: {full_path.name}\nLocation: {str(full_path.parent)}\n\nClick SAVE to export data, or CANCEL to adjust the filename/location."
             )
-            msg.setInformativeText("Click SAVE to export data, or CANCEL to adjust the filename/location.")
 
             save_btn = msg.addButton("SAVE", QMessageBox.AcceptRole)
             cancel_btn = msg.addButton("Cancel", QMessageBox.RejectRole)

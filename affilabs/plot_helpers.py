@@ -16,11 +16,56 @@ CHANNEL_COLORS = ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
 CHANNEL_COLORS_COLORBLIND = ["#e66101", "#fdb863", "#b2abd2", "#5e3c99"]
 
 
+class MinutesAxisItem(pg.AxisItem):
+    """X-axis that displays seconds data as minutes.
+
+    Underlying data and cursor positions remain in seconds — only the
+    tick labels are converted (÷60) so all clock/cursor consumers are
+    unaffected.
+
+    Ticks are generated at nice minute-aligned intervals so values like
+    0.1, 0.2, 0.5, 1.0, 5.0 appear cleanly instead of every raw second.
+    """
+
+    # Candidate major-tick spacings in seconds → nice minute labels
+    # (6s=0.1min, 30s=0.5min, 60s=1min, 300s=5min, 600s=10min, ...)
+    _SPACINGS = [6, 12, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200]
+
+    def tickValues(self, minVal, maxVal, size):
+        span = maxVal - minVal
+        if span <= 0:
+            return []
+        # Pick the smallest spacing that gives at most 10 ticks across the view
+        spacing = self._SPACINGS[-1]
+        for s in self._SPACINGS:
+            if span / s <= 10:
+                spacing = s
+                break
+        start = (int(minVal / spacing)) * spacing
+        ticks = []
+        v = start
+        while v <= maxVal + spacing * 0.01:
+            if v >= minVal - spacing * 0.01:
+                ticks.append(float(v))
+            v += spacing
+        return [(spacing, ticks)]
+
+    def tickStrings(self, values, scale, spacing):
+        # Format as minutes; drop trailing zero if whole number
+        out = []
+        for v in values:
+            mins = v / 60
+            out.append(f"{mins:.1f}" if mins % 1 else f"{int(mins)}")
+        return out
+
+
 def create_time_plot(
     left_label: str,
     bottom_label: str = "Time (seconds)",
     left_size: str = "11pt",
     size: str = None,
+    transparent: bool = False,
+    use_minutes: bool = False,
 ) -> pg.PlotWidget:
     """Create a standardized time-series plot widget."""
     # Allow overriding both axes size with 'size' parameter
@@ -30,8 +75,19 @@ def create_time_plot(
     else:
         bottom_size = left_size
 
-    w = pg.PlotWidget()
-    w.setBackground(Colors.BACKGROUND_WHITE)
+    if use_minutes:
+        bottom_label = "Time (minutes)"
+        bottom_axis = MinutesAxisItem(orientation="bottom")
+        w = pg.PlotWidget(axisItems={"bottom": bottom_axis})
+    else:
+        w = pg.PlotWidget()
+    if transparent:
+        from PySide6.QtCore import Qt
+        w.setBackground("transparent")
+        w.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        w.viewport().setAutoFillBackground(False)
+    else:
+        w.setBackground(Colors.BACKGROUND_WHITE)
     w.setLabel("left", left_label, color=AXIS_COLOR, size=left_size)
     w.setLabel("bottom", bottom_label, color=AXIS_COLOR, size=bottom_size)
     w.showGrid(x=False, y=False, alpha=GRID_ALPHA)  # Grid OFF by default

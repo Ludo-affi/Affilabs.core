@@ -69,12 +69,111 @@ class SettingsTabBuilder:
         # Display Controls (moved from Graphic Control tab)
         self._build_display_controls_section(tab_layout)
 
-        # Build spectroscopy plots immediately (needed by spectroscopy presenter at startup)
-        self._build_spectroscopy_plots(tab_layout)
+        # Spectroscopy plots moved to LiveContextPanel (Phase 3 sidebar redesign).
+        # Previously: self._build_spectroscopy_plots(tab_layout)
+        # Plots now live in affilabs/widgets/live_context_panel.py alongside the sensorgram.
 
-        # User Management section (below spectroscopy)
-        self._build_user_management(tab_layout)
+        # Phase 5: Hardware Status section (replaces Device Status tab)
+        self._build_hardware_status_section(tab_layout)
+
+        # Phase 4: Minimal user management (add/rename/delete only — profile card in User+Export tab)
+        self._build_manage_users_section(tab_layout)
+
         tab_layout.addSpacing(20)
+
+    def _build_hardware_status_section(self, tab_layout: QVBoxLayout):
+        """Phase 5: Embed Device Status widgets in Settings > Hardware Status (collapsed)."""
+        from sections import CollapsibleSection
+        from affilabs.sidebar_tabs.AL_device_status_builder import DeviceStatusTabBuilder
+
+        hw_section = CollapsibleSection("🔌 Hardware Status", is_expanded=False)
+        hw_section.content_layout.setSpacing(8)
+
+        # Run the Device Status builder into this section's layout.
+        # This populates sidebar.scan_btn, sidebar.add_hardware_btn, sidebar.debug_log_btn,
+        # sidebar.subunit_status, sidebar.operation_modes, sidebar.hw_led_bar, etc.
+        try:
+            ds_builder = DeviceStatusTabBuilder(self.sidebar)
+            ds_builder.build(hw_section.content_layout)
+        except Exception as _e:
+            from affilabs.utils.logger import logger
+            logger.error(f"DeviceStatusTabBuilder failed in Settings: {_e}", exc_info=True)
+            # Minimal fallback so subunit_status exists
+            self.sidebar.subunit_status = {}
+            self.sidebar.scan_btn = QPushButton("Scan")
+            self.sidebar.scan_btn.setProperty("scanning", False)
+            self.sidebar.add_hardware_btn = QPushButton("+ Add Hardware")
+            self.sidebar.debug_log_btn = QPushButton("Debug Log")
+
+        tab_layout.addWidget(hw_section)
+
+    def _build_manage_users_section(self, tab_layout: QVBoxLayout):
+        """Phase 4: Minimal user management — add / rename / delete only (no progression display)."""
+        from sections import CollapsibleSection
+
+        mgmt_section = CollapsibleSection("👥 Manage Users", is_expanded=False)
+
+        _help = QLabel("Add, rename, or remove lab users")
+        _help.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-style: italic; margin: 4px 0 8px 0;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        mgmt_section.content_layout.addWidget(_help)
+
+        _card = QFrame()
+        _card.setStyleSheet("QFrame { background: rgba(0,0,0,0.03); border-radius: 8px; }")
+        _card_layout = QVBoxLayout(_card)
+        _card_layout.setContentsMargins(12, 8, 12, 8)
+        _card_layout.setSpacing(8)
+
+        self.sidebar.user_list_widget = QListWidget()
+        self.sidebar.user_list_widget.setMaximumHeight(110)
+        self.sidebar.user_list_widget.setStyleSheet(
+            "QListWidget { background: white; border: 1px solid rgba(0,0,0,0.08);"
+            "  border-radius: 6px; padding: 4px; font-size: 13px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; }"
+            "QListWidget::item { padding: 6px 8px; border-radius: 4px; }"
+            "QListWidget::item:selected { background: rgba(0,122,255,0.12); }"
+        )
+        self._populate_user_list()
+        self.sidebar.user_list_widget.itemDoubleClicked.connect(self._on_set_active_user_settings)
+        _card_layout.addWidget(self.sidebar.user_list_widget)
+
+        _btn_row = QHBoxLayout()
+        _btn_row.setSpacing(6)
+
+        def _mini_btn(label, color):
+            b = QPushButton(label)
+            b.setFixedHeight(28)
+            b.setStyleSheet(
+                f"QPushButton {{ background: transparent; color: {color};"
+                f"  border: 1px solid {color}44; border-radius: 6px;"
+                f"  padding: 3px 8px; font-size: 11px; font-weight: 600;"
+                f"  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; }}"
+                f"QPushButton:hover {{ background: {color}18; }}"
+            )
+            return b
+
+        _add_btn = _mini_btn("+ Add", "#34C759")
+        _add_btn.clicked.connect(self._on_add_user_settings)
+        _btn_row.addWidget(_add_btn)
+
+        _rename_btn = _mini_btn("Rename", "#007AFF")
+        _rename_btn.clicked.connect(self._on_rename_user_settings)
+        _btn_row.addWidget(_rename_btn)
+
+        _active_btn = _mini_btn("Set Active", "#FF9500")
+        _active_btn.clicked.connect(lambda: self._on_set_active_user_settings())
+        _btn_row.addWidget(_active_btn)
+
+        _del_btn = _mini_btn("Delete", "#FF3B30")
+        _del_btn.clicked.connect(self._on_delete_user_settings)
+        _btn_row.addWidget(_del_btn)
+
+        _card_layout.addLayout(_btn_row)
+        mgmt_section.add_content_widget(_card)
+        tab_layout.addWidget(mgmt_section)
 
     def _build_user_management(self, tab_layout: QVBoxLayout):
         """Build user management section with progression display."""
@@ -335,26 +434,28 @@ class SettingsTabBuilder:
         if hasattr(self.sidebar, 'user_progression_frame'):
             self.sidebar.user_progression_frame.setVisible(True)
 
+        # Footer passive user indicator
+        if hasattr(self.sidebar, 'active_user_label'):
+            self.sidebar.active_user_label.setText(f"Running as: {current}")
+
         summary = self.user_manager.get_progression_summary(current)
 
-        # Title line
-        title = summary['title']
-        self.sidebar.user_title_label.setText(
-            f"👤 {current}  •  {title}"
-        )
+        # Title line (widget now lives in User+Export tab)
+        if hasattr(self.sidebar, 'user_title_label'):
+            title = summary['title']
+            self.sidebar.user_title_label.setText(f"👤 {current}  •  {title}")
 
         # XP & next title
-        xp = summary['xp']
-        next_title = summary['next_title']
-        remaining = summary['experiments_to_next_title']
-        if next_title:
-            self.sidebar.user_xp_label.setText(
-                f"XP: {xp}  •  {remaining} experiments to {next_title}"
-            )
-        else:
-            self.sidebar.user_xp_label.setText(
-                f"XP: {xp}  •  Maximum rank achieved!"
-            )
+        if hasattr(self.sidebar, 'user_xp_label'):
+            xp = summary['xp']
+            next_title = summary['next_title']
+            remaining = summary['experiments_to_next_title']
+            if next_title:
+                self.sidebar.user_xp_label.setText(
+                    f"XP: {xp}  •  {remaining} experiments to {next_title}"
+                )
+            else:
+                self.sidebar.user_xp_label.setText(f"XP: {xp}  •  Maximum rank achieved!")
 
         # Training status — no longer required per user
         if hasattr(self.sidebar, 'user_training_label'):

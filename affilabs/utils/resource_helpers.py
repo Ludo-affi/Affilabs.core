@@ -87,34 +87,35 @@ class ResourceHelpers:
                     except Exception as e:
                         logger.debug(f"Error homing pumps: {e}")
 
-            # Disconnect hardware (force close in emergency mode)
+            # Disconnect hardware — LEDs off FIRST, then close serial/USB
             if hasattr(app, "hardware_mgr") and app.hardware_mgr:
                 if not emergency:
-                    logger.debug("Disconnecting hardware...")
+                    logger.debug("Disconnecting hardware (LEDs off → close)...")
                 try:
-                    # Close controller
-                    if (
-                        hasattr(app.hardware_mgr, "controller")
-                        and app.hardware_mgr.controller
-                    ):
-                        try:
-                            if not emergency:
-                                app.hardware_mgr.controller.stop()
-                            app.hardware_mgr.controller.close()
-                        except Exception as e:
-                            if not emergency:
-                                logger.debug(f"Error closing controller: {e}")
-
-                    # Close spectrometer
-                    if (
-                        hasattr(app.hardware_mgr, "spectrometer")
-                        and app.hardware_mgr.spectrometer
-                    ):
-                        try:
-                            app.hardware_mgr.spectrometer.close()
-                        except Exception as e:
-                            if not emergency:
-                                logger.debug(f"Error closing spectrometer: {e}")
+                    if not emergency and hasattr(app.hardware_mgr, "disconnect_all"):
+                        # disconnect_all() sends 'lx' to turn all LEDs off, then closes
+                        # the serial port and spectrometer in the correct order.
+                        app.hardware_mgr.disconnect_all()
+                    else:
+                        # Emergency / fallback: use correct attribute names (ctrl, usb)
+                        hw = app.hardware_mgr
+                        if hasattr(hw, "ctrl") and hw.ctrl:
+                            try:
+                                hw.ctrl.turn_off_channels()
+                            except Exception:
+                                pass
+                        if hasattr(hw, "_ctrl_raw") and hw._ctrl_raw:
+                            try:
+                                hw._ctrl_raw.close()
+                            except Exception as e:
+                                if not emergency:
+                                    logger.debug(f"Error closing controller: {e}")
+                        if hasattr(hw, "usb") and hw.usb:
+                            try:
+                                hw.usb.close()
+                            except Exception as e:
+                                if not emergency:
+                                    logger.debug(f"Error closing spectrometer: {e}")
                 except Exception as e:
                     if not emergency:
                         logger.debug(f"Error during hardware disconnect: {e}")

@@ -43,10 +43,10 @@ Two palettes exist. The active palette is `ACTIVE_GRAPH_COLORS` in `settings.py`
 
 | Axis | Label | Unit |
 |------|-------|------|
-| X (bottom) | `Time` | `s` (seconds) |
+| X (bottom) | `Time` | **`min` (minutes)** — tick labels are divided by 60 via `MinutesAxisItem`; underlying data and all cursor/clock values remain in seconds |
 | Y (left) | `λ` (lambda) | `nm` or `RU` (user-selectable via `UNIT_LIST`) |
 
-Default unit: `RU` (set by `UNIT = "RU"` in `settings.py`). `UNIT_LIST = {"nm": 1, "RU": 355}` — the value is the conversion factor from nm to RU.
+> **Implementation note**: `create_time_plot(use_minutes=True)` injects a `MinutesAxisItem(orientation="bottom")` as the pyqtgraph axis. Cursor labels use `{value:.0f} s` (explicit "s") so hover tooltips are unambiguous. All clock conversions (`TimeBase.DISPLAY ↔ RAW_ELAPSED`) continue to operate in seconds.
 
 ### Global PyQtGraph config (set once at startup)
 
@@ -71,7 +71,7 @@ setConfigOptions(antialias=True, useNumba=False, exitCleanup=True, enableExperim
 
 ### Graph header controls (`_create_graph_header()`)
 
-Row above the plot area containing: **Channel toggles A/B/C/D** (with Signal IQ dots), **Baseline stability badge** (`stability_badge`), **Live Data** toggle, **Clear Graph** button.
+Row above the plot area containing: **Channel toggles A/B/C/D** (no IQ dots — removed; IQ now lives in the Active Cycle legend), **Baseline stability badge** (`stability_badge`), **Live Data** toggle, **Clear Graph** button.
 
 The stability badge transitions: hidden → grey "Stabilizing…" → green "Ready to inject ✓". It uses a 30-sample rolling buffer of peak wavelengths per channel; all active channels must have p2p ≤ 0.15 nm for at least 20 samples before turning green. Updated via `AL_UIUpdateCoordinator.queue_stability_update()` on the 500ms timer.
 
@@ -96,9 +96,12 @@ Downsampling kicks in above `GRAPH_SUBSAMPLE_THRESHOLD = 10000` points.
 
 Two `InfiniteLine` cursors: **start** and **stop**. Type: `pg.InfiniteLine(angle=90, movable=True)`.
 
-- Dragging start cursor → fires `sigPositionChanged` → `_on_start_cursor_moved()`
-- Dragging stop cursor → fires `sigPositionChanged` → `_on_stop_cursor_moved()`
-- Cursor positions define the time window shown in the Cycle-of-Interest graph
+- Dragging start cursor → fires `sigPositionChanged` → `_on_start_cursor_moved()` → **resets all active-cycle channels to (0, 0)** at the cursor position
+- Dragging stop cursor → fires `sigPositionChanged` → `_on_stop_cursor_moved()` → updates the time window width in Active Cycle graph
+- **Critical behavior**: Start cursor position becomes the common baseline point. Both **time** and **Δ SPR** axes are rebased relative to the start cursor:
+  - Time: `display_cycle_time = raw_cycle_time - start_cursor_pos`
+  - Δ SPR: `display_delta_spr = delta_spr - delta_spr[0]` (first point in cursor region always appears at 0)
+- This ensures all 4 channels share the same (0, 0) origin in the Active Cycle detail graph, regardless of when individual injection flags were detected
 - `UIState.has_stop_cursor` is cached — check this before accessing the stop cursor object
 
 **Cursor style**: `CYCLE_MARKER_STYLE = "cursors"` (default). Alternatively `"lines"` for vertical markers without drag.
@@ -169,9 +172,45 @@ Two `InfiniteLine` objects (angle=90°, movable=True). **Hidden by default** in 
 - Per-channel dissociation/association cursor lines (vertical, with labels) for phase marking
 - Downsampling: threshold 1001 pts → 500 pts (gentler than full timeline — preserves kinetics detail)
 
-### Channel visibility
+### Channel visibility & Interactive Legend
 
-Controlled by separate channel buttons above this graph (styled with `get_active_cycle_channel_button_style(color)` — less rounded, grayer inactive state). Each button shows only that channel's curve: `curve.setVisible(idx == selected_idx)`.
+**Widget**: `interactive_spr_legend.py` → `InteractiveSPRLegend`
+**Location**: Top-left corner of Active Cycle graph (`(62, 10)` from top-left of `PlotWidget`)
+**Features:**
+- **Clickable channel rows**: Click any channel (A, B, C, or D) to toggle visibility
+- **Real-time SPR values**: Displays current Δ RU per channel (e.g., "+145.2")
+- **IQ indicator dots**: Live color-coded `●` per channel — updated by `ui_update_coordinator._update_sensor_iq_displays()` → `legend.set_iq_color(ch, hex_color)`. Colors match `SENSOR_IQ_COLORS` (green/yellow/red/gray).
+- **Visual feedback**: Faded appearance when channel is hidden
+- **Hover effects**: Pointing hand cursor indicates interactive nature
+- **Auto-update**: SPR values refresh at 2 Hz coordinator tick; IQ colors update whenever new IQ data arrives
+
+| Component | Appearance | Interaction |
+|-----------|------------|-------------|
+| Channel label | Colored bold text (A, B, C, D) | Click to toggle visibility |
+| SPR value | Right-aligned, monospace | Updates live during cycle |
+| IQ dot | Colored `●` — green/yellow/red/gray | Reflects live signal quality per channel |
+| Row background | White with subtle border | Fades when channel hidden |
+
+**Implementation**: `InteractiveSPRLegend(parent=plot_widget, title="Δ SPR (RU)")` created in `_create_graph_container()`. Positioned via `_position_active_cycle_legend()` (200ms `QTimer.singleShot` after layout). Update methods:
+- `update_values(delta_values: dict)` — called from `_acquisition_mixin._update_delta_display()`
+- `set_iq_color(channel, hex_color)` — called from `ui_update_coordinator._update_sensor_iq_displays()`
+
+> **Removed (v2.0.5)**: Separate "Signal:" quality pill bar (`_create_signal_quality_bar()`) that was previously displayed above the Live Sensorgram. IQ quality is now consolidated into the legend dots.
+
+### Cycle Status Overlay
+
+**Widget**: `cycle_status_overlay.py` → `CycleStatusOverlay`
+**Location**: Top-right corner of Active Cycle graph (auto right-anchored with 10px margin)
+**Transparency**: `WA_TransparentForMouseEvents=True` — graph interaction is not blocked
+
+| Field | Content | Style change |
+|-------|---------|-------------|
+| Cycle type | e.g. "Binding" | Bold 11px |
+| Cycle index | e.g. "2 / 5" | Muted 10px, right-aligned |
+| Countdown | `MM:SS` remaining | 18px monospace, blue → orange at ≤10 s |
+| Next label | e.g. "Next: Rinse" | Muted 10px; hidden when queue empty |
+
+**Lifecycle**: Hidden at startup. `update_status(...)` called every second by `_update_cycle_display()` — first call shows the widget. `clear()` called by `_on_cycle_completed()` to hide it. Re-anchors to right edge on every tick (survives window resize).
 
 ---
 

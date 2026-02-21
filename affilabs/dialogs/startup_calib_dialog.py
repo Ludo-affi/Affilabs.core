@@ -138,6 +138,15 @@ class StartupCalibProgressDialog(QDialog):
         )
         main_layout.addWidget(self.progress_bar)
 
+        # Subtle elapsed time counter shown during calibration
+        self.elapsed_label = QLabel("")
+        self.elapsed_label.setStyleSheet(
+            "font-size: 13px; color: #D1D1D6; font-weight: 500;",
+        )
+        self.elapsed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.elapsed_label.setVisible(False)
+        main_layout.addWidget(self.elapsed_label)
+
         # Animated activity indicator with elapsed time
         self.activity_label = QLabel("Working...")
         self.activity_label.setStyleSheet(
@@ -446,6 +455,8 @@ class StartupCalibProgressDialog(QDialog):
                     self.warning_label.setVisible(False)
                 self.status_label.setVisible(False)
                 self.activity_label.setVisible(False)
+                self.elapsed_label.setVisible(True)
+                self.elapsed_label.setText("0:00")
                 self._calibration_running = True
                 self._elapsed_timer.start()
                 self._dot_timer.start(1000)
@@ -459,11 +470,11 @@ class StartupCalibProgressDialog(QDialog):
             total_secs = elapsed_ms // 1000
             mins = total_secs // 60
             secs = total_secs % 60
-            elapsed_str = f"{mins}m {secs:02d}s" if mins > 0 else f"{secs}s"
+            # Update the standalone elapsed counter (always visible while running)
+            self.elapsed_label.setText(f"{mins}:{secs:02d}")
+            # Also update step description label if it has content
             if self._current_step_text and self.step_description_label.isVisible():
-                self.step_description_label.setText(
-                    f"{self._current_step_text}  \u00b7  {elapsed_str}"
-                )
+                self.step_description_label.setText(self._current_step_text)
         else:
             self._dot_count = (self._dot_count % 3) + 1
             self.activity_label.setText(f"Working{'.' * self._dot_count}")
@@ -473,6 +484,7 @@ class StartupCalibProgressDialog(QDialog):
         self._dot_timer.stop()
         self._calibration_running = False
         self.activity_label.setVisible(False)
+        self.elapsed_label.setVisible(False)
 
     def enable_start_button_pre_calib(self) -> None:
         """Enable the Start button for pre-calibration checklist (thread-safe)."""

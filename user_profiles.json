@@ -1,10 +1,11 @@
 {
   "users": [
     "Default User",
+    "Julia",
     "Ludo",
     "Sandy"
   ],
-  "current_user": "Ludo",
+  "current_user": "Julia",
   "user_data": {
     "Sandy": {
       "experiment_count": 2,
@@ -22,6 +23,30 @@
         "date": null
       },
       "last_used": "2026-02-19T00:13:11.857224+00:00"
+    },
+    "Default User": {
+      "last_used": "2026-02-20T18:37:01.695280+00:00",
+      "hints_shown": {
+        "hint_connect_shown": true,
+        "hint_calibrate_shown": true,
+        "hint_acquire_shown": true
+      }
+    },
+    "Julia": {
+      "experiment_count": 0,
+      "compression_training": {
+        "completed": false,
+        "score": null,
+        "date": null
+      },
+      "hints_shown": {
+        "hint_inject_shown": true,
+        "hint_connect_shown": true,
+        "hint_calibrate_shown": true,
+        "hint_acquire_shown": true
+      },
+      "created_date": "2026-02-20T23:36:11.268203+00:00",
+      "last_used": "2026-02-20T23:36:44.799904+00:00"
     }
   }
 }
