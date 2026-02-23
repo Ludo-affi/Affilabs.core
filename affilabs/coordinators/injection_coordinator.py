@@ -51,9 +51,14 @@ from affilabs.utils.sample_parser import parse_sample_info
 
 if TYPE_CHECKING:
     from affilabs.core.hardware_manager import HardwareManager
+    from affilabs.core.data_acquisition_manager import DataAcquisitionManager
     from affilabs.domain.cycle import Cycle
     from affilabs.managers.pump_manager import PumpManager
-    from affilabs.core.data_acquisition_manager import DataAcquisitionManager
+
+# Fluidic path dead volume from loop outlet to sensor (P4PRO/PROPLUS geometry, µL).
+# Transit delay = FLUIDIC_PATH_VOLUME_UL / flow_rate_ul_per_min * 60.0 seconds.
+# Must match the constant of the same name in manual_injection_dialog.py.
+FLUIDIC_PATH_VOLUME_UL = 8.0
 
 
 class _WashMonitor(QObject):
@@ -377,7 +382,6 @@ class InjectionCoordinator(QObject):
         if method_mode in ('semi-automated', 'pump'):
             _active_flow_rate = getattr(cycle, 'flow_rate', None) or flow_rate
             if _active_flow_rate and _active_flow_rate > 0:
-                from affilabs.dialogs.manual_injection_dialog import FLUIDIC_PATH_VOLUME_UL
                 _pump_transit_delay_s = FLUIDIC_PATH_VOLUME_UL / _active_flow_rate * 60.0
                 logger.info(
                     f"Pump transit delay: {FLUIDIC_PATH_VOLUME_UL}µL ÷ {_active_flow_rate}µL/min × 60 "
