@@ -484,7 +484,17 @@ class AffilabsMainWindow(
         from affilabs.widgets.icon_rail import IconRail
         self.icon_rail = IconRail(parent=self)
         self.icon_rail.set_sidebar(self.sidebar)
+        self.sidebar._icon_rail = self.icon_rail  # direct ref so show_flow_tab() works
         main_layout.addWidget(self.icon_rail)
+
+        # User sidebar panel — 280px, hidden by default, toggled by icon rail user button
+        from affilabs.widgets.user_panel_popup import UserSidebarPanel
+        self.user_sidebar_panel = UserSidebarPanel(parent=self)
+        self.user_sidebar_panel.setVisible(False)
+        main_layout.addWidget(self.user_sidebar_panel)
+        # Give the icon rail a reference so _on_user_click can use it
+        self.icon_rail._user_sidebar = self.user_sidebar_panel
+
         main_layout.addWidget(self.splitter)
 
         # Floating Sparq bubble — child widget, zero layout impact
@@ -1783,10 +1793,10 @@ class AffilabsMainWindow(
         sizes = self.splitter.sizes()
         _ICON_STRIP = 50  # width that shows just the tab bar icons
         if collapsed:
-            self._sidebar_saved_width = sizes[0] if sizes[0] > _ICON_STRIP else 280
+            self._sidebar_saved_width = sizes[0] if sizes[0] > _ICON_STRIP else 380
             self.splitter.setSizes([_ICON_STRIP, sizes[0] + sizes[1] - _ICON_STRIP, sizes[2]])
         else:
-            w = getattr(self, '_sidebar_saved_width', 280)
+            w = getattr(self, '_sidebar_saved_width', 380)
             total = sizes[0] + sizes[1] + sizes[2]
             self.splitter.setSizes([w, total - w - sizes[2], sizes[2]])
 
@@ -1828,11 +1838,43 @@ class AffilabsMainWindow(
         )
         hdr_row.addWidget(title_lbl)
         hdr_row.addStretch()
+
+        # Clear Queue button in header
+        self._clear_queue_hdr_btn = QPushButton("Clear")
+        self._clear_queue_hdr_btn.setFixedHeight(24)
+        self._clear_queue_hdr_btn.setToolTip("Remove all cycles from the queue")
+        self._clear_queue_hdr_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #FF3B30;"
+            " border: 1px solid rgba(255,59,48,0.35); border-radius: 5px;"
+            " padding: 0 8px; font-size: 11px; font-weight: 600; }"
+            " QPushButton:hover { background: rgba(255,59,48,0.08); }"
+            " QPushButton:pressed { background: rgba(255,59,48,0.16); }"
+        )
+        self._clear_queue_hdr_btn.clicked.connect(self._on_clear_queue)
+        hdr_row.addWidget(self._clear_queue_hdr_btn)
+
         outer.addWidget(header)
 
         # ── content area (queue widget inserted here after sidebar builds) ──
         self._queue_content_layout = outer
         return panel
+
+    def _on_toggle_queue_panel(self, checked: bool) -> None:
+        """Handle queue toggle pill in transport bar — show or hide run queue panel."""
+        if checked:
+            self.expand_queue_panel()
+        else:
+            self.collapse_queue_panel()
+
+    def _sync_queue_toggle_btn(self, checked: bool) -> None:
+        """Sync the Live Sensorgram queue toggle button without re-triggering the signal."""
+        try:
+            btn = self._live_queue_btn
+            btn.blockSignals(True)
+            btn.setChecked(checked)
+            btn.blockSignals(False)
+        except Exception:
+            pass
 
     def expand_queue_panel(self, width: int = 320) -> None:
         """Expand the right run-queue panel (called when acquisition starts)."""
@@ -1842,6 +1884,7 @@ class AffilabsMainWindow(
             left = sizes[0]
             center = max(400, total - left - width)
             self.splitter.setSizes([left, center, width])
+            self._sync_queue_toggle_btn(True)
         except Exception as e:
             logger.debug(f"expand_queue_panel: {e}")
 
@@ -1852,10 +1895,11 @@ class AffilabsMainWindow(
             total = sum(sizes)
             left = sizes[0]
             self.splitter.setSizes([left, total - left, 0])
+            self._sync_queue_toggle_btn(False)
         except Exception as e:
             logger.debug(f"collapse_queue_panel: {e}")
 
-    def expand_sidebar(self, width: int = 300) -> None:
+    def expand_sidebar(self, width: int = 380) -> None:
         """Expand the left sidebar (called when icon rail tab is clicked)."""
         try:
             sizes = self.splitter.sizes()
@@ -1957,7 +2001,11 @@ class AffilabsMainWindow(
         container.setGraphicsEffect(create_card_shadow())
 
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(Dimensions.MARGIN_MD, 8, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
+        if show_delta_spr:
+            # Active Cycle graph — no side/bottom padding; keep 8px top so title sits off the card edge
+            layout.setContentsMargins(0, 8, 0, 0)
+        else:
+            layout.setContentsMargins(Dimensions.MARGIN_MD, 8, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
         layout.setSpacing(8)
 
         # Title row with controls
@@ -1977,6 +2025,39 @@ class AffilabsMainWindow(
         )
         title_row.addWidget(title_label)
         title_row.addStretch()
+
+        # Small queue toggle button — top-right of Live Sensorgram only
+        if not show_delta_spr:
+            self._live_queue_btn = QPushButton("Q")
+            self._live_queue_btn.setFixedSize(26, 26)
+            self._live_queue_btn.setCheckable(True)
+            self._live_queue_btn.setChecked(False)
+            self._live_queue_btn.setToolTip("Show / hide Run Queue panel")
+            self._live_queue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._live_queue_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: rgba(0,0,0,0.06);"
+                "  border: none;"
+                "  border-radius: 6px;"
+                "  font-size: 11px;"
+                "  font-weight: 700;"
+                "  color: rgba(0,0,0,0.35);"
+                "  padding: 0px;"
+                "}"
+                "QPushButton:hover {"
+                "  background: rgba(0,0,0,0.11);"
+                "  color: rgba(0,0,0,0.55);"
+                "}"
+                "QPushButton:checked {"
+                "  background: rgba(46,48,227,0.12);"
+                "  color: rgb(46,48,227);"
+                "}"
+                "QPushButton:checked:hover {"
+                "  background: rgba(46,48,227,0.20);"
+                "}"
+            )
+            self._live_queue_btn.toggled.connect(self._on_toggle_queue_panel)
+            title_row.addWidget(self._live_queue_btn)
 
         # Action buttons — icon-only 28×28, right-aligned in title row (Active Cycle only)
         if show_delta_spr:
@@ -2161,6 +2242,13 @@ class AffilabsMainWindow(
             use_minutes=not show_delta_spr,
         )
 
+        # User-zoom tracking: gate auto-adjust in ui_update_helpers
+        if show_delta_spr:
+            plot_widget._user_zoomed = False
+            plot_widget.getPlotItem().getViewBox().sigRangeChangedManually.connect(
+                lambda: setattr(plot_widget, '_user_zoomed', True)
+            )
+
         # Create plot curves for 4 channels with distinct colors
         # Ch A: Black, Ch B: Red, Ch C: Blue, Ch D: Green
         curves = add_channel_curves(plot_widget, clickable=False, width=3)
@@ -2280,6 +2368,10 @@ class AffilabsMainWindow(
         # Bottom graph: Rectangle zoom only (default PyQtGraph behavior)
         plot_widget.getPlotItem().getViewBox().setMouseMode(pg.ViewBox.RectMode)
 
+        # Active Cycle graph: kill pyqtgraph's default 10% auto-range padding
+        if show_delta_spr:
+            plot_widget.getPlotItem().getViewBox().setDefaultPadding(0)
+
         layout.addWidget(plot_widget, 1)
 
         # Embed interactive SPR legend inside the Active Cycle graph
@@ -2339,6 +2431,8 @@ class AffilabsMainWindow(
                 self.recording_stop_requested.connect(
                     lambda: footer.set_recording_active(False)
                 )
+
+        # No minimum Y-range enforcement — let the data drive the scale tightly.
 
         return plot_widget, container
 
@@ -2985,28 +3079,31 @@ class AffilabsMainWindow(
             self.app._on_start_button_clicked()
 
     def _on_clear_queue(self):
-        """Clear all cycles from the queue."""
-        if not self.cycle_queue:
+        """Clear all cycles from the queue (uses queue_presenter)."""
+        # Use the app's queue_presenter (new system)
+        qp = getattr(getattr(self, 'app', None), 'queue_presenter', None)
+        queue_size = qp.get_queue_size() if qp else len(getattr(self, 'cycle_queue', []))
+        if queue_size == 0:
             return
 
-        # Confirm with user
         from PySide6.QtWidgets import QMessageBox
-
         reply = QMessageBox.question(
             self,
             "Clear Queue",
-            f"Are you sure you want to clear {len(self.cycle_queue)} cycle(s) from the queue?",
+            f"Remove all {queue_size} cycle(s) from the queue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
 
-        if reply == QMessageBox.StandardButton.Yes:
+        if qp:
+            qp.clear_queue()
+        else:
             self.cycle_queue.clear()
-            logger.info("Queue cleared")
-
-            # Update UI
             self._update_queue_display()
             self.sidebar.update_queue_status(0)
+        logger.info("Queue cleared via Clear button")
 
     def _on_expand_queue(self):
         """Expand queue capacity by 5 cycles and resize the table."""
@@ -3043,12 +3140,11 @@ class AffilabsMainWindow(
             self.add_to_queue_btn.setEnabled(True)
 
     def open_full_cycle_table(self):
-        """Open the full cycle data table in the Edits tab."""
-        # Find the Edits tab and switch to it
-        for i in range(self.sidebar.tabs.count()):
-            if self.sidebar.tabs.tabText(i) == "Edits":
-                self.sidebar.tabs.setCurrentIndex(i)
-                break
+        """Switch to Edits tab to show cycle data."""
+        if hasattr(self, 'navigation_presenter'):
+            self.navigation_presenter.switch_page(1)
+        elif hasattr(self, 'content_stack'):
+            self.content_stack.setCurrentIndex(1)
 
     def start_cycle(self):
         """Start next cycle from queue or use current form values."""

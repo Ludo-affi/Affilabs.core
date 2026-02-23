@@ -64,6 +64,13 @@ _ICONS: dict[str, str] = {
         ' stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>'
         '</svg>'
     ),
+    "User": (
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.4"/>'
+        '<path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" stroke-width="1.4"'
+        ' stroke-linecap="round"/>'
+        '</svg>'
+    ),
     "Timer": (
         '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
         '<circle cx="12" cy="13" r="7" stroke="currentColor" stroke-width="1.4"/>'
@@ -119,20 +126,57 @@ class IconRail(QWidget):
         self._selected_name: str | None = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 8, 0, 8)
+        layout.setContentsMargins(0, 0, 0, 8)
         layout.setSpacing(2)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        # ── "A" monogram — fills the transport-bar zone (top-left branding) ──
+        logo = QLabel("A")
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo.setFixedHeight(56)  # matches TransportBar._HEIGHT
+        logo.setStyleSheet(
+            "font-size: 16px; font-weight: 800; color: #2E30E3; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+        )
+        logo.setToolTip("Affinité Instruments")
+        layout.addWidget(logo)
+
+        sep_top = QFrame()
+        sep_top.setFrameShape(QFrame.Shape.HLine)
+        sep_top.setFixedHeight(1)
+        sep_top.setStyleSheet("background: #D5D5D7; margin: 0 8px;")
+        layout.addWidget(sep_top)
+        layout.addSpacing(4)
+
         # ── Top tabs ──────────────────────────────────────────────────────────
         # Method removed from rail (moved to transport bar) — Flow is now index 0
-        for name, tab_idx in [("Flow", 0), ("Export", 1), ("Settings", 2)]:
+        for name, tab_idx in [("Flow", 0), ("Export", 1)]:
             btn = self._tab_btn(name, tab_idx)
             self._tab_buttons.append((name, tab_idx, btn))
-            # Flow starts hidden; shown when hardware model is detected
             if name == "Flow":
                 btn.setVisible(False)
                 self._flow_btn = btn
             layout.addWidget(btn)
+
+        # ── User button (popup, not a sidebar tab) ────────────────────────────
+        self._user_btn = QPushButton()
+        self._user_btn.setFixedSize(_WIDTH - 4, 40)
+        self._user_btn.setCheckable(True)
+        self._user_btn.setToolTip("Users")
+        self._user_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_INACTIVE))
+        self._user_btn.setIconSize(QSize(22, 22))
+        self._user_btn.setStyleSheet(self._btn_style(active=False))
+        self._user_btn.clicked.connect(self._on_user_click)
+        layout.addWidget(self._user_btn)
+
+        # Settings tab
+        _settings_btn = self._tab_btn("Settings", 2)
+        self._tab_buttons.append(("Settings", 2, _settings_btn))
+        layout.addWidget(_settings_btn)
+
+        self._user_popup = None
+        self._user_sidebar = None  # Set by AffilabsCoreUI after both widgets exist
 
         layout.addStretch(1)
 
@@ -166,26 +210,6 @@ class IconRail(QWidget):
 
         # Timer popup (created lazily on first click)
         self._timer_popup = None
-        # ── Divider ───────────────────────────────────────────────────────────
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setFixedHeight(1)
-        sep.setStyleSheet("background: #D5D5D7; margin: 0 8px;")
-        layout.addWidget(sep)
-
-        # ── "M" label (Affinité monogram) ─────────────────────────────────────
-        logo = QLabel("A")
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo.setFixedHeight(40)
-        logo.setStyleSheet(
-            "font-size: 16px; font-weight: 800; color: #2E30E3; background: transparent;"
-            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "QToolTip { background: #FFFFFF; color: #1D1D1F; border: 1px solid #D5D5D7;"
-            " border-radius: 4px; padding: 4px 8px; font-size: 12px; font-weight: 400; }"
-        )
-        logo.setToolTip("Affinité Instruments")
-        layout.addWidget(logo)
-
         # Select Export by default (Flow starts hidden, Method moved to transport bar)
         self._select("Export")
 
@@ -214,6 +238,66 @@ class IconRail(QWidget):
     # ──────────────────────────────────────────────────────────────────────────────
     # Timer
     # ──────────────────────────────────────────────────────────────────────────────
+
+    def _on_user_click(self) -> None:
+        """Toggle the user sidebar panel (inline, right of icon rail)."""
+        # Prefer the inline sidebar panel created by AffilabsCoreUI
+        panel = getattr(self, '_user_sidebar', None)
+        if panel is not None:
+            # Wire user manager if not yet done
+            if self._main_ui is not None:
+                sidebar = self._sidebar
+                if sidebar is not None and hasattr(sidebar, 'user_profile_manager'):
+                    panel.set_user_manager(sidebar.user_profile_manager)
+
+            visible = panel.toggle()
+            if visible:
+                self._user_btn.setChecked(True)
+                self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_ACTIVE))
+                self._user_btn.setStyleSheet(self._btn_style(active=True))
+            else:
+                self._user_btn.setChecked(False)
+                self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_INACTIVE))
+                self._user_btn.setStyleSheet(self._btn_style(active=False))
+            return
+
+        # Fallback: legacy floating popup (should not be reached in normal flow)
+        if self._user_popup is None:
+            try:
+                from affilabs.widgets.user_panel_popup import UserPanelPopup
+                self._user_popup = UserPanelPopup(parent=None)
+                self._user_popup.destroyed.connect(self._on_user_popup_destroyed)
+            except Exception as e:
+                logger.error(f"IconRail: could not create UserPanelPopup: {e}")
+                self._user_btn.setChecked(False)
+                return
+
+        # Wire user manager if available
+        if self._main_ui is not None:
+            sidebar = self._sidebar
+            if sidebar is not None and hasattr(sidebar, 'user_profile_manager'):
+                self._user_popup.set_user_manager(sidebar.user_profile_manager)
+
+        if self._user_popup.isVisible():
+            self._user_popup.hide()
+            self._user_btn.setChecked(False)
+            self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_INACTIVE))
+            self._user_btn.setStyleSheet(self._btn_style(active=False))
+        else:
+            btn_global = self._user_btn.mapToGlobal(self._user_btn.rect().center())
+            popup_x = self.mapToGlobal(self.rect().topRight()).x() + 4
+            popup_y = btn_global.y() - self._user_popup.height() // 2
+            self._user_popup.move(popup_x, popup_y)
+            self._user_popup.show_and_refresh()
+            self._user_btn.setChecked(True)
+            self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_ACTIVE))
+            self._user_btn.setStyleSheet(self._btn_style(active=True))
+
+    def _on_user_popup_destroyed(self) -> None:
+        self._user_popup = None
+        self._user_btn.setChecked(False)
+        self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_INACTIVE))
+        self._user_btn.setStyleSheet(self._btn_style(active=False))
 
     def _on_timer_click(self) -> None:
         """Toggle the floating countdown timer popup."""

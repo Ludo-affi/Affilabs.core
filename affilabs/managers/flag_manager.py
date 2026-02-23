@@ -796,6 +796,44 @@ class FlagManager:
             logger.debug(f"Could not create auto-marker: {e}")
             return None
 
+    def create_contact_region(self, start: float, end: float) -> None:
+        """Shade the contact window between injection and wash deadline.
+
+        Creates a non-interactive LinearRegionItem with a light blue fill so the
+        user can watch the sensorgram data grow to fill the contact window.
+
+        Args:
+            start: Injection display time (seconds)
+            end:   Wash deadline display time (seconds)
+        """
+        try:
+            if not hasattr(self.app.main_window, "cycle_of_interest_graph"):
+                return
+
+            region = pg.LinearRegionItem(
+                values=[start, end],
+                movable=False,
+                brush=pg.mkBrush(0, 122, 255, 28),   # #007AFF at ~11% opacity
+                pen=pg.mkPen(None),                   # no border lines (InfiniteLines already drawn)
+            )
+            region.setZValue(-10)  # render behind data traces
+
+            self.app.main_window.cycle_of_interest_graph.addItem(region)
+
+            # Store via AutoMarker so clear_auto_markers() removes it automatically
+            self._auto_markers.append(AutoMarker(
+                marker_type='contact_region',
+                time=start,
+                label='',
+                color='#007AFF',
+                marker=region,
+                is_selectable=False,
+            ))
+            logger.debug(f"Contact region shaded: {start:.1f}s → {end:.1f}s")
+
+        except Exception as e:
+            logger.debug(f"Could not create contact region: {e}")
+
     def clear_auto_markers(self):
         """Remove all auto-calculated markers from graph."""
         try:

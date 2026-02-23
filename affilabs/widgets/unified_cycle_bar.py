@@ -55,6 +55,7 @@ class CycleBarState(Enum):
     INJECT = "inject"
     CONTACT = "contact"
     WASH_DUE = "wash_due"
+    ANOMALY = "anomaly"
 
 
 class UnifiedCycleBar(QFrame):
@@ -648,4 +649,149 @@ class UnifiedCycleBar(QFrame):
             QPushButton:hover { background: #2DA84C; }
             QPushButton:pressed { background: #248A3D; }
             QPushButton:disabled { background: #E5E5EA; color: #86868B; }
+        """
+
+    # ──────────────────────────────────────────────────────────────────
+    # Anomaly display methods
+    # ──────────────────────────────────────────────────────────────────
+
+    _ANOMALY_ICONS = {
+        'POSSIBLE_BUBBLE': '🫧',
+        'POSSIBLE_LEAK':   '💧',
+        'BASELINE_DRIFT':  '📉',
+    }
+    _ANOMALY_MESSAGES = {
+        'POSSIBLE_BUBBLE': 'Possible air bubble — {ch}. Signal may recover.',
+        'POSSIBLE_LEAK':   'Possible leak — {ch}. Check connections.',
+        'BASELINE_DRIFT':  'Baseline drifting — {ch}. Re-stabilise before injecting.',
+    }
+
+    def set_inject_anomaly(self, flag: str, channel: str) -> None:
+        """Show anomaly warning within INJECT state — non-blocking.
+
+        Updates icon + message in place. State stays INJECT; Cancel/Done
+        buttons remain active so the user can still proceed or abort.
+
+        Args:
+            flag:    'POSSIBLE_BUBBLE' | 'POSSIBLE_LEAK' | 'BASELINE_DRIFT'
+            channel: Channel letter, e.g. 'B'
+        """
+        if self._state != CycleBarState.INJECT:
+            return
+        icon = self._ANOMALY_ICONS.get(flag, '⚠')
+        msg  = self._ANOMALY_MESSAGES.get(flag, f'Anomaly on channel {channel}')
+        msg  = msg.format(ch=f'Channel {channel}')
+
+        self.icon_label.setText(icon)
+        self.icon_label.setStyleSheet("font-size: 15px; background: transparent;")
+        self.message_label.setText(msg)
+        self.message_label.setStyleSheet(
+            f"font-size: 13px; color: #FF9500; "
+            f"font-weight: {Fonts.WEIGHT_SEMIBOLD}; font-family: {Fonts.SYSTEM}; "
+            f"background: transparent;"
+        )
+        self.setStyleSheet(self._anomaly_inject_style())
+
+    def set_anomaly(self, flag: str, channel: str,
+                    restore_fn=None) -> None:
+        """Set ANOMALY state — amber bar with Dismiss. Reverts on dismiss.
+
+        For use during RUNNING / CONTACT states when an anomaly is detected
+        outside the injection window.
+
+        Args:
+            flag:       'POSSIBLE_BUBBLE' | 'POSSIBLE_LEAK' | 'BASELINE_DRIFT'
+            channel:    Channel letter, e.g. 'B'
+            restore_fn: Optional callable to re-apply the previous bar state
+                        when user dismisses. If None, bar returns to IDLE.
+        """
+        self._state = CycleBarState.ANOMALY
+        self._anomaly_restore_fn = restore_fn
+
+        icon = self._ANOMALY_ICONS.get(flag, '⚠')
+        msg  = self._ANOMALY_MESSAGES.get(flag, f'Anomaly on channel {channel}')
+        msg  = msg.format(ch=f'Channel {channel}')
+
+        self._hide_all_buttons()
+        self.dismiss_btn.show()
+        self.dismiss_btn.setText("Dismiss")
+        self.dismiss_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255,255,255,0.85);
+                padding: 0px 16px;
+                font-size: 12px;
+                font-weight: 600;
+                color: #FF9500;
+                border-radius: 6px;
+                border: 1px solid rgba(255,149,0,0.4);
+            }
+            QPushButton:hover { background: rgba(255,255,255,1.0); }
+        """)
+        # Rewire dismiss for anomaly restore (temporarily override _on_dismiss)
+        try:
+            self.dismiss_btn.clicked.disconnect()
+        except RuntimeError:
+            pass
+        self.dismiss_btn.clicked.connect(self._on_anomaly_dismiss)
+
+        self.icon_label.setText(icon)
+        self.icon_label.setStyleSheet("font-size: 15px; background: transparent;")
+        self.message_label.setText(msg)
+        self.message_label.setStyleSheet(
+            f"font-size: 13px; color: #7D4E00; "
+            f"font-weight: {Fonts.WEIGHT_SEMIBOLD}; font-family: {Fonts.SYSTEM}; "
+            f"background: transparent;"
+        )
+        self.info_label.hide()
+        self.setStyleSheet(self._anomaly_style())
+        self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+        self.setToolTip("")
+
+    def _on_anomaly_dismiss(self) -> None:
+        """Dismiss anomaly bar and restore previous state."""
+        # Reconnect dismiss to original wash handler
+        try:
+            self.dismiss_btn.clicked.disconnect()
+        except RuntimeError:
+            pass
+        self.dismiss_btn.clicked.connect(self._on_dismiss)
+        self.dismiss_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.9);
+                padding: 0px 16px;
+                font-size: 12px;
+                font-weight: 600;
+                color: #FF3B30;
+                border-radius: 6px;
+                border: 1px solid rgba(255, 59, 48, 0.3);
+            }
+            QPushButton:hover { background: rgba(255, 255, 255, 1.0); }
+            QPushButton:pressed { background: #FFE5E3; }
+        """)
+        restore = getattr(self, '_anomaly_restore_fn', None)
+        if callable(restore):
+            restore()
+        else:
+            self.set_idle()
+
+    @staticmethod
+    def _anomaly_style() -> str:
+        """Amber background for ANOMALY state (RUNNING/CONTACT context)."""
+        return """
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #FFF3CD, stop:1 #FFE082);
+                border-top: 2px solid #FF9500;
+            }
+        """
+
+    @staticmethod
+    def _anomaly_inject_style() -> str:
+        """Deeper amber for inline anomaly within INJECT state."""
+        return """
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #FFE0B2, stop:1 #FFCC80);
+                border-top: 2px solid #FF6D00;
+            }
         """

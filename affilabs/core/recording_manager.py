@@ -106,7 +106,7 @@ class RecordingManager(QObject):
         """
         return self._timeline_stream
 
-    def start_recording(self, filename: str | None = None, time_offset: float = 0.0) -> None:
+    def start_recording(self, filename: str | None = None, time_offset: float = 0.0, chip_info: dict | None = None) -> None:
         """Start recording data to file (if filename provided) or memory only.
 
         Args:
@@ -136,6 +136,12 @@ class RecordingManager(QObject):
 
             # Start data collection
             self.data_collector.start_collection(start_time=time.time())
+
+            # Inject chip/sensor metadata if provided
+            if chip_info:
+                for key, value in chip_info.items():
+                    if value:  # skip empty strings
+                        self.data_collector.update_metadata(key, value)
 
             if filename:
                 # Create file immediately for live recording

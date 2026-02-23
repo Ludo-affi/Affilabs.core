@@ -251,11 +251,12 @@ class GraphEventCoordinator:
 
         logger.info(f"Autoscale enabled for {self.app._selected_axis.upper()}-axis")
 
-        # Enable autoscale for selected axis
-        if self.app._selected_axis == "x":
-            self.app.main_window.cycle_of_interest_graph.enableAutoRange(axis="x")
+        # Clear user-zoom lock so next update tick resumes auto-fitting.
+        graph = self.app.main_window.cycle_of_interest_graph
+        if hasattr(graph, 'auto_range'):
+            graph.auto_range()          # SegmentGraph path
         else:
-            self.app.main_window.cycle_of_interest_graph.enableAutoRange(axis="y")
+            graph._user_zoomed = False  # raw PlotWidget path (Active Cycle)
 
     def on_manual_scale_toggled(self, checked: bool):
         """Handle manual scale radio button toggle.

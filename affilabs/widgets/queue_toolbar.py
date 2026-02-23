@@ -22,7 +22,6 @@ USAGE:
     toolbar.undo_requested.connect(presenter.undo)
     toolbar.redo_requested.connect(presenter.redo)
     toolbar.delete_selected_requested.connect(lambda: presenter.delete_cycles(table.get_selected_indices()))
-    toolbar.clear_all_requested.connect(presenter.clear_queue)
 
     # Update button states from presenter
     presenter.can_undo_changed.connect(toolbar.set_undo_enabled)
@@ -44,20 +43,17 @@ class QueueToolbar(QToolBar):
     - Undo (Ctrl+Z)
     - Redo (Ctrl+Shift+Z)
     - Delete Selected
-    - Clear All
 
     Signals:
         undo_requested: User clicked Undo or pressed Ctrl+Z
         redo_requested: User clicked Redo or pressed Ctrl+Shift+Z
         delete_selected_requested: User clicked Delete Selected
-        clear_all_requested: User clicked Clear All
     """
 
     # Signals
     undo_requested = Signal()
     redo_requested = Signal()
     delete_selected_requested = Signal()
-    clear_all_requested = Signal()
 
     def __init__(self, parent: QWidget = None):
         """Initialize queue toolbar.
@@ -70,7 +66,6 @@ class QueueToolbar(QToolBar):
         self._undo_button: QPushButton = None
         self._redo_button: QPushButton = None
         self._delete_button: QPushButton = None
-        self._clear_button: QPushButton = None
 
         self._setup_ui()
         self._setup_shortcuts(parent)
@@ -102,12 +97,6 @@ class QueueToolbar(QToolBar):
         self._delete_button.setEnabled(False)  # Enabled when selection exists
         self._delete_button.clicked.connect(self.delete_selected_requested.emit)
         self.addWidget(self._delete_button)
-
-        # Clear all button
-        self._clear_button = QPushButton("🧹 Clear All")
-        self._clear_button.setToolTip("Remove all cycles from queue")
-        self._clear_button.clicked.connect(self._on_clear_all_clicked)
-        self.addWidget(self._clear_button)
 
         # Spacer to push subsequent items to the right
         spacer = QWidget()
@@ -171,15 +160,6 @@ class QueueToolbar(QToolBar):
         """
         self._delete_button.setEnabled(enabled)
 
-    @Slot(bool)
-    def set_clear_enabled(self, enabled: bool):
-        """Enable/disable clear button.
-
-        Args:
-            enabled: True to enable clear (when queue not empty)
-        """
-        self._clear_button.setEnabled(enabled)
-
     @Slot(str)
     def set_undo_tooltip(self, description: str):
         """Update undo button tooltip with operation description.
@@ -225,12 +205,6 @@ class QueueToolbar(QToolBar):
             self.redo_requested.emit()
             logger.debug("Redo triggered via Ctrl+Shift+Z")
 
-    def _on_clear_all_clicked(self):
-        """Handle clear all button click with confirmation."""
-        # TODO: Add confirmation dialog in actual integration
-        # For now, just emit signal
-        self.clear_all_requested.emit()
-
     # ========================================================================
     # CONVENIENCE METHODS
     # ========================================================================
@@ -249,4 +223,3 @@ class QueueToolbar(QToolBar):
         # Update button states
         self.set_undo_enabled(stats.get('can_undo', False))
         self.set_redo_enabled(stats.get('can_redo', False))
-        self.set_clear_enabled(queue_size > 0)

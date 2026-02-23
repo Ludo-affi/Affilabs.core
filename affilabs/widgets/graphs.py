@@ -625,9 +625,6 @@ class SensorgramGraph(GraphicsLayoutWidget):
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
         self.static[ch].setVisible(bool(flag))
-        # Re-fit Y-axis when channel visibility changes
-        if self._y_autofit:
-            self._fit_y_to_visible_data()
 
     def show_cycle_time_region(self, cycle_time_minutes):
         """Show cycle time markers - either as vertical lines or a shaded bar.
@@ -852,8 +849,7 @@ class SegmentGraph(GraphicsLayoutWidget):
         self.plot.setLabel("bottom", "Time (s)")
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
-        self.plot.enableAutoRange()
-        self.plot.setAutoVisible(x=True, y=True)
+        self.plot.disableAutoRange()
         self.plots = {}
 
         # ViewBox performance optimizations for smooth rendering:
@@ -873,12 +869,9 @@ class SegmentGraph(GraphicsLayoutWidget):
         bottom_axis.label.show()
         left_axis.label.show()
 
-        # Set minimum Y-axis range (10 RU minimum)
-        self.min_y_range = 10.0
-        self.plot.getViewBox().sigRangeChanged.connect(self._enforce_min_range)
-
-        # Set default Y-axis range for Cycle of Interest (-5 to 10 RU)
-        self.plot.setYRange(-5, 10, padding=0)
+        # Track whether user has manually zoomed — gates auto-adjust in update_display
+        self._user_zoomed = False
+        self.plot.getViewBox().sigRangeChangedManually.connect(self._on_user_range_change)
 
         self.wait_to_update = False
         self.dissoc_cursors = {ch: {"Start": None, "End": None} for ch in CH_LIST}
@@ -1273,49 +1266,16 @@ class SegmentGraph(GraphicsLayoutWidget):
                             x_min = min(x_min, np.nanmin(plot_x))
                             x_max = max(x_max, np.nanmax(plot_x))
 
-                # Apply padding: +10 RU above max, -5 RU below min, minimum 10s time span
-                if has_visible_data:
-                    # Y-axis padding (convert to RU if needed)
-                    if self.unit == "nm":
-                        # Convert nm to RU for padding calculation (approximate: 1 RU ≈ 0.1 nm)
-                        y_padding_top = 10 * 0.1  # 10 RU ≈ 1 nm
-                        y_padding_bottom = 5 * 0.1  # 5 RU ≈ 0.5 nm
-                    else:
-                        y_padding_top = 10  # 10 RU
-                        y_padding_bottom = 5  # 5 RU
-
-                    padded_y_min = y_min - y_padding_bottom
-                    padded_y_max = y_max + y_padding_top
-
-                    # X-axis: use cycle_time if available (with 10% padding), otherwise rolling 10-second window
+                # Auto-adjust axes only when user hasn't manually zoomed
+                if has_visible_data and not self._user_zoomed:
+                    # X-axis: fit to cycle time if known, else fit to data
                     if hasattr(seg, "cycle_time") and seg.cycle_time is not None:
-                        # Cycle has a defined time: show cycle_time + 10%
-                        target_time = seg.cycle_time * 60  # Convert minutes to seconds
-                        padded_x_min = x_min
-                        padded_x_max = x_min + (target_time * 1.1)  # Add 10% padding
+                        x_end = x_min + seg.cycle_time * 60
                     else:
-                        # Auto-read or no cycle time: rolling 10-second window
-                        x_span = x_max - x_min
-                        if x_span < 10:
-                            # Show 0-10 second window, moving forward with new data
-                            padded_x_min = x_min
-                            padded_x_max = x_min + 10
-                        else:
-                            # Data exceeds 10 seconds, show all data
-                            padded_x_min = x_min
-                            padded_x_max = x_max
+                        x_end = max(x_max, x_min + 10)
 
-                    # Set the ranges with padding disabled to avoid auto-scaling
-                    # BUT only if fixed window is not active (from cycle start)
-                    if not self.fixed_window_active:
-                        self.plot.setRange(
-                            xRange=(padded_x_min, padded_x_max),
-                            yRange=(padded_y_min, padded_y_max),
-                            padding=0,
-                        )
-                    else:
-                        # Fixed window active - only update Y range, keep X as-is
-                        self.plot.setYRange(padded_y_min, padded_y_max, padding=0)
+                    self.plot.setXRange(x_min, x_end, padding=0)
+                    self.plot.setYRange(y_min, y_max, padding=0)
 
                 # Add shift value labels on the signals
                 self._update_shift_labels(seg, x_data, y_data)
@@ -1327,17 +1287,12 @@ class SegmentGraph(GraphicsLayoutWidget):
         return self.updating
 
     def auto_range(self):
-        """Enable intelligent auto-ranging with outlier detection.
+        """Clear user zoom flag — next update_display tick will fit axes to data."""
+        self._user_zoomed = False
 
-        Uses 95th percentile scaling to ignore spikes/outliers automatically,
-        eliminating the need for manual cursor-based Y-scale adjustment.
-        """
-        yrange = self.plot.viewRange()[1]
-        self.plot.setRange(
-            yRange=(yrange[0], yrange[1]),
-            update=True,
-            disableAutoRange=False,
-        )
+    def _on_user_range_change(self, *_):
+        """Called when user manually pans/zooms — suppress auto-adjust until reset."""
+        self._user_zoomed = True
 
     def _calculate_smart_y_range(self, y_data_dict):
         """Calculate intelligent Y-axis range ignoring outliers.
@@ -1383,24 +1338,10 @@ class SegmentGraph(GraphicsLayoutWidget):
             return (-5, 10)  # Fallback to default
 
     def _enforce_min_range(self):
-        """Enforce minimum Y-axis range of 10 RU."""
-        try:
-            viewbox = self.plot.getViewBox()
-            yrange = viewbox.viewRange()[1]
-            y_span = yrange[1] - yrange[0]
-
-            if y_span < self.min_y_range:
-                # Expand range to minimum, centered on current view
-                center = (yrange[0] + yrange[1]) / 2
-                new_min = center - self.min_y_range / 2
-                new_max = center + self.min_y_range / 2
-                viewbox.setYRange(new_min, new_max, padding=0)
-        except Exception as e:
-            logger.debug(f"Error enforcing min range: {e}")
+        pass  # removed — was fighting user zoom
 
     def display_channel_changed(self, ch, flag):
         self.plots[ch].setVisible(bool(flag))
-        self.auto_range()
 
         # Update checkbox state if it exists (without triggering signal)
         if ch in self.legend_checkboxes:
@@ -1443,6 +1384,7 @@ class SegmentGraph(GraphicsLayoutWidget):
         if unit is None:
             unit = self.unit
         self.plot.setLabel("left", text=f"Δ SPR ({unit})")
+        self._user_zoomed = False  # new cycle — reset zoom state
 
         # Clear shift annotation
         self._clear_shift_annotation()

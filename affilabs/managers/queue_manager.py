@@ -68,9 +68,12 @@ class QueueManager(QObject):
     def add_cycle(self, cycle: Cycle) -> bool:
         """Add a cycle to the end of the queue.
 
-        NOTE: Adding cycles is ALLOWED even when queue is locked during execution.
-        This enables appending additional cycles to the back of a running queue.
-        Only deletion and reordering are blocked when locked.
+        Live-append during execution (queue is locked):
+            Adding is ALLOWED while a method is running.  The new cycle is
+            appended to BOTH ``_queue`` and ``_original_method`` so the
+            execution loop (which reads ``_original_method[_method_progress:]``)
+            will pick it up after all currently-pending cycles finish.
+            Deletion and reordering remain blocked while locked.
 
         Args:
             cycle: Cycle object to add (will be assigned a unique ID)
@@ -78,9 +81,6 @@ class QueueManager(QObject):
         Returns:
             True if cycle was added, False on error
         """
-        # REMOVED: lock check - allow adding cycles during execution
-        # Users should be able to append new cycles to a running method
-
         # Queue-level validation (defense-in-depth)
         validation_warnings = self._validate_cycle(cycle)
         if validation_warnings:
@@ -91,8 +91,18 @@ class QueueManager(QObject):
         self._cycle_counter += 1
         cycle.cycle_id = self._cycle_counter
 
-        # Add to queue
+        # Add to live queue
         self._queue.append(cycle)
+
+        # If a run is active, mirror into the execution snapshot so the loop
+        # will execute this cycle once all earlier cycles complete.
+        if self._lock and self._original_method:
+            import copy as _copy
+            self._original_method.append(_copy.deepcopy(cycle))
+            logger.info(
+                f"⚡ Mid-run append: '{cycle.name}' added to execution snapshot "
+                f"(position {len(self._original_method)} of {len(self._original_method)})"
+            )
 
         # Renumber for sequential display
         self._renumber_cycles()
@@ -523,14 +533,16 @@ class QueueManager(QObject):
         return self._method_progress
 
     def get_remaining_from_method(self) -> List[Cycle]:
-        """Get remaining cycles from original method for resume after pause.
+        """Get remaining cycles from original method (shallow copy).
 
-        Returns deep copies so they can be safely re-queued without aliasing.
+        The caller receives its own list so appending (e.g. auto-read cycle)
+        does not affect _original_method, but the Cycle objects are shared
+        read-only references — do NOT mutate individual cycles from this list.
 
         Returns:
-            List of Cycle deep-copies for cycles not yet executed.
+            Shallow list of remaining Cycle objects (display and counting only).
         """
-        return copy.deepcopy(self._original_method[self._method_progress:])
+        return list(self._original_method[self._method_progress:])
 
     def clear_method_snapshot(self):
         """Clear the method snapshot (run finished or user clears queue)."""

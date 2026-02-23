@@ -100,6 +100,9 @@ class UIUpdateHelpers:
                 ):
                     cycle_changed = True
                     app._last_cycle_bounds = (start_time_display, stop_time_display)
+                    # New cycle region — reset zoom so axes auto-fit the new data
+                    graph = app.main_window.cycle_of_interest_graph
+                    graph._user_zoomed = False
 
             # Extract data within cursor range for each channel
             for ch_letter, ch_idx in app._channel_pairs:
@@ -189,19 +192,10 @@ class UIUpdateHelpers:
                 curve = app.main_window.cycle_of_interest_graph.curves[ch_idx]
                 curve.setData(display_cycle_time, display_delta_spr)
 
-            # Set X-axis range to show only the cursor region
-            # Respect user's autoscale preference - only override if autoscale is enabled
-            if max_cycle_time > 0:
-                # Check if autoscale control exists (may be hidden)
-                if hasattr(app.main_window, 'autoscale_check') and app.main_window.autoscale_check.isChecked():
-                    # User wants autoscale - let it handle the range
-                    app.main_window.cycle_of_interest_graph.setXRange(0, max_cycle_time, padding=0.02)
-                elif not hasattr(app.main_window, 'autoscale_check'):
-                    # Control doesn't exist (hidden) - use autoscale by default
-                    app.main_window.cycle_of_interest_graph.setXRange(0, max_cycle_time, padding=0.02)
-                else:
-                    # User wants manual control - don't override their range
-                    pass
+            # Auto-range when user hasn't manually zoomed — let pyqtgraph handle it
+            graph = app.main_window.cycle_of_interest_graph
+            if not getattr(graph, '_user_zoomed', False):
+                graph.getPlotItem().enableAutoRange()
 
             # Update Δ SPR display with current cursor-based delta values
             app._update_delta_display()

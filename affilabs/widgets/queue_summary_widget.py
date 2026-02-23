@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QMenu, QLabel
 )
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QColor, QBrush
 
 from affilabs.domain.cycle import Cycle
@@ -66,7 +66,7 @@ class QueueSummaryWidget(QTableWidget):
     COL_NUM = 0
     COL_TYPE = 1
     COL_DURATION = 2
-    COL_NOTES = 3
+    COL_STATUS = 3
 
     def __init__(self, parent=None):
         """Initialize queue summary table."""
@@ -75,6 +75,8 @@ class QueueSummaryWidget(QTableWidget):
         self._presenter: Optional[QueuePresenter] = None
         self._is_locked = False
         self._running_cycle_id: Optional[str] = None  # Track which cycle is running
+        self._refresh_pending = False  # Debounce guard
+        self._cycles_in_edits: set = set()  # cycle_ids sent to Edits tab
 
         self._setup_ui()
         self._setup_drag_drop()
@@ -86,14 +88,14 @@ class QueueSummaryWidget(QTableWidget):
         """Configure table appearance and behavior."""
         # Set columns
         self.setColumnCount(4)
-        self.setHorizontalHeaderLabels(["#", "Type", "Duration (min)", "Notes"])
+        self.setHorizontalHeaderLabels(["#", "Type", "Duration (min)", "Status"])
 
-        # Column sizing - fit content for short columns, stretch Notes
+        # Column sizing - fit content for all columns, stretch Status
         header = self.horizontalHeader()
         header.setSectionResizeMode(self.COL_NUM, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(self.COL_TYPE, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(self.COL_DURATION, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(self.COL_NOTES, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(self.COL_STATUS, QHeaderView.ResizeMode.Stretch)
 
         # Scroll settings - critical for nested-inside-QScrollArea to work
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -178,12 +180,31 @@ class QueueSummaryWidget(QTableWidget):
         """
         self._presenter = presenter
 
-        # Connect presenter signals
-        presenter.queue_changed.connect(self.refresh)
+        # Connect presenter signals — queue_changed goes through debounce so
+        # multiple signals fired in the same event-loop tick (advance_method_progress,
+        # lock_queue, set_running_cycle) collapse into a single table rebuild.
+        presenter.queue_changed.connect(self._schedule_refresh)
         presenter.queue_locked.connect(self._on_queue_locked)
         presenter.queue_unlocked.connect(self._on_queue_unlocked)
 
         logger.debug("QueueSummaryWidget connected to presenter")
+
+    def _schedule_refresh(self):
+        """Debounce entry-point: schedules one refresh per event-loop tick.
+
+        Multiple same-tick signals (advance_method_progress → queue_changed,
+        lock_queue → queue_locked, set_running_cycle) each call this.  Only
+        the *first* call in any given tick schedules the actual rebuild; the
+        rest are no-ops because _refresh_pending is already True.
+        """
+        if not self._refresh_pending:
+            self._refresh_pending = True
+            QTimer.singleShot(0, self._do_refresh)
+
+    def _do_refresh(self):
+        """Actual rebuild — called once per debounced batch."""
+        self._refresh_pending = False
+        self.refresh()
 
     @Slot()
     def refresh(self):
@@ -200,6 +221,10 @@ class QueueSummaryWidget(QTableWidget):
 
         # Save selection
         selected_rows = [item.row() for item in self.selectedItems()]
+
+        # Hide empty overlay during rebuild to avoid blank flash
+        if hasattr(self, '_empty_overlay'):
+            self._empty_overlay.setVisible(False)
 
         # Block signals during bulk update to avoid flicker
         self.blockSignals(True)
@@ -293,11 +318,12 @@ class QueueSummaryWidget(QTableWidget):
 
         cycle_num = cycle.cycle_num if cycle.cycle_num > 0 else row + 1
 
+        status_text = self._status_label(cycle.cycle_id, status)
         for col, (text, align) in enumerate([
             (str(cycle_num), Qt.AlignmentFlag.AlignCenter),
             (f"{prefix}{abbr}", None),
             (f"{cycle.length_minutes:.1f}", Qt.AlignmentFlag.AlignCenter),
-            (cycle.note or "", None),
+            (status_text, Qt.AlignmentFlag.AlignCenter),
         ]):
             item = QTableWidgetItem(text)
             if align:
@@ -377,21 +403,50 @@ class QueueSummaryWidget(QTableWidget):
             duration_item.setBackground(QBrush(QColor(bg_color)))
         self.setItem(row, self.COL_DURATION, duration_item)
 
-        # Column 3: Notes
-        notes_item = QTableWidgetItem(cycle.note or "")
-        notes_item.setFlags(notes_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        # Column 3: Status
+        raw_status = "running" if is_running else "pending"
+        status_text = self._status_label(cycle.cycle_id, raw_status)
+        status_item = QTableWidgetItem(status_text)
+        status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        if cycle.note:
+            status_item.setToolTip(cycle.note)
         if is_running:
-            notes_item.setBackground(QBrush(QColor("#1565C0")))
-            notes_item.setForeground(QColor("#FFFFFF"))  # White text
-            font = notes_item.font()
+            status_item.setBackground(QBrush(QColor("#1565C0")))
+            status_item.setForeground(QColor("#FFFFFF"))
+            font = status_item.font()
             font.setBold(True)
-            notes_item.setFont(font)
+            status_item.setFont(font)
         elif bg_color:
-            notes_item.setBackground(QBrush(QColor(bg_color)))
-        self.setItem(row, self.COL_NOTES, notes_item)
+            status_item.setBackground(QBrush(QColor(bg_color)))
+        self.setItem(row, self.COL_STATUS, status_item)
 
         # Store cycle ID in row data
         self.item(row, 0).setData(Qt.ItemDataRole.UserRole, cycle.cycle_id)
+
+    def _status_label(self, cycle_id: int, execution_status: str) -> str:
+        """Return display text for the Status column.
+
+        Args:
+            cycle_id: Cycle's permanent ID
+            execution_status: 'pending', 'running', or 'completed'
+        """
+        if cycle_id in self._cycles_in_edits:
+            return "In Edits"
+        if execution_status == "running":
+            return "Running"
+        if execution_status == "completed":
+            return "Done"
+        return "Pending"
+
+    def mark_in_edits(self, cycle_id: int) -> None:
+        """Mark a cycle as having been sent to the Edits tab.
+
+        Called by _cycle_mixin after edits_tab.add_cycle() succeeds.
+        Schedules a debounced refresh so the Status column updates.
+        """
+        self._cycles_in_edits.add(cycle_id)
+        self._schedule_refresh()
 
     def _get_type_background(self, cycle_type: str) -> Optional[str]:
         """Get subtle background color for cycle type.
@@ -432,11 +487,16 @@ class QueueSummaryWidget(QTableWidget):
     def set_running_cycle(self, cycle_id: Optional[str]):
         """Mark a cycle as currently running.
 
+        Updates _running_cycle_id and schedules a debounced refresh so this
+        call (which comes right after advance_method_progress and lock_queue
+        have both already scheduled their own refreshes) is folded into the
+        same single rebuild rather than triggering an additional one.
+
         Args:
             cycle_id: ID of running cycle, or None to clear
         """
         self._running_cycle_id = cycle_id
-        self.refresh()  # Refresh to show running indicator
+        self._schedule_refresh()
 
     # ========================================================================
     # DRAG-DROP IMPLEMENTATION
@@ -445,6 +505,11 @@ class QueueSummaryWidget(QTableWidget):
     def dropEvent(self, event):
         """Handle drop event for reordering.
 
+        We deliberately do NOT call super().dropEvent() — Qt's InternalMove
+        would delete the source row before the presenter can reorder the data,
+        causing the cycle to disappear.  Instead we capture row indices, ignore
+        Qt's built-in move, and let the presenter rebuild the table via refresh().
+
         Args:
             event: QDropEvent
         """
@@ -452,18 +517,23 @@ class QueueSummaryWidget(QTableWidget):
             event.ignore()
             return
 
-        # Get source and destination rows
         source_row = self.currentRow()
-        drop_row = self.indexAt(event.pos()).row()
+        drop_index = self.indexAt(event.position().toPoint())
+        drop_row = drop_index.row()
 
-        if source_row < 0 or drop_row < 0:
+        # If dropped below all rows, target the last row
+        if drop_row < 0:
+            drop_row = self.rowCount() - 1
+
+        if source_row < 0 or source_row == drop_row:
             event.ignore()
             return
 
-        # Accept the drop
+        # Suppress Qt's built-in move (would remove the row before presenter acts)
+        event.setDropAction(Qt.DropAction.IgnoreAction)
         event.accept()
 
-        # Emit signal for presenter to handle
+        # Let presenter reorder and refresh the table
         self.cycle_reordered.emit(source_row, drop_row)
 
         logger.debug(f"Drag-drop: row {source_row} → {drop_row}")
@@ -583,6 +653,33 @@ class QueueSummaryWidget(QTableWidget):
     # ========================================================================
     # UTILITY METHODS
     # ========================================================================
+
+    def show_method_complete(self) -> None:
+        """Append a 'Method Complete' footer row at the bottom of the table."""
+        row = self.rowCount()
+        self.insertRow(row)
+        item = QTableWidgetItem("✓  Method Complete")
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # not selectable/editable
+        item.setForeground(QBrush(QColor("#34C759")))
+        item.setBackground(QBrush(QColor("#F0FFF4")))
+        from PySide6.QtGui import QFont
+        font = QFont()
+        font.setBold(True)
+        font.setPointSize(10)
+        item.setFont(font)
+        self.setItem(row, 0, item)
+        # Span all 4 columns
+        self.setSpan(row, 0, 1, self.columnCount())
+        self.scrollToBottom()
+        self._completion_row = row
+
+    def clear_method_complete(self) -> None:
+        """Remove the completion footer row if present."""
+        if hasattr(self, '_completion_row') and self._completion_row < self.rowCount():
+            self.removeRow(self._completion_row)
+            self._completion_row = -1
+            self.clearSpans()
 
     def get_cycle_count(self) -> int:
         """Get number of cycles in table.

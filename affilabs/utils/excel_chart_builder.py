@@ -291,19 +291,134 @@ class ExcelChartBuilder:
             chart_sheet.cell(row=row, column=2, value=cycle_row.get('start_time_sensorgram', 0))
             chart_sheet.cell(row=row, column=3, value=cycle_row.get('end_time_sensorgram', 100))
 
+    def add_binding_plot_chart(self, binding_fit: dict) -> None:
+        """Add Binding Plot sheet with data table and XY scatter chart.
+
+        Args:
+            binding_fit: Dict from BindingPlotMixin._binding_fit_result containing
+                         'model', 'channel', 'r2', 'ref', 'conc', 'dspr', 'labels',
+                         'x_fit', 'y_fit', 'params', and optionally 'Kd_uM', 'Rmax_RU'.
+        """
+        if not OPENPYXL_AVAILABLE:
+            return
+
+        from openpyxl.chart import ScatterChart, Reference, Series as ChartSeries
+
+        sheet = self.workbook.create_sheet("Binding Plot")
+
+        model   = binding_fit.get('model', 'Unknown')
+        channel = binding_fit.get('channel', '?')
+        r2      = binding_fit.get('r2', 0.0)
+        ref     = binding_fit.get('ref', 'None')
+        params  = binding_fit.get('params', '')
+        conc    = binding_fit.get('conc', [])
+        dspr    = binding_fit.get('dspr', [])
+        labels  = binding_fit.get('labels', [])
+        x_fit   = binding_fit.get('x_fit', [])
+        y_fit   = binding_fit.get('y_fit', [])
+
+        # --- Header ---
+        sheet.cell(row=1, column=1, value=f"Binding Plot — Ch {channel} — {model}")
+        sheet.cell(row=2, column=1, value=f"R² = {r2:.3f}   |   ref: {ref}   |   {params.replace(chr(10), '  ')}")
+
+        # --- Raw data table (cols A–C starting row 4) ---
+        sheet.cell(row=4, column=1, value="Cycle")
+        sheet.cell(row=4, column=2, value="Concentration_uM")
+        sheet.cell(row=4, column=3, value="Delta_SPR_RU")
+        for i, (lbl, c, d) in enumerate(zip(labels, conc, dspr)):
+            r = 5 + i
+            sheet.cell(row=r, column=1, value=lbl)
+            sheet.cell(row=r, column=2, value=float(c))
+            sheet.cell(row=r, column=3, value=float(d))
+
+        n_raw = len(conc)
+        raw_last_row = 4 + n_raw  # inclusive
+
+        # --- Fit line table (cols E–F starting row 4) ---
+        sheet.cell(row=4, column=5, value="Fit_X_uM")
+        sheet.cell(row=4, column=6, value="Fit_Y_RU")
+        for i, (x, y) in enumerate(zip(x_fit, y_fit)):
+            r = 5 + i
+            sheet.cell(row=r, column=5, value=float(x))
+            sheet.cell(row=r, column=6, value=float(y))
+
+        n_fit = len(x_fit)
+        fit_last_row = 4 + n_fit  # inclusive
+
+        # --- Metadata (col H) ---
+        sheet.cell(row=4, column=8, value="Channel")
+        sheet.cell(row=5, column=8, value=channel)
+        sheet.cell(row=6, column=8, value="Model")
+        sheet.cell(row=7, column=8, value=model)
+        sheet.cell(row=8, column=8, value="R2")
+        sheet.cell(row=9, column=8, value=r2)
+        sheet.cell(row=10, column=8, value="Reference")
+        sheet.cell(row=11, column=8, value=ref)
+        if 'Kd_uM' in binding_fit:
+            sheet.cell(row=12, column=8, value="Kd_uM")
+            sheet.cell(row=13, column=8, value=binding_fit['Kd_uM'])
+        if 'Rmax_RU' in binding_fit:
+            sheet.cell(row=14, column=8, value="Rmax_RU (empirical)")
+            sheet.cell(row=15, column=8, value=binding_fit['Rmax_RU'])
+
+        # --- Rmax Calculator summary block (col H, rows 17+) ---
+        rmax_rows = [
+            ("Ligand MW (Da)",        binding_fit.get('rmax_ligand_mw')),
+            ("Analyte MW (Da)",       binding_fit.get('rmax_analyte_mw')),
+            ("Immob ΔSPR (RU)",       binding_fit.get('rmax_immob_dspr_ru')),
+            ("Theoretical Rmax (RU)", binding_fit.get('rmax_theoretical_ru')),
+            ("Empirical Rmax (RU)",   binding_fit.get('Rmax_RU')),
+            ("Surface activity (%)",  binding_fit.get('rmax_surface_activity_pct')),
+        ]
+        r_offset = 17
+        sheet.cell(row=r_offset, column=8, value="Rmax Calculator")
+        for i, (label, value) in enumerate(rmax_rows):
+            sheet.cell(row=r_offset + 1 + i * 2, column=8, value=label)
+            sheet.cell(row=r_offset + 2 + i * 2, column=8,
+                       value=round(value, 2) if value is not None else "—")
+
+        # --- XY Scatter chart ---
+        if n_raw >= 2 and n_fit >= 2:
+            chart = ScatterChart()
+            chart.title = f"Binding Plot — Ch {channel} — {model}"
+            chart.style = 10
+            chart.x_axis.title = "Concentration (µM)"
+            chart.y_axis.title = "ΔSPR (RU)"
+            chart.width = 18
+            chart.height = 12
+
+            # Series 1: raw data points (markers only)
+            x_ref_raw = Reference(sheet, min_col=2, min_row=5, max_row=raw_last_row)
+            y_ref_raw = Reference(sheet, min_col=3, min_row=5, max_row=raw_last_row)
+            ser_raw = ChartSeries(y_ref_raw, x_ref_raw, title=f"Ch {channel} data")
+            ser_raw.graphicalProperties.line.noFill = True
+            ser_raw.marker.symbol = "circle"
+            ser_raw.marker.size = 7
+            chart.series.append(ser_raw)
+
+            # Series 2: fit line (line only, no markers)
+            x_ref_fit = Reference(sheet, min_col=5, min_row=5, max_row=fit_last_row)
+            y_ref_fit = Reference(sheet, min_col=6, min_row=5, max_row=fit_last_row)
+            ser_fit = ChartSeries(y_ref_fit, x_ref_fit, title=f"{model} fit")
+            ser_fit.marker.symbol = "none"
+            chart.series.append(ser_fit)
+
+            sheet.add_chart(chart, "A17")
+
 
 def create_analysis_workbook_with_charts(
     raw_data: pd.DataFrame,
-    processed_data: pd.DataFrame, 
+    processed_data: pd.DataFrame,
     analysis_results: pd.DataFrame,
     flag_data: pd.DataFrame,
     cycles_data: pd.DataFrame,
     export_settings: Dict[str, Any],
     output_path: Path,
-    selected_cycles: list = None
+    selected_cycles: list = None,
+    binding_fit: dict = None,
 ) -> None:
     """Create complete analysis workbook with data sheets and interactive charts.
-    
+
     Args:
         raw_data: Original untouched XY data
         processed_data: Post-edit processed curves
@@ -313,6 +428,7 @@ def create_analysis_workbook_with_charts(
         export_settings: Documentation of processing applied
         output_path: Where to save the Excel file
         selected_cycles: List of cycle indices to include in export (None = all)
+        binding_fit: Optional dict from BindingPlotMixin._binding_fit_result
     """
     if not OPENPYXL_AVAILABLE:
         print("Warning: openpyxl not available. Creating basic Excel file without charts.")
@@ -363,7 +479,10 @@ def create_analysis_workbook_with_charts(
             
         if not flag_data.empty:
             chart_builder.add_flags_timeline_chart(flag_data, cycles_data)
-            
+
+        if binding_fit is not None:
+            chart_builder.add_binding_plot_chart(binding_fit)
+
         print("✓ Added interactive Excel charts")
         
     except Exception as e:

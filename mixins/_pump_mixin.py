@@ -142,36 +142,57 @@ class PumpMixin:
         from PySide6.QtCore import QTimer
 
         # Check if we should show the "get ready" schedule dialog
-        # For ANY manual injection experiment (single or multi-injection)
+        # For ANY manual injection experiment (Binding/Kinetic/Concentration), with or without concentrations
         is_manual_mode = self.hardware_mgr.requires_manual_injection
         if (is_manual_mode and
             cycle.type in ("Binding", "Kinetic", "Concentration") and
-            cycle.planned_concentrations and
-            len(cycle.planned_concentrations) >= 1 and  # Single- and multi-injection
             getattr(cycle, 'injection_count', 0) == 0):
 
+            # Build label once — used for both set_upcoming and show_phase1
+            units = getattr(cycle, 'units', 'nM') or 'nM'
+            if cycle.concentrations:
+                active_chs = "".join(sorted(cycle.concentrations.keys()))
+                chs_display = ", ".join(sorted(cycle.concentrations.keys()))
+                vals = list(cycle.concentrations.values())
+                _label = f"Ch {chs_display} · {vals[0]}{units}" if vals else f"Ch {chs_display}"
+            elif cycle.planned_concentrations:
+                _label = cycle.planned_concentrations[0]
+                active_chs = "ABCD"
+            else:
+                _label = cycle.name or "Binding"
+                active_chs = "ABCD"
+            if cycle.contact_time:
+                _label += f" · {int(cycle.contact_time)}s"
+
+            # Pre-announce immediately (t=0) so panel shows what will be injected
+            _bar = getattr(getattr(self.main_window, 'sidebar', None), 'injection_action_bar', None)
+            if _bar is not None:
+                _bar.set_upcoming(_label, active_chs)
+
             def show_schedule_dialog():
-                """Show dialog after 1-second delay so cycle starts at t=0 first."""
-                from affilabs.dialogs.concentration_schedule_dialog import ConcentrationScheduleDialog
-                schedule_dialog = ConcentrationScheduleDialog(cycle, self.main_window)
-
-                # Wire up Phase 2: dialog calls _execute_injection when user clicks
-                # Ready (or countdown expires), and listens to coordinator signals
-                # for per-channel detection feedback.
-                schedule_dialog.set_injection_hooks(
-                    execute_callback=lambda: self._execute_injection(cycle),
-                    injection_coordinator=self.injection_coordinator,
-                )
-
-                result = schedule_dialog.exec()  # Blocks; Phase 2 runs inside exec()
-
-                if result != ConcentrationScheduleDialog.DialogCode.Accepted:
-                    logger.info("User cancelled injection from schedule dialog")
+                """Show inline injection bar 1 second after cycle starts at t=0."""
+                bar = getattr(getattr(self.main_window, 'sidebar', None), 'injection_action_bar', None)
+                if bar is None:
+                    logger.warning("InjectionActionBar not found — proceeding directly")
+                    self._execute_injection(cycle)
                     return
 
-                logger.info(f"⏲ Schedule dialog done — injection already executing ({cycle.injection_method})")
+                def _on_ready():
+                    logger.info("InjectionActionBar ready — executing injection on background thread")
+                    threading.Thread(
+                        target=self._execute_injection,
+                        args=(cycle,),
+                        daemon=True,
+                        name="ManualInjectionExec",
+                    ).start()
 
-            # Delay dialog by 1 second so Active Cycle graph starts at t=0 first
+                def _on_cancel():
+                    logger.info("InjectionActionBar: injection cancelled by user")
+
+                bar.show_phase1(_label, channels=active_chs, on_ready=_on_ready, on_cancel=_on_cancel,
+                                contact_time=getattr(cycle, 'contact_time', None))
+
+            # Delay phase 1 by 1 second so Active Cycle graph starts at t=0 first
             logger.info("⏲ Showing injection schedule dialog in 1 second (allows cycle to start at t=0)")
             QTimer.singleShot(1000, show_schedule_dialog)
         else:
@@ -366,6 +387,82 @@ class PumpMixin:
                 f"at display t={injection_display_time:.2f}s (SPR={spr_val:.1f} RU)"
             )
 
+            # ── Live binding stats: pre-baseline + scheduled slope/anchor freeze ──
+            try:
+                from affilabs.utils.live_binding_stats import compute_pre_baseline
+                from PySide6.QtCore import QTimer
+
+                cycle_num = getattr(self._current_cycle, 'cycle_num', 0) if self._current_cycle else 0
+
+                if (ch in self.buffer_mgr.cycle_data
+                        and len(self.buffer_mgr.cycle_data[ch].time) > 0):
+                    _ct = np.asarray(self.buffer_mgr.cycle_data[ch].time)
+                    _cs = np.asarray(self.buffer_mgr.cycle_data[ch].spr)
+                    pre_bl = compute_pre_baseline(_ct, _cs, injection_time)
+                else:
+                    pre_bl = None
+
+                # Initialise stats entry for this channel
+                if not hasattr(self, '_injection_stats'):
+                    self._injection_stats = {}
+                self._injection_stats[(cycle_num, ch)] = {
+                    'injection_time': injection_time,
+                    'pre_baseline_nm': pre_bl,
+                    'slope_nm_per_s': None,
+                    'slope_frozen': False,
+                    'anchor_nm': None,
+                    'anchor_frozen': False,
+                    'post_baseline_nm': None,
+                    'delta_spr_ru': None,
+                }
+                logger.debug(
+                    f"📊 Injection stats init: cycle={cycle_num} ch={ch.upper()} "
+                    f"pre_bl={pre_bl:.4f}nm" if pre_bl is not None else
+                    f"📊 Injection stats init: cycle={cycle_num} ch={ch.upper()} pre_bl=None"
+                )
+
+                # Freeze slope at t + 15 s
+                def _freeze_slope(c=cycle_num, channel=ch, inj_t=injection_time):
+                    try:
+                        from affilabs.utils.live_binding_stats import compute_slope
+                        entry = self._injection_stats.get((c, channel))
+                        if entry is None or entry['slope_frozen']:
+                            return
+                        if channel in self.buffer_mgr.cycle_data:
+                            _t = np.asarray(self.buffer_mgr.cycle_data[channel].time)
+                            _s = np.asarray(self.buffer_mgr.cycle_data[channel].spr)
+                            entry['slope_nm_per_s'] = compute_slope(_t, _s, inj_t)
+                        entry['slope_frozen'] = True
+                        logger.debug(f"📊 Slope frozen: cycle={c} ch={channel.upper()} "
+                                     f"slope={entry['slope_nm_per_s']}")
+                    except Exception as _e:
+                        logger.debug(f"slope freeze error: {_e}")
+
+                QTimer.singleShot(15_000, _freeze_slope)
+
+                # Freeze anchor at t + 20 s
+                def _freeze_anchor(c=cycle_num, channel=ch, inj_t=injection_time):
+                    try:
+                        from affilabs.utils.live_binding_stats import compute_anchor
+                        entry = self._injection_stats.get((c, channel))
+                        if entry is None or entry['anchor_frozen']:
+                            return
+                        if channel in self.buffer_mgr.cycle_data:
+                            _t = np.asarray(self.buffer_mgr.cycle_data[channel].time)
+                            _s = np.asarray(self.buffer_mgr.cycle_data[channel].spr)
+                            entry['anchor_nm'] = compute_anchor(_t, _s, inj_t)
+                        entry['anchor_frozen'] = True
+                        logger.debug(f"📊 Anchor frozen: cycle={c} ch={channel.upper()} "
+                                     f"anchor={entry['anchor_nm']}")
+                    except Exception as _e:
+                        logger.debug(f"anchor freeze error: {_e}")
+
+                QTimer.singleShot(20_000, _freeze_anchor)
+
+            except Exception as _stats_err:
+                logger.debug(f"Could not init injection stats: {_stats_err}")
+            # ── end live binding stats ─────────────────────────────────────────
+
             # Start contact timer ONCE if cycle has contact_time defined
             # Guard: only start if no manual timer is already running (avoids restart
             # when injection_flag_requested fires for each detected channel)
@@ -381,6 +478,40 @@ class PumpMixin:
                     and self._current_cycle.contact_time > 0):
                 contact_seconds = int(self._current_cycle.contact_time)
                 logger.info(f"⏱ Starting contact timer: {contact_seconds}s")
+
+                # Place projected wash deadline marker immediately on the Active Cycle
+                # graph so the user can see the target end-of-contact line and watch
+                # the data filling the window between injection and wash.
+                wash_display_time = injection_display_time + contact_seconds
+                if hasattr(self, 'flag_mgr') and self.flag_mgr:
+                    try:
+                        self.flag_mgr.create_auto_marker(
+                            marker_type='wash_deadline',
+                            time=wash_display_time,
+                            label='🧹 Wash',
+                            color='#007AFF',
+                        )
+                        logger.info(
+                            f"📍 Wash deadline marker placed at t={wash_display_time:.1f}s "
+                            f"(injection {injection_display_time:.1f}s + {contact_seconds}s contact)"
+                        )
+                        # Shade the contact window so the user sees data filling toward wash
+                        self.flag_mgr.create_contact_region(injection_display_time, wash_display_time)
+                        # Switch CycleStatusOverlay to injection-holding mode so the
+                        # contact countdown is visible on the graph (where the user is looking)
+                        try:
+                            graph = getattr(self.main_window, 'cycle_of_interest_graph', None)
+                            overlay = getattr(graph, 'cycle_status_overlay', None)
+                            if overlay is not None:
+                                overlay.show_injection(
+                                    channel=channel.upper(),
+                                    contact_sec=contact_seconds,
+                                    phase='holding',
+                                )
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
                 
                 # Start manual timer countdown (which auto-shows popout if "Contact" in label)
                 if hasattr(self.main_window, '_start_manual_timer_countdown'):
@@ -2186,6 +2317,7 @@ class PumpMixin:
                 self._method_builder_dialog = MethodBuilderDialog(
                     self.main_window,
                     user_manager=user_mgr,
+                    app=self,
                 )
                 self._method_builder_dialog.method_ready.connect(self._on_method_ready)
                 self._method_builder_dialog.method_saved.connect(self._on_method_saved)
@@ -2262,6 +2394,12 @@ class PumpMixin:
                 tbl.refresh()
         except Exception:
             pass
+
+        # Expand queue panel so user sees the table immediately
+        try:
+            self.main_window.expand_queue_panel()
+        except Exception as e:
+            logger.debug(f"expand_queue_panel after method queue: {e}")
 
         # Start immediately if requested (one-click "build and run")
         if action == "start":

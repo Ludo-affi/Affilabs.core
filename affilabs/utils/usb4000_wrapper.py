@@ -118,6 +118,7 @@ def reset_usb_spectrometers():
         logger.debug(f"Found {len(device_list)} Ocean Optics device(s)")
 
         reset_count = 0
+        unsupported_count = 0
         for dev in device_list:
             try:
                 # Get device info with timeout to prevent hanging
@@ -147,9 +148,13 @@ def reset_usb_spectrometers():
                 logger.debug("  Reset successful")
 
             except usb.core.USBError as e:
-                # Permission errors are common on Windows - not critical
+                err_str = str(e).lower()
                 if e.errno == 13:  # Permission denied
                     logger.warning("  ⚠️  Reset skipped (permission denied - device may be in use)")
+                elif "not supported" in err_str or "unimplemented" in err_str:
+                    # Expected on Windows — libusb reset is not supported by WinUSB/libusb-win32
+                    logger.debug(f"  USB reset not supported on this platform (normal on Windows): {e}")
+                    unsupported_count += 1
                 else:
                     logger.warning(f"  ⚠️  Reset failed: {e}")
             except Exception as e:
@@ -160,6 +165,10 @@ def reset_usb_spectrometers():
             time.sleep(2.0)  # Give USB stack time to re-enumerate devices
             logger.debug("USB reset complete")
             return True
+        elif unsupported_count > 0:
+            # All devices returned "not supported" — normal on Windows, not an error
+            logger.debug("USB reset skipped (not supported on this platform)")
+            return False
         else:
             logger.warning("No devices were successfully reset")
             return False

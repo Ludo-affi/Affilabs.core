@@ -23,6 +23,46 @@ from affilabs.utils.logger import logger
 from affilabs.ui_styles import Colors, Fonts
 
 
+class _AlignChannelProxy:
+    """Thin proxy so alignment_mixin can call .currentText() / blockSignals() as before.
+
+    Wraps the channel button group (All/A/B/C/D) that replaced the QComboBox,
+    exposing the same minimal API used by _edits_cycle_mixin.
+    """
+    def __init__(self):
+        self._value = "All"
+        self._btn_map: dict = {}   # populated by UIBuildersMixin after buttons are created
+
+    def currentText(self) -> str:
+        return self._value
+
+    def setCurrentText(self, text: str) -> None:
+        """Update internal value AND sync button visual state."""
+        self._value = text
+        # Sync button highlight if buttons have been wired in
+        if self._btn_map:
+            _ch_colors = {"All": "#86868B", "A": "#1D1D1F", "B": "#FF3B30",
+                          "C": "#007AFF", "D": "#34C759"}
+            for lbl, btn in self._btn_map.items():
+                checked = lbl == text
+                color = _ch_colors.get(lbl, "#86868B")
+                if checked:
+                    btn.setStyleSheet(
+                        f"QPushButton {{ background: white; color: {color};"
+                        f" border: 2px solid {color}; border-radius: 5px;"
+                        f" font-size: 11px; font-weight: 700; padding: 0 6px; }}"
+                    )
+                else:
+                    btn.setStyleSheet(
+                        "QPushButton { background: #E5E5EA; color: #808080;"
+                        " border: 2px solid #C7C7CC; border-radius: 5px;"
+                        " font-size: 11px; font-weight: 700; padding: 0 6px; }"
+                    )
+
+    def blockSignals(self, block: bool) -> bool:  # noqa: N802  (matches Qt naming)
+        return False
+
+
 class UIBuildersMixin:
     """Mixin providing all UI construction helpers for EditsTab."""
 
@@ -139,10 +179,17 @@ class UIBuildersMixin:
 
         # Create curves for 4 channels
         colors = [(0, 0, 0), (255, 0, 0), (0, 0, 255), (0, 170, 0)]
+        channel_names = ['A', 'B', 'C', 'D']
         self.edits_graph_curves = []
-        for color in colors:
+        self.edits_graph_curve_labels = []
+        for color, ch_name in zip(colors, channel_names):
             curve = self.edits_primary_graph.plot(pen=pg.mkPen(color, width=2))
             self.edits_graph_curves.append(curve)
+            label = pg.TextItem(text=ch_name, color=color, anchor=(0, 0.5))
+            label.setFont(pg.Qt.QtGui.QFont("Arial", 9, pg.Qt.QtGui.QFont.Bold))
+            label.hide()
+            self.edits_primary_graph.addItem(label)
+            self.edits_graph_curve_labels.append(label)
 
         content_widget = QFrame()
         content_widget.setStyleSheet("QFrame { background: #F8F9FA; border: none; }")
@@ -199,7 +246,8 @@ class UIBuildersMixin:
         notes_scroll.setWidgetResizable(True)
         self.details_tab_widget.addTab(notes_scroll, "Notes")
 
-        self.details_tab_widget.setMaximumHeight(120)
+        self.details_tab_widget.setMaximumHeight(180)
+        self.details_tab_widget.hide()
         table_details_layout.addWidget(self.details_tab_widget)
 
         left_splitter.addWidget(table_details_widget)
@@ -239,11 +287,22 @@ class UIBuildersMixin:
         selection_widget = self._create_active_selection()
         graphs_splitter.addWidget(selection_widget)
 
-        # BOTTOM: Delta SPR Bar Chart (45%)
+        # BOTTOM: Tabbed panel — ΔSPR bar chart + Binding plot (45%)
+        self.bottom_tab_widget = QTabWidget()
+        self.bottom_tab_widget.setStyleSheet("""
+            QTabBar::tab { padding: 4px 14px; background: white; color: #1D1D1F; }
+            QTabBar::tab:selected { background: #E3F2FD; color: #0066CC; font-weight: 600; }
+            QTabBar::tab:hover { background: #F5F5F5; }
+            QTabWidget::pane { border: none; }
+        """)
         barchart_widget = self._create_delta_spr_barchart()
-        graphs_splitter.addWidget(barchart_widget)
+        self.bottom_tab_widget.addTab(barchart_widget, "ΔSPR")
+        binding_widget = self._create_binding_panel()
+        self.bottom_tab_widget.addTab(binding_widget, "Binding")
+        self.bottom_tab_widget.currentChanged.connect(self._on_bottom_tab_changed)
+        graphs_splitter.addWidget(self.bottom_tab_widget)
 
-        # Set vertical proportions: 55:45 — bar chart deserves more space
+        # Set vertical proportions: 55:45
         graphs_splitter.setStretchFactor(0, 55)
         graphs_splitter.setStretchFactor(1, 45)
 
@@ -274,6 +333,8 @@ class UIBuildersMixin:
 
         # Apply default view settings (compact mode + binding filter)
         self._apply_compact_view_initial()
+        # Concentration column hidden by default — revealed via column picker
+        self.cycle_data_table.setColumnHidden(self.TABLE_COL_CONC, True)
 
         # Store references on main_window for external access
         self.main_window.cycle_data_table = self.cycle_data_table
@@ -281,9 +342,13 @@ class UIBuildersMixin:
         self.main_window.edits_primary_graph = self.edits_primary_graph
         self.main_window.edits_timeline_curves = self.edits_timeline_curves
         self.main_window.edits_graph_curves = self.edits_graph_curves
+        self.main_window.edits_graph_curve_labels = self.edits_graph_curve_labels
         self.main_window.edits_timeline_cursors = self.edits_timeline_cursors
         self.main_window.edits_smooth_slider = self.edits_smooth_slider
         self.main_window.edits_smooth_label = self.edits_smooth_label
+        self.main_window.bottom_tab_widget = self.bottom_tab_widget
+        self.main_window.binding_ch_btns = self.binding_ch_btns
+        self.main_window.binding_scatter_plot = self.binding_scatter_plot
 
         return content_widget
 
@@ -683,35 +748,50 @@ class UIBuildersMixin:
         align_title.setStyleSheet("font-size: 12px; font-weight: 600; color: #1D1D1F; background: transparent; border: none;")
         layout.addWidget(align_title)
 
-        # Channel selector
+        # Channel selector — inline buttons matching live channel toggle style
         ch_layout = QHBoxLayout()
-        ch_layout.setSpacing(10)
+        ch_layout.setSpacing(6)
         ch_label = QLabel("Channel:")
         ch_label.setStyleSheet("font-size: 12px; color: #1D1D1F; font-weight: 500; background: transparent; border: none;")
         ch_layout.addWidget(ch_label)
 
-        self.alignment_channel_combo = QComboBox()
-        self.alignment_channel_combo.addItems(["All", "A", "B", "C", "D"])
-        self.alignment_channel_combo.setStyleSheet("""
-            QComboBox {
-                background: #F8F9FA;
-                border: 1px solid #D1D1D6;
-                border-radius: 5px;
-                font-size: 12px;
-                padding: 4px 8px;
-                min-width: 80px;
-            }
-            QComboBox:focus {
-                border: 1px solid #007AFF;
-                background: white;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """)
-        ch_layout.addWidget(self.alignment_channel_combo)
+        _ch_colors = {"All": "#86868B", "A": "#1D1D1F", "B": "#FF3B30", "C": "#007AFF", "D": "#34C759"}
+
+        def _ch_btn_style(color, checked):
+            if checked:
+                return (
+                    f"QPushButton {{ background: white; color: {color};"
+                    f" border: 2px solid {color}; border-radius: 5px;"
+                    f" font-size: 11px; font-weight: 700; padding: 0 6px; }}"
+                )
+            return (
+                "QPushButton { background: #E5E5EA; color: #808080;"
+                " border: 2px solid #C7C7CC; border-radius: 5px;"
+                " font-size: 11px; font-weight: 700; padding: 0 6px; }"
+            )
+
+        self._alignment_ch_btns = {}
+        self.alignment_channel_combo = _AlignChannelProxy()  # keeps _alignment_mixin API intact
+
+        def _on_ch_btn(selected):
+            for lbl, btn in self._alignment_ch_btns.items():
+                btn.setStyleSheet(_ch_btn_style(_ch_colors[lbl], lbl == selected))
+            self.alignment_channel_combo._value = selected
+
+        for label in ["All", "A", "B", "C", "D"]:
+            btn = QPushButton(label)
+            btn.setFixedHeight(26)
+            btn.setMinimumWidth(30 if label != "All" else 36)
+            btn.setStyleSheet(_ch_btn_style(_ch_colors[label], label == "All"))
+            btn.clicked.connect(lambda checked=False, lbl=label: _on_ch_btn(lbl))
+            ch_layout.addWidget(btn)
+            self._alignment_ch_btns[label] = btn
+
         ch_layout.addStretch()
         layout.addLayout(ch_layout)
+
+        # Wire proxy so setCurrentText() can sync button visuals on cycle selection restore
+        self.alignment_channel_combo._btn_map = self._alignment_ch_btns
 
         # Shift controls - Add slider alongside input
         shift_layout = QVBoxLayout()
@@ -904,7 +984,7 @@ class UIBuildersMixin:
         self.delta_spr_lock_btn = QPushButton("🔓 Unlock")
         self.delta_spr_lock_btn.setFixedSize(80, 24)
         self.delta_spr_lock_btn.setCheckable(True)
-        self.delta_spr_lock_btn.setToolTip("Lock cursors to contact_time + 10% for consistent delta SPR measurement")
+        self.delta_spr_lock_btn.setToolTip("Auto-position the Start/Stop cursors based on injection contact time. Unlock to drag them manually.")
         self.delta_spr_lock_btn.setStyleSheet("""
             QPushButton {
                 background: #F8F9FA;
@@ -991,6 +1071,234 @@ class UIBuildersMixin:
 
         return container
 
+    # ------------------------------------------------------------------
+    # Bottom tab handler
+    # ------------------------------------------------------------------
+
+    def _on_bottom_tab_changed(self, index: int):
+        """Called when ΔSPR/Binding tab is switched."""
+        if index == 1:  # Binding tab activated
+            self.cycle_data_table.setColumnHidden(self.TABLE_COL_CONC, False)
+            self._update_binding_plot()
+
+    # ------------------------------------------------------------------
+    # Binding panel construction
+    # ------------------------------------------------------------------
+
+    def _create_binding_panel(self):
+        """Build the Binding Plot panel (Tab 1 of bottom_tab_widget)."""
+        from PySide6.QtWidgets import QSplitter
+
+        container = QFrame()
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(8, 6, 8, 6)
+        vbox.setSpacing(6)
+
+        # --- Controls bar ---
+        ctrl_bar = QHBoxLayout()
+        ctrl_bar.setSpacing(6)
+
+        ch_colors = ['#1D1D1F', '#FF3B30', '#007AFF', '#34C759']
+        self.binding_ch_btns = []
+        for i, (ch, color) in enumerate(zip('ABCD', ch_colors)):
+            btn = QPushButton(ch)
+            btn.setCheckable(True)
+            btn.setChecked(i == 0)
+            btn.setFixedSize(28, 24)
+            btn.setStyleSheet(
+                f"QPushButton {{ border: 1px solid #D1D1D6; border-radius: 4px;"
+                f" background: white; color: #1D1D1F; font-size: 11px; font-weight: 500; }}"
+                f"QPushButton:checked {{ border: 2px solid {color}; color: {color}; font-weight: 700; }}"
+                f"QPushButton:disabled {{ color: #C7C7CC; border: 1px solid #E5E5EA; background: #F8F9FA; }}"
+            )
+            btn.clicked.connect(lambda _, idx=i: self._on_binding_ch_clicked(idx))
+            ctrl_bar.addWidget(btn)
+            self.binding_ch_btns.append(btn)
+
+        ctrl_bar.addSpacing(12)
+        ctrl_bar.addWidget(QLabel("Model:"))
+        self.binding_model_combo = QComboBox()
+        self.binding_model_combo.addItems(["Linear", "1:1 Langmuir"])
+        self.binding_model_combo.setFixedWidth(130)
+        self.binding_model_combo.currentTextChanged.connect(lambda _: self._update_binding_plot())
+        ctrl_bar.addWidget(self.binding_model_combo)
+        ctrl_bar.addStretch()
+        vbox.addLayout(ctrl_bar)
+
+        # --- Horizontal split: scatter plot | formula panel ---
+        hsplit = QSplitter(Qt.Horizontal)
+
+        self.binding_scatter_plot = pg.PlotWidget()
+        self.binding_scatter_plot.setBackground('w')
+        self.binding_scatter_plot.setLabel('left', 'ΔSPR (RU)')
+        self.binding_scatter_plot.setLabel('bottom', 'Concentration (µM)')
+        self.binding_scatter_plot.showGrid(x=True, y=True, alpha=0.2)
+        hsplit.addWidget(self.binding_scatter_plot)
+
+        # Formula panel
+        formula_frame = QFrame()
+        formula_frame.setStyleSheet(
+            "QFrame { background: white; border: 1px solid #E5E5EA; border-radius: 6px; }"
+        )
+        fpanel = QVBoxLayout(formula_frame)
+        fpanel.setContentsMargins(10, 10, 10, 10)
+        fpanel.setSpacing(4)
+
+        self.binding_model_lbl   = QLabel("")
+        self.binding_formula_lbl = QLabel("")
+        self.binding_params_lbl  = QLabel("")
+        self.binding_r2_lbl      = QLabel("")
+        self.binding_ref_lbl     = QLabel("")
+        self.binding_kd_lbl      = QLabel("")
+
+        self.binding_model_lbl.setStyleSheet("font-size:12px; font-weight:700; color:#1D1D1F;")
+        self.binding_formula_lbl.setStyleSheet("font-family: monospace; font-size:11px; color:#3A3A3C;")
+        self.binding_params_lbl.setStyleSheet("font-size:11px; color:#1D1D1F;")
+        self.binding_r2_lbl.setStyleSheet("font-size:12px; font-weight:700;")
+        self.binding_ref_lbl.setStyleSheet("font-size:11px; color:#86868B; font-style:italic;")
+        self.binding_kd_lbl.setStyleSheet("font-size:11px; font-style:italic; color:#1D1D1F;")
+
+        # Langmuir warning banner
+        self.binding_warn_frame = QFrame()
+        self.binding_warn_frame.setStyleSheet(
+            "QFrame { background: #FFF3CD; border: 1px solid #FFCC02; border-radius: 4px; }"
+        )
+        warn_inner = QVBoxLayout(self.binding_warn_frame)
+        warn_inner.setContentsMargins(6, 4, 6, 4)
+        warn_lbl = QLabel("⚠ Equilibrium estimate only.\nVerify with full kinetics for publication data.")
+        warn_lbl.setStyleSheet("font-size:10px; color:#856404; background: transparent; border: none;")
+        warn_lbl.setWordWrap(True)
+        warn_inner.addWidget(warn_lbl)
+        self.binding_warn_frame.hide()
+
+        for w in [self.binding_model_lbl, self.binding_formula_lbl, self.binding_params_lbl,
+                  self.binding_r2_lbl, self.binding_ref_lbl, self.binding_kd_lbl,
+                  self.binding_warn_frame]:
+            fpanel.addWidget(w)
+        fpanel.addStretch()
+        hsplit.addWidget(formula_frame)
+
+        hsplit.setStretchFactor(0, 70)
+        hsplit.setStretchFactor(1, 30)
+        vbox.addWidget(hsplit, 1)
+
+        # --- Rmax Calculator (collapsible section below the plot split) ---
+        vbox.addWidget(self._create_rmax_calculator())
+
+        return container
+
+    def _create_rmax_calculator(self):
+        """Build the Rmax Calculator collapsible panel (§12 of EDITS_BINDING_PLOT_FRS)."""
+        from PySide6.QtWidgets import QDoubleSpinBox, QGridLayout
+
+        outer = QFrame()
+        outer.setStyleSheet(
+            "QFrame#RmaxPanel { background: #F8F9FA; border: 1px solid #E5E5EA;"
+            " border-radius: 6px; }"
+        )
+        outer.setObjectName("RmaxPanel")
+        outer_vbox = QVBoxLayout(outer)
+        outer_vbox.setContentsMargins(10, 6, 10, 8)
+        outer_vbox.setSpacing(4)
+
+        # Header row with collapse toggle
+        hdr = QHBoxLayout()
+        self._rmax_toggle_btn = QPushButton("▸ Rmax Calculator")
+        self._rmax_toggle_btn.setFlat(True)
+        self._rmax_toggle_btn.setStyleSheet(
+            "QPushButton { font-size:11px; font-weight:600; color:#1D1D1F;"
+            " text-align:left; background:transparent; border:none; padding:0; }"
+            "QPushButton:hover { color:#007AFF; }"
+        )
+        self._rmax_toggle_btn.setCheckable(True)
+        self._rmax_toggle_btn.setChecked(False)
+        self._rmax_toggle_btn.clicked.connect(self._toggle_rmax_panel)
+        hdr.addWidget(self._rmax_toggle_btn)
+        hdr.addStretch()
+        outer_vbox.addLayout(hdr)
+
+        # Collapsible body
+        self._rmax_body = QFrame()
+        self._rmax_body.setVisible(False)
+        body_grid = QGridLayout(self._rmax_body)
+        body_grid.setContentsMargins(0, 4, 0, 0)
+        body_grid.setSpacing(4)
+        body_grid.setColumnStretch(1, 1)
+
+        _lbl_style = "font-size:11px; color:#3A3A3C;"
+        _val_style = "font-size:11px; font-weight:600; color:#1D1D1F;"
+
+        # Row 0 — Ligand MW
+        body_grid.addWidget(self._ql("Ligand MW:", _lbl_style), 0, 0)
+        self.rmax_ligand_spin = QDoubleSpinBox()
+        self.rmax_ligand_spin.setRange(0, 1_000_000)
+        self.rmax_ligand_spin.setDecimals(0)
+        self.rmax_ligand_spin.setSuffix(" Da")
+        self.rmax_ligand_spin.setSpecialValueText("—")
+        self.rmax_ligand_spin.setValue(0)
+        self.rmax_ligand_spin.setFixedWidth(120)
+        self.rmax_ligand_spin.valueChanged.connect(self._on_rmax_input_changed)
+        body_grid.addWidget(self.rmax_ligand_spin, 0, 1, Qt.AlignLeft)
+
+        # Row 1 — Analyte MW
+        body_grid.addWidget(self._ql("Analyte MW:", _lbl_style), 1, 0)
+        self.rmax_analyte_spin = QDoubleSpinBox()
+        self.rmax_analyte_spin.setRange(0, 1_000_000)
+        self.rmax_analyte_spin.setDecimals(0)
+        self.rmax_analyte_spin.setSuffix(" Da")
+        self.rmax_analyte_spin.setSpecialValueText("—")
+        self.rmax_analyte_spin.setValue(0)
+        self.rmax_analyte_spin.setFixedWidth(120)
+        self.rmax_analyte_spin.valueChanged.connect(self._on_rmax_input_changed)
+        body_grid.addWidget(self.rmax_analyte_spin, 1, 1, Qt.AlignLeft)
+
+        # Row 2 — Immob ΔSPR (auto-filled, read-only)
+        body_grid.addWidget(self._ql("Immob ΔSPR:", _lbl_style), 2, 0)
+        self.rmax_immob_lbl = QLabel("—")
+        self.rmax_immob_lbl.setStyleSheet(_val_style)
+        body_grid.addWidget(self.rmax_immob_lbl, 2, 1)
+
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: #E5E5EA;")
+        body_grid.addWidget(sep, 3, 0, 1, 3)
+
+        # Row 4 — Theoretical Rmax
+        body_grid.addWidget(self._ql("Theoretical Rmax:", _lbl_style), 4, 0)
+        self.rmax_theoretical_lbl = QLabel("—")
+        self.rmax_theoretical_lbl.setStyleSheet(_val_style)
+        body_grid.addWidget(self.rmax_theoretical_lbl, 4, 1)
+
+        # Row 5 — Empirical Rmax (from Langmuir)
+        body_grid.addWidget(self._ql("Empirical Rmax:", _lbl_style), 5, 0)
+        self.rmax_empirical_lbl = QLabel("—")
+        self.rmax_empirical_lbl.setStyleSheet(f"font-size:11px; color:#86868B; font-style:italic;")
+        body_grid.addWidget(self.rmax_empirical_lbl, 5, 1)
+
+        # Row 6 — Surface activity
+        body_grid.addWidget(self._ql("Surface activity:", _lbl_style), 6, 0)
+        self.rmax_activity_lbl = QLabel("—")
+        self.rmax_activity_lbl.setStyleSheet(_val_style)
+        body_grid.addWidget(self.rmax_activity_lbl, 6, 1)
+
+        outer_vbox.addWidget(self._rmax_body)
+        return outer
+
+    def _ql(self, text: str, style: str = "") -> "QLabel":
+        """Convenience: create a styled QLabel."""
+        lbl = QLabel(text)
+        if style:
+            lbl.setStyleSheet(style)
+        return lbl
+
+    def _toggle_rmax_panel(self, checked: bool):
+        """Show/hide the Rmax body when header button is toggled."""
+        self._rmax_body.setVisible(checked)
+        self._rmax_toggle_btn.setText(
+            "▾ Rmax Calculator" if checked else "▸ Rmax Calculator"
+        )
+
     def _create_tools_panel(self):
         """Bottom right panel: Compact editing tools."""
         container = QFrame()
@@ -1007,17 +1315,20 @@ class UIBuildersMixin:
         layout.setSpacing(16)
 
         # Smoothing slider
-        layout.addWidget(QLabel("Smoothing:"))
-        self.edits_smooth_label = QLabel("0")
-        self.edits_smooth_label.setStyleSheet("font-size: 12px; color: #86868B; min-width: 20px;")
+        smooth_lbl = QLabel("Smooth:")
+        smooth_lbl.setToolTip("Savitzky-Golay smoothing window (0 = off)")
+        layout.addWidget(smooth_lbl)
+        self.edits_smooth_label = QLabel("off")
+        self.edits_smooth_label.setStyleSheet("font-size: 12px; color: #86868B; min-width: 28px;")
         layout.addWidget(self.edits_smooth_label)
 
         self.edits_smooth_slider = QSlider(Qt.Horizontal)
         self.edits_smooth_slider.setRange(0, 50)
         self.edits_smooth_slider.setValue(0)
         self.edits_smooth_slider.setMaximumWidth(200)
+        self.edits_smooth_slider.setToolTip("Savitzky-Golay smoothing window (0 = off)")
         self.edits_smooth_slider.valueChanged.connect(lambda v: (
-            self.edits_smooth_label.setText(str(v)),
+            self.edits_smooth_label.setText("off" if v == 0 else f"{v} pts"),
             self._update_selection_view()
         ))
         layout.addWidget(self.edits_smooth_slider)
@@ -1054,6 +1365,7 @@ class UIBuildersMixin:
         )
         create_processing_btn.clicked.connect(self._create_processing_cycle)
         layout.addWidget(create_processing_btn)
+        create_processing_btn.setVisible(False)  # TODO: hidden for now
 
         layout.addSpacing(8)
 

@@ -14,6 +14,8 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -122,51 +124,41 @@ class CalibrationQCDialog(QDialog):
         layout.setContentsMargins(15, 10, 15, 10)
         layout.setSpacing(8)
 
-        # Title and metadata in single compact header
-        header_widget = QWidget()
-        header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(16)
-
-        title = QLabel("📊 Calibration QC Report")
-        title.setStyleSheet("""
-            font-size: 16px;
-            font-weight: 600;
-            color: #1D1D1F;
-            padding: 5px 0px;
-        """)
-        header_layout.addWidget(title)
-        header_layout.addStretch()
-
-        # Add timestamp inline
+        # ── Compact single-row header ─────────────────────────────────────
         from datetime import datetime
+        from version import __version__
+
         timestamp = self.calibration_data.get(
             "timestamp",
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
-        timestamp_label = QLabel(f"📅 {timestamp}")
-        timestamp_label.setStyleSheet("""
-            font-size: 12px;
-            color: #86868B;
-            padding: 5px 0px;
-        """)
-        header_layout.addWidget(timestamp_label)
 
-        # Add software version
-        from version import __version__
-        version_label = QLabel(f"{__version__}")
-        version_label.setStyleSheet("""
-            font-size: 12px;
-            color: #86868B;
-            padding: 5px 0px;
-        """)
-        header_layout.addWidget(version_label)
+        # Build inline stats string (S-POL / P-POL / DARK)
+        _stats_html = self._build_header_stats_html()
 
-        layout.addWidget(header_widget)
+        # Username
+        try:
+            from affilabs.services.user_profile_manager import UserProfileManager
+            _upm = UserProfileManager()
+            _username = _upm.current_user or ""
+        except Exception:
+            _username = ""
+        _user_html = (
+            f"&nbsp;&nbsp;•&nbsp;&nbsp;<span style='color:#1D1D1F; font-weight:600;'>{_username}</span>"
+            if _username else ""
+        )
 
-        # Consolidated summary section (one row only)
-        summary_section = self._create_summary_section()
-        layout.addWidget(summary_section)
+        header_label = QLabel(
+            f"<span style='font-size:14px; font-weight:700; color:#1D1D1F;'>Calibration QC Report</span>"
+            f"&nbsp;&nbsp;&nbsp;"
+            f"<span style='font-size:11px; color:#86868B;'>📅 {timestamp}&nbsp;&nbsp;{__version__}</span>"
+            f"{_user_html}"
+            f"&nbsp;&nbsp;&nbsp;&nbsp;"
+            f"{_stats_html}"
+        )
+        header_label.setTextFormat(Qt.TextFormat.RichText)
+        header_label.setStyleSheet("padding: 4px 0px;")
+        layout.addWidget(header_label)
 
         # Create tab widget
         tabs = QTabWidget()
@@ -206,8 +198,16 @@ class CalibrationQCDialog(QDialog):
         button_layout = QHBoxLayout()
 
         # Export PDF button
-        export_pdf_btn = QPushButton("📄 Export PDF")
-        export_pdf_btn.setFixedSize(140, 36)
+        export_pdf_btn = QPushButton(" Export PDF")
+        try:
+            from affilabs.utils.resource_path import get_affilabs_resource
+            _pdf_icon_path = get_affilabs_resource("ui/img/export_pdf.svg")
+            if _pdf_icon_path.exists():
+                export_pdf_btn.setIcon(QIcon(str(_pdf_icon_path)))
+                export_pdf_btn.setIconSize(QSize(16, 16))
+        except Exception:
+            pass
+        export_pdf_btn.setFixedSize(148, 36)
         export_pdf_btn.setStyleSheet("""
             QPushButton {
                 background: #34C759;
@@ -505,8 +505,8 @@ class CalibrationQCDialog(QDialog):
         )
 
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
 
         # Single unified table with all metrics
         table = QTableWidget()
@@ -648,7 +648,7 @@ class CalibrationQCDialog(QDialog):
             5,
             table.horizontalHeader().ResizeMode.Stretch,
         )  # Status
-        table.setMaximumHeight(130)
+        table.setMaximumHeight(155)
 
         layout.addWidget(table)
 
@@ -662,15 +662,8 @@ class CalibrationQCDialog(QDialog):
             "}"
         )
         notes_layout = QVBoxLayout(notes_frame)
-        notes_layout.setContentsMargins(10, 8, 10, 8)
-        notes_layout.setSpacing(4)
-
-        notes_title = QLabel("Before you start")
-        notes_title.setStyleSheet(
-            "font-size: 10px; font-weight: 700; color: #86868B; background: transparent;"
-            "text-transform: uppercase; letter-spacing: 0.3px; border: none;"
-        )
-        notes_layout.addWidget(notes_title)
+        notes_layout.setContentsMargins(8, 4, 8, 6)
+        notes_layout.setSpacing(3)
 
         notes = [
             ("⚠", "Dry sensor will not produce usable data — ensure buffer is flowing before each run."),
@@ -687,13 +680,13 @@ class CalibrationQCDialog(QDialog):
 
             icon_lbl = QLabel(icon)
             icon_lbl.setFixedWidth(14)
-            icon_lbl.setStyleSheet("font-size: 10px; color: #86868B; background: transparent; border: none;")
+            icon_lbl.setStyleSheet("font-size: 11px; color: #86868B; background: transparent; border: none;")
             row.addWidget(icon_lbl)
 
             text_lbl = QLabel(text)
             text_lbl.setWordWrap(True)
             text_lbl.setStyleSheet(
-                "font-size: 10px; color: #3A3A3C; background: transparent; border: none;"
+                "font-size: 12px; color: #3A3A3C; background: transparent; border: none;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             )
             row.addWidget(text_lbl, 1)
@@ -1317,111 +1310,57 @@ class CalibrationQCDialog(QDialog):
 
         return frame
 
-    def _create_summary_section(self) -> QFrame:
-        """Create summary information section below timestamp."""
-        frame = QFrame()
-        frame.setFrameShape(QFrame.Shape.StyledPanel)
-        frame.setStyleSheet("""
-            QFrame {
-                background: #F5F5F7;
-                border: 1px solid #D1D1D6;
-                border-radius: 6px;
-                padding: 10px;
-            }
-        """)
-
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
-
+    def _build_header_stats_html(self) -> str:
+        """Return inline HTML snippet: S-POL MAX / P-POL MAX / DARK AVG."""
         data = self.calibration_data
-
-        led_intensities = data.get("led_intensities", {})
-        sp_swap_applied = data.get("sp_swap_applied", False)
-
-        led_str = ", ".join(
-            [
-                f"{ch.upper()}:{led_intensities.get(ch, 0)}"
-                for ch in ["a", "b", "c", "d"]
-            ],
-        )
-
-        # Calculate S-pol and P-pol max counts
         s_pol_spectra = data.get("s_pol_spectra", {})
         p_pol_spectra = data.get("p_pol_spectra", {})
-
-        s_max_str_parts = []
-        p_max_str_parts = []
-
-        for ch in ["a", "b", "c", "d"]:
-            if ch in s_pol_spectra and s_pol_spectra[ch] is not None:
-                try:
-                    s_arr = np.asarray(s_pol_spectra[ch], dtype=float)
-                    s_max = float(np.max(s_arr))
-                    s_max_str_parts.append(f"{ch.upper()}:{s_max:.0f}")
-                except Exception:
-                    pass
-
-            if ch in p_pol_spectra and p_pol_spectra[ch] is not None:
-                try:
-                    p_arr = np.asarray(p_pol_spectra[ch], dtype=float)
-                    p_max = float(np.max(p_arr))
-                    p_max_str_parts.append(f"{ch.upper()}:{p_max:.0f}")
-                except Exception:
-                    pass
-
-        s_max_str = ", ".join(s_max_str_parts) if s_max_str_parts else "N/A"
-        p_max_str = ", ".join(p_max_str_parts) if p_max_str_parts else "N/A"
-
-        # Calculate average dark signal across all channels (single value)
         dark_s_scans = data.get("dark_s_scans", {})
         dark_p_scans = data.get("dark_p_scans", {})
-        dark_values = []
+        sp_swap_applied = data.get("sp_swap_applied", False)
 
+        s_parts, p_parts, dark_values = [], [], []
         for ch in ["a", "b", "c", "d"]:
-            if ch in dark_s_scans and dark_s_scans[ch] is not None:
-                try:
-                    dark_values.append(float(np.mean(np.asarray(dark_s_scans[ch], dtype=float))))
-                except Exception:
-                    pass
-            elif ch in dark_p_scans and dark_p_scans[ch] is not None:
-                try:
-                    dark_values.append(float(np.mean(np.asarray(dark_p_scans[ch], dtype=float))))
-                except Exception:
-                    pass
+            try:
+                if ch in s_pol_spectra and s_pol_spectra[ch] is not None:
+                    s_parts.append(f"{ch.upper()}:{np.max(np.asarray(s_pol_spectra[ch], dtype=float)):.0f}")
+            except Exception:
+                pass
+            try:
+                if ch in p_pol_spectra and p_pol_spectra[ch] is not None:
+                    p_parts.append(f"{ch.upper()}:{np.max(np.asarray(p_pol_spectra[ch], dtype=float)):.0f}")
+            except Exception:
+                pass
+            try:
+                src = dark_s_scans.get(ch) or dark_p_scans.get(ch)
+                if src is not None:
+                    dark_values.append(float(np.mean(np.asarray(src, dtype=float))))
+            except Exception:
+                pass
 
-        dark_avg_str = f"{np.mean(dark_values):.0f}" if dark_values else "N/A"
+        s_str = ", ".join(s_parts) or "N/A"
+        p_str = ", ".join(p_parts) or "N/A"
+        dark_str = f"{np.mean(dark_values):.0f}" if dark_values else "N/A"
 
-        # Swap warning badge
-        swap_badge = (
-            "  <span style='background:#FFF3CD; color:#856404; padding:2px 6px; border-radius:3px; font-weight:600; font-size:10px;'>⚠ S/P SWAPPED</span>"
-            if sp_swap_applied
-            else ""
+        lbl = "<span style='font-size:10px; font-weight:600; color:#86868B;'>"
+        val_s = "<span style='font-weight:600; color:#34C759;'>"
+        val_p = "<span style='font-weight:600; color:#007AFF;'>"
+        val_d = "<span style='font-weight:600; color:#8E8E93;'>"
+        end = "</span>"
+        sep = "&nbsp;&nbsp;•&nbsp;&nbsp;"
+
+        swap = (
+            "&nbsp;<span style='background:#FFF3CD; color:#856404; padding:1px 5px;"
+            " border-radius:3px; font-weight:600; font-size:10px;'>⚠ S/P SWAPPED</span>"
+            if sp_swap_applied else ""
         )
 
-        # SINGLE ROW with max counts and dark average
-        combined_text = f"""
-        <span style='color:#86868B; font-size:10px; font-weight:600;'>S-POL MAX</span> <span style='color:#34C759; font-weight:600;'>{s_max_str}</span>
-        &nbsp;&nbsp;•&nbsp;&nbsp;
-        <span style='color:#86868B; font-size:10px; font-weight:600;'>P-POL MAX</span> <span style='color:#007AFF; font-weight:600;'>{p_max_str}</span>
-        &nbsp;&nbsp;•&nbsp;&nbsp;
-        <span style='color:#86868B; font-size:10px; font-weight:600;'>DARK AVG</span> <span style='color:#8E8E93; font-weight:600;'>{dark_avg_str}</span>{swap_badge}
-        """
-
-        combined_label = QLabel(combined_text)
-        combined_label.setTextFormat(Qt.TextFormat.RichText)
-        combined_label.setStyleSheet("""
-            background: white;
-            padding: 10px 16px;
-            border-radius: 6px;
-            font-size: 11px;
-            color: #1D1D1F;
-            border: 1px solid #E5E5EA;
-        """)
-        combined_label.setWordWrap(False)
-        layout.addWidget(combined_label)
-
-        return frame
+        return (
+            f"{lbl}S-POL MAX{end} {val_s}{s_str}{end}"
+            f"{sep}{lbl}P-POL MAX{end} {val_p}{p_str}{end}"
+            f"{sep}{lbl}DARK AVG{end} {val_d}{dark_str}{end}"
+            f"{swap}"
+        )
 
     def _create_calibration_metrics_table(self) -> QTableWidget | None:
         """Create a table showing LED intensities and iteration counts per channel.
@@ -1540,7 +1479,7 @@ class CalibrationQCDialog(QDialog):
         plot_widget.setMaximumHeight(280)
 
         # Configure axes
-        plot_widget.setLabel("bottom", "Wavelength", units="nm")
+        plot_widget.setLabel("bottom", "λ", units="nm")
 
         if data_type == "transmission":
             plot_widget.setLabel("left", "Transmission", units="%")
@@ -2328,8 +2267,8 @@ FAILURE DIAGNOSIS:
                                label=f'Target ({target_min/1000:.1f}k-{target_max/1000:.1f}k)')
 
                     ax1.set_title('S-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
-                    ax1.set_xlabel('Wavelength (nm)', fontsize=10)
-                    ax1.set_ylabel('Counts', fontsize=10)
+                    ax1.set_xlabel('λ (nm)', fontsize=11, fontweight='bold')
+                    ax1.set_ylabel('Counts', fontsize=11, fontweight='bold')
                     ax1.set_xlim(570, max(wavelengths) if len(wavelengths) > 0 else 720)
                     ax1.legend(fontsize=9, loc='best')
                     ax1.grid(True, alpha=0.3)
@@ -2352,8 +2291,8 @@ FAILURE DIAGNOSIS:
                         ax2.set_ylim(0, 8192 if detector_serial_str.startswith("ST") else 70000)
 
                     ax2.set_title('P-Pol Spectra', fontsize=12, fontweight='bold', pad=8)
-                    ax2.set_xlabel('Wavelength (nm)', fontsize=10)
-                    ax2.set_ylabel('Counts', fontsize=10)
+                    ax2.set_xlabel('λ (nm)', fontsize=11, fontweight='bold')
+                    ax2.set_ylabel('Counts', fontsize=11, fontweight='bold')
                     ax2.set_xlim(570, max(wavelengths) if len(wavelengths) > 0 else 720)
                     ax2.legend(fontsize=9, loc='best')
                     ax2.grid(True, alpha=0.3)
@@ -2365,8 +2304,8 @@ FAILURE DIAGNOSIS:
                         if ch in trans_data:
                             ax3.plot(wavelengths, trans_data[ch], color=color, label=f'Ch {ch.upper()}', linewidth=1.5)
                     ax3.set_title('Transmission Spectra', fontsize=12, fontweight='bold', pad=8)
-                    ax3.set_xlabel('Wavelength (nm)', fontsize=10)
-                    ax3.set_ylabel('Transmission %', fontsize=10)
+                    ax3.set_xlabel('λ (nm)', fontsize=11, fontweight='bold')
+                    ax3.set_ylabel('Transmission %', fontsize=11, fontweight='bold')
                     ax3.set_xlim(570, max(wavelengths) if len(wavelengths) > 0 else 720)
                     ax3.legend(fontsize=9, loc='best')
                     ax3.grid(True, alpha=0.3)

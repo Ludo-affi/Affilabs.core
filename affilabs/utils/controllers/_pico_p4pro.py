@@ -398,6 +398,13 @@ class PicoP4PRO(ValveCycleMixin, FlowController):
         """
         import time
         try:
+            # Convert early — callers may pass string values from JSON config
+            try:
+                target_pwm = int(target_pwm)
+            except (TypeError, ValueError) as conv_err:
+                logger.error(f"servo_move_raw_pwm: invalid target_pwm {target_pwm!r}: {conv_err}")
+                return False
+
             if target_pwm < 0 or target_pwm > 255:
                 logger.error(f"Invalid PWM value: {target_pwm} (must be 0-255)")
                 return False

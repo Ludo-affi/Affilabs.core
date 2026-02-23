@@ -18,9 +18,10 @@ from affilabs.tabs.edits._export_mixin import ExportMixin
 from affilabs.tabs.edits._ui_builders import UIBuildersMixin
 from affilabs.tabs.edits._alignment_mixin import AlignmentMixin
 from affilabs.tabs.edits._table_mixin import TableMixin
+from affilabs.tabs.edits._binding_plot_mixin import BindingPlotMixin
 
 
-class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMixin):
+class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMixin, BindingPlotMixin):
     """Handles the Edits tab UI and logic."""
     
     # Constants for consistent channel handling
@@ -53,6 +54,14 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
 
         # Per-cycle editing state
         self._cycle_alignment = {}  # {row_idx: {'channel': str, 'shift': float}}
+
+        # Binding plot fit result cache (populated by BindingPlotMixin._update_binding_plot)
+        self._binding_fit_result = None
+
+        # Rmax calculator state (§12 of EDITS_BINDING_PLOT_FRS)
+        self._ligand_mw: float | None = None
+        self._analyte_mw: float | None = None
+        self._immob_delta_spr_ru: float | None = None
 
         # Flags system for marking/annotating graph points
         # NOTE: _edits_flags and _selected_flag_idx are now managed by FlagManager.

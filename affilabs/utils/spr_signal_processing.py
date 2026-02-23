@@ -256,6 +256,239 @@ def validate_sp_orientation(
     }
 
 
+def score_injection_event(
+    times: np.ndarray,
+    wavelengths: np.ndarray,
+    p2p_values: np.ndarray | None,
+    transmittance: np.ndarray | None,
+    baseline_window_s: float = 30.0,
+    recovery_window_s: float = 20.0,
+) -> dict:
+    """Multi-feature injection scorer — v2 detection algorithm.
+
+    Votes across four independent signals. Requires score >= 0.65 AND
+    at least 2 features firing to declare injection. Produces anomaly flags
+    (POSSIBLE_BUBBLE, POSSIBLE_LEAK, BASELINE_DRIFT) as a free byproduct.
+
+    Args:
+        times:             Time array (seconds), same length as all signal arrays.
+        wavelengths:       Resonance wavelength array (nm).
+        p2p_values:        Peak-to-peak variation array (nm). None → use rolling
+                           std of wavelengths as proxy (Option B fallback).
+        transmittance:     Mean % transmittance array (0–100). None → skip
+                           %T features; only P2P + slope + λ onset used.
+        baseline_window_s: Seconds of history used for rolling baselines (default 30).
+        recovery_window_s: Lookback window for %T recovery check (default 20).
+
+    Returns:
+        dict:
+            score          float  0.0–1.0+  overall injection score
+            feature_count  int    how many of the 4 features fired
+            injection_time float|None  estimated injection timestamp (seconds)
+            confidence     float  0.0–1.0  mapped from score (score/0.65 clamped)
+            flags          list[str]  any of: 'INJECTION_DETECTED',
+                                     'POSSIBLE_BUBBLE', 'POSSIBLE_LEAK',
+                                     'BASELINE_DRIFT'
+            features       dict   per-feature values for debug logging
+    """
+    _empty = {
+        'score': 0.0, 'feature_count': 0, 'injection_time': None,
+        'confidence': 0.0, 'flags': [], 'features': {},
+    }
+    try:
+        n = len(times)
+        if n < 10 or len(wavelengths) != n:
+            return _empty
+
+        now_t = times[-1]
+
+        # ── Rolling baseline indices ──────────────────────────────────────────
+        bl_mask = times >= (now_t - baseline_window_s)
+        bl_idx = int(np.argmax(bl_mask)) if bl_mask.any() else 0
+        if (n - bl_idx) < 5:
+            bl_idx = max(0, n - max(5, n // 3))
+
+        # ── Feature 1: P2P spike ──────────────────────────────────────────────
+        # Use supplied p2p_values; fall back to rolling std of wavelengths.
+        if p2p_values is not None and len(p2p_values) == n:
+            p2p_arr = np.asarray(p2p_values, dtype=float)
+        else:
+            # Option B: rolling std over 5-sample windows as proxy
+            p2p_arr = np.array([
+                np.std(wavelengths[max(0, i - 4): i + 1])
+                for i in range(n)
+            ])
+
+        baseline_p2p = float(np.median(p2p_arr[bl_idx:]) or 1e-6)
+        current_p2p  = float(np.mean(p2p_arr[max(0, n - 5):]) or 0.0)
+        p2p_ratio    = current_p2p / max(baseline_p2p, 1e-6)
+        p2p_fired    = p2p_ratio > 2.5
+
+        # ── Feature 2: %T dip + recovery ─────────────────────────────────────
+        t_drop = 0.0
+        t_recovered = 0.0
+        t_fired = False
+        if transmittance is not None and len(transmittance) == n:
+            t_arr = np.asarray(transmittance, dtype=float)
+            baseline_t = float(np.mean(t_arr[bl_idx:bl_idx + max(1, (n - bl_idx) // 2)]))
+            recent_min = float(np.min(t_arr[max(0, n - int(recovery_window_s * 2)):]))
+            current_t  = float(np.mean(t_arr[max(0, n - 3):]))
+            t_drop = max(0.0, baseline_t - recent_min)
+            recovery_range = max(t_drop, 1e-6)
+            t_recovered = float(np.clip((current_t - recent_min) / recovery_range, 0.0, 1.0))
+            t_fired = (t_drop > 0.5) and (t_recovered > 0.55)
+
+        # ── Feature 3: Slope change ───────────────────────────────────────────
+        split = max(bl_idx, n - max(5, (n - bl_idx) // 2))
+        pre_wl  = wavelengths[bl_idx:split]
+        post_wl = wavelengths[split:]
+        pre_t   = times[bl_idx:split]
+        post_t  = times[split:]
+        slope_change = 0.0
+        if len(pre_wl) >= 3 and len(post_wl) >= 3:
+            try:
+                pre_slope  = float(np.polyfit(pre_t,  pre_wl,  1)[0])
+                post_slope = float(np.polyfit(post_t, post_wl, 1)[0])
+                slope_change = abs(post_slope - pre_slope)
+            except Exception:
+                pass
+        slope_fired = slope_change > 0.05  # nm/s
+
+        # ── Feature 4: λ onset (existing method, normalised) ─────────────────
+        bl_wl    = wavelengths[bl_idx:]
+        bl_std   = float(np.std(bl_wl[:max(1, len(bl_wl) // 2)]) or 0.1)
+        bl_mean  = float(np.mean(bl_wl[:max(1, len(bl_wl) // 2)]))
+        cur_wl   = float(np.mean(wavelengths[max(0, n - 3):]))
+        lambda_onset = abs(cur_wl - bl_mean) / (2.5 * bl_std)
+        lambda_fired = lambda_onset > 1.0
+
+        # ── Feature 5: step-change detector ──────────────────────────────────
+        # Splits the window at its midpoint and compares the mean of the first
+        # half (pre) to the mean of the second half (post).  Catches settled
+        # injections that happened before the dialog opened — where all transient
+        # features (P2P spike, slope, %T dip) have already decayed but the
+        # signal is permanently shifted.  Threshold: 3× baseline σ (≈ 3σ).
+        step_shift = 0.0
+        step_fired = False
+        step_strong = False  # True when shift is unambiguous (> 5σ)
+        mid = bl_idx + max(1, (n - bl_idx) // 2)
+        if mid < n and (mid - bl_idx) >= 3 and (n - mid) >= 3:
+            pre_mean  = float(np.mean(wavelengths[bl_idx:mid]))
+            post_mean = float(np.mean(wavelengths[mid:]))
+            pre_std   = float(np.std(wavelengths[bl_idx:mid]) or 0.1)
+            step_shift = abs(post_mean - pre_mean) / (pre_std or 0.1)
+            step_fired  = step_shift > 3.0
+            step_strong = step_shift > 4.0  # unambiguous level change (≥ 4σ)
+
+        # ── Score ─────────────────────────────────────────────────────────────
+        # Normal path: score >= 0.65 AND feature_count >= 2.
+        # Step-strong bypass: a >= 5σ level shift on its own is sufficient
+        # (step_shift contributes 0.65 solo, satisfying both conditions).
+        # This catches injections that settled before detection started, where
+        # transient features (P2P, slope, %T dip) have already decayed.
+        score = 0.0
+        feature_count = 0
+        if p2p_fired:
+            score += 0.30
+            feature_count += 1
+        if t_fired:
+            score += 0.40
+            feature_count += 1
+        if slope_fired:
+            score += 0.20
+            feature_count += 1
+        if lambda_fired:
+            score += 0.10
+            feature_count += 1
+        if step_strong:
+            score += 0.65   # solo bypass: this alone clears both thresholds
+            feature_count += 1
+        elif step_fired:
+            score += 0.35   # contributes, but needs one other feature
+            feature_count += 1
+
+        # ── Injection timestamp ───────────────────────────────────────────────
+        # Walk back to find where the level shift started.
+        # For step-change detections we use the midpoint crossing instead of
+        # the 2.5σ walk-back (which only works when the signal is still in flux).
+        # A strong step-change (≥ 4σ) is sufficient on its own; all other paths
+        # require score >= 0.65 AND at least 2 independent features.
+        _detected = step_strong or (score >= 0.65 and feature_count >= 2)
+
+        injection_time: float | None = None
+        if _detected:
+            if step_fired and not (p2p_fired or slope_fired):
+                # Step-detected: walk forward from midpoint to find first shifted point
+                injection_time = float(times[mid])  # fallback = window midpoint
+                for i in range(mid, n):
+                    if abs(wavelengths[i] - bl_mean) > 2.0 * bl_std:
+                        injection_time = float(times[i])
+                        break
+            else:
+                # Walk back to find where the deviation started
+                for i in range(n - 1, bl_idx, -1):
+                    if abs(wavelengths[i] - bl_mean) < 2.5 * bl_std:
+                        injection_time = float(times[min(i + 1, n - 1)])
+                        break
+            if injection_time is None:
+                injection_time = float(times[bl_idx])
+
+        confidence = float(np.clip(score / 0.65, 0.0, 1.0))
+
+        # ── Anomaly flags ─────────────────────────────────────────────────────
+        flags: list[str] = []
+
+        if _detected:
+            flags.append('INJECTION_DETECTED')
+        elif transmittance is not None:
+            t_arr_full = np.asarray(transmittance, dtype=float)
+            recent_t_arr = t_arr_full[max(0, n - int(recovery_window_s * 2)):]
+            recent_min_t = float(np.min(recent_t_arr)) if len(recent_t_arr) else 100.0
+            baseline_t_full = float(np.mean(t_arr_full[bl_idx:bl_idx + max(1, (n - bl_idx) // 2)]))
+            full_drop = max(0.0, baseline_t_full - recent_min_t)
+            no_recovery = t_recovered < 0.20
+
+            if p2p_fired and full_drop > 1.0 and no_recovery:
+                flags.append('POSSIBLE_BUBBLE')
+            elif full_drop > 2.0 and no_recovery:
+                flags.append('POSSIBLE_LEAK')
+
+        if not flags and slope_fired and not p2p_fired and not t_fired:
+            flags.append('BASELINE_DRIFT')
+
+        logger.debug(
+            f"score_injection_event: score={score:.2f} features={feature_count} "
+            f"p2p_ratio={p2p_ratio:.2f} t_drop={t_drop:.2f} t_rec={t_recovered:.2f} "
+            f"slope_Δ={slope_change:.4f} λ_onset={lambda_onset:.2f} "
+            f"step_shift={step_shift:.2f} flags={flags}"
+        )
+
+        return {
+            'score': score,
+            'feature_count': feature_count,
+            'injection_time': injection_time,
+            'confidence': confidence,
+            'flags': flags,
+            'features': {
+                'p2p_ratio': p2p_ratio,
+                'p2p_fired': p2p_fired,
+                't_drop': t_drop,
+                't_recovered': t_recovered,
+                't_fired': t_fired,
+                'slope_change': slope_change,
+                'slope_fired': slope_fired,
+                'lambda_onset': lambda_onset,
+                'lambda_fired': lambda_fired,
+                'step_shift': step_shift,
+                'step_fired': step_fired,
+            },
+        }
+
+    except Exception as e:
+        logger.debug(f"score_injection_event failed: {e}")
+        return _empty
+
+
 def auto_detect_injection_point(
     times: np.ndarray,
     values: np.ndarray,
@@ -315,69 +548,53 @@ def auto_detect_injection_point(
                 'baseline_noise': 0.0,
             }
 
-        # Calculate baseline statistics (from first N points)
-        baseline_end = min(baseline_points, int(len(values) * 0.33))  # Use up to 33% of data for baseline
-        if baseline_end < 10:
-            baseline_end = min(10, len(values) // 2)
+        # ── Step-jump detection ───────────────────────────────────────────────
+        # Philosophy: an injection is a SUDDEN STEP from baseline.
+        # Baseline = mean of first N points (settled signal before anything happens).
+        # Detection = first moment the signal jumps ≥ min_rise_threshold RU away
+        #             from baseline AND stays there for sustain_window consecutive pts.
+        # No drift correction — drift is slow and gradual; an injection is fast.
+
+        baseline_end = min(baseline_points, int(len(values) * 0.25))
+        baseline_end = max(baseline_end, min(5, len(values) // 3))
 
         baseline_values = values[:baseline_end]
-        baseline_mean = np.mean(baseline_values)
-        baseline_noise = np.std(baseline_values)
-        baseline_noise = max(baseline_noise, 0.1)  # Minimum noise floor
+        baseline_mean = float(np.mean(baseline_values))
+        baseline_noise = float(np.std(baseline_values))
+        baseline_noise = max(baseline_noise, 0.1)
 
-        # Fit linear trend to baseline to account for drift
-        baseline_times = times[:baseline_end]
-        try:
-            baseline_coeffs = np.polyfit(baseline_times, baseline_values, 1)
-            baseline_trend = np.poly1d(baseline_coeffs)
-            baseline_slope = baseline_coeffs[0]  # Drift rate
-        except Exception:
-            baseline_trend = lambda t: baseline_mean
-            baseline_slope = 0.0
+        # Effective jump threshold: at least min_rise_threshold RU,
+        # at least 3× baseline noise to distinguish from fluctuation,
+        # and never below 5 RU absolute minimum (no injection signal is credible below 5 RU).
+        effective_rise_threshold = max(
+            min_rise_threshold * sensitivity_factor,
+            3.0 * baseline_noise,
+            5.0,  # Hard floor: never confirm injection below 5 RU
+        )
 
-        # Calculate expected trend for all times
-        expected_trend = baseline_trend(times)
-
-        # Calculate deviation from baseline trend for each point
-        deviation = values - expected_trend
+        # Deviation of every point from the settled baseline mean
+        deviation = values - baseline_mean
         abs_deviation = np.abs(deviation)
 
-        # Threshold for "breaking from baseline" = 2.5 standard deviations
-        # This is more sensitive than the original 3.0 threshold
-        # sensitivity_factor scales: <1.0 lowers threshold (more sensitive), >1.0 raises it
-        threshold = 2.5 * baseline_noise * sensitivity_factor
+        # sustain_window: how many consecutive points must remain above threshold
+        # before we call it an injection (prevents single noisy spikes)
+        sustain_window = max(3, min(6, len(values) // 30))
 
-        # Scale min_rise_threshold by sensitivity_factor too
-        effective_rise_threshold = min_rise_threshold * sensitivity_factor
-
-        # Find FIRST point where signal deviates from baseline AND is sustained
         injection_idx = None
-        # Fewer sustain points needed when sensitivity_factor < 1.0
-        base_sustain = min(5, max(2, len(values) // 50))
-        sustain_window = max(2, int(base_sustain * sensitivity_factor))
-
         for i in range(baseline_end, len(values) - sustain_window):
-            # Check if deviation exceeds threshold at this point
-            if abs_deviation[i] > threshold:
-                # Verify sustained deviation over next few points (signal doesn't drop back)
-                next_deviations = abs_deviation[i:i + sustain_window]
-                if np.mean(next_deviations) > threshold * 0.8:  # Allow some wiggle
+            if abs_deviation[i] >= effective_rise_threshold:
+                # All sustain_window points must stay on the same side of baseline
+                window = deviation[i:i + sustain_window]
+                if np.all(window > 0) or np.all(window < 0):
                     injection_idx = i
                     logger.debug(
-                        f"Auto-detect: Found injection breakpoint at index {i}, "
-                        f"deviation {abs_deviation[i]:.2f} RU (threshold {threshold:.2f})"
+                        f"Step-jump detected at index {i} "
+                        f"(jump={deviation[i]:+.2f} RU, threshold={effective_rise_threshold:.2f} RU)"
                     )
                     break
 
-        # Fallback: If no sustained crossing found, use highest deviation point
-        if injection_idx is None:
-            candidate_idx = np.argmax(abs_deviation[baseline_end:]) + baseline_end
-            if abs_deviation[candidate_idx] > threshold * 0.5:  # At least 50% of threshold
-                injection_idx = candidate_idx
-                logger.debug(
-                    f"Auto-detect: Using highest deviation fallback at index {injection_idx}, "
-                    f"deviation {abs_deviation[candidate_idx]:.2f} RU"
-                )
+        # threshold alias for confidence calculation below
+        threshold = effective_rise_threshold
 
         if injection_idx is None:
             return {

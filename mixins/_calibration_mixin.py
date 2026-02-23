@@ -67,6 +67,11 @@ class CalibrationMixin:
         """Handler for calibration completion - updates status AND shows QC dialog."""
         from affilabs.utils.settings_helpers import SettingsHelpers
 
+        # Calibration succeeded — turn power button green now
+        if hasattr(self, 'main_window') and self.main_window:
+            self.main_window.set_power_state("connected")
+            logger.debug("Power button set to connected (calibration succeeded)")
+
         # Resume live spectrum updates after calibration
         if hasattr(self, 'ui_updates') and self.ui_updates is not None:
             logger.debug("Resuming live spectrum updates after calibration...")
@@ -297,6 +302,9 @@ class CalibrationMixin:
                     dialog.update_status("❌ Simple calibration failed")
                     dialog.set_progress(100, 100)
                     logger.error("❌ Simple LED calibration failed")
+                    # Always restart acquisition so live data doesn't freeze
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(100, self._restart_acquisition_after_calibration)
 
                 # Auto-close after 2 seconds
                 import time
@@ -309,6 +317,9 @@ class CalibrationMixin:
                 traceback.print_exc()
                 dialog.update_status(f"❌ Error: {e}")
                 dialog.set_progress(100, 100)
+                # Always restart acquisition so live data doesn't freeze
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(100, self._restart_acquisition_after_calibration)
                 import time
                 time.sleep(3)
                 dialog.close_from_thread()
@@ -696,6 +707,21 @@ class CalibrationMixin:
         dialog.show()
         dialog.enable_start_button_pre_calib()  # Enable the Start button after dialog is visible
 
+    def _on_calibration_failed(self, error_message: str):
+        """Handle calibration_failed signal from CalibrationService.
+
+        Resets the power button to disconnected (gray) so the user can retry.
+
+        Args:
+            error_message: Error description from CalibrationService
+
+        """
+        logger.error(f"[Calibration] Calibration failed: {error_message}")
+        # Revert power button to gray — calibration did not succeed
+        if hasattr(self, 'main_window') and self.main_window:
+            self.main_window.set_power_state("disconnected")
+            logger.debug("Power button reset to disconnected (calibration failed)")
+
     def _on_cal_vm_complete(self, calibration_data: dict):
         """Handle calibration_complete signal from CalibrationViewModel.
 
@@ -716,7 +742,10 @@ class CalibrationMixin:
         logger.error(
             f"[CalibrationViewModel] Calibration failed: {error_message}",
         )
-        # Future: Display error message, suggest retry
+        # Revert power button to gray — calibration did not succeed
+        if hasattr(self, 'main_window') and self.main_window:
+            self.main_window.set_power_state("disconnected")
+            logger.debug("Power button reset to disconnected (CalibrationViewModel failure)")
 
     def _run_servo_auto_calibration(self):
         """Run servo polarizer calibration automatically."""

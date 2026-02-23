@@ -75,15 +75,13 @@ if TYPE_CHECKING:
 from affilabs.utils.logger import logger
 
 # Configuration constants
-INJECTION_WINDOW_SECONDS = 60
-DETECTION_CONFIDENCE_THRESHOLD = 0.30
+INJECTION_WINDOW_SECONDS = 80       # Monitor t=10s→90s of binding cycle
 DETECTION_CHECK_INTERVAL_MS = 200
 UPDATE_STATUS_INTERVAL_MS = 1000
 FINAL_MEASUREMENT_TIMEOUT_MS = 2000
 MINIMUM_DATA_POINTS = 10
-RU_CONVERSION_FACTOR = 355.0
-CHANNEL_SCAN_GRACE_SECONDS = 10  # Keep scanning other channels after first detection
-
+CHANNEL_SCAN_GRACE_SECONDS = 10     # Keep scanning other channels after first detection
+FLUIDIC_PATH_VOLUME_UL = 8.0        # Dead volume from loop outlet to sensor (P4PRO/PROPLUS, µL)
 # ── Stylesheet constants ──────────────────────────────────────────────
 _COLOR_GREEN = "#34C759"
 _COLOR_ORANGE = "#FF9500"
@@ -153,6 +151,7 @@ class ManualInjectionDialog(QDialog):
     injection_complete = Signal()
     injection_cancelled = Signal()
     injection_detected = Signal()
+    anomaly_detected = Signal(str, str)  # flag, channel_upper
 
     def __init__(
         self,
@@ -164,6 +163,7 @@ class ManualInjectionDialog(QDialog):
         channels: str | None = None,
         detection_priority: str = "auto",
         method_mode: str | None = None,
+        pump_transit_delay_s: float = 0.0,
     ):
         """Initialize manual injection dialog.
 
@@ -185,6 +185,8 @@ class ManualInjectionDialog(QDialog):
             channels: Channels to monitor for detection (e.g., "ABCD", "AC")
             detection_priority: Detection priority from cycle ('auto', 'priority', 'off')
             method_mode: Method mode from cycle ('manual', 'semi-automated', None)
+            pump_transit_delay_s: Seconds to delay detection window start after valve fire.
+                Estimated from FLUIDIC_PATH_VOLUME_UL / flow_rate * 60. Zero for manual mode.
         """
         super().__init__(parent)
         self.sample_info = sample_info
@@ -194,6 +196,7 @@ class ManualInjectionDialog(QDialog):
         self.detection_channels = channels or "ABCD"
         self.detection_priority = detection_priority or "auto"
         self.method_mode = method_mode
+        self._pump_transit_delay_s = pump_transit_delay_s
         self.detection_active = False
         self.window_start_time = None  # Time when detection window opens
         # Detection result (stored for coordinator to use for flag placement)
@@ -417,24 +420,53 @@ class ManualInjectionDialog(QDialog):
 
     def _start_detection(self) -> None:
         """Auto-start detection monitoring when dialog appears."""
-        if not self.buffer_mgr or not self.buffer_mgr.timeline_data:
-            logger.warning("Cannot start detection - no data available")
+        logger.info(
+            f"_start_detection called — buffer_mgr={self.buffer_mgr!r}, "
+            f"channels={self.detection_channels!r}, priority={self.detection_priority!r}"
+        )
+        if not self.buffer_mgr:
+            logger.warning("Cannot start detection — buffer_mgr is None")
             self._status_label.setText("⚠ No data available. Ensure acquisition is running.")
             self._status_label.setStyleSheet(_STYLE_STATUS_WARNING)
             return
+        if not self.buffer_mgr.timeline_data:
+            logger.warning("Cannot start detection — timeline_data is empty/falsy")
+            return
 
-        # Get current time as window start
+        PHASE1_LOOKBACK_SECONDS = 45.0
         first_channel = self.detection_channels[0].lower()
+        logger.info(f"Looking for channel '{first_channel}' in timeline_data keys: {list(self.buffer_mgr.timeline_data.keys())}")
+
         if first_channel in self.buffer_mgr.timeline_data:
             channel_data = self.buffer_mgr.timeline_data[first_channel]
+            logger.info(f"Channel '{first_channel}' found — time pts: {len(channel_data.time) if channel_data else 0}, wl pts: {len(channel_data.wavelength) if channel_data else 0}")
             if channel_data and len(channel_data.time) > 0:
                 times = np.array(channel_data.time)
-                self.window_start_time = times[-1]  # Current time = window start
+                self.window_start_time = max(
+                    times[0],
+                    times[-1] - PHASE1_LOOKBACK_SECONDS,
+                )
+                if self._pump_transit_delay_s > 0:
+                    # Pump mode: sample is still travelling from loop to sensor.
+                    # Advance the window start past the estimated transit time so we
+                    # don't fire on the bulk RI shift of the approaching plug front.
+                    # This sets window_start to a future timestamp; _scan_channel's
+                    # window_mask will return empty until that time is crossed.
+                    self.window_start_time = times[-1] + self._pump_transit_delay_s
+                    logger.info(
+                        f"Pump transit delay {self._pump_transit_delay_s:.1f}s applied "
+                        f"→ detection window opens at t={self.window_start_time:.1f}s (future)"
+                    )
+                else:
+                    logger.info(
+                        f"Detection window: t={self.window_start_time:.1f}s → t={times[-1]:.1f}s "
+                        f"(lookback {PHASE1_LOOKBACK_SECONDS}s, {len(times)} pts total)"
+                    )
             else:
-                logger.warning("No time data available in channel")
+                logger.warning(f"Channel '{first_channel}' has no time data — aborting detection")
                 return
         else:
-            logger.warning(f"Channel {first_channel} not found in timeline data")
+            logger.warning(f"Channel '{first_channel}' not found in timeline_data — aborting detection")
             return
 
         # Start detection
@@ -473,31 +505,6 @@ class ManualInjectionDialog(QDialog):
         self._status_label.setText("✓ Injection complete. Finalizing measurement...")
         self._status_label.setStyleSheet(_STYLE_STATUS_SUCCESS_LARGE)
 
-    def _get_sensitivity_factor(self) -> float:
-        """Compute sensitivity_factor from detection_priority and method_mode.
-
-        Returns:
-            float: ≥1.0. Manual default=2.0 (conservative), pump=0.75 (tight).
-                   'off' returns 999.0 (effectively disables detection).
-        """
-        priority = self.detection_priority
-        mode = self.method_mode
-
-        if priority == "off":
-            return 999.0  # Effectively disable detection
-        elif priority == "priority":
-            return 1.0  # Most sensitive (still ≥ 2.5σ)
-        elif priority == "auto":
-            # Mode-dependent defaults
-            if mode == "manual":
-                return 5.0  # Manual syringe — very conservative (12.5σ threshold)
-            elif mode == "semi-automated":
-                return 0.75  # Pump-controlled — tight, predictable signal
-            else:
-                return 5.0  # Fallback to very conservative
-        else:
-            return 2.0
-
     def _check_for_injection_in_window(self):
         """Check for injection continuously across all channels.
 
@@ -508,6 +515,10 @@ class ManualInjectionDialog(QDialog):
         Hard timeout: 60 seconds total from dialog appearance.
         """
         if not self.detection_active or not self.buffer_mgr or self.window_start_time is None:
+            logger.debug(
+                f"[DETECT] skipping — active={self.detection_active} "
+                f"buf={self.buffer_mgr is not None} win={self.window_start_time}"
+            )
             return
 
         # Skip auto-detection entirely when detection is off
@@ -550,12 +561,13 @@ class ManualInjectionDialog(QDialog):
             logger.debug(f"Detection check error: {e}")
 
     def _scan_channel(self, channel_letter: str, now: float) -> None:
-        """Run injection detection on a single channel.
+        """Detect injection on one channel.
 
-        Checks buffer data for the given channel, converts to RU, and runs
-        auto_detect_injection_point. If injection is found, lights the LED
-        and stores the result. On first detection across any channel, sets
-        the primary detection result and starts the grace timer.
+        Uses auto_detect_injection_point(): fits baseline on the first N points of the
+        window then walks forward to find the first sustained break. Correct for both
+        live (injection just happened) and retrospective (injection mid-window) cases.
+        score_injection_event() anchors its baseline from the END of the array, which
+        gives wrong results when the injection is buried inside a historical window.
 
         Args:
             channel_letter: Lowercase channel letter (a, b, c, d)
@@ -565,7 +577,6 @@ class ManualInjectionDialog(QDialog):
 
         ch_upper = channel_letter.upper()
 
-        # Skip channels already detected
         if ch_upper in self._detected_channels_results:
             return
 
@@ -582,7 +593,7 @@ class ManualInjectionDialog(QDialog):
         if len(times) < MINIMUM_DATA_POINTS or len(wavelengths) < MINIMUM_DATA_POINTS:
             return
 
-        # Define search window: from start until now
+        # Search window: from Phase 2 start until now
         window_mask = (times >= self.window_start_time) & (times <= times[-1])
         window_times = times[window_mask]
         window_wl = wavelengths[window_mask]
@@ -590,22 +601,21 @@ class ManualInjectionDialog(QDialog):
         if len(window_times) < MINIMUM_DATA_POINTS:
             return
 
-        # Convert wavelength to RU (baseline-corrected)
-        baseline = window_wl[0] if len(window_wl) > 0 else 0
-        window_ru = (window_wl - baseline) * RU_CONVERSION_FACTOR
+        # Pass raw nm — detector is unitless, any consistent signal works.
+        result = auto_detect_injection_point(window_times, window_wl)
 
-        result = auto_detect_injection_point(
-            window_times, window_ru,
-            sensitivity_factor=self._get_sensitivity_factor(),
+        logger.info(
+            f"[SCAN {ch_upper}] pts={len(window_times)} "
+            f"inj_t={result['injection_time']} conf={result['confidence']:.2f} "
+            f"rise={result.get('signal_rise', 0):.3f}nm snr={result.get('snr', 0):.1f}"
         )
 
-        if result['injection_time'] is None or result['confidence'] <= DETECTION_CONFIDENCE_THRESHOLD:
+        if result['injection_time'] is None or result['confidence'] < 0.15:
             return
 
-        # Light up LED
+        # ── Injection confirmed ───────────────────────────────────────────────
         self._update_channel_led(channel_letter, detected=True)
 
-        # Store per-channel result
         self._detected_channels_results[ch_upper] = {
             'time': result['injection_time'],
             'confidence': result['confidence'],
@@ -614,7 +624,8 @@ class ManualInjectionDialog(QDialog):
         logger.info(
             f"Channel {ch_upper} injection detected at "
             f"t={result['injection_time']:.1f}s "
-            f"(confidence: {result['confidence']:.0%})"
+            f"(confidence={result['confidence']:.0%}, "
+            f"rise={result.get('signal_rise', 0):.3f}nm, snr={result.get('snr', 0):.1f})"
         )
 
         # First detection — store primary result and start grace timer
@@ -625,7 +636,6 @@ class ManualInjectionDialog(QDialog):
             self.detected_confidence = result['confidence']
             logger.info(f"✓ First detection: Channel {channel_letter} — starting contact timer")
 
-        # Track last detection time for spread calculation
         self._last_detection_time = now
         self.injection_detected.emit()
 

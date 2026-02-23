@@ -309,17 +309,43 @@ class AL_UIUpdateCoordinator(QObject):
                 sel_lower = sel_letter.lower()
                 sel_iq = self._pending_sensor_iq_updates.get(sel_lower)
                 if sel_iq is not None:
-                    # p2p is computed from Active Cycle sensorgram data (per channel),
-                    # not from the global SensorIQ history — matches exactly what is
-                    # plotted in the Active Cycle graph window.
+                    # p2p and slope are computed from Active Cycle sensorgram data
+                    # (per channel), not from the global SensorIQ history — matches
+                    # exactly what is plotted in the Active Cycle graph window.
                     p2p_val = None
+                    slope_val = None
+
+                    # Slope is only meaningful during flat-baseline phases.
+                    # Contact / flow phases (Binding, Kinetic, etc.) are expected
+                    # to drift — showing a slope there would be misleading.
+                    _SLOPE_IRRELEVANT_TYPES = {
+                        "Binding", "Kinetic", "Concentration",
+                        "Regeneration", "Immobilization", "Blocking",
+                    }
+                    _current_cycle = getattr(self.app, '_current_cycle', None)
+                    _cycle_type = _current_cycle.type if _current_cycle is not None else None
+                    _slope_active = _cycle_type not in _SLOPE_IRRELEVANT_TYPES
+
                     try:
                         import numpy as np
                         buf = getattr(self.app, 'buffer_mgr', None)
                         if buf is not None:
-                            spr_data = buf.cycle_data[sel_lower].spr
+                            ch_buf = buf.cycle_data[sel_lower]
+                            spr_data = ch_buf.spr
+                            time_data = ch_buf.time
                             if len(spr_data) >= 2:
                                 p2p_val = float(np.max(spr_data) - np.min(spr_data))
+                            # Slope over last 60 s (more stable than 10 s);
+                            # threshold is 10 RU/15 min ≈ 0.0111 nm/s.
+                            # Only computed for baseline-type cycles.
+                            if _slope_active and len(time_data) >= 2:
+                                t_end = time_data[-1]
+                                mask = time_data >= (t_end - 60.0)
+                                t_win = time_data[mask]
+                                s_win = spr_data[mask]
+                                if len(t_win) >= 2:
+                                    coeffs = np.polyfit(t_win, s_win, 1)
+                                    slope_val = float(coeffs[0])  # nm/s
                     except Exception:
                         pass
                     stable = (p2p_val < 5.0) if p2p_val is not None else None
@@ -329,6 +355,7 @@ class AL_UIUpdateCoordinator(QObject):
                         fwhm=sel_iq.fwhm,
                         p2p=p2p_val,
                         stable=stable,
+                        slope=slope_val,
                     )
 
         except Exception as e:

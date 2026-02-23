@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "tips": [
+    {
+      "id": "tip_001",
+      "text": "Static injection (no pump) gives longer contact time and is often better for capturing slow binders than flow.",
+      "tags": ["general", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_002",
+      "text": "Detecting a larger molecule binding to a smaller one gives a bigger signal. Immobilize the small partner when possible.",
+      "tags": ["general", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_003",
+      "text": "This is wavelength-interrogated SPR \u2014 the same principle as top-end lab instruments, just without the angular motor.",
+      "tags": ["general", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_004",
+      "text": "Seeing a noisy or drifting baseline? Open the Spectroscopy tab to check the transmission spectrum \u2014 it shows optical issues instantly.",
+      "tags": ["general", "software", "troubleshooting"],
+      "source": "software"
+    },
+    {
+      "id": "tip_005",
+      "text": "For biosensing applications, higher immobilization density means more ligand on the surface and a larger binding signal.",
+      "tags": ["general", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_006",
+      "text": "Static injection works well for low-concentration samples \u2014 the sample stays in contact longer without being washed away.",
+      "tags": ["general", "p4spr", "strategy", "injection"],
+      "source": "science"
+    },
+    {
+      "id": "tip_007",
+      "text": "The gold surface is the sensor — never touch it. Fingerprints and scratches permanently destroy sensitivity.",
+      "tags": ["p4spr", "hardware", "chip"],
+      "source": "device"
+    },
+    {
+      "id": "tip_008",
+      "text": "After inserting a new chip, always calibrate before starting an experiment. Calibration sets the S-pol reference.",
+      "tags": ["p4spr", "hardware", "chip", "calibration"],
+      "source": "device"
+    },
+    {
+      "id": "tip_009",
+      "text": "Compress your chip before first use to flush air pockets from the microchannels and stabilize the flow path.",
+      "tags": ["p4spr", "hardware", "chip"],
+      "source": "device"
+    },
+    {
+      "id": "tip_010",
+      "text": "With a 1 mL syringe, push slowly and steadily. A jerky injection creates a pressure spike artifact on the sensorgram.",
+      "tags": ["p4spr", "injection", "hardware"],
+      "source": "device"
+    },
+    {
+      "id": "tip_011",
+      "text": "Rinse the inlet ports with buffer before loading a new chip to remove residual salt from the previous experiment.",
+      "tags": ["p4spr", "hardware", "chip"],
+      "source": "device"
+    },
+    {
+      "id": "tip_012",
+      "text": "Noisy baseline after chip loading? Try 2\u20133 slow buffer flushes before calibrating \u2014 it usually clears debris.",
+      "tags": ["p4spr", "hardware", "chip", "calibration"],
+      "source": "device"
+    },
+    {
+      "id": "tip_013",
+      "text": "Each of the 4 flow cells is optically and fluidically independent. You can run up to 4 different analytes in one run.",
+      "tags": ["p4spr", "hardware", "science"],
+      "source": "device"
+    },
+    {
+      "id": "tip_014",
+      "text": "For immobilization, give the ligand the full 30 minutes. Ligand density directly determines your binding signal amplitude.",
+      "tags": ["p4spr", "injection", "science"],
+      "source": "device"
+    },
+    {
+      "id": "tip_015",
+      "text": "After regeneration, wait for the baseline to fully restabilize before injecting the next analyte concentration.",
+      "tags": ["p4spr", "general", "injection", "science"],
+      "source": "device"
+    },
+    {
+      "id": "tip_016",
+      "text": "Water in the flow cell blocks light and shows as extreme signal noise. Always prime with buffer before loading a chip.",
+      "tags": ["p4spr", "hardware", "chip", "troubleshooting"],
+      "source": "device"
+    },
+    {
+      "id": "tip_017",
+      "text": "Don't over-compress the chip — excess pressure increases variability. Use the minimum pressure needed to seat the chip.",
+      "tags": ["p4spr", "hardware", "chip"],
+      "source": "device"
+    },
+    {
+      "id": "tip_018",
+      "text": "Injected a bubble? If it's trapped, give a short pulse with the syringe — a brief pressure spike usually dislodges it.",
+      "tags": ["p4spr", "injection", "troubleshooting"],
+      "source": "device"
+    },
+    {
+      "id": "tip_019",
+      "text": "When removing the syringe, twist and pull slowly. A straight fast pull creates backflow and disturbs the surface.",
+      "tags": ["p4spr", "injection", "hardware"],
+      "source": "device"
+    },
+    {
+      "id": "tip_020",
+      "text": "At the end of each session, flush the flow cells with water then blow dry with air to prevent salt buildup.",
+      "tags": ["p4spr", "hardware", "chip"],
+      "source": "device"
+    },
+    {
+      "id": "tip_021",
+      "text": "Run the Affinité CLN-KIT maintenance protocol weekly to keep the fluidic cell clean and your baseline stable.",
+      "tags": ["general", "hardware", "maintenance"],
+      "source": "device"
+    },
+    {
+      "id": "tip_022",
+      "text": "The fluidic cell can develop micro-cracks over time — replace it annually, before a leak damages your polarizer optics.",
+      "tags": ["general", "hardware", "maintenance"],
+      "source": "device"
+    },
+    {
+      "id": "tip_023",
+      "text": "Replace luer tubing and connectors once a year. High-usage labs should do it sooner — worn tubing is the most common source of unexplained leaks.",
+      "tags": ["general", "hardware", "maintenance"],
+      "source": "device"
+    },
+    {
+      "id": "tip_024",
+      "text": "LED brightness degrades after ~1 000 hours of use. If signal is dropping across all channels equally, it's the light source, not the chip.",
+      "tags": ["general", "hardware", "maintenance", "troubleshooting"],
+      "source": "device"
+    },
+    {
+      "id": "tip_025",
+      "text": "Temperature and pressure changes both cause baseline drift. A reference channel separates real binding from these bulk effects — always use one.",
+      "tags": ["general", "science", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_026",
+      "text": "SPR measures refractive index change, not binding directly. Match your sample buffer to your running buffer to avoid a large bulk shift artifact.",
+      "tags": ["general", "science", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_027",
+      "text": "Targets below 1 kDa give weak signal. Expect reliable measurements above 1 kDa at high nM concentrations — smaller molecules need surface optimisation.",
+      "tags": ["general", "science", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_028",
+      "text": "For weak binders, dissociation starts the moment the wash begins. A fast signal drop during wash is the off-rate, not a failed experiment.",
+      "tags": ["general", "science", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_029",
+      "text": "Your results export as a single Excel file with charts — straight from the Edits tab. No manual graph building needed.",
+      "tags": ["general", "software"],
+      "source": "software"
+    },
+    {
+      "id": "tip_030",
+      "text": "The Affilabs.core Excel export loads directly into TraceDrawer, Prism, and Origin for kinetic fitting and figure generation.",
+      "tags": ["general", "software", "strategy"],
+      "source": "software"
+    },
+    {
+      "id": "tip_031",
+      "text": "Use the Compression Assistant (BETA) to learn correct sensor compression and confirm no leak before starting an experiment.",
+      "tags": ["general", "hardware", "chip", "software"],
+      "source": "software"
+    },
+    {
+      "id": "tip_032",
+      "text": "Want kinetics? The P4PRO with AffiPump delivers pulse-free flow — the clean association and dissociation curves you need for reliable kon/koff fitting.",
+      "tags": ["general", "p4pro", "strategy", "hardware"],
+      "source": "device"
+    },
+    {
+      "id": "tip_033",
+      "text": "Go from scouting to screening: use P4SPR for rapid condition scouting (buffer, regeneration, surface chemistry), then move confirmed binders to Flow+ for higher-throughput screening.",
+      "tags": ["general", "p4spr", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_034",
+      "text": "Affinité offers surface chemistries for both small and large molecules. Contact them before choosing your immobilisation strategy — info@affiniteinstruments.com",
+      "tags": ["general", "science", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_035",
+      "text": "Affinité can help with assay development: buffer scouting, regeneration conditions, surface chemistry. Reach out before troubleshooting blindly — info@affiniteinstruments.com",
+      "tags": ["general", "science", "strategy"],
+      "source": "science"
+    },
+    {
+      "id": "tip_036",
+      "text": "Think we can do better? We'd love to hear from you — info@affiniteinstruments.com",
+      "tags": ["general"],
+      "source": "software"
+    }
+  ]
+}

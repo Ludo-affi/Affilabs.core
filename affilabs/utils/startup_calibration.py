@@ -376,8 +376,8 @@ def _get_servo_positions_from_config(device_config, detector_serial: str) -> dic
         positions = device_config.get_servo_positions()
         if positions:
             return {
-                's_position': positions['s'],
-                'p_position': positions['p'],
+                's_position': int(positions['s']),
+                'p_position': int(positions['p']),
             }
 
     # Handle dict format
@@ -388,8 +388,8 @@ def _get_servo_positions_from_config(device_config, detector_serial: str) -> dic
 
         if s_pos is not None and p_pos is not None:
             return {
-                's_position': s_pos,
-                'p_position': p_pos,
+                's_position': int(s_pos),
+                'p_position': int(p_pos),
             }
 
     # Positions not found

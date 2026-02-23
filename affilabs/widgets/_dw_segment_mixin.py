@@ -101,12 +101,16 @@ class SegmentMixin:
 
     def new_segment(self: Self) -> None:
         """Create a new segment."""
+        from affilabs.utils.logger import logger as _seg_logger
+        _seg_logger.debug("[SOI-ZOOM] new_segment() called — resetting fixed_window + enableAutoRange(x) + reset_user_zoom")
         # Clear gray zone and re-enable auto-ranging
         self.full_segment_view.hide_cycle_time_region()
         self.full_segment_view.fixed_window_active = False
         self.SOI_view.fixed_window_active = False
         self.full_segment_view.plot.enableAutoRange(axis="x", enable=True)
         self.SOI_view.plot.enableAutoRange(axis="x", enable=True)
+        # Reset user zoom flag so next cycle gets fresh auto-padding
+        self.SOI_view.reset_user_zoom()
 
         if self.segment_edit is not None:
             self.reassert_row(self.segment_edit)
@@ -469,7 +473,7 @@ class SegmentMixin:
     ) -> None:
         """Set fixed X range on a view and disable X auto-range."""
         view.fixed_window_active = True
-        view.plot.setRange(xRange=(start, end), padding=0, disableAutoRange=False)
+        view.plot.getViewBox().setXRange(start, end, padding=0)
         view.plot.enableAutoRange(axis="x", enable=False)
         view.plot.enableAutoRange(axis="y", enable=True)
         logger.debug(f"{name}: X range [{start:.1f}, {end:.1f}]s")

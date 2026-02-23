@@ -2005,8 +2005,13 @@ class HardwareManager(QObject):
 
         return recovered
 
-    def disconnect_all(self) -> None:
-        """Disconnect all hardware devices gracefully and unlock for new hardware."""
+    def disconnect_all(self, silent: bool = False) -> None:
+        """Disconnect all hardware devices gracefully and unlock for new hardware.
+
+        Args:
+            silent: If True, skip emitting hardware_disconnected (used during app shutdown
+                    to avoid triggering UI handlers on a closing window).
+        """
         logger.debug("Disconnecting all hardware - unlocking configuration")
 
         # Turn off all LEDs before disconnecting (graceful exit)
@@ -2079,4 +2084,5 @@ class HardwareManager(QObject):
         self._hardware_locked = False
 
         logger.debug("Hardware disconnected safely - ready for offline mode")
-        self.hardware_disconnected.emit()
+        if not silent:
+            self.hardware_disconnected.emit()

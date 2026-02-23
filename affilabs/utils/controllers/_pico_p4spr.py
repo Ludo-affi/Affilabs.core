@@ -1202,13 +1202,21 @@ class PicoP4SPR(StaticController):
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # Convert early — config JSON can deliver these as strings
+                try:
+                    s = int(s)
+                    p = int(p)
+                except (TypeError, ValueError) as conv_err:
+                    logger.warning(f"servo_move_calibration_only: invalid position values {s!r}, {p!r}: {conv_err}")
+                    return False
+
                 if (s < 0) or (p < 0) or (s > 255) or (p > 255):
                     msg = f"Invalid polarizer PWM position: {s}, {p} (must be 0-255)"
                     raise ValueError(msg)
 
                 # Values are already in PWM (0-255) - NO CONVERSION NEEDED
-                s_servo = int(s)
-                p_servo = int(p)
+                s_servo = s
+                p_servo = p
 
                 cmd = f"sv{s_servo:03d}{p_servo:03d}\n"
                 if self._ser is not None or self.open():

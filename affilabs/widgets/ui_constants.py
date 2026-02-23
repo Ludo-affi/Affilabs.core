@@ -144,6 +144,12 @@ class CycleConfig:
         "Other":          2.0,
     }
 
+    # All types support a user-adjustable time limit
+    TIME_ENABLED_TYPES: Final[frozenset[str]] = frozenset([
+        "Baseline", "Binding", "Regeneration", "Immobilization",
+        "Blocking", "Wash", "Other",
+    ])
+
     @classmethod
     def get_default_time(cls, cycle_type: str) -> int | None:
         """Get default cycle time for a given type.
@@ -250,7 +256,6 @@ class UIStyle:
 # EXPORT SINGLETON INSTANCES (for backward compatibility)
 # ============================================================================
 
-# Can be imported directly: from ui_constants import CYCLE_TYPES, CYCLE_TIME_OPTIONS, etc.
+# Can be imported directly: from ui_constants import CYCLE_TYPES, etc.
 CYCLE_TYPES: Final[list[str]] = CycleConfig.TYPES
-CYCLE_TIME_OPTIONS: Final[list[int]] = CycleConfig.TIME_OPTIONS
 COLUMNS_TO_TOGGLE: Final[frozenset[int]] = TableConfig.COLUMNS_TO_TOGGLE

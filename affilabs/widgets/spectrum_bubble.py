@@ -139,7 +139,7 @@ class SpectrumBubble(QFrame):
         row.setContentsMargins(14, 0, 10, 0)
         row.setSpacing(8)
 
-        title = QLabel("Spectrum")
+        title = QLabel("Spectroscopy")
         title.setStyleSheet(
             f"font-size: 13px; font-weight: 700; color: {_TEXT};"
             " background: transparent; border: none; border-radius: 0px;"

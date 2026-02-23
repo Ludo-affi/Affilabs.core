@@ -6,6 +6,7 @@ column visibility, data loading/saving, and cycle editing.
 
 import pyqtgraph as pg
 import pandas as pd
+from pathlib import Path
 from PySide6.QtWidgets import QTableWidgetItem
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
@@ -210,6 +211,62 @@ class TableMixin:
                     parts.append(f"{ch_label}:{val:.0f}")
         self.cycle_data_table.setItem(row_idx, self.TABLE_COL_DELTA_SPR, QTableWidgetItem(" ".join(parts)))
 
+    def _prefill_delta_spr_from_stats(self, cycle_dict: dict) -> None:
+        """Pre-fill delta_ch{n} in cycle_dict from _injection_stats if not already set.
+
+        Writes delta_spr_ru per channel as delta_ch1…delta_ch4 so the binding
+        plot can populate automatically without the user placing cursors.
+        Also sets delta_measured=True and delta_ref_ch='None' (no reference subtraction
+        applied — baseline-to-baseline value from live stats).
+
+        Called from add_cycle() before appending to _loaded_cycles_data.
+        """
+        inj_stats = getattr(self.main_window, '_injection_stats', {})
+        if not inj_stats:
+            return
+
+        cycle_num = cycle_dict.get('cycle_num')
+        if cycle_num is None:
+            return
+
+        _CH_MAP = {'a': 1, 'b': 2, 'c': 3, 'd': 4}
+        any_prefilled = False
+
+        for ch, ch_idx in _CH_MAP.items():
+            key = (cycle_num, ch)
+            entry = inj_stats.get(key)
+            if entry is None:
+                continue
+            delta_ru = entry.get('delta_spr_ru')
+            if delta_ru is None:
+                continue
+            col = f'delta_ch{ch_idx}'
+            # Only write if not already set by cursor placement
+            if cycle_dict.get(col) is None:
+                cycle_dict[col] = round(float(delta_ru), 2)
+                any_prefilled = True
+
+        if any_prefilled:
+            # Mark as measured (baseline-to-baseline, no cursor reference)
+            cycle_dict.setdefault('delta_measured', True)
+            cycle_dict.setdefault('delta_ref_ch', 'None')
+            # Also auto-fill immob_delta_spr_ru for Rmax calculator
+            ctype = cycle_dict.get('type', '')
+            if ctype in ('Immobilisation', 'Immobilization'):
+                # Average across channels that have a value
+                vals = [
+                    cycle_dict[f'delta_ch{i}']
+                    for i in range(1, 5)
+                    if isinstance(cycle_dict.get(f'delta_ch{i}'), (int, float))
+                ]
+                if vals:
+                    self._immob_delta_spr_ru = abs(sum(vals) / len(vals))
+                    if hasattr(self, 'rmax_immob_lbl'):
+                        self.rmax_immob_lbl.setText(f"{self._immob_delta_spr_ru:.0f} RU")
+            logger.debug(
+                f"[Edits] Auto-prefilled ΔSPR from live stats for cycle {cycle_num}"
+            )
+
     def add_cycle(self, cycle_dict):
         """Add a single completed cycle to the table (public API called by main.py).
 
@@ -226,6 +283,10 @@ class TableMixin:
         # Initialize or get loaded cycles data list
         if not hasattr(self.main_window, '_loaded_cycles_data'):
             self.main_window._loaded_cycles_data = []
+
+        # Auto-prefill delta_ch{n} from live binding stats if available (§11 of FRS)
+        self._prefill_delta_spr_from_stats(cycle_dict)
+
         self.main_window._loaded_cycles_data.append(cycle_dict)
 
         # Count cycle type for numbering
@@ -1114,6 +1175,24 @@ class TableMixin:
             # 7. Create analysis workbook with charts
             from affilabs.utils.excel_chart_builder import create_analysis_workbook_with_charts
 
+            binding_fit = getattr(self, '_binding_fit_result', None)
+
+            # Augment binding_fit with Rmax calculator values if available
+            if binding_fit is not None:
+                binding_fit = dict(binding_fit)  # shallow copy — don't mutate cached dict
+                binding_fit['rmax_ligand_mw']    = getattr(self, '_ligand_mw', None)
+                binding_fit['rmax_analyte_mw']   = getattr(self, '_analyte_mw', None)
+                binding_fit['rmax_immob_dspr_ru'] = getattr(self, '_immob_delta_spr_ru', None)
+                ligand  = binding_fit['rmax_ligand_mw']
+                analyte = binding_fit['rmax_analyte_mw']
+                immob   = binding_fit['rmax_immob_dspr_ru']
+                if ligand and analyte and immob and ligand > 0:
+                    binding_fit['rmax_theoretical_ru'] = (analyte / ligand) * immob
+                empirical = binding_fit.get('Rmax_RU')
+                theo = binding_fit.get('rmax_theoretical_ru')
+                if empirical is not None and theo and theo > 0:
+                    binding_fit['rmax_surface_activity_pct'] = (empirical / theo) * 100.0
+
             create_analysis_workbook_with_charts(
                 raw_data=raw_data,
                 processed_data=processed_data,
@@ -1122,7 +1201,8 @@ class TableMixin:
                 cycles_data=cycles_data,
                 export_settings=export_settings,
                 output_path=Path(file_path),
-                selected_cycles=selected_cycle_indices
+                selected_cycles=selected_cycle_indices,
+                binding_fit=binding_fit,
             )
 
             logger.info(f"✓ Created analysis workbook with charts: {Path(file_path).name}")

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSizePolicy,
+    QSplitter,
     QVBoxLayout,
 )
 
@@ -314,15 +315,14 @@ class MethodTabBuilder:
         self.sidebar.queue_status_label.setVisible(False)
 
         # Hidden compat buttons (still wired in signal connections elsewhere)
-        self.sidebar.clear_queue_btn = QPushButton()
+        # Must have a parent to avoid becoming top-level OS windows when setVisible(True) is called
+        self.sidebar.clear_queue_btn = QPushButton(self.sidebar)
         self.sidebar.clear_queue_btn.setVisible(False)
-        self.sidebar.clear_queue_btn.setToolTip("Remove all cycles from queue")
-        self.sidebar.pause_queue_btn = QPushButton()
+        self.sidebar.pause_queue_btn = QPushButton(self.sidebar)
         self.sidebar.pause_queue_btn.setVisible(False)
-        self.sidebar.pause_queue_btn.setToolTip("Pause queue after current cycle completes")
 
         # Hidden compat frame (referenced by external code)
-        self.sidebar.completed_cycles_info = QFrame()
+        self.sidebar.completed_cycles_info = QFrame(self.sidebar)
         self.sidebar.completed_cycles_info.setVisible(False)
 
         # Summary table card (directly on sidebar)
@@ -333,8 +333,26 @@ class MethodTabBuilder:
         summary_card = QFrame()
         summary_card.setStyleSheet(card_style())
         summary_card_layout = QVBoxLayout(summary_card)
-        summary_card_layout.setContentsMargins(12, 8, 12, 8)
-        summary_card_layout.setSpacing(8)
+        summary_card_layout.setContentsMargins(8, 8, 8, 8)
+        summary_card_layout.setSpacing(0)
+
+        # ── Vertical splitter: 70% queue table / 30% injection panel ─────
+        queue_splitter = QSplitter(Qt.Orientation.Vertical)
+        queue_splitter.setHandleWidth(4)
+        queue_splitter.setStyleSheet(
+            "QSplitter::handle { background: rgba(0,0,0,0.06); border-radius: 2px; }"
+        )
+        queue_splitter.setCollapsible(0, False)  # table pane never collapses
+        queue_splitter.setCollapsible(1, False)  # contact monitor never collapses
+        summary_card_layout.addWidget(queue_splitter)
+
+        # ── Top pane: table + controls + footer ───────────────────────────
+        top_pane = QFrame()
+        top_pane.setStyleSheet("background: transparent; border: none;")
+        top_layout = QVBoxLayout(top_pane)
+        top_layout.setContentsMargins(4, 0, 4, 4)
+        top_layout.setSpacing(8)
+        queue_splitter.addWidget(top_pane)
 
         # NEW: Queue Summary Widget with drag-drop support - styled to match original
         self.sidebar.summary_table = QueueSummaryWidget()
@@ -397,7 +415,7 @@ class MethodTabBuilder:
             "}"
         )
 
-        summary_card_layout.addWidget(self.sidebar.summary_table)
+        top_layout.addWidget(self.sidebar.summary_table)
 
         # Queue control buttons (Start, Pause, Next, Duplicate)
         controls_row = QHBoxLayout()
@@ -426,30 +444,6 @@ class MethodTabBuilder:
         )
         controls_row.addWidget(self.sidebar.start_queue_btn)
 
-        self.sidebar.duplicate_last_btn = QPushButton("Duplicate")
-        self.sidebar.duplicate_last_btn.setFixedHeight(32)
-        self.sidebar.duplicate_last_btn.setIcon(self._create_duplicate_icon())
-        self.sidebar.duplicate_last_btn.setIconSize(QSize(16, 16))
-        self.sidebar.duplicate_last_btn.setToolTip("Quickly duplicate the last cycle (useful for repetitive testing)")
-        self.sidebar.duplicate_last_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #FF9500;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 6px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover { background: #E68A00; }"
-            "QPushButton:pressed { background: #CC7700; }"
-            "QPushButton:disabled { background: #C7C7CC; }"
-        )
-        # Connect to the main window's duplicate_last_cycle method
-        self.sidebar.duplicate_last_btn.clicked.connect(self._on_duplicate_last)
-        controls_row.addWidget(self.sidebar.duplicate_last_btn)
-
         self.sidebar.next_cycle_btn = QPushButton("Next Cycle")
         self.sidebar.next_cycle_btn.setFixedHeight(32)
         self.sidebar.next_cycle_btn.setIcon(self._create_skip_icon())
@@ -473,8 +467,7 @@ class MethodTabBuilder:
         )
         controls_row.addWidget(self.sidebar.next_cycle_btn)
 
-        summary_card_layout.addLayout(controls_row)
-        summary_card_layout.addSpacing(8)
+        top_layout.addLayout(controls_row)
 
         # Table footer
         table_footer_row = QHBoxLayout()
@@ -522,7 +515,33 @@ class MethodTabBuilder:
         self.sidebar.open_table_btn.setVisible(False)
         self.sidebar.open_table_btn.clicked.connect(self._open_cycle_table_dialog)
 
-        summary_card_layout.addLayout(table_footer_row)
+        top_layout.addLayout(table_footer_row)
+
+        # ── Bottom pane: Injection action bar (always visible, 30% height) ──
+        from affilabs.widgets.injection_action_bar import InjectionActionBar
+        inj_pane = QFrame()
+        inj_pane.setObjectName("InjectionZone")
+        inj_pane.setMinimumHeight(180)  # always show contact monitor
+        inj_pane.setStyleSheet(
+            "QFrame#InjectionZone {"
+            "  background: #F2F2F7;"
+            "  border: 1.5px solid rgba(0, 0, 0, 0.10);"
+            "  border-radius: 8px;"
+            "}"
+        )
+        inj_pane_layout = QVBoxLayout(inj_pane)
+        inj_pane_layout.setContentsMargins(0, 0, 0, 0)
+        inj_pane_layout.setSpacing(0)
+
+        self.sidebar.injection_action_bar = InjectionActionBar(inj_pane)
+        inj_pane_layout.addWidget(self.sidebar.injection_action_bar)
+
+        queue_splitter.addWidget(inj_pane)
+
+        # 60 / 40 split (table : contact monitor) — contact monitor has min 180px
+        queue_splitter.setStretchFactor(0, 6)
+        queue_splitter.setStretchFactor(1, 4)
+        queue_splitter.setSizes([600, 400])
 
         # Queue panel is NOT added to the sidebar Method tab.
         # It is reparented into the collapsible right splitter pane by affilabs_core_ui.

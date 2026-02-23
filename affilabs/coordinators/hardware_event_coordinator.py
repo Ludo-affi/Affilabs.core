@@ -102,15 +102,24 @@ class HardwareEventCoordinator:
             logger.debug(
                 f"Scan successful - found: {', '.join(valid_hardware)}",
             )
-            self._main_window.set_power_state("connected")
-            # Pulse Calibrate button to guide user to next step (only if not already calibrated)
+            # Check if already calibrated (reconnect path vs fresh connection)
             try:
                 cal = getattr(self._app, 'calibration', None)
                 already_cal = cal is not None and getattr(cal, '_calibration_data', None) is not None
-                if not already_cal:
-                    self._pulse_calibrate_button()
             except Exception:
-                pass
+                already_cal = False
+            if already_cal:
+                # Reconnecting with cached calibration data — safe to go straight to green
+                logger.debug("Already calibrated — setting power state to connected")
+                self._main_window.set_power_state("connected")
+            else:
+                # Fresh connection — hold at amber until calibration succeeds
+                logger.debug("Calibration required — setting power state to calibrating")
+                self._main_window.set_power_state("calibrating")
+                try:
+                    self._pulse_calibrate_button()
+                except Exception:
+                    pass
         else:
             logger.warning(
                 "Scan FAILED - no valid hardware combinations found",

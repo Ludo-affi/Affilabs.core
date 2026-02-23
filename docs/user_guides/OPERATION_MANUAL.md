@@ -245,7 +245,7 @@ Before starting, ensure your system is properly powered:
 
 Affilabs.core intentionally focuses on data capture and annotation. Advanced analysis is delegated to specialized tools:
 
-- ❌ **Curve fitting** (use Excel, Origin, Prism, TraceDrawer, or Affilabs.analysis)
+- ❌ **Curve fitting / kinetic analysis** (use TraceDrawer, Origin, Prism, or Affilabs.analysis — all accept the Affilabs.core Excel export directly)
 - ❌ **Kinetic modeling** (use specialized kinetics software)
 - ❌ **Statistical analysis** (use R, Python, Prism, or GraphPad)
 - ❌ **Advanced image processing** (use external visualization tools)
@@ -342,7 +342,8 @@ For users needing advanced analysis capabilities:
 | Annotate cycles | **Affilabs.core** | Add flags, notes, Δ-SPR measurements |
 | Basic export | **Affilabs.core** | Excel with all raw data + annotations |
 | Curve fitting | External tool or **Affilabs.analysis** | Not included in core |
-| Kinetic analysis | **Affilabs.analysis** | Advanced workflow for kinetics |
+| Kinetic analysis (Kd, kon, koff) | **TraceDrawer**, Affilabs.analysis | Import the Excel export directly |
+| SPR data visualisation & fitting | **TraceDrawer** | Industry-standard SPR analysis tool; Affilabs.core Excel format is directly compatible |
 | Statistical tests | Excel, R, Prism, Python | Affilabs.core provides data only |
 | Figure generation | Origin, Prism, Python, Matplotlib | Export data, create figures externally |
 
@@ -663,49 +664,58 @@ After measuring Δ-SPR for each concentration at same timepoint:
 
 ## Data Export Formats
 
+> **Design philosophy:** Affilabs.core is built around a focused workflow — acquire high-quality data, edit it in the Edits tab, then export a single Excel file with all results and charts ready to share. The goal is to get from raw acquisition to a publication-ready summary without touching any other software.
+
+### Workflow: Acquire → Edit → Export
+
+```
+Live tab (Acquire)
+    │  Record sensorgram data in real-time
+    │
+    ▼
+Edits tab (Analyse)
+    │  Align cycles, set cursors, measure Δ-SPR per cycle
+    │  Add concentrations, flag outliers, annotate notes
+    │
+    ▼
+Export (one click from Edits tab)
+    │  Single Excel file: data + charts
+    └─ Ready to share, present, or archive
+```
+
 ### Raw Data Export (from Live Tab)
 
-**When to Use:** Preserve original sensor data for re-analysis
+**When to use:** Backup or re-analysis starting from raw signal data.
 **Format:** Excel (.xlsx)
-**Location:** `Documents/Affilabs_Data/[ExperimentName]/Raw_Data/`
-**Filename:** `Raw_YYYYMMDD_HHMMSS.xlsx`
 
 **Contains:**
-- Sheet 1: Raw Data (long format) - Time, Channel, Value
-- Sheet 2: Per-Channel Format - Time_A, A, Time_B, B, Time_C, C, Time_D, D
-- Sheet 3: Cycle Table - Basic info (type, duration, conc, flags, notes)
-- Sheet 4: Export Info - Metadata (date, software version, device)
+- Sheet 1: Raw Data (long format) — Time, Channel, Value
+- Sheet 2: Per-Channel — Time_A, A, Time_B, B, Time_C, C, Time_D, D
+- Sheet 3: Cycle Table — type, duration, concentration, flags, notes
+- Sheet 4: Export Info — date, software version, device serial
 
-**Use Cases:**
-- Backup of original measurements
-- Re-analysis with different reference channel
-- Quality control audits
-- External software analysis (Prism, Origin)
+### Analysis Export (from Edits Tab)
 
-### Analysis Export (from Edit Tab)
-
-**When to Use:** Final results with annotations & Δ-SPR measurements
-**Format:** Excel (.xlsx)
-**Location:** `Documents/Affilabs_Data/[ExperimentName]/Analysis/`
-**Filename:** `Analysis_YYYYMMDD_HHMMSS.xlsx`
+**When to use:** This is the primary export. Use it at the end of every experiment.
+**Format:** Single Excel (.xlsx) with embedded charts — no external tools needed.
 
 **Contains:**
-- Sheet 1: Cycle Analysis - Full table with ΔSPR, flags, notes, QC status
-- Sheet 2: Metadata - Experiment info, operator, device, sensor type
-- Sheet 3: Settings - Analysis settings (ref channel, alignment, filters)
+- **Cycle analysis sheet** — full table with Δ-SPR per cycle, per channel, flags, QC status, notes, and concentration
+- **Sensorgram chart** — time-series plot of all channels, aligned and annotated
+- **Δ-SPR bar chart** — per-cycle binding response, ready for presentations
+- **Metadata sheet** — experiment info, operator, device, sensor type, analysis settings
 
-**Ready to Use:**
-- Copy & paste ΔSPR values to external software
-- Includes all annotations & validation status
-- Re-loadable for further editing
+**Key point:** The charts are generated automatically from your Edits tab data. You do not need to build them manually in Excel. Open the file, go to the chart sheet, and it is done.
+
+**Third-party platform compatibility:** The exported Excel file can be imported directly into **TraceDrawer**, **Prism**, **Origin**, and other SPR data processing platforms. TraceDrawer in particular is well-suited for kinetic fitting (kon, koff, Kd) from Affilabs.core sensorgram data.
 
 ### Export Info Sheet
 
-Both exports include metadata:
+Both exports include a metadata block:
 
 ```
 Export Date:    2026-02-07 14:30:00
-Software:       Affilabs-Core v2.0
+Software:       Affilabs-Core v2.0.5
 Device:         FLMT09788
 Total Cycles:   8
 Data Points:    12,450
@@ -832,49 +842,46 @@ The ideal compression provides:
 - ✓ **Structural integrity** - No deformation of microfluidic channels
 - ✓ **Stable baseline** - Minimal drift, consistent signal quality
 
-**Compression Assistant Feature:**
+**Compression Assistant** *(BETA)*
 
-Affilabs.core v2.0 includes a **Compression Training Assistant** to help you find the optimal compression:
+Affilabs.core includes a built-in **Compression Assistant** that teaches you how to compress the sensor correctly and confirms whether you have a leak — in real time, without guesswork.
 
-1. **Access the Assistant:**
-   - Settings → Device Status → "Train Compression"
-   - Or ask Spark AI: "Help me optimize compression"
+> **This is the recommended way to learn compression.** Even experienced operators use it when installing a new sensor type or after a microfluidic cell replacement, because small differences in knob position have a large effect on signal quality and leak risk.
 
-2. **What the Assistant Does:**
-   - Guides you through incremental compression adjustments
-   - Monitors baseline stability in real-time
-   - Detects leak signatures (sudden drift, signal loss)
-   - Identifies over-compression (noise increase, signal distortion)
-   - Recommends optimal knob position for your specific sensor
+**Access:** Settings → Device Status → "Train Compression"
 
-3. **How It Works:**
-   - Start with knob fully UP (no compression)
-   - Turn knob counter-clockwise in small increments
-   - Assistant monitors signal quality at each position
-   - Stop when assistant indicates "optimal compression achieved"
-   - Record the knob position for future reference
+**What it does:**
+- Walks you through compression step by step with on-screen instructions
+- Monitors baseline stability live as you turn the knob
+- **Detects leak signatures** — sudden drift or signal loss indicates the seal is incomplete
+- **Detects over-compression** — noise increase or signal distortion means too much pressure
+- Confirms when the compression is in the optimal zone
 
-4. **Benefits:**
-   - **Prevents leaks** by ensuring sufficient compression
-   - **Prevents over-compression** by detecting signal degradation
-   - **Consistent measurements** across experiments
-   - **Extends sensor lifespan** by avoiding damage
-   - **Faster setup** - no trial-and-error needed
+**Leak check:** The assistant monitors for the optical and fluidic signatures of a leak during compression. If the seal is not properly seated, it will flag this before you start an experiment — avoiding data loss and potential damage to the polarizer optics from water infiltration.
 
-**Compression Adjustment Guidelines:**
+> **BETA notice:** Guidance values (optimal knob position, threshold targets) are estimates based on typical hardware. Always verify the result visually (no visible liquid, stable baseline < 0.5 nm/min) and with a trained operator during first use.
+
+**How to use it:**
+1. Start with the knob fully UP (no compression applied)
+2. Launch the assistant — it will prompt each adjustment
+3. Turn the knob counter-clockwise in small increments as instructed
+4. The assistant monitors signal quality at each step
+5. Stop when the assistant indicates the optimal zone is reached
+6. Note the knob position — use it as your reference for this sensor type
+
+**Best practice:**
+- Run the assistant on every new sensor installation and after every microfluidic cell replacement
+- Recheck compression if baseline becomes unstable mid-experiment (could indicate the knob shifted)
+- Never start an experiment without confirming no leak in the assistant's leak-check step
+
+**Manual compression adjustment (without assistant):**
 
 | Observation | Action | Explanation |
 |-------------|--------|-------------|
-| Visible liquid leaking from sensor area | Turn knob further COUNTER-CLOCKWISE (increase compression) | Seal is incomplete - more pressure needed |
+| Visible liquid leaking from sensor area | Turn knob further COUNTER-CLOCKWISE (increase compression) | Seal is incomplete — more pressure needed |
 | Baseline drift > 1 nm/min after installation | Turn knob slightly CLOCKWISE (reduce compression) | Possible over-compression causing microfluidic deformation |
 | Signal very noisy or erratic | Turn knob slightly CLOCKWISE (reduce compression) | Over-compression distorting optical path |
-| Baseline stable, no leaks | ✓ Optimal compression achieved | Current position is ideal - record for future use |
-
-**Best Practice:**
-- Use the **Compression Assistant** during initial setup or when switching sensors
-- Document the optimal knob position for your specific sensor type
-- Recheck compression if baseline becomes unstable during long experiments
-- Always start with knob UP, then compress incrementally (never start compressed)
+| Baseline stable, no leaks | ✓ Optimal compression achieved | Record this knob position for future reference |
 
 #### Verification Checklist
 
@@ -1068,6 +1075,8 @@ The P4SPR uses **microfluidic incubation** for affinity measurement, not kinetic
 
 ### Weekly Maintenance
 
+> **Cleaning kit reminder:** Run the Affinité CLN-KIT maintenance procedure once per week to prevent residue build-up in the fluidic cell. See [Biweekly System Cleaning](#biweekly-system-cleaning-cln-kit) for the full procedure — weekly use is recommended over biweekly if sample throughput is high.
+
 1. **⚠️ Sensor Visual Check** (GLOVED HANDS ONLY)
    - Inspect sensor surface for dust, debris, fingerprints
    - Check glass windows for contamination
@@ -1209,6 +1218,7 @@ After completing Regular Cleaning steps 1-5 above, add Sanitization:
 
 1. **LED PCB Light Source Check**
    - **Spectral Range**: 500 nm - 680 nm (cool white LED)
+   - **Expected lifespan**: ~1 000 hours of cumulative on-time. After this threshold, brightness can decrease noticeably and the spectral balance may shift toward red/infrared, degrading signal quality.
    - **Check LED intensity**: Settings → Device Configuration
      - Current LED intensities:
        - Channel A: 115
@@ -1217,13 +1227,13 @@ After completing Regular Cleaning steps 1-5 above, add Sanitization:
        - Channel D: 119
      - **Warning signs of degradation:**
        - Variation > 10% between channels
-       - Overall intensity loss (baseline signal decreasing)
+       - Overall intensity loss (baseline signal decreasing over weeks)
        - Color profile shift (signal shifting toward red/infrared)
    - **If LED degradation detected:**
      - Document observed changes (date, intensity values, symptoms)
      - Order replacement LED PCB from Affinité (specify your device ID: FLMT09788)
-     - Keep spare LED on hand for critical experiments
-     - **DO NOT attempt to repair or adjust LED** - replacement is standard procedure
+     - Keep a spare LED PCB on hand for critical experiments — lead times can be several weeks
+     - **DO NOT attempt to repair or adjust LED** — replacement is the standard procedure
 
 2. **Spectrometer Calibration Status**
    - Settings → Calibration
@@ -1238,15 +1248,11 @@ After completing Regular Cleaning steps 1-5 above, add Sanitization:
 ### Quarterly/Annual Maintenance
 
 1. **⚠️ Microfluidic Cell Replacement** (ANNUAL - CRITICAL)
-   - **Replace microfluidic cell once per year** - this is preventive maintenance
-   - Even if no visible issues, the cell degrades with exposure to buffers and samples
-   - Degraded cells can cause:
-     - Reduced optical contact
-     - Baseline drift
-     - Inconsistent measurements
-     - Leaks (water infiltration)
-   - Order replacement cell from manufacturer before annual maintenance date
-   - Keep spare cell on hand in case of damage or leak
+   - **Replace microfluidic cell once per year** — preventive maintenance regardless of visible symptoms
+   - The cell undergoes mechanical stress and chemical exposure with each use; cracks and slow leaks develop progressively over time and are not always visible until the leak is significant
+   - **Do not wait for a leak to appear** — a cracked cell contaminates the optics and requires urgent unscheduled service
+   - Degraded cells cause: reduced optical contact, baseline drift, inconsistent measurements, and leaks (water infiltration into the polarizer apertures)
+   - Order a replacement cell from Affinité before your annual maintenance date; keep one spare on hand at all times
 
 2. **Microfluidic Cell Leak Diagnosis & Repair**
    - **If experiencing leaks during measurements:**
@@ -1263,29 +1269,26 @@ After completing Regular Cleaning steps 1-5 above, add Sanitization:
    - **If leak persists after water removal**: Replace microfluidic cell
    - **Do NOT attempt to disassemble or repair cell** - replacement is standard procedure
 
-3. **Fluidic Components Inspection & Replacement**
-   - **Components that can be replaced:**
-     - Tubing (silicone, PTFE)
+3. **Fluidic Tubing & Luer Connector Replacement** (ANNUAL)
+   - **Replace all luer tubing and connectors once per year** under normal usage; replace sooner if usage is high (> 3 experiments/week) or if any visual degradation is observed
+   - **Components that can be replaced in the field:**
+     - Silicone and PTFE tubing
+     - Luer connectors and fittings
      - Pump seals and O-rings
-     - Connectors and fittings
      - Syringe plungers
      - Check valves
      - Flow restrictors
-   - **When to replace:**
-     - Tubing cracks or discoloration
+   - **When to replace early:**
+     - Tubing cracks, kinks, or discoloration
      - Visible leaks at connections
      - Pressure readings abnormal (< 0.3 bar or > 2.5 bar)
-     - Flow rate decreasing
-     - Visible blockages or crystallization
+     - Flow rate decreasing or inconsistent
+     - Visible blockages or salt crystallization at joints
    - **For replacement:**
      - Contact Affinité with device ID (FLMT09788) and component description
-     - Keep spare tubing sets on hand (easy to replace in the field)
-     - Most other components require technician-level service
-   - **DO NOT attempt to repair** - replacement is the standard procedure
-   - Affinité can provide:
-     - Replacement part kits
-     - Installation instructions
-     - Technical support for component swaps
+     - Keep a spare tubing set on hand — tubing is the most frequently replaced component and is easy to swap in the field
+     - Pump seals and check valves require technician-level service — contact Affinité
+   - **DO NOT attempt to repair** — replacement is the standard procedure
 
 4. **⚠️ Sensor Assessment** (GLOVED, HANDLE WITH CARE)
    - Inspect sensor under magnification if available
@@ -1411,6 +1414,55 @@ Task: Annual maintenance & microfluidic cell replacement
 
 ---
 
+## SPR Measurement Tips
+
+### Physical Principles
+
+**SPR signal = refractive index change at the sensor surface.**
+Anything that changes the refractive index of the medium near the gold surface will shift the resonance wavelength — not just specific binding. Understanding this is essential for designing reliable experiments.
+
+| Effect | Impact on signal | Mitigation |
+|--------|-----------------|------------|
+| Temperature increase | Baseline drifts (refractive index of water is temperature-dependent) | Allow 30 min thermal equilibration; keep lab temperature stable |
+| Pressure spike (e.g. bubble clearing, pump pulsation) | Transient spike or step jump in all channels simultaneously | Use pulse injections carefully; inspect for air before starting |
+| Bulk refractive index mismatch (sample buffer ≠ running buffer) | Large rectangular artifact at injection start and end | Match sample to running buffer; use reference channel subtraction |
+| Non-specific binding | Slow creep across all channels | Always use a reference channel; subtract it from analyte channels |
+
+### Always Use a Reference Channel
+
+A reference channel is a flow cell with no immobilised ligand (or a control surface) that experiences the same bulk effects — temperature, pressure, and non-specific adsorption — as your analyte channel.
+
+- Subtract the reference sensorgram from the analyte sensorgram to isolate specific binding signal
+- Without reference subtraction, temperature drift and bulk shifts are indistinguishable from real binding events
+- **Rule:** never report Kd values from a single channel without reference correction
+
+### Sensitivity and Target Size
+
+SPR signal amplitude scales with the mass of analyte accumulating on the surface. Small molecules produce inherently weaker signals.
+
+| Analyte size | Expected signal | Notes |
+|-------------|----------------|-------|
+| > 50 kDa | Strong — easily detectable at low nM | Standard kinetic experiments straightforward |
+| 1–50 kDa | Moderate — detectable at high nM range | Optimise surface density; use good reference |
+| < 1 kDa | Weak — difficult to detect reliably | Consider fragment screening protocols; maximise ligand density |
+
+**Practical threshold:** Expect reliable, reproducible signal with targets above **1 kDa** at concentrations in the **high nM range**. Below this size, signal-to-noise requires careful optimisation.
+
+### Weak Binders and Dissociation During Wash
+
+For interactions with fast off-rates (high k_off, high K_D), dissociation begins as soon as the sample injection ends and buffer wash starts. On a sensorgram this appears as:
+
+- A rapid drop during the wash phase that mirrors the association slope
+- The signal may return to near-baseline before the wash cycle ends
+- **Do not mistake this for a failed experiment** — it is the dissociation phase of a weak binder
+
+To capture dissociation kinetics for weak binders:
+- Use a shorter wash injection (or no wash) and measure at end-of-injection
+- Increase association concentration to drive more signal before dissociation competes
+- Consider equilibrium (steady-state) analysis rather than full kinetic fitting if dissociation is too fast to measure accurately
+
+---
+
 ## Software Compatibility
 
 ### System Requirements
@@ -1489,7 +1541,7 @@ Device Compatibility: FLMT09788 (Flame-T Spectrometer)
 - **In-app help**: Click **?** button (top right)
 - **Documentation**: `docs/` folder in installation directory
 - **Error logs**: Saved to `~/.affilabs/logs/`
-- **Contact support**: [support contact info]
+- **Contact support**: info@affiniteinstruments.com
 
 ---
 
@@ -1787,15 +1839,44 @@ C:\Users\[YourName]\AppData\Local\Affilabs\
 ### Emergency Contacts
 
 - **Sensor Damage**: Contact Affinité Instruments immediately
-- **System Malfunction**: [Support contact]
-- **Software Issues**: [Support contact]
+- **System Malfunction**: info@affiniteinstruments.com
+- **Software Issues**: info@affiniteinstruments.com
+
+---
+
+## Affinité Resources
+
+### Surface Chemistry & Sensors
+
+Affinité offers a broad range of sensor surface chemistries designed for both small and large molecule applications — from fragment screening to antibody characterisation. Whether you are working with proteins, peptides, lipids, nucleic acids, or small drug-like molecules, there is a surface chemistry suited to your assay.
+
+Contact Affinité to discuss which surface is right for your target: **info@affiniteinstruments.com**
+
+### Assay Development Support
+
+Setting up an SPR assay for the first time — or struggling with a difficult target? Affinité's application scientists can help with:
+
+- Surface chemistry selection and immobilisation strategy
+- Buffer and regeneration scouting
+- Concentration series design for Kd determination
+- Troubleshooting baseline drift, non-specific binding, or weak signal
+
+**Contact us:** info@affiniteinstruments.com
+
+### Feedback
+
+Think we can do better? We want to hear from you.
+
+Affilabs.core is continuously improved based on user feedback. If something is confusing, missing, or could work better — tell us. Every report is read by the development team.
+
+**Share your feedback:** info@affiniteinstruments.com
 
 ---
 
 **Last Updated:** 2026-02-07
 **Manual Version:** 1.0
 **Status:** PRODUCTION - CRITICAL SAFETY REQUIREMENTS
-**For questions or corrections, contact:** [Development Team]
+**For questions or corrections, contact:** info@affiniteinstruments.com
 
 **⚠️ This manual contains critical safety information. All users MUST read and understand the sensor handling and air bubble prevention sections before operating the system.**
 

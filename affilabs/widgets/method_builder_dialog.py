@@ -56,6 +56,54 @@ _SVG_CLIPBOARD_WHITE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w
 
 
 # ---------------------------------------------------------------------------
+#  Draggable method table — supports row drag-and-drop reordering
+# ---------------------------------------------------------------------------
+
+class DraggableMethodTable(QTableWidget):
+    """QTableWidget with row-level drag-and-drop reordering.
+
+    When the user drags a row to a new position the *on_row_moved* callback is
+    invoked with (from_row, to_row) so the caller can update its data model and
+    repopulate the table itself.
+    """
+
+    def __init__(self, on_row_moved=None):
+        super().__init__()
+        self._on_row_moved = on_row_moved
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        # Use DragOnly so Qt doesn't physically move rows — we repopulate from the data model
+        self.setDragDropMode(QTableWidget.DragDropMode.DragOnly)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.setToolTip("Drag rows to reorder cycles")
+
+    def dragEnterEvent(self, event):
+        if event.source() is self:
+            event.accept()
+
+    def dragMoveEvent(self, event):
+        if event.source() is self:
+            event.accept()
+
+    def dropEvent(self, event):  # type: ignore[override]
+        if event.source() is not self:
+            event.ignore()
+            return
+        src_row = self.currentRow()
+        index = self.indexAt(event.position().toPoint())
+        if index.isValid():
+            dst_row = index.row()
+        else:
+            # Dropped below all rows — move to last
+            dst_row = self.rowCount() - 1
+        if src_row >= 0 and src_row != dst_row and self._on_row_moved:
+            self._on_row_moved(src_row, dst_row)
+        event.accept()
+
+
+# ---------------------------------------------------------------------------
 #  Spark Method Popup — lightweight chat for method-building assistance
 # ---------------------------------------------------------------------------
 
@@ -505,11 +553,13 @@ class MethodBuilderDialog(QDialog):
     method_ready = Signal(str, str, list)  # (action, method_name, list of cycles)
     method_saved = Signal(str, str)  # (method_name, file_path)
 
-    def __init__(self, parent=None, user_manager=None):
+    def __init__(self, parent=None, user_manager=None, app=None):
         super().__init__(parent)
+        self._app_ref = app  # For triggering calibration from New Sensor button
         self.setWindowTitle("Build Method")
         self.setMinimumSize(860, 640)
         self._local_cycles = []  # Cycles built in this dialog
+        self._has_affipump = False  # Set by configure_for_hardware(); gates contact_time warnings
         self._notes_history = []  # History of previous notes
         self._history_index = -1  # Current position in history (-1 = not browsing)
         self._current_draft = ""  # Store current text when browsing history
@@ -849,6 +899,66 @@ class MethodBuilderDialog(QDialog):
         header_row.addWidget(self.hw_label)
         layout.addLayout(header_row)
 
+        # Header row 2 — chip/sensor metadata
+        chip_row = QHBoxLayout()
+        chip_row.setSpacing(8)
+
+        _chip_icon = QLabel("🧬")
+        _chip_icon.setStyleSheet("font-size: 13px; color: #86868B;")
+        chip_row.addWidget(_chip_icon)
+
+        _chip_lbl = QLabel("Surface")
+        _chip_lbl.setStyleSheet("font-size: 12px; color: #86868B;")
+        chip_row.addWidget(_chip_lbl)
+
+        self.chip_type_combo = QComboBox()
+        self.chip_type_combo.addItems([
+            "— select —", "Au bare", "COOH", "Streptavidin", "NTA-His", "Protein A", "Other"
+        ])
+        self.chip_type_combo.setFixedHeight(28)
+        self.chip_type_combo.setMaximumWidth(150)
+        self.chip_type_combo.setStyleSheet(
+            "QComboBox { background: white; border: 1px solid rgba(0,0,0,0.1);"
+            " border-radius: 4px; padding: 4px 8px; font-size: 12px; color: #1D1D1F; }"
+            " QComboBox:focus { border-color: #007AFF; }"
+            " QComboBox::drop-down { border: none; width: 20px; }"
+            " QComboBox::down-arrow { image: none; border-left: 4px solid transparent;"
+            " border-right: 4px solid transparent; border-top: 5px solid #86868B; margin-right: 8px; }"
+        )
+        chip_row.addWidget(self.chip_type_combo)
+
+        _lot_icon = QLabel("📦")
+        _lot_icon.setStyleSheet("font-size: 13px; color: #86868B; margin-left: 8px;")
+        chip_row.addWidget(_lot_icon)
+
+        self.lot_number_input = QLineEdit()
+        self.lot_number_input.setPlaceholderText("Lot # (optional)")
+        self.lot_number_input.setFixedHeight(28)
+        self.lot_number_input.setMaximumWidth(130)
+        self.lot_number_input.setStyleSheet(
+            "QLineEdit { background: white; border: 1px solid rgba(0,0,0,0.1);"
+            " border-radius: 4px; padding: 4px 8px; font-size: 12px; color: #1D1D1F; }"
+            " QLineEdit:focus { border-color: #007AFF; }"
+        )
+        chip_row.addWidget(self.lot_number_input)
+
+        chip_row.addStretch()
+
+        self.new_sensor_btn = QPushButton("⬡ New Sensor Chip")
+        self.new_sensor_btn.setFixedHeight(28)
+        self.new_sensor_btn.setAutoDefault(False)  # Prevent Enter-key accidental activation
+        self.new_sensor_btn.setDefault(False)
+        self.new_sensor_btn.setStyleSheet(
+            "QPushButton { background: #F2F2F7; border: 1px solid rgba(0,0,0,0.12);"
+            " border-radius: 4px; padding: 4px 12px; font-size: 12px; color: #3C3C43; }"
+            " QPushButton:hover { background: #E5E5EA; }"
+            " QPushButton:pressed { background: #D1D1D6; }"
+        )
+        self.new_sensor_btn.clicked.connect(self._on_new_sensor_chip)
+        chip_row.addWidget(self.new_sensor_btn)
+
+        layout.addLayout(chip_row)
+
         # ═══════════════════════════════════════════════════════════════════
         # ZONE B — Template Gallery (collapses once first step is added)
         # ═══════════════════════════════════════════════════════════════════
@@ -862,52 +972,75 @@ class MethodBuilderDialog(QDialog):
         gallery_layout.setContentsMargins(14, 10, 14, 10)
         gallery_layout.setSpacing(8)
 
-        gallery_hdr = QLabel("Quick starts:")
-        gallery_hdr.setStyleSheet(
-            "font-size: 12px; font-weight: 600; color: #86868B; background: transparent;"
+        self._gallery_toggle_btn = QPushButton("Quick start ▴")
+        self._gallery_toggle_btn.setStyleSheet(
+            "QPushButton { font-size: 12px; font-weight: 600; color: #86868B;"
+            " background: transparent; border: none; text-align: left; padding: 0; }"
+            " QPushButton:hover { color: #007AFF; }"
         )
-        gallery_layout.addWidget(gallery_hdr)
+        self._gallery_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._gallery_toggle_btn.clicked.connect(self._toggle_gallery_cards)
+        gallery_layout.addWidget(self._gallery_toggle_btn)
 
-        cards_row = QHBoxLayout()
-        cards_row.setSpacing(8)
+        self._gallery_cards_frame = QFrame()
+        self._gallery_cards_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        _cards_vbox = QVBoxLayout(self._gallery_cards_frame)
+        _cards_vbox.setContentsMargins(0, 0, 0, 0)
+        _cards_vbox.setSpacing(8)
+        gallery_layout = _cards_vbox  # redirect remaining adds into cards frame
+        gallery_layout.addWidget = _cards_vbox.addWidget  # noqa — already same obj
 
         _TEMPLATES = [
-            ("Binding", "Baseline → Binding\n→ Regeneration", [
-                "Baseline 5min",
-                "Binding 8.5min [A:100nM] contact 300s",
-                "Regeneration 30sec [ALL:50mM]",
-                "Baseline 2min",
+            # ── P4SPR / Manual injection ──────────────────────────────────────────
+            # Regen and baseline are folded into neighboring cycles — user adds them
+            # manually if needed. Prep phases collapse into one cycle per logical step.
+            # One cycle = one thing to watch on the live sensorgram (~5–30 min).
+            ("Binding", "5× Binding", [
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 1",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 2",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 3",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 4",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 5",
             ]),
-            ("Amine Coupling", "EDC/NHS activation →\nligand → binding series", [
-                "Baseline 5min",
-                "Other 4min  # EDC/NHS activation",
-                "Wash 30sec",
-                "Immobilization 30min  # Ligand attachment — freestyle window",
-                "Wash 30sec",
-                "Blocking 4min  # Ethanolamine",
-                "Wash 30sec",
-                "Baseline 15min",
-                "Binding 8.5min [A:100nM] contact 300s",
-                "Regeneration 30sec [ALL:50mM]",
-                "Baseline 2min",
+            ("Amine", "Coupling → 5× binding", [
+                # All prep steps in one cycle — activation, ligand, blocking
+                "Immobilization 30min  # EDC/NHS → ligand → ethanolamine",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 1",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 2",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 3",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 4",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 5",
             ]),
-            ("Titration", "Dose-response series\n(4 concentrations)", [
-                "Baseline 5min",
-                "Binding 5min [A:10nM] contact 120s",
-                "Regeneration 30sec [ALL:50mM]",
-                "Baseline 2min",
-                "Binding 5min [A:50nM] contact 120s",
-                "Regeneration 30sec [ALL:50mM]",
-                "Baseline 2min",
-                "Binding 5min [A:100nM] contact 120s",
-                "Regeneration 30sec [ALL:50mM]",
-                "Baseline 2min",
-                "Binding 5min [A:500nM] contact 120s",
-                "Regeneration 30sec [ALL:50mM]",
-                "Baseline 2min",
+            ("✏ Custom", "Start with a blank step list", []),
+            # ── additional templates (shown when "More" is expanded) ──────
+            ("NTA", "His-tag capture → 5× binding", [
+                "Immobilization 20min  # NiNTA + His-tagged ligand, then rinse",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 1",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 2",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 3",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 4",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 5",
             ]),
-            ("✏ Custom", "Start with a blank\nstep list", []),
+            ("Biotin", "Streptavidin capture → 5× binding", [
+                "Immobilization 20min  # Biotinylated ligand capture, then rinse",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 1",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 2",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 3",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 4",
+                "Binding 8.5min [A:100nM] contact 300s  # Binding 5",
+            ]),
+            ("Conditions Scouting", "5× binding (screen conditions)", [
+                "Binding 8.5min [A:100nM] contact 300s  # Condition 1",
+                "Binding 8.5min [A:100nM] contact 300s  # Condition 2",
+                "Binding 8.5min [A:100nM] contact 300s  # Condition 3",
+                "Binding 8.5min [A:100nM] contact 300s  # Condition 4",
+                "Binding 8.5min [A:100nM] contact 300s  # Condition 5",
+            ]),
         ]
+
+        _VISIBLE_COUNT = 3  # cards always shown
+        _visible_templates = _TEMPLATES[:_VISIBLE_COUNT]
+        _extra_templates = _TEMPLATES[_VISIBLE_COUNT:]
 
         _card_ss = (
             "QPushButton { background: white; border: 1.5px solid rgba(0,0,0,0.09);"
@@ -918,22 +1051,85 @@ class MethodBuilderDialog(QDialog):
             " QPushButton:pressed { background: #E3EDFF; }"
         )
 
-        for name, subtitle, lines in _TEMPLATES:
-            btn = QPushButton(f"{name}\n{subtitle}")
-            btn.setToolTip(subtitle.replace("\n", " "))
-            btn.setMinimumHeight(80)
-            btn.setMinimumWidth(100)
-            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            btn.setStyleSheet(_card_ss)
-            _lines_copy = list(lines)
-            _name_copy = name.replace("\n", " ")
-            btn.clicked.connect(
-                lambda checked=False, l=_lines_copy, n=_name_copy: self._on_template_card_clicked(l, n)
-            )
-            cards_row.addWidget(btn)
+        def _make_card(name, subtitle, lines, parent_row):
+            from PySide6.QtWidgets import QLabel, QVBoxLayout
+            from PySide6.QtCore import Qt as _Qt
+            _name_flat = name.replace("\n", " ")
+            _sub_flat  = subtitle.replace("\n", " ")
+            _l = list(lines)
 
-        browse_btn = QPushButton("🔍 Browse\nsaved…")
-        browse_btn.setMinimumHeight(80)
+            card = QFrame()
+            card.setFixedHeight(44)
+            card.setMinimumWidth(100)
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            card.setToolTip(_sub_flat)
+            card.setStyleSheet(
+                "QFrame { background: white; border: 1.5px solid rgba(0,0,0,0.09);"
+                " border-radius: 8px; }"
+                " QFrame:hover { border-color: #007AFF; background: #F0F6FF; }"
+            )
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+
+            _inner = QVBoxLayout(card)
+            _inner.setContentsMargins(10, 5, 10, 5)
+            _inner.setSpacing(1)
+
+            _name_lbl = QLabel(_name_flat)
+            _name_lbl.setStyleSheet(
+                "font-size: 11px; font-weight: 600; color: #1D1D1F;"
+                " background: transparent; border: none;"
+            )
+            _name_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+            _sub_lbl = QLabel(_sub_flat)
+            _sub_lbl.setStyleSheet(
+                "font-size: 10px; color: #86868B;"
+                " background: transparent; border: none;"
+            )
+            _sub_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+            _inner.addWidget(_name_lbl)
+            _inner.addWidget(_sub_lbl)
+
+            def _on_click(event, l=_l, n=_name_flat):
+                self._on_template_card_clicked(l, n)
+
+            card.mousePressEvent = _on_click
+            parent_row.addWidget(card)
+
+        # ── primary row (always visible) ─────────────────────────────────
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(8)
+        for name, subtitle, lines in _visible_templates:
+            _make_card(name, subtitle, lines, cards_row)
+
+        # "More ▾" toggle button
+        _more_btn = QPushButton("More ▾")
+        _more_btn.setToolTip("Show more quick-start templates")
+        _more_btn.setFixedHeight(44)
+        _more_btn.setFixedWidth(72)
+        _more_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        _more_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: 1.5px dashed rgba(0,0,0,0.15);"
+            " border-radius: 8px; padding: 8px; font-size: 11px; color: #86868B; }"
+            " QPushButton:hover { border-color: #007AFF; color: #007AFF; }"
+            " QPushButton:checked { border-style: solid; border-color: #007AFF; color: #007AFF; }"
+        )
+        _more_btn.setCheckable(True)
+        cards_row.addWidget(_more_btn)
+        gallery_layout.addLayout(cards_row)
+
+        # ── extra row (hidden until "More" is clicked) ───────────────────
+        _extra_frame = QFrame()
+        _extra_frame.setVisible(False)
+        _extra_row = QHBoxLayout(_extra_frame)
+        _extra_row.setContentsMargins(0, 0, 0, 0)
+        _extra_row.setSpacing(8)
+        for name, subtitle, lines in _extra_templates:
+            _make_card(name, subtitle, lines, _extra_row)
+
+        browse_btn = QPushButton("🔍 Browse saved…")
+        browse_btn.setFixedHeight(44)
         browse_btn.setMinimumWidth(80)
         browse_btn.setToolTip("Browse saved cycle templates")
         browse_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -943,8 +1139,20 @@ class MethodBuilderDialog(QDialog):
             " QPushButton:hover { border-color: #007AFF; color: #007AFF; }"
         )
         browse_btn.clicked.connect(self._on_browse_templates)
-        cards_row.addWidget(browse_btn)
-        gallery_layout.addLayout(cards_row)
+        _extra_row.addWidget(browse_btn)
+        _extra_row.addStretch()
+        gallery_layout.addWidget(_extra_frame)
+
+        def _toggle_more(checked, btn=_more_btn, frame=_extra_frame):
+            frame.setVisible(checked)
+            btn.setText("Less ▴" if checked else "More ▾")
+
+        _more_btn.toggled.connect(_toggle_more)
+
+        # Add cards container to the outer gallery layout
+        outer_gallery_layout = self._template_gallery_frame.layout()
+        outer_gallery_layout.addWidget(self._gallery_cards_frame)
+
         layout.addWidget(self._template_gallery_frame)
 
         # ═══════════════════════════════════════════════════════════════════
@@ -971,11 +1179,12 @@ class MethodBuilderDialog(QDialog):
             " QTableWidget::item { padding: 4px 6px; }"
             " QTableWidget::item:selected { background: #E3EDFF; color: #1D1D1F; }"
         )
-        self.method_table = QTableWidget()
+        self.method_table = DraggableMethodTable(on_row_moved=self._on_row_moved)
         self.method_table.setColumnCount(6)
         self.method_table.setHorizontalHeaderLabels(
             ["Type", "Duration", "Channel", "Concentration", "Contact time", "Note"]
         )
+        # Header label updated by configure_for_hardware() when hardware is known
         self.method_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self.method_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.method_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
@@ -985,6 +1194,7 @@ class MethodBuilderDialog(QDialog):
         self.method_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.method_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.method_table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.method_table.itemChanged.connect(self._on_table_item_edited)
         self.method_table.verticalHeader().setVisible(True)
         self.method_table.setMinimumHeight(160)
         self.method_table.setStyleSheet(table_style)
@@ -1001,6 +1211,7 @@ class MethodBuilderDialog(QDialog):
             " padding: 4px 12px; font-size: 12px; font-weight: 600; }"
             " QPushButton:hover { background: #0051D5; }"
             " QPushButton:pressed { background: #003D99; }"
+            " QPushButton::menu-indicator { width: 0; height: 0; }"
         )
         from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QAction
@@ -1226,6 +1437,8 @@ class MethodBuilderDialog(QDialog):
 
         self._sparq_ask_btn = QPushButton("Ask")
         self._sparq_ask_btn.setFixedSize(50, 26)
+        self._sparq_ask_btn.setAutoDefault(False)
+        self._sparq_ask_btn.setDefault(False)
         self._sparq_ask_btn.setStyleSheet(
             "QPushButton { background: #FFD60A; color: #1D1D1F; border: none;"
             " border-radius: 6px; font-size: 11px; font-weight: 700; }"
@@ -1235,6 +1448,16 @@ class MethodBuilderDialog(QDialog):
         self._sparq_ask_btn.clicked.connect(self._on_sparq_ask)
         sparq_row.addWidget(self._sparq_ask_btn)
         layout.addWidget(sparq_frame)
+
+        # Sparq prose-response area — shown when the answer engine replies with info text
+        self._sparq_response_lbl = QLabel("")
+        self._sparq_response_lbl.setVisible(False)
+        self._sparq_response_lbl.setWordWrap(True)
+        self._sparq_response_lbl.setStyleSheet(
+            "QLabel { background: #F5F5F7; border: 1px solid #D1D1D6;"
+            " border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #1D1D1F; }"
+        )
+        layout.addWidget(self._sparq_response_lbl)
 
         # ── Text Mode (hidden, power-user escape hatch) ────────────────────
         self._text_mode_toggle = QPushButton("⋯ Text mode")
@@ -1437,28 +1660,46 @@ class MethodBuilderDialog(QDialog):
         # Select the newly added row
         self.method_table.selectRow(self.method_table.rowCount() - 1)
 
+    def _sparq_show_response(self, text: str) -> None:
+        """Display an info response from the answer engine below the Sparq bar."""
+        if not hasattr(self, '_sparq_response_lbl'):
+            return
+        # Strip markdown bold markers for plain display
+        import re as _re
+        plain = _re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+        self._sparq_response_lbl.setText(plain)
+        self._sparq_response_lbl.setVisible(True)
+        # Auto-clear after 12 seconds
+        QTimer.singleShot(12_000, lambda: (
+            self._sparq_response_lbl.setVisible(False)
+            if hasattr(self, '_sparq_response_lbl') else None
+        ))
+
     def _on_sparq_ask(self):
-        """Handle Sparq bar query — generate cycles and append to step list."""
+        """Handle Sparq bar query — generate cycles (pattern match) or show answer (engine)."""
+        # Always ensure button is re-enabled on entry (guards against stuck state)
+        self._sparq_ask_btn.setEnabled(True)
+
         query = self._sparq_input.text().strip()
         if not query:
+            # Flash the input border briefly to indicate it needs text
+            self._sparq_input.setStyleSheet(
+                "QLineEdit { background: transparent; border: none; font-size: 12px; color: #FF3B30; }"
+            )
+            QTimer.singleShot(600, lambda: self._sparq_input.setStyleSheet(
+                "QLineEdit { background: transparent; border: none; font-size: 12px; color: #1D1D1F; }"
+            ))
             return
 
         self._sparq_ask_btn.setText("⏳")
         self._sparq_ask_btn.setEnabled(False)
 
-        # Route through existing Sparq logic by feeding into notes_input and parsing
         try:
-            suggestion = self._try_sparq_patterns(query)
-            if suggestion is None and self._answer_engine is not None:
-                try:
-                    suggestion, _ = self._answer_engine.generate_answer(query, context="method_builder")
-                except Exception:
-                    suggestion = None
-
-            if suggestion:
-                # Parse the suggestion lines and append cycles
+            # Layer 1: pattern-based cycle generation (returns cycle-syntax lines)
+            cycle_lines = self._try_sparq_patterns(query)
+            if cycle_lines:
                 lines_added = 0
-                for line in suggestion.split("\n"):
+                for line in cycle_lines.split("\n"):
                     s = line.strip()
                     if s and not s.startswith("#"):
                         cycle, _ = self._build_cycle_from_text(s)
@@ -1467,12 +1708,25 @@ class MethodBuilderDialog(QDialog):
                 if lines_added:
                     self._refresh_method_table()
                     self._sparq_input.clear()
-                    # Brief confirmation
                     self._sparq_ask_btn.setText(f"✓ +{lines_added}")
+                    self._sparq_ask_btn.setEnabled(True)
                     QTimer.singleShot(1500, lambda: self._sparq_ask_btn.setText("Ask"))
-                    QTimer.singleShot(1500, lambda: self._sparq_ask_btn.setEnabled(True))
                     return
-            # No suggestion matched
+
+            # Layer 2: answer engine — returns prose, display it (do NOT parse as cycles)
+            if self._answer_engine is not None:
+                try:
+                    answer, _ = self._answer_engine.generate_answer(query, context="method_builder")
+                    if answer:
+                        self._sparq_show_response(answer)
+                        self._sparq_input.clear()
+                        self._sparq_ask_btn.setText("Ask")
+                        self._sparq_ask_btn.setEnabled(True)
+                        return
+                except Exception:
+                    pass
+
+            # Nothing matched
             self._sparq_input.setPlaceholderText(
                 'Try: "binding", "kinetics", "titration", "amine coupling", "build 5"'
             )
@@ -1484,48 +1738,35 @@ class MethodBuilderDialog(QDialog):
         self._sparq_ask_btn.setEnabled(True)
 
     def _try_sparq_patterns(self, text: str):
-        """Method-pattern matching for the Sparq bar."""
+        """Method-pattern matching for the Sparq bar.
+
+        P4SPR / Manual philosophy: one cycle = one watchable region (~5–10 min).
+        Each binding rep is its own short cycle so the user sees a clear signal
+        event per queue step. Alignment and export are done in Edits afterward.
+        """
         t = text.lower().strip()
+        # "build N" → N binding cycles of 8.5min each (no regen/baseline padding)
         m = re.search(r'build.*?(\d+)', t)
         if m:
             n = int(m.group(1))
-            lines = ["Baseline 5min"]
+            lines = []
             for i in range(n):
                 lines.append(f"Binding 8.5min [A:100nM] contact 300s  # Binding {i + 1}")
-                lines.append("Regeneration 30sec [ALL:50mM]")
-                lines.append("Baseline 2min")
             return "\n".join(lines)
         if re.search(r'titration|dose.?response|serial dilution|concentration series', t):
-            return ("Baseline 5min\n"
-                    "Binding 8.5min [A:10nM] contact 300s\n"
-                    "Regeneration 30sec [ALL:50mM]\n"
-                    "Baseline 2min\n"
-                    "Binding 8.5min [A:50nM] contact 300s\n"
-                    "Regeneration 30sec [ALL:50mM]\n"
-                    "Baseline 2min\n"
-                    "Binding 8.5min [A:100nM] contact 300s\n"
-                    "Regeneration 30sec [ALL:50mM]\n"
-                    "Baseline 2min\n"
-                    "Binding 8.5min [A:500nM] contact 300s\n"
-                    "Regeneration 30sec [ALL:50mM]\n"
-                    "Baseline 2min")
+            return (
+                "Binding 8.5min [A:10nM] contact 300s\n"
+                "Binding 8.5min [A:50nM] contact 300s\n"
+                "Binding 8.5min [A:100nM] contact 300s\n"
+                "Binding 8.5min [A:500nM] contact 300s"
+            )
         if re.search(r'amine coupling|amine|coupling', t):
             n_match = re.search(r'(\d+)', t)
-            n = int(n_match.group(1)) if n_match else 3
-            lines = [
-                "Baseline 5min",
-                "Other 4min  # EDC/NHS activation",
-                "Wash 30sec",
-                "Immobilization 30min  # Ligand attachment",
-                "Wash 30sec",
-                "Blocking 4min  # Ethanolamine",
-                "Wash 30sec",
-                "Baseline 15min",
-            ]
+            n = int(n_match.group(1)) if n_match else 5
+            # All prep in one immobilization cycle; each binding rep is its own cycle
+            lines = ["Immobilization 30min  # EDC/NHS → ligand → ethanolamine"]
             for i in range(n):
                 lines.append(f"Binding 8.5min [A:100nM] contact 300s  # Binding {i + 1}")
-                lines.append("Regeneration 30sec [ALL:50mM]")
-                lines.append("Baseline 2min")
             return "\n".join(lines)
         if re.search(r'baseline|start|equilibrat', t):
             return "Baseline 5min"
@@ -1538,13 +1779,32 @@ class MethodBuilderDialog(QDialog):
         if re.search(r'wash|rinse', t):
             return "Wash 30sec"
         if re.search(r'block', t):
-            return "Blocking 4min"
+            return "Blocking 5min"
         return None
 
     def _update_gallery_visibility(self):
-        """Show template gallery when step list is empty; hide it once steps exist."""
-        if hasattr(self, '_template_gallery_frame'):
-            self._template_gallery_frame.setVisible(len(self._local_cycles) == 0)
+        """Collapse template gallery to header-only when steps exist; expand when empty."""
+        if not hasattr(self, '_template_gallery_frame') or not hasattr(self, '_gallery_cards_frame'):
+            return
+        has_cycles = len(self._local_cycles) > 0
+        if has_cycles:
+            # Auto-collapse cards — header toggle remains visible for recall
+            self._gallery_cards_frame.setVisible(False)
+            if hasattr(self, '_gallery_toggle_btn'):
+                self._gallery_toggle_btn.setText("Quick start ▾")
+        else:
+            # Empty state — expand so gallery is the first thing users see
+            self._gallery_cards_frame.setVisible(True)
+            if hasattr(self, '_gallery_toggle_btn'):
+                self._gallery_toggle_btn.setText("Quick start ▴")
+
+    def _toggle_gallery_cards(self):
+        """Toggle the quick-start card rows open/closed."""
+        if not hasattr(self, '_gallery_cards_frame'):
+            return
+        visible = not self._gallery_cards_frame.isVisible()
+        self._gallery_cards_frame.setVisible(visible)
+        self._gallery_toggle_btn.setText("Quick start ▴" if visible else "Quick start ▾")
 
     def _toggle_text_mode_panel(self, checked: bool):
         """Show or hide the power-user text input panel."""
@@ -2004,6 +2264,10 @@ Binding 5min A:100nM contact 120s partial
             injection_method = "partial" if is_partial else "simple"
             if contact_time is None:
                 contact_time = 300.0  # 5 min default contact time (P4SPR manual injection)
+        elif cycle_type == "Kinetic":
+            injection_method = "simple"
+            if contact_time is None:
+                contact_time = 300.0  # 5 min default — association phase
         elif cycle_type == "Regeneration":
             injection_method = "simple"
             if contact_time is None:
@@ -2322,6 +2586,8 @@ Binding 5min A:100nM contact 120s partial
 
     def _refresh_method_table(self):
         """Update the 6-column step list and gallery visibility."""
+        self._update_chip_suggestion()
+        self.method_table.blockSignals(True)
         self.method_table.setRowCount(0)
 
         for cycle in self._local_cycles:
@@ -2360,7 +2626,7 @@ Binding 5min A:100nM contact 120s partial
                 ch_text = "ALL"
             ch_item = QTableWidgetItem(ch_text)
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            ch_item.setFlags(ch_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            ch_item.setToolTip("Double-click to edit channels (e.g. A, BD, ALL)")
             self.method_table.setItem(row, 2, ch_item)
 
             # Col 3: Concentration
@@ -2372,21 +2638,25 @@ Binding 5min A:100nM contact 120s partial
             else:
                 conc_text = "—"
             conc_item = QTableWidgetItem(conc_text)
-            conc_item.setFlags(conc_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            conc_item.setToolTip("Double-click to edit concentration (e.g. 100nM, A:100nM B:50nM)")
             self.method_table.setItem(row, 3, conc_item)
 
-            # Col 4: Contact time
-            if cycle.contact_time is not None:
-                ct = cycle.contact_time
-                if ct >= 3600:
-                    ct_text = f"{ct / 3600:.1f}h"
-                elif ct >= 60:
-                    ct_text = f"{ct / 60:.0f}m"
-                else:
-                    ct_text = f"{ct:.0f}s"
+            # Col 4: Flow rate (AffiPump) or Contact time (P4SPR)
+            if self._has_affipump:
+                fr = getattr(cycle, 'flow_rate', None)
+                col4_text = f"{fr:.0f} µL/min" if fr else "—"
             else:
-                ct_text = "—"
-            ct_item = QTableWidgetItem(ct_text)
+                if cycle.contact_time is not None:
+                    ct = cycle.contact_time
+                    if ct >= 3600:
+                        col4_text = f"{ct / 3600:.1f}h"
+                    elif ct >= 60:
+                        col4_text = f"{ct / 60:.0f}m"
+                    else:
+                        col4_text = f"{ct:.0f}s"
+                else:
+                    col4_text = "—"
+            ct_item = QTableWidgetItem(col4_text)
             ct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             ct_item.setFlags(ct_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.method_table.setItem(row, 4, ct_item)
@@ -2410,6 +2680,7 @@ Binding 5min A:100nM contact 120s partial
             time_str = f"Total: {total_time:.1f} min"
         self.method_exp_time_value.setText(time_str)
 
+        self.method_table.blockSignals(False)
         self._update_gallery_visibility()
 
     def _on_details_selection_changed(self):
@@ -2417,6 +2688,48 @@ Binding 5min A:100nM contact 120s partial
         selected_rows = [item.row() for item in self.details_table.selectedItems()]
         if selected_rows:
             self.method_table.selectRow(selected_rows[0])
+
+    def _on_table_item_edited(self, item: QTableWidgetItem):
+        """Write channel or concentration edits back to the cycle data model."""
+        row = item.row()
+        col = item.column()
+        if row < 0 or row >= len(self._local_cycles):
+            return
+        if col not in (2, 3):  # Only channel and concentration are editable
+            return
+        cycle = self._local_cycles[row]
+        text = item.text().strip()
+
+        # Block the signal while we refresh to avoid re-entry
+        self.method_table.blockSignals(True)
+        try:
+            if col == 2:  # Channel
+                cleaned = text.upper().replace(" ", "").replace("-", "").replace("—", "")
+                if cleaned in ("", "—", "ALL"):
+                    cycle.target_channels = ""
+                else:
+                    # Keep only valid channel letters
+                    cleaned = "".join(c for c in cleaned if c in "ABCD")
+                    cycle.target_channels = cleaned
+            elif col == 3:  # Concentration — re-parse via _build_cycle_from_text
+                if text in ("", "—"):
+                    cycle.concentrations = {}
+                else:
+                    # Build a minimal line with the cycle type + new conc tag and re-parse
+                    probe_line = f"{cycle.type.lower()} {text}"
+                    try:
+                        rebuilt, _ = self._build_cycle_from_text(probe_line)
+                        if rebuilt.concentrations:
+                            cycle.concentrations = rebuilt.concentrations
+                            cycle.units = rebuilt.units
+                    except Exception:
+                        pass  # Leave existing value if parse fails
+        finally:
+            self.method_table.blockSignals(False)
+
+        # Refresh just this row to reflect normalised values
+        self._refresh_method_table()
+        self.method_table.selectRow(row)
 
     def _on_selection_changed(self):
         """Update button states based on selection."""
@@ -2459,6 +2772,15 @@ Binding 5min A:100nM contact 120s partial
             self._local_cycles[row], self._local_cycles[row + 1] = self._local_cycles[row + 1], self._local_cycles[row]
             self._refresh_method_table()
             self.method_table.selectRow(row + 1)
+
+    def _on_row_moved(self, from_row: int, to_row: int) -> None:
+        """Handle drag-and-drop reorder — move cycle in data model then refresh."""
+        n = len(self._local_cycles)
+        if 0 <= from_row < n and 0 <= to_row < n and from_row != to_row:
+            cycle = self._local_cycles.pop(from_row)
+            self._local_cycles.insert(to_row, cycle)
+            self._refresh_method_table()
+            self.method_table.selectRow(to_row)
 
     def _on_overnight_mode_changed(self, state):
         """Update settings.OVERNIGHT_MODE when checkbox is toggled."""
@@ -2532,6 +2854,14 @@ Binding 5min A:100nM contact 120s partial
             elif has_affipump:
                 label = f"{hw_upper} + AffiPump"
 
+        # Store pump presence for validator gating
+        self._has_affipump = has_affipump or hw_upper in ("P4PRO", "P4PROPLUS")
+
+        # Col 4 header: "Flow rate" for AffiPump (contact time is loop-derived), "Contact time" for P4SPR
+        col4_label = "Flow rate" if self._has_affipump else "Contact time"
+        from PySide6.QtWidgets import QTableWidgetItem as _TWI
+        self.method_table.setHorizontalHeaderItem(4, _TWI(col4_label))
+
         # Detection always defaults to Auto — factor adapts internally
         self.detection_combo.setCurrentText("Auto")
         self.hw_label.setText(label)
@@ -2549,6 +2879,14 @@ Binding 5min A:100nM contact 120s partial
         if not self._local_cycles:
             return
         method_name = self.method_name_input.text().strip() or "Untitled Method"
+        # Attach chip/sensor metadata to every cycle before queuing
+        chip_type = self.chip_type_combo.currentText()
+        chip_info = {
+            "chip_type": chip_type if chip_type != "— select —" else "",
+            "lot_number": self.lot_number_input.text().strip(),
+        }
+        for cycle in self._local_cycles:
+            cycle.chip_info = chip_info
         self.method_ready.emit("queue", method_name, self._local_cycles.copy())
         self._local_cycles.clear()
         self._refresh_method_table()
@@ -2635,6 +2973,34 @@ Binding 5min A:100nM contact 120s partial
 
         except Exception as e:
             QMessageBox.critical(self, "Save Error", f"Failed to save method:\n{e}")
+
+    def _update_chip_suggestion(self) -> None:
+        """Auto-suggest surface chemistry based on cycle types in the current method.
+
+        Only updates the combo if the user hasn't made an explicit selection
+        (i.e. it's still at the default "— select —").
+        """
+        if not hasattr(self, 'chip_type_combo'):
+            return
+        if self.chip_type_combo.currentText() != "— select —":
+            return  # User already chose — don't override
+        types = {c.type for c in self._local_cycles}
+        if "Immobilization" in types and "Blocking" in types:
+            self.chip_type_combo.setCurrentText("COOH")
+        elif "Immobilization" in types and "Blocking" not in types:
+            # NTA or Biotin — immobilization without EDC/NHS blocking step
+            self.chip_type_combo.setCurrentText("NTA-His")
+
+    def _on_new_sensor_chip(self) -> None:
+        """Trigger Simple LED Calibration for a freshly loaded sensor chip."""
+        if self._app_ref and hasattr(self._app_ref, "_on_simple_led_calibration"):
+            self._app_ref._on_simple_led_calibration()
+        else:
+            QMessageBox.warning(
+                self,
+                "Not Connected",
+                "Connect hardware before running sensor calibration.",
+            )
 
     def _on_operator_changed(self, user_name: str):
         """Update current user when operator changes in Build Method dialog.
@@ -2781,17 +3147,18 @@ Binding 5min A:100nM contact 120s partial
                     "   → Consider using consistent units throughout method"
                 )
 
-        # T6 Check: No contact time on Binding/Kinetic cycles
-        if cycle.type in ("Binding", "Kinetic") and cycle.injection_method and not cycle.contact_time:
-            warnings.append(
-                "⚠️ No contact time set — injection will run for full cycle duration"
-            )
+        # T6 Check: No contact time on Binding/Kinetic cycles (P4SPR only — AffiPump uses loop volume)
+        if not self._has_affipump:
+            if cycle.type in ("Binding", "Kinetic") and cycle.injection_method and not cycle.contact_time:
+                warnings.append(
+                    "⚠️ No contact time set — injection will run for full cycle duration"
+                )
 
-        # T6 Check: Contact time < 60s (too short)
-        if cycle.type in ("Binding", "Kinetic") and cycle.contact_time and cycle.contact_time < 60:
-            warnings.append(
-                f"⚠️ Contact time is very short ({cycle.contact_time:.0f}s) — most analytes need 30+ seconds"
-            )
+            # T6 Check: Contact time < 60s (too short)
+            if cycle.type in ("Binding", "Kinetic") and cycle.contact_time and cycle.contact_time < 60:
+                warnings.append(
+                    f"⚠️ Contact time is very short ({cycle.contact_time:.0f}s) — most analytes need 30+ seconds"
+                )
 
         # T6 Check: Channel mismatch (concentrations only on specific channels but cycle runs ALL)
         if cycle.injection_method and getattr(cycle, 'concentrations', None):
@@ -2815,26 +3182,19 @@ Binding 5min A:100nM contact 120s partial
                         "💡 Tip: Consider adding a **Regeneration** cycle after this binding step to remove bound analyte"
                     )
 
-        # Check 0: Detect unparsed contact time patterns
-        if raw_text and cycle.injection_method:
-            # Check if text contains contact time pattern that wasn't successfully parsed
+        # Check 0: Detect unparsed contact time patterns (P4SPR only)
+        if not self._has_affipump and raw_text and cycle.injection_method:
             ct_pattern_found = bool(re.search(r'\b(ct|contact)[:\s]*\d', raw_text, re.IGNORECASE))
-            
-            # Only warn if the pattern was found BUT no unit was specified in the text
-            # This catches cases like "ct5" or "contact180" where the user forgot the unit
             if ct_pattern_found and cycle.type in ("Binding", "Kinetic"):
-                # Check if a time unit was actually found in the text
                 unit_found = bool(re.search(r'\b(ct|contact)[:\s]*\d+(?:\.\d+)?\s*(s|sec|m|min|h|hr)', raw_text, re.IGNORECASE))
-                
-                # Only warn if no unit was found and we're using the default
                 if not unit_found and cycle.contact_time == 300.0:
                     warnings.append(
                         f"⚠️ Contact time detected but no unit specified, using default 300s\n"
                         f"Add a unit for clarity: 'ct 5m' or 'contact 180s'"
                     )
 
-        # Check 1: Contact time vs cycle duration
-        if cycle.injection_method and cycle.contact_time:
+        # Check 1: Contact time vs cycle duration (P4SPR only — AffiPump ignores contact_time)
+        if not self._has_affipump and cycle.injection_method and cycle.contact_time:
             cycle_seconds = cycle.length_minutes * 60
             if cycle.contact_time > cycle_seconds * 0.9:
                 warnings.append(
@@ -2851,21 +3211,14 @@ Binding 5min A:100nM contact 120s partial
                 "rushed\n   → Consider 3-5 min minimum for manual injection"
             )
 
-        # Check 3: Multi-injection binding/kinetic cycles
-        # NOTE: Multi-channel injections (A:100nM B:50nM) are PARALLEL, not sequential
-        # Only warn for truly sequential planned_concentrations with no channel tags
-        if cycle.type in ("Binding", "Kinetic") and cycle.planned_concentrations:
+        # Check 3: Multi-injection binding/kinetic cycles (P4SPR only — AffiPump timing set by loop/flow)
+        if not self._has_affipump and cycle.type in ("Binding", "Kinetic") and cycle.planned_concentrations:
             n = len(cycle.planned_concentrations)
-
-            # Detect if these are parallel multi-channel injections
-            # If concentrations dict has multiple channels, they inject in parallel (seconds apart)
             is_parallel = len(getattr(cycle, 'concentrations', {})) > 1
 
             if is_parallel:
-                # Parallel: All channels inject ~simultaneously (just valve-switch delay)
-                # Time available = full cycle duration
                 secs = cycle.length_minutes * 60
-                min_needed = (cycle.contact_time or 0) + 60  # contact + 1min buffer
+                min_needed = (cycle.contact_time or 0) + 60
                 if secs < min_needed:
                     warnings.append(
                         f"⚠️ {n} parallel injections in {cycle.length_minutes:.1f} min\n"
@@ -2873,7 +3226,6 @@ Binding 5min A:100nM contact 120s partial
                         f"   → Consider {min_needed / 60:.1f} min"
                     )
             else:
-                # Sequential: Injections happen one after another
                 secs = cycle.length_minutes * 60
                 per = secs / n
                 if per < (cycle.contact_time or 0) + 60:

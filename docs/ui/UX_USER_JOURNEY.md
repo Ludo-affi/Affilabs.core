@@ -122,32 +122,58 @@ A user who cannot immediately identify which stage they are in — and what to d
 
 ### Stage 4 — INJECT
 
-**What the user wants**: Deliver sample to the sensor and watch the signal change.
+**What the user wants**: Deliver sample to the sensor and watch the signal change. Know exactly when to inject, which channel, and how long to hold.
 
-**Current experience**:
-- For P4SPR: user pipettes manually; clicks an injection flag button or it's auto-detected
-- For P4PRO/PROPLUS: user programs a method and the pump runs automatically
-- Injection flags appear as vertical markers on the sensorgram
+**P4SPR manual injection scenario (primary UX):**
+
+The user stands at the bench, hands occupied preparing the sample, eyes on the screen:
+
+1. **Baseline stable** → "Ready to inject ✓" badge turns green. This is the cue.
+2. **User presses "Ready"** → `InjectionActionBar` Phase 1 appears:
+   - *"Inject into A · Hold 5m 00s"* — channel + contact time always visible
+   - Green dot on the channel indicator shows **which channel to inject into**
+   - The cycle's sample name is shown so the user knows **what to inject**
+   - LED for that channel stays illuminated on the instrument as a physical cue
+   - Countdown button shows *"Done Ns"* (Phase 1 timeout)
+3. **User injects** — physically pipettes sample into the flow cell port.
+4. **Injection auto-detected** → Phase 2 begins immediately (no user action required):
+   - Contact countdown starts at once
+   - Flag marker (▲) placed on the Active Cycle graph at the detected injection point
+   - **Light blue shaded zone** spans from ▲ to the wash deadline
+   - **Dashed blue "🧹 Wash" line** placed at `t_injection + contact_time`
+5. **User watches data fill the gap** — the sensorgram trace grows rightward through the shaded zone toward the wash line. When data reaches the dashed line, contact time is complete → perform wash.
+6. **Wash performed** → auto-markers clear at cycle end; next cycle begins.
 
 **What users think/feel**:
-- "When exactly should I inject?" — no guidance on ideal baseline stability window
-- "Did the injection register?" — flag markers appear but users miss them
+- "When exactly should I inject?" — green badge + action bar answer this
+- "Which channel / what sample?" — action bar shows both explicitly
+- "Did the injection register?" — flag marker flashes; shaded contact zone appears immediately
+- "How long do I hold it?" — watch the data grow toward the wash line; action bar shows countdown
 - "The signal went down — is that wrong?" — blue shift on binding confuses users expecting a rise
 
 **Design requirements**:
-- Show a **baseline stability indicator**: a small badge that turns green when the signal has been stable for >30s — this is the injection cue
+- Show a **baseline stability indicator**: small badge turns green when stable >30s — this is the injection cue
 - When an injection flag is placed, briefly animate it (flash or expand) so users notice it
-- Add a one-time tooltip on the first injection: *"SPR signals decrease on binding — a drop means your sample is working"*
-- For P4SPR (manual), make the "Mark Injection" button visually prominent during acquisition — not hidden in a submenu
+- Add a one-time tooltip on first injection: *"SPR signals decrease on binding — a drop means your sample is working"*
+- InjectionActionBar must be visible and unambiguous — channel, sample name, contact time, all in one bar
+- **Contact window visualization**: on detection, immediately shade the contact window on the Active Cycle graph so the user can watch the data fill toward the wash deadline
 - For P4PRO/PROPLUS, show method progress (step X of Y, next: "Wait 120s") in a persistent status area
 
 **Implemented**:
-- ✅ Baseline stability badge in graph header — "Stabilizing…" (grey) → "Ready to inject ✓" (green) when all active channels p2p ≤ 0.15 nm for 30 samples; resets on acquisition stop (`affilabs_core_ui.py:stability_badge`, `main.py:_on_peak_updated`, `ui_update_coordinator.py`)
+- ✅ Baseline stability badge — "Stabilizing…" (grey) → "Ready to inject ✓" (green) when all active channels p2p ≤ 0.15 nm for 30 samples (`affilabs_core_ui.py:stability_badge`, `main.py:_on_peak_updated`, `ui_update_coordinator.py`)
 - ✅ Injection flag marker flashes on placement (3-step size pulse at 120ms intervals) (`flag_manager.py`)
 - ✅ One-time tooltip "SPR signals decrease on binding — a drop means your sample is interacting with the sensor" on first injection ever (`flag_manager.py`)
-- ✅ **Active Cycle Card** in sidebar shows current cycle type, countdown, and next cycle — partial coverage of "method step progress" for P4PRO/PROPLUS (`mixins/_cycle_mixin.py:_update_cycle_display`)
-- ✅ **Cycle Status Overlay** embedded in the Active Cycle graph (top-right chip, `WA_TransparentForMouseEvents`) — shows cycle type, "N / total" index, `MM:SS` countdown (turns orange at ≤10 s), and next-cycle name. No separate popup or sidebar required. (`affilabs/widgets/cycle_status_overlay.py`, `mixins/_cycle_mixin.py:_update_cycle_display`)
-- ⬜ Prominent "Mark Injection" button for P4SPR — not yet built
+- ✅ **InjectionActionBar Phase 1** — *"Inject into A · Hold 5m 00s"* + *"Done Ns"* countdown; contact time always visible before injection (`affilabs/widgets/injection_action_bar.py`)
+- ✅ **InjectionActionBar Phase 2** — contact countdown starts immediately on detection; *"Holding in A"* + remaining time shown (`injection_action_bar.py`)
+- ✅ **Contact window visualization** on Active Cycle graph — placed immediately on injection detection:
+  - ▲ injection flag at detected point (flashes on placement)
+  - `LinearRegionItem` (light blue, 11% opacity) shades injection → wash deadline (`flag_manager.create_contact_region()`)
+  - Dashed blue `InfiniteLine` at wash deadline labeled *"🧹 Wash"* (`flag_manager.create_auto_marker()`)
+  - All items cleared automatically by `clear_auto_markers()` at cycle end
+  - Source: `mixins/_pump_mixin.py:_place_injection_flag()`, `affilabs/managers/flag_manager.py`
+- ✅ **Active Cycle Card** in sidebar — cycle type, countdown, next cycle (`mixins/_cycle_mixin.py:_update_cycle_display`)
+- ✅ **Cycle Status Overlay** (top-right of Active Cycle graph) — cycle type, "N / total", MM:SS countdown, next-cycle name (`affilabs/widgets/cycle_status_overlay.py`)
+- ⬜ Sample name shown in InjectionActionBar — not yet wired
 - ⬜ Full P4PRO/PROPLUS method step status (step X of Y, next: "Wait 120s") — not yet built
 
 ---

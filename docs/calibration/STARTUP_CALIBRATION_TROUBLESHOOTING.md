@@ -378,6 +378,83 @@ Test each channel individually:
 
 ---
 
+## History-Based Failure Triage (Automated)
+
+The calibration failure dialog performs automatic triage using the device's calibration history from `tools/ml_training/device_history.db`. The triage message is appended to the standard error text and guides the user toward the most likely fix without requiring them to understand the underlying hardware.
+
+### How the triage works
+
+At the point of failure, the software:
+1. Extracts the numeric serial from the connected detector (e.g. `FLMT09788` → `9788`)
+2. Queries `DeviceHistoryDatabase.get_device_statistics(serial_int)` — a read-only query taking < 5 ms
+3. Classifies the failure into one of three tracks based on `successful_calibrations` count:
+
+| Track | Condition | Message shown | Suggested action |
+|-------|-----------|---------------|-----------------|
+| **Known-good device** | `successful_calibrations ≥ 1` | "N previous successful calibration(s) on record." | "Likely water in the optical path. Dry the chip and retry." |
+| **Never calibrated** | `total_calibrations == 0` or no DB record | "No calibration history on record for this device." | "If problem persists, contact technical support." |
+| **Consistently failing** | `total_calibrations ≥ 1` and `successful_calibrations == 0` | "No successful calibrations on record." | "May be a hardware issue. Contact technical support." |
+
+### Failure detail parsing
+
+The error string emitted by the calibration engine encodes which LED failed and why. The triage parser extracts:
+
+| Error pattern in string | Extracted cause | User-facing text |
+|------------------------|-----------------|-----------------|
+| `channel [A-D]` / `Ch [A-D]` | Channel letter | "Channel B: …" |
+| `too low` / `extremely low` | `low_signal` | "signal too low" |
+| `saturated` | `saturated` | "signal saturated" |
+| `timeout` / `timed out` | `timeout` | "communication timeout" |
+| `convergence failed` | `convergence` | "LED convergence failed" |
+| (other) | `other` | (raw message) |
+
+### Safety properties
+
+- **Never blocks calibration retry** — query is wrapped in `try/except`; any DB error silently degrades to showing the raw error message only
+- **Never writes to DB** — read-only query at failure time; the calibration result (success/fail) is written to the DB only after a successful calibration via `record_calibration_to_database()`
+- **Works without network** — `device_history.db` is a local SQLite file shipped with the application
+- **Graceful on new devices** — returns "No history" message if serial not in DB (e.g. unit fresh out of OEM calibration where provisioning DB hasn't been synced)
+
+### What the user sees (example)
+
+```
+Calibration Failed
+
+Channel B: signal too low
+
+3 previous successful calibrations on record for this device.
+→ Likely water in the optical path.
+  Dry the chip, flush the flow cell, then retry.
+
+Retries remaining: 2
+```
+
+vs. on a device with no history:
+
+```
+Calibration Failed
+
+Channel B: signal too low
+
+No calibration history on record for this device.
+→ If the problem persists after retrying, contact technical support.
+
+Retries remaining: 2
+```
+
+### Implementation location
+
+| Component | File | Method |
+|-----------|------|--------|
+| History query | `affilabs/core/calibration_service.py` | `_query_calibration_history(device_serial)` |
+| Triage message builder | `affilabs/core/calibration_service.py` | `_build_triage_message(error_str, history)` |
+| Wire-up point | `affilabs/core/calibration_service.py` | `calibration_failed` signal emit (~line 1934) |
+| Dialog display | `affilabs/dialogs/startup_calib_dialog.py` | `show_error_state()` — no change needed |
+
+The triage message is composed before emitting `calibration_failed` and concatenated into the error string. The dialog's `show_error_state()` receives the full string and displays it verbatim — no dialog changes required.
+
+---
+
 ## When to Contact Support
 
 Contact technical support if:
@@ -399,5 +476,5 @@ Contact technical support if:
 
 ---
 
-*Last Updated: February 3, 2026*
-*Document Version: 1.0*
+*Last Updated: February 22, 2026*
+*Document Version: 1.1 — Added §History-Based Failure Triage*

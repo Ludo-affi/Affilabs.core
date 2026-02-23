@@ -38,7 +38,7 @@ USAGE:
 from __future__ import annotations
 
 import time
-from typing import Literal, Optional, Dict, List
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -95,6 +95,12 @@ class Cycle(BaseModel):
     concentration_units: str = Field(
         default="nM", 
         description="[DEPRECATED] Legacy unit field. Use units field instead."
+    )
+
+    # Chip/sensor metadata (set at method build time, flows to Excel Metadata sheet)
+    chip_info: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Sensor chip metadata: {'chip_type': 'COOH/NHS', 'lot_number': 'ABC123'}",
     )
 
     # Concentration metadata (for multi-channel experiments)

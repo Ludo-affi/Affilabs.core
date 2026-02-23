@@ -77,6 +77,21 @@ class DeviceStatusMixin:
                 "}",
             )
             self.power_btn.setToolTip("Searching for Device...\nClick to CANCEL search")
+        elif state == "calibrating":
+            # Amber - Calibrating device (hardware found, calibration in progress)
+            self.power_btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #FF9500;"
+                "  color: white;"
+                "  border: 1px solid #E6850A;"
+                "  border-radius: 18px;"
+                "}"
+                "QPushButton:hover {"
+                "  background: #FF9500;"
+                "  border: 1px solid #E6850A;"
+                "}",
+            )
+            self.power_btn.setToolTip("Calibrating device — please wait...")
         elif state == "connected":
             # Green - Device powered and connected
             self.power_btn.setStyleSheet(
@@ -139,6 +154,11 @@ class DeviceStatusMixin:
             )
             return  # Do nothing while hardware search is active
 
+        elif current_state == "calibrating":
+            # Button is inactive while calibrating - ignore clicks
+            logger.debug("Button clicked during calibration - ignoring")
+            return  # Do nothing while calibration is running
+
         elif current_state == "connected":
             # Power OFF: Show warning dialog
             from PySide6.QtWidgets import QMessageBox
@@ -181,7 +201,7 @@ class DeviceStatusMixin:
         """Set power button state from external controller.
 
         Args:
-            state: 'disconnected', 'searching', or 'connected'
+            state: 'disconnected', 'searching', 'calibrating', or 'connected'
 
         """
         self.power_btn.setProperty("powerState", state)
@@ -576,11 +596,9 @@ class DeviceStatusMixin:
         # Static mode is available if we have detector AND PCB (regardless of pump)
         static_available = detector_ready and pcb_ready
 
-        # Flow mode requires calibration to be completed (not just pump detection)
-        # During initial connection, flow indicators stay grey until calibration completes
-        # After calibration, flow_available will be set based on pump presence
-        # For P4PROPLUS (internal pumps) and other flow controllers, still needs calibration
-        flow_available = status.get("flow_calibrated", False)  # Enabled after calibration completes
+        # Flow icon visible as soon as pump hardware is detected (P4PRO/P4PROPLUS).
+        # Hidden entirely for P4SPR (no pump, no flow tab needed).
+        flow_available = has_pump
 
         logger.debug(f"Operation modes: ctrl={ctrl_type} static={static_available} flow={flow_available} pump={has_pump}")
 

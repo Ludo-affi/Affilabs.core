@@ -98,6 +98,25 @@ class TransportBar(QWidget):
         layout.setContentsMargins(16, 10, 16, 10)
         layout.setSpacing(6)
 
+        # ── Company logo (top-left) ───────────────────────────────────────────
+        logo_label = QLabel()
+        logo_path = get_affilabs_resource("ui/img/affinite-no-background.png")
+        if logo_path and logo_path.exists():
+            pxm = QPixmap(str(logo_path))
+            if not pxm.isNull():
+                logo_label.setPixmap(
+                    pxm.scaledToHeight(30, Qt.TransformationMode.SmoothTransformation)
+                )
+        if not logo_label.pixmap() or logo_label.pixmap().isNull():
+            logo_label.setText("Affinité")
+            logo_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #1D1D1F;")
+        logo_label.setStyleSheet("background: transparent;")
+        logo_label.setToolTip("Affinité Instruments")
+        layout.addWidget(logo_label)
+        layout.addSpacing(8)
+        layout.addWidget(self._sep())
+        layout.addSpacing(8)
+
         # ── Tab switcher pills ────────────────────────────────────────────────
         nav_configs = [
             ("Live", 0, "Real-time data visualisation"),
@@ -303,26 +322,6 @@ class TransportBar(QWidget):
         self.power_btn.clicked.connect(self.main_window._handle_power_click)
         self.main_window.power_btn = self.power_btn
         layout.addWidget(self.power_btn)
-
-        layout.addSpacing(8)
-
-        # ── Company logo ──────────────────────────────────────────────────────
-        logo_label = QLabel()
-        logo_path = get_affilabs_resource("ui/img/affinite-no-background.png")
-        if logo_path and logo_path.exists():
-            from PySide6.QtGui import QPixmap
-            from PySide6.QtCore import Qt as _Qt
-            pxm = QPixmap(str(logo_path))
-            if not pxm.isNull():
-                logo_label.setPixmap(
-                    pxm.scaledToHeight(30, _Qt.TransformationMode.SmoothTransformation)
-                )
-        if not logo_label.pixmap() or logo_label.pixmap().isNull():
-            logo_label.setText("Affinité")
-            logo_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #1D1D1F;")
-        logo_label.setStyleSheet("background: transparent;")
-        logo_label.setToolTip("Affinité Instruments")
-        layout.addWidget(logo_label)
 
         # ── Hidden compat widgets (used by coordinator / mixin checks) ─────────
         self.recording_indicator = QFrame()

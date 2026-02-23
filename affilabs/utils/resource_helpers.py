@@ -36,6 +36,23 @@ class ResourceHelpers:
 
         """
         try:
+            # Stop all Qt timers first — they keep the event loop alive after the
+            # window closes and prevent app.exec() from returning.
+            for timer_name in (
+                "_ui_update_timer",
+                "_profiling_timer",
+                "_cycle_timer",
+                "_cycle_end_timer",
+                "_plunger_poll_timer",
+                "_valve_poll_timer",
+            ):
+                timer = getattr(app, timer_name, None)
+                if timer is not None:
+                    try:
+                        timer.stop()
+                    except Exception:
+                        pass
+
             if not emergency:
                 # Print final profiling stats if enabled (graceful shutdown only)
                 from affilabs.settings import PROFILING_ENABLED
@@ -74,18 +91,23 @@ class ResourceHelpers:
                         logger.debug(f"Error stopping pumps: {e}")
 
                 # Home pumps to zero position before closing
-                if hasattr(app, "pump_mgr") and app.pump_mgr:
+                if hasattr(app, "pump_mgr") and app.pump_mgr and app.pump_mgr.is_available:
                     logger.debug("Homing pumps to zero position...")
                     try:
                         import asyncio
-                        # Run async home_pumps in sync context via PumpManager
+                        # Force IDLE so shutdown homing is never blocked by a stale operation state
+                        from affilabs.managers.pump_manager import PumpOperation
+                        app.pump_mgr._current_operation = PumpOperation.IDLE
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        loop.run_until_complete(app.pump_mgr.home_pumps())
+                        result = loop.run_until_complete(app.pump_mgr.home_pumps())
                         loop.close()
-                        logger.debug("Pumps homed successfully")
+                        if result:
+                            logger.debug("Pumps homed successfully")
+                        else:
+                            logger.warning("Pump homing returned False — pumps may not be at home position")
                     except Exception as e:
-                        logger.debug(f"Error homing pumps: {e}")
+                        logger.warning(f"Error homing pumps on shutdown: {e}")
 
             # Disconnect hardware — LEDs off FIRST, then close serial/USB
             if hasattr(app, "hardware_mgr") and app.hardware_mgr:
@@ -95,7 +117,9 @@ class ResourceHelpers:
                     if not emergency and hasattr(app.hardware_mgr, "disconnect_all"):
                         # disconnect_all() sends 'lx' to turn all LEDs off, then closes
                         # the serial port and spectrometer in the correct order.
-                        app.hardware_mgr.disconnect_all()
+                        # silent=True: skip hardware_disconnected signal to avoid
+                        # triggering UI handlers on an already-closing window.
+                        app.hardware_mgr.disconnect_all(silent=True)
                     else:
                         # Emergency / fallback: use correct attribute names (ctrl, usb)
                         hw = app.hardware_mgr

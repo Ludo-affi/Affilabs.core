@@ -738,6 +738,9 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         self._contact_time_marker = None  # Vertical line showing when to wash/regen
         self._injection_completion_time = None  # Sensorgram time when injection completed
 
+        # Live binding stats: keyed by (cycle_num, channel) — populated by _place_injection_flag
+        self._injection_stats: dict = {}
+
         # Internal pump state tracking (P4PROPLUS)
         self._pump1_running = False
         self._pump2_running = False
@@ -920,14 +923,12 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             return self.clock.raw_elapsed_now()
 
         def get_recording_elapsed():
-            """Seconds since recording started, or None if not recording."""
-            if not self.clock.experiment_started:
+            """Seconds since recording started (wall-clock), or None if not recording."""
+            import time as _time
+            wall = getattr(self, '_recording_start_wall', None)
+            if wall is None:
                 return None
-            raw = self.clock.raw_elapsed_now()
-            rec_offset = self.clock._recording_offset
-            if rec_offset <= 0:
-                return None
-            return max(0.0, raw - rec_offset)
+            return max(0.0, _time.time() - wall)
 
         self.main_window._get_elapsed_time = get_elapsed_time
         self.main_window._get_recording_elapsed = get_recording_elapsed
@@ -1133,22 +1134,13 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         logger.debug("✓ All signals connected")
 
     def _show_user_selector_if_needed(self) -> None:
-        """Show a compact user-selector modal if multiple profiles exist.
+        """Show a compact user-selector / greeting modal on startup.
 
-        Shown before the window becomes interactive so the guidance level is
-        known before any hardware / UI state transitions fire.
-        Skipped silently when only one profile exists (preserves current behaviour).
+        Always shown so the user can confirm who is running the session.
+        When only one profile exists the combo is pre-selected and acts
+        purely as a greeting; when multiple exist the user picks from the list.
         """
         try:
-            um = self.user_profile_manager
-            profiles = um.get_profiles()
-            if len(profiles) <= 1:
-                # Show greeting for single user
-                current_user = um.get_current_user()
-                if current_user:
-                    self._show_user_greeting(current_user)
-                return
-
             from PySide6.QtCore import Qt
             from PySide6.QtWidgets import (
                 QComboBox,
@@ -1158,8 +1150,12 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
                 QVBoxLayout,
             )
 
+            um = self.user_profile_manager
+            profiles = um.get_profiles()
+            current_user = um.get_current_user() or (profiles[0] if profiles else "")
+
             dlg = QDialog(self.main_window)
-            dlg.setWindowTitle("Who's running today's experiment?")
+            dlg.setWindowTitle("Affilabs.core")
             dlg.setWindowFlags(
                 Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint
             )
@@ -1176,15 +1172,26 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             layout.setContentsMargins(24, 20, 24, 20)
             layout.setSpacing(12)
 
-            lbl = QLabel("Who's running today's experiment?")
+            # Greeting headline — updates live when combo selection changes
+            def _greeting_text(name: str) -> str:
+                if name.lower() in ("default", "default user", "", "+ new profile (rename later)"):
+                    return "👋 Welcome to Affilabs.core!"
+                return f"👋 Hello, {name}!"
+
+            lbl = QLabel(_greeting_text(current_user))
             lbl.setWordWrap(True)
-            lbl.setStyleSheet("font-size: 14px; font-weight: 600; color: #1D1D1F;")
+            lbl.setStyleSheet("font-size: 15px; font-weight: 700; color: #1D1D1F;")
             layout.addWidget(lbl)
+
+            sub = QLabel("Who's running today's experiment?")
+            sub.setWordWrap(True)
+            sub.setStyleSheet("font-size: 12px; color: #8E8E93;")
+            layout.addWidget(sub)
 
             combo = QComboBox()
             combo.addItems(profiles)
-            combo.addItem("+ New profile (rename later)")  # creates a placeholder user
-            current_idx = combo.findText(um.get_current_user())
+            combo.addItem("+ New profile (rename later)")
+            current_idx = combo.findText(current_user)
             if current_idx >= 0:
                 combo.setCurrentIndex(current_idx)
             combo.setFixedHeight(36)
@@ -1200,7 +1207,19 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
                 "  selection-background-color: #E5E5EA;"
                 "}"
             )
+            # Update greeting label when selection changes
+            combo.currentTextChanged.connect(lambda name: lbl.setText(_greeting_text(name)))
             layout.addWidget(combo)
+
+            hint = QLabel(
+                "Press <b>Power</b> when you're ready to connect,\n"
+                "or ask <b>Sparq</b> to set up a method first — no hardware needed."
+            )
+            hint.setWordWrap(True)
+            hint.setStyleSheet(
+                "font-size: 11px; color: #8E8E93; line-height: 1.4;"
+            )
+            layout.addWidget(hint)
 
             btn = QPushButton("Start")
             btn.setFixedHeight(40)
@@ -1219,7 +1238,6 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
             selected = combo.currentText()
             if selected == "+ New profile (rename later)":
-                # Create a unique placeholder name; user renames in Settings > Manage Users
                 base = "New User"
                 candidate = base
                 n = 2
@@ -1228,76 +1246,15 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
                     n += 1
                 um.add_user(candidate)
                 um.set_current_user(candidate)
-                self._show_user_greeting(candidate)
             elif selected and selected != um.get_current_user():
                 um.set_current_user(selected)
-                self._show_user_greeting(selected)
                 # GuidanceCoordinator._on_user_changed fires automatically via callback
         except Exception as _sel_err:
             logger.warning(f"User selector skipped: {_sel_err}")
 
     def _show_user_greeting(self, username: str) -> None:
-        """Show a welcome greeting for the selected user.
-        
-        Args:
-            username: The name of the user who was selected
-        """
-        try:
-            from PySide6.QtCore import QTimer, Qt, QRect
-            from PySide6.QtWidgets import QLabel
-            from PySide6.QtGui import QFont
-            
-            # Delay to ensure main window is fully rendered
-            def show_toast():
-                if not self.main_window:
-                    return
-                    
-                # Special greeting for default user
-                if username.lower() in ["default", "default user"]:
-                    greeting = "👋 Welcome back to Affilabs.core!"
-                else:
-                    greeting = f"👋 Hello, {username}!"
-                
-                # Create toast notification as top-level window (no parent)
-                toast = QLabel(greeting)
-                toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                font = QFont()
-                font.setPointSize(13)
-                font.setWeight(QFont.Weight.Bold)
-                toast.setFont(font)
-                toast.setStyleSheet(
-                    "QLabel {"
-                    "  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, "
-                    "              stop:0 rgba(46,48,227,0.95), stop:1 rgba(90,200,250,0.95));"
-                    "  color: white;"
-                    "  border-radius: 8px;"
-                    "  padding: 14px 28px;"
-                    "  border: 1px solid rgba(255,255,255,0.2);"
-                    "}"
-                )
-                toast.adjustSize()
-                
-                # Position at top-center of main window
-                try:
-                    main_geometry = self.main_window.geometry()
-                    x = main_geometry.x() + (main_geometry.width() - toast.width()) // 2
-                    y = main_geometry.y() + 100  # Below transport bar
-                    toast.move(x, y)
-                except Exception:
-                    pass
-                
-                # Show toast
-                toast.show()
-                toast.raise_()
-                
-                # Auto-hide after 3 seconds
-                QTimer.singleShot(3000, lambda: (toast.hide(), toast.deleteLater()) if toast else None)
-            
-            # Wait 800ms for window to be fully rendered and visible
-            QTimer.singleShot(800, show_toast)
-            
-        except Exception as e:
-            logger.debug(f"Could not show user greeting: {e}")
+        """No-op: greeting is now shown inside the user selector dialog."""
+        pass
 
     def _finalize_and_show(self):
         """Finalize initialization and show main window."""
@@ -1537,6 +1494,11 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         logger.debug(
             "✓ calibration.calibration_complete signal",
         )
+        self.calibration.calibration_failed.connect(
+            self._on_calibration_failed,
+            Qt.QueuedConnection,
+        )
+        logger.debug("✓ calibration.calibration_failed signal")
 
         # === RECORDING MANAGER SIGNALS ===
         self.recording_mgr.recording_started.connect(self._on_recording_started)
@@ -1621,6 +1583,13 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         )
         single_point_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         single_point_shortcut.activated.connect(self.debug.send_single_data_point)
+
+        # Ctrl+Shift+D / F9: Load demo sensorgram data for screenshots
+        for _demo_key in ("Ctrl+Shift+D", "F9"):
+            _sc = QShortcut(QKeySequence(_demo_key), self.main_window)
+            _sc.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            _sc.activated.connect(self._load_demo_data)
+        logger.info("[Demo] Ctrl+Shift+D / F9 shortcut registered")
 
         self.main_window.acquisition_pause_requested.connect(
             self._on_acquisition_pause_requested,
@@ -2175,30 +2144,6 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             if not self.data_mgr._acquiring:
                 self.acquisition_events.on_start_button_clicked()
             return
-
-        # ── Check if recording is active before running queued cycles ─────
-        if not self.recording_mgr.is_recording:
-            from PySide6.QtWidgets import QMessageBox
-
-            reply = QMessageBox.question(
-                self.main_window,
-                "Recording Not Active",
-                "Data recording is not enabled.\n\n"
-                "Would you like to start recording before\n"
-                "running the cycle queue?",
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-                QMessageBox.Yes,
-            )
-            if reply == QMessageBox.Cancel:
-                logger.info("Cycle start cancelled by user")
-                return
-            if reply == QMessageBox.Yes:
-                logger.info("User chose to start recording before cycle queue")
-                self._on_recording_start_requested()
-                # If user cancelled the recording dialog, don't start cycles
-                if not self.recording_mgr.is_recording:
-                    logger.info("Recording was not started — aborting cycle start")
-                    return
 
         # Snapshot the full method on first cycle start (for progress tracking)
         if self.queue_presenter.get_method_progress() == 0:
@@ -3454,6 +3399,18 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
 
 
+    def _load_demo_data(self):
+        """Ctrl+Shift+D: Generate kinetics_demo.xlsx, load into Edits, fill live graphs."""
+        logger.info("[Demo] Ctrl+Shift+D triggered")
+        self.main_window._suppress_load_dialog = True
+        try:
+            from affilabs.utils.demo_data_generator import load_demo_data_into_app
+            load_demo_data_into_app(self)
+        except Exception as _e:
+            logger.error(f"[Demo] load_demo_data_into_app failed: {_e}", exc_info=True)
+        finally:
+            self.main_window._suppress_load_dialog = False
+
     def _on_export_requested(self, config: dict):
         """Handle comprehensive export request from Export tab."""
         from affilabs.utils.export_helpers import ExportHelpers
@@ -3660,7 +3617,11 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         self.closing = True
         logger.info("Closing application...")
         self._cleanup_resources(emergency=False)
-        return super().close()
+        result = super().close()
+        # Ensure the Qt event loop exits after all timers are stopped.
+        from PySide6.QtWidgets import QApplication
+        QApplication.quit()
+        return result
 
     def _emergency_cleanup(self):
         """Emergency cleanup for unexpected exits (called by atexit)."""
@@ -3833,7 +3794,10 @@ def main():
     sys.stderr = original_stderr
     sys.stdout = original_stdout
 
-    sys.exit(exit_code)
+    # Force process exit — oceandirect/pyserial SDK threads are non-daemon and
+    # will keep the process alive indefinitely after app.exec() returns.
+    # All hardware cleanup already ran in close() → _cleanup_resources().
+    os._exit(exit_code)
 
 
 if __name__ == "__main__":

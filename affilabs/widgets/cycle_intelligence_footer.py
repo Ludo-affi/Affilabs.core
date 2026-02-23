@@ -3,7 +3,7 @@
 LAYOUT  (left → stretch → centre → stretch → right)
   Left  : cycle metadata — name · type · duration · sample · concentration
   Centre: experiment elapsed clock  +  recording elapsed clock (shown only when recording)
-  Right : signal science — λ resonance · FWHM · p2p baseline noise · Stable/Drifting
+  Right : signal science — λ resonance · FWHM · p2p baseline noise · slope · Stable/Drifting
 """
 
 from __future__ import annotations
@@ -114,6 +114,7 @@ class CycleIntelligenceFooter(QFrame):
         clocks_row = QHBoxLayout()
         clocks_row.setSpacing(10)
         clocks_row.setContentsMargins(0, 0, 0, 0)
+        self._clocks_row_layout = clocks_row  # retained so show_saved_toast can insert into it
 
         # Experiment elapsed
         exp_prefix = QLabel("Exp")
@@ -193,6 +194,8 @@ class CycleIntelligenceFooter(QFrame):
         _, self._fwhm_val = _metric_pair("FWHM", "—",  "SPR dip width — narrower = better coupling (nm)")
         _, self._p2p_val  = _metric_pair("p2p",  "—",  "Baseline noise: peak-to-peak over last ~10 s\n"
                                                         "<5 nm = stable  ·  5–8 nm = noisy  ·  >8 nm = poor")
+        _, self._slope_val = _metric_pair("slope", "—", "60 s baseline slope (nm/s) — baseline & auto-read only\n"
+                                                        "Drift threshold: 10 RU / 15 min (355 RU = 1 nm → ≈ ±3.1e-5 nm/s)")
 
         # Baseline stability pill (dot + text)
         self._stab_dot  = QLabel("●")
@@ -239,6 +242,60 @@ class CycleIntelligenceFooter(QFrame):
         if not active:
             self._rec_clock.setText("00:00")
 
+    def show_saved_toast(self, filename: str, on_click: Callable[[], None] | None = None) -> None:
+        """Replace the rec clock area with a brief '✓ Saved' notice.
+
+        The label is clickable (navigates to Edits tab via *on_click*) and
+        auto-hides after 8 seconds, restoring normal empty state.
+
+        Args:
+            filename: Just the file basename to display.
+            on_click: Optional callable invoked when the user clicks the label.
+        """
+        # Hide rec widgets (recording is already stopped at this point)
+        self._rec_dot.setVisible(False)
+        self._rec_label.setVisible(False)
+        self._rec_clock.setVisible(False)
+
+        # Create the toast label lazily
+        if not hasattr(self, '_saved_toast_label'):
+            lbl = QLabel()
+            lbl.setTextFormat(Qt.TextFormat.PlainText)
+            lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+            lbl.setStyleSheet(
+                f"font-size: 11px; font-weight: 600; color: {_DOT_GREEN};"
+                f"font-family: {_FONT}; background: transparent;"
+                "text-decoration: underline;"
+            )
+            # Insert into the root layout (after rec widgets)
+            if hasattr(self, '_clocks_row_layout'):
+                self._clocks_row_layout.addWidget(lbl)
+            else:
+                self.layout().addWidget(lbl)
+            self._saved_toast_label = lbl
+            self._saved_toast_timer = QTimer(self)
+            self._saved_toast_timer.setSingleShot(True)
+            self._saved_toast_timer.timeout.connect(self._hide_saved_toast)
+
+        self._saved_toast_label.setText(f"✓ Saved — View results →")
+        self._saved_toast_label.setToolTip(filename)
+
+        # Wire click — disconnect any previous connection first
+        try:
+            self._saved_toast_label.mousePressEvent = None
+        except Exception:
+            pass
+        if on_click:
+            self._saved_toast_label.mousePressEvent = lambda __e: on_click()
+
+        self._saved_toast_label.setVisible(True)
+        self._saved_toast_timer.start(8000)
+
+    def _hide_saved_toast(self) -> None:
+        """Auto-dismiss the saved toast."""
+        if hasattr(self, '_saved_toast_label'):
+            self._saved_toast_label.setVisible(False)
+
     def update_cycle_info(self, cycle_data: dict[str, Any] | None) -> None:
         """Update the cycle metadata label."""
         self.cycle_data = cycle_data
@@ -255,6 +312,7 @@ class CycleIntelligenceFooter(QFrame):
         fwhm: float | None,
         p2p: float | None,
         stable: bool | None,
+        slope: float | None = None,
     ) -> None:
         """Update signal science indicators from the active timing channel.
 
@@ -264,6 +322,7 @@ class CycleIntelligenceFooter(QFrame):
             fwhm     : SPR dip FWHM in nm, or None.
             p2p      : Baseline peak-to-peak noise in nm over last ~10 s, or None.
             stable   : True = baseline stable, False = drifting, None = unknown.
+            slope    : 10 s baseline slope in nm/s, or None. Positive = rising, negative = falling.
         """
         ch = channel.lower()
         self._signal_metrics[ch] = {
@@ -271,6 +330,7 @@ class CycleIntelligenceFooter(QFrame):
             'fwhm': fwhm,
             'p2p': p2p,
             'stable': stable,
+            'slope': slope,
         }
         self._refresh_signal_panel(ch)
 
@@ -363,6 +423,11 @@ class CycleIntelligenceFooter(QFrame):
 
     # ── Internal: signal panel ────────────────────────────────────────────────
 
+    # Conversion: 355 RU = 1 nm
+    # Drift threshold: 10 RU / 15 min = (10/355 nm) / 900 s ≈ 3.13e-5 nm/s
+    RU_PER_NM = 355
+    SLOPE_DRIFT_THRESHOLD = (10 / RU_PER_NM) / 900  # nm/s  (~3.13e-5)
+
     def _refresh_signal_panel(self, channel: str) -> None:
         """Refresh right-side signal science indicators for *channel*."""
         m = self._signal_metrics.get(channel, {})
@@ -370,7 +435,11 @@ class CycleIntelligenceFooter(QFrame):
         wl   = m.get('wavelength')
         fwhm = m.get('fwhm')
         p2p  = m.get('p2p')
+        slope = m.get('slope')
+        # stable can be overridden by slope if slope is available
         stable = m.get('stable')
+        if slope is not None:
+            stable = abs(slope) < self.SLOPE_DRIFT_THRESHOLD
 
         # λ
         self._wl_val.setText(f"{wl:.1f} nm" if wl is not None else "—")
@@ -402,6 +471,23 @@ class CycleIntelligenceFooter(QFrame):
         self._p2p_val.setText(p2p_txt)
         self._p2p_val.setStyleSheet(
             f"font-size: 11px; font-weight: 600; color: {p2p_color};"
+            f"font-family: {_MONO}; background: transparent;"
+        )
+
+        # Slope — colour-coded by magnitude vs threshold
+        if slope is None:
+            slope_color = "#8E8E93"
+            slope_txt = "—"
+        else:
+            sign = "+" if slope >= 0 else ""
+            slope_txt = f"{sign}{slope:.3f} nm/s"
+            if abs(slope) >= self.SLOPE_DRIFT_THRESHOLD:
+                slope_color = _DOT_ORANGE
+            else:
+                slope_color = _DOT_GREEN
+        self._slope_val.setText(slope_txt)
+        self._slope_val.setStyleSheet(
+            f"font-size: 11px; font-weight: 600; color: {slope_color};"
             f"font-family: {_MONO}; background: transparent;"
         )
 

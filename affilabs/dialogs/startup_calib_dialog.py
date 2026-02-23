@@ -14,11 +14,13 @@ from PySide6.QtCore import Qt, Signal, QTimer, QElapsedTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -100,10 +102,10 @@ class StartupCalibProgressDialog(QDialog):
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         main_layout.addWidget(self.title_label)
 
-        # Step description label (shows current calibration step + elapsed time)
+        # Step description label (shows current calibration step)
         self.step_description_label = QLabel("")
         self.step_description_label.setStyleSheet(
-            "font-size: 12px; color: #86868B; font-weight: 400; padding: 2px;",
+            "font-size: 13px; color: #3A3A3C; font-weight: 600; padding: 2px;",
         )
         self.step_description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.step_description_label.setWordWrap(True)
@@ -113,6 +115,43 @@ class StartupCalibProgressDialog(QDialog):
 
         # Track base step text (without Working... suffix)
         self._current_step_text = ""
+
+        # --- Rotating pro-tips shown DURING calibration ---
+        self._calib_tips: list[str] = [
+            "You can build and save methods offline — no hardware needed. Ask Sparq to set one up.",
+            "Each LED channel (A–D) is independent. Run up to 4 different samples per experiment on the P4SPR.",
+            "Use the <b>Edits</b> tab after recording to align cycles, trim baselines, and export to Excel.",
+            "Sparq IQ scores update in real time. A score ≥ 70 means your signal is measurement-ready.",
+        ]
+        self._calib_tip_index: int = 0
+        self._tip_rotation_timer = QTimer(self)
+        self._tip_rotation_timer.setInterval(20_000)  # rotate every 20 s
+        self._tip_rotation_timer.timeout.connect(self._rotate_calib_tip)
+
+        # Pro-tip card shown during calibration (hidden at init)
+        self._calib_tip_card = QFrame()
+        self._calib_tip_card.setObjectName("calibTipCard")
+        self._calib_tip_card.setStyleSheet(
+            "#calibTipCard {"
+            "  background: #F5F5F7;"
+            "  border: 1px solid #E5E5EA;"
+            "  border-radius: 8px;"
+            "}"
+        )
+        _ct_inner = QHBoxLayout(self._calib_tip_card)
+        _ct_inner.setContentsMargins(10, 8, 10, 8)
+        _ct_inner.setSpacing(8)
+        _ct_icon = QLabel("💡")
+        _ct_icon.setStyleSheet("font-size: 13px;")
+        _ct_icon.setFixedWidth(18)
+        self._calib_tip_label = QLabel()
+        self._calib_tip_label.setWordWrap(True)
+        self._calib_tip_label.setOpenExternalLinks(False)
+        self._calib_tip_label.setStyleSheet("font-size: 11px; color: #555;")
+        _ct_inner.addWidget(_ct_icon, 0)
+        _ct_inner.addWidget(self._calib_tip_label, 1)
+        self._calib_tip_card.setVisible(False)
+        main_layout.addWidget(self._calib_tip_card)  # shown during calibration, hidden pre-calib
 
         # Progress bar (can be indeterminate or real progress)
         self.progress_bar = QProgressBar()
@@ -138,14 +177,10 @@ class StartupCalibProgressDialog(QDialog):
         )
         main_layout.addWidget(self.progress_bar)
 
-        # Subtle elapsed time counter shown during calibration
+        # Elapsed time is shown inline in the progress bar format string.
+        # This label is kept for compatibility but never shown.
         self.elapsed_label = QLabel("")
-        self.elapsed_label.setStyleSheet(
-            "font-size: 13px; color: #D1D1D6; font-weight: 500;",
-        )
-        self.elapsed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.elapsed_label.setVisible(False)
-        main_layout.addWidget(self.elapsed_label)
 
         # Animated activity indicator with elapsed time
         self.activity_label = QLabel("Working...")
@@ -164,39 +199,94 @@ class StartupCalibProgressDialog(QDialog):
         self._dot_timer.timeout.connect(self._animate_dots)
         self._dot_timer.start(1000)  # 1s interval for elapsed time ticking
 
-        # Warning banner — shown when message starts with ⚠ (e.g. "water in device")
-        # Extracts the warning lines (up to the first blank line) and displays them
-        # in a high-visibility amber box; the rest goes in status_label below.
-        warning_text, body_text = self._split_warning(message)
+        # ── Pre-calibration panel (warning + checklist + timing) ────────
+        warning_text, checklist_items, timing_text = self._parse_precalib_message(message)
 
+        self._precalib_panel = QFrame()
+        self._precalib_panel.setObjectName("precalibPanel")
+        _panel_layout = QVBoxLayout(self._precalib_panel)
+        _panel_layout.setContentsMargins(0, 0, 0, 0)
+        _panel_layout.setSpacing(10)
+
+        # Warning banner
         if warning_text:
-            self.warning_label = QLabel(warning_text)
+            self.warning_label = QFrame()
+            self.warning_label.setObjectName("warnBanner")
             self.warning_label.setStyleSheet(
-                "QLabel {"
-                "  font-size: 12px;"
-                "  font-weight: 500;"
-                "  color: #8B6914;"
+                "#warnBanner {"
                 "  background: #FFFBEC;"
                 "  border: 1px solid #F0C840;"
-                "  border-radius: 6px;"
-                "  padding: 6px 12px;"
-                "}",
+                "  border-radius: 8px;"
+                "}"
             )
-            self.warning_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            self.warning_label.setWordWrap(True)
-            main_layout.addWidget(self.warning_label)
+            _wb = QHBoxLayout(self.warning_label)
+            _wb.setContentsMargins(10, 8, 10, 8)
+            _wb.setSpacing(8)
+            _warn_icon = QLabel("⚠")
+            _warn_icon.setStyleSheet("font-size: 14px; color: #8B6914; background: transparent;")
+            _warn_icon.setFixedWidth(18)
+            _warn_text = QLabel(warning_text)
+            _warn_text.setStyleSheet(
+                "font-size: 12px; font-weight: 500; color: #8B6914; background: transparent;"
+            )
+            _warn_text.setWordWrap(True)
+            _wb.addWidget(_warn_icon, 0)
+            _wb.addWidget(_warn_text, 1)
+            _panel_layout.addWidget(self.warning_label)
         else:
             self.warning_label = None
 
-        # Status message (checklist items and timing note)
-        self.status_label = QLabel(body_text if warning_text else message)
-        self.status_label.setStyleSheet(
-            "font-size: 14px;color: #86868B;padding: 0px;",
-        )
+        # Checklist items
+        if checklist_items:
+            _checklist_frame = QFrame()
+            _checklist_frame.setObjectName("checklistFrame")
+            _checklist_frame.setStyleSheet(
+                "#checklistFrame {"
+                "  background: #F5F5F7;"
+                "  border-radius: 8px;"
+                "}"
+            )
+            _cl = QVBoxLayout(_checklist_frame)
+            _cl.setContentsMargins(14, 10, 14, 10)
+            _cl.setSpacing(6)
+            for item in checklist_items:
+                _row = QHBoxLayout()
+                _row.setSpacing(8)
+                _check = QLabel("✓")
+                _check.setStyleSheet(
+                    "font-size: 13px; font-weight: 700; color: #34C759; background: transparent;"
+                )
+                _check.setFixedWidth(14)
+                _check.setAlignment(Qt.AlignmentFlag.AlignTop)
+                _text = QLabel(item)
+                _text.setStyleSheet(
+                    "font-size: 13px; color: #1D1D1F; background: transparent;"
+                )
+                _text.setWordWrap(True)
+                _row.addWidget(_check, 0)
+                _row.addWidget(_text, 1)
+                _cl.addLayout(_row)
+            _panel_layout.addWidget(_checklist_frame)
+
+        # Timing note
+        if timing_text:
+            _timing = QLabel(timing_text)
+            _timing.setStyleSheet(
+                "font-size: 12px; color: #86868B; background: transparent;"
+            )
+            _timing.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            _panel_layout.addWidget(_timing)
+
+        main_layout.addWidget(self._precalib_panel)
+
+        # Status label — used post-calibration and for non-checklist messages
+        self.status_label = QLabel("")
+        self.status_label.setStyleSheet("font-size: 14px; color: #86868B; padding: 0px;")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setWordWrap(True)
         self.status_label.setMinimumHeight(30)
         self.status_label.setMaximumHeight(160)
+        self.status_label.setVisible(False)
         main_layout.addWidget(self.status_label)
 
         # Small spacer before buttons
@@ -263,20 +353,43 @@ class StartupCalibProgressDialog(QDialog):
         if self.parent_window:
             self._center_on_parent()
 
-    @staticmethod
-    def _split_warning(message: str) -> tuple[str, str]:
-        """Split message into (warning_text, body_text).
+    def _load_tip(self, tags: list[str] | None = None) -> None:
+        """No-op: pre-calibration tip card removed."""
 
-        If message starts with '⚠', everything up to the first blank line
-        is the warning; the rest is the body.  If no leading '⚠', returns
-        ('', message) so all text goes into status_label unchanged.
+    def set_tip_tags(self, tags: list[str]) -> None:
+        """No-op: pre-calibration tip card removed."""
+
+    @staticmethod
+    def _parse_precalib_message(message: str) -> tuple[str, list[str], str]:
+        """Parse the pre-calibration message into (warning, checklist_items, timing).
+
+        Expects the format produced by calibration_service:
+          ⚠ <warning line>
+             <warning continuation>
+
+          Before starting:
+            ✓  <item>
+            ...
+
+          <N> steps, ~<T> minutes
         """
-        if not message.startswith("⚠"):
-            return "", message
-        parts = message.split("\n\n", 1)
-        warning = parts[0].strip()
-        body = parts[1].strip() if len(parts) > 1 else ""
-        return warning, body
+        warning_lines: list[str] = []
+        checklist_items: list[str] = []
+        timing_text = ""
+
+        for line in message.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("⚠"):
+                warning_lines.append(stripped.lstrip("⚠").strip())
+            elif stripped.startswith("✓"):
+                checklist_items.append(stripped.lstrip("✓").strip())
+            elif stripped.startswith("Before starting"):
+                pass  # section header — skip
+            elif "steps" in stripped and "minutes" in stripped:
+                timing_text = stripped
+
+        warning = " ".join(warning_lines)
+        return warning, checklist_items, timing_text
 
     def _on_start_clicked(self) -> None:
         """Handle start button click."""
@@ -309,10 +422,36 @@ class StartupCalibProgressDialog(QDialog):
             except:
                 pass
 
-    def closeEvent(self, event: Any) -> None:
-        """Clean up overlay when dialog closes."""
+    def _cleanup_overlay(self) -> None:
+        """Remove the black dimming overlay from the parent window."""
+        if self.overlay:
+            try:
+                self.overlay.hide()
+                self.overlay.deleteLater()
+            except RuntimeError:
+                pass  # Widget already deleted
+            self.overlay = None
+
+    def done(self, result: int) -> None:
+        """Override done() to clean up overlay on accept/reject (which call done, not close)."""
         self._is_closing = True
         self._dot_timer.stop()
+        self._tip_rotation_timer.stop()
+
+        if self.parent_window:
+            try:
+                self.parent_window.removeEventFilter(self)
+            except RuntimeError:
+                pass
+
+        self._cleanup_overlay()
+        super().done(result)
+
+    def closeEvent(self, event: Any) -> None:
+        """Clean up overlay when dialog is closed via the window manager."""
+        self._is_closing = True
+        self._dot_timer.stop()
+        self._tip_rotation_timer.stop()
 
         # Remove event filter
         if self.parent_window:
@@ -321,13 +460,7 @@ class StartupCalibProgressDialog(QDialog):
             except RuntimeError:
                 pass
 
-        if self.overlay:
-            try:
-                self.overlay.hide()
-                self.overlay.deleteLater()
-            except RuntimeError:
-                pass  # Widget already deleted
-            self.overlay = None
+        self._cleanup_overlay()
         super().closeEvent(event)
 
     def eventFilter(self, obj: Any, event: Any) -> bool:
@@ -365,6 +498,7 @@ class StartupCalibProgressDialog(QDialog):
         if not self._is_closing and self.isVisible():
             try:
                 self.status_label.setText(message)
+                self.status_label.setVisible(bool(message))
             except RuntimeError:
                 pass  # Widget deleted
 
@@ -424,10 +558,14 @@ class StartupCalibProgressDialog(QDialog):
 
                 self.progress_bar.setValue(value)
 
-                # Update text to show percentage
+                # Update text to show elapsed time only
                 if maximum > 0:
-                    percentage = int((value / maximum) * 100)
-                    self.progress_bar.setFormat(f"{percentage}%")
+                    if self._calibration_running and self._elapsed_timer.isValid():
+                        total_secs = self._elapsed_timer.elapsed() // 1000
+                        elapsed_str = f"{total_secs // 60}:{total_secs % 60:02d}"
+                        self.progress_bar.setFormat(elapsed_str)
+                    else:
+                        self.progress_bar.setFormat("")
             except RuntimeError:
                 pass  # Widget deleted
 
@@ -450,41 +588,52 @@ class StartupCalibProgressDialog(QDialog):
                 self.progress_bar.show()
                 self.progress_bar.setMaximum(100)
                 self.progress_bar.setValue(0)
-                # Hide warning + checklist — no longer relevant once calibration runs
-                if self.warning_label:
-                    self.warning_label.setVisible(False)
+                # Hide pre-calibration panel — no longer relevant once calibration runs
+                self._precalib_panel.setVisible(False)
                 self.status_label.setVisible(False)
                 self.activity_label.setVisible(False)
-                self.elapsed_label.setVisible(True)
-                self.elapsed_label.setText("0:00")
+                self.progress_bar.setFormat("0:00")
                 self._calibration_running = True
                 self._elapsed_timer.start()
                 self._dot_timer.start(1000)
+                # Start rotating pro tips
+                self._calib_tip_index = 0
+                self._calib_tip_label.setText(self._calib_tips[0])
+                self._calib_tip_card.setVisible(True)
+                self._tip_rotation_timer.start()
             except RuntimeError:
                 pass  # Widget deleted
 
     def _animate_dots(self) -> None:
-        """Update step description with elapsed time so users see the process is alive."""
+        """Tick elapsed time into the progress bar format string."""
         if self._calibration_running:
             elapsed_ms = self._elapsed_timer.elapsed()
             total_secs = elapsed_ms // 1000
             mins = total_secs // 60
             secs = total_secs % 60
-            # Update the standalone elapsed counter (always visible while running)
-            self.elapsed_label.setText(f"{mins}:{secs:02d}")
-            # Also update step description label if it has content
-            if self._current_step_text and self.step_description_label.isVisible():
-                self.step_description_label.setText(self._current_step_text)
+            elapsed_str = f"{mins}:{secs:02d}"
+            if self.progress_bar.maximum() > 0:
+                self.progress_bar.setFormat(elapsed_str)
+            else:
+                self.progress_bar.setFormat(elapsed_str)
         else:
             self._dot_count = (self._dot_count % 3) + 1
             self.activity_label.setText(f"Working{'.' * self._dot_count}")
 
+    def _rotate_calib_tip(self) -> None:
+        """Advance to the next pro tip in the calibration rotation."""
+        if not self._is_closing:
+            self._calib_tip_index = (self._calib_tip_index + 1) % len(self._calib_tips)
+            self._calib_tip_label.setText(self._calib_tips[self._calib_tip_index])
+
     def _stop_activity_animation(self) -> None:
-        """Stop the dot animation and elapsed time tracking."""
+        """Stop the dot animation, elapsed time tracking, and tip rotation."""
         self._dot_timer.stop()
+        self._tip_rotation_timer.stop()
+        self._calib_tip_card.setVisible(False)
         self._calibration_running = False
         self.activity_label.setVisible(False)
-        self.elapsed_label.setVisible(False)
+        self.progress_bar.setFormat("%p%")
 
     def enable_start_button_pre_calib(self) -> None:
         """Enable the Start button for pre-calibration checklist (thread-safe)."""
@@ -520,9 +669,8 @@ class StartupCalibProgressDialog(QDialog):
                 self._stop_activity_animation()
                 self.step_description_label.setVisible(False)
 
-                # Ensure warning banner is dismissed
-                if self.warning_label:
-                    self.warning_label.setVisible(False)
+                # Ensure pre-calib panel is dismissed
+                self._precalib_panel.setVisible(False)
 
                 # Show the completion status
                 self.status_label.setVisible(True)

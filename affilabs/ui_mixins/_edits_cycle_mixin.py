@@ -347,11 +347,12 @@ class EditsCycleMixin:
                 if hasattr(self.edits_tab, '_update_selection_view'):
                     self.edits_tab._update_selection_view()
 
-            QMessageBox.information(
-                self,
-                "Data Loaded",
-                f"Successfully loaded {len(cycles_data)} cycles from\n{file_path}"
-            )
+            if not getattr(self, '_suppress_load_dialog', False):
+                QMessageBox.information(
+                    self,
+                    "Data Loaded",
+                    f"Successfully loaded {len(cycles_data)} cycles from\n{file_path}"
+                )
 
         except Exception as e:
             logger.error(f"Failed to load Excel file: {e}", exc_info=True)
@@ -529,6 +530,9 @@ class EditsCycleMixin:
                 logger.info("[GRAPH] No cycles selected - clearing graph")
                 for i in range(4):
                     self.edits_graph_curves[i].setData([], [])
+                if hasattr(self, 'edits_graph_curve_labels'):
+                    for lbl in self.edits_graph_curve_labels:
+                        lbl.hide()
                 # Hide alignment panel when nothing selected
                 if hasattr(self, 'edits_tab'):
                     self.edits_tab.alignment_panel.hide()
@@ -700,19 +704,19 @@ class EditsCycleMixin:
                 cycle = self._loaded_cycles_data[row]
 
                 # Get time range for this cycle - try multiple field name variations
-                start_time = (
-                    cycle.get('start_time_sensorgram') or
-                    cycle.get('sensorgram_time') or
-                    cycle.get('start_time') or
-                    cycle.get('time') or
-                    cycle.get('elapsed_time') or
-                    cycle.get('elapsed')
+                # Use explicit None checks (not `or`) so start_time=0 is valid
+                def _first_not_none(*keys):
+                    for k in keys:
+                        v = cycle.get(k)
+                        if v is not None:
+                            return v
+                    return None
+
+                start_time = _first_not_none(
+                    'start_time_sensorgram', 'sensorgram_time',
+                    'start_time', 'time', 'elapsed_time', 'elapsed',
                 )
-                end_time = (
-                    cycle.get('end_time_sensorgram') or
-                    cycle.get('end_time') or
-                    None
-                )
+                end_time = _first_not_none('end_time_sensorgram', 'end_time')
 
                 # Handle NaN values from pandas (convert to None)
                 try:
@@ -862,9 +866,13 @@ class EditsCycleMixin:
                                 ch_wavelength_subtracted = ch_wavelength_sorted.copy()
                                 ch_wavelength_subtracted[valid_mask] -= ref_interp[valid_mask]
 
-                                # Update the data (keep sorted order)
-                                all_cycle_data[ch]['time'] = ch_time_sorted.tolist()
-                                all_cycle_data[ch]['wavelength'] = ch_wavelength_subtracted.tolist()
+                                # CRITICAL: keep only the subtracted points.
+                                # Points outside the reference time range keep their raw
+                                # absolute wavelength (~620 nm). Mixing raw and
+                                # differential values in the same array causes the
+                                # baseline correction to produce ±200,000 RU spikes.
+                                all_cycle_data[ch]['time'] = ch_time_sorted[valid_mask].tolist()
+                                all_cycle_data[ch]['wavelength'] = ch_wavelength_subtracted[valid_mask].tolist()
 
                                 logger.info(f"[REF SUBTRACT] Ch {ch.upper()}: subtracted {valid_mask.sum()}/{len(ch_time)} points")
                     else:
@@ -889,11 +897,25 @@ class EditsCycleMixin:
                     delta_wavelength = wavelength_data - baseline
                     spr_data = delta_wavelength * WAVELENGTH_TO_RU
 
+                    # Apply smoothing if slider is set
+                    smooth_slider = getattr(self, 'edits_smooth_slider', None)
+                    smooth_win = smooth_slider.value() if smooth_slider else 0
+                    if smooth_win > 1 and len(spr_data) > smooth_win:
+                        from scipy.ndimage import uniform_filter1d
+                        spr_data = uniform_filter1d(spr_data, size=smooth_win, mode='nearest')
+
                     self.edits_graph_curves[i].setData(time_data, spr_data)
+                    # Update channel label to right edge of curve
+                    if hasattr(self, 'edits_graph_curve_labels') and i < len(self.edits_graph_curve_labels):
+                        lbl = self.edits_graph_curve_labels[i]
+                        lbl.setPos(time_data[-1], spr_data[-1])
+                        lbl.show()
                     logger.info(f"[GRAPH] Ch {ch.upper()}: {len(time_data)} pts, time {time_data.min():.1f}-{time_data.max():.1f}s, baseline={baseline:.3f}nm, RU range {spr_data.min():.1f} to {spr_data.max():.1f}")
                 else:
                     # Clear curve if no data
                     self.edits_graph_curves[i].setData([], [])
+                    if hasattr(self, 'edits_graph_curve_labels') and i < len(self.edits_graph_curve_labels):
+                        self.edits_graph_curve_labels[i].hide()
                     logger.info(f"[GRAPH] No data for channel {ch.upper()}")
 
             # Auto-scale the graph to show all data
@@ -901,6 +923,17 @@ class EditsCycleMixin:
             # Update Y-axis label to show RU
             self.edits_primary_graph.setLabel('left', 'Response (RU)')
             logger.info("[GRAPH] Auto-scaled graph to fit data")
+
+            # Style reference channel: dashed light-gray so it reads as background
+            import pyqtgraph as pg
+            colors = [(0, 0, 0), (255, 0, 0), (0, 0, 255), (0, 170, 0)]
+            for i in range(4):
+                if ref_channel_idx is not None and i == ref_channel_idx:
+                    self.edits_graph_curves[i].setPen(
+                        pg.mkPen(color=(180, 180, 180), width=1.5, style=pg.Qt.QtCore.Qt.PenStyle.DashLine)
+                    )
+                else:
+                    self.edits_graph_curves[i].setPen(pg.mkPen(colors[i], width=2))
 
             logger.info(f"✓ Loaded {valid_cycles_loaded} cycle(s) to edits graph")
 

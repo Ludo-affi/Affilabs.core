@@ -444,6 +444,10 @@ The previous guide described an implementation that no longer exists:
 
 5. **make_timer_draggable() uses monkey-patching** — Sets `timer_item.mouseDragEvent = handler.mouseDragEvent` directly on the pg.TextItem. This may break if pyqtgraph updates its event handling model.
 
+6. **`injection_completed` signal timing with contact_time** — (Fixed Feb 22 2026) Previously, `injection_completed` emitted when the ManualInjectionDialog finalized detection (~20-30s), even when contact_time was set (e.g. 300s). This caused downstream listeners (cycle progression, recording markers) to see the injection as "done" long before the user finished the contact+wash cycle. **Fix:** When `contact_time` is set, `_on_dialog_complete` no longer sets `done_event`. The BG thread stays blocked until `_on_bar_done` fires (all channels washed). Timeout is now `95 + contact_time + 120s` margin. See `injection_coordinator.py` lines 413-425.
+
+7. **No wash flag from WashMonitor detection** — When `_WashMonitor.wash_detected` fires, only `bar.set_channel_wash(ch)` is called (visual update). No injection flag is placed on the Active Cycle graph for the wash event. Wash flags come only from `_place_automatic_wash_flags()` in `_timer_mixin`, which fires on contact timer expiry — not on actual wash detection. If a user washes early, there is no graph flag. (Known gap, not yet fixed.)
+
 ---
 
 ## §13. Document Metadata

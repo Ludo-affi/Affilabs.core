@@ -1,8 +1,8 @@
 # Injection Auto-Detection — Functional Specification
 
-**Version:** 2.0.5 beta  
-**Verified against source:** Yes  
-**Last updated:** 2026-02-19  
+**Version:** 2.0.5 beta
+**Verified against source:** Yes
+**Last updated:** 2026-02-22
 **Source files:**
 - `affilabs/utils/spr_signal_processing.py` — algorithm layer
 - `affilabs/coordinators/injection_coordinator.py` — orchestration layer
@@ -12,25 +12,28 @@
 
 ## 1. Overview
 
-Injection auto-detection identifies the moment an analyte enters the flow cell by tracking a sustained deviation of the SPR resonance wavelength from its pre-injection baseline trend. Detection runs per-channel, produces a time + confidence score, and causes an injection flag to be placed on the sensorgram.
+Injection auto-detection identifies the moment an analyte enters the flow cell by detecting a **sudden step-jump** of the SPR resonance wavelength away from its pre-injection baseline. Detection runs per-channel, produces a time + confidence score, and causes an injection flag to be placed on the sensorgram.
 
-**Signal polarity:** Injection causes a **blue shift** (wavelength decreases) in this system. The detection algorithm is direction-agnostic — it detects any sustained deviation from baseline, rising or falling.
+**Signal polarity:** Injection causes a **blue shift** (wavelength decreases) in this system. The detection algorithm is direction-agnostic — it detects any sustained step-jump from baseline, rising or falling.
+
+**Detection philosophy:** An injection is a **step change**, not a slope/drift. Example: baseline 3 RU, sample enters, signal jumps to 9 RU. The algorithm finds the first point where the signal exceeds a threshold above the settled baseline AND stays on the same side of baseline for several consecutive points. Slow baseline drift does not trigger detection.
 
 ---
 
 ## 2. System Architecture
 
 ```
-ManualInjectionDialog (per tick, 500ms timer)
+ManualInjectionDialog (per tick, 200ms timer, off-screen on Windows)
   │  calls per-channel:
   ▼
 auto_detect_injection_point(times, values, sensitivity_factor)
   │  returns: {injection_time, confidence, ...}
   │
   ├─ if detected → dialog marks channel LED green, stores result
+  │               → InjectionActionBar.update_channel_detected(ch, True)
   │
-  └─ when all channels detected OR 60s expires:
-       dialog.exec() returns Accepted
+  └─ when all channels detected OR 80s expires:
+       dialog closes (auto — no user button)
          │
          ▼
        InjectionCoordinator._process_detection_results()
@@ -47,8 +50,8 @@ auto_detect_injection_point(times, values, sensitivity_factor)
 
 ## 3. Core Algorithm — `auto_detect_injection_point()`
 
-**Source:** `affilabs/utils/spr_signal_processing.py` line 260  
-**Called from:** `ManualInjectionDialog._check_channel_for_injection()` (per channel, every 500ms)
+**Source:** `affilabs/utils/spr_signal_processing.py`
+**Called from:** `ManualInjectionDialog._check_for_injection_in_window()` (per channel, every 200ms)
 
 ### 3.1 Signature
 
@@ -56,10 +59,10 @@ auto_detect_injection_point(times, values, sensitivity_factor)
 auto_detect_injection_point(
     times:              np.ndarray,       # Time array (seconds, RAW_ELAPSED)
     values:             np.ndarray,       # SPR signal (RU or wavelength nm)
-    smoothing_window:   int = 11,         # SG window (unused in current implementation)
-    baseline_points:    int = 5,          # Initial points for baseline (see §3.2)
+    smoothing_window:   int = 11,         # Unused parameter (accepted, not applied)
+    baseline_points:    int = 5,          # Initial points for baseline establishment
     min_rise_threshold: float = 2.0,      # Minimum absolute signal change to confirm
-    sensitivity_factor: float = 1.0,      # Scales all thresholds (see §3.5)
+    sensitivity_factor: float = 1.0,      # Scales min_rise_threshold only (see §3.5)
 ) -> dict
 ```
 
@@ -68,66 +71,69 @@ Requires at least 10 points in each array; returns all-zero/None dict otherwise.
 ### 3.2 Step 1 — Baseline Establishment
 
 ```python
-baseline_end = min(baseline_points, int(len(values) * 0.33))
-baseline_end = max(baseline_end, min(10, len(values) // 2))
+baseline_end = min(baseline_points, int(len(values) * 0.25))
+baseline_end = max(baseline_end, min(5, len(values) // 3))
 ```
 
-Uses the first `baseline_end` points (capped at 33% of total data, minimum 10 points) to compute:
+Uses the first `baseline_end` points (capped at 25% of total data) to compute:
 - `baseline_mean` — mean of baseline window
-- `baseline_noise` — std dev, floored at `0.1` (minimum noise floor)
+- `baseline_noise` — std dev, floored at `0.1` RU (prevents zero-noise threshold)
 
-A **linear trend** is fit to the baseline window via `np.polyfit(baseline_times, baseline_values, 1)` to account for pre-injection drift. Fallback: constant `baseline_mean` if polyfit fails.
+**No linear trend is fit.** The baseline is a flat mean. Pre-injection drift is tolerated as long as the step-jump is large enough relative to noise.
 
-### 3.3 Step 2 — Deviation from Trend
+### 3.3 Step 2 — Threshold Calculation
 
 ```python
-expected_trend = baseline_trend(times)     # projected linear drift
-deviation = values - expected_trend        # signed deviation
-abs_deviation = np.abs(deviation)
+effective_rise_threshold = max(
+    min_rise_threshold * sensitivity_factor,
+    3.0 * baseline_noise,
+)
 ```
 
-All subsequent comparisons are against `abs_deviation`, making the algorithm direction-agnostic.
+The threshold is the **larger** of:
+- `min_rise_threshold × sensitivity_factor` — absolute minimum rise (default 2.0 RU)
+- `3.0 × baseline_noise` — 3-sigma above the baseline noise floor
 
-### 3.4 Step 3 — Sustained Crossing Detection
+This ensures the detector never fires on noise (3σ requirement) but always requires at least 2 RU of actual signal change.
+
+### 3.4 Step 3 — Step-Jump Detection
 
 ```python
-threshold = 2.5 * baseline_noise * sensitivity_factor
-effective_rise_threshold = min_rise_threshold * sensitivity_factor
+deviation = values - baseline_mean
+abs_deviation = np.abs(deviation)
 
-base_sustain = min(5, max(2, len(values) // 50))
-sustain_window = max(2, int(base_sustain * sensitivity_factor))
+sustain_window = max(3, min(6, len(values) // 30))
 ```
 
 Scanning from `baseline_end` to `len(values) - sustain_window`:
 
 ```
 for each point i:
-    if abs_deviation[i] > threshold:
-        if mean(abs_deviation[i : i+sustain_window]) > threshold × 0.8:
+    if abs_deviation[i] >= effective_rise_threshold:
+        window = deviation[i : i + sustain_window]
+        if np.all(window > 0) or np.all(window < 0):
             injection_idx = i  ← FOUND
             break
 ```
 
-The 0.8 factor allows minor dips within the sustain window ("wiggle room").
+**Key properties of this detector:**
+- Requires the signal to cross the threshold AND stay on the **same side of baseline** for `sustain_window` consecutive points (3–6 points depending on array length)
+- No "wiggle room" within the sustain window — all points must be strictly same-sign
+- No fallback: if no sustained crossing found, `injection_time = None` (no flag placed)
+- Direction-agnostic: works for both upward and downward step-jumps
 
-**Fallback** if no sustained crossing found:
-```python
-candidate = argmax(abs_deviation[baseline_end:]) + baseline_end
-if abs_deviation[candidate] > threshold × 0.5:
-    injection_idx = candidate
-```
+### 3.5 Sensitivity Factor
 
-If still no candidate → return `injection_time = None`.
+`sensitivity_factor` only scales `min_rise_threshold`. It does **not** change the noise-sigma multiplier (3.0) or the sustain window.
 
-### 3.5 Step 4 — Slope Calculation
+| Method mode (`cycle.detection_priority`) | `sensitivity_factor` | Effect |
+|------------------------------------------|---------------------|--------|
+| `"priority"` | `0.5` | Min threshold halved → fires at smaller steps |
+| `"manual"` | `0.6` | Moderate sensitivity boost |
+| `"auto"` / `"semi-automated"` | `1.0` | Default |
+| `"off"` | — | `auto_detect_injection_point` is never called |
 
-```python
-max_slope_value = float(np.gradient(values, times)[injection_idx])
-```
-
-Uses `np.gradient`'s centered finite difference for interior points, forward/backward at edges.
-
-### 3.6 Step 5 — Confidence Scoring
+### 3.6 Step 4 — Confidence Scoring
 
 Three sub-scores, weighted sum:
 
@@ -143,7 +149,7 @@ confidence = deviation × 0.5 + sustain × 0.3 + edge × 0.2
 
 **Penalty:** if `abs_signal_rise < effective_rise_threshold`, confidence is halved (`× 0.5`).
 
-`signal_rise` is the distance from `baseline_mean` to the post-injection peak or trough (direction-aware).
+`signal_rise` = distance from `baseline_mean` to the post-injection value at `injection_idx` (direction-aware signed value).
 
 ### 3.7 Return Dict
 
@@ -153,7 +159,7 @@ confidence = deviation × 0.5 + sustain × 0.3 + edge × 0.2
     'injection_index': int | None,    # Array index
     'confidence':      float,         # 0.0–1.0
     'max_slope':       float,         # Slope at injection point (RU/s, signed)
-    'signal_rise':     float,         # Total signal change from baseline (RU, signed)
+    'signal_rise':     float,         # Signal change from baseline at detection (RU, signed)
     'snr':             float,         # abs_signal_rise / baseline_noise
     'baseline_noise':  float,         # Baseline std dev (RU)
 }
@@ -161,27 +167,12 @@ confidence = deviation × 0.5 + sustain × 0.3 + edge × 0.2
 
 ---
 
-## 4. Sensitivity Factor — Per-Mode Scaling
+## 4. Multi-Channel Detection — `detect_injection_all_channels()`
 
-The `sensitivity_factor` parameter scales both thresholds and the sustain window. Lower = more sensitive.
-
-| Method mode (`cycle.detection_priority`) | `sensitivity_factor` | Effect |
-|------------------------------------------|---------------------|--------|
-| `"priority"` | `0.5` | Threshold halved, sustain window halved — fires earliest |
-| `"manual"` | `0.6` | Moderate sensitivity boost |
-| `"auto"` / `"semi-automated"` | `1.0` | Default |
-| `"off"` | — | `auto_detect_injection_point` is never called |
-
-These are set in `ManualInjectionDialog` at construction and passed through to each detection call.
-
----
-
-## 5. Multi-Channel Detection — `detect_injection_all_channels()`
-
-**Source:** `affilabs/utils/spr_signal_processing.py` line 585  
+**Source:** `affilabs/utils/spr_signal_processing.py`
 **Called from:** `InjectionCoordinator._scan_all_channels_for_injection()` (retroactive scan)
 
-### 5.1 Signature
+### 4.1 Signature
 
 ```python
 detect_injection_all_channels(
@@ -192,7 +183,7 @@ detect_injection_all_channels(
 ) -> dict
 ```
 
-### 5.2 Per-Channel Processing
+### 4.2 Per-Channel Processing
 
 For each channel in `['a', 'b', 'c', 'd']`:
 1. Extract `time` and `wavelength` arrays from `ChannelBuffer`
@@ -203,7 +194,7 @@ For each channel in `['a', 'b', 'c', 'd']`:
 4. Call `auto_detect_injection_point(window_times, window_ru)` with default sensitivity
 5. Accept result only if `confidence >= min_confidence` (default 0.70)
 
-### 5.3 Return Dict
+### 4.3 Return Dict
 
 ```python
 {
@@ -215,12 +206,12 @@ For each channel in `['a', 'b', 'c', 'd']`:
 
 ---
 
-## 6. Delta SPR Measurement — `measure_delta_spr()`
+## 5. Delta SPR Measurement — `measure_delta_spr()`
 
-**Source:** `affilabs/utils/spr_signal_processing.py` line 473  
+**Source:** `affilabs/utils/spr_signal_processing.py`
 **Purpose:** Measures SPR shift from pre-injection baseline to end of contact phase (cycle result reporting).
 
-### 6.1 Signature
+### 5.1 Signature
 
 ```python
 measure_delta_spr(
@@ -233,16 +224,16 @@ measure_delta_spr(
 ) -> dict
 ```
 
-### 6.2 Measurement Points
+### 5.2 Measurement Points
 
 ```
 START: injection_time - pre_offset  (10s before injection)
 END:   injection_time + contact_time
 ```
 
-Both use a centered `avg_points` window around the nearest data point. The inner helper `_avg_at(target)` handles the clamping logic and is shared between both measurements.
+Both use a centered `avg_points` window around the nearest data point.
 
-### 6.3 Quality Assessment
+### 5.3 Quality Assessment
 
 | Condition | `quality` |
 |-----------|-----------|
@@ -250,7 +241,7 @@ Both use a centered `avg_points` window around the nearest data point. The inner
 | Either gap > 2s | `"extrapolated"` |
 | Exception or insufficient data | `"failed"` |
 
-### 6.4 Return Dict
+### 5.4 Return Dict
 
 ```python
 {
@@ -267,14 +258,14 @@ Both use a centered `avg_points` window around the nearest data point. The inner
 
 ---
 
-## 7. S/P Orientation Validation — `validate_sp_orientation()`
+## 6. S/P Orientation Validation — `validate_sp_orientation()`
 
-**Source:** `affilabs/utils/spr_signal_processing.py` line 62  
+**Source:** `affilabs/utils/spr_signal_processing.py`
 **Called from:** Calibration orchestrator (Step 5 QC)
 
 Analyzes the P/S transmission spectrum in the 600–750 nm SPR region to validate that the servo polarizer is in the correct orientation.
 
-### 7.1 Decision Logic
+### 6.1 Decision Logic
 
 ```
 Compute P/S transmission
@@ -292,7 +283,7 @@ else:                                → orientation_correct = None  (indetermin
 
 A flat spectrum (range < 5%) returns `orientation_correct = None`, `confidence = 0.0`.
 
-### 7.2 Return Dict
+### 6.2 Return Dict
 
 ```python
 {
@@ -309,11 +300,11 @@ A flat spectrum (range < 5%) returns `orientation_correct = None`, `confidence =
 
 ---
 
-## 8. InjectionCoordinator — Orchestration Layer
+## 7. InjectionCoordinator — Orchestration Layer
 
 **Source:** `affilabs/coordinators/injection_coordinator.py`
 
-### 8.1 Signals
+### 7.1 Signals
 
 ```python
 injection_started          = Signal(str)             # injection_type: "manual" | "automated"
@@ -324,7 +315,7 @@ injection_flag_requested   = Signal(str, float, float)  # channel, injection_tim
 
 `injection_flag_requested` is the primary output — it causes the flag manager to place an injection marker on the sensorgram at the detected time.
 
-### 8.2 Mode Determination
+### 7.2 Mode Determination
 
 ```python
 InjectionCoordinator._determine_injection_mode(cycle) -> bool
@@ -338,7 +329,7 @@ InjectionCoordinator._determine_injection_mode(cycle) -> bool
 
 P4SPR without pump → `requires_manual_injection = True` → manual.
 
-### 8.3 Channel Resolution — `_resolve_detection_channels()`
+### 7.3 Channel Resolution — `_resolve_detection_channels()`
 
 ```
 Priority:
@@ -347,7 +338,7 @@ Priority:
 3. "ABCD" if P4SPR, else sample_info["channels"] or "AC"
 ```
 
-### 8.4 Manual Injection Flow
+### 7.4 Manual Injection Flow
 
 ```
 _execute_manual_injection(cycle, parent_widget):
@@ -356,12 +347,13 @@ _execute_manual_injection(cycle, parent_widget):
   3. Open 3-way valves for target channels (non-P4SPR only)
   4. Resolve _detection_channels via _resolve_detection_channels()
   5. Skip dialog if cycle.method_mode in ["pump", "semi-automated"] → auto-complete
-  6. Show ManualInjectionDialog.exec() — blocks for up to 60s
+  6. Show ManualInjectionDialog off-screen (move to -9999,-9999 before show())
+     Blocks worker thread for up to 80s — dialog closes automatically
   7. On Accepted → _process_detection_results() → close valves → injection_completed.emit()
-  8. On Rejected → close valves → injection_cancelled.emit()
+  8. On Rejected (worker timeout) → close valves → injection_cancelled.emit()
 ```
 
-### 8.5 Detection Results Processing — `_process_detection_results()`
+### 7.5 Detection Results Processing — `_process_detection_results()`
 
 Three cases handled:
 
@@ -373,13 +365,13 @@ Three cases handled:
 
 Both Case 1 and Case 2 increment `cycle.injection_count` for Binding/Kinetic/Concentration cycles.
 
-### 8.6 Retroactive Scan — `_scan_all_channels_for_injection()`
+### 7.6 Retroactive Scan — `_scan_all_channels_for_injection()`
 
 Used as fallback when `ManualInjectionDialog` detected a primary channel but didn't complete per-channel scanning during the grace period.
 
 ```
 window_start = self._window_start_time
-window_end   = max(window_start + 60.0, latest timestamp in timeline_data)
+window_end   = max(window_start + 80.0, latest timestamp in timeline_data)
 
 result = detect_injection_all_channels(buffer_mgr.timeline_data, window_start, window_end, min_confidence=0.70)
 
@@ -389,7 +381,7 @@ result = detect_injection_all_channels(buffer_mgr.timeline_data, window_start, w
 
 **Mislabel detection:** If injection detected on a channel not in `cycle.channels`, it's flagged as `cycle.injection_mislabel_flags[ch] = 'inactive_channel'` and logged as a warning.
 
-### 8.7 Automated Injection Flow
+### 7.7 Automated Injection Flow
 
 Runs in a background `threading.Thread` (daemon). Uses asyncio event loop. Stops any running pump first (`stop_and_wait_for_idle`, 30s timeout), then:
 
@@ -400,7 +392,7 @@ Runs in a background `threading.Thread` (daemon). Uses asyncio event loop. Stops
 
 Emits `injection_completed` on success, logs error on failure.
 
-### 8.8 Valve Control
+### 7.8 Valve Control
 
 Only for non-P4SPR hardware. Requires `ctrl.knx_three_both()` to exist (FlowController only).
 
@@ -413,16 +405,19 @@ Valves closed after injection: 3-way resets to `pump_mgr.default_channels` state
 
 ---
 
-## 9. Key Constants
+## 8. Key Constants
 
 | Constant | Value | Location | Description |
 |----------|-------|----------|-------------|
-| Detection threshold | `2.5 × baseline_noise × sensitivity_factor` | `auto_detect_injection_point` | Sigma multiplier for breakout detection |
-| Sustain wiggle | `0.8 × threshold` | `auto_detect_injection_point` | Min mean deviation during sustained window |
-| Fallback threshold | `0.5 × threshold` | `auto_detect_injection_point` | Threshold for highest-deviation fallback |
 | Min noise floor | `0.1` RU | `auto_detect_injection_point` | Prevents zero noise from making threshold zero |
-| Edge margin | `5%` of array length | `auto_detect_injection_point` | Edge penalty zone |
-| Detection window | `60` seconds | `ManualInjectionDialog` | Hard cutoff for manual injection monitoring |
+| Noise sigma multiplier | `3.0` | `auto_detect_injection_point` | Detection threshold = max(min_rise, 3σ noise) |
+| Min rise threshold | `2.0` RU | `auto_detect_injection_point` | Absolute minimum step-jump size |
+| Sustain window | `3–6` points | `auto_detect_injection_point` | Consecutive same-side points required for confirmation |
+| Edge margin | `5%` of array length | `auto_detect_injection_point` | Edge penalty zone for confidence scoring |
+| Detection window | **`80` seconds** | `ManualInjectionDialog` | Hard cutoff for manual injection monitoring |
+| Phase 1 duration | **`10` seconds** | `InjectionActionBar` | Non-interactive prep countdown before detection |
+| Phase 2 duration | **`80` seconds** | `InjectionActionBar` | Maximum detection monitoring time |
+| Coordinator timeout | `95` seconds | `InjectionCoordinator` | Worker thread wait timeout (phase1 + phase2 + margin) |
 | RU conversion factor | `355.0` | `detect_injection_all_channels` | nm → pseudo-RU scale factor |
 | Multi-channel min confidence | `0.70` | `detect_injection_all_channels` | Minimum to accept a channel detection |
 | Pre-injection offset | `10.0` s | `measure_delta_spr` | Baseline measurement point before injection |
@@ -432,18 +427,22 @@ Valves closed after injection: 3-way resets to `pump_mgr.default_channels` state
 
 ---
 
-## 10. Gotchas
+## 9. Gotchas
 
 1. **Blue-shift means injection is a drop:** The algorithm detects any deviation, but in this system injections produce a wavelength decrease. If values passed to `auto_detect_injection_point` are raw wavelengths (not RU), a binding event will show `signal_rise < 0` and `max_slope < 0`.
 
-2. **RU conversion uses first-window-point as baseline (not global):** In `detect_injection_all_channels`, `baseline = window_wl[0]` — the first wavelength in the detection window, not the global baseline. This means the RU values are relative to the state at detection window open, not experiment start.
+2. **RU conversion uses first-window-point as baseline (not global):** In `detect_injection_all_channels`, `baseline = window_wl[0]` — the first wavelength in the detection window, not the global baseline.
 
-3. **`baseline_points` default is 5, not 50:** The docstring says default 50; the actual default is 5. The effective baseline uses `min(5, int(len*0.33))`, clamped to at least 10 — meaning with short windows, 10 points are used regardless.
+3. **No fallback on detection failure:** Unlike the previous algorithm, there is no "highest-deviation fallback" candidate. If no sustained crossing is found, `injection_time = None` and no flag is placed. This is intentional — a false positive flag is worse than a missed flag.
 
-4. **`smoothing_window` param is accepted but not used:** The `smoothing_window=11` parameter is in the signature but the SG filter inside `auto_detect_injection_point` is not called in the current implementation.
+4. **`smoothing_window` param is accepted but not used:** The `smoothing_window=11` parameter is in the signature but not applied.
 
-5. **Per-channel results in dialog come from grace-period scan:** When the dialog detects a primary channel, it runs a grace-period scan on all channels. `_detected_channels_results` is only populated if that grace-period scan completes before dialog close. If not, `InjectionCoordinator` falls back to the retroactive scan.
+5. **ManualInjectionDialog is off-screen on Windows:** `WA_DontShowOnScreen` is X11-only and non-functional on Windows. The dialog is moved to `(-9999, -9999)` before `show()` to keep it off-screen while still firing `showEvent` (which starts the detection engine).
 
 6. **Pump/semi-automated modes skip dialog entirely:** If `cycle.method_mode in ["pump", "semi-automated"]`, `_execute_manual_injection` returns immediately without showing the dialog and without detection — `injection_completed` emitted directly.
 
 7. **P4SPR valve control is suppressed:** `_is_p4spr = True` blocks `_open_valves_for_manual_injection()` since P4SPR lacks 3-way valve hardware. Channels are also set to `None` in `sample_info`.
+
+8. **Detection check interval is 200ms (5 Hz):** `DETECTION_CHECK_INTERVAL_MS = 200`. Each channel is scanned 5 times per second during the 80s window.
+
+9. **`DETECTION_CONFIDENCE_THRESHOLD = 0.30`:** The minimum confidence to mark a channel as detected in the live dialog scan. Lower than the retroactive scan threshold (0.70) to be more permissive during the live window.

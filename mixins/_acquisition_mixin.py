@@ -12,7 +12,12 @@ import time
 import numpy as np
 from PySide6.QtCore import QTimer
 
-from affilabs.app_config import LEAK_DETECTION_WINDOW, LEAK_THRESHOLD_RATIO
+from affilabs.app_config import LEAK_DETECTION_WINDOW
+
+# Intensity-drop leak detection constants
+_LEAK_DROP_THRESHOLD = 0.15   # Alert if intensity falls to ≤15% of baseline
+_LEAK_BASELINE_WINDOW = 30.0  # Seconds to establish baseline (rolling max)
+_LEAK_CONFIRM_WINDOW = 3.0    # Seconds of sustained low signal before alerting
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +144,13 @@ class AcquisitionMixin:
     def _handle_intensity_monitoring(
         self, channel: str, data: dict, timestamp: float
     ):
-        """Handle intensity monitoring and leak detection."""
+        """Handle intensity monitoring and sudden-drop leak detection.
+
+        Tracks a rolling intensity baseline (peak over the first 30s of
+        acquisition) per channel.  If intensity drops to ≤15% of that
+        baseline and stays there for ≥3 consecutive seconds, a Sparq
+        alert is pushed once per channel per session.
+        """
         intensity = data.get("intensity", 0)
 
         self.buffer_mgr.append_intensity_point(channel, timestamp, intensity)
@@ -150,18 +161,86 @@ class AcquisitionMixin:
         cutoff_time = timestamp - LEAK_DETECTION_WINDOW
         self.buffer_mgr.trim_intensity_buffer(channel, cutoff_time)
 
-        time_span = self.buffer_mgr.get_intensity_timespan(channel)
-        if time_span and time_span >= LEAK_DETECTION_WINDOW:
-            dark_noise = getattr(self.data_mgr, "dark_noise", None)
-            if dark_noise is not None:
-                avg_intensity = self.buffer_mgr.get_intensity_average(channel)
-                dark_threshold = np.mean(dark_noise) * LEAK_THRESHOLD_RATIO
-                if avg_intensity < dark_threshold:
+        # --- Sudden-drop leak detection ---
+        # Lazy-init per-session state dicts
+        if not hasattr(self, '_intensity_baseline'):
+            self._intensity_baseline: dict[str, float] = {}
+            self._intensity_baseline_locked: dict[str, bool] = {}
+            self._intensity_low_since: dict[str, float | None] = {}
+            self._leak_alerted: set[str] = set()
+            self._acq_start_time: float | None = None
+
+        if self._acq_start_time is None:
+            self._acq_start_time = timestamp
+
+        elapsed = timestamp - self._acq_start_time
+
+        # Update rolling max baseline (only while within the baseline window)
+        if not self._intensity_baseline_locked.get(channel, False):
+            current_max = self._intensity_baseline.get(channel, 0.0)
+            if intensity > current_max:
+                self._intensity_baseline[channel] = intensity
+            # Lock baseline after the window has passed
+            if elapsed > _LEAK_BASELINE_WINDOW and self._intensity_baseline.get(channel, 0) > 0:
+                self._intensity_baseline_locked[channel] = True
+
+        # Only check after baseline is established and not already alerted
+        baseline = self._intensity_baseline.get(channel, 0.0)
+        if (
+            baseline > 0
+            and self._intensity_baseline_locked.get(channel, False)
+            and channel not in self._leak_alerted
+        ):
+            drop_ratio = intensity / baseline
+            if drop_ratio <= _LEAK_DROP_THRESHOLD:
+                # Signal is critically low — track how long it's been low
+                if self._intensity_low_since.get(channel) is None:
+                    self._intensity_low_since[channel] = timestamp
+                low_duration = timestamp - self._intensity_low_since[channel]
+                if low_duration >= _LEAK_CONFIRM_WINDOW:
+                    # Sustained drop — alert user once
+                    self._leak_alerted.add(channel)
                     logger.warning(
-                        f"Possible optical leak detected in channel "
-                        f"{channel.upper()}: avg intensity {avg_intensity:.0f} "
-                        f"< threshold {dark_threshold:.0f}",
+                        f"⚠ OPTICAL LEAK detected — Channel {channel.upper()}: "
+                        f"intensity dropped to {drop_ratio*100:.1f}% of baseline "
+                        f"({intensity:.0f} / {baseline:.0f} counts), "
+                        f"sustained for {low_duration:.1f}s"
                     )
+                    self._push_leak_alert(channel, drop_ratio, baseline)
+            else:
+                # Signal recovered — reset the low-timer
+                self._intensity_low_since[channel] = None
+
+    def _push_leak_alert(self, channel: str, drop_ratio: float, baseline: float) -> None:
+        """Push a Sparq alert when a sudden intensity drop (possible leak) is detected.
+
+        Called at most once per channel per session from _handle_intensity_monitoring.
+        Runs on the processing thread — uses QTimer.singleShot to safely update UI.
+        """
+        ch = channel.upper()
+        pct = int(drop_ratio * 100)
+        msg = (
+            f"**Warning — Possible optical leak on Channel {ch}**\n\n"
+            f"Signal intensity dropped to **{pct}% of normal** "
+            f"({int(baseline * drop_ratio):,} vs {int(baseline):,} counts).\n\n"
+            "This usually means liquid has entered the optical path — "
+            "check the flow cell and fiber connections for water or buffer. "
+            "If injections are in progress, pause and inspect the chip."
+        )
+
+        def _do_push():
+            try:
+                sidebar = getattr(self, 'spark_sidebar', None)
+                if sidebar and hasattr(sidebar, 'spark_widget') and sidebar.spark_widget:
+                    sidebar.spark_widget.push_system_message(msg)
+                    # Ensure the sidebar is visible
+                    if hasattr(sidebar, 'show'):
+                        sidebar.show()
+            except Exception as e:
+                logger.warning(f"Leak alert UI push failed: {e}")
+
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, _do_push)
 
     def _queue_transmission_update(self, channel: str, data: dict):
         """Queue transmission spectrum update for batch processing."""
@@ -202,6 +281,13 @@ class AcquisitionMixin:
     def _on_acquisition_started(self):
         """Acquisition has started — enable record and pause buttons."""
         self.acquisition_events.on_acquisition_started()
+
+        # Reset leak detection state for the new session
+        self._intensity_baseline = {}
+        self._intensity_baseline_locked = {}
+        self._intensity_low_since = {}
+        self._leak_alerted = set()
+        self._acq_start_time = None
 
         # Note: active_cycle_card is shown only when a cycle is actually running
         # (via _update_cycle_display), not on mere acquisition start.

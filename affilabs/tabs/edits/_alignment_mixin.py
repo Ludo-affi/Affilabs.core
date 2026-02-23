@@ -447,6 +447,13 @@ class AlignmentMixin:
             # Update ΔSPR column in the table (col 4 — last column)
             delta_str = " ".join(delta_parts)
             self.cycle_data_table.setItem(row_idx, self.TABLE_COL_DELTA_SPR, QTableWidgetItem(delta_str))
+            # Store reference channel and measurement flag for binding plot (Option A)
+            ref_ch = self._get_effective_ref_channel(row_idx)
+            cycle['delta_ref_ch'] = f'Ch {chr(65 + ref_ch)}' if ref_ch is not None else 'None'
+            cycle['delta_measured'] = True
+            # Propagate to binding plot if visible
+            if hasattr(self, 'bottom_tab_widget') and self.bottom_tab_widget.currentIndex() == 1:
+                self._update_binding_plot()
 
     # ------------------------------------------------------------------
     # Time-shift application & slider/input sync

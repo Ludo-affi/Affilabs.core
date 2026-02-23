@@ -58,5 +58,25 @@
     "timestamp": "2026-02-20T18:39:55.441281",
     "question": "where is the data saved?",
     "answer": "Sorry, I took too long to respond. Please try again."
+  },
+  {
+    "timestamp": "2026-02-21T13:59:52.532542",
+    "question": "how do i start a test",
+    "answer": "Click the **Live** tab, make sure your detector is connected (check **Device Status**), and hit the green **Start** button. Data streams in real-time."
+  },
+  {
+    "timestamp": "2026-02-21T14:41:01.133089",
+    "question": "where is the power button",
+    "answer": "To power on:\n\n1. Click **Power On** (top right)\n2. Startup calibration runs automatically (1-2 min)\n3. Review the QC Report, then click **Start**\n\nThe system begins in Auto-Read mode. Build a method and press **Record** to save data."
+  },
+  {
+    "timestamp": "2026-02-21T16:53:24.975369",
+    "question": "where is my poop",
+    "answer": "Use these 2-letter abbreviations anywhere instead of full cycle type names:\n\nBL = Baseline - Running buffer only, establishes stable signal\nBN = Binding - Manual injection with contact time (5 min default)\nIM = Immobilization - Attach ligand to sensor surface\nBK = Blocking - Block unreacted surface sites\nKN = Kinetic - Flow injection (association + dissociation phases)\nCN = Concentration - Alias for Binding (deprecated, use BN)\nRG = Regeneration - Strip bound analyte, restore baseline (30s default)\nAS = Association - Alias for Kinetic (deprecated, use KN)\nDS = Dissociation - Alias for Baseline (deprecated, use BL)\nWS = Wash - Rinse flow path between steps\nOT = Other - Custom steps (activation, equilibration, etc.)\n\nEXAMPLES:\nBL 5min (instead of Baseline 5min)\nBN 5min A:100nM contact 180s (instead of Binding 5min A:100nM contact 180s)"
+  },
+  {
+    "timestamp": "2026-02-22T13:28:02.147717",
+    "question": "the calibration failed, what can i do",
+    "answer": "Startup calibration takes 1-2 minutes. If it fails, check for flow path obstructions, verify reagents are loaded, and confirm the detector connection. You can retry or power cycle the device."
   }
 ]

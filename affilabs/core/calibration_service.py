@@ -829,6 +829,16 @@ class CalibrationService(QObject):
                         f"Weak channel detected after {self._retry_count + 1} attempts: "
                         f"Channel {diagnosis['channel'].upper()} at {diagnosis['pct_of_historical']}% of historical"
                     )
+                    # Enrich diagnosis with history track so Sparq can branch correctly
+                    _ts_history = self._query_calibration_history(
+                        getattr(self, '_triage_serial', None)
+                    )
+                    _ts_track = self._classify_history_track(_ts_history)
+                    diagnosis['history_track'] = _ts_track
+                    diagnosis['history_successes'] = (
+                        _ts_history.successful_calibrations if _ts_history else 0
+                    )
+                    logger.debug(f"[Triage] Sparq track: {_ts_track}")
                     self._launch_spark_troubleshooting(diagnosis)
                     # Still show the failure dialog with updated message
                     self._calibration_dialog.show_error_state(
@@ -856,6 +866,117 @@ class CalibrationService(QObject):
                     f"Max retries ({self._max_retries}) reached. Showing final error state."
                 )
                 self._calibration_dialog.show_max_retries_error(error_message)
+
+    # ── History-based failure triage ──────────────────────────────────────
+
+    def _query_calibration_history(self, device_serial: str | None) -> object | None:
+        """Return DeviceStatistics for this serial, or None if unavailable.
+
+        Always safe to call — any error is swallowed.  device_serial is the
+        raw string from the spectrometer (e.g. 'FLMT09788'); we extract the
+        numeric portion for the database lookup.
+        """
+        if not device_serial:
+            return None
+        try:
+            serial_digits = ''.join(c for c in device_serial if c.isdigit())
+            if not serial_digits:
+                return None
+            serial_int = int(serial_digits)
+            # Resolve DB path relative to this repo root — works in both dev and
+            # installed build (db is bundled in tools/ml_training/).
+            from pathlib import Path
+            db_path = Path(__file__).parent.parent.parent / 'tools' / 'ml_training' / 'device_history.db'
+            if not db_path.exists():
+                return None
+            from tools.ml_training.device_history import DeviceHistoryDatabase
+            db = DeviceHistoryDatabase(db_path=db_path)
+            return db.get_device_statistics(serial_int)
+        except Exception as _e:
+            logger.debug(f"[Triage] History query failed (non-critical): {_e}")
+            return None
+
+    @staticmethod
+    def _classify_history_track(history) -> str:
+        """Classify device calibration history into a Sparq guidance track.
+
+        Returns:
+            'known_good'           — ≥1 prior success → water/optical path likely
+            'never_calibrated'     — no history on record → setup/hardware issue
+            'consistently_failing' — calibrations attempted but none succeeded → OEM fault
+        """
+        if history is None or history.total_calibrations == 0:
+            return 'never_calibrated'
+        if history.successful_calibrations == 0:
+            return 'consistently_failing'
+        return 'known_good'
+
+    @staticmethod
+    def _build_triage_message(error_str: str, history: object | None) -> str:
+        """Compose the history-informed triage paragraph appended to failure messages.
+
+        Returns a short multi-line string (starts with '\\n\\n') ready to
+        concatenate onto the raw error string, or '' if no useful context.
+        """
+        import re
+
+        # --- Parse which channel failed and why ---
+        channel = None
+        ch_match = re.search(r'\bch(?:annel)?\s*([A-Da-d])\b', error_str, re.IGNORECASE)
+        if ch_match:
+            channel = ch_match.group(1).upper()
+
+        cause = 'other'
+        es = error_str.lower()
+        if 'too low' in es or 'extremely low' in es:
+            cause = 'low_signal'
+        elif 'saturated' in es or 'saturation' in es:
+            cause = 'saturated'
+        elif 'timeout' in es or 'timed out' in es:
+            cause = 'timeout'
+        elif 'convergence' in es:
+            cause = 'convergence'
+
+        cause_text = {
+            'low_signal':  'signal too low',
+            'saturated':   'signal saturated',
+            'timeout':     'communication timeout',
+            'convergence': 'LED convergence failed',
+            'other':       '',
+        }[cause]
+
+        lines = []
+        if channel and cause_text:
+            lines.append(f"Channel {channel}: {cause_text}")
+        elif channel:
+            lines.append(f"Channel {channel} failed")
+
+        # --- History classification ---
+        if history is None:
+            lines.append("No calibration history on record for this device.")
+            lines.append("→ If the problem persists after retrying, contact technical support.")
+        elif history.total_calibrations == 0:
+            lines.append("No calibration history on record for this device.")
+            lines.append("→ If the problem persists after retrying, contact technical support.")
+        elif history.successful_calibrations >= 1:
+            n = history.successful_calibrations
+            lines.append(
+                f"{n} previous successful calibration{'s' if n != 1 else ''} on record."
+            )
+            if cause == 'low_signal':
+                lines.append("→ Likely water in the optical path.")
+                lines.append("  Dry the chip, flush the flow cell, then retry.")
+            else:
+                lines.append("→ This device has calibrated successfully before.")
+                lines.append("  Check the optical path and retry.")
+        else:
+            # total > 0 but 0 successes
+            lines.append("No successful calibrations on record for this device.")
+            lines.append("→ May be a hardware issue. Contact technical support if retries fail.")
+
+        if not lines:
+            return ''
+        return '\n\n' + '\n'.join(lines)
 
     def _check_weak_channel_diagnosis(self, error_message: str) -> dict | None:
         """Parse convergence error for weak-channel pattern and compare to history.
@@ -959,6 +1080,30 @@ class CalibrationService(QObject):
 
         # Reset retry counter for next calibration attempt
         self._retry_count = 0
+
+        # Hide the connecting backdrop and restore cursor — shown during calibration,
+        # must be explicitly dismissed when the user skips via "Continue Anyway".
+        try:
+            mw = getattr(self.app, 'main_window', None)
+            if mw:
+                # Direct hide — bypasses the connecting_label guard in show_connecting_indicator
+                backdrop = getattr(mw, '_connecting_backdrop', None)
+                if backdrop is not None:
+                    backdrop.setVisible(False)
+                label = getattr(mw, 'connecting_label', None)
+                if label is not None:
+                    label.setVisible(False)
+                anim_timer = getattr(mw, '_connecting_anim_timer', None)
+                if anim_timer is not None:
+                    anim_timer.stop()
+                # Restore wait cursor if still active
+                if getattr(mw, '_busy_cursor_active', False):
+                    from PySide6.QtWidgets import QApplication
+                    QApplication.restoreOverrideCursor()
+                    mw._busy_cursor_active = False
+        except Exception:
+            pass
+
         logger.info("[OK] Dialog closed - user can troubleshoot manually")
 
     def _on_start_button_clicked(self) -> None:
@@ -1149,6 +1294,11 @@ class CalibrationService(QObject):
             ctrl = hardware_mgr.ctrl
             usb = hardware_mgr.usb
             pump = hardware_mgr.pump  # Get pump if available
+
+            # Initialised here so it's always in scope in the outer except block,
+            # even if calibration fails before the serial is read from the device.
+            device_serial: str | None = getattr(usb, 'serial_number', None)
+            self._triage_serial = device_serial
             logger.debug(
                 f"Calibration: pump={pump is not None}, prime_completed={self._prime_pump_completed}"
             )
@@ -1907,7 +2057,17 @@ class CalibrationService(QObject):
 
         except Exception as e:
             logger.error(f"[ERROR] Calibration failed: {e}", exc_info=True)
-            self.calibration_failed.emit(str(e))
+
+            # Append history-based triage hint to the error message.
+            # _triage_serial is set on self as soon as the serial is known so it
+            # survives even if the exception fired before device_serial was assigned.
+            _history = self._query_calibration_history(
+                getattr(self, '_triage_serial', None)
+            )
+            _triage = self._build_triage_message(str(e), _history)
+            _full_error = str(e) + _triage
+
+            self.calibration_failed.emit(_full_error)
 
             if self._calibration_dialog:
                 self._calibration_dialog.update_title("Calibration Failed")
@@ -1916,6 +2076,7 @@ class CalibrationService(QObject):
 
         finally:
             self._running = False
+            self._triage_serial = None  # reset so stale serial doesn't persist
             logger.debug("Calibration service reset")
             # No stream redirection performed; nothing to restore.
             # Detach file handler cleanly so subsequent runs create fresh logs

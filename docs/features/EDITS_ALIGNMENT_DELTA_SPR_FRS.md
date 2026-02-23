@@ -154,7 +154,7 @@ For each channel ch_idx in [0, 1, 2, 3]:
   delta_spr    = stop_value - start_value          # end − start, NOT abs
 ```
 
-**Sign convention:** delta_spr is **negative** when the response drops (analyte binding in spectral SPR). This is intentional — do not take abs().
+**Sign convention:** delta_spr is **positive** when analyte binds (red-shift — resonance wavelength increases on binding in spectral SPR). Do not negate or take abs().
 
 Results stored in `self.current_delta_values` (list of 4 floats).
 

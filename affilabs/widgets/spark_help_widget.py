@@ -1304,27 +1304,50 @@ class SparkHelpWidget(QWidget):
         ch = diag["channel"].upper()
 
         if state == "START":
-            self.push_system_message(
-                f"**Calibration failed — Channel {ch} signal is critically low.**\n\n"
-                f"Right now, Channel {ch} at maximum LED brightness is producing only "
-                f"**{diag['current_signal']:,.0f} counts** ({diag['pct_of_historical']:.0f}% of normal).\n\n"
-                f"Historically, Channel {ch} produces ~**{diag['historical_avg']:,.0f} counts**.\n\n"
-                f"I'll guide you through troubleshooting. "
-                f"First, I'm turning on LED {ch} at full brightness."
-            )
+            track = diag.get('history_track', 'known_good')
+            n_success = diag.get('history_successes', 0)
 
-            # Turn on the problematic LED at max brightness
-            try:
-                led_args = {c: 0 for c in ("a", "b", "c", "d")}
-                led_args[diag["channel"]] = 255
-                ctrl.set_batch_intensities(**led_args)
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).error(f"Troubleshooting LED control failed: {e}")
+            if track == 'known_good':
+                self.push_system_message(
+                    f"**Calibration failed — Channel {ch} signal is critically low.**\n\n"
+                    f"Channel {ch} at maximum LED brightness is producing only "
+                    f"**{diag['current_signal']:,.0f} counts** ({diag['pct_of_historical']:.0f}% of normal). "
+                    f"Historically, Channel {ch} produces ~**{diag['historical_avg']:,.0f} counts**.\n\n"
+                    f"This device has **{n_success} prior successful calibration{'s' if n_success != 1 else ''} on record** — "
+                    f"most likely cause is **water or debris in the optical path**.\n\n"
+                    f"I'm turning on LED {ch} at full brightness."
+                )
+                # Turn on the problematic LED at max brightness
+                try:
+                    led_args = {c: 0 for c in ("a", "b", "c", "d")}
+                    led_args[diag["channel"]] = 255
+                    ctrl.set_batch_intensities(**led_args)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Troubleshooting LED control failed: {e}")
+                self._ts_state = "CHECK_WATER"
+                QTimer.singleShot(1500, self._advance_troubleshooting)
 
-            self._ts_state = "CHECK_WATER"
-            # Short delay before showing the next question
-            QTimer.singleShot(1500, self._advance_troubleshooting)
+            elif track == 'never_calibrated':
+                self.push_system_message(
+                    f"**Calibration failed — Channel {ch} signal is critically low.**\n\n"
+                    f"This device has **no successful calibration history on record**. "
+                    f"This typically points to a setup or hardware issue rather than water in the optical path.\n\n"
+                    f"Let's check the basics first."
+                )
+                self._ts_state = "CHECK_HARDWARE"
+                QTimer.singleShot(800, self._advance_troubleshooting)
+
+            else:  # consistently_failing
+                self.push_system_message(
+                    f"**Calibration failed — Channel {ch} signal is critically low.**\n\n"
+                    f"This device has attempted calibration before but has **never succeeded**. "
+                    f"This is unlikely to be water — it points to a persistent hardware fault.\n\n"
+                    f"I recommend contacting technical support. "
+                    f"I can generate a bug report with the full diagnostic details."
+                )
+                self._ts_state = "CONTACT_SUPPORT"
+                QTimer.singleShot(800, self._advance_troubleshooting)
 
         elif state == "CHECK_WATER":
             bubble = self.push_interactive_message(
@@ -1351,6 +1374,26 @@ class SparkHelpWidget(QWidget):
 
             # Short delay then ask the comparison question
             QTimer.singleShot(1500, self._show_led_comparison_question)
+
+        elif state == "CHECK_HARDWARE":
+            bubble = self.push_interactive_message(
+                f"Check the following for Channel {ch}:\n\n"
+                f"• Fiber cable seated firmly at both ends\n"
+                f"• LED connector fully attached\n"
+                f"• Detector USB connected and powered on\n\n"
+                f"**Have you checked all connections?**",
+                ["Yes — all connections look good", "Found a loose connection"],
+            )
+            bubble.option_selected.connect(self._on_hardware_check_answer)
+
+        elif state == "CONTACT_SUPPORT":
+            bubble = self.push_interactive_message(
+                "Would you like me to generate a support report?\n\n"
+                "It will include: device serial, error details, calibration history, "
+                "and a recent log excerpt — ready to email to support.",
+                ["Yes, generate report", "No thanks"],
+            )
+            bubble.option_selected.connect(self._on_contact_support_answer)
 
         elif state == "DONE":
             # Turn off all LEDs
@@ -1402,3 +1445,32 @@ class SparkHelpWidget(QWidget):
             )
         self._ts_state = "DONE"
         self._advance_troubleshooting()
+
+    def _on_hardware_check_answer(self, answer: str):
+        """Handle user response to the hardware connections check (never-calibrated track)."""
+        ch = self._ts_diagnosis["channel"].upper()
+        if "loose" in answer.lower():
+            self.push_system_message(
+                f"Re-seat the connection and retry calibration.\n\n"
+                f"If Channel {ch} still fails after reconnecting, contact support."
+            )
+            self._ts_state = "DONE"
+            self._advance_troubleshooting()
+        else:
+            # All connections look fine — fall through to LED brightness comparison
+            self._ts_state = "CHECK_LED_BRIGHTNESS"
+            self._advance_troubleshooting()
+
+    def _on_contact_support_answer(self, answer: str):
+        """Handle user response to the support report offer (consistently-failing track)."""
+        if "generate" in answer.lower():
+            self._ts_state = "DONE"
+            self._advance_troubleshooting()
+            self.start_bug_report_flow()
+        else:
+            self.push_system_message(
+                "Contact support at **info@affiniteinstruments.com** with your device serial "
+                "number and the error details shown in the calibration dialog."
+            )
+            self._ts_state = "DONE"
+            self._advance_troubleshooting()

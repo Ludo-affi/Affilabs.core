@@ -450,48 +450,9 @@ class AffilabsSidebar(QWidget):
         self._collapse_btn.clicked.connect(self._on_collapse_clicked)
         self.tab_widget.setCornerWidget(self._collapse_btn, Qt.Corner.TopRightCorner)
 
-        # Active user indicator — passive display (user is set at launch via the user selector)
-        self.active_user_label = QLabel("Running as: —")
-        self.active_user_label.setFixedHeight(22)
-        self.active_user_label.setStyleSheet(
-            "QLabel {"
-            "  font-size: 10px;"
-            "  color: #86868B;"
-            "  background: #F2F2F7;"
-            "  border-top: 1px solid #E5E5EA;"
-            "  padding-left: 16px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-        )
-        container_layout.addWidget(self.active_user_label)
-
-        # Spark AI hint strip — persistent footer nudge, clickable to open bubble
-        self.spark_hint_label = QPushButton(" Ask Sparq")
-        self.spark_hint_label.setFixedHeight(36)
-        self.spark_hint_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.spark_hint_label.setFlat(True)
-        _sparq_icon_path = get_affilabs_resource("ui/img/sparq_icon.svg")
-        if _sparq_icon_path and _sparq_icon_path.exists():
-            self.spark_hint_label.setIcon(QIcon(str(_sparq_icon_path)))
-            self.spark_hint_label.setIconSize(QSize(14, 14))
-        self.spark_hint_label.setStyleSheet(
-            "QPushButton {"
-            "  font-size: 11px;"
-            "  color: rgba(46, 48, 227, 0.75);"
-            "  background: rgba(46, 48, 227, 0.06);"
-            "  border: none;"
-            "  border-top: 1px solid rgba(46, 48, 227, 0.15);"
-            "  text-align: left;"
-            "  padding-left: 16px;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(46, 48, 227, 0.12);"
-            "  color: rgba(46, 48, 227, 1.0);"
-            "}"
-        )
-        self.spark_hint_label.clicked.connect(self.spark_help_requested.emit)
-        container_layout.addWidget(self.spark_hint_label)
+        # Active user label kept as hidden dummy so external setters don't crash
+        self.active_user_label = QLabel()
+        self.active_user_label.setVisible(False)
 
         main_layout.addWidget(container)
 
@@ -512,8 +473,6 @@ class AffilabsSidebar(QWidget):
         self._is_collapsed = not self._is_collapsed
         self._collapse_btn.setText("\u25c0" if self._is_collapsed else "\u25b6")
         self._collapse_btn.setToolTip("Expand sidebar" if self._is_collapsed else "Collapse sidebar")
-        if hasattr(self, 'spark_hint_label'):
-            self.spark_hint_label.setVisible(not self._is_collapsed)
         self.collapse_requested.emit(self._is_collapsed)
 
     def _connect_internal_signals(self):
@@ -708,6 +667,10 @@ class AffilabsSidebar(QWidget):
                 status_label.setText("Disabled")
                 status_label.setStyleSheet("QLabel { font-size: 12px; color: #86868B; }")
 
+        # Show/hide the Flow icon in the icon rail
+        if hasattr(self, "_icon_rail") and self._icon_rail:
+            self._icon_rail.show_flow_tab(flow_available)
+
     def switch_to_spark_tab(self):
         """Show Spark sidebar (now handled by main window, kept for compatibility)."""        # This method is now handled by the main window showing the Spark sidebar
         logger.debug("switch_to_spark_tab called - Spark is now a separate sidebar")
@@ -733,89 +696,18 @@ class AffilabsSidebar(QWidget):
         builder.build(tab_layout)
 
     def _open_cycle_table_dialog(self):
-        """Open the full cycle table dialog showing completed cycles.
-
-        Displays all completed cycles from _completed_cycles list with
-        same column structure as Edits tab cycle_data_table.
-        """
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton
+        """Switch to Edits tab to show cycle data (replaces old modal QDialog popup)."""
         from affilabs.utils.logger import logger
-
-        # DEBUG: Check what data we have
-        if hasattr(self, 'app') and self.app and hasattr(self.app, '_completed_cycles'):
-            cycles = self.app._completed_cycles
-            logger.info(f"📊 Opening Cycle Data Table - Found {len(cycles)} completed cycles")
-            for i, cycle in enumerate(cycles):
-                logger.debug(f"  Cycle {i+1}: {cycle.cycle_type} - {cycle.notes}")
-        else:
-            logger.error("❌ Cannot access _completed_cycles - app reference not set!")
-            if not hasattr(self, 'app'):
-                logger.error("  self.app does not exist")
-            elif not self.app:
-                logger.error("  self.app is None")
-            elif not hasattr(self.app, '_completed_cycles'):
-                logger.error("  self.app has no _completed_cycles attribute")
-
-        # Create simple dialog showing cycle data
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Cycle Data Table - COMPLETED CYCLES ONLY")
-        dialog.resize(1000, 600)
-
-        layout = QVBoxLayout()
-
-        # Create table matching Edits tab structure
-        table = QTableWidget()
-        table.setColumnCount(11)
-        table.setHorizontalHeaderLabels([
-            "Type", "Duration", "Start", "Conc.", "Units",
-            "Notes", "ΔSPR", "Inj.", "Flags", "Channel", "Shift"
-        ])
-
-        # Populate table with completed cycles from Application instance
-        if hasattr(self, 'app') and self.app and hasattr(self.app, '_completed_cycles'):
-            cycles = self.app._completed_cycles
-            table.setRowCount(len(cycles))
-
-            for row, cycle in enumerate(cycles):
-                # Format concentrations dict as string (e.g., "A:100, B:50")
-                if cycle.concentrations:
-                    conc_str = ", ".join(
-                        f"{ch}:{val}" for ch, val in sorted(cycle.concentrations.items())
-                    )
-                else:
-                    conc_str = ""
-
-                # Format notes with cycle_id prefix
-                notes_text = f"[ID:{cycle.cycle_id}] {cycle.notes}" if cycle.notes else f"[ID:{cycle.cycle_id}]"
-
-                # Format injection flag
-                injection_text = "Yes" if cycle.injection else "No"
-
-                # Add row data
-                table.setItem(row, 0, QTableWidgetItem(cycle.cycle_type))
-                table.setItem(row, 1, QTableWidgetItem(str(cycle.duration)))
-                table.setItem(row, 2, QTableWidgetItem(cycle.start_time))
-                table.setItem(row, 3, QTableWidgetItem(conc_str))
-                table.setItem(row, 4, QTableWidgetItem(cycle.units or ""))
-                table.setItem(row, 5, QTableWidgetItem(notes_text))
-                table.setItem(row, 6, QTableWidgetItem(f"{cycle.delta_spr:.2f}" if cycle.delta_spr is not None else ""))
-                table.setItem(row, 7, QTableWidgetItem(injection_text))
-                table.setItem(row, 8, QTableWidgetItem(cycle.flags or ""))
-                table.setItem(row, 9, QTableWidgetItem(cycle.channel or ""))
-                table.setItem(row, 10, QTableWidgetItem(f"{cycle.shift:.2f}" if cycle.shift is not None else ""))
-
-        # Resize columns to content
-        table.resizeColumnsToContents()
-
-        layout.addWidget(table)
-
-        # Add close button
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(dialog.close)
-        layout.addWidget(close_btn)
-
-        dialog.setLayout(layout)
-        dialog.exec()
+        # Find navigation_presenter via app or main_window
+        try:
+            mw = getattr(getattr(self, 'app', None), 'main_window', None)
+            if mw and hasattr(mw, 'navigation_presenter'):
+                mw.navigation_presenter.switch_page(1)
+                logger.debug("Switched to Edits tab via _open_cycle_table_dialog")
+                return
+        except Exception as e:
+            logger.debug(f"_open_cycle_table_dialog fallback: {e}")
+        logger.warning("Cannot switch to Edits tab — no navigation_presenter found")
 
     def _build_export_tab(self, tab_layout: QVBoxLayout):
         """Build Export tab with data export options using builder."""
@@ -1149,11 +1041,9 @@ class AffilabsSidebar(QWidget):
                     f"Queue: {count} cycle{'s' if count > 1 else ''} ready",
                 )
 
-        if hasattr(self, "clear_queue_btn"):
-            self.clear_queue_btn.setVisible(count > 0)
-
-        if hasattr(self, "start_run_btn"):
-            self.start_run_btn.setVisible(count > 0)
+        # NOTE: clear_queue_btn and start_run_btn are parentless compat stubs —
+        # never make them visible or they appear as floating top-level windows.
+        # The real Clear button lives in the queue panel header (_clear_queue_hdr_btn).
 
     def update_operation_hours(self, hours: int):
         """Update the operation hours display."""

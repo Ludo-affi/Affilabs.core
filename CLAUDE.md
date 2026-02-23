@@ -61,7 +61,7 @@ Raw counts (P-pol + S-pol per LED channel, acquired sequentially)
 ```
 
 ### Critical Physics for Algorithm Developers
-1. **Signal polarity — BLUE SHIFT on binding**: When analyte binds the sensor, the resonance wavelength **DECREASES** (moves to shorter wavelength). This is opposite to standard angular SPR convention. Injection detection must look for a **DROP** in wavelength, not a rise.
+1. **Signal polarity — RED SHIFT on binding**: When analyte binds the sensor, the resonance wavelength **INCREASES** (moves to longer wavelength). Injection detection must look for a **RISE** in wavelength. ΔSPR values are therefore **positive** on binding.
 2. **S-polarization is the reference**: S-pol light does not couple to surface plasmons. P/S ratio cancels LED intensity drift, giving a stable transmission baseline.
 3. **Broad dip**: The spectral SPR dip spans ~20–40 nm FWHM. Simple `argmin()` is noisy — hence multiple peak-finding pipelines (centroid, fourier, polynomial, consensus) exist to robustly track the broad minimum.
 4. **Transmission dip, not peak**: The SPR feature is a **minimum** in transmission (dip), not a maximum. Pipelines operate on the inverted spectrum or explicitly search for the minimum.
@@ -155,18 +155,21 @@ Ignored by Claude Code (use --no-ignore to access):
 | EditsTab — layout, widget refs | [EDITS_UI_BUILDERS_FRS.md](docs/features/EDITS_UI_BUILDERS_FRS.md) | `affilabs/tabs/edits/_ui_builders.py` |
 | EditsTab — export, Save as Method | [EDITS_EXPORT_FRS.md](docs/features/EDITS_EXPORT_FRS.md) | `affilabs/tabs/edits/_export_mixin.py` |
 | EditsTab — alignment, delta SPR cursors | [EDITS_ALIGNMENT_DELTA_SPR_FRS.md](docs/features/EDITS_ALIGNMENT_DELTA_SPR_FRS.md) | `affilabs/tabs/edits/_interaction_mixin.py` |
+| EditsTab — binding plot, Kd fitting | [EDITS_BINDING_PLOT_FRS.md](docs/features/EDITS_BINDING_PLOT_FRS.md) | `affilabs/tabs/edits/_binding_plot_mixin.py` |
 | EditsTab — cycle display, graph rendering | [EDITS_CYCLE_DISPLAY_FRS.md](docs/features/EDITS_CYCLE_DISPLAY_FRS.md) | `main.py` (`_display_cycle_in_edits*`) |
 | EditsTab — data loading utilities | [EDITS_DATA_LOADING_FRS.md](docs/features/EDITS_DATA_LOADING_FRS.md) | `affilabs/tabs/edits/_data_utils.py` |
 | Recording, auto-save, Excel export | [RECORDING_MANAGER_FRS.md](docs/features/RECORDING_MANAGER_FRS.md) | `affilabs/managers/recording_manager.py` |
 | Excel chart generation | [EXCEL_CHART_BUILDER_FRS.md](docs/features/EXCEL_CHART_BUILDER_FRS.md) | `affilabs/services/excel_exporter.py` |
 | Controller HAL, servo commands, adapters | [CONTROLLER_HAL_FRS.md](docs/features/CONTROLLER_HAL_FRS.md) | `affilabs/utils/hal/controller_hal.py` |
 | Pump HAL, AffiPump, Cavro protocol | [PUMP_HAL_FRS.md](docs/features/PUMP_HAL_FRS.md) | `affilabs/utils/hal/pump_hal.py` |
+| P4PRO fluidic system — KC1/KC2, 6-port loop, 3-way valves, channel mapping | [P4PRO_FLUIDIC_ARCHITECTURE.md](docs/hardware/P4PRO_FLUIDIC_ARCHITECTURE.md) | `affilabs/coordinators/injection_coordinator.py` |
 | Hardware scanning, USB connect flow | [HARDWARE_SCANNING_FRS.md](docs/features/HARDWARE_SCANNING_FRS.md) | `affilabs/core/hardware_manager.py` |
 | Injection flags, AutoMarker, contact timer | [FLAGGING_SYSTEM_GUIDE.md](docs/features/FLAGGING_SYSTEM_GUIDE.md) | `affilabs/managers/flag_manager.py` |
 | Calibration flow, servo auto-cal | [CALIBRATION_ORCHESTRATOR_FRS.md](docs/calibration/CALIBRATION_ORCHESTRATOR_FRS.md) | `affilabs/core/calibration_orchestrator.py` |
 | Signal quality, IQ levels, wavelength zones | [SENSOR_IQ_SYSTEM.md](docs/features/SENSOR_IQ_SYSTEM.md) | `affilabs/utils/sensor_iq.py` |
 | Cycle templates, queue presets | [METHOD_PRESETS_SYSTEM.md](docs/features/METHOD_PRESETS_SYSTEM.md) | `affilabs/services/cycle_template_storage.py` |
 | Method Builder UI redesign (3-zone layout, template gallery, Sparq bar) | [METHOD_BUILDER_REDESIGN_FRS.md](docs/features/METHOD_BUILDER_REDESIGN_FRS.md) | `affilabs/widgets/method_builder_dialog.py` |
+| Contact Monitor panel, per-channel contact timers, binding symbols | [MICROFLUIDIC_CHANNELS_PANEL_FRS.md](docs/features/MICROFLUIDIC_CHANNELS_PANEL_FRS.md) | `affilabs/widgets/injection_action_bar.py` |
 | Compression Assistant — guided chip compression, gauge, QC leak check | [COMPRESSION_ASSISTANT_FRS.md](docs/features/COMPRESSION_ASSISTANT_FRS.md) | `standalone_tools/compression_trainer_ui.py` |
 | Timeline events, CycleMarker, stream API | [TIMELINE_QUICK_START.md](docs/architecture/TIMELINE_QUICK_START.md) | `affilabs/domain/timeline.py`, `affilabs/core/recording_manager.py`, `affilabs/managers/flag_manager.py`, `mixins/_cycle_mixin.py` |
 | Timeline Phase 5+ roadmap, proposed improvements | [TIMELINE_ROADMAP.md](docs/future_plans/TIMELINE_ROADMAP.md) | `affilabs/domain/timeline.py` |
@@ -302,6 +305,8 @@ Detector profiles override deprecated constants in settings.py at runtime via `g
 8. **Two acquisition modes:** `CYCLE_SYNC` (V2.4 firmware, default) vs `EVENT_RANK` (fallback) — toggled by `USE_CYCLE_SYNC` flag
 9. **Supported detectors:** Ocean Optics Flame-T (primary) and USB4000 — profiles in `detector_profiles/`
 10. **Phantom USB devices on Windows:** When Ocean Optics detectors are unplugged/replugged, Windows leaves "phantom" device entries in Device Manager (Status: Unknown). **Don't try to clean them up** — instead, implement a **handshake test** in `usb4000_wrapper.py` that tries to read device properties (wavelengths, serial, etc.) on each device in `list_devices()`. Only the real device will respond. This avoids the need for manual registry cleanup. See **usb4000_wrapper.py:360-385** for implementation.
+11. **Mid-run cycle append:** `QueueManager.add_cycle()` is allowed during execution (lock does NOT block adds). When `_lock` is True and `_original_method` is non-empty, the new cycle is deep-copied into `_original_method` as well as `_queue`, so the execution loop (`_original_method[_method_progress:]`) will pick it up after all currently-pending cycles finish. The `QueueSummaryWidget` in locked/execution-mode shows `_original_method`, so the appended cycle will appear in the table immediately. Deletion and reordering remain blocked while running.
+12. **`_AlignChannelProxy` — silent crash risk in EditsTab:** The alignment channel selector in EditsTab (`affilabs/tabs/edits/_ui_builders.py`) was changed from a `QComboBox` to `_AlignChannelProxy` (a thin wrapper over the All/A/B/C/D buttons). `_on_cycle_selected_in_table()` in `_edits_cycle_mixin.py` calls `.blockSignals()` and `.setCurrentText()` on it — these methods **must exist** on the proxy or the entire function silently fails (wrapped in `try/except`) and the graph stays blank. The proxy's `_btn_map` dict must also be wired to `_alignment_ch_btns` after button creation so `setCurrentText()` can sync button visuals.
 
 ## Import Conventions
 - **Absolute imports** from `affilabs.*` are the standard: `from affilabs.core.spectrum_processor import SpectrumProcessor`
@@ -357,6 +362,30 @@ When creating or updating documentation:
 - Flow rates, injection volume, and contact time are precisely controlled by software
 - `_update_internal_pump_visibility()` shows/hides P4PROPLUS-specific pump UI
 
+### Preset Design Philosophy: Human-as-Autosampler (P4SPR) vs Automated Flow (P4PRO/PROPLUS)
+
+**P4SPR presets: one cycle = one watchable region (~5–10 min).**
+
+The user physically pipettes samples. Each cycle must show something clear on the live sensorgram — a signal event the user can observe and act on. The live view is ~5–10 min of context. Design presets around that constraint:
+
+- **Binding reps** (8.5min each) → one cycle per rep. Short enough to watch, distinct enough to identify later in Edits.
+- **Immobilization** (30min), **extended baseline** (15min) → single long cycles are fine — the user is monitoring a slow drift, not making injection decisions every few minutes.
+- **No regen/baseline padding between every binding rep** — those micro-cycles create queue noise. The user pipettes regen manually during the binding window; alignment happens in Edits.
+- **Target ~6–10 meaningful queue entries** for a full amine coupling: baseline → activation → immobilization → blocking → baseline → 5× binding.
+- **Never create 60-min black-box binding cycles** — users can't make sense of a 60-min sensorgram window while also pipetting.
+
+Post-hoc work (cursor placement, region alignment, delta-SPR, export) all happens in the **Edits tab**.
+
+**P4PRO/PROPLUS presets: one cycle = one injection event.**
+
+With AffiPump or internal pumps, each injection is automated and timed. Cycles can be short (2–15 min) and fully segmented — the machine handles timing so the user doesn't need to watch constantly. No Edits post-processing needed for alignment.
+
+**Rule for preset authoring:**
+- P4SPR: regen and baseline are **not queue cycles** — folded into neighboring steps. User adds them manually if needed. All prep steps (EDC/NHS, ligand, ethanolamine) collapse into **one immobilization cycle of 30min**. Each binding rep gets its own 8.5min cycle.
+- P4PRO/PROPLUS: explicit regen + baseline cycles between every binding rep is correct — the machine handles timing so fine-grained segmentation works.
+- Never pad P4SPR presets with regen/baseline cycles between binding reps.
+- Never create 60-min black-box binding windows for P4SPR.
+
 ### Code Gotchas
 - `ctrl_type` field in `hardware_mgr` status dict identifies the model at runtime
 - `'p4proplus' in firmware_id.lower()` is the guard for internal pump features
@@ -396,17 +425,15 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 ### In-Progress / Known Issues
 - `ApplicationState` migration incomplete — `app_state.py` defines target but `main.py` not yet converted
 - Timeline Phase 5 (Presenters: SensogramPresenter + EditsTab query from stream) — ready to start
-- Exit code 1 on last run — cause unknown, investigate before next session
+- Binding Plot (`_binding_plot_mixin.py`) — plan complete, implementation not yet started
+- **No wash flag from WashMonitor** — `_WashMonitor.wash_detected` only calls `bar.set_channel_wash(ch)` (visual). No graph flag placed. Wash flags only come from `_timer_mixin._place_automatic_wash_flags()` on timer expiry.
+- **Manual injection auto-detection not firing** — `_scan_channel()` uses `auto_detect_injection_point()` (raw nm, no RU conversion). `[SCAN x]` lines now at INFO level. Needs live test to confirm detection fires; if still silent, check `detection_priority` passed from coordinator and whether `window_start_time` mask leaves enough points.
 
 ### Recently Completed
-- **Active Cycle graph embeds** ✅ (Feb 21 2026)
-  - `InteractiveSPRLegend` (top-left): IQ `●` dots now live-wired to `ui_update_coordinator._update_sensor_iq_displays()` via `set_iq_color()`
-  - `CycleStatusOverlay` (top-right): replaces floating popup — shows cycle type, "N/total", MM:SS countdown, next-cycle label. Auto right-anchors on resize. `WA_TransparentForMouseEvents=True`.
-  - Signal quality pill bar (`_create_signal_quality_bar`) removed entirely
-  - IQ dots removed from A/B/C/D channel toggle buttons (`sensor_iq_badges` deleted)
-- **Notes button** ✅ — moved from title row (hidden by default) → Display row (always visible)
-- **Live Sensorgram X-axis → minutes** ✅ — `MinutesAxisItem` in `plot_helpers.py`; data/cursors unchanged in seconds
-- **UI/FRS docs updated** ✅ — `UI_COMPONENT_INVENTORY.md`, `UI_GRAPH_VISUALIZATION_SPEC.md`, `SENSOR_IQ_SYSTEM.md`, `UX_USER_JOURNEY.md`
+- **Injection lifecycle timeout fix** ✅ (Feb 22 2026) — `done_event.wait(timeout=95)` in `injection_coordinator.py` fired `injection_completed` prematurely when contact_time was set. Now: `_on_dialog_complete` doesn't unblock BG thread when contact_time exists; waits for `_on_bar_done` (all channels washed). Timeout = `95 + contact_time + 120s`.
+- **Dormant vs active panel appearance** ✅ (Feb 22 2026) — Were visually identical (`#F2F2F7`, `#8E8E93`). Now: dormant = dashed `#C7C7CC` border + lighter text; active = solid `rgba(0,122,255,0.20)` blue border + `#F8F8FA` bg + "Waiting for injection…" text.
+- **EditsTab blank graph bug fixed** ✅ (Feb 21 2026) — `_AlignChannelProxy` was missing `blockSignals()` and `setCurrentText()` methods
+- **Active Cycle graph embeds** ✅ (Feb 21 2026) — `InteractiveSPRLegend` IQ dots live-wired; `CycleStatusOverlay` replaces floating popup
 
 ### Context Maintenance Workflow
 **At the end of each work session**, update this "Active Context" section:

@@ -133,21 +133,11 @@ class CycleMixin:
             logger.info("No cycles selected for deletion")
             return
 
-        from PySide6.QtWidgets import QMessageBox
         count = len(selected_indices)
-        reply = QMessageBox.question(
-            self.main_window,
-            "Delete Cycles",
-            f"Delete {count} selected {'cycle' if count == 1 else 'cycles'}?\n\nYou can undo this with Ctrl+Z.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            success = self.queue_presenter.delete_cycles(selected_indices)
-            if success:
-                self.segment_queue = self.queue_presenter.get_queue_snapshot()
-                logger.info(f"🗑️ Deleted {count} cycles from queue")
+        success = self.queue_presenter.delete_cycles(selected_indices)
+        if success:
+            self.segment_queue = self.queue_presenter.get_queue_snapshot()
+            logger.info(f"🗑️ Deleted {count} cycles from queue")
 
     def _confirm_clear_queue(self):
         """Clear entire queue with confirmation (called by toolbar Clear All button)."""
@@ -155,23 +145,13 @@ class CycleMixin:
             logger.info("Queue is already empty")
             return
 
-        from PySide6.QtWidgets import QMessageBox
-        reply = QMessageBox.question(
-            self.main_window,
-            "Clear Queue",
-            f"Clear all {self.queue_presenter.get_queue_size()} cycles from queue?\n\nYou can undo this with Ctrl+Z.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
+        self.queue_presenter.clear_queue()
+        self.segment_queue = self.queue_presenter.get_queue_snapshot()
+        logger.info("🗑️ Queue cleared")
 
-        if reply == QMessageBox.StandardButton.Yes:
-            self.queue_presenter.clear_queue()
-            self.segment_queue = self.queue_presenter.get_queue_snapshot()
-            logger.info("🗑️ Queue cleared")
-
-            # Reset method name to default
-            if method_label := self._sidebar_widget('method_name_label'):
-                method_label.setText("Untitled Method")
+        # Reset method name to default
+        if method_label := self._sidebar_widget('method_name_label'):
+            method_label.setText("Untitled Method")
 
     def _on_queue_changed(self):
         """Handle queue changes - update UI elements that don't auto-refresh.
@@ -335,6 +315,12 @@ class CycleMixin:
                 if hasattr(self.main_window, 'edits_tab'):
                     self.main_window.edits_tab.add_cycle(cycle_export_data)
                     logger.info(f"✓ Incomplete {cycle_export_data.get('type', 'cycle')} saved to Edits table")
+                    _cid = cycle_export_data.get('cycle_id')
+                    if _cid is not None:
+                        try:
+                            self.main_window.sidebar.summary_table.mark_in_edits(_cid)
+                        except Exception:
+                            pass
 
                 # Save to recording if active
                 if hasattr(self, 'recording_mgr') and self.recording_mgr.is_recording:
@@ -407,11 +393,10 @@ class CycleMixin:
         self.recording_events.on_record_baseline_clicked()
 
     def _on_recording_start_requested(self):
-        """User requested to start recording - show confirmation popup first."""
-        from PySide6.QtWidgets import QMessageBox
+        """User requested to start recording — start immediately, no confirmation."""
         from affilabs.utils.time_utils import for_filename
 
-        logger.info("[RECORD-HANDLER] Recording start requested - showing confirmation")
+        logger.info("[RECORD-HANDLER] Recording start requested")
 
         # Log current queue state for debugging
         logger.info(f"📋 Current queue state: {len(self.segment_queue)} cycles")
@@ -427,7 +412,6 @@ class CycleMixin:
         default_filename = f"AffiLabs_data_{timestamp}"
 
         # Always resolve user-specific directory dynamically (same as Edits tab)
-        # This ensures Record button always saves to Documents/Affilabs Data/<username>/SPR_data/
         destination = str(self.recording_mgr.get_user_output_directory())
         current_user = self._get_current_user()
         logger.info(f"✅ Recording destination for '{current_user or 'Default'}': {destination}")
@@ -448,38 +432,29 @@ class CycleMixin:
 
         full_path = Path(destination) / filename
 
-        # Show confirmation dialog
-        msg = QMessageBox(self.main_window)
-        msg.setIcon(QMessageBox.Question)
-        msg.setWindowTitle("Start Recording")
-
-        # Format message with prominent path styling
-        message_html = (
-            "<p style='font-size: 13px;'>Data will be recorded as:</p>"
-            f"<p style='font-size: 14px; font-weight: bold; color: #1D1D1F; background: #F5F5F7; padding: 8px; border-radius: 4px;'>"
-            f"{filename}</p>"
-            "<p style='font-size: 13px; margin-top: 12px;'>In folder:</p>"
-            f"<p style='font-size: 13px; font-weight: 600; color: #007AFF; background: #F0F6FF; padding: 8px; border-radius: 4px; font-family: monospace;'>"
-            f"{destination}</p>"
-        )
-
-        msg.setText(message_html)
-        msg.setTextFormat(Qt.TextFormat.RichText)
-
-        start_btn = msg.addButton("▶️ Start Recording", QMessageBox.AcceptRole)
-        cancel_btn = msg.addButton("Cancel", QMessageBox.RejectRole)
-        msg.setDefaultButton(start_btn)
-
-        msg.exec()
-
-        if msg.clickedButton() == cancel_btn:
-            logger.info("Recording cancelled by user")
-            # Reset button state since recording didn't start
-            self.main_window.set_recording_state(is_recording=False)
-            return
-
-        # User confirmed - start recording with file
         logger.info(f"Starting recording to file: {full_path}")
+
+        # Notify user of exact save location before recording starts
+        try:
+            import os
+            from PySide6.QtWidgets import QMessageBox, QPushButton
+            msg = QMessageBox(self.main_window)
+            msg.setWindowTitle("Recording Started")
+            msg.setText(f"Data will be saved to:\n\n{full_path}")
+            msg.setIcon(QMessageBox.Icon.Information)
+            open_btn = msg.addButton("Open Folder", QMessageBox.ButtonRole.ActionRole)
+            msg.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
+            msg.exec()
+            if msg.clickedButton() == open_btn:
+                os.startfile(str(Path(destination)))
+        except Exception:
+            pass
+
+        # Also show in status bar as persistent reminder during recording
+        try:
+            self.main_window.statusBar().showMessage(f"Recording to: {full_path}", 0)
+        except Exception:
+            pass
 
         # Get the live data front directly from the buffer (RAW_ELAPSED coords).
         # NOTE: clock.raw_elapsed_now() returns 0 because start_experiment() is never
@@ -495,9 +470,21 @@ class CycleMixin:
             pass
         recording_start_elapsed = raw_now
 
+        # Stamp wall-clock time so get_recording_elapsed() can compute footer clock
+        import time as _time
+        self._recording_start_wall = _time.time()
+
         # Tell the clock where recording t=0 is, then pass to recording manager
         self.clock.start_recording_at(recording_start_elapsed)
-        self.recording_mgr.start_recording(filename=str(full_path), time_offset=recording_start_elapsed)
+        # Pull chip_info from first queued cycle if available
+        _chip_info = {}
+        try:
+            _queue = getattr(self, 'segment_queue', None) or []
+            if _queue and hasattr(_queue[0], 'chip_info'):
+                _chip_info = _queue[0].chip_info or {}
+        except Exception:
+            pass
+        self.recording_mgr.start_recording(filename=str(full_path), time_offset=recording_start_elapsed, chip_info=_chip_info)
 
         # Add visual marker on Live Sensorgram showing recording started
         if hasattr(self.main_window, 'full_timeline_graph'):
@@ -543,6 +530,9 @@ class CycleMixin:
     def _on_recording_stop_requested(self):
         """User requested to stop recording."""
         logger.info("Recording stop requested...")
+
+        # Clear wall-clock stamp so get_recording_elapsed() returns None
+        self._recording_start_wall = None
 
         # Stop the recording
         self.recording_mgr.stop_recording()
@@ -655,10 +645,12 @@ class CycleMixin:
         total_sec_rem = int(total_sec % 60)
 
         # Build next-cycle label (always show, not just at <10s)
+        # segment_queue[0] is the CURRENT cycle (progress not yet incremented),
+        # so the actual next cycle is at index 1.
         next_cycle_label = ""
         next_cycle_warning = ""
-        if self.segment_queue:
-            next_cycle = self.segment_queue[0]
+        if len(self.segment_queue) > 1:
+            next_cycle = self.segment_queue[1]
             next_type = next_cycle.type
             if next_type == "Concentration":
                 next_type = "Binding"
@@ -673,17 +665,18 @@ class CycleMixin:
             if remaining_sec <= 10 and remaining_sec > 0:
                 next_cycle_warning = f" → Next: {next_type} in {int(remaining_sec)}s"
 
-        # Calculate total experiment time remaining (current cycle + all queued)
+        # Calculate total experiment time remaining (current cycle + all queued after it)
+        # Skip segment_queue[0] since that's the current cycle; remaining_sec already accounts for it.
         total_remaining_sec = remaining_sec
-        for queued in self.segment_queue:
+        for queued in self.segment_queue[1:]:
             total_remaining_sec += getattr(queued, 'length_minutes', 0) * 60.0
         total_rem_min = int(total_remaining_sec // 60)
         total_rem_sec = int(total_remaining_sec % 60)
 
-        # Update the Active Cycle card on the sidebar
+        # Active Cycle card disabled — CycleStatusOverlay on graph covers the same info
         sidebar = self.main_window.sidebar
         if hasattr(sidebar, 'active_cycle_card'):
-            sidebar.active_cycle_card.setVisible(True)
+            pass  # intentionally kept hidden; info lives in graph overlay
 
             # Cycle type badge
             if hasattr(sidebar, 'active_cycle_type_label'):
@@ -741,8 +734,59 @@ class CycleMixin:
                         remaining_sec=remaining_sec,
                         next_label=next_cycle_label,
                     )
+                    # ── Live binding quality signal ─────────────────────────────
+                    self._push_binding_signal_to_overlay(overlay, cycle_num)
         except Exception as e:
             logger.warning(f"Could not update cycle status overlay: {e}")
+
+    def _push_binding_signal_to_overlay(self, overlay, cycle_num: int) -> None:
+        """Push live binding quality signal to overlay row 2 if injection stats exist.
+
+        Called every tick from _update_cycle_display while a cycle is running.
+        Only acts when at least one channel has an active _injection_stats entry for
+        the current cycle.  Uses the first channel found.
+        """
+        try:
+            import numpy as np
+            from affilabs.utils.live_binding_stats import classify_binding, classify_slope
+
+            stats = getattr(self, '_injection_stats', {})
+            # Find the first active entry for this cycle_num
+            entry = None
+            active_ch = None
+            for (c, ch), v in stats.items():
+                if c == cycle_num:
+                    entry = v
+                    active_ch = ch
+                    break
+            if entry is None:
+                return
+
+            inj_t = entry['injection_time']
+            pre_bl = entry['pre_baseline_nm']
+
+            # Live SPR at the current moment (last point in cycle buffer for this channel)
+            current_nm = None
+            if (active_ch in self.buffer_mgr.cycle_data
+                    and len(self.buffer_mgr.cycle_data[active_ch].spr) > 0):
+                current_nm = float(self.buffer_mgr.cycle_data[active_ch].spr[-1])
+
+            resp_label, resp_color = classify_binding(pre_bl, current_nm)
+
+            # Slope: use frozen value once available, otherwise live
+            slope = entry.get('slope_nm_per_s')
+            if slope is None and active_ch in self.buffer_mgr.cycle_data:
+                _t = np.asarray(self.buffer_mgr.cycle_data[active_ch].time)
+                _s = np.asarray(self.buffer_mgr.cycle_data[active_ch].spr)
+                from affilabs.utils.live_binding_stats import compute_slope
+                slope = compute_slope(_t, _s, inj_t)
+
+            slope_label, slope_color = classify_slope(slope)
+
+            overlay.update_binding_signal(resp_label, resp_color, slope_label, slope_color)
+
+        except Exception as _e:
+            logger.debug(f"_push_binding_signal_to_overlay: {_e}")
 
     def _update_next_cycle_warning_visual(self, remaining_sec: float, total_sec: float):
         """Show/hide orange warning line on active cycle graph when <10s to next cycle."""
@@ -787,6 +831,88 @@ class CycleMixin:
         except Exception as e:
             logger.debug(f"Error updating next cycle warning visual: {e}")
 
+    def _finalise_injection_stats(self, cycle_num: int, overlay) -> None:
+        """Compute post-baseline ΔSPR for all injection channels in this cycle.
+
+        Stores final ``delta_spr_ru`` in _injection_stats so EditsTab can
+        pre-fill the binding plot.  Briefly shows a cycle result chip on the
+        overlay, then schedules clear() after 3 s.
+
+        Called from _on_cycle_completed().
+        """
+        import numpy as np
+        from PySide6.QtCore import QTimer
+
+        stats = getattr(self, '_injection_stats', {})
+        cycle_entries = {ch: v for (c, ch), v in stats.items() if c == cycle_num}
+
+        result_label = ""
+        result_color = "#86868B"
+
+        for ch, entry in cycle_entries.items():
+            try:
+                from affilabs.utils.live_binding_stats import (
+                    compute_post_baseline, compute_delta_spr_ru,
+                    classify_binding, classify_regen, classify_immob,
+                )
+
+                post_bl = None
+                if ch in self.buffer_mgr.cycle_data:
+                    _t = np.asarray(self.buffer_mgr.cycle_data[ch].time)
+                    _s = np.asarray(self.buffer_mgr.cycle_data[ch].spr)
+                    if len(_t) > 0:
+                        post_bl = compute_post_baseline(_t, _s, float(_t[-1]))
+
+                entry['post_baseline_nm'] = post_bl
+                delta_ru = compute_delta_spr_ru(entry['pre_baseline_nm'], post_bl)
+                entry['delta_spr_ru'] = delta_ru
+                entry['cycle_type'] = (
+                    self._current_cycle.type if self._current_cycle else ''
+                )
+
+                # Pick the best result label for the overlay chip
+                # Priority: if it's a binding/kinetic cycle show ΔSPR;
+                # regeneration shown as regen quality.
+                cycle_type = getattr(
+                    self._current_cycle, 'type', ''
+                ) if self._current_cycle else ''
+
+                if cycle_type in ('Binding', 'Concentration', 'Kinetic'):
+                    r_lbl, r_col = classify_binding(
+                        entry['pre_baseline_nm'], entry.get('anchor_nm')
+                    )
+                    result_label = r_lbl
+                    result_color = r_col
+                elif cycle_type == 'Regeneration':
+                    r_lbl, r_col = classify_regen(
+                        entry['pre_baseline_nm'], post_bl
+                    )
+                    result_label = r_lbl
+                    result_color = r_col
+                elif cycle_type == 'Immobilisation':
+                    r_lbl, r_col = classify_immob(delta_ru)
+                    result_label = r_lbl
+                    result_color = r_col
+
+                logger.info(
+                    f"📊 Cycle {cycle_num} Ch {ch.upper()} finalised: "
+                    f"ΔSPR={delta_ru:.0f} RU" if delta_ru is not None
+                    else f"📊 Cycle {cycle_num} Ch {ch.upper()} finalised: ΔSPR=None"
+                )
+            except Exception as _e:
+                logger.debug(f"_finalise_injection_stats ch={ch}: {_e}")
+
+        # Show result chip briefly, then clear overlay after 3 s
+        if overlay is not None:
+            if result_label:
+                try:
+                    overlay.show_cycle_result(result_label, result_color)
+                    QTimer.singleShot(3_000, overlay.clear)
+                except Exception:
+                    overlay.clear()
+            else:
+                overlay.clear()
+
     def _on_cycle_completed(self):
         """Handle cycle completion — auto-start next or switch to auto-read."""
         if not self._current_cycle:
@@ -797,12 +923,11 @@ class CycleMixin:
         logger.info(f"✓ Cycle {cycle_num} completed: {cycle_type}")
 
         self._cycle_timer.stop()
-        # Clear the embedded graph overlay
+        # Finalise injection stats + show cycle result in overlay, then clear
         try:
             graph = getattr(self.main_window, 'cycle_of_interest_graph', None)
             overlay = getattr(graph, 'cycle_status_overlay', None)
-            if overlay is not None:
-                overlay.clear()
+            self._finalise_injection_stats(cycle_num, overlay)
         except Exception:
             pass
         # Ensure the one-shot end timer doesn't fire again (e.g. if Next Cycle was pressed early)
@@ -839,6 +964,12 @@ class CycleMixin:
         if hasattr(self.main_window, 'edits_tab'):
             self.main_window.edits_tab.add_cycle(cycle_export_data)
             logger.info(f"✓ {cycle_export_data.get('type', 'cycle')} saved to Edits table")
+            _cid = cycle_export_data.get('cycle_id')
+            if _cid is not None:
+                try:
+                    self.main_window.sidebar.summary_table.mark_in_edits(_cid)
+                except Exception:
+                    pass
 
         # Save to recording if active
         if self.recording_mgr.is_recording:
@@ -872,6 +1003,51 @@ class CycleMixin:
         else:
             # Queue completed - show retrieve button and unlock
             logger.info("✓ Queue execution completed - all cycles finished")
+
+            # ── 1. CycleStatusOverlay → Method Complete state ─────────────
+            try:
+                plot_widget = getattr(self.main_window, 'cycle_of_interest_graph', None)
+                if plot_widget is not None:
+                    overlay = getattr(plot_widget, 'cycle_status_overlay', None)
+                    if overlay is not None:
+                        overlay.show_complete()
+            except Exception as _e:
+                logger.debug(f"Could not show completion overlay: {_e}")
+
+            # ── 2. QueueSummaryWidget → 'Method Complete' footer row ──────
+            try:
+                tbl = self._sidebar_widget('summary_table')
+                if tbl is not None and hasattr(tbl, 'show_method_complete'):
+                    tbl.show_method_complete()
+            except Exception as _e:
+                logger.debug(f"Could not show completion row: {_e}")
+
+            # ── 3. Live sensorgram → green vertical completion marker ──────
+            try:
+                import pyqtgraph as pg
+                from PySide6.QtCore import Qt as _Qt
+                timeline = getattr(self.main_window, 'full_timeline_graph', None)
+                if timeline is not None:
+                    _pos = 0.0
+                    if hasattr(timeline, 'stop_cursor') and timeline.stop_cursor is not None:
+                        _pos = timeline.stop_cursor.value()
+                    _line = pg.InfiniteLine(
+                        pos=_pos,
+                        angle=90,
+                        pen=pg.mkPen(color='#34C759', width=2,
+                                     style=_Qt.PenStyle.DashLine),
+                        label="✓ Method Complete",
+                        labelOpts={
+                            'color': '#34C759',
+                            'position': 0.96,
+                            'fill': (240, 255, 244, 200),
+                        },
+                    )
+                    _line.setMovable(False)
+                    timeline.addItem(_line)
+                    self.main_window._method_completion_line = _line
+            except Exception as _e:
+                logger.debug(f"Could not add completion line to sensorgram: {_e}")
 
             # Hide the active cycle card — no more cycles to display
             try:

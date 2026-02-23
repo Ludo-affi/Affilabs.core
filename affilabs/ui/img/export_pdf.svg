@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <!-- Document body -->
+  <path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"
+        stroke="white" stroke-width="1.5" stroke-linejoin="round" fill="none"/>
+  <!-- Folded corner -->
+  <path d="M15 2v5h5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- PDF text lines -->
+  <path d="M9 13h2.5a1.5 1.5 0 0 0 0-3H9v6" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14 10h1.5a2 2 0 0 1 0 4H14v-4z" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
