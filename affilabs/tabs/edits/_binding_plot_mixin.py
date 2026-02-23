@@ -193,8 +193,7 @@ class BindingPlotMixin:
                 return
 
             # Extract raw sensorgram per cycle and fit association phase
-            raw_rows = []
-            dc = getattr(getattr(getattr(self, 'main_window', None), None, None), None, None)
+            dc = None
             try:
                 dc = self.main_window.app.recording_mgr.data_collector.raw_data_rows
             except AttributeError:
