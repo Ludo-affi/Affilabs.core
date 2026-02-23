@@ -349,6 +349,7 @@ class UIBuildersMixin:
         self.main_window.bottom_tab_widget = self.bottom_tab_widget
         self.main_window.binding_ch_btns = self.binding_ch_btns
         self.main_window.binding_scatter_plot = self.binding_scatter_plot
+        self.main_window.binding_conc_unit_combo = self.binding_conc_unit_combo
 
         return content_widget
 
@@ -1122,6 +1123,15 @@ class UIBuildersMixin:
         self.binding_model_combo.setFixedWidth(130)
         self.binding_model_combo.currentTextChanged.connect(lambda _: self._update_binding_plot())
         ctrl_bar.addWidget(self.binding_model_combo)
+
+        ctrl_bar.addSpacing(12)
+        ctrl_bar.addWidget(QLabel("Units:"))
+        self.binding_conc_unit_combo = QComboBox()
+        self.binding_conc_unit_combo.addItems(["nM", "µM", "pM"])
+        self.binding_conc_unit_combo.setFixedWidth(70)
+        self.binding_conc_unit_combo.currentTextChanged.connect(lambda _: self._update_binding_plot())
+        ctrl_bar.addWidget(self.binding_conc_unit_combo)
+
         ctrl_bar.addStretch()
         vbox.addLayout(ctrl_bar)
 
@@ -1131,7 +1141,7 @@ class UIBuildersMixin:
         self.binding_scatter_plot = pg.PlotWidget()
         self.binding_scatter_plot.setBackground('w')
         self.binding_scatter_plot.setLabel('left', 'ΔSPR (RU)')
-        self.binding_scatter_plot.setLabel('bottom', 'Concentration (µM)')
+        self.binding_scatter_plot.setLabel('bottom', 'Concentration (nM)')
         self.binding_scatter_plot.showGrid(x=True, y=True, alpha=0.2)
         hsplit.addWidget(self.binding_scatter_plot)
 

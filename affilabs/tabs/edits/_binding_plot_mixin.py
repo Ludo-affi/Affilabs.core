@@ -117,8 +117,16 @@ class BindingPlotMixin:
         model = self.binding_model_combo.currentText()
         ch_color = _CH_COLORS[current_ch]
 
-        x_min = max(0.0, conc_arr.min() * 0.8)
-        x_max = conc_arr.max() * 1.15
+        # Unit scaling — concentration values in Excel are assumed to be in nM
+        unit_combo = getattr(self, 'binding_conc_unit_combo', None)
+        conc_unit = unit_combo.currentText() if unit_combo else 'nM'
+        _NM_SCALE = {'nM': 1.0, 'µM': 1e-3, 'pM': 1e3}
+        scale = _NM_SCALE.get(conc_unit, 1.0)
+        conc_arr_scaled = conc_arr * scale  # display units for plot/Kd
+        self.binding_scatter_plot.setLabel('bottom', f'Concentration ({conc_unit})')
+
+        x_min = max(0.0, conc_arr_scaled.min() * 0.8)
+        x_max = conc_arr_scaled.max() * 1.15
         x_line = np.linspace(x_min, x_max, 300)
 
         # --- Fit ---
@@ -132,14 +140,14 @@ class BindingPlotMixin:
         params_text = ""
 
         if model == 'Linear':
-            coeffs = np.polyfit(conc_arr, dspr_arr, 1)
+            coeffs = np.polyfit(conc_arr_scaled, dspr_arr, 1)
             m, b = coeffs
             y_fit = np.polyval(coeffs, x_line)
-            ss_res = np.sum((dspr_arr - np.polyval(coeffs, conc_arr)) ** 2)
+            ss_res = np.sum((dspr_arr - np.polyval(coeffs, conc_arr_scaled)) ** 2)
             ss_tot = np.sum((dspr_arr - dspr_arr.mean()) ** 2)
             r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else 0.0
             formula_text = "y = m·x + b"
-            params_text = f"m = {m:.3f} RU/µM\nb = {b:.2f} RU"
+            params_text = f"m = {m:.3f} RU/{conc_unit}\nb = {b:.2f} RU"
             fit_ok = True
 
         elif model == '1:1 Langmuir':
@@ -153,21 +161,21 @@ class BindingPlotMixin:
                 return Rmax * c / (Kd + c)
 
             try:
-                p0 = [float(dspr_arr.max()), float(np.median(conc_arr))]
+                p0 = [float(dspr_arr.max()), float(np.median(conc_arr_scaled))]
                 popt, _ = _scipy_curve_fit(
-                    langmuir, conc_arr, dspr_arr,
+                    langmuir, conc_arr_scaled, dspr_arr,
                     p0=p0, bounds=([0.0, 0.0], [np.inf, np.inf]),
                     maxfev=5000
                 )
                 Rmax, Kd = float(popt[0]), float(popt[1])
                 y_fit = langmuir(x_line, Rmax, Kd)
-                y_pred = langmuir(conc_arr, Rmax, Kd)
+                y_pred = langmuir(conc_arr_scaled, Rmax, Kd)
                 ss_res = np.sum((dspr_arr - y_pred) ** 2)
                 ss_tot = np.sum((dspr_arr - dspr_arr.mean()) ** 2)
                 r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else 0.0
                 formula_text = "y = Rmax·c / (Kd + c)"
-                params_text = f"Rmax = {Rmax:.1f} RU\nKd   = {Kd:.3f} µM"
-                kd_text = f"Kd = {Kd:.3f} µM"
+                params_text = f"Rmax = {Rmax:.1f} RU\nKd   = {Kd:.3f} {conc_unit}"
+                kd_text = f"Kd = {Kd:.3f} {conc_unit}"
                 fit_ok = True
             except RuntimeError:
                 self._binding_show_empty(
@@ -181,15 +189,15 @@ class BindingPlotMixin:
         # --- Update scatter plot ---
         self.binding_scatter_plot.clear()
         scatter = pg.ScatterPlotItem(
-            x=conc_arr, y=dspr_arr,
+            x=conc_arr_scaled, y=dspr_arr,
             size=10, symbol='o',
             brush=pg.mkBrush(ch_color),
             pen=pg.mkPen(None),
         )
         # Hover tooltips
         spots = [
-            {'pos': (c, d), 'data': f"{lbl}\n{c} µM → {d:.1f} RU"}
-            for c, d, lbl in zip(conc_list, dspr_list, labels_list)
+            {'pos': (c, d), 'data': f"{lbl}\n{c:.3g} {conc_unit} → {d:.1f} RU"}
+            for c, d, lbl in zip(conc_arr_scaled.tolist(), dspr_list, labels_list)
         ]
         scatter.addPoints(spots)
         self.binding_scatter_plot.addItem(scatter)
