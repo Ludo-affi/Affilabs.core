@@ -8,29 +8,34 @@ with open('VERSION', 'r') as f:
 import os
 import sys
 
-# Common Python installation paths to check
+# Find libusb DLL — prefer venv site-packages, then common system paths
 libusb_dll = None
-possible_paths = [
-    # Python 3.12 (current target)
-    os.path.expanduser(r'~\AppData\Local\Programs\Python\Python312\Lib\site-packages\libusb_package\libusb-1.0.dll'),
-    # Python 3.11
-    os.path.expanduser(r'~\AppData\Local\Programs\Python\Python311\Lib\site-packages\libusb_package\libusb-1.0.dll'),
-    # Fallback: Python 3.9 Roaming
-    os.path.expanduser(r'~\AppData\Roaming\Python\Python39\site-packages\libusb_package\libusb-1.0.dll'),
-    # Fallback: Python 3.9 Program Files
-    r'C:\Program Files\Python39\Lib\site-packages\libusb_package\libusb-1.0.dll',
-]
 
-for path in possible_paths:
-    if os.path.exists(path):
-        libusb_dll = path
-        print(f"Found libusb DLL at: {path}")
-        break
+# Try to find via installed libusb_package (works for venv and system installs)
+try:
+    import libusb_package as _lp
+    _candidate = os.path.join(os.path.dirname(_lp.__file__), 'libusb-1.0.dll')
+    if os.path.exists(_candidate):
+        libusb_dll = _candidate
+except Exception:
+    pass
 
 if not libusb_dll:
-    print("WARNING: libusb-1.0.dll not found in expected locations")
+    # Fallback: well-known install locations
+    possible_paths = [
+        os.path.expanduser(r'~\AppData\Local\Programs\Python\Python312\Lib\site-packages\libusb_package\libusb-1.0.dll'),
+        os.path.expanduser(r'~\AppData\Local\Programs\Python\Python311\Lib\site-packages\libusb_package\libusb-1.0.dll'),
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            libusb_dll = path
+            break
+
+if not libusb_dll:
+    print("WARNING: libusb-1.0.dll not found — USB spectrometer support will be unavailable")
     binaries = []
 else:
+    print(f"Found libusb DLL at: {libusb_dll}")
     binaries = [(libusb_dll, '.')]
 
 a = Analysis(
@@ -47,9 +52,9 @@ a = Analysis(
         ('affilabs/utils/Sensor64bit.dll', 'affilabs/utils'),
         ('detector_profiles', 'detector_profiles'),
         ('led_calibration_official', 'led_calibration_official'),
-        ('servo_polarizer_calibration', 'servo_polarizer_calibration'),
         ('settings', 'settings'),
         ('standalone_tools', 'standalone_tools'),
+        ('data', 'data'),  # Spark tips, QA history, runtime data
         # Piper TTS (if exists) - optional for Spark voice
         # ('piper', 'piper'),  # Uncomment if you have Piper TTS installed
     ],
@@ -129,9 +134,6 @@ a = Analysis(
 # Filter out dev/test artifacts from bundled data to reduce .exe size
 # These patterns match against the destination path inside the bundle
 _exclude_patterns = [
-    'servo_polarizer_calibration/test_data',       # ~916KB dev analysis PNGs/CSVs
-    'servo_polarizer_calibration/README',           # dev docs
-    'servo_polarizer_calibration/requirements',     # dev deps
     'standalone_tools/compression_training_data',   # ~3.1MB training data (generated at runtime)
     'standalone_tools/README',                      # dev docs
     'led_calibration_official/1_create_model',      # OEM-only scripts
