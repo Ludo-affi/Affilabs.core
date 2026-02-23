@@ -122,11 +122,11 @@ def generate_demo_sensorgrams(
 def generate_concentration_series(
     concentrations_nm: list[float] = None,
     baseline_s: float = 60.0,    # baseline before each injection
-    assoc_s: float = 300.0,      # association phase
-    dissoc_s: float = 300.0,     # dissociation phase
+    assoc_s: float = 120.0,      # association phase — short enough that curves don't all plateau
+    dissoc_s: float = 180.0,     # dissociation phase
     rate_hz: float = 1.0,        # 1 Hz for Excel (smaller file)
-    ka_per_Ms: float = 1.5e5,    # on-rate constant (M⁻¹s⁻¹)
-    kd_per_s: float = 2.5e-4,    # off-rate constant (s⁻¹) → KD = kd/ka = 1.67 nM... use higher kd
+    ka_per_Ms: float = 5e4,      # on-rate constant (M⁻¹s⁻¹) — slower so kobs varies with [C]
+    kd_per_s: float = 2.5e-4,    # off-rate constant (s⁻¹) — overridden below to KD=150 nM
     seed: int = 42,
 ) -> tuple[np.ndarray, dict[str, dict[str, np.ndarray]]]:
     """Generate a multi-cycle concentration series for the Edits/Excel demo.
@@ -353,20 +353,23 @@ def generate_demo_excel(output_path: str = DEMO_EXCEL_PATH) -> str:
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     # Generate 5 distinct concentration-series sensorgrams
-    # Each cycle: 60s baseline + 300s association + 300s dissociation = 660s
+    # Each cycle: 60s baseline + 120s association + 180s dissociation = 360s
+    # Short association window ensures curves don't all plateau — concentration effect is visible
     BASELINE_S = 60.0
-    ASSOC_S = 300.0
-    DISSOC_S = 300.0
+    ASSOC_S = 120.0
+    DISSOC_S = 180.0
+    KA_PER_MS = 5e4   # slower ka so kobs varies meaningfully across [C] range
     times_abs, wl_by_cycle, cycle_windows = generate_concentration_series(
         concentrations_nm=_DEMO_CONC_NM,
         baseline_s=BASELINE_S,
         assoc_s=ASSOC_S,
         dissoc_s=DISSOC_S,
         rate_hz=1.0,
+        ka_per_Ms=KA_PER_MS,
     )
 
     # Compute ΔSPR at end-of-association for each cycle (plateau value)
-    ka_per_Ms = 1.5e5
+    ka_per_Ms = KA_PER_MS
     kd_per_s = ka_per_Ms * 150e-9
     rmax_ru = {ch: _CHANNEL_PROFILES[ch]["rmax"] * _NM_TO_RU for ch in "abcd"}
 
