@@ -1,8 +1,12 @@
-"""BindingPlotMixin — dose-response fitting for Edits tab.
+"""BindingPlotMixin — dose-response and kinetics fitting for Edits tab.
 
 Provides _update_binding_plot(), _binding_show_empty(), and _on_binding_ch_clicked().
-Reads stored delta_ch{n} / delta_measured / delta_ref_ch values written by
-AlignmentMixin._update_delta_spr_barchart() (Option A — dumb consumer).
+
+Two fit modes:
+  - Equilibrium (Linear / 1:1 Langmuir): uses stored delta_ch{n} values vs concentration
+  - Kinetics (ka/kd): extracts raw sensorgram per cycle, fits association phase to
+    R(t) = Rmax*(1-exp(-kobs*t)), then linear regression of kobs vs C gives
+    ka (slope) and kd (intercept), KD = kd/ka.
 """
 
 import numpy as np
@@ -183,8 +187,88 @@ class BindingPlotMixin:
                 )
                 return
 
+        elif model == 'Kinetics (ka/kd)':
+            if not _SCIPY_OK:
+                self._binding_show_empty("scipy not available — required for kinetics fitting.")
+                return
+
+            # Extract raw sensorgram per cycle and fit association phase
+            raw_rows = []
+            dc = getattr(getattr(getattr(self, 'main_window', None), None, None), None, None)
+            try:
+                dc = self.main_window.app.recording_mgr.data_collector.raw_data_rows
+            except AttributeError:
+                pass
+            if not dc:
+                self._binding_show_empty(
+                    "No raw sensorgram data available.\nKinetics fitting requires loaded sensorgram data."
+                )
+                return
+
+            ch_key = 'abcd'[current_ch]
+            kobs_list, conc_fit_list = [], []
+
+            for row in selected_rows:
+                if row >= len(cycles_data):
+                    continue
+                cycle = cycles_data[row]
+                try:
+                    conc = float(cycle.get('concentration_value', ''))
+                except (ValueError, TypeError):
+                    continue
+                t_start = cycle.get('start_time_sensorgram')
+                t_end = cycle.get('end_time_sensorgram')
+                if t_start is None or t_end is None:
+                    continue
+
+                kobs = self._fit_kobs_from_raw(dc, ch_key, float(t_start), float(t_end))
+                if kobs is not None:
+                    kobs_list.append(kobs)
+                    conc_fit_list.append(conc)
+
+            if len(kobs_list) < 2:
+                self._binding_show_empty(
+                    "Need at least 2 cycles with sensorgram data for kinetics fitting.\n"
+                    "Check that raw data was loaded and time windows are set."
+                )
+                return
+
+            conc_fit_arr = np.array(conc_fit_list) * scale  # display units
+            kobs_arr = np.array(kobs_list)
+
+            # Linear regression: kobs = ka * C + kd
+            coeffs = np.polyfit(conc_fit_arr, kobs_arr, 1)
+            ka, kd_val = float(coeffs[0]), float(coeffs[1])
+            kd_val = max(kd_val, 0.0)  # kd must be ≥ 0
+            KD = kd_val / ka if ka > 1e-15 else float('inf')
+
+            y_fit = np.polyval(coeffs, x_line)
+            ss_res = np.sum((kobs_arr - np.polyval(coeffs, conc_fit_arr)) ** 2)
+            ss_tot = np.sum((kobs_arr - kobs_arr.mean()) ** 2)
+            r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else 0.0
+
+            # Format ka/kd with appropriate units
+            # ka is in 1/(conc_unit·s), kd in 1/s
+            ka_str = f"{ka:.3e} {conc_unit}⁻¹s⁻¹"
+            kd_str = f"{kd_val:.3e} s⁻¹"
+            KD_str = f"{KD:.3f} {conc_unit}"
+
+            formula_text = "kobs = ka·[C] + kd"
+            params_text = f"ka  = {ka_str}\nkd  = {kd_str}\nKD  = {KD_str}"
+            kd_text = f"KD = {KD_str}  (ka/kd)"
+
+            # Swap axes: plot kobs vs concentration
+            self.binding_scatter_plot.setLabel('left', 'kobs (s⁻¹)')
+            dspr_arr = kobs_arr   # repurpose y-axis for kobs values
+            conc_arr_scaled = conc_fit_arr
+            fit_ok = True
+
         if not fit_ok:
             return
+
+        # Restore y-axis label for equilibrium models
+        if model != 'Kinetics (ka/kd)':
+            self.binding_scatter_plot.setLabel('left', 'ΔSPR (RU)')
 
         # --- Update scatter plot ---
         self.binding_scatter_plot.clear()
@@ -328,6 +412,56 @@ class BindingPlotMixin:
         else:
             self.rmax_activity_lbl.setText("—")
             self.rmax_activity_lbl.setStyleSheet("font-size:11px; color:#86868B;")
+
+    # ------------------------------------------------------------------
+    # Kinetics helper
+    # ------------------------------------------------------------------
+
+    def _fit_kobs_from_raw(self, raw_rows: list, ch: str,
+                           t_start: float, t_end: float) -> float | None:
+        """Fit a single-exponential association to extract kobs.
+
+        Slices raw_rows for the given channel between t_start and t_end,
+        baseline-subtracts using the first 10% of points, then fits:
+            R(t) = Rmax * (1 - exp(-kobs * t))
+
+        Returns kobs (s⁻¹) or None if fit fails / insufficient data.
+        """
+        if not _SCIPY_OK:
+            return None
+
+        pts = sorted(
+            (r['time'], r['value']) for r in raw_rows
+            if r.get('channel') == ch
+            and t_start <= r['time'] <= t_end
+        )
+        if len(pts) < 10:
+            return None
+
+        times = np.array([p[0] for p in pts])
+        values = np.array([p[1] for p in pts])
+
+        # Baseline: mean of first 10% of points
+        n_base = max(1, len(times) // 10)
+        baseline = float(values[:n_base].mean())
+        response = values - baseline
+        t_rel = times - times[0]
+
+        # Fit R(t) = Rmax * (1 - exp(-kobs * t))
+        def assoc(t, Rmax, kobs):
+            return Rmax * (1.0 - np.exp(-kobs * t))
+
+        try:
+            rmax_guess = float(response.max()) if response.max() > 0 else 1.0
+            popt, _ = _scipy_curve_fit(
+                assoc, t_rel, response,
+                p0=[rmax_guess, 0.01],
+                bounds=([0.0, 1e-6], [np.inf, 10.0]),
+                maxfev=3000,
+            )
+            return float(popt[1])  # kobs
+        except (RuntimeError, ValueError):
+            return None
 
     # ------------------------------------------------------------------
     # Empty state helper

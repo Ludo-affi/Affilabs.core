@@ -1119,8 +1119,8 @@ class UIBuildersMixin:
         ctrl_bar.addSpacing(12)
         ctrl_bar.addWidget(QLabel("Model:"))
         self.binding_model_combo = QComboBox()
-        self.binding_model_combo.addItems(["Linear", "1:1 Langmuir"])
-        self.binding_model_combo.setFixedWidth(130)
+        self.binding_model_combo.addItems(["Linear", "1:1 Langmuir", "Kinetics (ka/kd)"])
+        self.binding_model_combo.setFixedWidth(160)
         self.binding_model_combo.currentTextChanged.connect(lambda _: self._update_binding_plot())
         ctrl_bar.addWidget(self.binding_model_combo)
 
