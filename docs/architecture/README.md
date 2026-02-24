@@ -1,6 +1,27 @@
-# Analysis Framework Documentation
+# Architecture Documentation
 
-This directory contains AFfilab's proprietary analysis and ML framework documentation.
+This directory contains Affilabs.core architecture specifications — data flows, processing pipelines, component boundaries, and system design references.
+
+For the full document listing with verification status, see [docs/DOCUMENT_INDEX.md](../DOCUMENT_INDEX.md).
+
+---
+
+## High-Priority Reads
+
+| If you're working on... | Start here |
+|-------------------------|------------|
+| SPR signal processing pipeline | [SPR_SIGNAL_PROCESSING_PIPELINE.md](SPR_SIGNAL_PROCESSING_PIPELINE.md) |
+| LED convergence / S-pol + P-pol calibration | [LED_CONVERGENCE_ENGINE.md](LED_CONVERGENCE_ENGINE.md) |
+| Per-device config, EEPROM, OEM workflow | [DEVICE_CONFIGURATION_SYSTEM.md](DEVICE_CONFIGURATION_SYSTEM.md) |
+| Injection auto-detection algorithm | [INJECTION_AUTO_DETECTION_FRS.md](INJECTION_AUTO_DETECTION_FRS.md) |
+| Timeline domain model (phases 1–4 complete) | [TIMELINE_QUICK_START.md](TIMELINE_QUICK_START.md) |
+| Timeline migration checklist | [TIMELINE_INTEGRATION_GUIDE.md](TIMELINE_INTEGRATION_GUIDE.md) |
+| Manual injection state machine (P4SPR) | [MANUAL_INJECTION_STATE_MACHINE.md](MANUAL_INJECTION_STATE_MACHINE.md) |
+| Acquisition modes (CYCLE_SYNC vs EVENT_RANK) | [ACQUISITION_METHODS.md](ACQUISITION_METHODS.md) |
+
+---
+
+**Last Updated:** February 24, 2026
 
 ---
 

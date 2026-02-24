@@ -159,7 +159,7 @@ Ignored by Claude Code (use --no-ignore to access):
 | EditsTab — cycle display, graph rendering | [EDITS_CYCLE_DISPLAY_FRS.md](docs/features/EDITS_CYCLE_DISPLAY_FRS.md) | `main.py` (`_display_cycle_in_edits*`) |
 | EditsTab — data loading utilities | [EDITS_DATA_LOADING_FRS.md](docs/features/EDITS_DATA_LOADING_FRS.md) | `affilabs/tabs/edits/_data_utils.py` |
 | Recording, auto-save, Excel export | [RECORDING_MANAGER_FRS.md](docs/features/RECORDING_MANAGER_FRS.md) | `affilabs/managers/recording_manager.py` |
-| Experiment index — searchable log of all recording sessions | [EXPERIMENT_INDEX_FRS.md](docs/features/EXPERIMENT_INDEX_FRS.md) | `affilabs/services/experiment_index.py` (planned) |
+| Experiment index — searchable log of all recording sessions | [EXPERIMENT_INDEX_FRS.md](docs/features/EXPERIMENT_INDEX_FRS.md) | `affilabs/services/experiment_index.py` |
 | Experiment browser dialog — search/load past recordings from Edits tab | [EXPERIMENT_BROWSER_FRS.md](docs/features/EXPERIMENT_BROWSER_FRS.md) | `affilabs/dialogs/experiment_browser_dialog.py` (planned) |
 | Notes tab — ELN, experiment list, Kanban, planning, tags, ratings | [NOTES_TAB_FRS.md](docs/features/NOTES_TAB_FRS.md) | `affilabs/tabs/notes_tab.py` |
 | Excel chart generation | [EXCEL_CHART_BUILDER_FRS.md](docs/features/EXCEL_CHART_BUILDER_FRS.md) | `affilabs/services/excel_exporter.py` |
@@ -174,6 +174,8 @@ Ignored by Claude Code (use --no-ignore to access):
 | Method Builder UI redesign (3-zone layout, template gallery, Sparq bar) | [METHOD_BUILDER_REDESIGN_FRS.md](docs/features/METHOD_BUILDER_REDESIGN_FRS.md) | `affilabs/widgets/method_builder_dialog.py` |
 | Contact Monitor panel, per-channel contact timers, binding symbols | [MICROFLUIDIC_CHANNELS_PANEL_FRS.md](docs/features/MICROFLUIDIC_CHANNELS_PANEL_FRS.md) | `affilabs/widgets/injection_action_bar.py` |
 | Compression Assistant — guided chip compression, gauge, QC leak check | [COMPRESSION_ASSISTANT_FRS.md](docs/features/COMPRESSION_ASSISTANT_FRS.md) | `standalone_tools/compression_trainer_ui.py` |
+| Injection auto-detection FRS v2 — multi-feature scorer (planned) | [INJECTION_DETECTION_FRS.md](docs/features/INJECTION_DETECTION_FRS.md) | `affilabs/utils/spr_signal_processing.py` |
+| In-app tips system — tip storage, display triggers, dismissal tracking | [TIPS_SYSTEM.md](docs/features/TIPS_SYSTEM.md) | `affilabs/services/` |
 | Timeline events, CycleMarker, stream API | [TIMELINE_QUICK_START.md](docs/architecture/TIMELINE_QUICK_START.md) | `affilabs/domain/timeline.py`, `affilabs/core/recording_manager.py`, `affilabs/managers/flag_manager.py`, `mixins/_cycle_mixin.py` |
 | Timeline Phase 5+ roadmap, proposed improvements | [TIMELINE_ROADMAP.md](docs/future_plans/TIMELINE_ROADMAP.md) | `affilabs/domain/timeline.py` |
 | 21 CFR Part 11 compliance — gap analysis, implementation order, files to create | [21CFR_PART11_GAP_ANALYSIS.md](docs/future_plans/21CFR_PART11_GAP_ANALYSIS.md) | `affilabs/services/audit_log.py` (planned) |
@@ -438,15 +440,10 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 - **Manual injection auto-detection not firing** — needs live test; if silent check `detection_priority` and `window_start_time` mask
 
 ### Recently Completed
-- **Notes tab Phase 4 (Kanban stub)** ✅ (Feb 24 2026) — `QStackedWidget` view stack; `☰ List` / `⊞ Kanban` toggle header with active/inactive styles; Kanban placeholder widget at index 1. `_switch_to_list_view` / `_switch_to_kanban_view` methods.
-- **Notes tab Phase 3 (recording hooks)** ✅ (Feb 24 2026) — `recording_mgr.recording_started/stopped` wired to `notes_tab.on_recording_started/stopped` in `main.py _connect_hardware_and_manager_signals()`; redundant `notes_tab.refresh()` removed from `_acquisition_mixin.py`.
-- **Notes tab Phase 2b (ELN widgets)** ✅ (Feb 24 2026) — editable notes + 800ms debounce save, `_StarRatingWidget` (interactive 1–5 stars), tag pill editor with `QCompleter`, `PreviewWorker` + `pg.PlotWidget` sensorgram preview. Live filter counts wired. `notes_tab.py` now 1253 lines.
-- **Notes tab Phase 2 (tab shell)** ✅ (Feb 24 2026) — `notes_tab.py` 719 lines: 3-panel layout (nav/list/preview) wired into `content_stack` index 2.
-- **Notes tab Phase 1 (data layer)** ✅ (Feb 24 2026) — `experiment_index.py` fully implemented (384 lines): rating, tags, notes/description, planned entries CRUD, extended search, schema v2 with v1 migration guard.
-- **ACCESSIBILITY_PANEL_FRS.md** ✅ (Feb 23 2026) — Full FRS written (8 sections); fixed stale `int(pen_style)` → `pen_style.value` note; added FRS map entry to CLAUDE.md
-- **`int(pen_style)` crash fixed** ✅ (Feb 23 2026) — `affilabs_core_ui.py:_on_line_style_changed` now uses `pen_style.value` (PySide6 enums reject `int()`)
-- **Documentation audit** ✅ (Feb 23 2026) — 7 undocumented widgets catalogued; wrote TRANSPORT_BAR_FRS.md, FLOATING_PANELS_FRS.md, GUIDANCE_COORDINATOR_FRS.md; updated UI_COMPONENT_INVENTORY.md §1 + §4 + §6; added FRS map entries to CLAUDE.md
-- **Injection lifecycle timeout fix** ✅ (Feb 22 2026) — `done_event.wait(timeout=95 + contact_time + 120s)` in `injection_coordinator.py`
+- **Workspace spring clean** ✅ (Feb 24 2026) — Deleted junk (nul, venv_312_test, build/, generated-files/, icons/, 60+ old logs, 7 obsolete docs). Moved 17 USB diagnostic scripts → `tools/diagnostics/`. Moved calibration dumps → `_data/calibration_data/`. Moved OpticalSystem_QC + led_calibration_official → `_data/`. Moved OEM_Communication → `docs/hardware/`. Moved training/walkthrough docs → `docs/user_guides/`. Moved Spark roadmap + System Intelligence docs → `docs/future_plans/`. Moved CYCLE_RECREATION_GUIDE → `docs/user_guides/`. Removed stale FRS map entries (METHOD_BUILDER_FRS, LEAK_DETECTION, SENSOR_CHIP_METADATA).
+- **Notes tab Phases 1–4** ✅ (Feb 24 2026) — `experiment_index.py` 384 lines; `notes_tab.py` 1253 lines (ELN, star rating, tag pills, sensorgram preview, recording hooks, Kanban stub).
+- **ACCESSIBILITY_PANEL_FRS.md** ✅ (Feb 23 2026) — Full FRS written; `int(pen_style)` → `pen_style.value` crash fixed in `affilabs_core_ui.py`.
+- **TransportBar / Floating Panels / GuidanceCoordinator** ✅ (Feb 23 2026) — FRS docs written; UI_COMPONENT_INVENTORY.md updated.
 
 ### Context Maintenance Workflow
 **At the end of each work session**, update this "Active Context" section:

@@ -1,6 +1,6 @@
 # Affilabs.core — Documentation Index
 
-Last updated: 2026-02-19 (Timeline docs added: TIMELINE_INTEGRATION_GUIDE, TIMELINE_QUICK_START, TIMELINE_ROADMAP; Roadmaps section moved to own category with future_plans/ path)
+Last updated: 2026-02-24 (Added missing sections: Hardware, User Guides, Product Requirements, Setup; added Notes tab, Experiment Index/Browser, Transport Bar, Floating Panels, Guidance Coordinator, Accessibility Panel, Method Builder Redesign, Microfluidic Channels Panel, Compression Assistant, Injection Detection, Leak Detection, Tips System, Sensor Chip Metadata FRS docs; added UX_USER_JOURNEY.md to UI section; added all missing future_plans docs; updated EXPERIMENT_INDEX_FRS and NOTES_TAB_FRS to ✅)
 Add a row whenever a new document is created; update Verified column after each code-verification pass.
 
 **Verification key:**
@@ -74,17 +74,56 @@ Add a row whenever a new document is created; update Verified column after each 
 | [FLAGGING_SYSTEM_GUIDE.md](features/FLAGGING_SYSTEM_GUIDE.md) | FlagManager: centralized flag state (live/edits contexts), Flag domain model, injection alignment (channel time shifts), AutoMarker, contact timer overlay, keyboard movement, ScatterPlotItem visuals | Feb 19 2026 | ✅ |
 | [METHOD_PRESETS_SYSTEM.md](features/METHOD_PRESETS_SYSTEM.md) | Preset save/load; CycleTemplateStorage + QueuePresetStorage (TinyDB); import/export; browser dialogs | Feb 18 2026 | ✅ |
 | [SENSOR_IQ_SYSTEM.md](features/SENSOR_IQ_SYSTEM.md) | SensorIQ: wavelength zone scoring (560-720nm), FWHM thresholds (30/60/80nm), 5 IQ levels, global singleton classifier, trend history, log_sensor_iq() | Feb 19 2026 | ✅ |
-| [DEPLOYMENT_GRACEFUL_DEGRADATION.md](features/DEPLOYMENT_GRACEFUL_DEGRADATION.md) | Missing hardware fallback; partial boot behavior | unknown | ⚠️ unverified |
-| [CHANNEL_CLICK_SELECTION.md](features/CHANNEL_CLICK_SELECTION.md) | Channel selection via sensogram click | unknown | ⚠️ unverified |
-| [CYCLE_OF_INTEREST_FILTERING_WALKTHROUGH.md](features/CYCLE_OF_INTEREST_FILTERING_WALKTHROUGH.md) | Cycle-of-interest UI filter walkthrough | unknown | ⚠️ unverified |
-| [PROTECTED_FEATURES.md](features/PROTECTED_FEATURES.md) | License-gated feature flags; production protection | unknown | ⚠️ unverified |
-| [PERFORMANCE_TUNING_GUIDE.md](features/PERFORMANCE_TUNING_GUIDE.md) | UI update batching; GC disable; queue draining | unknown | ⚠️ unverified |
+| [NOTES_TAB_FRS.md](features/NOTES_TAB_FRS.md) | Notes tab (ELN): 3-panel layout (nav/list/preview), experiment list with filtering/tags/ratings, Kanban stub, ELN text editor, recording hooks, star rating widget, tag pill editor, sensorgram preview | Feb 24 2026 | ✅ |
+| [EXPERIMENT_INDEX_FRS.md](features/EXPERIMENT_INDEX_FRS.md) | ExperimentIndex data layer: CRUD for experiment entries, rating/tags/notes, planned entries, extended search, schema v2 with v1 migration | Feb 24 2026 | ✅ |
+| [EXPERIMENT_BROWSER_FRS.md](features/EXPERIMENT_BROWSER_FRS.md) | Experiment browser dialog: search, load, filter past recordings from Edits tab | Feb 19 2026 | 🗂️ Planned — dialog not yet created |
+| [TRANSPORT_BAR_FRS.md](features/TRANSPORT_BAR_FRS.md) | TransportBar (toolbar redesign): icon rail, transport controls, connection status, signal indicators | Feb 23 2026 | ✅ |
+| [FLOATING_PANELS_FRS.md](features/FLOATING_PANELS_FRS.md) | SpectrumBubble, RailTimerPopup, LiveContextPanel, LiveRightPanel — floating overlays and docked panels | Feb 23 2026 | ✅ |
+| [GUIDANCE_COORDINATOR_FRS.md](features/GUIDANCE_COORDINATOR_FRS.md) | GuidanceCoordinator: adaptive contextual hints, Pass A logging, Pass B widget wiring (planned) | Feb 23 2026 | ✅ |
+| [ACCESSIBILITY_PANEL_FRS.md](features/ACCESSIBILITY_PANEL_FRS.md) | Accessibility panel: colour palettes (standard/colorblind/high-contrast), line style overrides, dark mode; `int(pen_style)` → `pen_style.value` fix noted | Feb 23 2026 | ✅ |
+| [METHOD_BUILDER_REDESIGN_FRS.md](features/METHOD_BUILDER_REDESIGN_FRS.md) | Method Builder UI redesign: 3-zone layout, template gallery, Sparq bar, hardware-conditional mode combo | unknown | ⚠️ |
+| [METHOD_BUILDER_FRS.md](features/METHOD_BUILDER_FRS.md) | Method Builder dialog: cycle editor, template save/load, queue preview | unknown | ⚠️ |
+| [MICROFLUIDIC_CHANNELS_PANEL_FRS.md](features/MICROFLUIDIC_CHANNELS_PANEL_FRS.md) | Contact Monitor panel, per-channel contact timers, binding symbols, wash monitoring | unknown | ⚠️ |
+| [COMPRESSION_ASSISTANT_FRS.md](features/COMPRESSION_ASSISTANT_FRS.md) | Compression Assistant: guided chip compression, gauge display, QC leak check | unknown | ⚠️ |
+| [INJECTION_DETECTION_FRS.md](features/INJECTION_DETECTION_FRS.md) | Live injection detection FRS: threshold triggers, confidence gating, P4SPR vs PRO detection paths | unknown | ⚠️ |
+| [LEAK_DETECTION_SYSTEM.md](features/LEAK_DETECTION_SYSTEM.md) | Leak detection: pressure monitoring, alert system, fluidic safety | unknown | ⚠️ |
+| [SENSOR_CHIP_METADATA.md](features/SENSOR_CHIP_METADATA.md) | Sensor chip metadata: chip type, lot, chemistry, storage with session data | unknown | ⚠️ |
+| [TIPS_SYSTEM.md](features/TIPS_SYSTEM.md) | In-app tips system: tip storage, display triggers, dismissal tracking | unknown | ⚠️ |
+| [DEPLOYMENT_GRACEFUL_DEGRADATION.md](features/DEPLOYMENT_GRACEFUL_DEGRADATION.md) | Missing hardware fallback; partial boot behavior | unknown | ⚠️ |
+| [CHANNEL_CLICK_SELECTION.md](features/CHANNEL_CLICK_SELECTION.md) | Channel selection via sensogram click | unknown | ⚠️ |
+| [CYCLE_OF_INTEREST_FILTERING_WALKTHROUGH.md](features/CYCLE_OF_INTEREST_FILTERING_WALKTHROUGH.md) | Cycle-of-interest UI filter walkthrough | unknown | ⚠️ |
+| [PROTECTED_FEATURES.md](features/PROTECTED_FEATURES.md) | License-gated feature flags; production protection | unknown | ⚠️ |
+| [PERFORMANCE_TUNING_GUIDE.md](features/PERFORMANCE_TUNING_GUIDE.md) | UI update batching; GC disable; queue draining | unknown | ⚠️ |
 
 ---
 
-## User Guides (`docs/features/` — not code reference, not verified against source)
+## User Guides (`docs/user_guides/`)
 
-> These docs describe workflows for human operators. Do NOT use as code reference.
+> Written for human operators. Do NOT use as code reference — not verified against source.
+
+| Document | Coverage Area |
+|----------|--------------|
+| [OPERATION_MANUAL.md](user_guides/OPERATION_MANUAL.md) | Full instrument operation manual |
+| [QUICK_START.md](user_guides/QUICK_START.md) | Quick-start guide for new users |
+| [POWER_ON_PROCEDURE.md](user_guides/POWER_ON_PROCEDURE.md) | Power-on and startup sequence |
+| [INJECTION_METHODS.md](user_guides/INJECTION_METHODS.md) | Injection workflow guide (P4SPR vs P4PRO/PROPLUS) |
+| [INJECTION_QUICK_REF.md](user_guides/INJECTION_QUICK_REF.md) | One-page injection quick reference card |
+| [INJECT_FUNCTION_README.md](user_guides/INJECT_FUNCTION_README.md) | Inject function usage guide |
+| [KINETIC_METHODS.md](user_guides/KINETIC_METHODS.md) | Kinetic binding experiment design |
+| [TRAINING_GUIDE.md](user_guides/TRAINING_GUIDE.md) | Operator training guide |
+| [DEMO_QUICK_START.md](user_guides/DEMO_QUICK_START.md) | Demo mode quick start |
+| [DEMO_DATA_README.md](user_guides/DEMO_DATA_README.md) | Demo data description and usage |
+| [BUILD_INSTALLER.md](user_guides/BUILD_INSTALLER.md) | Build and installer guide for developers |
+| [SHIPPING_GUIDE.md](user_guides/SHIPPING_GUIDE.md) | Device shipping and packaging procedure |
+| [QUICK_SHIP.md](user_guides/QUICK_SHIP.md) | Quick-ship checklist |
+| [PRIVACY_POLICY.md](user_guides/PRIVACY_POLICY.md) | Privacy policy |
+| [PHASE_4_TESTING_GUIDE.md](user_guides/PHASE_4_TESTING_GUIDE.md) | Phase 4 feature testing guide |
+| [DEV_MODE_CONFIG_DIALOG.md](user_guides/DEV_MODE_CONFIG_DIALOG.md) | Developer mode configuration dialog |
+| [CYCLE_RECREATION_GUIDE.md](user_guides/CYCLE_RECREATION_GUIDE.md) | Cycle recreation from archived data |
+| [UX_WORKFLOW_TEST_PROTOCOL.md](user_guides/UX_WORKFLOW_TEST_PROTOCOL.md) | UX testing: Sparq IQ scoring, workflow readiness, user journey validation |
+| [README.md](user_guides/README.md) | User guides overview |
+
+> These docs are also cross-referenced in `docs/features/`:
 
 | Document | Coverage Area |
 |----------|--------------|
@@ -102,16 +141,25 @@ Add a row whenever a new document is created; update Verified column after each 
 
 | Document | Coverage Area |
 |----------|-------------|
-| [TIMELINE_ROADMAP.md](future_plans/TIMELINE_ROADMAP.md) | Phase 5+ timeline integration roadmap: presenter queries, InjectionCoordinator, clean refactor, 6 improvement proposals (thread safety, normalize_time, start markers, AutoMarker, Excel export, edit/remove API) |
+| [TIMELINE_ROADMAP.md](future_plans/TIMELINE_ROADMAP.md) | Phase 5+ timeline integration roadmap: presenter queries, InjectionCoordinator, clean refactor, 6 improvement proposals |
 | [FUTURE_ENHANCEMENTS.md](future_plans/FUTURE_ENHANCEMENTS.md) | General feature backlog |
 | [MAIN_PY_REFACTORING_OPPORTUNITIES.md](future_plans/MAIN_PY_REFACTORING_OPPORTUNITIES.md) | main.py decomposition opportunities |
 | [AFFILABS_ANALYZE_UI_SPEC.md](future_plans/AFFILABS_ANALYZE_UI_SPEC.md) | AffiLabs Analyze companion app UI spec |
 | [AFFILABS_DATA_ANALYSIS_MODULE.md](future_plans/AFFILABS_DATA_ANALYSIS_MODULE.md) | Data analysis module design |
 | [ANIML_SILA_IMPLEMENTATION_PLAN.md](future_plans/ANIML_SILA_IMPLEMENTATION_PLAN.md) | AnIML / SiLA 2 protocol integration plan |
+| [AUTOSAMPLER_INTEGRATION_PLAN.md](future_plans/AUTOSAMPLER_INTEGRATION_PLAN.md) | Autosampler hardware + software integration plan |
+| [DEMO_MODE_PLAN.md](future_plans/DEMO_MODE_PLAN.md) | Demo mode implementation plan |
+| [ADAPTIVE_GUIDANCE_PLAN.md](future_plans/ADAPTIVE_GUIDANCE_PLAN.md) | Adaptive contextual guidance system design |
+| [SIDEBAR_REDESIGN_PLAN.md](future_plans/SIDEBAR_REDESIGN_PLAN.md) | Sidebar v2.1 redesign plan |
+| [SPARQ_AI_UPGRADE_PLAN.md](future_plans/SPARQ_AI_UPGRADE_PLAN.md) | Sparq AI assistant upgrade roadmap |
+| [21CFR_PART11_GAP_ANALYSIS.md](future_plans/21CFR_PART11_GAP_ANALYSIS.md) | 21 CFR Part 11 compliance gap analysis; implementation order |
+| [IQOQ_PLAN.md](future_plans/IQOQ_PLAN.md) | IQ/OQ validation plan: check IDs, test suites, report format |
+| [LICENSE_STRATEGY.md](future_plans/LICENSE_STRATEGY.md) | Software licensing strategy |
 | [ONLINE_DEPLOYMENT_GUIDE.md](future_plans/ONLINE_DEPLOYMENT_GUIDE.md) | Cloud/remote deployment guide |
 | [SHAREPOINT_UPLOAD_SETUP.md](future_plans/SHAREPOINT_UPLOAD_SETUP.md) | SharePoint auto-upload setup |
 | [SHAREPOINT_WIX_INTEGRATION_GUIDE.md](future_plans/SHAREPOINT_WIX_INTEGRATION_GUIDE.md) | SharePoint + Wix integration |
 | [TICKET_SYSTEM_DESIGN.md](future_plans/TICKET_SYSTEM_DESIGN.md) | In-app support ticket system design |
+| [CUSTOMER_DATA_REVIEW_PLAN.md](future_plans/CUSTOMER_DATA_REVIEW_PLAN.md) | Plan for reviewing and managing customer data |
 | [SPARK_WORKFLOW_ROADMAP.md](features/SPARK_WORKFLOW_ROADMAP.md) | Spark AI assistant planned capabilities |
 | [SYSTEM_INTELLIGENCE_INTEGRATION.md](features/SYSTEM_INTELLIGENCE_INTEGRATION.md) | SensorIQ + Spark AI integration architecture (planned) |
 | [SYSTEM_INTELLIGENCE_QUICKSTART.md](features/SYSTEM_INTELLIGENCE_QUICKSTART.md) | Quick-start for Spark / SensorIQ features |
@@ -137,10 +185,54 @@ Add a row whenever a new document is created; update Verified column after each 
 | Document | Coverage Area | Last Updated | Verified |
 |----------|--------------|-------------|----------|
 | [UI_DESIGN_SYSTEM.md](ui/UI_DESIGN_SYSTEM.md) | Color palette, typography, spacing, button variants, input fields, status indicators — all rules for consistent styling | Feb 19 2026 | ✅ |
-| [UI_COMPONENT_INVENTORY.md](ui/UI_COMPONENT_INVENTORY.md) | Every sidebar tab, main page, reusable widget, dialog, and presenter — what it does, what rules govern it, and when things are enabled/disabled | Feb 19 2026 | ✅ |
+| [UI_COMPONENT_INVENTORY.md](ui/UI_COMPONENT_INVENTORY.md) | Every sidebar tab, main page, reusable widget, dialog, and presenter — what it does, what rules govern it, and when things are enabled/disabled | Feb 23 2026 | ✅ |
 | [UI_STATE_MACHINE.md](ui/UI_STATE_MACHINE.md) | Every application state (disconnected → searching → connected → calibrated → acquiring → recording/paused), all transition triggers, and exact UI changes at each transition | Feb 19 2026 | ✅ |
 | [UI_GRAPH_VISUALIZATION_SPEC.md](ui/UI_GRAPH_VISUALIZATION_SPEC.md) | All 7 graphs: axes, units, channel colors (standard + colorblind), update architecture (10 Hz throttle), cursor behavior, cycle shading, anti-patterns | Feb 19 2026 | ✅ |
 | [UI_HARDWARE_MODEL_REQUIREMENTS.md](ui/UI_HARDWARE_MODEL_REQUIREMENTS.md) | Per-model UI differences: P4SPR / P4PRO / P4PROPLUS — mode combo locking, pump/valve visibility, fluidics subunit, AffiPump detection, injection channel pairing, internal pump constraints | Feb 19 2026 | ✅ |
+| [UX_USER_JOURNEY.md](ui/UX_USER_JOURNEY.md) | User journey across 6 experiment stages (Connect → Calibrate → Acquire → Inject → Record → Export); what users need at each stage | Feb 19 2026 | ✅ |
+
+---
+
+## Hardware Docs (`docs/hardware/`)
+
+| Document | Coverage Area | Last Updated | Verified |
+|----------|--------------|-------------|----------|
+| [P4PRO_FLUIDIC_ARCHITECTURE.md](hardware/P4PRO_FLUIDIC_ARCHITECTURE.md) | P4PRO fluidic system: KC1/KC2, 6-port loop, 3-way valves, channel mapping | Feb 19 2026 | ✅ |
+| [P4PRO_Firmware_Documentation.md](hardware/P4PRO_Firmware_Documentation.md) | P4PRO firmware command reference | unknown | ⚠️ |
+| [P4SPR_Firmware_Documentation.md](hardware/P4SPR_Firmware_Documentation.md) | P4SPR firmware command reference | unknown | ⚠️ |
+| [FIRMWARE_V2.2_NOTES.md](hardware/FIRMWARE_V2.2_NOTES.md) | Firmware V2.2 change notes | unknown | ⚠️ |
+| [FIRMWARE_V2.4_CYCLE_SYNC.md](hardware/FIRMWARE_V2.4_CYCLE_SYNC.md) | Firmware V2.4 CYCLE_SYNC acquisition mode | unknown | ⚠️ |
+| [EEPROM_DEVICE_CONFIG_SPEC.md](hardware/EEPROM_DEVICE_CONFIG_SPEC.md) | EEPROM device config spec: layout, write protocol, fallback | unknown | ⚠️ |
+| [EEPROM_IMPLEMENTATION_SUMMARY.md](hardware/EEPROM_IMPLEMENTATION_SUMMARY.md) | EEPROM implementation summary | unknown | ⚠️ |
+| [INTERNAL_PUMP_ARCHITECTURE.md](hardware/INTERNAL_PUMP_ARCHITECTURE.md) | P4PROPLUS internal pump architecture | unknown | ⚠️ |
+| [INTERNAL_PUMP_UI_SYNC_ISSUES.md](hardware/INTERNAL_PUMP_UI_SYNC_ISSUES.md) | Known UI sync issues with internal pumps | unknown | ⚠️ |
+| [P4PROPLUS_PUMP_COMMANDS_CORRECT.md](hardware/P4PROPLUS_PUMP_COMMANDS_CORRECT.md) | Correct P4PROPLUS pump command sequences | unknown | ⚠️ |
+| [P4PROPLUS_QUICK_REF.md](hardware/P4PROPLUS_QUICK_REF.md) | P4PROPLUS quick reference card | unknown | ⚠️ |
+| [PUMP_CONTROL_ARCHITECTURE.md](hardware/PUMP_CONTROL_ARCHITECTURE.md) | Pump control architecture (P4PRO + P4PROPLUS) | unknown | ⚠️ |
+| [PUMP_IMPROVEMENTS_FROM_CAVRO.md](hardware/PUMP_IMPROVEMENTS_FROM_CAVRO.md) | Cavro syringe pump improvement notes | unknown | ⚠️ |
+| [DEVICE_DATABASE_REGISTRATION.md](hardware/DEVICE_DATABASE_REGISTRATION.md) | Device registry + device_history.db workflows | unknown | ⚠️ |
+| [HIGH_SENSITIVITY_REFINEMENTS.md](hardware/HIGH_SENSITIVITY_REFINEMENTS.md) | High-sensitivity detector refinements | unknown | ⚠️ |
+| [CONVERGENCE_STARTUP_SAFETY_IMPROVEMENTS.md](hardware/CONVERGENCE_STARTUP_SAFETY_IMPROVEMENTS.md) | Convergence safety improvements at startup | unknown | ⚠️ |
+| [README_HARDWARE_BEHAVIOR.md](hardware/README_HARDWARE_BEHAVIOR.md) | Hardware behavior overview README | unknown | ⚠️ |
+
+---
+
+## Product Requirements (`docs/product_requirements/`)
+
+| Document | Coverage Area | Last Updated | Verified |
+|----------|--------------|-------------|----------|
+| [SPARQ_PRD.md](product_requirements/SPARQ_PRD.md) | Sparq AI assistant product requirements | unknown | ⚠️ |
+| [LENSLESS_SPECTRAL_SPR_SYSTEM_REQUIREMENTS.md](product_requirements/LENSLESS_SPECTRAL_SPR_SYSTEM_REQUIREMENTS.md) | System requirements spec (SRS) for lensless spectral SPR instrument | unknown | ⚠️ |
+| [NOTION_IMPORT.md](product_requirements/NOTION_IMPORT.md) | Legacy Notion content import | unknown | ⚠️ |
+| [README.md](product_requirements/README.md) | Product requirements overview | unknown | ⚠️ |
+
+---
+
+## Setup Docs (`docs/setup/`)
+
+| Document | Coverage Area |
+|----------|--------------|
+| [SMTP_SETUP_GUIDE.md](setup/SMTP_SETUP_GUIDE.md) | SMTP email configuration for notifications |
 
 ---
 
@@ -149,7 +241,7 @@ Add a row whenever a new document is created; update Verified column after each 
 | Document | Coverage Area | Last Updated | Verified |
 |----------|--------------|-------------|----------|
 | [TERMINOLOGY.md](TERMINOLOGY.md) | Standard doc type labels; document taxonomy | Feb 19 2026 | ✅ |
-| [DOCUMENT_INDEX.md](DOCUMENT_INDEX.md) | This file | Feb 19 2026 | — |
+| [DOCUMENT_INDEX.md](DOCUMENT_INDEX.md) | This file | Feb 24 2026 | — |
 
 ---
 
@@ -158,6 +250,7 @@ Add a row whenever a new document is created; update Verified column after each 
 | Document (to create) | Priority | Rationale |
 |----------------------|----------|-----------|
 | `architecture/APPLICATION_STATE_MIGRATION.md` | MEDIUM | `ApplicationState` dataclass vs `self.*` coexistence — no doc; migration incomplete |
+| `architecture/MIXIN_SYSTEM.md` | LOW | main.py + affilabs_core_ui.py mixin patterns; how to add a new mixin; extraction guide |
 
 ---
 

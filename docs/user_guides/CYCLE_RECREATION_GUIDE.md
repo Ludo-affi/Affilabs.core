@@ -126,39 +126,7 @@ def parse_concentration_from_note(note: str) -> float | None:
     return None
 ```
 
-### Step 3: Calculate Missing End Times
-
-**KEY INSIGHT:** Even when `end_time_sensorgram` is NaN, we can calculate it!
-
-```python
-def calculate_end_time(row: pd.Series) -> float | None:
-    """Calculate end time from start time + duration.
-
-    Args:
-        row: DataFrame row with start_time_sensorgram and duration_minutes
-
-    Returns:
-        Calculated end time in seconds, or None if data missing
-    """
-    end_time = row.get('end_time_sensorgram')
-
-    # If end time is missing, calculate from start + duration
-    if pd.isna(end_time):
-        start_time = row.get('start_time_sensorgram')
-        duration_min = row.get('duration_minutes')
-
-        if start_time is not None and duration_min is not None:
-            # Convert duration to seconds and add to start time
-            end_time = start_time + (duration_min * 60.0)
-
-    return end_time if not pd.isna(end_time) else None
-```
-
-**Example:**
-- Cycle 1: start = 215.79s, duration = 8.0 min
-- Calculated end = 215.79 + (8.0 × 60) = **695.79s** ✅
-
-### Step 4: Reconstruct SPR Deltas by Channel
+### Step 3: Reconstruct SPR Deltas by Channel
 
 ```python
 def reconstruct_delta_spr_by_channel(row: pd.Series) -> dict:
@@ -178,7 +146,7 @@ def reconstruct_delta_spr_by_channel(row: pd.Series) -> dict:
     return delta_by_channel
 ```
 
-### Step 5: Create Cycle Objects
+### Step 4: Create Cycle Objects
 
 ```python
 from affilabs.domain.cycle import Cycle
@@ -325,25 +293,16 @@ According to [cycle.py](affilabs/domain/cycle.py#L169-L204), `to_export_dict()` 
 - Injection settings
 - User-entered notes (reliable metadata storage)
 
-⚠️ **Sometimes Missing (But Recoverable):**
-- End time field is NaN → **Calculate from start + duration** ✅
-- Concentration values in dedicated fields → **Parse from notes** ✅
-- Multi-channel concentration data → **Parse from notes** ✅
-- SPR delta analysis (if not computed) → Use delta_ch1/ch2/ch3/ch4 columns ✅
+⚠️ **Sometimes Missing:**
+- End time (if stopped early)
+- Concentration values in dedicated fields
+- Multi-channel concentration data
+- SPR delta analysis (if not computed)
 
-🔑 **Key Insights:**
+🔑 **Key Insight:**
+In this export, **cycle notes are the primary source of concentration data**. The system allows users to store critical metadata in notes when structured fields aren't used. This is working as designed, but structured fields provide better data integrity.
 
-1. **Complete Timeline Reconstruction:** Even when `end_time_sensorgram` is NaN, we can calculate it from `start_time + (duration_minutes × 60)`. This means **full timeline accuracy is preserved** in the export.
-
-2. **Concentration Data in Notes:** Cycle notes are the primary source of concentration data in this export. The system allows users to store critical metadata in notes when structured fields aren't used. This is working as designed, but structured fields provide better data integrity.
-
-3. **100% Data Recovery:** Using the provided script, we can reconstruct **complete cycle metadata** including:
-   - ✅ Calculated end times from start + duration
-   - ✅ Concentrations parsed from notes
-   - ✅ SPR deltas from delta_ch columns
-   - ✅ Full timeline integration with sensorgram data
-
-**Result:** Cycles can be perfectly recreated from Excel exports, even with missing fields!
+**Cycle recreation IS POSSIBLE** using the provided script, which intelligently parses notes and reconstructs complete cycle metadata.
 
 ---
 
