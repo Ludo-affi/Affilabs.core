@@ -65,7 +65,13 @@ SW_VERSION = f"Version {get_version()}"
 TARGET = "win"
 
 if TARGET == "win":
-    ROOT_DIR = f"{os.getcwd()}\\generated-files"
+    # When frozen (PyInstaller exe), os.getcwd() returns C:\Windows\system32 — write-protected.
+    # Use the exe's own directory instead.
+    if getattr(sys, "frozen", False):
+        _base_dir = os.path.dirname(sys.executable)
+    else:
+        _base_dir = os.getcwd()
+    ROOT_DIR = os.path.join(_base_dir, "generated-files")
     os.makedirs(ROOT_DIR, exist_ok=True)
 
 elif TARGET == "mac":
@@ -77,7 +83,7 @@ EZ_CH_LIST = ["a", "b"]
 UNIT_LIST = {"nm": 1, "RU": 355}
 
 # Standard color palette
-GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 230, 65)}
+GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 122, 255), "d": (0, 230, 65)}
 
 # Colorblind-friendly palette (ColorBrewer PuOr divergent)
 # Designed to be distinguishable for all types of colorblindness
@@ -91,6 +97,10 @@ GRAPH_COLORS_COLORBLIND = {
 # Current active palette (can be toggled by user)
 # Default: Standard colors (Black, Red, Blue, Green)
 ACTIVE_GRAPH_COLORS = GRAPH_COLORS.copy()
+
+# Active line style for all sensorgram curves — Qt.PenStyle value (int)
+# 1 = SolidLine, 2 = DashLine, 3 = DotLine
+ACTIVE_LINE_STYLE = 1  # Qt.PenStyle.SolidLine
 
 # Cycle marker style: "cursors" or "lines"
 CYCLE_MARKER_STYLE = "cursors"  # Can be changed to "lines" for vertical line markers

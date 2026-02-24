@@ -1,7 +1,9 @@
 """Demo Data Generator for promotional UI screenshots.
 
-Generates realistic SPR binding curves in wavelength domain (nm) with 4 distinct
-on/off kinetic profiles across a 15-minute window.
+Generates realistic SPR binding curves in wavelength domain (nm):
+  - Live sensorgram: 5-concentration series (~30 min, all cycles visible)
+  - Active cycle graph: last (highest) concentration cycle — full 360 s view
+  - Edits tab: kinetics_demo.xlsx with matching concentration data
 
 Ctrl+Shift+D: generates a full .xlsx demo file (saved to _data/demo/kinetics_demo.xlsx)
 and loads it into the Edits tab via the normal Excel import path, then populates
@@ -202,11 +204,11 @@ def generate_concentration_series(
 
 
 def load_demo_data_into_app(app) -> None:
-    """Populate live graphs + Edits tab with fake 15-min kinetics SPR data.
+    """Populate live graphs + Edits tab with 5-concentration kinetics SPR data.
 
-    Generates the demo Excel file (kinetics_demo.xlsx), loads it into Edits
-    via the normal Excel import path, then also fills the live sensorgram
-    buffers, cycle queue, Sparq, spectroscopy tab, and ΔSPR bar chart.
+    Live sensorgram: full 5-concentration series (~30 min, all cycles visible).
+    Active cycle graph: zoomed to first cycle (0 → 360 s, full single injection).
+    Edits tab: loaded from the matching Excel file via normal import path.
 
     Call from the Application instance (main.py) after hardware init.
     Wired to Ctrl+Shift+D.
@@ -221,9 +223,28 @@ def load_demo_data_into_app(app) -> None:
     except Exception as _e:
         _errors.append(f"Excel load: {_e}\n{_tb.format_exc()}")
 
-    times_rel, wl = generate_demo_sensorgrams()
-    n = len(times_rel)
-    epoch = time.time() - times_rel[-1]  # fake epoch so times end "now"
+    # ── Generate concentration series for live buffer ─────────────────────────
+    # Each cycle: 60s baseline + 120s assoc + 180s dissoc = 360s per cycle × 5 = 1800s total
+    BASELINE_S = 60.0
+    ASSOC_S    = 120.0
+    DISSOC_S   = 180.0
+    CYCLE_S    = BASELINE_S + ASSOC_S + DISSOC_S  # 360s per cycle
+    times_abs, wl_by_cycle, cycle_windows = generate_concentration_series(
+        concentrations_nm=_DEMO_CONC_NM,
+        baseline_s=BASELINE_S,
+        assoc_s=ASSOC_S,
+        dissoc_s=DISSOC_S,
+        rate_hz=2.0,   # 2 Hz for smooth live graph (vs 1 Hz for Excel)
+        ka_per_Ms=5e4,
+    )
+
+    # Flatten per-cycle wl_by_cycle into single array per channel
+    times_rel = times_abs - times_abs[0]   # start at t=0
+    wl: dict[str, np.ndarray] = {}
+    for ch in ("a", "b", "c", "d"):
+        wl[ch] = np.concatenate([wl_by_cycle[ci][ch] for ci in range(len(wl_by_cycle))])
+
+    epoch = time.time() - times_rel[-1]  # fake epoch so series ends "now"
     abs_times = times_rel + epoch
 
     # ── Live sensorgram buffers ───────────────────────────────────────────────
@@ -249,11 +270,23 @@ def load_demo_data_into_app(app) -> None:
         _errors.append(f"Live buffers: {_e}\n{_tb.format_exc()}")
         display_times = times_rel[1:]
 
-    # Position cursors at association window (2 min → 7 min)
+    # Position cursors to show the LAST (highest concentration) full cycle
+    # Last cycle starts at (N-1)*CYCLE_S, ends at N*CYCLE_S
     try:
         ftg = app.main_window.full_timeline_graph
-        ftg.start_cursor.setValue(display_times[int(120 * 2)])   # t=120s
-        ftg.stop_cursor.setValue(display_times[int(420 * 2)])    # t=420s
+        last_cycle_start = (len(_DEMO_CONC_NM) - 1) * CYCLE_S
+        last_cycle_end   = len(_DEMO_CONC_NM) * CYCLE_S
+        _dt = times_rel[1] - times_rel[0]  # time step (0.5s at 2Hz)
+        _n_offset = int(last_cycle_start / _dt)
+        _n_end    = int(last_cycle_end   / _dt) - 2
+
+        # Clamp to valid range
+        max_idx = len(display_times) - 1
+        _n_offset = min(_n_offset, max_idx)
+        _n_end    = min(_n_end,    max_idx)
+
+        ftg.start_cursor.setValue(display_times[_n_offset])
+        ftg.stop_cursor.setValue(display_times[_n_end])
     except Exception as _e:
         _errors.append(f"Cursors: {_e}")
 

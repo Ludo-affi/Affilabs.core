@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -25,6 +27,27 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+_USER_SVG = (
+    '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
+    '<circle cx="12" cy="8" r="4" stroke="#007AFF" stroke-width="1.5"/>'
+    '<path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="#007AFF" stroke-width="1.5" stroke-linecap="round"/>'
+    '</svg>'
+)
+
+
+def _make_svg_label(svg: str, size: int = 16) -> QLabel:
+    renderer = QSvgRenderer(svg.encode("utf-8"))
+    px = QPixmap(QSize(size, size))
+    px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px)
+    renderer.render(p)
+    p.end()
+    lbl = QLabel()
+    lbl.setPixmap(px)
+    lbl.setFixedSize(size, size)
+    lbl.setStyleSheet("background: transparent;")
+    return lbl
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +64,7 @@ class UserSidebarPanel(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(280)
+        self.setFixedWidth(380)
         self.setObjectName("UserSidebarPanel")
         self.setStyleSheet("""
             QFrame#UserSidebarPanel {
@@ -71,16 +94,12 @@ class UserSidebarPanel(QFrame):
         content = QWidget()
         content.setStyleSheet("background: #FFFFFF;")
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(8)
 
         # ── Header ────────────────────────────────────────────────────────────
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
-
-        header_icon = QLabel("👥")
-        header_icon.setStyleSheet("font-size: 18px; background: transparent;")
-        header_row.addWidget(header_icon)
 
         header_title = QLabel("USERS")
         header_title.setStyleSheet(
@@ -116,12 +135,19 @@ class UserSidebarPanel(QFrame):
         banner_lay.setContentsMargins(10, 8, 10, 8)
         banner_lay.setSpacing(2)
 
+        name_row = QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(6)
+        self._banner_icon = _make_svg_label(_USER_SVG, 14)
+        name_row.addWidget(self._banner_icon)
         self._banner_name = QLabel("")
         self._banner_name.setStyleSheet(
             f"font-size: 13px; font-weight: 700; color: #007AFF;"
             f" background: transparent; font-family: {_FONT};"
         )
-        banner_lay.addWidget(self._banner_name)
+        name_row.addWidget(self._banner_name)
+        name_row.addStretch()
+        banner_lay.addLayout(name_row)
 
         self._banner_xp = QLabel("")
         self._banner_xp.setStyleSheet(
@@ -247,10 +273,10 @@ class UserSidebarPanel(QFrame):
                 title, _ = self._user_manager.get_title(current)
                 title_str = title.value if hasattr(title, "value") else str(title)
                 exp_count = self._user_manager.get_experiment_count(current)
-                self._banner_name.setText(f"👤 {current}  •  {title_str}")
+                self._banner_name.setText(f"{current}  •  {title_str}")
                 self._banner_xp.setText(f"{exp_count} experiment(s) logged")
             except Exception:
-                self._banner_name.setText(f"👤 {current}")
+                self._banner_name.setText(current)
                 self._banner_xp.setText("")
         else:
             self._banner.setVisible(False)

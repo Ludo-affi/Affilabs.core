@@ -239,8 +239,23 @@ class UIControlEventCoordinator:
                 ),
             )
 
+        # Update channel button dashed-border styles
+        try:
+            self.app.main_window._update_channel_btn_ref_styles(self.app._reference_channel)
+        except Exception:
+            pass
+
         # Recompute cycle data with new reference
         self.app._update_cycle_of_interest_graph()
+
+    def set_reference_channel(self, channel: str | None) -> None:
+        """Set reference channel directly by letter ('a'/'b'/'c'/'d') or None.
+
+        Called by the channel button right-click context menu. Delegates to
+        on_reference_changed() using the same text keys as the combo box.
+        """
+        reverse_map = {None: "None", "a": "Channel A", "b": "Channel B", "c": "Channel C", "d": "Channel D"}
+        self.on_reference_changed(reverse_map.get(channel, "None"))
 
     # =========================================================================
     # UNIT DISPLAY CONTROLS

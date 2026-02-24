@@ -36,7 +36,9 @@ from PySide6.QtWidgets import (
     QSplitter, QPushButton, QLabel, QTableWidget, QTableWidgetItem,
     QSlider, QFrame, QFileDialog
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QIcon
+from affilabs.utils.resource_path import get_affilabs_resource
 
 
 class EditsPageRedesign(QMainWindow):
@@ -277,7 +279,11 @@ class EditsPageRedesign(QMainWindow):
         header.addStretch()
         layout.addLayout(header)
 
-        load_btn = QPushButton("📂 Load Data")
+        load_btn = QPushButton(" Load Data")
+        _folder_svg = get_affilabs_resource("ui/img/folder_icon.svg")
+        if _folder_svg.exists():
+            load_btn.setIcon(QIcon(str(_folder_svg)))
+            load_btn.setIconSize(QSize(14, 14))
         load_btn.setFixedHeight(32)
         load_btn.setStyleSheet(
             "QPushButton { background: #007AFF; color: white; border-radius: 6px; "

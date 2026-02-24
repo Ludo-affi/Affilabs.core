@@ -71,6 +71,14 @@ _ICONS: dict[str, str] = {
         ' stroke-linecap="round"/>'
         '</svg>'
     ),
+    "Accessibility": (
+        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M12 7C8.5 7 5.5 9.5 4 12C5.5 14.5 8.5 17 12 17C15.5 17 18.5 14.5 20 12C18.5 9.5 15.5 7 12 7Z"'
+        ' stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>'
+        '<circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.5"/>'
+        '<circle cx="12" cy="12" r="0.8" fill="currentColor"/>'
+        '</svg>'
+    ),
     "Timer": (
         '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
         '<circle cx="12" cy="13" r="7" stroke="currentColor" stroke-width="1.4"/>'
@@ -138,7 +146,6 @@ class IconRail(QWidget):
             "font-size: 16px; font-weight: 800; color: #2E30E3; background: transparent;"
             "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
         )
-        logo.setToolTip("Affinité Instruments")
         layout.addWidget(logo)
 
         sep_top = QFrame()
@@ -170,17 +177,40 @@ class IconRail(QWidget):
         self._user_btn.clicked.connect(self._on_user_click)
         layout.addWidget(self._user_btn)
 
-        # Settings tab
-        _settings_btn = self._tab_btn("Settings", 2)
-        self._tab_buttons.append(("Settings", 2, _settings_btn))
-        layout.addWidget(_settings_btn)
+        # ── Accessibility button (popup panel, not a sidebar tab) ────────────
+        self._accessibility_btn = QPushButton()
+        self._accessibility_btn.setFixedSize(_WIDTH - 4, 40)
+        self._accessibility_btn.setCheckable(True)
+        self._accessibility_btn.setToolTip("Visual Accessibility")
+        self._accessibility_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._accessibility_btn.setIcon(_make_icon(_ICONS["Accessibility"], _COLOR_INACTIVE))
+        self._accessibility_btn.setIconSize(QSize(22, 22))
+        self._accessibility_btn.setStyleSheet(self._btn_style(active=False))
+        self._accessibility_btn.clicked.connect(self._on_accessibility_click)
+        layout.addWidget(self._accessibility_btn)
+
+        # ── Timer button (below eye/accessibility) ────────────────────────────
+        self._timer_btn = QPushButton()
+        self._timer_btn.setFixedSize(_WIDTH - 4, 40)
+        self._timer_btn.setCheckable(True)
+        self._timer_btn.setToolTip("Countdown Timer")
+        self._timer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._timer_btn.setIcon(_make_icon(_ICONS["Timer"], _COLOR_INACTIVE))
+        self._timer_btn.setIconSize(QSize(22, 22))
+        self._timer_btn.setStyleSheet(self._btn_style(active=False))
+        self._timer_btn.clicked.connect(self._on_timer_click)
+        layout.addWidget(self._timer_btn)
+
+        # Timer popup (created lazily on first click)
+        self._timer_popup = None
 
         self._user_popup = None
-        self._user_sidebar = None  # Set by AffilabsCoreUI after both widgets exist
+        self._user_sidebar = None       # Set by AffilabsCoreUI after both widgets exist
+        self._accessibility_sidebar = None  # Set by AffilabsCoreUI after both widgets exist
 
         layout.addStretch(1)
 
-        # ── Spectroscopy button (above timer) ────────────────────────────────
+        # ── Spectroscopy button ───────────────────────────────────────────────
         self._spectrum_btn = QPushButton()
         self._spectrum_btn.setFixedSize(_WIDTH - 4, 40)
         self._spectrum_btn.setCheckable(True)
@@ -196,20 +226,11 @@ class IconRail(QWidget):
         self._spectrum_btn.toggled.connect(self._on_spectrum_toggle)
         layout.addWidget(self._spectrum_btn)
 
-        # ── Timer button (above divider) ─────────────────────────────────────────────
-        self._timer_btn = QPushButton()
-        self._timer_btn.setFixedSize(_WIDTH - 4, 40)
-        self._timer_btn.setCheckable(True)
-        self._timer_btn.setToolTip("Countdown Timer")
-        self._timer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._timer_btn.setIcon(_make_icon(_ICONS["Timer"], _COLOR_INACTIVE))
-        self._timer_btn.setIconSize(QSize(22, 22))
-        self._timer_btn.setStyleSheet(self._btn_style(active=False))
-        self._timer_btn.clicked.connect(self._on_timer_click)
-        layout.addWidget(self._timer_btn)
+        # ── Settings tab (last) ───────────────────────────────────────────────
+        _settings_btn = self._tab_btn("Settings", 2)
+        self._tab_buttons.append(("Settings", 2, _settings_btn))
+        layout.addWidget(_settings_btn)
 
-        # Timer popup (created lazily on first click)
-        self._timer_popup = None
         # Select Export by default (Flow starts hidden, Method moved to transport bar)
         self._select("Export")
 
@@ -239,6 +260,59 @@ class IconRail(QWidget):
     # Timer
     # ──────────────────────────────────────────────────────────────────────────────
 
+    def _close_all_float_panels(self) -> None:
+        """Close user panel and accessibility panel — called when a sidebar tab opens."""
+        self._close_user_panel()
+        self._close_accessibility_panel()
+
+    def _close_user_panel(self) -> None:
+        """Close user panel and reset its button."""
+        panel = getattr(self, '_user_sidebar', None)
+        if panel is not None and panel.isVisible():
+            panel.hide()
+        elif self._user_popup is not None and self._user_popup.isVisible():
+            self._user_popup.hide()
+        self._user_btn.setChecked(False)
+        self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_INACTIVE))
+        self._user_btn.setStyleSheet(self._btn_style(active=False))
+
+    def _close_accessibility_panel(self) -> None:
+        """Close accessibility panel and reset its button."""
+        panel = getattr(self, '_accessibility_sidebar', None)
+        if panel is not None and panel.isVisible():
+            panel.hide()
+        self._accessibility_btn.setChecked(False)
+        self._accessibility_btn.setIcon(_make_icon(_ICONS["Accessibility"], _COLOR_INACTIVE))
+        self._accessibility_btn.setStyleSheet(self._btn_style(active=False))
+
+    def _on_accessibility_click(self) -> None:
+        """Toggle the accessibility sidebar panel."""
+        panel = getattr(self, '_accessibility_sidebar', None)
+        if panel is None:
+            self._accessibility_btn.setChecked(False)
+            return
+
+        # Wire sidebar reference if not yet done
+        if self._sidebar is not None:
+            panel.set_sidebar(self._sidebar)
+
+        visible = panel.toggle()
+        if visible:
+            self._select(None)
+            self._close_user_panel()
+            try:
+                if self._main_ui is not None:
+                    self._main_ui.collapse_sidebar()
+            except Exception:
+                pass
+            self._accessibility_btn.setChecked(True)
+            self._accessibility_btn.setIcon(_make_icon(_ICONS["Accessibility"], _COLOR_ACTIVE))
+            self._accessibility_btn.setStyleSheet(self._btn_style(active=True))
+        else:
+            self._accessibility_btn.setChecked(False)
+            self._accessibility_btn.setIcon(_make_icon(_ICONS["Accessibility"], _COLOR_INACTIVE))
+            self._accessibility_btn.setStyleSheet(self._btn_style(active=False))
+
     def _on_user_click(self) -> None:
         """Toggle the user sidebar panel (inline, right of icon rail)."""
         # Prefer the inline sidebar panel created by AffilabsCoreUI
@@ -252,6 +326,14 @@ class IconRail(QWidget):
 
             visible = panel.toggle()
             if visible:
+                # Close all other panels — only one open at a time
+                self._select(None)
+                self._close_accessibility_panel()
+                try:
+                    if self._main_ui is not None:
+                        self._main_ui.collapse_sidebar()
+                except Exception:
+                    pass
                 self._user_btn.setChecked(True)
                 self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_ACTIVE))
                 self._user_btn.setStyleSheet(self._btn_style(active=True))
@@ -284,6 +366,13 @@ class IconRail(QWidget):
             self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_INACTIVE))
             self._user_btn.setStyleSheet(self._btn_style(active=False))
         else:
+            # Close sidebar tab panel — only one open at a time
+            self._select(None)
+            try:
+                if self._main_ui is not None:
+                    self._main_ui.collapse_sidebar()
+            except Exception:
+                pass
             btn_global = self._user_btn.mapToGlobal(self._user_btn.rect().center())
             popup_x = self.mapToGlobal(self.rect().topRight()).x() + 4
             popup_y = btn_global.y() - self._user_popup.height() // 2
@@ -367,6 +456,9 @@ class IconRail(QWidget):
         if self._sidebar is None or self._main_ui is None:
             return
 
+        # Clicking any sidebar tab always closes float panels
+        self._close_all_float_panels()
+
         # Check if sidebar is currently collapsed
         try:
             is_collapsed = self._main_ui.is_sidebar_collapsed()
@@ -389,7 +481,7 @@ class IconRail(QWidget):
             self._select(None)
             return
 
-        # If expanded and different tab clicked, just switch tabs (stay expanded)
+        # If expanded and different tab clicked, close current and open new
         self._select(name)
         try:
             self._sidebar.tab_widget.setCurrentIndex(tab_idx)

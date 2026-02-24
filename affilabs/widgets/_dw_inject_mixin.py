@@ -118,7 +118,40 @@ class InjectMixin:
                 partial(self.SOI_view.display_channel_changed, ch),
             )
 
-            # Connect right-side display checkboxes (if they exist)
+        # Wire GraphContainer channel toggle buttons (Cycle of Interest title row)
+        # These mirror the segment_A/B/C/D checkboxes but live in the graph header.
+        if hasattr(self, "soi_frame") and self.soi_frame.channel_toggles:
+            for ch, btn in self.soi_frame.channel_toggles.items():
+                ch_lower = ch.lower()
+                btn.toggled.connect(
+                    partial(self.full_segment_view.display_channel_changed, ch_lower),
+                )
+                btn.toggled.connect(
+                    partial(self.SOI_view.display_channel_changed, ch_lower),
+                )
+                # Keep legacy UI checkboxes in sync
+                ui_cb_name = f"segment_{ch}"
+                if hasattr(self.ui, ui_cb_name):
+                    ui_cb = getattr(self.ui, ui_cb_name)
+                    btn.toggled.connect(
+                        lambda checked, cb=ui_cb: (
+                            cb.blockSignals(True),
+                            cb.setChecked(checked),
+                            cb.blockSignals(False),
+                        )
+                    )
+
+            # Wire reference channel Ctrl+click → DataWindow.reference_change
+            def _on_soi_ref_changed(ch_letter):
+                # ch_letter is lowercase or None
+                self.reference_change(ch_letter if ch_letter else "None")
+                # Keep set_reference dialog in sync too
+                self.set_reference(ch_letter)
+
+            self.soi_frame._on_ref_channel_changed = _on_soi_ref_changed
+
+        # Connect right-side display checkboxes (if they exist)
+        for ch in CH_LIST:
             right_checkbox_name = f"segment_{ch.upper()}_right"
             if hasattr(self.ui, right_checkbox_name):
                 getattr(self.ui, right_checkbox_name).stateChanged.connect(
@@ -269,11 +302,13 @@ class InjectMixin:
                 toggle_indicators=self.circles,
             )
 
-        # open the average channel and reference channel dialog
+        # Reference channel is now handled via Ctrl+click on the graph header buttons
+        # (soi_frame.channel_toggles). Hide the legacy dialog button.
         if isinstance(self.ui, Ui_Processing):
             self.ui.reference_channel_btn.clicked.connect(
                 self.open_reference_channel_dlg,
             )
+            self.ui.reference_channel_btn.hide()
 
         # text fields
         self.ui.left_cursor_time.returnPressed.connect(self.update_left)

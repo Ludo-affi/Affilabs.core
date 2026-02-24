@@ -15,7 +15,7 @@
         "editor.defaultFormatter": "ms-python.python"
     },
     "python.analysis.extraPaths": [],
-    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.typeCheckingMode": "off",
     "python.analysis.diagnosticMode": "openFilesOnly",
     "python.analysis.diagnosticSeverityOverrides": {
         // Import and module issues

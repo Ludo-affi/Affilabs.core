@@ -755,7 +755,7 @@ class CompressionTrainerWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.cfg = cfg or TrainerConfig()
-        self.setWindowTitle("AffiLabs  \u2014  Compression Assistant")
+        self.setWindowTitle("AffiLabs  \u2014  Compression Assistant  [BETA]")
         self.setGeometry(180, 80, 1060, 720)
         self.setMinimumSize(860, 640)
         self.setStyleSheet(f"QMainWindow {{ background: {COL_BG}; }}")
@@ -824,12 +824,28 @@ class CompressionTrainerWindow(QMainWindow):
 
         # ── Header ───────────────────────────────────────────────────────
         hdr = QHBoxLayout()
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+
         title = QLabel("Compression Assistant")
         title.setStyleSheet(
             f"font-size: 22px; font-weight: 700; color: {COL_TEXT}; "
             f"font-family: {FONT}; background: transparent;"
         )
-        hdr.addWidget(title)
+        title_col.addWidget(title)
+
+        beta_note = QLabel(
+            "BETA  \u2014  Guidance values are estimates. "
+            "Verify results with a trained operator before use in critical experiments."
+        )
+        beta_note.setStyleSheet(
+            "font-size: 11px; font-weight: 600; color: #E65100; "
+            f"font-family: {FONT}; background: transparent;"
+        )
+        title_col.addWidget(beta_note)
+
+        hdr.addLayout(title_col)
         hdr.addStretch()
 
         self.status = QLabel("Connecting...")

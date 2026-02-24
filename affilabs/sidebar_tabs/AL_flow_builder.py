@@ -1379,12 +1379,12 @@ class FlowTabBuilder:
 
         # Empty corner cell
         corner = QLabel("")
-        corner.setFixedWidth(100)
+        corner.setFixedWidth(80)
         header_row.addWidget(corner)
 
         # KC1 header
         kc1_header = QLabel("KC 1")
-        kc1_header.setFixedWidth(80)
+        kc1_header.setFixedWidth(90)
         kc1_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         kc1_header.setStyleSheet(
             "font-size: 12px;"
@@ -1397,7 +1397,7 @@ class FlowTabBuilder:
 
         # KC2 header
         kc2_header = QLabel("KC 2")
-        kc2_header.setFixedWidth(80)
+        kc2_header.setFixedWidth(90)
         kc2_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         kc2_header.setStyleSheet(
             "font-size: 12px;"
@@ -1418,7 +1418,7 @@ class FlowTabBuilder:
         loop_row.setSpacing(10)
 
         loop_label = QLabel("Loop:")
-        loop_label.setFixedWidth(100)
+        loop_label.setFixedWidth(80)
         loop_label.setStyleSheet(
             "font-size: 12px;"
             "color: #1D1D1F;"
@@ -1429,7 +1429,7 @@ class FlowTabBuilder:
 
         # KC1 Loop segmented control (Load | Sensor)
         kc1_loop_container = QWidget()
-        kc1_loop_container.setFixedSize(100, 32)
+        kc1_loop_container.setFixedSize(90, 32)
         kc1_loop_layout = QHBoxLayout(kc1_loop_container)
         kc1_loop_layout.setContentsMargins(0, 0, 0, 0)
         kc1_loop_layout.setSpacing(0)
@@ -1457,7 +1457,7 @@ class FlowTabBuilder:
 
         # KC2 Loop segmented control (Load | Sensor)
         kc2_loop_container = QWidget()
-        kc2_loop_container.setFixedSize(100, 32)
+        kc2_loop_container.setFixedSize(90, 32)
         kc2_loop_layout = QHBoxLayout(kc2_loop_container)
         kc2_loop_layout.setContentsMargins(0, 0, 0, 0)
         kc2_loop_layout.setSpacing(0)
@@ -1491,7 +1491,7 @@ class FlowTabBuilder:
         channel_row.setSpacing(10)
 
         channel_label = QLabel("Channel:")
-        channel_label.setFixedWidth(100)
+        channel_label.setFixedWidth(80)
         channel_label.setStyleSheet(
             "font-size: 12px;"
             "color: #1D1D1F;"
@@ -1502,7 +1502,7 @@ class FlowTabBuilder:
 
         # KC1 Channel segmented control (A | B)
         kc1_channel_container = QWidget()
-        kc1_channel_container.setFixedSize(76, 32)
+        kc1_channel_container.setFixedSize(90, 32)
         kc1_channel_layout = QHBoxLayout(kc1_channel_container)
         kc1_channel_layout.setContentsMargins(0, 0, 0, 0)
         kc1_channel_layout.setSpacing(0)
@@ -1530,7 +1530,7 @@ class FlowTabBuilder:
 
         # KC2 Channel segmented control (C | D)
         kc2_channel_container = QWidget()
-        kc2_channel_container.setFixedSize(76, 32)
+        kc2_channel_container.setFixedSize(90, 32)
         kc2_channel_layout = QHBoxLayout(kc2_channel_container)
         kc2_channel_layout.setContentsMargins(0, 0, 0, 0)
         kc2_channel_layout.setSpacing(0)

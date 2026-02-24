@@ -24,7 +24,8 @@
       "Bash(find:*)",
       "Bash(.venv/Scripts/python.exe:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(# Check if qt_material is actually used or just imported - navigation_presenter is shown as using ui_styles grep -rn \"\"qt_material\"\" \"\"c:/Users/lucia/OneDrive/Desktop/ezControl 2.0/Affilabs.core/test/ezControl-AI/affilabs\"\")"
     ]
   }
 }

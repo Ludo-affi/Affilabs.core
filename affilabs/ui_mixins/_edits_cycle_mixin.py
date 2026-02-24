@@ -533,15 +533,19 @@ class EditsCycleMixin:
                 if hasattr(self, 'edits_graph_curve_labels'):
                     for lbl in self.edits_graph_curve_labels:
                         lbl.hide()
-                # Hide alignment panel when nothing selected
+                # Hide time labels and legend when nothing selected
                 if hasattr(self, 'edits_tab'):
-                    self.edits_tab.alignment_panel.hide()
+                    for _lbl in ('alignment_start_time', 'alignment_end_time'):
+                        w = getattr(self.edits_tab, _lbl, None)
+                        if w:
+                            w.setVisible(False)
+                    leg = getattr(self.edits_tab, 'edits_spr_legend', None)
+                    if leg:
+                        leg.setVisible(False)
                 return
 
-            # Show alignment panel for single selection
             if len(selected_rows) == 1 and hasattr(self, 'edits_tab'):
                 row_idx = selected_rows[0]
-                self.edits_tab.alignment_panel.show()
 
                 # Update title with cycle number
                 cycle_num = row_idx + 1  # 1-indexed for display
@@ -635,11 +639,13 @@ class EditsCycleMixin:
                             duration_min = 5.0
                         end_time = start_time + (duration_min * 60)
 
-                    # Update labels or spinboxes depending on which exist
+                    # Update time labels in graph header
                     if hasattr(self.edits_tab, 'alignment_start_time'):
-                        self.edits_tab.alignment_start_time.setText(f"{start_time:.2f} s")
+                        self.edits_tab.alignment_start_time.setText(f"▶ {start_time:.0f} s")
+                        self.edits_tab.alignment_start_time.setVisible(True)
                     if hasattr(self.edits_tab, 'alignment_end_time'):
-                        self.edits_tab.alignment_end_time.setText(f"{end_time:.2f} s")
+                        self.edits_tab.alignment_end_time.setText(f"◼ {end_time:.0f} s")
+                        self.edits_tab.alignment_end_time.setVisible(True)
                     if hasattr(self.edits_tab, 'cycle_start_spinbox'):
                         self.edits_tab.cycle_start_spinbox.blockSignals(True)
                         self.edits_tab.cycle_start_spinbox.setValue(float(start_time))
@@ -649,8 +655,11 @@ class EditsCycleMixin:
                         self.edits_tab.cycle_end_spinbox.setValue(float(end_time))
                         self.edits_tab.cycle_end_spinbox.blockSignals(False)
             elif hasattr(self, 'edits_tab'):
-                # Hide for multi-selection (no alignment controls for multiple cycles)
-                self.edits_tab.alignment_panel.hide()
+                # Hide time labels for multi-selection
+                for _lbl in ('alignment_start_time', 'alignment_end_time'):
+                    w = getattr(self.edits_tab, _lbl, None)
+                    if w:
+                        w.setVisible(False)
 
             # Get cycle data
             if not hasattr(self, '_loaded_cycles_data') or not self._loaded_cycles_data:
@@ -923,6 +932,13 @@ class EditsCycleMixin:
             # Update Y-axis label to show RU
             self.edits_primary_graph.setLabel('left', 'Response (RU)')
             logger.info("[GRAPH] Auto-scaled graph to fit data")
+
+            # Show floating legend as soon as a cycle is on the graph
+            if hasattr(self, 'edits_tab'):
+                _leg = getattr(self.edits_tab, 'edits_spr_legend', None)
+                if _leg is not None and not _leg.isVisible():
+                    _leg.setVisible(True)
+                    self.edits_tab._position_edits_legend()
 
             # Style reference channel: dashed light-gray so it reads as background
             import pyqtgraph as pg

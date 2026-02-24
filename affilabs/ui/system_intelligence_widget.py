@@ -6,8 +6,8 @@ Author: AI Assistant
 Date: November 21, 2025
 """
 
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QSize, QTimer
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from affilabs.utils.resource_path import get_affilabs_resource
 
 from affilabs.core.system_intelligence import (
     IssueSeverity,
@@ -96,7 +97,11 @@ class SystemIntelligenceWidget(QWidget):
         clear_btn.clicked.connect(self._on_clear_all)
         button_row.addWidget(clear_btn)
 
-        report_btn = QPushButton("📊 Save Report")
+        report_btn = QPushButton(" Save Report")
+        _chart_svg = get_affilabs_resource("ui/img/chart_icon.svg")
+        if _chart_svg.exists():
+            report_btn.setIcon(QIcon(str(_chart_svg)))
+            report_btn.setIconSize(QSize(14, 14))
         report_btn.clicked.connect(self._on_save_report)
         button_row.addWidget(report_btn)
 

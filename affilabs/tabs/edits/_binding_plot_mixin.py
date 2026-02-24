@@ -20,7 +20,17 @@ try:
 except ImportError:
     _SCIPY_OK = False
 
-_CH_COLORS = ['#1D1D1F', '#FF3B30', '#007AFF', '#34C759']
+_CH_COLORS_DEFAULT = ['#1D1D1F', '#FF3B30', '#007AFF', '#34C759']
+
+
+def _ch_colors() -> list[str]:
+    """Return the active channel palette, falling back to defaults."""
+    try:
+        from affilabs.settings import settings as _s
+        palette = _s.ACTIVE_GRAPH_COLORS
+        return [palette.get(ch, _CH_COLORS_DEFAULT[i]) for i, ch in enumerate('abcd')]
+    except Exception:
+        return _CH_COLORS_DEFAULT
 
 
 class BindingPlotMixin:
@@ -119,7 +129,7 @@ class BindingPlotMixin:
         dspr_arr = np.array(dspr_list)
         ref_label = refs_seen.pop() if len(refs_seen) == 1 else 'mixed ⚠'
         model = self.binding_model_combo.currentText()
-        ch_color = _CH_COLORS[current_ch]
+        ch_color = _ch_colors()[current_ch]
 
         # Unit scaling — concentration values in Excel are assumed to be in nM
         unit_combo = getattr(self, 'binding_conc_unit_combo', None)
@@ -294,6 +304,11 @@ class BindingPlotMixin:
         self.binding_model_lbl.setText(model)
         self.binding_formula_lbl.setText(formula_text)
         self.binding_params_lbl.setText(params_text)
+        self.binding_params_lbl.setStyleSheet(
+            "font-size: 11px; color: #3D3D3D; "
+            "font-family: 'SF Mono', 'Consolas', 'Courier New', monospace; "
+            "background: #F5F5F7; border-radius: 5px; padding: 5px 7px;"
+        )
         self.binding_r2_lbl.setText(f"R² = {r2:.3f}")
         self.binding_r2_lbl.setStyleSheet(
             f"font-size:12px; font-weight:700; color:{r2_color};"
@@ -301,6 +316,12 @@ class BindingPlotMixin:
         self.binding_ref_lbl.setText(f"ref: {ref_label}")
         self.binding_kd_lbl.setText(kd_text)
         self.binding_kd_lbl.setVisible(bool(kd_text))
+        if kd_text:
+            self.binding_kd_lbl.setStyleSheet(
+                "font-size: 16px; font-weight: 700; color: #1D1D1F; "
+                f"border-left: 3px solid {ch_color}; padding-left: 8px; "
+                "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
+            )
         self.binding_warn_frame.setVisible(model == '1:1 Langmuir')
 
         # --- Cache for export ---

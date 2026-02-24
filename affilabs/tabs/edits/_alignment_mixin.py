@@ -17,18 +17,134 @@ class AlignmentMixin:
     # ------------------------------------------------------------------
     # Bar-chart colour updates
     # ------------------------------------------------------------------
-    def update_barchart_colors(self, colorblind_enabled: bool):
-        """Update bar chart colors when colorblind mode is toggled.
+    def update_barchart_colors(self, colorblind_enabled: bool = False, hex_colors: list | None = None):
+        """Update bar chart and edits graph curve colors from a palette or colorblind toggle.
 
         Args:
-            colorblind_enabled: True if colorblind mode is enabled
+            colorblind_enabled: legacy bool for old colorblind toggle path
+            hex_colors: list of 4 hex strings [A, B, C, D] from accessibility panel palette
         """
-        from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+        if hex_colors is not None:
+            bar_colors = hex_colors
+        else:
+            from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+            bar_colors = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
 
-        bar_colors = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
-
-        for i, (bar, color) in enumerate(zip(self.delta_spr_bars, bar_colors)):
+        # Update delta SPR bar chart
+        for bar, color in zip(self.delta_spr_bars, bar_colors):
             bar.setOpts(brush=pg.mkColor(color))
+
+        # Update edits primary graph curves and channel-end labels
+        if hasattr(self, 'edits_graph_curves'):
+            from affilabs.settings import settings as _settings
+            pen_style_val = getattr(_settings, 'ACTIVE_LINE_STYLE', 1)
+            from PySide6.QtCore import Qt
+            pen_style = Qt.PenStyle(pen_style_val)
+            for i, curve in enumerate(self.edits_graph_curves):
+                if i < len(bar_colors):
+                    curve.setPen(pg.mkPen(color=bar_colors[i], width=2, style=pen_style))
+            if hasattr(self, 'edits_graph_curve_labels'):
+                for i, label in enumerate(self.edits_graph_curve_labels):
+                    if i < len(bar_colors):
+                        label.setColor(bar_colors[i])
+
+        # Update A/B/C/D channel toggle buttons above the graph
+        if hasattr(self, 'edits_channel_buttons'):
+            from affilabs.ui_styles import get_channel_button_style, get_channel_button_ref_style
+            ref = getattr(self, '_edits_ref_channel', None)
+            for i, ch in enumerate('ABCD'):
+                btn = self.edits_channel_buttons.get(ch)
+                if btn and i < len(bar_colors):
+                    color = bar_colors[i]
+                    btn.setProperty("channel_color", color)
+                    style_fn = get_channel_button_ref_style if ch == ref else get_channel_button_style
+                    btn.setStyleSheet(style_fn(color))
+
+        # Update floating legend colors
+        legend = getattr(self, 'edits_spr_legend', None)
+        if legend is not None:
+            legend.update_colors()
+
+    # ------------------------------------------------------------------
+    # Edits channel button — eventFilter + reference handling
+    # Mirrors graph_components.py pattern exactly.
+    # ------------------------------------------------------------------
+    def eventFilter(self, obj, event):
+        """Handle events on edits graph and channel buttons.
+
+        - Ctrl+click on A/B/C/D buttons → set/clear reference channel
+        - Left/Right arrow on edits_primary_graph → step cycle selection
+        - Resize on edits_primary_graph → reposition floating legend
+        """
+        from PySide6.QtCore import QEvent, Qt
+
+        graph = getattr(self, 'edits_primary_graph', None)
+
+        # ── Graph keyboard navigation ──────────────────────────────────
+        if obj is graph and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key == Qt.Key.Key_Left:
+                self._step_cycle_selection(-1)
+                return True
+            if key == Qt.Key.Key_Right:
+                self._step_cycle_selection(1)
+                return True
+
+        # ── Legend reposition on graph resize ─────────────────────────
+        if obj is graph and event.type() == QEvent.Type.Resize:
+            if hasattr(self, '_position_edits_legend'):
+                self._position_edits_legend()
+
+        # ── Ctrl+click on channel toggle buttons ──────────────────────
+        if (event.type() == QEvent.Type.MouseButtonPress
+                and event.button() == Qt.MouseButton.LeftButton
+                and event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            ch_letter = obj.property("channel_letter")
+            if ch_letter and ch_letter in getattr(self, 'edits_channel_buttons', {}):
+                self._on_edits_channel_ref_ctrl_click(ch_letter)
+                return True
+
+        return False  # pass event through (EditsTab is not a QObject; no Qt super chain)
+
+    def _step_cycle_selection(self, delta: int) -> None:
+        """Move table selection by delta rows (−1 = previous, +1 = next)."""
+        table = getattr(self, 'cycle_data_table', None)
+        if table is None:
+            return
+        current = table.currentRow()
+        row_count = table.rowCount()
+        if row_count == 0:
+            return
+        if current < 0:
+            new_row = 0 if delta > 0 else row_count - 1
+        else:
+            new_row = max(0, min(row_count - 1, current + delta))
+        if new_row != current:
+            table.clearSelection()
+            table.selectRow(new_row)
+            table.scrollToItem(table.item(new_row, 0))
+
+    def _on_edits_channel_ref_ctrl_click(self, ch: str) -> None:
+        """Set or clear reference channel on Ctrl+click (does not affect checked state)."""
+        current_ref = getattr(self, '_edits_ref_channel', None)
+        new_ref = None if ch == current_ref else ch
+        self._edits_ref_channel = new_ref
+        self._update_edits_channel_ref_styles(new_ref)
+        # Sync alignment_ref_combo
+        if hasattr(self, 'alignment_ref_combo'):
+            combo_text = {None: "None", "A": "Ch A", "B": "Ch B", "C": "Ch C", "D": "Ch D"}
+            self.alignment_ref_combo.blockSignals(True)
+            self.alignment_ref_combo.setCurrentText(combo_text.get(new_ref, "None"))
+            self.alignment_ref_combo.blockSignals(False)
+            self._on_reference_changed(combo_text.get(new_ref, "None"))
+
+    def _update_edits_channel_ref_styles(self, ref_ch: "str | None") -> None:
+        """Apply dotted border to the reference channel button; restore others."""
+        from affilabs.ui_styles import get_channel_button_style, get_channel_button_ref_style
+        for ch, btn in getattr(self, 'edits_channel_buttons', {}).items():
+            color = btn.property("channel_color") or "#1D1D1F"
+            style_fn = get_channel_button_ref_style if ch == ref_ch else get_channel_button_style
+            btn.setStyleSheet(style_fn(color))
 
     # ------------------------------------------------------------------
     # Alignment channel / shift handlers
@@ -454,6 +570,18 @@ class AlignmentMixin:
             # Propagate to binding plot if visible
             if hasattr(self, 'bottom_tab_widget') and self.bottom_tab_widget.currentIndex() == 1:
                 self._update_binding_plot()
+
+        # ── Update floating legend ─────────────────────────────────────
+        legend = getattr(self, 'edits_spr_legend', None)
+        if legend is not None and self.current_delta_values:
+            ch_keys = ['a', 'b', 'c', 'd']
+            legend.update_values({
+                ch: float(v)
+                for ch, v in zip(ch_keys, self.current_delta_values)
+            })
+            if not legend.isVisible():
+                legend.setVisible(True)
+                self._position_edits_legend()
 
     # ------------------------------------------------------------------
     # Time-shift application & slider/input sync

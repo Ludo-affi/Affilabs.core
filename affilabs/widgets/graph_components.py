@@ -1,6 +1,6 @@
 """Modern graph components extracted from UI Prototype Rev 1."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFrame,
@@ -86,11 +86,21 @@ class GraphHeader(QWidget):
 class GraphContainer(QFrame):
     """Graph container with title, controls, and graph area."""
 
+    # Channel colours matching the live sensorgram header
+    _CH_COLORS = {
+        "A": "#1D1D1F",
+        "B": "#FF3B30",
+        "C": "#007AFF",
+        "D": "#34C759",
+    }
+
     def __init__(self, title, height=200, show_delta_spr=False, parent=None):
         super().__init__(parent)
         self.graph_title = title
         self.show_delta = show_delta_spr
         self.delta_display = None
+        self.channel_toggles: dict[str, QPushButton] = {}  # only populated when show_delta_spr
+        self.reference_channel_id: str | None = None        # currently active ref channel letter
         self._setup_ui(height)
 
     def _setup_ui(self, height):
@@ -125,10 +135,31 @@ class GraphContainer(QFrame):
 
     def _create_title_row(self):
         """Create the title row with controls."""
-        title_row = QHBoxLayout()
-        title_row.setSpacing(12)
+        from affilabs.ui_styles import get_channel_button_style
 
-        # Title label
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+
+        # ── Channel toggle buttons (Cycle of Interest graph only) ──────────────
+        if self.show_delta:
+            _BTN_W, _BTN_H = 32, 28
+            for ch, color in self._CH_COLORS.items():
+                btn = QPushButton(ch)
+                btn.setCheckable(True)
+                btn.setChecked(True)
+                btn.setFixedSize(_BTN_W, _BTN_H)
+                btn.setToolTip(f"Toggle Channel {ch}\nCtrl+click to set/clear as reference channel")
+                btn.setProperty("channel_color", color)
+                btn.setProperty("channel_letter", ch.lower())
+                btn.setStyleSheet(get_channel_button_style(color))
+                btn.installEventFilter(self)
+                self.channel_toggles[ch] = btn
+                title_row.addWidget(btn)
+            title_row.addSpacing(8)
+
+        title_row.addStretch()
+
+        # Title label — shown after buttons so it sits right-of-centre
         title_label = QLabel(self.graph_title)
         title_label.setStyleSheet(
             "QLabel {"
@@ -261,6 +292,46 @@ class GraphContainer(QFrame):
         graph_layout.addWidget(x_axis_container)
 
         return graph_area
+
+    # ── Channel toggle / reference helpers ────────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        """Intercept Ctrl+click on channel buttons to toggle reference channel."""
+        if (event.type() == QEvent.Type.MouseButtonPress
+                and event.button() == Qt.MouseButton.LeftButton
+                and event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            ch_letter = obj.property("channel_letter")
+            if ch_letter:
+                self._on_channel_ref_ctrl_click(ch_letter)
+                return True
+        return super().eventFilter(obj, event)
+
+    def _on_channel_ref_ctrl_click(self, ch_letter: str) -> None:
+        """Set or clear reference channel on Ctrl+click."""
+        if self.reference_channel_id == ch_letter:
+            self.reference_channel_id = None
+        else:
+            self.reference_channel_id = ch_letter
+        self._update_channel_btn_ref_styles()
+        # Notify the DataWindow via callback if wired
+        cb = getattr(self, '_on_ref_channel_changed', None)
+        if callable(cb):
+            cb(self.reference_channel_id)
+
+    def _update_channel_btn_ref_styles(self) -> None:
+        """Apply dotted border to the reference button; solid to all others."""
+        from affilabs.ui_styles import get_channel_button_style, get_channel_button_ref_style
+        for ch, btn in self.channel_toggles.items():
+            color = btn.property("channel_color") or self._CH_COLORS.get(ch, "#1D1D1F")
+            if self.reference_channel_id and ch.lower() == self.reference_channel_id:
+                btn.setStyleSheet(get_channel_button_ref_style(color))
+            else:
+                btn.setStyleSheet(get_channel_button_style(color))
+
+    def set_reference_channel(self, ch_letter: str | None) -> None:
+        """Programmatically set reference channel (e.g. from DataWindow.set_reference)."""
+        self.reference_channel_id = ch_letter
+        self._update_channel_btn_ref_styles()
 
     def set_graph_widget(self, widget):
         """Replace the placeholder with actual graph widget."""

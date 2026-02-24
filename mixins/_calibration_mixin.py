@@ -194,6 +194,16 @@ class CalibrationMixin:
             self.ui_updates.set_transmission_updates_enabled(True)
             self.ui_updates.set_raw_spectrum_updates_enabled(True)
 
+        # Re-enable live graph display on main window
+        try:
+            if hasattr(self, 'sensogram_presenter') and self.sensogram_presenter:
+                self.sensogram_presenter.set_live_data_enabled(True)
+                logger.debug("Live graph display re-enabled")
+            elif hasattr(self, 'main_window'):
+                self.main_window.live_data_enabled = True
+        except Exception as e:
+            logger.debug(f"Could not re-enable live graph display: {e}")
+
         if hasattr(self, 'data_mgr') and self.data_mgr:
             logger.debug("Restarting live data acquisition...")
             try:

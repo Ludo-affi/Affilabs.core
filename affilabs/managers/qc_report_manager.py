@@ -499,13 +499,17 @@ class QCReportManager:
 
     def _generate_html_report(self, report: dict) -> str:
         """Generate HTML report from QC data."""
+        import re as _re
         metadata = report["metadata"]
         qc_validation = report["qc_validation"]
+        # Mask supplier prefix for customer-facing display
+        _raw_serial = metadata.get('device_serial', '')
+        _display_serial = _re.sub(r'(?i)^FLMT', 'AFFI', str(_raw_serial))
 
         html = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>QC Report - {metadata['device_serial']}</title>
+    <title>QC Report - {_display_serial}</title>
     <style>
         body {{ font-family: -apple-system, system-ui, sans-serif; margin: 40px; background: #f5f5f7; }}
         .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
@@ -524,7 +528,7 @@ class QCReportManager:
         <h1>📊 Calibration QC Report</h1>
 
         <div class="metadata">
-            <p><strong>Device Serial:</strong> {metadata['device_serial']}</p>
+            <p><strong>Device Serial:</strong> {_display_serial}</p>
             <p><strong>Timestamp:</strong> {metadata['timestamp']}</p>
             <p><strong>Firmware:</strong> {metadata['firmware_version']}</p>
             <p><strong>Software:</strong> {metadata['software_version']}</p>

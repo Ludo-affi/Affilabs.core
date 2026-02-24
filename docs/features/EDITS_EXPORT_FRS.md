@@ -1,5 +1,7 @@
 # Edits Tab — Export System FRS
 
+**Last Verified:** February 24, 2026 — Affilabs.core v2.0.5 beta
+
 > **Source files (code-verified)**
 > - `affilabs/tabs/edits/_export_mixin.py` — all Edits tab export methods (1467 lines)
 > - `affilabs/widgets/_dw_export_mixin.py` — live recording TraceDrawer export (reference)

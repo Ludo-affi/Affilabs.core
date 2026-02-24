@@ -1,7 +1,9 @@
 """Data export and management panel for sidebar."""
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QSize
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QGroupBox, QLabel, QPushButton, QVBoxLayout, QWidget
+from affilabs.utils.resource_path import get_affilabs_resource
 
 
 class DataPanel(QWidget):
@@ -39,7 +41,11 @@ class DataPanel(QWidget):
         export_layout.addWidget(self.export_csv_btn)
 
         # Export to Excel button
-        self.export_excel_btn = QPushButton("📊 Export to Excel")
+        self.export_excel_btn = QPushButton(" Export to Excel")
+        _export_svg = get_affilabs_resource("ui/img/export_package_icon.svg")
+        if _export_svg.exists():
+            self.export_excel_btn.setIcon(QIcon(str(_export_svg)))
+            self.export_excel_btn.setIconSize(QSize(14, 14))
         self.export_excel_btn.setToolTip(
             "Export data to Excel format (.xlsx) with multiple sheets",
         )

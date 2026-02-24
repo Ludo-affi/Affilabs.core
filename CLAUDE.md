@@ -159,6 +159,9 @@ Ignored by Claude Code (use --no-ignore to access):
 | EditsTab — cycle display, graph rendering | [EDITS_CYCLE_DISPLAY_FRS.md](docs/features/EDITS_CYCLE_DISPLAY_FRS.md) | `main.py` (`_display_cycle_in_edits*`) |
 | EditsTab — data loading utilities | [EDITS_DATA_LOADING_FRS.md](docs/features/EDITS_DATA_LOADING_FRS.md) | `affilabs/tabs/edits/_data_utils.py` |
 | Recording, auto-save, Excel export | [RECORDING_MANAGER_FRS.md](docs/features/RECORDING_MANAGER_FRS.md) | `affilabs/managers/recording_manager.py` |
+| Experiment index — searchable log of all recording sessions | [EXPERIMENT_INDEX_FRS.md](docs/features/EXPERIMENT_INDEX_FRS.md) | `affilabs/services/experiment_index.py` (planned) |
+| Experiment browser dialog — search/load past recordings from Edits tab | [EXPERIMENT_BROWSER_FRS.md](docs/features/EXPERIMENT_BROWSER_FRS.md) | `affilabs/dialogs/experiment_browser_dialog.py` (planned) |
+| Notes tab — ELN, experiment list, Kanban, planning, tags, ratings | [NOTES_TAB_FRS.md](docs/features/NOTES_TAB_FRS.md) | `affilabs/tabs/notes_tab.py` |
 | Excel chart generation | [EXCEL_CHART_BUILDER_FRS.md](docs/features/EXCEL_CHART_BUILDER_FRS.md) | `affilabs/services/excel_exporter.py` |
 | Controller HAL, servo commands, adapters | [CONTROLLER_HAL_FRS.md](docs/features/CONTROLLER_HAL_FRS.md) | `affilabs/utils/hal/controller_hal.py` |
 | Pump HAL, AffiPump, Cavro protocol | [PUMP_HAL_FRS.md](docs/features/PUMP_HAL_FRS.md) | `affilabs/utils/hal/pump_hal.py` |
@@ -173,6 +176,12 @@ Ignored by Claude Code (use --no-ignore to access):
 | Compression Assistant — guided chip compression, gauge, QC leak check | [COMPRESSION_ASSISTANT_FRS.md](docs/features/COMPRESSION_ASSISTANT_FRS.md) | `standalone_tools/compression_trainer_ui.py` |
 | Timeline events, CycleMarker, stream API | [TIMELINE_QUICK_START.md](docs/architecture/TIMELINE_QUICK_START.md) | `affilabs/domain/timeline.py`, `affilabs/core/recording_manager.py`, `affilabs/managers/flag_manager.py`, `mixins/_cycle_mixin.py` |
 | Timeline Phase 5+ roadmap, proposed improvements | [TIMELINE_ROADMAP.md](docs/future_plans/TIMELINE_ROADMAP.md) | `affilabs/domain/timeline.py` |
+| 21 CFR Part 11 compliance — gap analysis, implementation order, files to create | [21CFR_PART11_GAP_ANALYSIS.md](docs/future_plans/21CFR_PART11_GAP_ANALYSIS.md) | `affilabs/services/audit_log.py` (planned) |
+| IQ/OQ plan — check IDs, test suites, report format, implementation order | [IQOQ_PLAN.md](docs/future_plans/IQOQ_PLAN.md) | `scripts/validation/`, `tests/oq/` (planned) |
+| TransportBar (toolbar redesign), IconRail (vertical tab strip) | [TRANSPORT_BAR_FRS.md](docs/features/TRANSPORT_BAR_FRS.md) | `affilabs/widgets/transport_bar.py`, `affilabs/widgets/icon_rail.py` |
+| SpectrumBubble, RailTimerPopup, LiveContextPanel, LiveRightPanel | [FLOATING_PANELS_FRS.md](docs/features/FLOATING_PANELS_FRS.md) | `affilabs/widgets/spectrum_bubble.py`, `affilabs/widgets/rail_timer_popup.py`, `affilabs/widgets/live_context_panel.py`, `affilabs/widgets/live_right_panel.py` |
+| GuidanceCoordinator — adaptive contextual hints | [GUIDANCE_COORDINATOR_FRS.md](docs/features/GUIDANCE_COORDINATOR_FRS.md) | `affilabs/coordinators/guidance_coordinator.py` |
+| Accessibility panel — colour palettes, line styles, dark mode | [ACCESSIBILITY_PANEL_FRS.md](docs/features/ACCESSIBILITY_PANEL_FRS.md) | `affilabs/widgets/accessibility_panel.py`, `affilabs/affilabs_core_ui.py` |
 
 **Rule:** If the task touches a subsystem listed above, read the FRS doc first. Only open the source file if the doc doesn't answer the question.
 
@@ -418,22 +427,26 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 <!-- Keep it SHORT — 5-10 bullet points max. Delete stale items aggressively. -->
 
 ### Current Focus
-- UX polish / feature-completion phase post-mixin refactor — app boots cleanly
-- v2.0.5 beta released 2026-02-17
-- **Timeline system implementation** — Phases 1–4 + improvements B/C/D/E/F complete ✅
+- UX polish / feature-completion phase — v2.0.5 beta released 2026-02-17
+- Sidebar redesign (v2.1): `TransportBar`, `IconRail`, floating panels complete ✅ — stubs for `LiveContextPanel` (Phase 3) and `LiveRightPanel` (Phase 2) in place, not wired
 
 ### In-Progress / Known Issues
 - `ApplicationState` migration incomplete — `app_state.py` defines target but `main.py` not yet converted
 - Timeline Phase 5 (Presenters: SensogramPresenter + EditsTab query from stream) — ready to start
-- Binding Plot (`_binding_plot_mixin.py`) — plan complete, implementation not yet started
-- **No wash flag from WashMonitor** — `_WashMonitor.wash_detected` only calls `bar.set_channel_wash(ch)` (visual). No graph flag placed. Wash flags only come from `_timer_mixin._place_automatic_wash_flags()` on timer expiry.
-- **Manual injection auto-detection not firing** — `_scan_channel()` uses `auto_detect_injection_point()` (raw nm, no RU conversion). `[SCAN x]` lines now at INFO level. Needs live test to confirm detection fires; if still silent, check `detection_priority` passed from coordinator and whether `window_start_time` mask leaves enough points.
+- **GuidanceCoordinator Pass B** — Pass A (logging only) complete; Pass B (widget calls: `push_hint`, show/hide rail buttons, update combos) not yet implemented
+- **No wash flag from WashMonitor** — `_WashMonitor.wash_detected` only calls `bar.set_channel_wash(ch)` (visual). Wash flags only from `_timer_mixin._place_automatic_wash_flags()`.
+- **Manual injection auto-detection not firing** — needs live test; if silent check `detection_priority` and `window_start_time` mask
 
 ### Recently Completed
-- **Injection lifecycle timeout fix** ✅ (Feb 22 2026) — `done_event.wait(timeout=95)` in `injection_coordinator.py` fired `injection_completed` prematurely when contact_time was set. Now: `_on_dialog_complete` doesn't unblock BG thread when contact_time exists; waits for `_on_bar_done` (all channels washed). Timeout = `95 + contact_time + 120s`.
-- **Dormant vs active panel appearance** ✅ (Feb 22 2026) — Were visually identical (`#F2F2F7`, `#8E8E93`). Now: dormant = dashed `#C7C7CC` border + lighter text; active = solid `rgba(0,122,255,0.20)` blue border + `#F8F8FA` bg + "Waiting for injection…" text.
-- **EditsTab blank graph bug fixed** ✅ (Feb 21 2026) — `_AlignChannelProxy` was missing `blockSignals()` and `setCurrentText()` methods
-- **Active Cycle graph embeds** ✅ (Feb 21 2026) — `InteractiveSPRLegend` IQ dots live-wired; `CycleStatusOverlay` replaces floating popup
+- **Notes tab Phase 4 (Kanban stub)** ✅ (Feb 24 2026) — `QStackedWidget` view stack; `☰ List` / `⊞ Kanban` toggle header with active/inactive styles; Kanban placeholder widget at index 1. `_switch_to_list_view` / `_switch_to_kanban_view` methods.
+- **Notes tab Phase 3 (recording hooks)** ✅ (Feb 24 2026) — `recording_mgr.recording_started/stopped` wired to `notes_tab.on_recording_started/stopped` in `main.py _connect_hardware_and_manager_signals()`; redundant `notes_tab.refresh()` removed from `_acquisition_mixin.py`.
+- **Notes tab Phase 2b (ELN widgets)** ✅ (Feb 24 2026) — editable notes + 800ms debounce save, `_StarRatingWidget` (interactive 1–5 stars), tag pill editor with `QCompleter`, `PreviewWorker` + `pg.PlotWidget` sensorgram preview. Live filter counts wired. `notes_tab.py` now 1253 lines.
+- **Notes tab Phase 2 (tab shell)** ✅ (Feb 24 2026) — `notes_tab.py` 719 lines: 3-panel layout (nav/list/preview) wired into `content_stack` index 2.
+- **Notes tab Phase 1 (data layer)** ✅ (Feb 24 2026) — `experiment_index.py` fully implemented (384 lines): rating, tags, notes/description, planned entries CRUD, extended search, schema v2 with v1 migration guard.
+- **ACCESSIBILITY_PANEL_FRS.md** ✅ (Feb 23 2026) — Full FRS written (8 sections); fixed stale `int(pen_style)` → `pen_style.value` note; added FRS map entry to CLAUDE.md
+- **`int(pen_style)` crash fixed** ✅ (Feb 23 2026) — `affilabs_core_ui.py:_on_line_style_changed` now uses `pen_style.value` (PySide6 enums reject `int()`)
+- **Documentation audit** ✅ (Feb 23 2026) — 7 undocumented widgets catalogued; wrote TRANSPORT_BAR_FRS.md, FLOATING_PANELS_FRS.md, GUIDANCE_COORDINATOR_FRS.md; updated UI_COMPONENT_INVENTORY.md §1 + §4 + §6; added FRS map entries to CLAUDE.md
+- **Injection lifecycle timeout fix** ✅ (Feb 22 2026) — `done_event.wait(timeout=95 + contact_time + 120s)` in `injection_coordinator.py`
 
 ### Context Maintenance Workflow
 **At the end of each work session**, update this "Active Context" section:

@@ -629,11 +629,11 @@ class DeviceStatusMixin:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"AffiLabs_debug_log_{timestamp}.txt"
 
-            # Save to current working directory
-            dest_path = os.path.join(os.getcwd(), filename)
+            # Save next to the log file (ROOT_DIR), not CWD (broken in frozen exe)
+            from settings import ROOT_DIR
+            dest_path = os.path.join(ROOT_DIR, filename)
 
             # Source log file path (from logger.py configuration)
-            from settings import ROOT_DIR
             source_log = os.path.join(ROOT_DIR, "logfile.txt")
 
             # Copy the actual log file

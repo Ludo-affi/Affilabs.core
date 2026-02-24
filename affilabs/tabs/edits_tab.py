@@ -11,6 +11,7 @@ This tab provides:
 import re
 
 import pandas as pd
+from PySide6.QtWidgets import QPushButton
 
 from affilabs.utils.logger import logger
 from affilabs.tabs.edits._data_mixin import DataMixin
@@ -203,7 +204,8 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
 
         self.meta_operator.setText(operator_str if operator_str else "-")
 
-        # DEVICE: Prefer loaded metadata, fall back to current device
+        # DEVICE: Prefer loaded metadata, fall back to current device.
+        # Mask supplier prefix "FLMT" → "AFFI" for customer-facing display.
         device_str = None
 
         if loaded_metadata and 'device_id' in loaded_metadata:
@@ -213,7 +215,197 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
             device_id = getattr(dc, 'device_serial', '') or ''
             device_str = device_id if device_id else None
 
+        if device_str:
+            import re as _re
+            device_str = _re.sub(r'(?i)^FLMT', 'AFFI', device_str)
+
         self.meta_device.setText(device_str if device_str else "-")
+
+        # CALIBRATION: name of the startup calibration JSON used for this session.
+        # Prefer explicit metadata key, then look at latest_calibration.json timestamp,
+        # then fall back to calibration_service's last saved path.
+        if not hasattr(self, 'meta_calibration'):
+            return  # widget not yet built (guard during early init)
+
+        cal_str = None
+        if loaded_metadata and 'calibration_file' in loaded_metadata:
+            cal_str = loaded_metadata['calibration_file']
+        else:
+            try:
+                from pathlib import Path as _Path
+                import json as _json
+                _cal_dir = _Path("calibration_results")
+                _latest = _cal_dir / "latest_calibration.json"
+                if _latest.exists():
+                    with open(_latest) as _f:
+                        _meta = _json.load(_f).get("calibration_metadata", {})
+                    _ts = _meta.get("timestamp", "")
+                    if _ts:
+                        # Convert ISO timestamp to filename: calibration_YYYYMMDD_HHMMSS.json
+                        from datetime import datetime as _dt
+                        _dt_obj = _dt.fromisoformat(_ts)
+                        cal_str = f"calibration_{_dt_obj.strftime('%Y%m%d_%H%M%S')}.json"
+            except Exception:
+                pass
+
+        self.meta_calibration.setText(cal_str if cal_str else "-")
+
+        # TRANSMISSION BASELINE FILE: the Excel file from a baseline recording.
+        # Prefer explicit metadata key, then try the current recording's output file.
+        trans_str = None
+        if loaded_metadata and 'transmission_file' in loaded_metadata:
+            trans_str = loaded_metadata['transmission_file']
+        elif loaded_metadata and 'baseline_file' in loaded_metadata:
+            trans_str = loaded_metadata['baseline_file']
+        else:
+            try:
+                from pathlib import Path as _Path2
+                _rec = getattr(getattr(self.main_window, 'app', None), 'recording_mgr', None)
+                if _rec and getattr(_rec, 'current_file', None):
+                    trans_str = _Path2(_rec.current_file).name
+            except Exception:
+                pass
+
+        self.meta_transmission_file.setText(trans_str if trans_str else "-")
+
+        # RATING + TAGS: from ExperimentIndex, keyed by loaded file path
+        if hasattr(self, 'meta_star_buttons'):
+            entry = self._find_index_entry_for_file(getattr(self, '_loaded_file_path', None))
+            rating = entry.get("rating", 0) if entry else 0
+            self._set_star_display(rating)
+            tags = entry.get("tags", []) if entry else []
+            self._refresh_tags_display(tags)
+
+    # ── ExperimentIndex integration ───────────────────────────────────────────
+
+    def _find_index_entry_for_file(self, file_path) -> dict | None:
+        """Return the ExperimentIndex entry whose 'file' field matches file_path, or None."""
+        if not file_path:
+            return None
+        try:
+            from pathlib import Path as _P
+            from affilabs.services.experiment_index import ExperimentIndex
+            idx = ExperimentIndex()
+            abs_path = _P(file_path).resolve()
+            base = (_P.home() / "Documents" / "Affilabs Data").resolve()
+            # Build both relative and absolute forms for comparison
+            try:
+                rel = str(abs_path.relative_to(base))
+            except ValueError:
+                rel = None
+            abs_str = str(abs_path)
+            for entry in idx.all_entries():
+                entry_file = entry.get("file", "")
+                # Match against relative path first, then absolute
+                if rel and (entry_file == rel or entry_file.replace("\\", "/") == rel.replace("\\", "/")):
+                    return entry
+                if entry_file == abs_str or _P(entry_file).resolve() == abs_path:
+                    return entry
+        except Exception:
+            pass
+        return None
+
+    def _set_star_display(self, rating: int) -> None:
+        """Update the 5 star buttons to reflect the given rating (0 = none filled)."""
+        for i, btn in enumerate(self.meta_star_buttons, start=1):
+            if i <= rating:
+                btn.setStyleSheet(btn.styleSheet().replace("color: #D1D1D6", "color: #FF9500")
+                                  if "color: #FF9500" not in btn.styleSheet() else btn.styleSheet())
+                # Simpler: set inline color per button
+                btn.setProperty("active", True)
+            else:
+                btn.setProperty("active", False)
+            # Force repaint via individual style
+            filled = i <= rating
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    border: none;
+                    font-size: 16px;
+                    color: {"#FF9500" if filled else "#D1D1D6"};
+                    padding: 0px;
+                }}
+                QPushButton:hover {{ color: #FF9500; }}
+            """)
+
+    def _on_star_clicked(self, n: int) -> None:
+        """Toggle or set star rating. Clicking the current rating clears it (sets to 0)."""
+        entry = self._find_index_entry_for_file(getattr(self, '_loaded_file_path', None))
+        if not entry:
+            return
+        try:
+            from affilabs.services.experiment_index import ExperimentIndex
+            idx = ExperimentIndex()
+            current = entry.get("rating", 0)
+            new_rating = 0 if current == n else n
+            idx.set_rating(entry["id"], new_rating)
+            self._set_star_display(new_rating)
+        except Exception:
+            pass
+
+    def _refresh_tags_display(self, tags: list) -> None:
+        """Rebuild the tag pills container to show current tags."""
+        layout = self._meta_tags_pills_layout
+        # Clear all existing pill widgets (keep the stretch at the end)
+        while layout.count() > 1:
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        # Add a pill per tag
+        for tag in tags:
+            pill = QPushButton(f"{tag}  ✕")
+            pill.setFixedHeight(20)
+            pill.setStyleSheet(f"""
+                QPushButton {{
+                    background: #E3F0FF;
+                    border: 1px solid #B0D0FF;
+                    border-radius: 10px;
+                    font-size: 10px;
+                    color: #007AFF;
+                    padding: 0px 8px;
+                }}
+                QPushButton:hover {{
+                    background: #FFE5E5;
+                    border-color: #FF3B30;
+                    color: #FF3B30;
+                }}
+            """)
+            _t = tag
+            pill.clicked.connect(lambda checked, t=_t: self._on_tag_removed(t))
+            layout.insertWidget(layout.count() - 1, pill)
+
+    def _on_tag_added(self) -> None:
+        """Read tag from input, write to index, refresh display."""
+        tag = self.meta_tag_input.text().strip().lower()
+        if not tag:
+            return
+        entry = self._find_index_entry_for_file(getattr(self, '_loaded_file_path', None))
+        if not entry:
+            return
+        try:
+            from affilabs.services.experiment_index import ExperimentIndex
+            idx = ExperimentIndex()
+            idx.add_tag(entry["id"], tag)
+            # Re-read to get updated tags
+            updated = self._find_index_entry_for_file(self._loaded_file_path)
+            self._refresh_tags_display(updated.get("tags", []) if updated else [])
+            self.meta_tag_input.clear()
+        except Exception:
+            pass
+
+    def _on_tag_removed(self, tag: str) -> None:
+        """Remove a tag from the index entry and refresh display."""
+        entry = self._find_index_entry_for_file(getattr(self, '_loaded_file_path', None))
+        if not entry:
+            return
+        try:
+            from affilabs.services.experiment_index import ExperimentIndex
+            idx = ExperimentIndex()
+            idx.remove_tag(entry["id"], tag)
+            updated = self._find_index_entry_for_file(self._loaded_file_path)
+            self._refresh_tags_display(updated.get("tags", []) if updated else [])
+        except Exception:
+            pass
 
     def _update_selection_view(self):
         """Update active selection graph based on timeline cursor positions."""

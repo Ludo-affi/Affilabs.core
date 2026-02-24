@@ -3,8 +3,8 @@
 **Source:** `affilabs/ui_mixins/_edits_cycle_mixin.py` (1664 lines)  
 **Owner:** `MainWindowPrototype` (via mixin)  
 **Consumed by:** `EditsTab`, `SegmentManager`, `FlagManager`, `RecordingManager`  
-**Version:** Affilabs.core v2.0.5 beta  
-**Status:** Code-verified 2026-02-19
+**Version:** Affilabs.core v2.0.5 beta
+**Status:** Code-verified 2026-02-24
 
 ---
 
@@ -220,38 +220,30 @@ if hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
 
 | Selection | Action |
 |-----------|--------|
-| **No rows** | Clear graph, hide alignment panel |
-| **Single row** | Show alignment panel, populate controls, render cycle with shift + ref subtraction, show baseline cursors |
-| **Multi-row** | Hide alignment panel, overlay all selected cycles on graph (no shifts applied) |
+| **No rows** | Clear graph, hide time labels |
+| **Single row** | Render cycle with shift + ref subtraction; show start/end time labels in graph header |
+| **Multi-row** | Overlay all selected cycles on graph (no shifts applied); hide time labels |
 
-#### Single-Selection Panel Population
+#### Single-Selection Header Population
 
-**Alignment panel title:**
+**Time labels** (inline in Active Selection graph header):
 ```python
-self.edits_tab.alignment_title.setText(f"Cycle {cycle_num} Details & Editing")
+self.edits_tab.alignment_start_time.setText(f"▶ {start:.0f} s")
+self.edits_tab.alignment_end_time.setText(f"◼ {end:.0f} s")
+self.edits_tab.alignment_start_time.setVisible(True)
+self.edits_tab.alignment_end_time.setVisible(True)
 ```
 
-**Flags display** (color-coded):
-```python
-# Extract from cycle.get('flags', '')
-- Red (❌): contains 'error', 'fail', 'invalid', 'bad'
-- Orange (⚠): contains 'warning', 'check', 'review'
-- Blue (🏷️): other flags
-- Green (✓): no flags
-```
-
-**Alignment controls** (from `_cycle_alignment[row_idx]`):
-- `alignment_channel_combo` → `channel` field ('A', 'B', 'C', 'D', 'All')
-- `alignment_ref_combo` → `ref` field ('Global', 'Ch A', 'Ch B', 'Ch C', 'Ch D', 'None')
-- `alignment_shift_input` (QLineEdit) → `shift` field, formatted to 1 decimal: `"12.5"`
-- `alignment_shift_slider` (QSlider) → `int(shift * 10)` (range: −2000 to +2000 = −200.0s to +200.0s in 0.1s increments)
+**Alignment panel** (now invisible stubs — no visible panel):
+- `alignment_ref_combo` stub → still synced from `_cycle_alignment[row_idx]['ref']`
+- `alignment_shift_input` stub → still synced from `_cycle_alignment[row_idx]['shift']`
+- `alignment_channel_combo` (via `_AlignChannelProxy`) → synced from `_cycle_alignment[row_idx]['channel']`
 
 **Cycle boundaries:**
 ```python
 start_time = cycle.get('start_time_sensorgram', 0)
 end_time = cycle.get('end_time_sensorgram') or (start_time + duration_minutes * 60)
 ```
-Updated in: `alignment_start_time`, `alignment_end_time` (labels), or `cycle_start_spinbox`, `cycle_end_spinbox` (if exist — legacy UI elements).
 
 #### Data Source Resolution Strategy
 
@@ -732,7 +724,7 @@ spr_data = delta_wavelength * WAVELENGTH_TO_RU
 
 **Why 355?** Empirically calibrated for gold-coated sensors in Kretschmann configuration at ~630 nm resonance. This factor converts wavelength shift (nm) to standard "Response Units" (RU) comparable to angular SPR systems.
 
-**Sign convention:** Negative wavelength shift (blue shift) = positive RU response = binding event.
+**Sign convention:** Positive wavelength shift (red shift) = positive RU response = binding event. SPR on gold produces a RED SHIFT when analyte binds — ΔSPR values are positive on binding.
 
 ### Reference Subtraction Interpolation
 
@@ -799,13 +791,9 @@ for data_point in raw_data:
 
 **Complexity:** Requires per-cycle ref interpolation + separate baseline correction per cycle before overlay.
 
-### Issue #3: Baseline Cursor Logic Not Implemented
+### ~~Issue #3: Baseline Cursor Logic Not Implemented~~ **RESOLVED**
 
-Lines 908-918 have placeholder logic for baseline cursors (start/stop cursors for ΔSPR measurement), but no cursor creation code exists.
-
-**Expected:** On single-cycle selection, place 2 draggable cursors on graph → user can measure ΔSPR between cursors → value auto-saved to `_loaded_cycles_data[row]` and table.
-
-**Current:** ΔSPR values are **static** from recording time; no live editing via cursors.
+Delta SPR cursors (`delta_spr_start_cursor` / `delta_spr_stop_cursor`) are implemented as draggable `pg.InfiniteLine` objects on `edits_primary_graph`. Dragging updates the bar chart and InteractiveSPRLegend in real time. Lock button pins cursor distance to `contact_time × 1.1` for consistent cross-cycle measurement.
 
 ### Issue #4: CWD-Relative Paths in Segment Export
 
@@ -842,8 +830,9 @@ Lines 908-918 have placeholder logic for baseline cursors (start/stop cursors fo
 - `cycles_data` (list of dicts)
 
 **Data read from EditsTab:**
-- `alignment_panel`, `alignment_title`, `alignment_flags_display`
-- `alignment_channel_combo`, `alignment_ref_combo`, `alignment_shift_input`, `alignment_shift_slider`
+- `alignment_start_time`, `alignment_end_time` (graph header labels — shown/hidden)
+- `alignment_ref_combo` (stub), `alignment_shift_input` (stub), `alignment_shift_slider` (stub) — synced but invisible
+- `_AlignChannelProxy` (channel selector proxy) — `.setCurrentText()` / `.blockSignals()` called
 - `cycle_data_table.selectedItems()` → selected row indices
 
 ### → RecordingManager

@@ -11,7 +11,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
-from ui_styles import Colors, Fonts, label_style
+from affilabs.ui_styles import Colors, Fonts, label_style
 
 
 class NavigationPresenter:
@@ -44,8 +44,9 @@ class NavigationPresenter:
 
         # Navigation buttons (Analysis and Report tabs disabled)
         nav_button_configs = [
-            ("Live", 0, "Real-time data visualization and cycle monitoring"),
+            ("Live",  0, "Real-time data visualization and cycle monitoring"),
             ("Edits", 1, "Edit and annotate experiment data"),
+            ("Notes", 2, "Experiment history and lab notebook"),
         ]
 
         for i, (label, page_index, tooltip) in enumerate(nav_button_configs):

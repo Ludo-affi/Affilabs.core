@@ -28,6 +28,7 @@ from tinydb import TinyDB, Query
 
 from affilabs.domain.cycle import Cycle
 from affilabs.utils.logger import logger
+from affilabs.utils.resource_path import get_writable_data_path
 
 
 class CycleTemplate:
@@ -89,13 +90,13 @@ class CycleTemplate:
 class CycleTemplateStorage:
     """Storage service for cycle templates using TinyDB."""
 
-    def __init__(self, db_path: str = "cycle_templates.json"):
+    def __init__(self, db_path: str = ""):
         """Initialize template storage.
 
         Args:
-            db_path: Path to TinyDB database file
+            db_path: Path to TinyDB database file (default: writable data dir)
         """
-        self.db_path = Path(db_path)
+        self.db_path = Path(db_path) if db_path else get_writable_data_path("cycle_templates.json")
         self.db = TinyDB(self.db_path)
         self.templates_table = self.db.table('templates')
 

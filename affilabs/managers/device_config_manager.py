@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import threading
 
-from dialogs import DeviceConfigDialog
+from affilabs.dialogs import DeviceConfigDialog
 from PySide6.QtWidgets import QDialog
 
 from affilabs.utils.logger import logger

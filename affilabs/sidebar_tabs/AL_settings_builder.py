@@ -66,9 +66,6 @@ class SettingsTabBuilder:
         self._build_hardware_configuration(tab_layout)
         self._build_calibration_controls(tab_layout)
 
-        # Display Controls (moved from Graphic Control tab)
-        self._build_display_controls_section(tab_layout)
-
         # Spectroscopy plots moved to LiveContextPanel (Phase 3 sidebar redesign).
         # Previously: self._build_spectroscopy_plots(tab_layout)
         # Plots now live in affilabs/widgets/live_context_panel.py alongside the sensorgram.
@@ -83,7 +80,7 @@ class SettingsTabBuilder:
         from sections import CollapsibleSection
         from affilabs.sidebar_tabs.AL_device_status_builder import DeviceStatusTabBuilder
 
-        hw_section = CollapsibleSection("🔌 Hardware Status", is_expanded=False)
+        hw_section = CollapsibleSection("Hardware Status", is_expanded=False)
         hw_section.content_layout.setSpacing(8)
 
         # Run the Device Status builder into this section's layout.
@@ -584,7 +581,7 @@ class SettingsTabBuilder:
         """Create placeholder for spectroscopy plots - will be lazy loaded on tab open."""
         from sections import CollapsibleSection
 
-        spectro_section = CollapsibleSection("📊 Live Spectroscopy", is_expanded=True)
+        spectro_section = CollapsibleSection("Live Spectroscopy", is_expanded=True)
 
         # Store reference for lazy loading
         self.sidebar._spectroscopy_section = spectro_section
@@ -614,7 +611,7 @@ class SettingsTabBuilder:
         from affilabs.utils.logger import logger
 
         logger.debug("Building spectroscopy plots in Settings tab...")
-        spectro_section = CollapsibleSection("📊 Live Spectroscopy", is_expanded=True)
+        spectro_section = CollapsibleSection("Live Spectroscopy", is_expanded=True)
 
         spectro_help = QLabel(
             "Real-time transmission and raw detector spectrum display",
@@ -801,7 +798,7 @@ class SettingsTabBuilder:
     def _build_hardware_configuration(self, tab_layout: QVBoxLayout):
         """Build hardware configuration section with polarizer and LED settings (collapsible, starts expanded)."""
         hardware_section = CollapsibleSection(
-            "⚙ Hardware Configuration",
+            "Hardware Configuration",
             is_expanded=False,
         )
 
@@ -1035,7 +1032,7 @@ class SettingsTabBuilder:
     def _build_calibration_controls(self, tab_layout: QVBoxLayout):
         """Build calibration controls section with Simple, Full, and OEM calibrations (collapsible, starts collapsed)."""
         calibration_section = CollapsibleSection(
-            "🔧 Calibration Controls",
+            "Calibration Controls",
             is_expanded=False,
         )
 
@@ -1119,6 +1116,8 @@ class SettingsTabBuilder:
             primary=False,
         )
 
+        self._build_data_filtering(calibration_card_layout)
+
         calibration_section.add_content_widget(calibration_card)
         tab_layout.addWidget(calibration_section)
 
@@ -1129,7 +1128,7 @@ class SettingsTabBuilder:
     def _build_display_controls_section(self, tab_layout: QVBoxLayout):
         """Build display controls section (moved from Graphic Control tab)."""
         display_section = CollapsibleSection(
-            "🎨 Display Controls",
+            "Display Controls",
             is_expanded=False,
         )
 
@@ -1156,8 +1155,6 @@ class SettingsTabBuilder:
         display_card_layout.setSpacing(12)
 
         self._build_data_filtering(display_card_layout)
-        self._build_reference_section(display_card_layout)
-        self._build_visual_accessibility(display_card_layout)
 
         display_section.add_content_widget(display_card)
         tab_layout.addWidget(display_section)

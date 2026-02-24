@@ -1,12 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+
+# Project root is one level above the _build/ directory that contains this spec.
+# SPECPATH is injected by PyInstaller and equals the directory of the .spec file.
+PROJECT_ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
 
 # Read version from VERSION file
-with open('VERSION', 'r') as f:
+with open(os.path.join(PROJECT_ROOT, 'VERSION'), 'r') as f:
     VERSION = f.read().strip()
 
 # Find libusb DLL - check common locations
-import os
-import sys
 
 # Find libusb DLL — prefer venv site-packages, then common system paths
 libusb_dll = None
@@ -39,26 +44,36 @@ else:
     binaries = [(libusb_dll, '.')]
 
 a = Analysis(
-    ['main.py'],
-    pathex=[],
+    [os.path.join(PROJECT_ROOT, 'main.py')],
+    pathex=[PROJECT_ROOT],
     binaries=binaries,
     datas=[
-        ('VERSION', '.'),
-        ('affilabs/ui', 'affilabs/ui'),
-        ('affilabs/config', 'affilabs/config'),
-        ('affilabs/data', 'affilabs/data'),  # Knowledge base, Spark AI data
-        ('affilabs/services', 'affilabs/services'),  # Include Spark services
-        ('affilabs/convergence/models', 'affilabs/convergence/models'),
-        ('affilabs/utils/Sensor64bit.dll', 'affilabs/utils'),
-        ('detector_profiles', 'detector_profiles'),
-        ('led_calibration_official', 'led_calibration_official'),
-        ('settings', 'settings'),
-        ('standalone_tools', 'standalone_tools'),
-        ('data', 'data'),  # Spark tips, QA history, runtime data
+        (os.path.join(PROJECT_ROOT, 'VERSION'), '.'),
+        (os.path.join(PROJECT_ROOT, 'affilabs/ui'), 'affilabs/ui'),
+        (os.path.join(PROJECT_ROOT, 'affilabs/config'), 'affilabs/config'),
+        (os.path.join(PROJECT_ROOT, 'affilabs/data'), 'affilabs/data'),  # Knowledge base, Spark AI data
+        (os.path.join(PROJECT_ROOT, 'affilabs/convergence/models'), 'affilabs/convergence/models'),
+        (os.path.join(PROJECT_ROOT, 'affilabs/utils/Sensor64bit.dll'), 'affilabs/utils'),
+        (os.path.join(PROJECT_ROOT, 'detector_profiles'), 'detector_profiles'),
+        (os.path.join(PROJECT_ROOT, 'led_calibration_official'), 'led_calibration_official'),
+        (os.path.join(PROJECT_ROOT, 'settings'), 'settings'),
+        (os.path.join(PROJECT_ROOT, 'data'), 'data'),  # Spark tips, QA history, runtime data
         # Piper TTS (if exists) - optional for Spark voice
-        # ('piper', 'piper'),  # Uncomment if you have Piper TTS installed
+        # (os.path.join(PROJECT_ROOT, 'piper'), 'piper'),  # Uncomment if you have Piper TTS installed
     ],
-    hiddenimports=[
+    hiddenimports=(
+        collect_submodules('affilabs') +
+        collect_submodules('AffiPump') +
+        collect_submodules('mixins') +
+        collect_submodules('settings') +
+    [
+        # Only compression_trainer_ui is imported from standalone_tools (calibration_service.py)
+        'standalone_tools',
+        'standalone_tools.compression_trainer_ui',
+        # Root-level modules
+        'affilabs.ui_styles',
+        'affilabs.dialogs',
+        'affilabs.dialogs.device_config_dialog',
         'PySide6',
         'pyqtgraph',
         'scipy',
@@ -71,9 +86,6 @@ a = Analysis(
         'libusb_package',
         'sklearn',
         'joblib',
-        'standalone_tools',
-        'standalone_tools.compression_trainer_ui',
-        'standalone_tools.compression_labeller',
         'tinydb',
         'tinydb.queries',
         'tinydb.table',
@@ -88,33 +100,9 @@ a = Analysis(
         'affilabs.services.spark.knowledge_base',
         'affilabs.services.spark.tinylm',
         'affilabs.services.spark.patterns',
-        # PyTorch/Transformers (TinyLM AI model) - optional but needed if AI enabled
-        'torch',
-        'torch.nn',
-        'torch.nn.functional',
-        'transformers',
-        'transformers.models',
-        'transformers.models.llama',
-        'transformers.models.llama.modeling_llama',
-        'transformers.models.llama.tokenization_llama',
-        'transformers.models.llama.tokenization_llama_fast',
-        'transformers.pipelines',
-        'transformers.pipelines.text_generation',
-        'tokenizers',
-        'tokenizers.implementations',
-        'tokenizers.models',
-        'tokenizers.pre_tokenizers',
-        'tokenizers.processors',
-        'datasets',
-        'huggingface_hub',
-        'safetensors',
-        # TTS dependencies (optional - for Spark voice)
-        'sounddevice',
-        'cffi',
-        'cffi.api',
-        'cffi.backend_ctypes',
+        # cffi - needed by some serial/USB libs
         '_cffi_backend',
-    ],
+    ]),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -126,6 +114,11 @@ a = Analysis(
         'numpy.tests',
         'pandas.tests',
         'sklearn.tests',
+        # TinyLM removed — exclude to prevent accidental bundling
+        'torch', 'torchvision', 'torchaudio',
+        'transformers', 'tokenizers', 'datasets',
+        'huggingface_hub', 'safetensors',
+        'sounddevice',
     ],
     noarchive=False,
     optimize=0,
@@ -160,11 +153,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['ui\\img\\affinite2.ico'],
+    icon=[os.path.join(PROJECT_ROOT, 'affilabs', 'ui', 'img', 'affinite2.ico')],
 )

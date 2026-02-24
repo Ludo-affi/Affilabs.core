@@ -179,6 +179,19 @@ class RecordingManager(QObject):
                         logger.info(f"Experiment count incremented: {new_count}")
                 except Exception as e:
                     logger.warning(f"Could not increment experiment count: {e}")
+
+                # Write experiment index entry
+                try:
+                    from affilabs.services.experiment_index import record_experiment
+                    record_experiment(
+                        current_file=self.current_file,
+                        recording_start_time=self.data_collector.recording_start_time,
+                        cycles=self.data_collector.cycles,
+                        metadata=self.data_collector.metadata,
+                        user_manager=self.user_manager,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not write experiment index: {e}")
             else:
                 logger.info("Recording stopped (data in memory - click Export to save)")
 

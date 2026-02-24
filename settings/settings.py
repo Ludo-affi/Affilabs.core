@@ -64,7 +64,14 @@ SW_VERSION = f"Version {get_version()}"
 TARGET = "win"
 
 if TARGET == "win":
-    ROOT_DIR = f"{os.getcwd()}\\generated-files"
+    # When frozen (PyInstaller exe), use the exe's directory, not CWD.
+    # CWD inside a frozen exe launched from Explorer/taskbar is C:\Windows\system32
+    # which is write-protected and causes PermissionError on log/config creation.
+    if getattr(sys, "frozen", False):
+        _base_dir = os.path.dirname(sys.executable)
+    else:
+        _base_dir = os.getcwd()
+    ROOT_DIR = os.path.join(_base_dir, "generated-files")
     os.makedirs(ROOT_DIR, exist_ok=True)
 
 elif TARGET == "mac":
@@ -76,7 +83,7 @@ EZ_CH_LIST = ["a", "b"]
 UNIT_LIST = {"nm": 1, "RU": 355}
 
 # Standard color palette
-GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 174, 255), "d": (0, 230, 65)}
+GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 122, 255), "d": (0, 230, 65)}
 
 # Colorblind-friendly palette (ColorBrewer PuOr divergent)
 # Designed to be distinguishable for all types of colorblindness

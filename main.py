@@ -1505,6 +1505,13 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         self.recording_mgr.recording_stopped.connect(self._on_recording_stopped)
         self.recording_mgr.recording_error.connect(self._on_recording_error)
         self.recording_mgr.event_logged.connect(self._on_event_logged)
+        if hasattr(self, 'notes_tab'):
+            self.recording_mgr.recording_started.connect(
+                self.notes_tab.on_recording_started, Qt.QueuedConnection
+            )
+            self.recording_mgr.recording_stopped.connect(
+                self.notes_tab.on_recording_stopped, Qt.QueuedConnection
+            )
 
         # === GUIDANCE COORDINATOR SIGNALS (Phase 6) ===
         if getattr(self, 'guidance_coordinator', None):
@@ -1567,8 +1574,17 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
         logger.debug("Connected: main_window UI action signals")
 
-        # === DEBUG SHORTCUTS ===
+        # === TAB SHORTCUTS ===
         from PySide6.QtGui import QKeySequence, QShortcut
+        _nav = self.main_window.navigation_presenter
+        _sc1 = QShortcut(QKeySequence("Ctrl+1"), self.main_window)
+        _sc1.activated.connect(lambda: _nav.switch_page(0))
+        _sc2 = QShortcut(QKeySequence("Ctrl+2"), self.main_window)
+        _sc2.activated.connect(lambda: _nav.switch_page(1))
+        _sc3 = QShortcut(QKeySequence("Ctrl+3"), self.main_window)
+        _sc3.activated.connect(lambda: _nav.switch_page(2))
+
+        # === DEBUG SHORTCUTS ===
         # logger.info(f"[OK] Ctrl+Shift+C registered: {bypass_calibration_shortcut}")
 
         # Ctrl+Shift+S: Start simulation mode (inject fake spectra)

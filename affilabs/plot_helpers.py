@@ -102,10 +102,21 @@ def create_time_plot(
     return w
 
 
+def _active_channel_colors() -> list[str]:
+    """Return current palette from settings.ACTIVE_GRAPH_COLORS, falling back to CHANNEL_COLORS."""
+    try:
+        from affilabs.settings import settings as _s
+        palette = _s.ACTIVE_GRAPH_COLORS
+        return [palette.get(ch, CHANNEL_COLORS[i]) for i, ch in enumerate('abcd')]
+    except Exception:
+        return CHANNEL_COLORS
+
+
 def add_channel_curves(plot: pg.PlotWidget, clickable: bool = False, width: int = 2):
     """Add four channel curves to a plot and return list of curve refs."""
+    colors = _active_channel_colors()
     curves = []
-    for i, color in enumerate(CHANNEL_COLORS):
+    for i, color in enumerate(colors):
         curve = plot.plot(
             pen=pg.mkPen(color=color, width=width),
             name=f"Channel {chr(65+i)}",

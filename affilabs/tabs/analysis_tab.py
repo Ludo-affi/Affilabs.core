@@ -9,16 +9,17 @@ This tab is focused on scientific analysis after data quality has been verified:
 - Export publication-ready overlays
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QPushButton,
     QSplitter, QTableWidget, QTableWidgetItem, QCheckBox, QHeaderView,
     QComboBox, QGraphicsDropShadowEffect
 )
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon
 import pyqtgraph as pg
 
 from affilabs.utils.logger import logger
+from affilabs.utils.resource_path import get_affilabs_resource
 
 
 class AnalysisTab:
@@ -323,7 +324,11 @@ class AnalysisTab:
             self.channel_toggles.append(ch_btn)
         
         # Normalize overlay toggle (t=0 alignment)
-        self.normalize_overlay_btn = QPushButton("📊 Align t=0")
+        self.normalize_overlay_btn = QPushButton(" Align t=0")
+        _chart_svg = get_affilabs_resource("ui/img/chart_icon.svg")
+        if _chart_svg.exists():
+            self.normalize_overlay_btn.setIcon(QIcon(str(_chart_svg)))
+            self.normalize_overlay_btn.setIconSize(QSize(14, 14))
         self.normalize_overlay_btn.setCheckable(True)
         self.normalize_overlay_btn.setChecked(True)  # Default enabled
         self.normalize_overlay_btn.setFixedHeight(28)
@@ -763,7 +768,11 @@ class AnalysisTab:
         layout.addLayout(conc_layout)
         
         # Fit button
-        self.fit_btn = QPushButton("⚡ Fit Kinetics")
+        self.fit_btn = QPushButton(" Fit Kinetics")
+        _lightning_svg = get_affilabs_resource("ui/img/lightning_icon.svg")
+        if _lightning_svg.exists():
+            self.fit_btn.setIcon(QIcon(str(_lightning_svg)))
+            self.fit_btn.setIconSize(QSize(16, 16))
         self.fit_btn.setFixedHeight(36)
         self.fit_btn.setStyleSheet(
             "QPushButton {"

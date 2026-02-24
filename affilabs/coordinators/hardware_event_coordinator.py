@@ -359,7 +359,9 @@ class HardwareEventCoordinator:
 
         if has_detector:
             detector_serial = status.get("spectrometer_serial", "unknown")
-            found.append(f"✓ Detector (S/N: {detector_serial})")
+            import re as _re
+            _display_serial = _re.sub(r'(?i)^FLMT', 'AFFI', str(detector_serial))
+            found.append(f"✓ Detector (S/N: {_display_serial})")
         else:
             missing.append("✗ Detector")
 

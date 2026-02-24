@@ -358,8 +358,8 @@ class AffilabsMainWindow(
         )
 
         self.sidebar = AffilabsSidebar()
-        self.sidebar.setMinimumWidth(50)  # ~tab bar width — always keeps icon strip visible
-        self.sidebar.setMaximumWidth(900)  # Maximum width for sidebar
+        self.sidebar.setMinimumWidth(50)   # ~tab bar width — always keeps icon strip visible
+        self.sidebar.setMaximumWidth(380)  # Fixed panel width — matches UserSidebarPanel
         # Give sidebar reference to device_config for S/P position syncing
         self.sidebar.device_config = self.device_config
         # Give sidebar reference to app for accessing _completed_cycles
@@ -367,9 +367,10 @@ class AffilabsMainWindow(
         self.sidebar.app = None
 
         # Forward sidebar control references to main window for easy access
-        self.colorblind_check = self.sidebar.colorblind_check
-        self.ref_combo = self.sidebar.ref_combo
-        self.export_data_btn = self.sidebar.export_data_btn
+        # colorblind_check now lives on accessibility_panel (wired after panel creation below)
+        self.colorblind_check = None
+        self.ref_combo = getattr(self.sidebar, 'ref_combo', None)
+        self.export_data_btn = getattr(self.sidebar, 'export_data_btn', None)
 
         # Initialize unit buttons (will be set from advanced settings)
         self.ru_btn = QPushButton("RU")
@@ -446,6 +447,11 @@ class AffilabsMainWindow(
         # Edits tab with cycle data table and timeline editing
         self.content_stack.addWidget(self._create_edits_content())  # Index 1
 
+        # Notes tab — ELN, experiment history, search
+        from affilabs.tabs.notes_tab import NotesTab
+        self.notes_tab = NotesTab(self)
+        self.content_stack.addWidget(self.notes_tab)  # Index 2
+
         # Analysis and Report tabs disabled - not used in this software version
 
         # Phase 2: Live Right Panel — shown/hidden by acquisition start/stop
@@ -487,13 +493,25 @@ class AffilabsMainWindow(
         self.sidebar._icon_rail = self.icon_rail  # direct ref so show_flow_tab() works
         main_layout.addWidget(self.icon_rail)
 
-        # User sidebar panel — 280px, hidden by default, toggled by icon rail user button
+        # User sidebar panel — hidden by default, toggled by icon rail user button
         from affilabs.widgets.user_panel_popup import UserSidebarPanel
         self.user_sidebar_panel = UserSidebarPanel(parent=self)
         self.user_sidebar_panel.setVisible(False)
         main_layout.addWidget(self.user_sidebar_panel)
-        # Give the icon rail a reference so _on_user_click can use it
         self.icon_rail._user_sidebar = self.user_sidebar_panel
+
+        # Accessibility sidebar panel — hidden by default, toggled by icon rail accessibility button
+        from affilabs.widgets.accessibility_panel import AccessibilityPanel
+        self.accessibility_panel = AccessibilityPanel(parent=self)
+        self.accessibility_panel.setVisible(False)
+        main_layout.addWidget(self.accessibility_panel)
+        self.icon_rail._accessibility_sidebar = self.accessibility_panel
+        # Forward colorblind_check reference to main window
+        self.colorblind_check = self.accessibility_panel.colorblind_check
+        # Wire accessibility signals
+        self.accessibility_panel.palette_changed.connect(self._on_palette_changed)
+        self.accessibility_panel.line_style_changed.connect(self._on_line_style_changed)
+        self.accessibility_panel.dark_mode_changed.connect(self._on_dark_mode_toggled)
 
         main_layout.addWidget(self.splitter)
 
@@ -555,6 +573,30 @@ class AffilabsMainWindow(
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         sb.addPermanentWidget(self.subunit_optics_dot)
+
+        # Acquiring pulse dot — shown + blinks while DAQ is running (left side)
+        self._acq_dot = QLabel("● ACQ")
+        self._acq_dot.setStyleSheet(
+            "color: #007AFF; font-size: 11px; font-weight: 700; margin: 0 8px; "
+            "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
+        )
+        self._acq_dot.hide()
+        sb.addWidget(self._acq_dot)
+
+        # Recording badge — shown while file recording is active (left side)
+        self._rec_badge_status = QLabel("● REC")
+        self._rec_badge_status.setStyleSheet(
+            "color: #FF3B30; font-size: 11px; font-weight: 700; margin: 0 4px 0 0; "
+            "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
+        )
+        self._rec_badge_status.hide()
+        sb.addWidget(self._rec_badge_status)
+
+        # 800 ms blink timer for the acquiring dot
+        self._acq_pulse_timer = QTimer(self)
+        self._acq_pulse_timer.setInterval(800)
+        self._acq_pulse_visible = True
+        self._acq_pulse_timer.timeout.connect(self._tick_acq_pulse)
 
     def _create_sensorgram_content(self):
         """Create the Sensorgram tab content with dual-graph layout (master-detail pattern)."""
@@ -749,7 +791,7 @@ class AffilabsMainWindow(
         so the transition is seamless when real graphs load.
         """
         placeholder = QFrame()
-        placeholder.setStyleSheet("QFrame { background: {Colors.BACKGROUND_WHITE};  }")
+        placeholder.setStyleSheet(f"QFrame {{ background: {Colors.BACKGROUND_WHITE};  }}")
 
         layout = QVBoxLayout(placeholder)
         layout.setContentsMargins(Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
@@ -1744,18 +1786,16 @@ class AffilabsMainWindow(
         from affilabs.ui_styles import get_channel_button_style
         from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
         from affilabs.settings import settings as _settings
-        import pyqtgraph as pg
 
         # Select color palette based on mode
         colors = CHANNEL_COLORS_COLORBLIND if enabled else CHANNEL_COLORS
-        channel_colors_rgb = [self._hex_to_rgb(c) for c in colors]
 
-        # Keep settings.ACTIVE_GRAPH_COLORS in sync so legend.update_colors() reads correct palette
+        # Keep settings.ACTIVE_GRAPH_COLORS in sync so update_colors() reads correct palette
         _ch_keys = ['a', 'b', 'c', 'd']
         for i, ch in enumerate(_ch_keys):
             _settings.ACTIVE_GRAPH_COLORS[ch] = colors[i]
 
-        # Notify legend of colorblind mode for shape encoding
+        # Notify legend of colorblind mode for shape encoding (unique to this handler)
         if hasattr(self, 'cycle_of_interest_graph'):
             legend = getattr(self.cycle_of_interest_graph, 'interactive_spr_legend', None)
             if legend is not None:
@@ -1765,28 +1805,228 @@ class AffilabsMainWindow(
         if hasattr(self, 'channel_toggles'):
             for i, (ch, btn) in enumerate(self.channel_toggles.items()):
                 btn.setStyleSheet(get_channel_button_style(colors[i]))
+                btn.setProperty("channel_color", colors[i])
 
-        # Update Full Timeline graph curve colors (Live Sensorgram - top graph)
-        if hasattr(self, 'full_timeline_graph') and hasattr(self.full_timeline_graph, 'curves'):
-            for i, curve in enumerate(self.full_timeline_graph.curves):
-                curve.setPen(pg.mkPen(color=channel_colors_rgb[i], width=2))
-
-        # Update Active Cycle graph curve colors (bottom graph)
-        if hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'curves'):
-            selected_channel = getattr(self, 'selected_channel_for_timing', None)
-            for i, curve in enumerate(self.cycle_of_interest_graph.curves):
-                width = 4 if selected_channel == i else 2
-                curve.setPen(pg.mkPen(color=channel_colors_rgb[i], width=width))
+        # Redraw curves via update_colors() — reads ACTIVE_GRAPH_COLORS set above
+        if hasattr(self, 'full_timeline_graph') and hasattr(self.full_timeline_graph, 'update_colors'):
+            self.full_timeline_graph.update_colors()
+        if hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'update_colors'):
+            self.cycle_of_interest_graph.update_colors()
 
         # Update Edits tab bar chart colors
         if hasattr(self, 'edits_tab') and hasattr(self.edits_tab, 'update_barchart_colors'):
-            self.edits_tab.update_barchart_colors(enabled)
+            self.edits_tab.update_barchart_colors(hex_colors=colors)
 
-        # Refresh interactive SPR legend colors (colorblind mode toggle)
+        # Propagate to DataWindow graphs and buttons
+        self._propagate_to_datawindow_graphs()
+
+        # Refresh interactive SPR legend colors
         if hasattr(self, 'cycle_of_interest_graph'):
             legend = getattr(self.cycle_of_interest_graph, 'interactive_spr_legend', None)
             if legend is not None and legend.isVisible():
                 legend.update_colors()
+
+    def _propagate_to_datawindow_graphs(self) -> None:
+        """Call update_colors() on all live DataWindow SegmentGraphs and header buttons."""
+        try:
+            from affilabs.widgets.datawindow import DataWindow
+            from affilabs.ui_styles import get_channel_button_style, get_channel_button_ref_style
+            from affilabs.settings import settings as _settings
+            _ch_keys = ['A', 'B', 'C', 'D']
+            for dw in self.findChildren(DataWindow):
+                soi = getattr(dw, 'SOI_view', None)
+                if soi and hasattr(soi, 'update_colors'):
+                    soi.update_colors()
+                sg = getattr(dw, 'sensorgram_graph', None)
+                if sg and hasattr(sg, 'update_colors'):
+                    sg.update_colors()
+                # Update soi_frame header channel toggle button colours
+                soi_frame = getattr(dw, 'soi_frame', None)
+                if soi_frame and soi_frame.channel_toggles:
+                    ref_id = soi_frame.reference_channel_id
+                    for i, ch in enumerate(_ch_keys):
+                        btn = soi_frame.channel_toggles.get(ch)
+                        if btn is None:
+                            continue
+                        color = _settings.ACTIVE_GRAPH_COLORS.get(ch.lower(), '#1D1D1F')
+                        btn.setProperty("channel_color", color)
+                        if ref_id and ch.lower() == ref_id:
+                            btn.setStyleSheet(get_channel_button_ref_style(color))
+                        else:
+                            btn.setStyleSheet(get_channel_button_style(color))
+        except Exception:
+            pass
+
+    def _propagate_line_style_to_datawindow_graphs(self, pen_style) -> None:
+        """Call update_line_style() on all live DataWindow graphs."""
+        try:
+            from affilabs.widgets.datawindow import DataWindow
+            for dw in self.findChildren(DataWindow):
+                soi = getattr(dw, 'SOI_view', None)
+                if soi and hasattr(soi, 'update_line_style'):
+                    soi.update_line_style(pen_style)
+                sg = getattr(dw, 'sensorgram_graph', None)
+                if sg and hasattr(sg, 'update_line_style'):
+                    sg.update_line_style(pen_style)
+        except Exception:
+            pass
+
+    def _propagate_to_analysis_tab(self, hex_colors: list | None = None,
+                                   pen_style=None) -> None:
+        """Update analysis_tab overlay curves with current palette / line style."""
+        try:
+            from PySide6.QtCore import Qt
+            import pyqtgraph as pg
+            # Find any AnalysisTab instance
+            from affilabs.tabs.analysis_tab import AnalysisTab
+            for tab in self.findChildren(AnalysisTab):
+                curves = getattr(tab, 'overlay_graph_curves', [])
+                _ch_keys = ['a', 'b', 'c', 'd']
+                from affilabs.settings import settings as _settings
+                for i, curve in enumerate(curves):
+                    color = hex_colors[i] if hex_colors else _settings.ACTIVE_GRAPH_COLORS.get(
+                        _ch_keys[i], "#1D1D1F")
+                    if isinstance(color, str) and color.startswith('#'):
+                        color = self._hex_to_rgb(color)
+                    style = pen_style if pen_style is not None else Qt.PenStyle(
+                        _settings.ACTIVE_LINE_STYLE)
+                    curve.setPen(pg.mkPen(color=color, width=2, style=style))
+        except Exception:
+            pass
+
+    def _on_palette_changed(self, palette_id: str, hex_colors: list) -> None:
+        """Apply a new colour palette from the Accessibility panel to all sensorgram curves."""
+        from affilabs.ui_styles import get_channel_button_style
+        from affilabs.settings import settings as _settings
+        from PySide6.QtCore import Qt
+        import pyqtgraph as pg
+
+        _ch_keys = ['a', 'b', 'c', 'd']
+        pen_style = Qt.PenStyle(_settings.ACTIVE_LINE_STYLE)
+
+        # Update ACTIVE_GRAPH_COLORS so all future renders pick up new colours
+        for i, ch in enumerate(_ch_keys):
+            _settings.ACTIVE_GRAPH_COLORS[ch] = hex_colors[i]
+
+        channel_colors_rgb = [self._hex_to_rgb(c) for c in hex_colors]
+
+        # Update channel toggle button borders
+        if hasattr(self, 'channel_toggles'):
+            for i, (ch, btn) in enumerate(self.channel_toggles.items()):
+                btn.setStyleSheet(get_channel_button_style(hex_colors[i]))
+                btn.setProperty("channel_color", hex_colors[i])
+
+        # Update Full Timeline (Live Sensorgram) curves
+        if hasattr(self, 'full_timeline_graph') and hasattr(self.full_timeline_graph, 'curves'):
+            for i, curve in enumerate(self.full_timeline_graph.curves):
+                curve.setPen(pg.mkPen(color=channel_colors_rgb[i], width=2, style=pen_style))
+
+        # Update Active Cycle graph curves (skip if dark mode active — neon takes precedence)
+        _dark_on = getattr(self, 'accessibility_panel', None) and self.accessibility_panel.is_dark_mode()
+        if not _dark_on and hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'curves'):
+            selected_channel = getattr(self, 'selected_channel_for_timing', None)
+            for i, curve in enumerate(self.cycle_of_interest_graph.curves):
+                width = 4 if selected_channel == i else 2
+                curve.setPen(pg.mkPen(color=channel_colors_rgb[i], width=width, style=pen_style))
+
+        # Refresh legend
+        if hasattr(self, 'cycle_of_interest_graph'):
+            legend = getattr(self.cycle_of_interest_graph, 'interactive_spr_legend', None)
+            if legend is not None and legend.isVisible():
+                legend.update_colors()
+
+        # Update Edits tab first — fast setPen calls, should paint before findChildren walks
+        if hasattr(self, 'edits_tab') and hasattr(self.edits_tab, 'update_barchart_colors'):
+            self.edits_tab.update_barchart_colors(hex_colors=hex_colors)
+
+        # Propagate to DataWindow graphs and analysis tab (slower — findChildren walk)
+        self._propagate_to_datawindow_graphs()
+        self._propagate_to_analysis_tab(hex_colors=hex_colors)
+
+    def _on_line_style_changed(self, style_id: str, pen_style) -> None:
+        """Apply a new line style from the Accessibility panel to all sensorgram curves."""
+        import pyqtgraph as pg
+        from affilabs.settings import settings as _settings
+
+        # Persist so graphs initialised later pick up the style
+        _settings.ACTIVE_LINE_STYLE = pen_style.value if hasattr(pen_style, 'value') else int(pen_style)
+
+        _ch_keys = ['a', 'b', 'c', 'd']
+
+        def _color_for(i):
+            ch = _ch_keys[i]
+            c = _settings.ACTIVE_GRAPH_COLORS.get(ch, "#1D1D1F")
+            if isinstance(c, str) and c.startswith('#'):
+                return self._hex_to_rgb(c)
+            return c
+
+        # Update Full Timeline curves
+        if hasattr(self, 'full_timeline_graph') and hasattr(self.full_timeline_graph, 'curves'):
+            for i, curve in enumerate(self.full_timeline_graph.curves):
+                curve.setPen(pg.mkPen(color=_color_for(i), width=2, style=pen_style))
+
+        # Update Active Cycle curves (use neon colours if dark mode active)
+        if hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'curves'):
+            _dark_on = getattr(self, 'accessibility_panel', None) and self.accessibility_panel.is_dark_mode()
+            selected_channel = getattr(self, 'selected_channel_for_timing', None)
+            for i, curve in enumerate(self.cycle_of_interest_graph.curves):
+                width = 4 if selected_channel == i else 2
+                color = self._NEON_COLORS[i] if _dark_on else _color_for(i)
+                curve.setPen(pg.mkPen(color=color, width=width, style=pen_style))
+
+        # Propagate to DataWindow graphs and analysis tab
+        self._propagate_line_style_to_datawindow_graphs(pen_style)
+        self._propagate_to_analysis_tab(pen_style=pen_style)
+
+    # Neon palette for Active Cycle dark mode
+    _NEON_COLORS = [
+        "#00FF41",  # A: matrix green
+        "#FF3B30",  # B: neon red
+        "#00C8FF",  # C: electric cyan
+        "#FFD60A",  # D: neon yellow
+    ]
+
+    def _on_dark_mode_toggled(self, enabled: bool) -> None:
+        """Toggle Active Cycle graph between dark (black bg, neon lines) and light."""
+        import pyqtgraph as pg
+        from PySide6.QtGui import QColor
+        from affilabs.settings import settings as _settings
+        from PySide6.QtCore import Qt
+
+        graph = getattr(self, 'cycle_of_interest_graph', None)
+        if graph is None:
+            return
+
+        pen_style = Qt.PenStyle(_settings.ACTIVE_LINE_STYLE)
+
+        if enabled:
+            graph.setBackground(QColor("#0D0D0D"))
+            # Neon axis/grid colours
+            graph.getPlotItem().getAxis('left').setPen(pg.mkPen('#444444'))
+            graph.getPlotItem().getAxis('bottom').setPen(pg.mkPen('#444444'))
+            graph.getPlotItem().getAxis('left').setTextPen(pg.mkPen('#888888'))
+            graph.getPlotItem().getAxis('bottom').setTextPen(pg.mkPen('#888888'))
+            # Neon curves
+            selected = getattr(self, 'selected_channel_for_timing', None)
+            for i, curve in enumerate(graph.curves):
+                width = 4 if selected == i else 2
+                curve.setPen(pg.mkPen(color=self._NEON_COLORS[i], width=width,
+                                      style=pen_style))
+        else:
+            graph.setBackground(QColor("#FFFFFF"))
+            graph.getPlotItem().getAxis('left').setPen(pg.mkPen('#000000'))
+            graph.getPlotItem().getAxis('bottom').setPen(pg.mkPen('#000000'))
+            graph.getPlotItem().getAxis('left').setTextPen(pg.mkPen('#000000'))
+            graph.getPlotItem().getAxis('bottom').setTextPen(pg.mkPen('#000000'))
+            # Restore palette colours
+            selected = getattr(self, 'selected_channel_for_timing', None)
+            _ch_keys = ['a', 'b', 'c', 'd']
+            for i, curve in enumerate(graph.curves):
+                c = _settings.ACTIVE_GRAPH_COLORS.get(_ch_keys[i], "#1D1D1F")
+                if isinstance(c, str) and c.startswith('#'):
+                    c = self._hex_to_rgb(c)
+                width = 4 if selected == i else 2
+                curve.setPen(pg.mkPen(color=c, width=width, style=pen_style))
 
     def _toggle_sidebar_collapse(self, collapsed: bool):
         """Collapse left sidebar to icon strip only, or restore to full width."""
@@ -1930,6 +2170,58 @@ class AffilabsMainWindow(
             return self.splitter.sizes()[0] == 0
         except Exception:
             return True
+
+    def eventFilter(self, obj, event) -> bool:
+        """Intercept Ctrl+click on channel toggle buttons to set/clear reference."""
+        if (
+            event.type() == QEvent.Type.MouseButtonPress
+            and event.button() == Qt.MouseButton.LeftButton
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+            and obj.property("channel_letter") is not None
+        ):
+            self._on_channel_ref_ctrl_click(obj)
+            return True  # Consume — don't toggle the button's checked state
+        return super().eventFilter(obj, event)
+
+    def _on_channel_ref_ctrl_click(self, btn: "QPushButton") -> None:
+        """Ctrl+click on a channel button — toggle it as the reference channel."""
+        ch_letter = btn.property("channel_letter")
+        current_ref = getattr(self.app, "_reference_channel", None)
+
+        # Toggle: Ctrl+click the current ref clears it; any other channel sets it
+        new_ref = None if ch_letter == current_ref else ch_letter
+
+        # Apply visual immediately — don't wait for coordinator round-trip
+        self.app._reference_channel = new_ref
+        self._update_channel_btn_ref_styles(new_ref)
+
+        # Sync the combo box in Settings / Graphic Control sidebars
+        combo_text = {None: "None", "a": "Channel A", "b": "Channel B", "c": "Channel C", "d": "Channel D"}
+        for combo_attr in ("ref_combo",):
+            combo = getattr(getattr(self, "sidebar", None), combo_attr, None)
+            if combo is not None:
+                combo.blockSignals(True)
+                combo.setCurrentText(combo_text.get(new_ref, "None"))
+                combo.blockSignals(False)
+
+        # Notify coordinator for graph update (wrapped so a missing graph doesn't abort)
+        coordinator = getattr(self.app, "ui_control_coordinator", None)
+        if coordinator is not None:
+            try:
+                coordinator.set_reference_channel(new_ref)
+            except Exception:
+                pass
+
+    def _update_channel_btn_ref_styles(self, ref_letter: "str | None") -> None:
+        """Apply dashed border to the reference channel button; restore others."""
+        from affilabs.ui_styles import get_channel_button_style, get_channel_button_ref_style
+        _colors = {"A": "#1D1D1F", "B": "#FF3B30", "C": "#007AFF", "D": "#34C759"}
+        for ch, btn in getattr(self, "channel_toggles", {}).items():
+            color = btn.property("channel_color") or _colors.get(ch, "#1D1D1F")
+            if ref_letter and ch.lower() == ref_letter:
+                btn.setStyleSheet(get_channel_button_ref_style(color))
+            else:
+                btn.setStyleSheet(get_channel_button_style(color))
 
     def _on_spark_toggle(self, checked: bool):
         """Handle Spark toggle button — opens/closes the floating Sparq bubble. Never crashes."""
@@ -2126,7 +2418,7 @@ class AffilabsMainWindow(
             timing_row.setSpacing(8)
 
             # Display label
-            from affilabs.ui_styles import get_channel_button_style
+            from affilabs.ui_styles import get_channel_button_style, get_channel_button_ref_style
             display_label = QLabel("Display:")
             display_label.setStyleSheet(
                 "QLabel {"
@@ -2157,8 +2449,11 @@ class AffilabsMainWindow(
                 ch_btn.setCheckable(True)
                 ch_btn.setChecked(True)
                 ch_btn.setGeometry(0, 0, _BTN_W, _BTN_H)
-                ch_btn.setToolTip(tooltip)
+                ch_btn.setToolTip(f"{tooltip}\nCtrl+click to set/clear as reference channel")
+                ch_btn.setProperty("channel_color", color)
+                ch_btn.setProperty("channel_letter", ch.lower())
                 ch_btn.setStyleSheet(get_channel_button_style(color))
+                ch_btn.installEventFilter(self)
                 self.channel_toggles[ch] = ch_btn
                 ch_btn.toggled.connect(
                     lambda checked, channel=ch: self.sensogram_presenter.toggle_channel_visibility(channel, checked)
@@ -2474,7 +2769,7 @@ class AffilabsMainWindow(
         from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
 
         # Get channel colors based on colorblind mode setting
-        colorblind_enabled = self.colorblind_check.isChecked() if hasattr(self, 'colorblind_check') else False
+        colorblind_enabled = self.colorblind_check.isChecked() if getattr(self, 'colorblind_check', None) is not None else False
         color_palette = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
 
         # Convert hex colors to RGB tuples for pyqtgraph
@@ -2763,6 +3058,13 @@ class AffilabsMainWindow(
         """
         self.is_recording = is_recording
         self.record_btn.setChecked(is_recording)
+
+        # Status bar recording badge
+        if hasattr(self, '_rec_badge_status'):
+            if is_recording:
+                self._rec_badge_status.show()
+            else:
+                self._rec_badge_status.hide()
 
         if is_recording:
             display_name = Path(filename).name if filename else "data.csv"
@@ -3537,6 +3839,30 @@ class AffilabsMainWindow(
             "preset": None,  # Will be set by preset buttons
         }
 
+    def _tick_acq_pulse(self) -> None:
+        """Alternate the acquiring dot between full and dim on every timer tick."""
+        self._acq_pulse_visible = not self._acq_pulse_visible
+        color = "#007AFF" if self._acq_pulse_visible else "rgba(0,122,255,0.25)"
+        if hasattr(self, '_acq_dot'):
+            self._acq_dot.setStyleSheet(
+                f"color: {color}; font-size: 11px; font-weight: 700; margin: 0 8px; "
+                "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
+            )
+
+    def set_acquiring_pulse(self, active: bool) -> None:
+        """Show/hide the status-bar acquiring dot and control its blink timer."""
+        if not hasattr(self, '_acq_dot'):
+            return
+        if active:
+            self._acq_dot.show()
+            if hasattr(self, '_acq_pulse_timer') and not self._acq_pulse_timer.isActive():
+                self._acq_pulse_visible = True
+                self._acq_pulse_timer.start()
+        else:
+            if hasattr(self, '_acq_pulse_timer'):
+                self._acq_pulse_timer.stop()
+            self._acq_dot.hide()
+
     def update_status_operation(self, message: str, notes: str = "") -> None:
         """Update the bottom operation status bar.
 
@@ -3591,6 +3917,9 @@ class AffilabsMainWindow(
             # Determine operational context for more useful messaging
             is_acquiring = hasattr(self, 'app') and hasattr(self.app, 'data_mgr') and getattr(self.app.data_mgr, '_acquiring', False)
             is_calibrated = hasattr(self, 'app') and hasattr(self.app, 'data_mgr') and getattr(self.app.data_mgr, 'calibrated', False)
+
+            # Drive the acquiring pulse dot from the intelligence refresh cycle
+            self.set_acquiring_pulse(is_acquiring)
             queue_count = len(self.segment_queue) if hasattr(self, 'segment_queue') else 0
 
             # Check if a cycle is currently running (don't override cycle countdown)

@@ -25,18 +25,19 @@ from pathlib import Path
 from typing import List
 
 from affilabs.utils.logger import logger
+from affilabs.utils.resource_path import get_writable_data_path
 
 
 class UserProfileManager:
     """Manages user profiles for experiment tracking."""
 
-    def __init__(self, config_file: str = "user_profiles.json"):
+    def __init__(self, config_file: str = ""):
         """Initialize user profile manager.
 
         Args:
-            config_file: Name of JSON file to store profiles
+            config_file: Path to JSON file to store profiles (default: writable data dir)
         """
-        self.config_file = Path(config_file)
+        self.config_file = Path(config_file) if config_file else get_writable_data_path("user_profiles.json")
         self.profiles: List[str] = []
         self.current_user: str = ""
         self.on_user_changed = None  # Optional callback: fn(username: str) — set by GuidanceCoordinator

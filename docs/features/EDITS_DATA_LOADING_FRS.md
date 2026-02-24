@@ -3,7 +3,7 @@
 **Source:** `affilabs/tabs/edits/_data_mixin.py` (271 lines)  
 **Consumed by:** `_table_mixin.py`, `_export_mixin.py`, `_alignment_mixin.py`, `edits_tab.py`  
 **Version:** Affilabs.core v2.0.5 beta  
-**Status:** Code-verified 2026-02-19 — legacy `flags` fallback removed from `_format_flags_display` (§5); remaining code clean
+**Status:** Code-verified 2026-02-24 — clean
 
 ---
 

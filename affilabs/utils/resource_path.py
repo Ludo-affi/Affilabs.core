@@ -4,8 +4,32 @@ This module provides functions to correctly locate resources in both
 development and frozen (PyInstaller) environments.
 """
 
+import os
 import sys
 from pathlib import Path
+
+
+def get_writable_data_path(filename: str = "") -> Path:
+    """Return a writable path for user data files.
+
+    In frozen (PyInstaller) builds, writes go to %LOCALAPPDATA%\\Affilabs
+    so they are never inside the read-only _MEIPASS temp bundle.
+    In development mode, returns project root (existing behaviour).
+
+    Args:
+        filename: Optional filename to append (e.g. "cycle_templates.json")
+
+    Returns:
+        Absolute writable Path, parent directory is guaranteed to exist.
+    """
+    if getattr(sys, 'frozen', False):
+        appdata = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        base = Path(appdata) / "Affilabs"
+    else:
+        base = Path(__file__).parent.parent.parent  # project root
+
+    base.mkdir(parents=True, exist_ok=True)
+    return base / filename if filename else base
 
 
 def get_resource_path(relative_path: str) -> Path:

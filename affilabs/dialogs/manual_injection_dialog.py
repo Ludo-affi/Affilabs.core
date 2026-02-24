@@ -431,6 +431,8 @@ class ManualInjectionDialog(QDialog):
             return
         if not self.buffer_mgr.timeline_data:
             logger.warning("Cannot start detection — timeline_data is empty/falsy")
+            self._status_label.setText("⚠ No signal data yet. Ensure acquisition is running.")
+            self._status_label.setStyleSheet(_STYLE_STATUS_WARNING)
             return
 
         PHASE1_LOOKBACK_SECONDS = 45.0
@@ -523,6 +525,7 @@ class ManualInjectionDialog(QDialog):
 
         # Skip auto-detection entirely when detection is off
         if self.detection_priority == "off":
+            self._status_label.setText("Auto-detect disabled — click 'Done' after injecting.")
             return
 
         try:
@@ -601,13 +604,24 @@ class ManualInjectionDialog(QDialog):
         if len(window_times) < MINIMUM_DATA_POINTS:
             return
 
-        # Pass raw nm — detector is unitless, any consistent signal works.
-        result = auto_detect_injection_point(window_times, window_wl)
+        # Convert nm → RU so the algorithm's hard floor (5.0 RU) and thresholds
+        # are correctly scaled. Baseline for RU conversion = first point in window.
+        baseline_wl = window_wl[0] if len(window_wl) > 0 else 0.0
+        window_ru = (window_wl - baseline_wl) * 355.0
+
+        # sensitivity_factor: manual/P4SPR = 1.0 (default); pump = 0.75 (more sensitive,
+        # pump signal is cleaner and the transit-delay already filters bulk-RI artefacts).
+        sensitivity_factor = 0.75 if self._pump_transit_delay_s > 0 else 1.0
+
+        result = auto_detect_injection_point(
+            window_times, window_ru, sensitivity_factor=sensitivity_factor
+        )
 
         logger.info(
             f"[SCAN {ch_upper}] pts={len(window_times)} "
             f"inj_t={result['injection_time']} conf={result['confidence']:.2f} "
-            f"rise={result.get('signal_rise', 0):.3f}nm snr={result.get('snr', 0):.1f}"
+            f"rise={result.get('signal_rise', 0):.1f}RU snr={result.get('snr', 0):.1f} "
+            f"sens={sensitivity_factor}"
         )
 
         if result['injection_time'] is None or result['confidence'] < 0.15:
@@ -625,7 +639,7 @@ class ManualInjectionDialog(QDialog):
             f"Channel {ch_upper} injection detected at "
             f"t={result['injection_time']:.1f}s "
             f"(confidence={result['confidence']:.0%}, "
-            f"rise={result.get('signal_rise', 0):.3f}nm, snr={result.get('snr', 0):.1f})"
+            f"rise={result.get('signal_rise', 0):.1f}RU, snr={result.get('snr', 0):.1f})"
         )
 
         # First detection — store primary result and start grace timer

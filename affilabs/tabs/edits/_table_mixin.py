@@ -778,35 +778,28 @@ class TableMixin:
         dialog.exec()
 
     def _update_details_panel(self):
-        """Update the Details tabs (Flags and Notes) when a cycle is selected."""
+        """Show cycle-specific notes below the table when a cycle is selected."""
         if not hasattr(self, 'details_tab_widget'):
             return
 
         selected_rows = self.cycle_data_table.selectionModel().selectedRows()
         if not selected_rows:
-            self.details_flags_text.setText("(No cycle selected)")
-            self.details_notes_text.setText("(No cycle selected)")
+            self.details_tab_widget.hide()
             return
 
-        # Get the first selected row
         row_idx = selected_rows[0].row()
 
-        # Retrieve stored details for this cycle
         if not hasattr(self, '_cycle_details_data'):
             self._cycle_details_data = {}
 
         details = self._cycle_details_data.get(row_idx, {})
-
-        flags = details.get('flags', '')
         note = details.get('note', '')
-        cycle_id = details.get('cycle_id', '')
 
-        # Format and display
-        flags_display = flags if flags else "(No flags)"
-        notes_display = f"[{cycle_id}]\n{note}" if cycle_id and note else f"[{cycle_id}]" if cycle_id else note if note else "(No notes)"
-
-        self.details_flags_text.setText(flags_display)
-        self.details_notes_text.setText(notes_display)
+        if note and note.strip():
+            self.details_notes_text.setText(note.strip())
+            self.details_tab_widget.show()
+        else:
+            self.details_tab_widget.hide()
 
     def _apply_compact_view_initial(self):
         """Apply initial column visibility based on compact_view flag."""
@@ -1002,6 +995,28 @@ class TableMixin:
 
         # Call the main window's load function
         self.main_window._load_data_from_excel_internal(file_path)
+
+    def _load_data_from_path(self, path: "Path") -> None:
+        """Load an Excel file directly from a Path — called by ExperimentBrowserDialog."""
+        from pathlib import Path as _Path
+        file_path = str(path) if isinstance(path, _Path) else path
+        self._loaded_file_path = file_path
+        self.main_window._load_data_from_excel_internal(file_path)
+
+    def _open_experiment_browser(self) -> None:
+        """Switch to Notes tab (FRS §11.4). Falls back to dialog if Notes tab unavailable."""
+        mw = self.main_window
+        if hasattr(mw, 'notes_tab') and hasattr(mw, 'navigation_presenter'):
+            mw.navigation_presenter.switch_page(2)
+            return
+        # Fallback: open dialog
+        from affilabs.dialogs.experiment_browser_dialog import ExperimentBrowserDialog
+        user_manager = getattr(self, "user_manager", None)
+        if user_manager is None:
+            user_manager = getattr(mw, "user_manager", None)
+        dlg = ExperimentBrowserDialog(parent=mw, user_manager=user_manager)
+        dlg.file_selected.connect(self._load_data_from_path)
+        dlg.exec()
 
     def _save_cycles_to_excel(self):
         """Save the modified cycle data back to the loaded Excel file."""

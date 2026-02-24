@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect, QComboBox, QLineEdit, QTableWidgetItem,
     QWidget, QGridLayout, QScrollArea, QToolButton, QMenu,
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QObject, QEvent
 from PySide6.QtGui import QColor, QFont, QIcon, QPixmap, QPainter
 from PySide6.QtSvg import QSvgRenderer
 from affilabs.utils.resource_path import get_affilabs_resource
@@ -61,6 +61,24 @@ class _AlignChannelProxy:
 
     def blockSignals(self, block: bool) -> bool:  # noqa: N802  (matches Qt naming)
         return False
+
+
+class _EditsEventFilter(QObject):
+    """QObject shim so EditsTab (not a QObject) can be used as an event filter.
+
+    Delegates all decisions to the EditsTab instance via its eventFilter method
+    (defined in AlignmentMixin), which handles:
+      - Ctrl+click on A/B/C/D channel buttons
+      - Left/Right arrow on edits_primary_graph
+      - Resize on edits_primary_graph → reposition legend
+    """
+
+    def __init__(self, edits_tab, parent=None):
+        super().__init__(parent)
+        self._tab = edits_tab
+
+    def eventFilter(self, obj, event):
+        return self._tab.eventFilter(obj, event)
 
 
 class UIBuildersMixin:
@@ -169,23 +187,23 @@ class UIBuildersMixin:
         self.cycle_data_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.cycle_data_table.customContextMenuRequested.connect(self._on_table_context_menu)
 
-        # Initialize primary graph (needed by selection panel)
-        self.edits_primary_graph = pg.PlotWidget()
-        self.edits_primary_graph.setMenuEnabled(True)  # Enable context menu for export options
-        self.edits_primary_graph.setBackground('w')
-        self.edits_primary_graph.setLabel('left', 'Response (RU)', color='#1D1D1F')
-        self.edits_primary_graph.setLabel('bottom', 'Time (s)', color='#1D1D1F')
+        # Initialize primary graph using shared helpers so it matches live-data style
+        # (axis colours, grid, clipToView, autoDownsample, connect='finite', active palette)
+        from affilabs.plot_helpers import create_time_plot, add_channel_curves, _active_channel_colors
+        self.edits_primary_graph = create_time_plot(
+            left_label='Response (RU)',
+            bottom_label='Time (s)',
+        )
+        self.edits_primary_graph.setMenuEnabled(True)
         self.edits_primary_graph.showGrid(x=True, y=True, alpha=0.2)
 
-        # Create curves for 4 channels
-        colors = [(0, 0, 0), (255, 0, 0), (0, 0, 255), (0, 170, 0)]
-        channel_names = ['A', 'B', 'C', 'D']
-        self.edits_graph_curves = []
+        self.edits_graph_curves = add_channel_curves(self.edits_primary_graph, width=2)
+
+        # Channel-end labels (shown when a curve has data)
         self.edits_graph_curve_labels = []
-        for color, ch_name in zip(colors, channel_names):
-            curve = self.edits_primary_graph.plot(pen=pg.mkPen(color, width=2))
-            self.edits_graph_curves.append(curve)
-            label = pg.TextItem(text=ch_name, color=color, anchor=(0, 0.5))
+        active_colors = _active_channel_colors()
+        for i, ch_name in enumerate('ABCD'):
+            label = pg.TextItem(text=ch_name, color=active_colors[i], anchor=(0, 0.5))
             label.setFont(pg.Qt.QtGui.QFont("Arial", 9, pg.Qt.QtGui.QFont.Bold))
             label.hide()
             self.edits_primary_graph.addItem(label)
@@ -220,54 +238,46 @@ class UIBuildersMixin:
         table_details_layout.addWidget(table_widget, 1)
 
         # Details tab widget (Flags & Notes)
-        self.details_tab_widget = QTabWidget()
-        self.details_tab_widget.setStyleSheet("""
-            QTabWidget::pane { border: 1px solid #D1D1D6; }
-            QTabBar::tab { padding: 4px 12px; background: white; color: #1D1D1F; }
-            QTabBar::tab:selected { background: #E3F2FD; color: #0066CC; font-weight: 600; }
-            QTabBar::tab:hover { background: #F5F5F5; }
-        """)
+        # Cycle notes panel — shown below table when a cycle is selected
+        self.details_tab_widget = QFrame()
+        self.details_tab_widget.setStyleSheet(
+            "QFrame { background: white; border-radius: 8px; border: 1px solid #E5E5EA; }"
+        )
+        notes_panel_layout = QVBoxLayout(self.details_tab_widget)
+        notes_panel_layout.setContentsMargins(10, 6, 10, 6)
+        notes_panel_layout.setSpacing(2)
 
-        # Flags tab
-        self.details_flags_text = QLabel("")
-        self.details_flags_text.setWordWrap(True)
-        self.details_flags_text.setStyleSheet("QLabel { padding: 8px; color: #1D1D1F; font-size: 12px; }")
-        flags_scroll = QScrollArea()
-        flags_scroll.setWidget(self.details_flags_text)
-        flags_scroll.setWidgetResizable(True)
-        self.details_tab_widget.addTab(flags_scroll, "Flags")
+        notes_header = QLabel("Cycle Notes")
+        notes_header.setStyleSheet(
+            "font-size: 11px; font-weight: 600; color: #86868B;"
+            " background: transparent; border: none;"
+        )
+        notes_panel_layout.addWidget(notes_header)
 
-        # Notes tab
         self.details_notes_text = QLabel("")
         self.details_notes_text.setWordWrap(True)
-        self.details_notes_text.setStyleSheet("QLabel { padding: 8px; color: #1D1D1F; font-size: 12px; }")
-        notes_scroll = QScrollArea()
-        notes_scroll.setWidget(self.details_notes_text)
-        notes_scroll.setWidgetResizable(True)
-        self.details_tab_widget.addTab(notes_scroll, "Notes")
+        self.details_notes_text.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.details_notes_text.setStyleSheet(
+            "QLabel { color: #1D1D1F; font-size: 12px;"
+            " background: transparent; border: none; padding: 2px 0; }"
+        )
+        notes_panel_layout.addWidget(self.details_notes_text, 1)
 
-        self.details_tab_widget.setMaximumHeight(180)
+        # Keep this attribute so _update_details_panel still works
+        self.details_flags_text = QLabel("")
+
+        self.details_tab_widget.setMaximumHeight(100)
         self.details_tab_widget.hide()
         table_details_layout.addWidget(self.details_tab_widget)
 
         left_splitter.addWidget(table_details_widget)
 
-        # LEFT BOTTOM: Metadata and Alignment panels side by side
-        bottom_left_widget = QFrame()
-        bottom_left_layout = QHBoxLayout(bottom_left_widget)
-        bottom_left_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_left_layout.setSpacing(8)
-
-        # Metadata panel
+        # LEFT BOTTOM: Metadata panel (full width — alignment panel removed)
         metadata_panel = self._create_metadata_panel()
-        bottom_left_layout.addWidget(metadata_panel, 1)
+        left_splitter.addWidget(metadata_panel)
 
-        # Alignment panel
-        self.alignment_panel = self._create_alignment_panel()
-        bottom_left_layout.addWidget(self.alignment_panel, 1)
-        self.alignment_panel.hide()  # Hidden until cycle selected
-
-        left_splitter.addWidget(bottom_left_widget)
+        # Stub alignment widgets so mixin code using hasattr() guards keeps working
+        self._create_alignment_stubs()
 
         # Set vertical proportions for left side: 70% table, 30% bottom panels
         left_splitter.setStretchFactor(0, 70)
@@ -401,7 +411,11 @@ class UIBuildersMixin:
         controls_layout.setSpacing(8)
 
         # Load button (matching control style)
-        load_btn = QPushButton("📂 Load")
+        load_btn = QPushButton(" Load")
+        _folder_svg = get_affilabs_resource("ui/img/folder_icon.svg")
+        if _folder_svg.exists():
+            load_btn.setIcon(QIcon(str(_folder_svg)))
+            load_btn.setIconSize(QSize(14, 14))
         load_btn.setFixedHeight(28)
         load_btn.setStyleSheet(
             f"QPushButton {{ background: {Colors.BACKGROUND_LIGHT}; color: {Colors.PRIMARY_TEXT}; "
@@ -591,6 +605,121 @@ class UIBuildersMixin:
         grid.addWidget(device_lbl, 6, 0, Qt.AlignLeft)
         grid.addWidget(self.meta_device, 6, 1, Qt.AlignLeft)
 
+        # Calibration file (startup calibration used for this run)
+        cal_lbl = QLabel("Calibration:")
+        cal_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        self.meta_calibration = QLabel("-")
+        self.meta_calibration.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+        self.meta_calibration.setToolTip("Startup calibration file used for this session")
+        grid.addWidget(cal_lbl, 7, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_calibration, 7, 1, Qt.AlignLeft)
+
+        # Transmission baseline file (baseline recording linked to this run)
+        trans_lbl = QLabel("Baseline file:")
+        trans_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        self.meta_transmission_file = QLabel("-")
+        self.meta_transmission_file.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+        self.meta_transmission_file.setToolTip("Transmission baseline recording (5-min baseline cycle)")
+        grid.addWidget(trans_lbl, 8, 0, Qt.AlignLeft)
+        grid.addWidget(self.meta_transmission_file, 8, 1, Qt.AlignLeft)
+
+        # Rating row
+        rating_lbl = QLabel("Rating:")
+        rating_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        stars_widget = QWidget()
+        stars_widget.setStyleSheet("background: transparent; border: none;")
+        stars_layout = QHBoxLayout(stars_widget)
+        stars_layout.setContentsMargins(0, 0, 0, 0)
+        stars_layout.setSpacing(2)
+        self.meta_star_buttons: list = []
+        for i in range(1, 6):
+            btn = QPushButton("★")
+            btn.setFixedSize(22, 22)
+            btn.setCheckable(False)
+            btn.setObjectName(f"meta_star_{i}")
+            btn.setStyleSheet("""
+                QPushButton#meta_star_1, QPushButton#meta_star_2, QPushButton#meta_star_3,
+                QPushButton#meta_star_4, QPushButton#meta_star_5 {
+                    background: transparent;
+                    border: none;
+                    font-size: 16px;
+                    color: #D1D1D6;
+                    padding: 0px;
+                }
+                QPushButton#meta_star_1:hover, QPushButton#meta_star_2:hover,
+                QPushButton#meta_star_3:hover, QPushButton#meta_star_4:hover,
+                QPushButton#meta_star_5:hover {
+                    color: #FF9500;
+                }
+            """)
+            _n = i
+            btn.clicked.connect(lambda checked, n=_n: self._on_star_clicked(n))
+            stars_layout.addWidget(btn)
+            self.meta_star_buttons.append(btn)
+        stars_layout.addStretch()
+        grid.addWidget(rating_lbl, 9, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        grid.addWidget(stars_widget, 9, 1, Qt.AlignLeft)
+
+        # Tags row
+        tags_lbl = QLabel("Tags:")
+        tags_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        tags_outer = QWidget()
+        tags_outer.setStyleSheet("background: transparent; border: none;")
+        tags_outer_layout = QVBoxLayout(tags_outer)
+        tags_outer_layout.setContentsMargins(0, 0, 0, 0)
+        tags_outer_layout.setSpacing(4)
+
+        # Pills container (rebuilt on every refresh)
+        self.meta_tags_pills = QWidget()
+        self.meta_tags_pills.setStyleSheet("background: transparent; border: none;")
+        self._meta_tags_pills_layout = QHBoxLayout(self.meta_tags_pills)
+        self._meta_tags_pills_layout.setContentsMargins(0, 0, 0, 0)
+        self._meta_tags_pills_layout.setSpacing(4)
+        self._meta_tags_pills_layout.addStretch()
+        tags_outer_layout.addWidget(self.meta_tags_pills)
+
+        # Tag input row
+        tag_input_row = QHBoxLayout()
+        tag_input_row.setSpacing(4)
+        self.meta_tag_input = QLineEdit()
+        self.meta_tag_input.setPlaceholderText("Add tag…")
+        self.meta_tag_input.setFixedHeight(24)
+        self.meta_tag_input.setStyleSheet("""
+            QLineEdit {
+                background: #F8F9FA;
+                border: 1px solid #D1D1D6;
+                border-radius: 4px;
+                font-size: 11px;
+                padding: 2px 6px;
+                color: #1D1D1F;
+            }
+            QLineEdit:focus { border: 1px solid #007AFF; background: white; }
+        """)
+        self.meta_tag_input.returnPressed.connect(self._on_tag_added)
+        tag_input_row.addWidget(self.meta_tag_input, 1)
+
+        add_tag_btn = QPushButton("+")
+        add_tag_btn.setObjectName("meta_add_tag_btn")
+        add_tag_btn.setFixedSize(24, 24)
+        add_tag_btn.setStyleSheet("""
+            QPushButton#meta_add_tag_btn {
+                background: #007AFF;
+                border: none;
+                border-radius: 4px;
+                color: white;
+                font-size: 14px;
+                font-weight: 600;
+            }
+            QPushButton#meta_add_tag_btn:hover { background: #0051D5; }
+            QPushButton#meta_add_tag_btn:pressed { background: #003FA3; }
+        """)
+        add_tag_btn.clicked.connect(self._on_tag_added)
+        tag_input_row.addWidget(add_tag_btn)
+        tags_outer_layout.addLayout(tag_input_row)
+
+        grid.addWidget(tags_lbl, 10, 0, Qt.AlignLeft | Qt.AlignTop)
+        grid.addWidget(tags_outer, 10, 1, Qt.AlignLeft)
+
         layout.addWidget(stats_widget)
 
         # Divider
@@ -631,8 +760,60 @@ class UIBuildersMixin:
 
         return panel
 
+    def _create_alignment_stubs(self):
+        """Create invisible stub widgets for alignment controls.
+
+        The alignment panel has been removed from the UI. These stubs satisfy
+        the hasattr() guards in _alignment_mixin and _edits_cycle_mixin so
+        existing logic (ref subtraction, shift, channel filter) keeps working
+        without a visible panel.
+        """
+        # Invisible dummy panel — keeps .show()/.hide() calls safe
+        self.alignment_panel = QWidget()
+        self.alignment_title = QLabel()
+        self.alignment_flags_display = QLabel()
+
+        self.alignment_ref_combo = QComboBox()
+        self.alignment_ref_combo.addItems(["Global", "None", "Ch A", "Ch B", "Ch C", "Ch D"])
+        self.alignment_ref_combo.currentTextChanged.connect(self._on_cycle_ref_changed)
+
+        _ch_colors = {"All": "#86868B", "A": "#1D1D1F", "B": "#FF3B30", "C": "#007AFF", "D": "#34C759"}
+
+        def _ch_btn_style(color, checked):
+            if checked:
+                return (f"QPushButton {{ background: white; color: {color};"
+                        f" border: 2px solid {color}; border-radius: 5px;"
+                        f" font-size: 11px; font-weight: 700; padding: 0 6px; }}")
+            return ("QPushButton { background: #E5E5EA; color: #808080;"
+                    " border: 2px solid #C7C7CC; border-radius: 5px;"
+                    " font-size: 11px; font-weight: 700; padding: 0 6px; }")
+
+        self._alignment_ch_btns = {}
+        self.alignment_channel_combo = _AlignChannelProxy()
+
+        def _on_ch_btn(selected):
+            for lbl, btn in self._alignment_ch_btns.items():
+                btn.setStyleSheet(_ch_btn_style(_ch_colors[lbl], lbl == selected))
+            self.alignment_channel_combo._value = selected
+
+        for label in ["All", "A", "B", "C", "D"]:
+            btn = QPushButton(label)
+            btn.setStyleSheet(_ch_btn_style(_ch_colors[label], label == "All"))
+            btn.clicked.connect(lambda checked=False, lbl=label: _on_ch_btn(lbl))
+            self._alignment_ch_btns[label] = btn
+
+        self.alignment_channel_combo._btn_map = self._alignment_ch_btns
+
+        self.alignment_shift_input = QLineEdit("0.0")
+        self.alignment_shift_input.textChanged.connect(self._on_shift_input_changed)
+
+        self.alignment_shift_slider = QSlider(Qt.Horizontal)
+        self.alignment_shift_slider.setRange(-200, 200)
+        self.alignment_shift_slider.setValue(0)
+        self.alignment_shift_slider.valueChanged.connect(self._on_shift_slider_changed)
+
     def _create_alignment_panel(self):
-        """Create alignment controls panel (shown when cycle selected)."""
+        """DEPRECATED — panel removed; stubs created via _create_alignment_stubs."""
         panel = QFrame()
         panel.setStyleSheet("""
             QFrame {
@@ -870,7 +1051,8 @@ class UIBuildersMixin:
     def _create_active_selection(self):
         """Middle right panel: Active selection view for detailed cycle analysis."""
         container = QFrame()
-        container.setStyleSheet("QFrame { background: white; border-radius: 12px; }")
+        container.setObjectName("editsSelectionContainer")
+        container.setStyleSheet("#editsSelectionContainer { background: white; border-radius: 12px; }")
 
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -882,55 +1064,62 @@ class UIBuildersMixin:
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # Header with controls
+        # QObject shim — required because EditsTab is not a QObject, but
+        # installEventFilter() requires a QObject. Shim delegates to self.eventFilter().
+        self._edits_event_filter = _EditsEventFilter(self, parent=self.main_window)
+
+        # Header: [A][B][C][D]  →  cycle name label
         header = QHBoxLayout()
-        self.cycle_context_label = QLabel("Select a cycle")
-        self.cycle_context_label.setStyleSheet("font-size: 15px; font-weight: 600; color: #1D1D1F;")
-        header.addWidget(self.cycle_context_label)
+        header.setSpacing(8)
 
-        # Channel toggles - store references for colorblind palette updates
         self.edits_channel_buttons = {}
-        # Standard colors (will be updated by global colorblind setting if enabled)
-        standard_colors = ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
+        self._edits_ref_channel: str | None = None
+        from affilabs.ui_styles import get_channel_button_style
+        # Use hardcoded CSS-safe hex colors — same as live Active Cycle graph.
+        # ACTIVE_GRAPH_COLORS can return "k" (matplotlib) which is invalid CSS.
+        _CH_COLORS = {"A": "#1D1D1F", "B": "#FF3B30", "C": "#007AFF", "D": "#34C759"}
 
-        for i, ch in enumerate(["A", "B", "C", "D"]):
-            ch_btn = QPushButton(f"Ch {ch}")
+        for ch in ["A", "B", "C", "D"]:
+            ch_btn = QPushButton(ch)
             ch_btn.setCheckable(True)
             ch_btn.setChecked(True)
-            ch_btn.setFixedSize(40, 24)
-            color = standard_colors[i]
-            ch_btn.setStyleSheet(
-                f"QPushButton {{ background: {color}; color: white; border: none; "
-                f"border-radius: 4px; font-size: 11px; font-weight: 600; }}"
-                "QPushButton:!checked { background: rgba(0, 0, 0, 0.06); color: #86868B; }"
-            )
+            ch_btn.setFixedSize(32, 28)
+            ch_btn.setToolTip(f"Toggle Channel {ch}\nCtrl+click to set/clear as reference channel")
+            color = _CH_COLORS[ch]
+            ch_btn.setProperty("channel_color", color)
+            ch_btn.setProperty("channel_letter", ch)
+            ch_btn.setStyleSheet(get_channel_button_style(color))
             ch_idx = ord(ch) - ord('A')
-            ch_btn.toggled.connect(lambda checked, idx=ch_idx: self._toggle_channel(idx, checked))
+            ch_btn.clicked.connect(lambda _, idx=ch_idx, b=ch_btn: self._toggle_channel(idx, b.isChecked()))
+            ch_btn.installEventFilter(self._edits_event_filter)
             self.edits_channel_buttons[ch] = ch_btn
             header.addWidget(ch_btn)
 
-        # Reset view button
-        reset_btn = QPushButton("⟲ Reset")
-        reset_btn.setFixedSize(60, 24)
-        reset_btn.setToolTip("Reset graph to full view")
-        reset_btn.setStyleSheet("""
-            QPushButton {
-                background: #F8F9FA;
-                color: #1D1D1F;
-                border: 1px solid #D1D1D6;
-                border-radius: 4px;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background: #E5E5EA;
-                border: 1px solid #007AFF;
-            }
-        """)
-        reset_btn.clicked.connect(lambda: self.edits_primary_graph.autoRange())
-        header.addWidget(reset_btn)
-
         header.addStretch()
+
+        # Start / End time — compact, right of centre
+        self.alignment_start_time = QLabel("")
+        self.alignment_start_time.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent;"
+        )
+        self.alignment_start_time.setVisible(False)
+        header.addWidget(self.alignment_start_time)
+
+        self.alignment_end_time = QLabel("")
+        self.alignment_end_time.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent;"
+        )
+        self.alignment_end_time.setVisible(False)
+        header.addWidget(self.alignment_end_time)
+
+        header.addSpacing(8)
+
+        self.cycle_context_label = QLabel("Select a cycle")
+        self.cycle_context_label.setStyleSheet(
+            "font-size: 13px; color: #86868B; background: transparent;"
+        )
+        header.addWidget(self.cycle_context_label)
+
         layout.addLayout(header)
 
         # Selection graph (reuse existing primary graph)
@@ -954,6 +1143,25 @@ class UIBuildersMixin:
         # Connect cursor movement to Delta SPR calculation
         self.delta_spr_start_cursor.sigPositionChanged.connect(self._update_delta_spr_barchart)
         self.delta_spr_stop_cursor.sigPositionChanged.connect(self._update_delta_spr_barchart)
+
+        # ── Floating Δ SPR legend (same widget as live-view Active Cycle graph) ──
+        try:
+            from affilabs.widgets.interactive_spr_legend import InteractiveSPRLegend
+            from PySide6.QtCore import QTimer as _QTimer
+            self.edits_spr_legend = InteractiveSPRLegend(
+                parent=self.edits_primary_graph,
+                title="Δ SPR (RU)",
+            )
+            self.edits_spr_legend.setVisible(False)  # shown once a cycle is loaded
+            self.edits_spr_legend.raise_()
+            # Defer positioning 200ms so layout has settled (mirrors live-view pattern)
+            _QTimer.singleShot(200, self._position_edits_legend)
+        except Exception:
+            self.edits_spr_legend = None
+
+        # ── Keyboard navigation: ←/→ steps through cycles in the table ──
+        self.edits_primary_graph.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.edits_primary_graph.installEventFilter(self._edits_event_filter)
 
         layout.addWidget(self.edits_primary_graph)
 
@@ -1026,7 +1234,10 @@ class UIBuildersMixin:
                 border: 1px solid #007AFF;
             }
         """)
-        reset_bar_btn.clicked.connect(lambda: self.delta_spr_barchart.autoRange())
+        reset_bar_btn.clicked.connect(lambda: (
+            self.delta_spr_barchart.autoRange(),
+            self.delta_spr_barchart.setXRange(-0.5, 3.5, padding=0),
+        ))
         header.addWidget(reset_bar_btn)
 
         layout.addLayout(header)
@@ -1036,24 +1247,22 @@ class UIBuildersMixin:
         self.delta_spr_barchart.setMenuEnabled(True)  # Enable context menu for export options
         self.delta_spr_barchart.setBackground('w')
         self.delta_spr_barchart.setYRange(0, 100)
+        self.delta_spr_barchart.setXRange(-0.5, 3.5, padding=0)
         self.delta_spr_barchart.getAxis('bottom').setTicks([[(0, 'Ch A'), (1, 'Ch B'), (2, 'Ch C'), (3, 'Ch D')]])
         self.delta_spr_barchart.setLabel('left', 'ΔSPR (RU)')
         self.delta_spr_barchart.setMinimumHeight(160)  # Floor only — no ceiling
         self.delta_spr_barchart.showGrid(y=True, alpha=0.2)
+        self.delta_spr_barchart.getViewBox().setMouseEnabled(x=False, y=True)
 
         # Add baseline indicator at y=0
         baseline = pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen(color='#86868B', width=1, style=Qt.DashLine))
         self.delta_spr_barchart.addItem(baseline)
 
-        # Create bar graph items — colors MUST match sensorgram curve colors
+        # Create bar graph items — colors MUST match active palette (ACTIVE_GRAPH_COLORS)
         self.delta_spr_bars = []
-        from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
-
-        colorblind_enabled = (
-            hasattr(self.main_window, 'colorblind_check') and
-            self.main_window.colorblind_check.isChecked()
-        )
-        bar_colors = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
+        from affilabs.settings import settings as _settings
+        _ch_keys = ['a', 'b', 'c', 'd']
+        bar_colors = [_settings.ACTIVE_GRAPH_COLORS.get(ch, '#1D1D1F') for ch in _ch_keys]
 
         for i, color in enumerate(bar_colors):
             bar = pg.BarGraphItem(x=[i], height=[0], width=0.6, brush=pg.mkColor(color))
@@ -1071,6 +1280,16 @@ class UIBuildersMixin:
         layout.addWidget(self.delta_spr_barchart)
 
         return container
+
+    def _position_edits_legend(self):
+        """Pin the Δ SPR legend to the top-left of edits_primary_graph (mirrors graphs.py)."""
+        legend = getattr(self, 'edits_spr_legend', None)
+        if legend is None:
+            return
+        legend.adjustSize()
+        left_axis_w = 58   # approx Y-axis width in pyqtgraph
+        legend.move(left_axis_w + 8, 8)
+        legend.raise_()
 
     # ------------------------------------------------------------------
     # Bottom tab handler

@@ -136,7 +136,8 @@ def run_simple_led_calibration(
             if hasattr(ctrl, "set_mode"):
                 positions = device_config.get_servo_positions()
                 if positions:
-                    s_pos, p_pos = positions
+                    s_pos = positions["s"]
+                    p_pos = positions["p"]
                     logger.info(f"Setting servo positions: S={s_pos}, P={p_pos}")
                     # Set both positions in firmware
                     ctrl.servo_set(s=s_pos, p=p_pos)

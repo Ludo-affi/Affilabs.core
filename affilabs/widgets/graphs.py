@@ -10,7 +10,7 @@ from pyqtgraph import (
     setConfigOptions,
 )
 from PySide6.QtCore import Qt, QSize, Signal
-from PySide6.QtGui import QBrush, QColor, QIcon
+from PySide6.QtGui import QBrush, QColor, QFont, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QGraphicsProxyWidget,
@@ -115,9 +115,10 @@ class SensorgramGraph(GraphicsLayoutWidget):
         else:
             self.plot = self.addPlot()
         self.plot.showGrid(x=False, y=False)
+        _lbl_kw = {'color': '#86868B', 'size': '10pt'}
         self.plot.setAxisItems()
-        self.plot.setLabel("left", text=f"λ ({self.unit})")  # Lambda symbol
-        self.plot.setLabel("bottom", text="Time (s)")
+        self.plot.setLabel("left", text=f"λ ({self.unit})", **_lbl_kw)  # Lambda symbol
+        self.plot.setLabel("bottom", text="Time (s)", **_lbl_kw)
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
         self.plot.enableAutoRange(axis='x')
@@ -149,6 +150,14 @@ class SensorgramGraph(GraphicsLayoutWidget):
         # Ensure label is visible
         bottom_axis.label.show()
         left_axis.label.show()
+
+        # Polish axis appearance: lighter pen, styled tick font
+        _axis_pen = mkPen(color='#D1D1D6', width=1)
+        _tick_font = QFont("Segoe UI", 9)
+        for _ax in (bottom_axis, left_axis):
+            _ax.setPen(_axis_pen)
+            _ax.setTextPen(mkPen('#86868B'))
+            _ax.setTickFont(_tick_font)
 
         # set up channel data and plots
         self.plots = {}
@@ -336,14 +345,27 @@ class SensorgramGraph(GraphicsLayoutWidget):
             self.clear_button_proxy.setPos(x, y)
 
     def update_colors(self):
-        """Update plot colors when colorblind mode is toggled."""
+        """Update plot colors when palette changes."""
+        from PySide6.QtCore import Qt
+        pen_style = Qt.PenStyle(settings.ACTIVE_LINE_STYLE)
         for ch in CH_LIST:
             self.plots[ch].setPen(
-                mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2),
+                mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2, style=pen_style),
             )
             if hasattr(self, "static") and ch in self.static:
                 self.static[ch].setPen(
-                    mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2),
+                    mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2, style=pen_style),
+                )
+
+    def update_line_style(self, pen_style) -> None:
+        """Update curve line style across all channels."""
+        for ch in CH_LIST:
+            self.plots[ch].setPen(
+                mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2, style=pen_style),
+            )
+            if hasattr(self, "static") and ch in self.static:
+                self.static[ch].setPen(
+                    mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2, style=pen_style),
                 )
 
     def movable_cursors(self, state):
@@ -845,8 +867,9 @@ class SegmentGraph(GraphicsLayoutWidget):
             self.plot = self.addPlot()
         self.plot.setDownsampling(ds=False, mode="subsample")
         self.plot.showGrid(x=False, y=False)
-        self.plot.setLabel("left", f"Δ SPR ({unit_string})")
-        self.plot.setLabel("bottom", "Time (s)")
+        _lbl_kw = {'color': '#86868B', 'size': '10pt'}
+        self.plot.setLabel("left", f"Δ SPR ({unit_string})", **_lbl_kw)
+        self.plot.setLabel("bottom", "Time (s)", **_lbl_kw)
         self.plot.setMenuEnabled(True)
         self.plot.setMouseEnabled(x=True, y=True)
         self.plot.disableAutoRange()
@@ -868,6 +891,14 @@ class SegmentGraph(GraphicsLayoutWidget):
         # Ensure label is visible
         bottom_axis.label.show()
         left_axis.label.show()
+
+        # Polish axis appearance: lighter pen, styled tick font
+        _axis_pen = mkPen(color='#D1D1D6', width=1)
+        _tick_font = QFont("Segoe UI", 9)
+        for _ax in (bottom_axis, left_axis):
+            _ax.setPen(_axis_pen)
+            _ax.setTextPen(mkPen('#86868B'))
+            _ax.setTickFont(_tick_font)
 
         # Track whether user has manually zoomed — gates auto-adjust in update_display
         self._user_zoomed = False
@@ -1041,13 +1072,25 @@ class SegmentGraph(GraphicsLayoutWidget):
             logger.debug(f"Error getting averaged value: {e}")
             return None
 
+    def update_line_style(self, pen_style) -> None:
+        """Update curve line style across all channels."""
+        try:
+            for ch in CH_LIST:
+                self.plots[ch].setPen(
+                    mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2, style=pen_style),
+                )
+        except Exception as e:
+            logger.debug(f"Error updating SegmentGraph line style: {e}")
+
     def update_colors(self):
-        """Update plot and cursor colors when colorblind mode is toggled."""
+        """Update plot and cursor colors when palette changes."""
+        from PySide6.QtCore import Qt
+        pen_style = Qt.PenStyle(settings.ACTIVE_LINE_STYLE)
         try:
             for ch in CH_LIST:
                 # Update line colors for each channel
                 self.plots[ch].setPen(
-                    mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2),
+                    mkPen(color=settings.ACTIVE_GRAPH_COLORS[ch], width=2, style=pen_style),
                 )
 
                 # Update checkbox colors in legend

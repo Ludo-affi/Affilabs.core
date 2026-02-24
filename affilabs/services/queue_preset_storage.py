@@ -22,6 +22,7 @@ from typing import Dict, List, Optional
 from tinydb import Query, TinyDB
 
 from affilabs.domain.cycle import Cycle
+from affilabs.utils.resource_path import get_writable_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +147,7 @@ class QueuePresetStorage:
         Args:
             db_path: Optional custom database path (defaults to queue_presets.json)
         """
-        self.db_path = db_path or Path("queue_presets.json")
+        self.db_path = db_path if db_path is not None else get_writable_data_path("queue_presets.json")
         self.db = TinyDB(str(self.db_path), indent=2)
         self.presets_table = self.db.table("presets")
 

@@ -1,571 +1,328 @@
 # EDITS_UI_BUILDERS_FRS.md
 
-**Feature Requirement Specification: Edits Tab UI Builders**  
-Document Status: ✅ Code-verified  
-Last Updated: February 19, 2026  
-Source File: `affilabs/tabs/edits/_ui_builders.py` (1048 lines)
+**Feature Requirement Specification: Edits Tab UI Layout**
+Document Status: ✅ Code-verified
+Last Updated: February 24, 2026
+Source File: `affilabs/tabs/edits/_ui_builders.py`
 
 ---
 
-## §1. Purpose & Context
+## §1. Purpose
 
-**What This Is:**  
-`UIBuildersMixin` is the pure UI construction layer for EditsTab. It contains every method that creates widgets, layouts, and pyqtgraph plots. All event-handling logic (`_on_cycle_selected_in_table`, `_apply_cycle_filter`, etc.) lives in other mixins — `UIBuildersMixin` is responsible only for building the view hierarchy.
+`UIBuildersMixin` is the pure UI construction layer for EditsTab. Contains every method that creates widgets and layouts. All event logic lives in other mixins — this mixin only builds the view hierarchy.
 
-**Mixin Structure:**  
-EditsTab assembles its UI from 4 mixin classes:
-- `UIBuildersMixin` — **Widget construction** (this document)
-- `DataLoaderMixin` — Cycle data loading and table population
-- `InteractionMixin` — User event handlers (table clicks, filter changes, etc.)
-- `ExportMixin` — Excel/CSV export logic
-
-**Widget references created here are stored as `self.*` on EditsTab** and accessed by other mixins. The calling convention is `content_widget = self.create_content()` from `EditsTab.__init__()`.
+Widget references created here are stored as `self.*` on EditsTab and accessed by all other mixins.
 
 ---
 
 ## §2. Layout Architecture
 
-### Top-Level Structure
-
 ```
 EditsTab (QWidget)
-└─ create_content() → QFrame (content_widget)
+└─ create_content() → QFrame (content_widget, bg #F8F9FA)
      └─ outer_layout (QHBoxLayout)
-          ├─ export_sidebar (QWidget, collapsible left panel, initially hidden)
-          └─ main_splitter (QSplitter, Horizontal)
-               ├─ left_panel (50% initial width)
-               │    └─ left_splitter (QSplitter, Vertical)
-               │         ├─ table_details_widget (70% initial)
-               │         │    └─ QVBoxLayout
-               │         │         ├─ table_panel        ← _create_table_panel()
-               │         │         └─ details_tab_widget  (Flags / Notes tabs)
-               │         └─ bottom_left_widget (30% initial)
-               │              └─ QHBoxLayout
-               │                   ├─ metadata_panel     ← _create_metadata_panel()
-               │                   └─ alignment_panel    ← _create_alignment_panel()
-               └─ right_panel (50% initial width)
-                    └─ graphs_splitter (QSplitter, Vertical)
-                         ├─ selection_widget (70% initial) ← _create_active_selection()
-                         └─ barchart_widget (30% initial) ← _create_delta_spr_barchart()
+          └─ main_splitter (QSplitter, Horizontal, initial [500, 500])
+               ├─ LEFT PANEL (QWidget)
+               │    └─ left_splitter (QSplitter, Vertical, initial [400, 150])
+               │         ├─ table_panel         ← _create_table_panel()
+               │         └─ metadata_panel      ← _create_metadata_panel()
+               └─ RIGHT PANEL (QWidget)
+                    └─ graphs_splitter (QSplitter, Vertical, initial [400, 150])
+                         ├─ selection_widget    ← _create_active_selection()
+                         └─ bottom_tabs         ← QTabWidget
+                              ├─ Tab 0: ΔSPR    ← _create_delta_spr_barchart()
+                              └─ Tab 1: Binding ← (BindingPlotMixin)
 ```
 
-**Alternative compact view**: `_apply_compact_view_initial()` collapses `bottom_left_widget` (sets size hint to 60px) when window width < 1400px. Called immediately after `create_content()`.
+**Removed from layout (Feb 24 2026):**
+- `alignment_panel` — removed; controls replaced by graph-embedded interactions
+- `details_tab_widget` (Flags/Notes QTabWidget) — replaced by plain notes panel inline in metadata
+
+**Retained as invisible stubs** (via `_create_alignment_stubs()`):
+`alignment_panel`, `alignment_title`, `alignment_flags_display`, `alignment_ref_combo`,
+`alignment_shift_input`, `alignment_shift_slider`, plus the `_AlignChannelProxy` wrapper.
+These satisfy `hasattr()` guards in `_alignment_mixin.py` without a visible panel.
 
 ---
 
-## §3. create_content()
+## §3. Graph Header — Start/End Time Labels
 
-**Signature:** `create_content() → QFrame`
-
-Creates and returns the complete layout hierarchy. Called once from `EditsTab.__init__()`:
-```python
-self.content_widget = self.create_content()
-self._main_layout.addWidget(self.content_widget)
-```
-
-**Background:** `#F8F9FA` (light gray page background)  
-**Splitter sizes:** main_splitter → `[500, 500]`; left_splitter → `[400, 150]`; graphs_splitter → `[400, 150]`
-
-### pyqtgraph Plots Created in create_content()
-
-Two pyqtgraph plots are instantiated in `create_content()` before being passed to sub-builders:
-
-| Widget | Type | Purpose |
-|--------|------|---------|
-| `self.edits_timeline_graph` | `pg.PlotWidget` | Full timeline view (all loaded cycles) |
-| `self.edits_primary_graph` | `pg.PlotWidget` | Active selection view (one cycle detail) |
-
-Both are created before calling `_create_active_selection()` because the selection panel reuses `edits_primary_graph` (not create a new one).
-
-### Details Tab Widget (below table)
+Start and end time of the selected cycle are shown **inline in the Active Selection graph header** (not in a separate panel):
 
 ```python
-self.details_tab_widget = QTabWidget()
-self.details_tab_widget.setTabPosition(QTabWidget.South)
-self.details_tab_widget.setStyleSheet(...)
-
-# Tab 1: Flags
-flags_page = QWidget()
-self.flags_list = QListWidget()
-self.details_tab_widget.addTab(flags_page, "🚩 Flags")
-
-# Tab 2: Notes
-notes_page = QWidget()
-self.cycle_notes_edit = QTextEdit()
-self.cycle_notes_edit.setPlaceholderText("Add notes for this cycle...")
-self.cycle_notes_edit.textChanged.connect(self._on_cycle_notes_changed)
-self.details_tab_widget.addTab(notes_page, "📝 Notes")
+self.alignment_start_time = QLabel("")   # e.g. "▶ 1140 s"
+self.alignment_end_time   = QLabel("")   # e.g. "◼ 1440 s"
 ```
 
-### Widget References Stored on Self
-
-After `create_content()`, the following attributes exist on `self`:
-- `self.edits_timeline_graph` — Timeline graph (PlotWidget)
-- `self.edits_primary_graph` — Selection graph (PlotWidget)
-- `self.details_tab_widget` — Flags/Notes tab widget
-- `self.flags_list` — QListWidget for cycle flags display
-- `self.cycle_notes_edit` — QTextEdit for cycle notes
-- Plus all attributes from each sub-builder (see §4-§8)
+- Initially hidden; shown/hidden by `_edits_cycle_mixin._on_cycle_selected_in_table()`
+- Format: `f"▶ {start:.0f} s"` / `f"◼ {end:.0f} s"`
+- Style: 11px, `#86868B`, transparent background
+- Positioned left of `cycle_context_label` in the graph header row
 
 ---
 
 ## §4. _create_table_panel()
 
-**Returns:** `QFrame` (white, rounded corners)
+**Returns:** `QFrame` (white, border-radius 12px, shadow)
 
-Creates the cycle table panel occupying the upper-left area.
-
-### Layout Within Panel
+### Layout
 
 ```
-table_panel (QFrame, white, border-radius 12px, shadow)
+table_panel
 └─ QVBoxLayout
      ├─ controls_row (QHBoxLayout)
-     │    ├─ load_btn            "📂 Load Data"
-     │    ├─ filter_combo        Cycle type filter
-     │    ├─ search_box          Text search (150px)
-     │    └─ columns_btn         "☰" column visibility
-     ├─ empty_state_widget       (shown when no cycles loaded)
-     └─ cycle_data_table         QTableWidget (5 columns)
+     │    ├─ load_btn       (folder SVG icon, "Load")
+     │    ├─ history_btn    ("History" → switches to Notes tab or opens ExperimentBrowserDialog)
+     │    ├─ filter_combo   (cycle type filter)
+     │    ├─ search_box     (🔍 placeholder, 150px)
+     │    └─ columns_btn    ("☰", 28×28)
+     ├─ empty_state_widget  (shown when no data)
+     └─ cycle_data_table    (QTableWidget, 5 columns)
 ```
 
-### cycle_data_table (QTableWidget)
+### cycle_data_table Columns
 
-The primary data table showing loaded cycles.
+| Index | Header | Width | Notes |
+|-------|--------|-------|-------|
+| 0 | Export | 50px fixed | Checkbox |
+| 1 | Type | 55px fixed | Cycle type badge |
+| 2 | Time | Stretch | Duration (e.g. "10 min") |
+| 3 | Conc. | Stretch | Concentration; **hidden by default** |
+| 4 | ΔSPR | Stretch | Calculated delta SPR |
 
-**Column definition:**
-
-| Index | Header | Width | Description |
-|-------|--------|-------|-------------|
-| 0 | Export | 50px | Checkbox column, centered |
-| 1 | Type | 55px | Cycle type badge (e.g., "Baseline") |
-| 2 | Time | Stretch | Duration (e.g., "10 min") |
-| 3 | Conc. | Stretch | Concentration (e.g., "100 nM") |
-| 4 | ΔSPR | Stretch | Calculated delta SPR value |
-
-**Table settings:**
-```python
-table.setSelectionBehavior(QAbstractItemView.SelectRows)
-table.setSelectionMode(QAbstractItemView.ExtendedSelection)  # Ctrl+click multi-select
-table.verticalHeader().setVisible(False)                    # No row numbers
-table.verticalHeader().setDefaultSectionSize(22)            # 22px row height
-table.setAlternatingRowColors(True)                         # Zebra stripes
-table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)  # Time stretches
-table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)  # Conc. stretches
-table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)  # ΔSPR stretches
-```
+- `SelectionBehavior`: SelectRows; `SelectionMode`: ExtendedSelection
+- Row height: 22px; `alternatingRowColors(True)`
+- `col 2 + 3 + 4`: `setSectionResizeMode(Stretch)`
 
 **Signals connected:**
 ```python
-table.itemSelectionChanged.connect(self._on_cycle_selected_in_table)
-table.itemSelectionChanged.connect(self._update_export_sidebar_stats)
-table.itemSelectionChanged.connect(self._update_details_panel)
-table.itemSelectionChanged.connect(self._reset_delta_spr_lock)
-```
-
-### Empty State Widget
-
-Shown when no cycles are loaded; hidden when table has data:
-```python
-empty_state_widget = QWidget()  # Stored as self.empty_state_widget
-# Contains: 📊 icon (48px) + "No cycles to display" + 
-#           "Start a recording or load data to begin"
-```
-
-### Filter & Search Controls
-
-```python
-self.filter_combo = QComboBox()
-# Items populated at runtime by DataLoaderMixin
-# Signal: currentTextChanged → self._apply_cycle_filter
-
-self.search_box = QLineEdit()
-self.search_box.setPlaceholderText("Search cycles...")
-self.search_box.setFixedWidth(150)
-# Signal: textChanged → self._apply_search_filter
-
-self.columns_btn = QPushButton("☰")
-self.columns_btn.setFixedSize(28, 28)
-# Signal: clicked → self._show_column_visibility_menu
+table.itemSelectionChanged → _on_cycle_selected_in_table
+table.itemSelectionChanged → _update_export_sidebar_stats
+table.itemSelectionChanged → _update_details_panel
+table.itemSelectionChanged → _reset_delta_spr_lock
 ```
 
 ---
 
 ## §5. _create_metadata_panel()
 
-**Returns:** `QFrame` (white, rounded corners, fixed width ~260px)
+**Returns:** `QFrame` (white, border-radius 12px, shadow)
 
-Shows metadata for the currently selected cycle(s). Hidden when nothing is selected (toggled by `InteractionMixin._update_selection_panels()`).
+The left-bottom panel. Always visible (not hidden on deselect).
+
+### Grid Rows
+
+| Row | Label | Attribute | Content |
+|-----|-------|-----------|---------|
+| 0 | Method: | `meta_method` | Method name from metadata |
+| 1 | Cycles: | `meta_total_cycles` | Count of visible rows (blue #007AFF) |
+| 2 | Types: | `meta_cycle_types` | Comma-separated unique types |
+| 3 | Conc. Range: | `meta_conc_range` | Min–max concentration |
+| 4 | Date: | `meta_date` | Recording date/time |
+| 5 | Operator: | `meta_operator` | User from metadata or user_manager |
+| 6 | Device: | `meta_device` | Serial (FLMT prefix → AFFI masked) |
+| 7 | Calibration: | `meta_calibration` | Startup calibration JSON filename |
+| 8 | Baseline file: | `meta_transmission_file` | Transmission baseline recording name |
+| 9 | Rating: | `meta_star_buttons[0..4]` | 5 × ★ QPushButton (grey/gold) |
+| 10 | Tags: | `meta_tags_pills` + `meta_tag_input` | Blue pill labels + add-tag QLineEdit |
+
+**Below grid — divider + sensor row:**
+```python
+self.sensor_input = QLineEdit()  # placeholder "Enter sensor type..."
+```
+
+### Rating Interaction
+
+- Clicking star N → `_on_star_clicked(N)`
+- If current rating == N: clears to 0 (toggle off)
+- Saved to `ExperimentIndex.set_rating(entry_id, N)`
+- Displayed: gold `#FF9500` for filled stars, grey `#D1D1D6` for empty
+
+### Tags Interaction
+
+- Existing tags shown as blue pills (`#E3F0FF` bg, `#007AFF` text) with `✕` to remove
+- `meta_tag_input` QLineEdit: Enter or `+` button calls `_on_tag_added()`
+- Remove: `_on_tag_removed(tag)` via pill `✕` click
+- All ops go through `ExperimentIndex.add_tag()` / `.remove_tag()`
+
+### ExperimentIndex Lookup
+
+`_find_index_entry_for_file(file_path)` — matches loaded file against index entries by:
+1. Relative path from `~/Documents/Affilabs Data/`
+2. Absolute path fallback
+
+Returns `None` if no match (new recording not yet in index, or index missing).
+
+---
+
+## §6. _create_active_selection()
+
+**Returns:** `QFrame` (white, border-radius 12px, shadow)
 
 ### Layout
 
 ```
-metadata_panel (QFrame, white, border-radius 12px, shadow)
-└─ QVBoxLayout
-     ├─ title: "Cycle Details"
-     ├─ grid (QGridLayout, 2 col)
-     │    ├─ Row 0: "Method:"    self.meta_method
-     │    ├─ Row 1: "Cycles:"    self.meta_cycles
-     │    ├─ Row 2: "Types:"     self.meta_types
-     │    ├─ Row 3: "Conc.:"     self.meta_conc_range
-     │    ├─ Row 4: "Date:"      self.meta_date
-     │    ├─ Row 5: "Operator:"  self.meta_operator
-     │    └─ Row 6: "Device:"    self.meta_device
-     ├─ divider (QFrame::HLine, #E5E5EA)
-     ├─ "Sensor type:"
-     └─ self.sensor_input (QLineEdit, placeholder "Enter sensor type...")
-```
-
-### Widget References Created
-
-| Attribute | Type | Content |
-|-----------|------|---------|
-| `self.meta_method` | QLabel | Method name (e.g., "5-point titration") |
-| `self.meta_cycles` | QLabel | Cycle count (e.g., "7 cycles") |
-| `self.meta_types` | QLabel | Cycle types (e.g., "Baseline, Binding") |
-| `self.meta_conc_range` | QLabel | Concentration range (e.g., "10–1000 nM") |
-| `self.meta_date` | QLabel | Recording date |
-| `self.meta_operator` | QLabel | Operator name from user profile |
-| `self.meta_device` | QLabel | Device identifier |
-| `self.sensor_input` | QLineEdit | User-entered sensor type; persisted per session |
-
-**All `meta_*` labels** are styled `#86868B` (gray) with 12px font. Labels (keys) are `#1D1D1F` bold.
-
----
-
-## §6. _create_alignment_panel()
-
-**Returns:** `QFrame` (info panel, initially **hidden** via `panel.hide()`)
-
-Shows cycle-specific timing details and provides alignment/reference controls for the selected cycle. Shown by `InteractionMixin._update_selection_panels()` when a cycle is selected.
-
-### Layout Sections
-
-**Section 1: Timing Info Grid**
-```
-"Start:"   self.alignment_start_time  (QLabel, e.g., "0.00 s")
-"End:"     self.alignment_end_time    (QLabel, e.g., "600.00 s")
-"Flags:"   self.alignment_flags_display (QLabel, styled green "#34C759")
-```
-
-**Section 2: Reference Subtraction**
-```
-"Ref:"   self.alignment_ref_combo  (QComboBox)
-```
-`alignment_ref_combo` items:
-- `"Global"` — Use toolbar global reference setting
-- `"None"` — Disable reference subtraction for this cycle
-- `"Ch A"`, `"Ch B"`, `"Ch C"`, `"Ch D"` — Use specific channel as reference
-
-Signal: `currentTextChanged → self._on_cycle_ref_changed`
-
-**Section 3: Channel Alignment**
-```
-"Channel:"   self.alignment_channel_combo  (QComboBox: All, A, B, C, D)
-"Shift:"     self.alignment_shift_input    (QLineEdit, 80px, shows seconds)
-             self.alignment_shift_slider   (QSlider, -200 to +200 = -20s to +20s)
-```
-Signals:
-- `alignment_shift_input.textChanged → self._on_shift_input_changed`
-- `alignment_shift_slider.valueChanged → self._on_shift_slider_changed`
-
-**Slider range:** ±200 ticks at 0.1s/tick = ±20.0s for fine alignment
-
----
-
-## §7. _create_active_selection()
-
-**Returns:** `QFrame` (white, border-radius 12px, drop shadow)
-
-The dominant right panel. Contains channel toggle buttons, `edits_primary_graph`, and Delta SPR measurement cursors.
-
-### Layout
-
-```
-selection_widget (QFrame, white, shadow)
+selection_widget
 └─ QVBoxLayout
      ├─ header (QHBoxLayout)
-     │    ├─ "Active Selection View" title
-     │    ├─ Ch A button (checkable, black #1D1D1F)
-     │    ├─ Ch B button (checkable, red #FF3B30)
-     │    ├─ Ch C button (checkable, blue #007AFF)
-     │    ├─ Ch D button (checkable, green #34C759)
-     │    └─ "⟲ Reset" button → edits_primary_graph.autoRange()
-     └─ edits_primary_graph (PyQtGraph PlotWidget, white bg, grid)
+     │    ├─ title "Active Selection View"
+     │    ├─ alignment_start_time  QLabel (▶ NNN s, hidden by default)
+     │    ├─ alignment_end_time    QLabel (◼ NNN s, hidden by default)
+     │    ├─ spacing(8)
+     │    ├─ cycle_context_label   QLabel (e.g. "Cycle 3 — Binding")
+     │    ├─ [stretch]
+     │    ├─ Ch A button  (checkable, #1D1D1F)
+     │    ├─ Ch B button  (checkable, #FF3B30)
+     │    ├─ Ch C button  (checkable, #007AFF)
+     │    ├─ Ch D button  (checkable, #34C759)
+     │    └─ "⟲ Reset" button
+     └─ edits_primary_graph (pg.PlotWidget)
+          ├─ InteractiveSPRLegend  (floating, top-right, QTimer.singleShot 200ms)
+          ├─ delta_spr_start_cursor (green dashed InfiniteLine, movable)
+          └─ delta_spr_stop_cursor  (red dashed InfiniteLine, movable)
 ```
 
 ### Channel Toggle Buttons
 
 ```python
-self.edits_channel_buttons = {}  # dict: 'A'/'B'/'C'/'D' → QPushButton
-
-# Colors update when colorblind mode toggled (global setting check at build time)
-colorblind_enabled = (
-    hasattr(self.main_window, 'colorblind_check') and 
-    self.main_window.colorblind_check.isChecked()
-)
-bar_colors = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
+self.edits_channel_buttons = {}  # 'A'/'B'/'C'/'D' → QPushButton
 ```
 
-**Toggle signal:** `btn.toggled → lambda checked, idx: self._toggle_channel(idx, checked)`
+Colors: hardcoded hex `{"A": "#1D1D1F", "B": "#FF3B30", "C": "#007AFF", "D": "#34C759"}` — NOT from `_active_channel_colors()` (which returns matplotlib shorthand `"k"` for A, invalid CSS).
 
-**Unchecked style:** Background `rgba(0,0,0,0.06)`, text `#86868B` — channel grayed out visually in graph.
+**Ctrl+click** on a channel button → `_on_edits_channel_ref_ctrl_click(ch)` → set/clear reference channel.
+
+### InteractiveSPRLegend
+
+- Created with `setVisible(False)`; made visible in `_on_cycle_selected_in_table()` after graph data plotted
+- Positioned via `QTimer.singleShot(200, self._position_edits_legend)` to allow layout to settle
+- Repositioned on resize events via `_EditsEventFilter`
+- Shows ΔSPR values per channel; updated by `_update_delta_spr_barchart()`
 
 ### Delta SPR Cursors
 
-Two movable `pg.InfiniteLine` cursors added to `edits_primary_graph`:
-
 ```python
-self.delta_spr_start_cursor = pg.InfiniteLine(
-    pos=0, angle=90, movable=True,
-    pen=pg.mkPen(color='#34C759', width=2, style=Qt.DashLine),
-    label='Start',
-    labelOpts={'position': 0.85, 'color': '#34C759'}
-)
-self.delta_spr_stop_cursor = pg.InfiniteLine(
-    pos=100, angle=90, movable=True,
-    pen=pg.mkPen(color='#FF3B30', width=2, style=Qt.DashLine),
-    label='Stop',
-    labelOpts={'position': 0.85, 'color': '#FF3B30'}
-)
+delta_spr_start_cursor: pg.InfiniteLine  # green #34C759, dashed
+delta_spr_stop_cursor:  pg.InfiniteLine  # red #FF3B30, dashed
 ```
 
-Signals: both `sigPositionChanged → self._update_delta_spr_barchart` — dragging cursors live-updates the bar chart.
+Both: `sigPositionChanged → _update_delta_spr_barchart`
 
 ---
 
-## §8. _create_delta_spr_barchart()
+## §7. _create_delta_spr_barchart()
 
-**Returns:** `QFrame` (white, border-radius 12px, drop shadow)
+**Returns:** `QFrame` (white, border-radius 12px, shadow)
 
-The lower-right panel. Shows channel responses (ΔSPR in RU) between the Start and Stop cursors as a bar chart.
+Lower-right panel (Tab 0 in bottom tabs).
 
 ### Layout
 
 ```
-barchart_widget (QFrame, white, shadow)
+barchart_widget
 └─ QVBoxLayout
-     ├─ header (QHBoxLayout)
-     │    ├─ "ΔSPR (RU) - Response Between Cursors" title
-     │    ├─ self.delta_spr_lock_btn  "🔓 Unlock" (checkable toggle)
-     │    └─ "⟲" reset button → delta_spr_barchart.autoRange()
-     └─ self.delta_spr_barchart (pg.PlotWidget, fixed height 220px)
+     ├─ header
+     │    ├─ "ΔSPR (RU) — Response Between Cursors"
+     │    ├─ delta_spr_lock_btn  (checkable, "🔓 Unlock" / "🔒 Locked")
+     │    └─ "⟲" reset
+     └─ delta_spr_barchart (pg.PlotWidget, fixed height 220px)
+          ├─ delta_spr_bars[0..3]   (pg.BarGraphItem per channel)
+          └─ delta_spr_labels[0..3] (pg.TextItem value labels above bars)
 ```
 
-### delta_spr_barchart (pg.PlotWidget)
-
-- **Y axis:** `setLabel('left', 'ΔSPR (RU)')`; initial `setYRange(0, 100)`
-- **X axis:** Custom ticks: `[(0,'Ch A'), (1,'Ch B'), (2,'Ch C'), (3,'Ch D')]`
-- **Grid:** `showGrid(y=True, alpha=0.2)`
-- **Context menu:** `setMenuEnabled(True)` — right-click to export chart data
-
-### Bar Items
-
-One `pg.BarGraphItem` per channel (A/B/C/D) — colors match sensorgram curve colors:
-```python
-self.delta_spr_bars = []  # list[pg.BarGraphItem], indices 0-3
-
-# Colors: CHANNEL_COLORS or CHANNEL_COLORS_COLORBLIND from plot_helpers
-for i, color in enumerate(bar_colors):
-    bar = pg.BarGraphItem(x=[i], height=[0], width=0.6, brush=pg.mkColor(color))
-    self.delta_spr_barchart.addItem(bar)
-    self.delta_spr_bars.append(bar)
-```
-
-### Value Labels
-
-One `pg.TextItem` per channel, positioned above each bar:
-```python
-self.delta_spr_labels = []  # list[pg.TextItem], indices 0-3
-
-for i in range(4):
-    text = pg.TextItem(text='0.0', anchor=(0.5, 1.2), color='#1D1D1F')
-    text.setFont(QFont('-apple-system', 10, QFont.Bold))
-    self.delta_spr_barchart.addItem(text)
-    self.delta_spr_labels.append(text)
-```
-
-Bars and labels updated together by `_update_delta_spr_barchart()` (in `InteractionMixin`).
-
-### Lock Button
-
-`self.delta_spr_lock_btn` — Checkable button. When checked (locked):
-- Positions cursors at `contact_time + 10%` relative to cycle start
-- Prevents manual cursor dragging
-- Label changes: `"🔓 Unlock"` → `"🔒 Locked"`
-
-Signal: `toggled → self._toggle_delta_spr_lock`
+- Y axis: `"ΔSPR (RU)"`, initial range `[0, 100]`
+- X ticks: `[(0,'Ch A'), (1,'Ch B'), (2,'Ch C'), (3,'Ch D')]`
+- Bar colors: `CHANNEL_COLORS` or `CHANNEL_COLORS_COLORBLIND`
 
 ---
 
-## §9. _create_tools_panel()
+## §8. _create_alignment_stubs()
 
-**Returns:** `QFrame` (white, border-radius 12px, drop shadow)
-
-Compact bottom bar with smoothing control and primary action buttons.
-
-### Layout
-
-```
-tools_panel (QFrame, white, shadow)
-└─ QHBoxLayout (horizontal, all on one row)
-     ├─ "Smoothing:" label
-     ├─ self.edits_smooth_label  (QLabel shows current value)
-     ├─ self.edits_smooth_slider (QSlider 0-50, max width 200px)
-     ├─ [stretch]
-     ├─ create_processing_btn   "📊 Create Processing Cycle"
-     └─ export_btn              "📥 Export"
-```
-
-### Smoothing Slider
+Creates all alignment widgets as invisible, unparented dummies so mixin `hasattr()` guards pass without a visible panel:
 
 ```python
-self.edits_smooth_slider = QSlider(Qt.Horizontal)
-self.edits_smooth_slider.setRange(0, 50)  # Savitzky-Golay window size (0=off)
-self.edits_smooth_slider.setValue(0)
-self.edits_smooth_slider.setMaximumWidth(200)
-# Signal:
-self.edits_smooth_slider.valueChanged.connect(lambda v: (
-    self.edits_smooth_label.setText(str(v)),
-    self._update_selection_view()
-))
+self.alignment_panel = QWidget()          # hide()/.show() calls are safe
+self.alignment_title = QLabel()
+self.alignment_flags_display = QLabel()
+self.alignment_ref_combo = QComboBox()    # items: Global/None/Ch A/B/C/D
+                                           # connected: _on_cycle_ref_changed
+self.alignment_shift_input = QLineEdit("0.0")  # connected: _on_shift_input_changed
+self.alignment_shift_slider = QSlider(Qt.Horizontal)  # range -200..200
+                                                        # connected: _on_shift_slider_changed
+# Plus _alignment_ch_btns dict and _AlignChannelProxy
 ```
-
-Slider value = Savitzky-Golay window size passed to `_update_selection_view()` for live re-smoothing.
-
-### Create Processing Cycle Button
-
-- Label: `"📊 Create Processing Cycle"` (green #34C759)
-- Signal: `clicked → self._create_processing_cycle`
-- Purpose: Extract selected channels from multiple selected cycles → merge into single combined cycle
-
-**Tooltip explains 3-step workflow:**
-1. Select cycles in table
-2. Set Channel filter per cycle (A/B/C/D or All)
-3. Click to extract and merge
-
-### Export Button
-
-- Label: `"📥 Export"` (black #1D1D1F)
-- Signal: `clicked → self._export_selection`
-- Opens export dialog (ExportMixin handles implementation)
 
 ---
 
-## §10. Column Visibility Menu
+## §9. Cycle Notes Panel
 
-**Method:** `_show_column_visibility_menu()` — Called by `columns_btn` click
-
-Creates a `QMenu` dynamically with `QAction(checkable=True)` entries for each table column. Users can show/hide individual columns:
-
-```
-☑ Type
-☑ Time
-☑ Conc.
-☑ ΔSPR
-```
-
-Export column (0) is always visible (not toggleable). Menu appears at button position.
-
----
-
-## §11. Compact View Initialization
-
-**Method:** `_apply_compact_view_initial()`
-
-Called immediately after `create_content()`. Checks window width:
-```python
-if self.main_window.width() < 1400:
-    # Collapse bottom-left panel to minimal height
-    self.bottom_left_widget.setMinimumHeight(60)
-    self.bottom_left_widget.setMaximumHeight(60)
-```
-
-Users can still drag the splitter handle to expand it. The compact view is initial state only.
-
----
-
-## §12. Export Sidebar
-
-A collapsible left sidebar (initially hidden) toggled by an export action in the toolbar. Built inline in `create_content()`:
+Replaced `QTabWidget` (Flags + Notes) with a plain `QFrame` notes panel:
 
 ```python
-self.export_sidebar = QWidget()
-self.export_sidebar.hide()  # Initially hidden
-
-# Contains:
-# - Export format selector (Excel / CSV)
-# - Channel checkboxes (A B C D)
-# - Cycle type filter for export
-# - selection stats labels
-# - "Export Selected" primary action button
+self.details_tab_widget = QFrame()        # reuses old name for compat
+self.cycle_notes_edit = QTextEdit()       # read-only in current phase
+self.cycle_notes_edit.setMaximumHeight(100)
 ```
 
-`InteractionMixin._update_export_sidebar_stats()` updates the stats labels whenever table selection changes.
+- Hidden by default; shown in `_update_details_panel()` only when selected cycle has a non-empty note
+- Flags tracking removed from UI
 
 ---
 
-## §13. Widget Quick Reference
+## §10. Widget Quick Reference
 
-All `self.*` attributes created by UIBuildersMixin:
-
-| Attribute | Type | Created In | Purpose |
-|-----------|------|-----------|---------|
-| `edits_timeline_graph` | pg.PlotWidget | create_content() | Full timeline view |
-| `edits_primary_graph` | pg.PlotWidget | create_content() | Selected cycle detail |
-| `details_tab_widget` | QTabWidget | create_content() | Flags / Notes tabs |
-| `flags_list` | QListWidget | create_content() | List cycle flags |
-| `cycle_notes_edit` | QTextEdit | create_content() | Cycle notes entry |
-| `empty_state_widget` | QWidget | _create_table_panel | No-data placeholder |
-| `cycle_data_table` | QTableWidget | _create_table_panel | 5-col cycle list |
-| `filter_combo` | QComboBox | _create_table_panel | Cycle type filter |
-| `search_box` | QLineEdit | _create_table_panel | Text search |
-| `columns_btn` | QPushButton | _create_table_panel | Column visibility |
-| `meta_method` | QLabel | _create_metadata_panel | Method name |
-| `meta_cycles` | QLabel | _create_metadata_panel | Cycle count |
-| `meta_types` | QLabel | _create_metadata_panel | Cycle types |
-| `meta_conc_range` | QLabel | _create_metadata_panel | Concentration range |
-| `meta_date` | QLabel | _create_metadata_panel | Recording date |
-| `meta_operator` | QLabel | _create_metadata_panel | Operator name |
-| `meta_device` | QLabel | _create_metadata_panel | Device ID |
-| `sensor_input` | QLineEdit | _create_metadata_panel | Sensor type entry |
-| `alignment_start_time` | QLabel | _create_alignment_panel | Cycle start time |
-| `alignment_end_time` | QLabel | _create_alignment_panel | Cycle end time |
-| `alignment_flags_display` | QLabel | _create_alignment_panel | Flag count/summary |
-| `alignment_ref_combo` | QComboBox | _create_alignment_panel | Reference channel |
-| `alignment_channel_combo` | QComboBox | _create_alignment_panel | Channel to shift |
-| `alignment_shift_input` | QLineEdit | _create_alignment_panel | Shift value (s) |
-| `alignment_shift_slider` | QSlider | _create_alignment_panel | ±20s fine control |
-| `edits_channel_buttons` | dict[str,QPushButton] | _create_active_selection | Ch A/B/C/D toggles |
-| `delta_spr_start_cursor` | pg.InfiniteLine | _create_active_selection | Green start cursor |
-| `delta_spr_stop_cursor` | pg.InfiniteLine | _create_active_selection | Red stop cursor |
-| `delta_spr_lock_btn` | QPushButton | _create_delta_spr_barchart | Lock/unlock cursors |
-| `delta_spr_barchart` | pg.PlotWidget | _create_delta_spr_barchart | Channel bar chart |
-| `delta_spr_bars` | list[pg.BarGraphItem] | _create_delta_spr_barchart | 4 bar items |
-| `delta_spr_labels` | list[pg.TextItem] | _create_delta_spr_barchart | Value labels above bars |
-| `edits_smooth_label` | QLabel | _create_tools_panel | Shows slider value |
-| `edits_smooth_slider` | QSlider | _create_tools_panel | Smoothing (0-50) |
-| `export_sidebar` | QWidget | create_content() | Left export sidebar |
-
----
-
-## §14. Design Notes
-
-1. **`edits_primary_graph` is not created in `_create_active_selection()`** — It is created in `create_content()` and passed into the selection panel to avoid lifecycle issues with pyqtgraph ownership.
-
-2. **Colors are applied at build time, not dynamically** — `edits_channel_buttons` and `delta_spr_bars` check `main_window.colorblind_check.isChecked()` ONCE during construction. Color mode changes require rebuild (handled by a settings signal in `InteractionMixin._rebuild_charts()`).
-
-3. **Alignment panel is hidden by default** — `alignment_panel.hide()` is called in `_create_alignment_panel()`. It appears only when a cycle is selected. `metadata_panel` is always visible.
-
-4. **Splitter state persistence** — `left_splitter`, `main_splitter`, `graphs_splitter` states are saved/restored in `EditsTab._save_layout_state()` / `_restore_layout_state()` using `QSettings`.
-
-5. **`edits_timeline_graph` vs `edits_primary_graph`** — Timeline shows all loaded cycles overlaid; primary graph shows only the selected cycle(s). Both are separate PlotWidgets updated independently.
+| Attribute | Type | Source |
+|-----------|------|--------|
+| `edits_timeline_graph` | pg.PlotWidget | create_content() |
+| `edits_primary_graph` | pg.PlotWidget | create_content() |
+| `details_tab_widget` | QFrame | create_content() (plain notes, not QTabWidget) |
+| `cycle_notes_edit` | QTextEdit | create_content() |
+| `empty_state_widget` | QWidget | _create_table_panel() |
+| `cycle_data_table` | QTableWidget | _create_table_panel() |
+| `filter_combo` | QComboBox | _create_table_panel() |
+| `search_box` | QLineEdit | _create_table_panel() |
+| `columns_btn` | QPushButton | _create_table_panel() |
+| `meta_method` | QLabel | _create_metadata_panel() |
+| `meta_total_cycles` | QLabel | _create_metadata_panel() |
+| `meta_cycle_types` | QLabel | _create_metadata_panel() |
+| `meta_conc_range` | QLabel | _create_metadata_panel() |
+| `meta_date` | QLabel | _create_metadata_panel() |
+| `meta_operator` | QLabel | _create_metadata_panel() |
+| `meta_device` | QLabel | _create_metadata_panel() |
+| `meta_calibration` | QLabel | _create_metadata_panel() |
+| `meta_transmission_file` | QLabel | _create_metadata_panel() |
+| `meta_star_buttons` | list[QPushButton] | _create_metadata_panel() |
+| `meta_tags_pills` | QWidget | _create_metadata_panel() |
+| `meta_tag_input` | QLineEdit | _create_metadata_panel() |
+| `sensor_input` | QLineEdit | _create_metadata_panel() |
+| `alignment_start_time` | QLabel | _create_active_selection() header |
+| `alignment_end_time` | QLabel | _create_active_selection() header |
+| `cycle_context_label` | QLabel | _create_active_selection() header |
+| `edits_channel_buttons` | dict[str, QPushButton] | _create_active_selection() |
+| `delta_spr_start_cursor` | pg.InfiniteLine | _create_active_selection() |
+| `delta_spr_stop_cursor` | pg.InfiniteLine | _create_active_selection() |
+| `delta_spr_lock_btn` | QPushButton | _create_delta_spr_barchart() |
+| `delta_spr_barchart` | pg.PlotWidget | _create_delta_spr_barchart() |
+| `delta_spr_bars` | list[pg.BarGraphItem] | _create_delta_spr_barchart() |
+| `delta_spr_labels` | list[pg.TextItem] | _create_delta_spr_barchart() |
+| `edits_smooth_label` | QLabel | _create_tools_panel() |
+| `edits_smooth_slider` | QSlider | _create_tools_panel() |
+| `alignment_panel` | QWidget (stub) | _create_alignment_stubs() |
+| `alignment_ref_combo` | QComboBox (stub) | _create_alignment_stubs() |
+| `alignment_shift_input` | QLineEdit (stub) | _create_alignment_stubs() |
+| `alignment_shift_slider` | QSlider (stub) | _create_alignment_stubs() |
 
 ---
 
-## §15. Document Metadata
+## §11. Key Gotchas
 
-**Created:** February 19, 2026  
-**Codebase Version:** Affilabs.core v2.0.5 beta  
-**Source Lines Reviewed:** All 1048 lines of `_ui_builders.py`  
-**Next Review:** When new panels are added to EditsTab layout
+1. **Channel button colors**: Use hardcoded `{"A": "#1D1D1F", "B": "#FF3B30", "C": "#007AFF", "D": "#34C759"}`. `_active_channel_colors()` returns `"k"` for Ch A (matplotlib shorthand) — invalid CSS.
+2. **`edits_primary_graph` created in `create_content()`**, not in `_create_active_selection()` — passed in to avoid pyqtgraph ownership issues.
+3. **InteractiveSPRLegend positioning**: Uses `QTimer.singleShot(200ms)` — immediate positioning fails because layout hasn't settled.
+4. **Alignment panel removed but stubs required** — `_alignment_mixin.py` uses `hasattr()` guards but existing mixin code calls `.show()`, `.hide()`, `.addItems()`, `.setCurrentText()` on these widgets directly. Stubs must expose the same API.
+5. **Rating/tags require a file to be loaded** — `_find_index_entry_for_file(None)` returns `None` immediately; star/tag UI shows default state (0 stars, no tags).
+
+---
+
+**Last Updated:** February 24, 2026
+**Codebase Version:** Affilabs.core v2.0.5 beta

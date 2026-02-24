@@ -174,7 +174,11 @@ class AffilabsSidebar(QWidget):
         This button is created in __init__ rather than lazy-loaded so that
         main-simplified.py can connect to it before the Settings tab is opened.
         """
-        self.baseline_capture_btn = QPushButton("📊 Capture 5-Min Baseline")
+        self.baseline_capture_btn = QPushButton(" Capture 5-Min Baseline")
+        _record_svg = get_affilabs_resource("ui/img/record_icon.svg")
+        if _record_svg.exists():
+            self.baseline_capture_btn.setIcon(QIcon(str(_record_svg)))
+            self.baseline_capture_btn.setIconSize(QSize(16, 16))
         self.baseline_capture_btn.setObjectName("baseline_capture_btn")
         self.baseline_capture_btn.setFixedHeight(40)
         self.baseline_capture_btn.setCursor(Qt.CursorShape.PointingHandCursor)

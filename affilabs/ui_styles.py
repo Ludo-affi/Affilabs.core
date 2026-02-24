@@ -936,6 +936,33 @@ def get_channel_button_style(active_color: str) -> str:
     )
 
 
+def get_channel_button_ref_style(active_color: str) -> str:
+    """Return stylesheet for a channel button in reference mode (dotted border).
+
+    Same as get_channel_button_style but with a dotted border to signal
+    this channel is the active reference.
+    """
+    return (
+        f"QPushButton {{"
+        f"  background: white;"
+        f"  color: {active_color};"
+        f"  border: 2px dotted {active_color};"
+        f"  border-radius: 6px;"
+        f"  font-size: 12px;"
+        f"  font-weight: 900;"
+        f"  font-family: {Fonts.SYSTEM};"
+        f"}}"
+        f"QPushButton:!checked {{"
+        f"  background: #E5E5E5;"
+        f"  color: #808080;"
+        f"  border: 2px dotted #808080;"
+        f"}}"
+        f"QPushButton:hover:!checked {{"
+        f"  border: 2px dotted #808080;"
+        f"}}"
+    )
+
+
 def get_active_cycle_channel_button_style(active_color: str) -> str:
     """Return stylesheet for active cycle graph channel buttons (less curved, more grey).
 

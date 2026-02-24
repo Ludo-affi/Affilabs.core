@@ -706,6 +706,9 @@ class DataWindow(InjectMixin, SetupMixin, SegmentMixin, ImportMixin, ExportMixin
             self.reference_channel_dlg.ui.channelD.setChecked(True)
         else:
             self.reference_channel_dlg.ui.noRef.setChecked(True)
+        # Keep soi_frame header buttons in sync
+        if hasattr(self, "soi_frame"):
+            self.soi_frame.set_reference_channel(ch)
 
     def disable_channels(self: Self, error_channels: list[str]) -> None:
         """Disable some channels."""

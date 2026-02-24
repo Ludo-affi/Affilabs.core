@@ -26,13 +26,77 @@
 
 **Layout**: `QMainWindow` → `QSplitter` → [Content Area | Sidebar]
 
-#### Toolbar
+#### 1.1 Toolbar Redesign — `TransportBar` (v2.1)
 
-| Element | Widget | States | Rule |
-|---------|--------|--------|------|
-| **Power** | `QPushButton` (checkable) | `disconnected` / `searching` / `connected` | Disabled during calibration. Text and color change per state (see Design System §9). |
-| **Record** | `QPushButton` (checkable) | enabled / disabled / recording | Disabled until calibration completes. Becomes "⏺ Recording" when active. |
-| **Pause** | `QPushButton` (checkable) | enabled / disabled / paused | Disabled until acquisition starts. Toggle emits `acquisition_pause_requested(bool)`. |
+> **Replaces** the legacy `QToolBar` with a 56px horizontal strip widget at the top of the main window.
+> **FRS**: [`docs/features/TRANSPORT_BAR_FRS.md`](../features/TRANSPORT_BAR_FRS.md)
+
+**File**: [`affilabs/widgets/transport_bar.py`](../../affilabs/widgets/transport_bar.py)
+
+**Layout zones** (left → right):
+
+| Zone | Contents | Width |
+|------|----------|-------|
+| Logo | `AffiLabs` wordmark label | Fixed |
+| Nav pills | Live / Edits / Analyze / Report | Stretch |
+| Method button | Blue "Build Method" pill | Fixed |
+| Stretch | — | Fills |
+| Sparq toggle | Robot SVG icon button | Fixed |
+| Pause | Checkable pause button | Fixed |
+| Record | Checkable record button | Fixed |
+| Power | Checkable connect button | Fixed |
+
+**Button aliasing** — TransportBar wires all buttons directly onto `main_window.*` for backward compat:
+- `main_window.power_btn` → TransportBar power button
+- `main_window.record_btn` → TransportBar record button
+- `main_window.pause_btn` → TransportBar pause button
+- `main_window.spark_toggle_btn` → TransportBar Spark button
+
+**Hidden compat widgets** (invisible, kept for signal wiring that still references them):
+- `main_window.recording_indicator`, `main_window.rec_status_dot`
+- `main_window.connecting_label`
+- `main_window.timer_btn` (stub `TimerButton` — actual timer is in `RailTimerPopup`)
+
+**States** (same as legacy toolbar — see §7):
+
+| Element | States | Rule |
+|---------|--------|------|
+| Power | `disconnected` / `searching` / `connected` | Disabled during calibration |
+| Record | enabled / disabled / recording | Disabled until calibration completes |
+| Pause | enabled / disabled / paused | Disabled until acquisition starts |
+
+#### 1.2 Icon Rail — `IconRail` (v2.1)
+
+> **Replaces** the built-in `QTabBar` of `AffilabsSidebar` with a 48px vertical strip widget.
+> **FRS**: [`docs/features/TRANSPORT_BAR_FRS.md`](../features/TRANSPORT_BAR_FRS.md)
+
+**File**: [`affilabs/widgets/icon_rail.py`](../../affilabs/widgets/icon_rail.py)
+
+**Layout zones** (top → bottom):
+
+| Zone | Contents |
+|------|----------|
+| Top | `A` monogram logo button |
+| Tab buttons | Device Status / Method / Flow / Export / Settings |
+| Stretch | — |
+| Utilities | Spectrum toggle, Timer toggle |
+
+**Tab click logic**:
+
+| State | Same tab clicked | Different tab clicked |
+|-------|------------------|-----------------------|
+| Sidebar collapsed | Expand + switch to tab | Expand + switch to tab |
+| Sidebar expanded | Collapse sidebar | Switch to tab (stay expanded) |
+
+**API**:
+- `set_sidebar(sidebar)` — connects rail to `AffilabsSidebar` instance
+- `show_flow_tab(visible: bool)` — shows/hides Flow tab button (hidden for P4SPR)
+
+**Utility buttons**:
+- **Spectrum** → toggles `SpectrumBubble` floating panel
+- **Timer** → toggles `RailTimerPopup` floating panel
+
+**Icon style**: 20px SVG icons; active tab = `#2E30E3` (accent blue); inactive = `#86868B` (muted grey); hover = `#1D1D1F` (dark text)
 
 #### Status Bar
 
@@ -402,6 +466,66 @@ Show/hide: shown by `_update_cycle_display()` on first tick; hidden by `_on_cycl
 
 ---
 
+### Floating / Overlay Panels (v2.1)
+
+> **FRS**: [`docs/features/FLOATING_PANELS_FRS.md`](../features/FLOATING_PANELS_FRS.md)
+> All floating panels are frameless child `QWidget`s or `QFrame`s parented to the main window. They overlay content without consuming layout space.
+
+#### `SpectrumBubble`
+**File**: [`affilabs/widgets/spectrum_bubble.py`](../../affilabs/widgets/spectrum_bubble.py)
+
+- 310×380px floating spectroscopy panel — bottom-left of main window (above transport bar)
+- Triggered by **Spectrum** button on `IconRail`
+- Two tabs: **Transmission** (normalised P/S ratio) / **Raw** (raw counts)
+- Draggable via header drag handle
+- **Public attributes** (also aliased on `main_window`):
+  - `transmission_plot` — pyqtgraph `PlotWidget`
+  - `transmission_curves` — list of 4 `PlotDataItem` (one per channel)
+  - `raw_data_plot` — pyqtgraph `PlotWidget`
+  - `raw_data_curves` — list of 4 `PlotDataItem`
+  - `baseline_capture_btn` — `QPushButton` ("Capture 5-Min Baseline")
+- **API**: `toggle()`, `reposition()` (call from `resizeEvent`)
+- Drop shadow: `blurRadius=32`, `offset=(0, 6)`, `alpha=55`
+- Close button → hides panel + unchecks `main_window.spectrum_toggle_btn`
+
+#### `RailTimerPopup`
+**File**: [`affilabs/widgets/rail_timer_popup.py`](../../affilabs/widgets/rail_timer_popup.py)
+
+- 240×250px countdown timer popup — bottom-left of main window, above `SpectrumBubble`
+- Triggered by **Timer** button on `IconRail`
+- Flags: `Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint`
+- **Signals**: `timer_started`, `timer_finished(int elapsed_s)`
+- **4-state machine**:
+
+| State | Display | Controls |
+|-------|---------|----------|
+| `idle` | Time picker + preset chips (5 / 10 / 15 / 30 min) | Start button |
+| `running` | `MM:SS` countdown, progress ring | Pause, Stop |
+| `paused` | `MM:SS` frozen | Resume, Stop |
+| `finished` | "Time's up!" — alert blink | Reset button |
+
+- Alert on finish: title bar blinks `#FF3B30` (red) × 5 via `QTimer`
+- Preset chips: quick-set 5 / 10 / 15 / 30 min
+- Draggable via header; repositions on parent `resizeEvent`
+
+#### `LiveContextPanel` *(v2.1 stub — not wired)*
+**File**: [`affilabs/widgets/live_context_panel.py`](../../affilabs/widgets/live_context_panel.py)
+
+- 230px left panel for the Live page — Phase 3 of sidebar redesign
+- Will replace `SpectrumBubble` by moving spectroscopy plots inline into the Live page left rail
+- Currently a minimal stub (`QFrame`, no plot widgets wired yet)
+- **Do not wire signals or call `update_*` methods** until Phase 3 is implemented
+
+#### `LiveRightPanel` *(v2.1 stub — not wired)*
+**File**: [`affilabs/widgets/live_right_panel.py`](../../affilabs/widgets/live_right_panel.py)
+
+- 220px right panel for the Live page — Phase 2 of sidebar redesign
+- Shows: active cycle card, queue summary, elapsed time
+- Currently a minimal stub with `add_widget_ref(name, widget)` API for future wiring
+- **Do not wire signals or call `update_*` methods** until Phase 2 is implemented
+
+---
+
 ## 5. Dialogs
 
 All dialogs lazy-loaded (created on first access, then cached). Use `show()` for non-modal, `exec()` only for blocking flows (confirmations).
@@ -446,6 +570,26 @@ Presenters are the only layer that touches widget state in response to business 
 | `NavigationPresenter` | `presenters/navigation_presenter.py` | Nav bar buttons + page switching |
 | `StatusPresenter` | `presenters/status_presenter.py` | Status bar and device status display |
 | `BaselineRecordingPresenter` | `presenters/baseline_recording_presenter.py` | Baseline recording progress + state |
+| `GuidanceCoordinator` | `coordinators/guidance_coordinator.py` | Adaptive contextual hints based on user experience level |
+
+### `GuidanceCoordinator`
+**File**: [`affilabs/coordinators/guidance_coordinator.py`](../../affilabs/coordinators/guidance_coordinator.py)
+**FRS**: [`docs/features/GUIDANCE_COORDINATOR_FRS.md`](../features/GUIDANCE_COORDINATOR_FRS.md)
+
+> Plain Python object (not `QObject`) — no Qt signals. Receives events from `main.py` signal handlers.
+
+**Guidance levels** (set by experiment count):
+
+| Level | Threshold | Hint density |
+|-------|-----------|--------------|
+| `full` | 0–4 experiments | All hints shown |
+| `standard` | 5–19 experiments | Reduced set |
+| `minimal` | 20+ experiments | Critical only |
+
+**Entry points**: `on_hardware_connected()`, `on_calibration_complete()`, `on_acquisition_started()`, `on_injection_placed()`, `on_recording_started()`, `on_cycle_complete()`, `on_export_complete()`
+
+**Pass A** (complete): logs hint decisions only — no widget calls
+**Pass B** (pending): will call `SparkHelpWidget.push_hint()` and other widget APIs based on hint key
 
 ### Presenter Rules
 

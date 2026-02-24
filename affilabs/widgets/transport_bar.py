@@ -119,8 +119,9 @@ class TransportBar(QWidget):
 
         # ── Tab switcher pills ────────────────────────────────────────────────
         nav_configs = [
-            ("Live", 0, "Real-time data visualisation"),
+            ("Live",  0, "Real-time data visualisation"),
             ("Edits", 1, "Edit and annotate experiment data"),
+            ("Notes", 2, "Experiment history and lab notebook"),
         ]
         for i, (label, idx, tip) in enumerate(nav_configs):
             btn = QPushButton(label)

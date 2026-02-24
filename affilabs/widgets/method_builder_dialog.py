@@ -17,6 +17,7 @@ from affilabs.services.queue_preset_storage import QueuePresetStorage
 from affilabs.services.user_profile_manager import UserProfileManager
 from affilabs.widgets.ui_constants import CycleTypeStyle
 from affilabs.utils.logger import logger
+from affilabs.utils.resource_path import get_affilabs_resource
 import time
 import re
 import threading
@@ -1585,7 +1586,11 @@ class MethodBuilderDialog(QDialog):
         self.save_btn.clicked.connect(self._on_save_method)
         button_row.addWidget(self.save_btn)
 
-        self.load_btn = QPushButton("📂 Load")
+        self.load_btn = QPushButton(" Load")
+        _folder_svg = get_affilabs_resource("ui/img/folder_icon.svg")
+        if _folder_svg.exists():
+            self.load_btn.setIcon(QIcon(str(_folder_svg)))
+            self.load_btn.setIconSize(QSize(14, 14))
         self.load_btn.setFixedHeight(40)
         self.load_btn.setToolTip("Load method from file")
         self.load_btn.setStyleSheet(
