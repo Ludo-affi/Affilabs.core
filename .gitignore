@@ -110,6 +110,9 @@ generated-files/calibration_profiles/*.json
 calibration_data/*.json
 calibration_checkpoints/*.json
 baseline_data/
+_data/calibration_data/*.json
+_data/led_calibration_official/
+_data/logs/
 
 # Data output files
 data_results/
@@ -117,10 +120,10 @@ data_results/
 !**/templates/**/*.csv
 !**/reference_data/**/*.csv
 
-# QC reports (runtime generated)
-OpticalSystem_QC/**/validation_reports/*.html
-OpticalSystem_QC/**/validation_reports/*.json
-!OpticalSystem_QC/**/validation_reports/qc_report_latest.json
+# QC reports (runtime generated — now under _data/OpticalSystem_QC/)
+_data/OpticalSystem_QC/**/validation_reports/*.html
+_data/OpticalSystem_QC/**/validation_reports/*.json
+!_data/OpticalSystem_QC/**/validation_reports/qc_report_latest.json
 
 # Build artifacts
 dist/

@@ -94,24 +94,60 @@ Root (essential files only):
 Source code (VISIBLE to Claude):
   affilabs/            ← THE application package (see affilabs/CLAUDE.md)
   AffiPump/            ← Pump controller library (Tecan/Cavro protocol)
+  mixins/              ← main.py mixin extracts (PumpMixin, FlagMixin, etc.)
 
 Runtime configuration (VISIBLE to Claude):
   config/              ← App configuration files
   settings/            ← User settings (settings.py = master constants)
   detector_profiles/   ← Detector-specific profiles (Flame-T, USB4000)
+  data/                ← Runtime app data (data/spark/ — Spark AI knowledge base, tips, history)
 
 Ignored by Claude Code (use --no-ignore to access):
   scripts/             ← Operational scripts (calibration, recovery, provisioning)
   tools/               ← Analysis, diagnostics, ML training, cleanup
+    tools/diagnostics/ ← One-off diagnostic/debug scripts (USB, drivers, hardware)
   standalone_tools/    ← Standalone GUI utility tools
-  tests/               ← Test suite (47 files)
-  calibrations/        ← Calibration data + scripts (servo, LED, per-device)
-  docs/                ← Project documentation (6 subdirs)
-  _scratch/            ← Archived one-off scripts
-  _data/               ← Data outputs, logs, simulation data
-  _build/              ← Build artifacts, installers, dist
+  tests/               ← Test suite
+  calibrations/        ← Calibration scripts + per-device configs (servo, LED)
+  docs/                ← Project documentation
+    docs/features/     ← FRS specs for each subsystem (primary reference)
+    docs/user_guides/  ← How-to guides, training docs, walkthroughs
+    docs/architecture/ ← System design, data flows
+    docs/hardware/     ← Firmware, EEPROM, OEM communication
+    docs/future_plans/ ← Roadmaps, unimplemented designs
+    docs/calibration/  ← Calibration procedures and specs
+    docs/ui/           ← UI design system, component inventory, state machine
+  _scratch/            ← Archived one-off scripts (do not add new files here — use tools/diagnostics/)
+  _data/               ← All runtime-generated data and outputs
+    _data/calibration_data/   ← Calibration JSON dumps from oem_calibrate.py
+    _data/OpticalSystem_QC/   ← Per-device QC validation reports
+    _data/led_calibration_official/ ← LED calibration data (official device records)
+    _data/demo/               ← Demo/simulation data
+    _data/logs/               ← App runtime logs (not committed)
+  _build/              ← Build artifacts, PyInstaller outputs, installers
   .venv/               ← Python virtual environment
 ```
+
+## File Placement Rules
+> **When creating a new file, pick the first matching rule.**
+
+| File type | Where it goes |
+|-----------|--------------|
+| App source code — new widget, service, coordinator, pipeline | `affilabs/<layer>/` matching the 4-layer architecture |
+| `main.py` method group too large | Extract to `mixins/<group>_mixin.py` |
+| FRS / feature spec doc | `docs/features/<SUBSYSTEM_NAME>_FRS.md` |
+| How-to guide, training doc, walkthrough | `docs/user_guides/` |
+| Architecture / data-flow doc | `docs/architecture/` |
+| Hardware / firmware / OEM reference | `docs/hardware/` |
+| Roadmap / unimplemented design | `docs/future_plans/` |
+| Operational script (calibration, provisioning, shipping) | `scripts/<category>/` |
+| Analysis, ML, data-processing script | `tools/<category>/` |
+| One-off diagnostic / debug script (USB, drivers, hardware probe) | `tools/diagnostics/` |
+| Runtime-generated data, JSON dumps, QC reports | `_data/<category>/` |
+| Calibration per-device configs + scripts | `calibrations/` |
+| Standalone GUI utility (runs without main app) | `standalone_tools/` |
+| Build spec, installer script | `_build/` |
+| **Root** | Only the files listed in Workspace Layout above — nothing else |
 
 ## Key External Dependencies
 - PySide6 (Qt GUI)

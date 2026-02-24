@@ -99,8 +99,8 @@ AffiPump/pps_speed_test.py
 AffiPump/max_speed_test.py
 AffiPump/query_*.py
 
-# === OEM docs (reference only, not code) ===
-OEM_Communication/
+# === OEM docs (reference only, not code — now lives in docs/hardware/) ===
+docs/hardware/OEM_Communication/
 
 # === Config files Claude doesn't need ===
 *.lock
@@ -117,4 +117,3 @@ OEM_Communication/
 .idea/
 .git/
 .github/
-icons/
