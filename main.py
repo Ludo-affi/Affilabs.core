@@ -737,6 +737,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         # Contact time marker for manual injection cycles
         self._contact_time_marker = None  # Vertical line showing when to wash/regen
         self._injection_completion_time = None  # Sensorgram time when injection completed
+        self._last_injection_display_time = None  # Cycle-relative injection time (set by _place_injection_flag)
 
         # Live binding stats: keyed by (cycle_num, channel) — populated by _place_injection_flag
         self._injection_stats: dict = {}
@@ -915,6 +916,10 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             self.main_window.sidebar.app = self
             # Share centralized user profile manager with sidebar
             self.main_window.sidebar.user_profile_manager = self.user_profile_manager
+            # Redirect pause_btn to the sidebar's visible button
+            sb = self.main_window.sidebar
+            if hasattr(sb, 'pause_btn'):
+                self.main_window.pause_btn = sb.pause_btn
 
         # Wire up elapsed time getter for pause markers + footer clocks
         def get_elapsed_time():
@@ -959,7 +964,28 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
         self.debug = DebugController(self)
 
+        # Dev console — Ctrl+Shift+Alt+D (no UI entry point, internal only)
+        self._dev_console = None
+        from PySide6.QtGui import QKeySequence, QShortcut as _QShortcut
+        _dev_shortcut = _QShortcut(
+            QKeySequence("Ctrl+Shift+Alt+D"),
+            self.main_window,
+        )
+        _dev_shortcut.activated.connect(self._toggle_dev_console)
+
         logger.debug("✓ Main window")
+
+    def _toggle_dev_console(self) -> None:
+        """Open/close the developer pump console (Ctrl+Shift+Alt+D)."""
+        from affilabs.dialogs.dev_console_dialog import DevConsoleDialog
+        if self._dev_console is None or not self._dev_console.isVisible():
+            if self._dev_console is None:
+                self._dev_console = DevConsoleDialog(self, self.main_window)
+            self._dev_console.show()
+            self._dev_console.raise_()
+            self._dev_console.activateWindow()
+        else:
+            self._dev_console.hide()
 
     def _init_coordinators(self):
         """Initialize UI coordinators (require main window)."""
@@ -1213,7 +1239,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
             hint = QLabel(
                 "Press <b>Power</b> when you're ready to connect,\n"
-                "or ask <b>Sparq</b> to set up a method first — no hardware needed."
+                "or ask <b>Spark</b> to set up a method first — no hardware needed."
             )
             hint.setWordWrap(True)
             hint.setStyleSheet(
@@ -1533,6 +1559,17 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
                     _gc.on_injection_flag, Qt.QueuedConnection
                 )
             logger.debug("✓ GuidanceCoordinator signals wired")
+
+        # === SIGNAL QUALITY SCORER ===
+        try:
+            from affilabs.services.signal_quality_scorer import SignalQualityScorer
+            _scorer = SignalQualityScorer.get_instance()
+            _summary = getattr(getattr(self, 'sidebar', None), 'summary_table', None)
+            if _summary is not None:
+                _scorer.cycle_scored.connect(_summary.set_cycle_score, Qt.QueuedConnection)
+            logger.debug("✓ SignalQualityScorer wired to QueueSummaryWidget")
+        except Exception as e:
+            logger.warning(f"SignalQualityScorer wire failed: {e}")
 
         # === KINETIC MANAGER SIGNALS ===
         self.kinetic_mgr.pump_initialized.connect(self._on_pump_initialized)
@@ -1980,6 +2017,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             self.injection_coordinator.injection_completed.connect(self._show_contact_time_marker)
             self.injection_coordinator.injection_flag_requested.connect(self._place_injection_flag)
             self.injection_coordinator.injection_cancelled.connect(self._on_injection_cancelled)
+            self.injection_coordinator.wash_detected.connect(self._on_wash_detected)
 
             logger.debug("✓ InjectionCoordinator signals connected")
 
@@ -2062,7 +2100,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
     def _set_start_button_to_stop_mode(self):
         """Change Start Run button to Stop Run mode (red, cancels execution)."""
         if btn := self._sidebar_widget('start_queue_btn'):
-            btn.setText("Stop Run")
+            btn.setText("Stop Cycle Record")
             btn.setToolTip("Stop the running cycle queue")
 
             # Set stop icon (SVG)
@@ -2104,7 +2142,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
     def _set_start_button_to_start_mode(self):
         """Change Stop Run button back to Start Run mode (green, starts execution)."""
         if btn := self._sidebar_widget('start_queue_btn'):
-            btn.setText("Start Run")
+            btn.setText("Start Cycle Record")
             btn.setToolTip("Start executing the queued cycles")
 
             # Set play icon (SVG)
@@ -2212,6 +2250,15 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
         # Initialize cycle tracking using Cycle.start() method
         self._current_cycle = cycle
+        try:
+            from affilabs.services.signal_quality_scorer import SignalQualityScorer
+            SignalQualityScorer.get_instance().on_cycle_started(
+                cycle_index=cycle_num,
+                cycle_id=str(getattr(cycle, 'cycle_id', cycle_num)),
+                cycle_type=cycle_type or "",
+            )
+        except Exception:
+            pass
         # Get sensorgram start time from live buffer (RAW_ELAPSED coords).
         # clock.raw_elapsed_now() may return 0 if start_experiment() hasn't fired yet,
         # so read the latest raw timestamp directly from the buffer as a reliable source.
@@ -2912,6 +2959,15 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
     def _on_hardware_connected(self, status: dict):
         """Hardware connection completed and update Device Status UI."""
         self.hardware_events.on_hardware_connected(status)
+        # Only advance the step chip when hardware actually connected.
+        # on_hardware_connected() sets power state to "disconnected" and returns
+        # early on scan failure — do not advance in that case.
+        power_state = self.main_window.power_btn.property("powerState")
+        if power_state in ("connected", "calibrating") and hasattr(self.main_window, 'stage_bar'):
+            self.main_window.stage_bar.advance_to("connect")
+            # Reconnect path: already calibrated → go straight to calibrate dot too
+            if power_state == "connected":
+                self.main_window.stage_bar.advance_to("calibrate")
 
     def _on_hardware_disconnected(self):
         """Hardware disconnected."""
@@ -2938,6 +2994,9 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
                 self.data_mgr.stop_acquisition()
             except Exception as e:
                 logger.error(f"Error stopping acquisition: {e}")
+
+        if hasattr(self.main_window, 'stage_bar'):
+            self.main_window.stage_bar.reset()
 
         # Stop LED status monitoring
         self._stop_led_status_monitoring()
@@ -3796,8 +3855,7 @@ def main():
             app.update_splash_message("Ready!")
             def _after_splash():
                 app.splash_screen.finish(app.main_window)
-                # Phase 6: user selector shown immediately after splash dismisses
-                app._show_user_selector_if_needed()
+                # User selector is now shown in the QC dialog footer after calibration
             QTimer.singleShot(300, _after_splash)
 
     # Close splash after at least 3 seconds for branding visibility

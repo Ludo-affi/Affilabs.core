@@ -92,14 +92,15 @@ class SparkSidebar(QFrame):
         except Exception as e:
             logger.warning(f"Spark robot icon failed (non-fatal): {e}")
 
-        title = QLabel("SPARQ AI assistant")
+        title = QLabel("Spark AI assistant")
         title.setFixedHeight(27)
         title.setStyleSheet(
-            "font-size: 20px;"
+            "font-size: 14px;"
             "font-weight: 600;"
             "color: #1D1D1F;"
             "background: transparent;"
-            "letter-spacing: -0.3px;"
+            "letter-spacing: -0.2px;"
+            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
         )
         layout.addWidget(title)
 
@@ -119,10 +120,10 @@ class SparkSidebar(QFrame):
         except Exception as e:
             logger.error(f"Failed to load Spark widget on startup (non-fatal): {e}")
             # Fallback: show placeholder if loading fails
-            placeholder = QLabel("Sparq AI loading failed")
+            placeholder = QLabel("Spark AI loading failed")
             placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
             placeholder.setStyleSheet(
-                "color: #86868B; font-size: 12px; background: transparent; padding: 40px 20px;"
+                "color: #6E6E73; font-size: 13px; background: transparent; padding: 40px 20px;"
             )
             self.main_layout.addWidget(placeholder, 1)
             self._spark_loaded = False

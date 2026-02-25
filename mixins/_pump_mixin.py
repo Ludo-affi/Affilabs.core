@@ -284,38 +284,46 @@ class PumpMixin:
         thread.start()
 
     def _on_injection_cancelled(self):
-        """Handle user cancellation of injection — log cancellation."""
+        """Handle user cancellation of injection — remove stale marker and log."""
         logger.info("❌ Injection cancelled by user")
+        if self._contact_time_marker is not None:
+            try:
+                graph = self.main_window.cycle_of_interest_graph
+                graph.removeItem(self._contact_time_marker)
+            except Exception:
+                pass
+            self._contact_time_marker = None
 
     def _show_contact_time_marker(self):
-        """Place a vertical 'contact time' marker on the cycle-of-interest graph.
+        """Place a 'Contact end' marker on the cycle-of-interest graph.
 
-        Called when injection_coordinator.injection_completed fires. Marks the
-        point at which sample contact ended so the user can measure response.
+        Called when injection_coordinator.injection_completed fires.
+        Marker is placed at injection_display_time + contact_time (the predicted
+        end of sample contact). If wash is subsequently detected by _WashMonitor,
+        _on_wash_detected() moves the marker to the actual wash time.
 
         When no contact timer is configured (timer off), also immediately places
         wash flags — the timer path won't fire, so we do it here.
         """
         try:
             graph = self.main_window.cycle_of_interest_graph
-            stop_time = self.main_window.full_timeline_graph.stop_cursor.value()
 
-            # Remove previous marker if present
-            if self._contact_time_marker is not None:
-                try:
-                    graph.removeItem(self._contact_time_marker)
-                except Exception:
-                    pass
-
-            import pyqtgraph as pg
-            from PySide6.QtCore import Qt
-            pen = pg.mkPen(color="#FF9500", width=2, style=Qt.PenStyle.DashLine)
-            self._contact_time_marker = pg.InfiniteLine(
-                pos=stop_time, angle=90, pen=pen, label="Contact end",
-                labelOpts={"color": "#FF9500", "position": 0.9}
+            # Predicted contact end = injection display time + contact_time from cycle
+            contact_time = (
+                getattr(self._current_cycle, 'contact_time', None)
+                if hasattr(self, '_current_cycle') and self._current_cycle
+                else None
             )
-            graph.addItem(self._contact_time_marker)
-            logger.debug(f"Contact time marker placed at t={stop_time:.1f}s")
+            injection_t = getattr(self, '_last_injection_display_time', None)
+            if injection_t is not None and contact_time:
+                marker_pos = injection_t + contact_time
+            else:
+                # Fallback: no injection flag was placed yet — skip marker
+                logger.debug("Contact time marker skipped: no injection display time available")
+                return
+
+            self._place_contact_marker(graph, marker_pos)
+            logger.debug(f"Contact end marker placed at t={marker_pos:.1f}s (injection={injection_t:.1f}s + contact={contact_time:.1f}s)")
         except Exception as e:
             logger.debug(f"Could not place contact time marker: {e}")
 
@@ -335,6 +343,72 @@ class PumpMixin:
             logger.debug("Contact timer OFF — placing wash flags immediately at injection end")
             if hasattr(self.main_window, '_place_automatic_wash_flags'):
                 self.main_window._place_automatic_wash_flags()
+
+    def _place_contact_marker(self, graph, pos: float) -> None:
+        """Create or move the orange dashed 'Contact end' InfiniteLine on the cycle graph."""
+        import pyqtgraph as pg
+        from PySide6.QtCore import Qt
+
+        if self._contact_time_marker is not None:
+            try:
+                graph.removeItem(self._contact_time_marker)
+            except Exception:
+                pass
+        pen = pg.mkPen(color="#FF9500", width=2, style=Qt.PenStyle.DashLine)
+        self._contact_time_marker = pg.InfiniteLine(
+            pos=pos, angle=90, pen=pen, label="Contact end",
+            labelOpts={"color": "#FF9500", "position": 0.9},
+        )
+        graph.addItem(self._contact_time_marker)
+
+    def _on_wash_detected(self, channel: str, wash_cycle_time: float) -> None:
+        """Move the 'Contact end' marker and place a wash flag at actual wash time.
+
+        Called when InjectionCoordinator.wash_detected fires (WashMonitor confirmed
+        a slope break indicating wash injection). Updates the marker position from
+        the predicted contact end to the real detected wash start, and places a
+        wash flag on the timeline at the detected time.
+        """
+        import numpy as np
+
+        # Move contact marker to actual wash time
+        try:
+            graph = self.main_window.cycle_of_interest_graph
+            self._place_contact_marker(graph, wash_cycle_time)
+            logger.info(
+                f"Contact end marker moved to actual wash time t={wash_cycle_time:.1f}s "
+                f"(channel {channel})"
+            )
+        except Exception as e:
+            logger.debug(f"Could not move contact marker to wash time: {e}")
+
+        # Place wash flag at the detected wash time
+        try:
+            if not hasattr(self, 'flag_mgr') or not self.flag_mgr:
+                return
+            ch = channel.lower()
+            # Look up SPR value at wash time from cycle_data
+            spr_val = 0.0
+            if (hasattr(self, 'buffer_mgr') and self.buffer_mgr
+                    and ch in self.buffer_mgr.cycle_data
+                    and len(self.buffer_mgr.cycle_data[ch].time) > 0):
+                ct = np.asarray(self.buffer_mgr.cycle_data[ch].time)
+                cs = np.asarray(self.buffer_mgr.cycle_data[ch].spr)
+                idx = int(np.argmin(np.abs(ct - wash_cycle_time)))
+                spr_val = float(cs[idx])
+
+            self.flag_mgr.add_flag_marker(
+                channel=ch,
+                time_val=wash_cycle_time,
+                spr_val=spr_val,
+                flag_type='wash',
+            )
+            logger.info(
+                f"🧼 Wash flag placed on Channel {channel} "
+                f"at t={wash_cycle_time:.1f}s (SPR={spr_val:.1f} RU) — WashMonitor detected"
+            )
+        except Exception as e:
+            logger.debug(f"Could not place wash flag from WashMonitor: {e}")
 
     def _place_injection_flag(self, channel: str, injection_time: float, confidence: float):
         """Place injection flag directly from dialog's pre-detected result.
@@ -366,6 +440,14 @@ class PumpMixin:
             start_time_raw = self.clock.convert(start_cursor_display, TimeBase.DISPLAY, TimeBase.RAW_ELAPSED)
             injection_display_time = injection_time - start_time_raw
 
+            if injection_display_time < 0:
+                # Auto-detection fired just before cycle start — clamp to 0 so the
+                # flag still appears at the cycle boundary rather than raising.
+                logger.debug(
+                    f"Injection display time was {injection_display_time:.2f}s (pre-cycle); clamped to 0."
+                )
+                injection_display_time = 0.0
+
             # Get SPR value from cycle_data (matches what's displayed on graph)
             spr_val = 0
             if (ch in self.buffer_mgr.cycle_data and
@@ -382,6 +464,8 @@ class PumpMixin:
                 spr_val=spr_val,
                 flag_type='injection'
             )
+            # Store for _show_contact_time_marker to use when placing the "Contact end" marker.
+            self._last_injection_display_time = injection_display_time
             logger.info(
                 f"✓ Injection flag placed on Channel {ch.upper()} "
                 f"at display t={injection_display_time:.2f}s (SPR={spr_val:.1f} RU)"
@@ -479,52 +563,7 @@ class PumpMixin:
                 contact_seconds = int(self._current_cycle.contact_time)
                 logger.info(f"⏱ Starting contact timer: {contact_seconds}s")
 
-                # Place projected wash deadline marker immediately on the Active Cycle
-                # graph so the user can see the target end-of-contact line and watch
-                # the data filling the window between injection and wash.
-                wash_display_time = injection_display_time + contact_seconds
-                if hasattr(self, 'flag_mgr') and self.flag_mgr:
-                    try:
-                        self.flag_mgr.create_auto_marker(
-                            marker_type='wash_deadline',
-                            time=wash_display_time,
-                            label='🧹 Wash',
-                            color='#007AFF',
-                        )
-                        logger.info(
-                            f"📍 Wash deadline marker placed at t={wash_display_time:.1f}s "
-                            f"(injection {injection_display_time:.1f}s + {contact_seconds}s contact)"
-                        )
-                        # Shade the contact window so the user sees data filling toward wash
-                        self.flag_mgr.create_contact_region(injection_display_time, wash_display_time)
-                        # Switch CycleStatusOverlay to injection-holding mode so the
-                        # contact countdown is visible on the graph (where the user is looking)
-                        try:
-                            graph = getattr(self.main_window, 'cycle_of_interest_graph', None)
-                            overlay = getattr(graph, 'cycle_status_overlay', None)
-                            if overlay is not None:
-                                overlay.show_injection(
-                                    channel=channel.upper(),
-                                    contact_sec=contact_seconds,
-                                    phase='holding',
-                                )
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-                
-                # Start manual timer countdown (which auto-shows popout if "Contact" in label)
-                if hasattr(self.main_window, '_start_manual_timer_countdown'):
-                    cycle_num = getattr(self._current_cycle, 'cycle_num', 1)
-                    timer_label = f"Contact Time #{cycle_num}"
-                    # Set next action hint so PopOutTimerWindow shows "Perform wash" on expiry
-                    self.main_window._manual_timer_next_action = "Perform wash"
-                    self.main_window._start_manual_timer_countdown(
-                        timer_label, 
-                        contact_seconds, 
-                        sound_enabled=True
-                    )
-                    logger.info(f"✓ Contact timer started: {timer_label} ({contact_seconds}s)")
+                # Contact time is tracked per-channel in InjectionActionBar — no manual timer needed
 
         except Exception as e:
             logger.error(f"❌ Error placing injection flag: {e}")
@@ -2386,6 +2425,15 @@ class PumpMixin:
         except Exception as e:
             logger.error(f"_on_method_ready: add method failed: {e}")
             return
+
+        if hasattr(self, 'main_window') and hasattr(self.main_window, 'stage_bar'):
+            try:
+                _chip = self.main_window.transport_bar.step_chip
+                # Only advance to "method" if already connected (calibrate=1 or higher)
+                if _chip._completed_idx >= 0:
+                    self.main_window.stage_bar.advance_to("method")
+            except Exception:
+                self.main_window.stage_bar.advance_to("method")
 
         # Refresh summary table
         try:

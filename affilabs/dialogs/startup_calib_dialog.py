@@ -118,11 +118,18 @@ class StartupCalibProgressDialog(QDialog):
 
         # --- Rotating pro-tips shown DURING calibration ---
         self._calib_tips: list[str] = [
-            "You can build and save methods offline — no hardware needed. Ask Sparq to set one up.",
+            "You can build and save methods offline — no hardware needed. Ask Spark to set one up.",
             "Each LED channel (A–D) is independent. Run up to 4 different samples per experiment on the P4SPR.",
             "Use the <b>Edits</b> tab after recording to align cycles, trim baselines, and export to Excel.",
-            "Sparq IQ scores update in real time. A score ≥ 70 means your signal is measurement-ready.",
+            "Rinse with buffer for at least 2 minutes before calibrating — a stable baseline gives you a cleaner S-pol reference.",
+            "The SPR dip shifts to longer wavelengths when analyte binds. A rising sensorgram means binding is happening.",
+            "P-polarisation couples to surface plasmons; S-polarisation doesn't. The P/S ratio cancels LED drift automatically.",
+            "Set your pump flow rate <b>before</b> starting the run — changes made mid-cycle have no effect.",
+            "Gold chips are single-use. If you see a noisy or flat signal after regeneration, it's time for a new chip.",
+            "Use short regeneration pulses (10–15 s) and check the baseline recovery before committing to a full injection cycle.",
         ]
+        import random as _random
+        _random.shuffle(self._calib_tips)
         self._calib_tip_index: int = 0
         self._tip_rotation_timer = QTimer(self)
         self._tip_rotation_timer.setInterval(20_000)  # rotate every 20 s
@@ -596,7 +603,9 @@ class StartupCalibProgressDialog(QDialog):
                 self._calibration_running = True
                 self._elapsed_timer.start()
                 self._dot_timer.start(1000)
-                # Start rotating pro tips
+                # Start rotating pro tips (already shuffled at init)
+                import random as _random
+                _random.shuffle(self._calib_tips)
                 self._calib_tip_index = 0
                 self._calib_tip_label.setText(self._calib_tips[0])
                 self._calib_tip_card.setVisible(True)

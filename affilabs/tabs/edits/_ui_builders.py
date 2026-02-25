@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect, QComboBox, QLineEdit, QTableWidgetItem,
     QWidget, QGridLayout, QScrollArea, QToolButton, QMenu,
 )
-from PySide6.QtCore import Qt, QSize, QObject, QEvent
-from PySide6.QtGui import QColor, QFont, QIcon, QPixmap, QPainter
+from PySide6.QtCore import Qt, QSize, QObject, QEvent, QUrl
+from PySide6.QtGui import QColor, QFont, QIcon, QPixmap, QPainter, QDesktopServices
 from PySide6.QtSvg import QSvgRenderer
 from affilabs.utils.resource_path import get_affilabs_resource
 
@@ -213,8 +213,8 @@ class UIBuildersMixin:
         content_widget.setStyleSheet("QFrame { background: #F8F9FA; border: none; }")
 
         content_layout = QVBoxLayout(content_widget)
-        content_layout.setContentsMargins(12, 12, 12, 12)  # Increased from 8 for more breathing room
-        content_layout.setSpacing(12)  # Increased from 8 for better visual separation
+        content_layout.setContentsMargins(12, 12, 12, 12)
+        content_layout.setSpacing(12)
 
         # Main content container with optional export sidebar
         outer_layout = QHBoxLayout()
@@ -224,11 +224,10 @@ class UIBuildersMixin:
         # Main horizontal split: Table LEFT | Graphs RIGHT
         main_splitter = QSplitter(Qt.Horizontal)
 
-        # LEFT SIDE: Vertical split (Table TOP | Bottom Panels BOTTOM)
+        # LEFT SIDE: Vertical split (Table TOP | Metadata BOTTOM)
         left_splitter = QSplitter(Qt.Vertical)
 
-        # LEFT TOP: Cycle table with details tabs
-        from PySide6.QtWidgets import QTabWidget
+        # LEFT TOP: Cycle table with notes panel
         table_details_widget = QFrame()
         table_details_layout = QVBoxLayout(table_details_widget)
         table_details_layout.setContentsMargins(0, 0, 0, 0)
@@ -237,7 +236,6 @@ class UIBuildersMixin:
         table_widget = self._create_table_panel()
         table_details_layout.addWidget(table_widget, 1)
 
-        # Details tab widget (Flags & Notes)
         # Cycle notes panel — shown below table when a cycle is selected
         self.details_tab_widget = QFrame()
         self.details_tab_widget.setStyleSheet(
@@ -249,7 +247,7 @@ class UIBuildersMixin:
 
         notes_header = QLabel("Cycle Notes")
         notes_header.setStyleSheet(
-            "font-size: 11px; font-weight: 600; color: #86868B;"
+            "font-size: 12px; font-weight: 600; color: #6E6E73;"
             " background: transparent; border: none;"
         )
         notes_panel_layout.addWidget(notes_header)
@@ -263,7 +261,6 @@ class UIBuildersMixin:
         )
         notes_panel_layout.addWidget(self.details_notes_text, 1)
 
-        # Keep this attribute so _update_details_panel still works
         self.details_flags_text = QLabel("")
 
         self.details_tab_widget.setMaximumHeight(100)
@@ -272,16 +269,16 @@ class UIBuildersMixin:
 
         left_splitter.addWidget(table_details_widget)
 
-        # LEFT BOTTOM: Metadata panel (full width — alignment panel removed)
+        # LEFT BOTTOM: Metadata panel
         metadata_panel = self._create_metadata_panel()
         left_splitter.addWidget(metadata_panel)
 
-        # Stub alignment widgets so mixin code using hasattr() guards keeps working
+        # Stub alignment widgets so mixin code keeps working
         self._create_alignment_stubs()
 
-        # Set vertical proportions for left side: 70% table, 30% bottom panels
-        left_splitter.setStretchFactor(0, 70)
-        left_splitter.setStretchFactor(1, 30)
+        # Match vertical proportion to right side so the divider aligns: 55% table / 45% metadata
+        left_splitter.setStretchFactor(0, 55)
+        left_splitter.setStretchFactor(1, 45)
 
         main_splitter.addWidget(left_splitter)
 
@@ -298,6 +295,36 @@ class UIBuildersMixin:
         graphs_splitter.addWidget(selection_widget)
 
         # BOTTOM: Tabbed panel — ΔSPR bar chart + Binding plot (45%)
+        analysis_container = QFrame()
+        analysis_container.setObjectName("AnalysisContainer")
+        analysis_container.setStyleSheet(
+            "#AnalysisContainer { background: white; border-radius: 12px; }"
+        )
+        an_shadow = QGraphicsDropShadowEffect()
+        an_shadow.setBlurRadius(8)
+        an_shadow.setColor(QColor(0, 0, 0, 20))
+        an_shadow.setOffset(0, 2)
+        analysis_container.setGraphicsEffect(an_shadow)
+        an_vbox = QVBoxLayout(analysis_container)
+        an_vbox.setContentsMargins(0, 0, 0, 0)
+        an_vbox.setSpacing(0)
+
+        # Title strip
+        an_title_strip = QFrame()
+        an_title_strip.setStyleSheet(
+            "QFrame { background: white; border-bottom: 1px solid #E5E5EA; }"
+        )
+        an_title_layout = QHBoxLayout(an_title_strip)
+        an_title_layout.setContentsMargins(16, 10, 16, 10)
+        an_title_lbl = QLabel("Analysis")
+        an_title_lbl.setStyleSheet(
+            "font-size: 14px; font-weight: 700; color: #1D1D1F; "
+            "background: transparent; letter-spacing: -0.2px;"
+        )
+        an_title_layout.addWidget(an_title_lbl)
+        an_vbox.addWidget(an_title_strip)
+
+        from PySide6.QtWidgets import QTabWidget
         self.bottom_tab_widget = QTabWidget()
         self.bottom_tab_widget.setStyleSheet("""
             QTabBar::tab { padding: 4px 14px; background: white; color: #1D1D1F; }
@@ -310,56 +337,45 @@ class UIBuildersMixin:
         binding_widget = self._create_binding_panel()
         self.bottom_tab_widget.addTab(binding_widget, "Binding")
         self.bottom_tab_widget.currentChanged.connect(self._on_bottom_tab_changed)
-        graphs_splitter.addWidget(self.bottom_tab_widget)
+        an_vbox.addWidget(self.bottom_tab_widget, 1)
+        graphs_splitter.addWidget(analysis_container)
 
-        # Set vertical proportions: 55:45
         graphs_splitter.setStretchFactor(0, 55)
         graphs_splitter.setStretchFactor(1, 45)
 
         right_vbox.addWidget(graphs_splitter, 1)
 
-        # TOOLS BAR: Smoothing + Create Processing + Export (below graphs)
-        tools_panel = self._create_tools_panel()
-        right_vbox.addWidget(tools_panel)
-
         main_splitter.addWidget(right_container)
 
-        # Set horizontal proportions: 50:50 (left:right)
         main_splitter.setStretchFactor(0, 50)
         main_splitter.setStretchFactor(1, 50)
-
-        # Set minimum widths
         main_splitter.setMinimumWidth(800)
         table_widget.setMinimumWidth(300)
 
-        # Export sidebar (collapsible left panel — consistent with main sidebar position)
+        # Export sidebar (hidden by default)
         self.export_sidebar = self._create_export_sidebar()
-        self.export_sidebar.setVisible(False)  # Hidden by default — opened via Export button
+        self.export_sidebar.setVisible(False)
         outer_layout.addWidget(self.export_sidebar)
-
         outer_layout.addWidget(main_splitter, 1)
 
         content_layout.addLayout(outer_layout)
 
-        # Apply default view settings (compact mode + binding filter)
         self._apply_compact_view_initial()
-        # Concentration column hidden by default — revealed via column picker
         self.cycle_data_table.setColumnHidden(self.TABLE_COL_CONC, True)
 
-        # Store references on main_window for external access
-        self.main_window.cycle_data_table = self.cycle_data_table
-        self.main_window.edits_timeline_graph = self.edits_timeline_graph
-        self.main_window.edits_primary_graph = self.edits_primary_graph
-        self.main_window.edits_timeline_curves = self.edits_timeline_curves
-        self.main_window.edits_graph_curves = self.edits_graph_curves
+        self.main_window.cycle_data_table         = self.cycle_data_table
+        self.main_window.edits_timeline_graph     = self.edits_timeline_graph
+        self.main_window.edits_primary_graph      = self.edits_primary_graph
+        self.main_window.edits_timeline_curves    = self.edits_timeline_curves
+        self.main_window.edits_graph_curves       = self.edits_graph_curves
         self.main_window.edits_graph_curve_labels = self.edits_graph_curve_labels
-        self.main_window.edits_timeline_cursors = self.edits_timeline_cursors
-        self.main_window.edits_smooth_slider = self.edits_smooth_slider
-        self.main_window.edits_smooth_label = self.edits_smooth_label
-        self.main_window.bottom_tab_widget = self.bottom_tab_widget
-        self.main_window.binding_ch_btns = self.binding_ch_btns
-        self.main_window.binding_scatter_plot = self.binding_scatter_plot
-        self.main_window.binding_conc_unit_combo = self.binding_conc_unit_combo
+        self.main_window.edits_timeline_cursors   = self.edits_timeline_cursors
+        self.main_window.edits_smooth_slider      = self.edits_smooth_slider
+        self.main_window.edits_smooth_label       = self.edits_smooth_label
+        self.main_window.bottom_tab_widget        = self.bottom_tab_widget
+        self.main_window.binding_ch_btns          = self.binding_ch_btns
+        self.main_window.binding_scatter_plot     = self.binding_scatter_plot
+        self.main_window.binding_conc_unit_combo  = self.binding_conc_unit_combo
 
         return content_widget
 
@@ -373,7 +389,7 @@ class UIBuildersMixin:
     def _create_table_panel(self):
         """Left panel: Cycle table with Load Data button and alignment controls."""
         container = QFrame()
-        container.setStyleSheet("QFrame { background: white; border-radius: 12px; }")
+        container.setStyleSheet("QFrame { background: #F5F6F8; border-radius: 12px; }")
         container.setMinimumWidth(300)
 
         shadow = QGraphicsDropShadowEffect()
@@ -383,28 +399,116 @@ class UIBuildersMixin:
         container.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 14, 16, 0)
+        layout.setSpacing(10)
 
-        # Header
-        header = QHBoxLayout()
-        title = QLabel("Cycles Recorded")
+        # ── Section title bar ──────────────────────────────────────────────
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+        title = QLabel("Recorded Cycles")
         title.setStyleSheet(
-            f"font-size: 15px; font-weight: 600; color: {Colors.PRIMARY_TEXT}; "
-            f"font-family: {Fonts.DISPLAY};"
+            f"font-size: 14px; font-weight: 700; color: {Colors.PRIMARY_TEXT}; "
+            f"font-family: {Fonts.DISPLAY}; letter-spacing: -0.2px;"
         )
-        header.addWidget(title)
-        header.addStretch()
+        title_row.addWidget(title)
+        title_row.addStretch()
 
-        # Units reference
-        units_label = QLabel("ΔSPR in RU")
-        units_label.setStyleSheet(
-            f"font-size: 10px; color: {Colors.SECONDARY_TEXT}; font-weight: 500; "
-            f"font-family: {Fonts.SYSTEM};"
+        # Compact Export button in title row
+        title_export_btn = QToolButton()
+        title_export_btn.setText(" Export")
+        _exp_svg = get_affilabs_resource("ui/img/export_package_icon.svg")
+        if _exp_svg and _exp_svg.exists():
+            _exp_src = _exp_svg.read_text(encoding="utf-8").replace("currentColor", "white")
+            _exp_ren = QSvgRenderer(_exp_src.encode("utf-8"))
+            _exp_px = QPixmap(QSize(13, 13))
+            _exp_px.fill(Qt.GlobalColor.transparent)
+            _exp_p = QPainter(_exp_px)
+            _exp_ren.render(_exp_p)
+            _exp_p.end()
+            title_export_btn.setIcon(QIcon(_exp_px))
+            title_export_btn.setIconSize(QSize(13, 13))
+            title_export_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        else:
+            title_export_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        title_export_btn.setFixedHeight(26)
+        title_export_btn.setMinimumWidth(88)
+        title_export_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        title_export_btn.setStyleSheet("""
+            QToolButton {
+                background: #1D1D1F; color: white; border-radius: 7px;
+                font-size: 11px; font-weight: 600; padding: 2px 10px;
+                border: none;
+            }
+            QToolButton:hover { background: #3A3A3C; }
+            QToolButton::menu-button {
+                border-left: 1px solid rgba(255,255,255,0.2);
+                border-radius: 0px 7px 7px 0px;
+                width: 16px;
+            }
+            QToolButton::menu-arrow { image: none; }
+        """)
+        title_export_btn.clicked.connect(self._export_package)
+        _title_export_menu = QMenu(self.main_window)
+        _title_export_menu.setStyleSheet("""
+            QMenu { background: white; border: 1px solid #E5E5EA;
+                    border-radius: 8px; padding: 4px; }
+            QMenu::item { padding: 8px 16px; font-size: 12px; color: #1D1D1F;
+                          border-radius: 6px; }
+            QMenu::item:selected { background: #F0F0F0; }
+            QMenu::separator { height: 1px; background: #E5E5EA; margin: 4px 8px; }
+        """)
+        _title_export_menu.addAction("📊  Excel + Charts",   self._export_post_edit_analysis_with_charts)
+        _title_export_menu.addAction("💾  Excel only",         self._export_table_data)
+        _title_export_menu.addSeparator()
+        _title_export_menu.addAction("🖼  Sensorgram PNG",    self._export_graph_image)
+        _title_export_menu.addAction("📈  ΔSPR Chart PNG",     self._export_barchart_image)
+        _title_export_menu.addSeparator()
+        _title_export_menu.addAction("📋  Copy to clipboard",   self._copy_table_to_clipboard)
+        _title_export_menu.addAction("🔗  External (Prism / Origin)", self._export_for_external_software)
+        _title_export_menu.addAction("📋  Save as Method",     self._save_cycles_as_method)
+        title_export_btn.setMenu(_title_export_menu)
+        title_row.addWidget(title_export_btn)
+
+        # Sparq Coach — waitlist (feature coming soon)
+        _SPARQ_WAITLIST_URL = "https://www.affilabs.com/sparq-coach"  # replace with Wix waitlist URL
+        sparq_coach_btn = QToolButton()
+        sparq_coach_btn.setText("✦ Spark Coach")
+        sparq_coach_btn.setFixedHeight(26)
+        sparq_coach_btn.setToolTip(
+            "Spark Coach — Coming Soon\n\n"
+            "Get a personalised debrief after every run: bubble fixes, regen tips,\n"
+            "concentration advice, and product recommendations.\n\n"
+            "Click to join the early access list."
         )
-        header.addWidget(units_label)
+        sparq_coach_btn.setStyleSheet("""
+            QToolButton {
+                background: transparent;
+                color: #8E8E93;
+                border: 1px dashed #C7C7CC;
+                border-radius: 5px;
+                padding: 2px 10px;
+                font-size: 12px;
+            }
+            QToolButton:hover {
+                color: #636366;
+                border-color: #8E8E93;
+                background: #F5F5F7;
+            }
+        """)
+        sparq_coach_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(_SPARQ_WAITLIST_URL))
+        )
+        title_row.addWidget(sparq_coach_btn)
+        self._sparq_coach_btn = sparq_coach_btn
 
-        layout.addLayout(header)
+        layout.addLayout(title_row)
+
+        # Thin divider
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setStyleSheet("border: none; border-top: 1px solid #E5E5EA; margin: 0;")
+        layout.addWidget(divider)
 
         # View and filter controls
         controls_layout = QHBoxLayout()
@@ -429,7 +533,7 @@ class UIBuildersMixin:
         # Filter dropdown
         filter_label = QLabel("Show:")
         filter_label.setStyleSheet(
-            f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; font-family: {Fonts.SYSTEM};"
+            f"font-size: 12px; color: {Colors.SECONDARY_TEXT}; font-family: {Fonts.SYSTEM};"
         )
         controls_layout.addWidget(filter_label)
 
@@ -510,14 +614,14 @@ class UIBuildersMixin:
         self.empty_state_widget.hide()  # Hidden by default
 
         layout.addWidget(self.empty_state_widget)
-        layout.addWidget(self.cycle_data_table)
+        layout.addWidget(self.cycle_data_table, 1)
 
         return container
 
     def _create_metadata_panel(self):
         """Create metadata info panel showing experiment statistics."""
         panel = QFrame()
-        panel.setStyleSheet("QFrame { background: white; border-radius: 12px; }")
+        panel.setStyleSheet("QFrame { background: #F5F6F8; border-radius: 12px; }")
 
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(8)
@@ -529,16 +633,23 @@ class UIBuildersMixin:
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
 
-        # Title
-        title = QLabel("Experiment Metadata")
-        title.setStyleSheet("""
-            font-size: 15px;
-            font-weight: 600;
-            color: #1D1D1F;
-            border: none;
-            background: transparent;
-        """)
-        layout.addWidget(title)
+        # ── Section title bar ──────────────────────────────────────────────
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title = QLabel("Experiment")
+        title.setStyleSheet(
+            "font-size: 14px; font-weight: 700; color: #1D1D1F; "
+            "border: none; background: transparent; letter-spacing: -0.2px;"
+        )
+        title_row.addWidget(title)
+        title_row.addStretch()
+        layout.addLayout(title_row)
+
+        # Thin divider
+        divider = QFrame()
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setStyleSheet("border: none; border-top: 1px solid #E5E5EA; margin: 0;")
+        layout.addWidget(divider)
 
         # Stats grid with proper alignment
         stats_widget = QWidget()
@@ -581,47 +692,52 @@ class UIBuildersMixin:
         grid.addWidget(conc_lbl, 3, 0, Qt.AlignLeft)
         grid.addWidget(self.meta_conc_range, 3, 1, Qt.AlignLeft)
 
-        # Date
-        date_lbl = QLabel("Date:")
-        date_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        # Session row — Date + Operator combined
+        session_lbl = QLabel("Session:")
+        session_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        session_row = QWidget()
+        session_row.setStyleSheet("background: transparent; border: none;")
+        session_row_layout = QHBoxLayout(session_row)
+        session_row_layout.setContentsMargins(0, 0, 0, 0)
+        session_row_layout.setSpacing(4)
         self.meta_date = QLabel("-")
         self.meta_date.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
-        grid.addWidget(date_lbl, 4, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_date, 4, 1, Qt.AlignLeft)
-
-        # Operator (matches Method Builder terminology)
-        operator_lbl = QLabel("Operator:")
-        operator_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        _sep_dot = QLabel("·")
+        _sep_dot.setStyleSheet("font-size: 12px; color: #C7C7CC; background: transparent; border: none;")
         self.meta_operator = QLabel("-")
         self.meta_operator.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
-        grid.addWidget(operator_lbl, 5, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_operator, 5, 1, Qt.AlignLeft)
+        session_row_layout.addWidget(self.meta_date)
+        session_row_layout.addWidget(_sep_dot)
+        session_row_layout.addWidget(self.meta_operator)
+        session_row_layout.addStretch()
+        grid.addWidget(session_lbl, 4, 0, Qt.AlignLeft)
+        grid.addWidget(session_row, 4, 1, Qt.AlignLeft)
 
-        # Device
+        # Device + Calibration row combined
         device_lbl = QLabel("Device:")
         device_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        device_cal_row = QWidget()
+        device_cal_row.setStyleSheet("background: transparent; border: none;")
+        device_cal_layout = QHBoxLayout(device_cal_row)
+        device_cal_layout.setContentsMargins(0, 0, 0, 0)
+        device_cal_layout.setSpacing(4)
         self.meta_device = QLabel("-")
         self.meta_device.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
-        grid.addWidget(device_lbl, 6, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_device, 6, 1, Qt.AlignLeft)
-
-        # Calibration file (startup calibration used for this run)
-        cal_lbl = QLabel("Calibration:")
-        cal_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        _sep_dot2 = QLabel("·")
+        _sep_dot2.setStyleSheet("font-size: 12px; color: #C7C7CC; background: transparent; border: none;")
         self.meta_calibration = QLabel("-")
-        self.meta_calibration.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+        self.meta_calibration.setStyleSheet("font-size: 11px; color: #AEAEB2; background: transparent; border: none;")
         self.meta_calibration.setToolTip("Startup calibration file used for this session")
-        grid.addWidget(cal_lbl, 7, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_calibration, 7, 1, Qt.AlignLeft)
-
-        # Transmission baseline file (baseline recording linked to this run)
-        trans_lbl = QLabel("Baseline file:")
-        trans_lbl.setStyleSheet("font-size: 12px; font-weight: 500; color: #1D1D1F; background: transparent; border: none;")
+        # Hidden stub — kept as attribute so setText() calls in edits_tab.py don't crash
         self.meta_transmission_file = QLabel("-")
-        self.meta_transmission_file.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+        self.meta_transmission_file.hide()
         self.meta_transmission_file.setToolTip("Transmission baseline recording (5-min baseline cycle)")
-        grid.addWidget(trans_lbl, 8, 0, Qt.AlignLeft)
-        grid.addWidget(self.meta_transmission_file, 8, 1, Qt.AlignLeft)
+        device_cal_layout.addWidget(self.meta_device)
+        device_cal_layout.addWidget(_sep_dot2)
+        device_cal_layout.addWidget(self.meta_calibration)
+        device_cal_layout.addStretch()
+        grid.addWidget(device_lbl, 5, 0, Qt.AlignLeft)
+        grid.addWidget(device_cal_row, 5, 1, Qt.AlignLeft)
 
         # Rating row
         rating_lbl = QLabel("Rating:")
@@ -657,8 +773,8 @@ class UIBuildersMixin:
             stars_layout.addWidget(btn)
             self.meta_star_buttons.append(btn)
         stars_layout.addStretch()
-        grid.addWidget(rating_lbl, 9, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        grid.addWidget(stars_widget, 9, 1, Qt.AlignLeft)
+        grid.addWidget(rating_lbl, 6, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        grid.addWidget(stars_widget, 6, 1, Qt.AlignLeft)
 
         # Tags row
         tags_lbl = QLabel("Tags:")
@@ -717,8 +833,8 @@ class UIBuildersMixin:
         tag_input_row.addWidget(add_tag_btn)
         tags_outer_layout.addLayout(tag_input_row)
 
-        grid.addWidget(tags_lbl, 10, 0, Qt.AlignLeft | Qt.AlignTop)
-        grid.addWidget(tags_outer, 10, 1, Qt.AlignLeft)
+        grid.addWidget(tags_lbl, 7, 0, Qt.AlignLeft | Qt.AlignTop)
+        grid.addWidget(tags_outer, 7, 1, Qt.AlignLeft)
 
         layout.addWidget(stats_widget)
 
@@ -795,6 +911,7 @@ class UIBuildersMixin:
             for lbl, btn in self._alignment_ch_btns.items():
                 btn.setStyleSheet(_ch_btn_style(_ch_colors[lbl], lbl == selected))
             self.alignment_channel_combo._value = selected
+            self._on_alignment_channel_changed(selected)
 
         for label in ["All", "A", "B", "C", "D"]:
             btn = QPushButton(label)
@@ -959,6 +1076,7 @@ class UIBuildersMixin:
             for lbl, btn in self._alignment_ch_btns.items():
                 btn.setStyleSheet(_ch_btn_style(_ch_colors[lbl], lbl == selected))
             self.alignment_channel_combo._value = selected
+            self._on_alignment_channel_changed(selected)
 
         for label in ["All", "A", "B", "C", "D"]:
             btn = QPushButton(label)
@@ -1039,7 +1157,7 @@ class UIBuildersMixin:
 
         # Hint label
         hint_lbl = QLabel("💡 Drag slider for real-time alignment (±20s)")
-        hint_lbl.setStyleSheet("font-size: 10px; color: #86868B; font-style: italic; background: transparent; border: none;")
+        hint_lbl.setStyleSheet("font-size: 11px; color: #6E6E73; font-style: italic; background: transparent; border: none;")
         shift_layout.addWidget(hint_lbl)
 
         layout.addLayout(shift_layout)
@@ -1061,8 +1179,126 @@ class UIBuildersMixin:
         container.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+        # ── Section title bar ──────────────────────────────────────────────
+        sel_title_row = QHBoxLayout()
+        sel_title_row.setContentsMargins(0, 0, 0, 0)
+        sel_title_row.setSpacing(6)
+        sel_title_lbl = QLabel("Selected Cycle")
+        sel_title_lbl.setStyleSheet(
+            "font-size: 14px; font-weight: 700; color: #1D1D1F; "
+            "background: transparent; letter-spacing: -0.2px;"
+        )
+        sel_title_row.addWidget(sel_title_lbl)
+        sel_title_row.addStretch()
+
+        # Helper: render SVG file → QIcon with given CSS colour
+        def _svg_icon(rel_path: str, color: str, size: int = 14) -> QIcon:
+            p = get_affilabs_resource(rel_path)
+            if not p or not p.exists():
+                return QIcon()
+            src = p.read_text(encoding="utf-8").replace("currentColor", color)
+            renderer = QSvgRenderer(src.encode("utf-8"))
+            px = QPixmap(QSize(size, size))
+            px.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(px)
+            renderer.render(painter)
+            painter.end()
+            return QIcon(px)
+
+        # Lock/Unlock cursor button — two-state SVG icon
+        _btn_style = (
+            "QPushButton { background: #F2F2F7; border: 1px solid #D1D1D6; "
+            "border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 600; "
+            "color: #3C3C43; }"
+            "QPushButton:hover { background: #E5E5EA; border-color: #007AFF; }"
+            "QPushButton:checked { background: #34C759; border-color: #28A745; color: white; }"
+        )
+        self.delta_spr_lock_btn = QPushButton(" Unlock")
+        self.delta_spr_lock_btn.setCheckable(True)
+        self.delta_spr_lock_btn.setFixedHeight(26)
+        self.delta_spr_lock_btn.setToolTip(
+            "Unlock: drag the Start/Stop cursors manually.\n"
+            "Lock: auto-position cursors from injection contact time."
+        )
+        self.delta_spr_lock_btn.setStyleSheet(_btn_style)
+        _lock_icon = _svg_icon("ui/img/lock_icon.svg", "#3C3C43")
+        _unlock_icon = _svg_icon("ui/img/unlock_icon.svg", "#3C3C43")
+        # Build two-state icon
+        _two_state = QIcon()
+        if not _unlock_icon.isNull():
+            _two_state.addPixmap(
+                _unlock_icon.pixmap(QSize(14, 14)), QIcon.Mode.Normal, QIcon.State.Off
+            )
+        if not _lock_icon.isNull():
+            _lock_icon_white = _svg_icon("ui/img/lock_icon.svg", "white")
+            _two_state.addPixmap(
+                _lock_icon_white.pixmap(QSize(14, 14)), QIcon.Mode.Normal, QIcon.State.On
+            )
+        if not _two_state.isNull():
+            self.delta_spr_lock_btn.setIcon(_two_state)
+            self.delta_spr_lock_btn.setIconSize(QSize(14, 14))
+        self.delta_spr_lock_btn.toggled.connect(self._toggle_delta_spr_lock)
+        sel_title_row.addWidget(self.delta_spr_lock_btn)
+
+        # Reset bar chart button
+        _reset_btn_style = (
+            "QPushButton { background: #F2F2F7; border: 1px solid #D1D1D6; "
+            "border-radius: 6px; padding: 0; }"
+            "QPushButton:hover { background: #E5E5EA; border-color: #007AFF; }"
+        )
+        reset_bar_btn = QPushButton()
+        reset_bar_btn.setFixedSize(26, 26)
+        reset_bar_btn.setToolTip("Reset ΔSPR chart view")
+        reset_bar_btn.setStyleSheet(_reset_btn_style)
+        _reset_icon = _svg_icon("ui/img/reset_icon.svg", "#3C3C43")
+        if not _reset_icon.isNull():
+            reset_bar_btn.setIcon(_reset_icon)
+            reset_bar_btn.setIconSize(QSize(14, 14))
+        else:
+            reset_bar_btn.setText("⟲")
+        reset_bar_btn.clicked.connect(lambda: (
+            self.delta_spr_barchart.autoRange(),
+            self.delta_spr_barchart.setXRange(-0.5, 3.5, padding=0),
+        ))
+        sel_title_row.addWidget(reset_bar_btn)
+
+        # Smooth slider — inline in title row
+        _sep = QFrame()
+        _sep.setFrameShape(QFrame.Shape.VLine)
+        _sep.setFixedHeight(16)
+        _sep.setStyleSheet("color: #D1D1D6; background: #D1D1D6; margin: 0 2px;")
+        sel_title_row.addWidget(_sep)
+        _smooth_lbl_hdr = QLabel("Smooth:")
+        _smooth_lbl_hdr.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent;"
+        )
+        sel_title_row.addWidget(_smooth_lbl_hdr)
+        self.edits_smooth_label = QLabel("off")
+        self.edits_smooth_label.setStyleSheet(
+            "font-size: 11px; color: #86868B; min-width: 24px; background: transparent;"
+        )
+        sel_title_row.addWidget(self.edits_smooth_label)
+        self.edits_smooth_slider = QSlider(Qt.Horizontal)
+        self.edits_smooth_slider.setRange(0, 50)
+        self.edits_smooth_slider.setValue(0)
+        self.edits_smooth_slider.setFixedWidth(120)
+        self.edits_smooth_slider.setFixedHeight(18)
+        self.edits_smooth_slider.setToolTip("Savitzky-Golay smoothing window (0 = off)")
+        self.edits_smooth_slider.valueChanged.connect(lambda v: (
+            self.edits_smooth_label.setText("off" if v == 0 else f"{v} pts"),
+            self._on_smooth_changed(),
+        ))
+        sel_title_row.addWidget(self.edits_smooth_slider)
+
+        layout.addLayout(sel_title_row)
+        # Thin divider
+        sel_div = QFrame()
+        sel_div.setFrameShape(QFrame.Shape.HLine)
+        sel_div.setStyleSheet("border: none; border-top: 1px solid #E5E5EA; margin: 0;")
+        layout.addWidget(sel_div)
 
         # QObject shim — required because EditsTab is not a QObject, but
         # installEventFilter() requires a QObject. Shim delegates to self.eventFilter().
@@ -1100,14 +1336,14 @@ class UIBuildersMixin:
         # Start / End time — compact, right of centre
         self.alignment_start_time = QLabel("")
         self.alignment_start_time.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-size: 12px; color: #6E6E73; background: transparent;"
         )
         self.alignment_start_time.setVisible(False)
         header.addWidget(self.alignment_start_time)
 
         self.alignment_end_time = QLabel("")
         self.alignment_end_time.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-size: 12px; color: #6E6E73; background: transparent;"
         )
         self.alignment_end_time.setVisible(False)
         header.addWidget(self.alignment_end_time)
@@ -1130,12 +1366,18 @@ class UIBuildersMixin:
         self.delta_spr_start_cursor = pg.InfiniteLine(
             pos=0, angle=90, movable=True,
             pen=pg.mkPen(color='#34C759', width=2, style=Qt.PenStyle.DashLine),
-            label='Start', labelOpts={'position': 0.85, 'color': '#34C759'}
+            label='Start', labelOpts={
+                'position': 0.85, 'color': '#34C759',
+                'fill': (255, 255, 255, 200),  # white bg — prevents ghost traces on drag
+            }
         )
         self.delta_spr_stop_cursor = pg.InfiniteLine(
             pos=100, angle=90, movable=True,
             pen=pg.mkPen(color='#FF3B30', width=2, style=Qt.PenStyle.DashLine),
-            label='Stop', labelOpts={'position': 0.85, 'color': '#FF3B30'}
+            label='Stop', labelOpts={
+                'position': 0.85, 'color': '#FF3B30',
+                'fill': (255, 255, 255, 200),  # white bg — prevents ghost traces on drag
+            }
         )
         self.edits_primary_graph.addItem(self.delta_spr_start_cursor)
         self.edits_primary_graph.addItem(self.delta_spr_stop_cursor)
@@ -1154,6 +1396,10 @@ class UIBuildersMixin:
             )
             self.edits_spr_legend.setVisible(False)  # shown once a cycle is loaded
             self.edits_spr_legend.raise_()
+            # Wire legend channel click → alignment channel selector (mirrors live-view)
+            self.edits_spr_legend.channel_timing_selected.connect(
+                self._on_edits_legend_channel_selected
+            )
             # Defer positioning 200ms so layout has settled (mirrors live-view pattern)
             _QTimer.singleShot(200, self._position_edits_legend)
         except Exception:
@@ -1163,7 +1409,7 @@ class UIBuildersMixin:
         self.edits_primary_graph.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.edits_primary_graph.installEventFilter(self._edits_event_filter)
 
-        layout.addWidget(self.edits_primary_graph)
+        layout.addWidget(self.edits_primary_graph, 1)
 
         return container
 
@@ -1184,62 +1430,10 @@ class UIBuildersMixin:
 
         # Header
         header = QHBoxLayout()
-        title = QLabel("ΔSPR (RU) - Response Between Cursors")
-        title.setStyleSheet("font-size: 15px; font-weight: 600; color: #1D1D1F;")
+        title = QLabel("ΔSPR (RU) · Response Between Cursors")
+        title.setStyleSheet("font-size: 13px; font-weight: 600; color: #1D1D1F;")
         header.addWidget(title)
         header.addStretch()
-
-        # Lock/Unlock cursor button
-        self.delta_spr_lock_btn = QPushButton("🔓 Unlock")
-        self.delta_spr_lock_btn.setFixedSize(80, 24)
-        self.delta_spr_lock_btn.setCheckable(True)
-        self.delta_spr_lock_btn.setToolTip("Auto-position the Start/Stop cursors based on injection contact time. Unlock to drag them manually.")
-        self.delta_spr_lock_btn.setStyleSheet("""
-            QPushButton {
-                background: #F8F9FA;
-                color: #1D1D1F;
-                border: 1px solid #D1D1D6;
-                border-radius: 5px;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background: #E5E5EA;
-                border: 1px solid #007AFF;
-            }
-            QPushButton:checked {
-                background: #34C759;
-                color: white;
-                border: 1px solid #2DB04E;
-            }
-        """)
-        self.delta_spr_lock_btn.toggled.connect(self._toggle_delta_spr_lock)
-        header.addWidget(self.delta_spr_lock_btn)
-
-        # Reset bar chart button
-        reset_bar_btn = QPushButton("⟲")
-        reset_bar_btn.setFixedSize(28, 24)
-        reset_bar_btn.setToolTip("Reset bar chart view")
-        reset_bar_btn.setStyleSheet("""
-            QPushButton {
-                background: #F8F9FA;
-                color: #1D1D1F;
-                border: 1px solid #D1D1D6;
-                border-radius: 5px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background: #E5E5EA;
-                border: 1px solid #007AFF;
-            }
-        """)
-        reset_bar_btn.clicked.connect(lambda: (
-            self.delta_spr_barchart.autoRange(),
-            self.delta_spr_barchart.setXRange(-0.5, 3.5, padding=0),
-        ))
-        header.addWidget(reset_bar_btn)
-
         layout.addLayout(header)
 
         # Bar chart
@@ -1327,7 +1521,7 @@ class UIBuildersMixin:
             btn.setFixedSize(28, 24)
             btn.setStyleSheet(
                 f"QPushButton {{ border: 1px solid #D1D1D6; border-radius: 4px;"
-                f" background: white; color: #1D1D1F; font-size: 11px; font-weight: 500; }}"
+                f" background: white; color: #1D1D1F; font-size: 12px; font-weight: 500; }}"
                 f"QPushButton:checked {{ border: 2px solid {color}; color: {color}; font-weight: 700; }}"
                 f"QPushButton:disabled {{ color: #C7C7CC; border: 1px solid #E5E5EA; background: #F8F9FA; }}"
             )
@@ -1558,7 +1752,7 @@ class UIBuildersMixin:
         self.edits_smooth_slider.setToolTip("Savitzky-Golay smoothing window (0 = off)")
         self.edits_smooth_slider.valueChanged.connect(lambda v: (
             self.edits_smooth_label.setText("off" if v == 0 else f"{v} pts"),
-            self._update_selection_view()
+            self._on_smooth_changed(),
         ))
         layout.addWidget(self.edits_smooth_slider)
 

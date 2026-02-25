@@ -11,8 +11,8 @@ The Method sidebar is the main interface for building and managing SPR assays.
 Extracted from sidebar.py to improve modularity.
 """
 
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QIcon, QPixmap, QPainter
+from PySide6.QtCore import Qt, QSize, QUrl
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QDesktopServices
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QComboBox,
@@ -92,9 +92,9 @@ class MethodTabBuilder:
     @staticmethod
     def _create_skip_icon() -> QIcon:
         """Create skip/next icon."""
-        svg = '''<svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
-            <path d="M6 4v16l8-8-8-8z" fill="white"/>
-            <path d="M15 4v16" stroke="white" stroke-width="2" fill="none"/>
+        svg = '''<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 4v16l8-8-8-8z" fill="#2E30E3"/>
+            <path d="M15 4v16" stroke="#2E30E3" stroke-width="2" fill="none"/>
         </svg>'''
         return MethodTabBuilder._create_svg_icon(svg)
 
@@ -173,7 +173,7 @@ class MethodTabBuilder:
             "  color: white;"
             "  border-radius: 5px;"
             "  padding: 2px 8px;"
-            "  font-size: 11px;"
+            "  font-size: 12px;"
             "  font-weight: 700;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
@@ -183,8 +183,8 @@ class MethodTabBuilder:
         self.sidebar.active_cycle_index_label = QLabel("Cycle 1/4")
         self.sidebar.active_cycle_index_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 11px;"
-            "  color: #86868B;"
+            "  font-size: 12px;"
+            "  color: #6E6E73;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
@@ -262,7 +262,12 @@ class MethodTabBuilder:
         tab_layout.addSpacing(4)
 
     def _build_build_method_cta(self, tab_layout: QVBoxLayout):
-        """Build prominent Build Method CTA at the top of the Method tab."""
+        """Build prominent Build Method CTA + Sparq Coach waitlist button."""
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        row.setContentsMargins(0, 0, 0, 0)
+
+        # Primary: Build Method button
         self.sidebar.build_method_btn = QPushButton("  Build Method")
         self.sidebar.build_method_btn.setFixedHeight(48)
         self.sidebar.build_method_btn.setStyleSheet(
@@ -285,8 +290,60 @@ class MethodTabBuilder:
         self.sidebar.build_method_btn.setIcon(add_icon)
         self.sidebar.build_method_btn.setIconSize(QSize(20, 20))
         self.sidebar.build_method_btn.setToolTip("Open method builder to create and queue cycles")
-        tab_layout.addWidget(self.sidebar.build_method_btn)
+        row.addWidget(self.sidebar.build_method_btn, stretch=1)
+
+        # Secondary: Sparq Coach waitlist button (SVG robot icon)
+        _SPARQ_WAITLIST_URL = "https://www.affilabs.com/sparq-coach"  # replace with live Wix URL
+        sparq_btn = QPushButton()
+        sparq_btn.setFixedSize(48, 48)
+        sparq_btn.setToolTip(
+            "Spark Coach — Coming Soon\n\n"
+            "Get a personalised post-run debrief: bubble fixes, regen tips,\n"
+            "concentration advice, and product recommendations.\n\n"
+            "Click to join the early access list."
+        )
+        sparq_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #F2F2F7;"
+            "  border: 1px dashed #C7C7CC;"
+            "  border-radius: 10px;"
+            "}"
+            "QPushButton:hover { background: #E5E5EA; border-color: #8E8E93; }"
+            "QPushButton:pressed { background: #D1D1D6; }"
+        )
+        try:
+            from affilabs.utils.resource_path import get_affilabs_resource
+            _svg_path = get_affilabs_resource("ui/img/sparq_icon.svg")
+            _icon = self._svg_icon_coloured(str(_svg_path), "#8E8E93")
+            sparq_btn.setIcon(_icon)
+            sparq_btn.setIconSize(QSize(22, 22))
+        except Exception:
+            sparq_btn.setText("✦")
+        sparq_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(_SPARQ_WAITLIST_URL))
+        )
+        self.sidebar.sparq_coach_waitlist_btn = sparq_btn
+        row.addWidget(sparq_btn)
+
+        tab_layout.addLayout(row)
         tab_layout.addSpacing(4)
+
+    def _svg_icon_coloured(self, svg_path: str, color: str) -> QIcon:
+        """Render an SVG file substituting currentColor with ``color``."""
+        try:
+            import re
+            with open(svg_path, "r", encoding="utf-8") as f:
+                svg_data = f.read()
+            svg_data = svg_data.replace("currentColor", color)
+            renderer = QSvgRenderer(svg_data.encode())
+            px = QPixmap(22, 22)
+            px.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(px)
+            renderer.render(painter)
+            painter.end()
+            return QIcon(px)
+        except Exception:
+            return QIcon()
 
     def _build_cycle_history_queue(self, tab_layout: QVBoxLayout):
         """Build cycle queue management section."""
@@ -336,23 +393,13 @@ class MethodTabBuilder:
         summary_card_layout.setContentsMargins(8, 8, 8, 8)
         summary_card_layout.setSpacing(0)
 
-        # ── Vertical splitter: 70% queue table / 30% injection panel ─────
-        queue_splitter = QSplitter(Qt.Orientation.Vertical)
-        queue_splitter.setHandleWidth(4)
-        queue_splitter.setStyleSheet(
-            "QSplitter::handle { background: rgba(0,0,0,0.06); border-radius: 2px; }"
-        )
-        queue_splitter.setCollapsible(0, False)  # table pane never collapses
-        queue_splitter.setCollapsible(1, False)  # contact monitor never collapses
-        summary_card_layout.addWidget(queue_splitter)
-
-        # ── Top pane: table + controls + footer ───────────────────────────
+        # ── Queue table + controls + footer (full height — no contact monitor pane) ──
         top_pane = QFrame()
         top_pane.setStyleSheet("background: transparent; border: none;")
         top_layout = QVBoxLayout(top_pane)
         top_layout.setContentsMargins(4, 0, 4, 4)
         top_layout.setSpacing(8)
-        queue_splitter.addWidget(top_pane)
+        summary_card_layout.addWidget(top_pane)
 
         # NEW: Queue Summary Widget with drag-drop support - styled to match original
         self.sidebar.summary_table = QueueSummaryWidget()
@@ -417,53 +464,80 @@ class MethodTabBuilder:
 
         top_layout.addWidget(self.sidebar.summary_table)
 
-        # Queue control buttons (Start, Pause, Next, Duplicate)
+        # Queue control buttons — grouped: Start & Record | Pause | Next Cycle
+        # Single action starts cycles AND recording together — you should never run
+        # cycles without recording. Append to existing session if one is open.
         controls_row = QHBoxLayout()
-        controls_row.setSpacing(8)
+        controls_row.setSpacing(6)
 
-        self.sidebar.start_queue_btn = QPushButton("Start Run")
-        self.sidebar.start_queue_btn.setFixedHeight(32)
-        self.sidebar.start_queue_btn.setIcon(self._create_play_icon())
-        self.sidebar.start_queue_btn.setIconSize(QSize(16, 16))
-        self.sidebar.start_queue_btn.setToolTip("Start executing the queued cycles")
-        self.sidebar.start_queue_btn.setProperty("mode", "start")  # Initialize in start mode
-        self.sidebar.start_queue_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #34C759;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 6px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
+        _btn_font = (
+            "  font-size: 12px; font-weight: 600;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
+        )
+
+        # ── Start & Record (combined) ──────────────────────────────────────────
+        from affilabs.utils.resource_path import get_affilabs_resource as _res
+        self.sidebar.start_record_btn = QPushButton("Start Cycle Record")
+        self.sidebar.start_record_btn.setFixedHeight(32)
+        self.sidebar.start_record_btn.setCheckable(True)
+        self.sidebar.start_record_btn.setToolTip(
+            "Start cycle queue and record to file.\n"
+            "If a recording session is already open, data is appended to it."
+        )
+        self.sidebar.start_record_btn.setProperty("mode", "start")
+        self.sidebar.start_record_btn.setStyleSheet(
+            "QPushButton { background: #34C759; color: white; border: none;"
+            "  border-radius: 6px; padding: 6px 14px;" + _btn_font + "}"
+            "QPushButton::indicator { width: 0; height: 0; }"
             "QPushButton:hover { background: #30B350; }"
             "QPushButton:pressed { background: #2A9D46; }"
+            "QPushButton:checked { background: #FF3B30; }"
+            "QPushButton:checked:hover { background: #E03429; }"
             "QPushButton:disabled { background: #C7C7CC; }"
         )
-        controls_row.addWidget(self.sidebar.start_queue_btn)
+        # Also keep start_queue_btn as an alias so existing signal wiring finds it
+        self.sidebar.start_queue_btn = self.sidebar.start_record_btn
+        controls_row.addWidget(self.sidebar.start_record_btn)
 
-        self.sidebar.next_cycle_btn = QPushButton("Next Cycle")
-        self.sidebar.next_cycle_btn.setFixedHeight(32)
+        # ── Pause ─────────────────────────────────────────────────────────────
+        _pause_style = (
+            "QPushButton { background: rgba(255,149,0,0.12); color: #FF9500; border: 1px solid rgba(255,149,0,0.35);"
+            "  border-radius: 6px; padding: 0px;" + _btn_font + "}"
+            "QPushButton:hover { background: rgba(255,149,0,0.20); }"
+            "QPushButton:checked { background: #FF9500; color: white; border-color: transparent; }"
+            "QPushButton:hover:checked { background: #E68500; }"
+            "QPushButton:disabled { background: #F5F5F7; color: #C7C7CC; border-color: #E5E5EA; }"
+        )
+        self.sidebar.pause_btn = QPushButton()
+        self.sidebar.pause_btn.setCheckable(True)
+        self.sidebar.pause_btn.setFixedSize(40, 32)
+        self.sidebar.pause_btn.setEnabled(False)
+        self.sidebar.pause_btn.setToolTip("Pause acquisition")
+        self.sidebar.pause_btn.setStyleSheet(_pause_style)
+        _psv = _res("ui/img/pause_icon.svg")
+        _psv_w = _res("ui/img/pause_icon_white.svg")
+        if _psv and _psv.exists():
+            _pi = QIcon(str(_psv))
+            if _psv_w and _psv_w.exists():
+                _pi.addFile(str(_psv_w), QSize(), QIcon.Mode.Normal, QIcon.State.On)
+            self.sidebar.pause_btn.setIcon(_pi)
+            self.sidebar.pause_btn.setIconSize(QSize(16, 16))
+        self.sidebar.pause_btn.hide()  # hidden — pause doesn't stop cycle timer/queue; use Stop instead
+        controls_row.addWidget(self.sidebar.pause_btn)
+
+        # ── Next Cycle ────────────────────────────────────────────────────────
+        self.sidebar.next_cycle_btn = QPushButton()
+        self.sidebar.next_cycle_btn.setFixedSize(40, 32)
         self.sidebar.next_cycle_btn.setIcon(self._create_skip_icon())
         self.sidebar.next_cycle_btn.setIconSize(QSize(16, 16))
         self.sidebar.next_cycle_btn.setEnabled(False)
-        self.sidebar.next_cycle_btn.setToolTip("Skip to the next cycle")
+        self.sidebar.next_cycle_btn.setToolTip("Skip to next cycle")
         self.sidebar.next_cycle_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: #007AFF;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 6px;"
-            "  padding: 6px 16px;"
-            "  font-size: 12px;"
-            "  font-weight: 600;"
-            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-            "}"
-            "QPushButton:hover { background: #0051D5; }"
-            "QPushButton:pressed { background: #003D99; }"
-            "QPushButton:disabled { background: #C7C7CC; }"
+            "QPushButton { background: rgba(46,48,227,0.08); color: #2E30E3; border: 1px solid rgba(46,48,227,0.25);"
+            "  border-radius: 6px; padding: 0px;" + _btn_font + "}"
+            "QPushButton:hover { background: rgba(46,48,227,0.14); }"
+            "QPushButton:pressed { background: rgba(46,48,227,0.22); }"
+            "QPushButton:disabled { background: #F5F5F7; color: #C7C7CC; border-color: #E5E5EA; }"
         )
         controls_row.addWidget(self.sidebar.next_cycle_btn)
 
@@ -517,31 +591,11 @@ class MethodTabBuilder:
 
         top_layout.addLayout(table_footer_row)
 
-        # ── Bottom pane: Injection action bar (always visible, 30% height) ──
+        # InjectionActionBar — coordinator accesses via getattr(sidebar, 'injection_action_bar').
+        # Reparented and shown in the right queue panel (above queue widget) by affilabs_core_ui.
         from affilabs.widgets.injection_action_bar import InjectionActionBar
-        inj_pane = QFrame()
-        inj_pane.setObjectName("InjectionZone")
-        inj_pane.setMinimumHeight(180)  # always show contact monitor
-        inj_pane.setStyleSheet(
-            "QFrame#InjectionZone {"
-            "  background: #F2F2F7;"
-            "  border: 1.5px solid rgba(0, 0, 0, 0.10);"
-            "  border-radius: 8px;"
-            "}"
-        )
-        inj_pane_layout = QVBoxLayout(inj_pane)
-        inj_pane_layout.setContentsMargins(0, 0, 0, 0)
-        inj_pane_layout.setSpacing(0)
-
-        self.sidebar.injection_action_bar = InjectionActionBar(inj_pane)
-        inj_pane_layout.addWidget(self.sidebar.injection_action_bar)
-
-        queue_splitter.addWidget(inj_pane)
-
-        # 60 / 40 split (table : contact monitor) — contact monitor has min 180px
-        queue_splitter.setStretchFactor(0, 6)
-        queue_splitter.setStretchFactor(1, 4)
-        queue_splitter.setSizes([600, 400])
+        self.sidebar.injection_action_bar = InjectionActionBar(parent=None)
+        self.sidebar.injection_action_bar.hide()  # hidden until reparented by core_ui
 
         # Queue panel is NOT added to the sidebar Method tab.
         # It is reparented into the collapsible right splitter pane by affilabs_core_ui.

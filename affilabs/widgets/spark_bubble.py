@@ -1,8 +1,9 @@
 """SparkBubble — floating Sparq AI overlay panel.
 
-A frameless child widget positioned over the main window bottom-right corner.
-Zero layout impact: no splitter space consumed, available on every tab.
-Toggle with toggle(). Repositions on parent resize via reposition().
+A frameless child widget positioned over the main window top-right corner,
+below the transport bar. Zero layout impact: no splitter space consumed,
+available on every tab. Toggle with toggle(). Repositions on parent resize
+via reposition().
 """
 
 import logging
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 _BUBBLE_W = 340
 _BUBBLE_H = 500
 _MARGIN_RIGHT = 16
-_MARGIN_BOTTOM = 52   # clears the nav bar pill button row
+_MARGIN_TOP = 64     # clears the transport bar (56px) + small gap
 
 
 class SparkBubble(QFrame):
@@ -82,7 +83,7 @@ class SparkBubble(QFrame):
         header_row.setContentsMargins(14, 0, 10, 0)
         header_row.setSpacing(8)
 
-        title = QLabel("✦ Sparq")
+        title = QLabel("✦ Spark")
         title.setStyleSheet(
             "font-size: 13px; font-weight: 700; color: #1D1D1F;"
             " background: transparent; border: none;"
@@ -124,9 +125,9 @@ class SparkBubble(QFrame):
             content_layout.addWidget(self._spark_widget)
         except Exception as e:
             logger.error(f"SparkHelpWidget load failed in bubble (non-fatal): {e}")
-            placeholder = QLabel("Sparq unavailable")
+            placeholder = QLabel("Spark unavailable")
             placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            placeholder.setStyleSheet("color: #86868B; font-size: 12px; padding: 40px;")
+            placeholder.setStyleSheet("color: #6E6E73; font-size: 13px; padding: 40px;")
             content_layout.addWidget(placeholder)
 
         outer.addWidget(content_frame, 1)
@@ -163,7 +164,7 @@ class SparkBubble(QFrame):
             self.raise_()
 
     def reposition(self):
-        """Call from main window resizeEvent to keep bubble anchored bottom-right."""
+        """Call from main window resizeEvent to keep bubble anchored top-right."""
         if self.isVisible():
             self._reposition()
 
@@ -172,8 +173,8 @@ class SparkBubble(QFrame):
         if parent is None:
             return
         x = parent.width() - _BUBBLE_W - _MARGIN_RIGHT
-        y = parent.height() - _BUBBLE_H - _MARGIN_BOTTOM
-        self.move(max(0, x), max(0, y))
+        y = _MARGIN_TOP
+        self.move(max(0, x), y)
 
     def _close_and_uncheck(self):
         """Hide bubble and uncheck the nav bar toggle button."""

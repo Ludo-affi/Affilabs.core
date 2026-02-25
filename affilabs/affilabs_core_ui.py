@@ -119,7 +119,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QIcon
+from PySide6.QtGui import QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -138,6 +138,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QSplitterHandle,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -177,6 +178,74 @@ from affilabs.ui_mixins import (
 # - StartupCalibProgressDialog -> affilabs/dialogs/startup_calib_dialog.py
 # - DeviceConfigDialog -> affilabs/dialogs/device_config_dialog.py
 # Import from affilabs.dialogs if needed
+
+
+class _GripHandle(QSplitterHandle):
+    """Splitter handle that paints a visible 5-dot grip indicator."""
+
+    _CLR_DEFAULT = QColor(110, 110, 120)
+    _CLR_HOVER   = QColor(60,  60,  70)
+    _CLR_PRESS   = QColor(29,  29,  31)
+    _BG_DEFAULT  = QColor(0, 0, 0, 10)
+    _BG_HOVER    = QColor(0, 122, 255, 18)
+    _BG_PRESS    = QColor(0, 122, 255, 35)
+
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+        self._hovered = False
+        self._pressed = False
+        self.setCursor(Qt.CursorShape.SizeVerCursor)
+        self.setToolTip("Drag to resize graphs")
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        self._pressed = True
+        self.update()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._pressed = False
+        self.update()
+        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+
+        # Background strip
+        bg = self._BG_PRESS if self._pressed else (self._BG_HOVER if self._hovered else self._BG_DEFAULT)
+        p.fillRect(self.rect(), bg)
+
+        # 3 grip dots centred in the handle with vertical padding
+        dot_color = self._CLR_PRESS if self._pressed else (self._CLR_HOVER if self._hovered else self._CLR_DEFAULT)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(dot_color)
+        n, dot_r, spacing = 3, 2.0, 8
+        total_w = (n - 1) * spacing
+        start_x = (w - total_w) / 2
+        pad = 2
+        cy = max(dot_r + pad, min(h - dot_r - pad, h / 2))
+        for i in range(n):
+            cx = start_x + i * spacing
+            p.drawEllipse(int(cx - dot_r), int(cy - dot_r), int(dot_r * 2), int(dot_r * 2))
+        p.end()
+
+
+class _GripSplitter(QSplitter):
+    """QSplitter that uses _GripHandle for all split handles."""
+
+    def createHandle(self) -> QSplitterHandle:  # noqa: N802
+        return _GripHandle(self.orientation(), self)
 
 
 class AffilabsMainWindow(
@@ -423,11 +492,40 @@ class AffilabsMainWindow(
         )  # Allow main content to compress so sidebar can expand more
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
+        right_layout.setSpacing(8)
         # TransportBar replaces the old nav_bar (44px, includes all control buttons)
         from affilabs.widgets.transport_bar import TransportBar
         self.transport_bar = TransportBar(self)
         right_layout.addWidget(self.transport_bar)
+
+        # Stage progress bar — kept as object so advance_to() calls don't crash, but hidden from layout
+        from affilabs.widgets.stage_progress_bar import StageProgressBar
+        self.stage_bar = StageProgressBar(self)
+        self.stage_bar.hide()  # Not shown — progress communicated via the StepChip in transport bar
+
+        # Forward stage_bar.advance_to() / reset() → TransportBar.step_chip so existing call sites
+        # (in main.py, mixins, presenters) automatically update the chip without being changed.
+        _orig_advance = self.stage_bar.advance_to
+        _orig_reset   = self.stage_bar.reset
+        _tb_ref       = self.transport_bar  # captured here; already constructed above
+
+        def _advance_and_chip(stage: str, _fn=_orig_advance, _tb=_tb_ref) -> None:
+            _fn(stage)
+            try:
+                _tb.step_chip.advance_to(stage)
+            except Exception:
+                pass
+
+        def _reset_and_chip(_fn=_orig_reset, _tb=_tb_ref) -> None:
+            _fn()
+            try:
+                _tb.step_chip.reset()
+            except Exception:
+                pass
+
+        self.stage_bar.advance_to = _advance_and_chip  # type: ignore[method-assign]
+        self.stage_bar.reset      = _reset_and_chip    # type: ignore[method-assign]
+
         # Wire build_method_btn on transport bar → actual sidebar button (main.py uses sidebar ref)
         self.build_method_btn = self.transport_bar.build_method_btn
         self.transport_bar.build_method_btn.clicked.connect(
@@ -472,6 +570,15 @@ class AffilabsMainWindow(
         self._queue_right_panel = self._build_queue_right_panel()
         # Populate it with the queue widget now — sidebar is fully built at this point
         if hasattr(self.sidebar, 'queue_panel') and hasattr(self, '_queue_content_layout'):
+            # Contact Monitor — at position 1 (after header at 0), above queue
+            if hasattr(self.sidebar, 'injection_action_bar'):
+                bar = self.sidebar.injection_action_bar
+                bar.setParent(self._queue_right_panel)
+                from PySide6.QtWidgets import QSizePolicy
+                bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+                bar.setMaximumHeight(280)
+                bar.show()
+                self._queue_content_layout.insertWidget(1, bar, 0)
             self._queue_content_layout.addWidget(self.sidebar.queue_panel, 1)
 
         # Splitter: Sidebar (left) | TransportBar+Content (center) | Run Queue (right)
@@ -562,14 +669,14 @@ class AffilabsMainWindow(
 
         self.subunit_sensor_dot = QLabel("● Sensor")
         self.subunit_sensor_dot.setStyleSheet(
-            "color: #C7C7CC; margin: 0 8px; font-size: 11px;"
+            "color: #C7C7CC; margin: 0 8px; font-size: 12px;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         sb.addPermanentWidget(self.subunit_sensor_dot)
 
         self.subunit_optics_dot = QLabel("● Optics")
         self.subunit_optics_dot.setStyleSheet(
-            "color: #C7C7CC; margin: 0 8px; font-size: 11px;"
+            "color: #C7C7CC; margin: 0 8px; font-size: 12px;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         sb.addPermanentWidget(self.subunit_optics_dot)
@@ -577,7 +684,7 @@ class AffilabsMainWindow(
         # Acquiring pulse dot — shown + blinks while DAQ is running (left side)
         self._acq_dot = QLabel("● ACQ")
         self._acq_dot.setStyleSheet(
-            "color: #007AFF; font-size: 11px; font-weight: 700; margin: 0 8px; "
+            "color: #007AFF; font-size: 12px; font-weight: 700; margin: 0 8px; "
             "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
         )
         self._acq_dot.hide()
@@ -586,11 +693,20 @@ class AffilabsMainWindow(
         # Recording badge — shown while file recording is active (left side)
         self._rec_badge_status = QLabel("● REC")
         self._rec_badge_status.setStyleSheet(
-            "color: #FF3B30; font-size: 11px; font-weight: 700; margin: 0 4px 0 0; "
+            "color: #FF3B30; font-size: 12px; font-weight: 700; margin: 0 4px 0 0; "
             "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
         )
         self._rec_badge_status.hide()
         sb.addWidget(self._rec_badge_status)
+
+        # Recording path label — sits immediately right of the REC badge, no overlap with showMessage
+        self._rec_path_label = QLabel()
+        self._rec_path_label.setStyleSheet(
+            "color: #FF3B30; font-size: 12px; margin: 0 8px 0 0; "
+            "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
+        )
+        self._rec_path_label.hide()
+        sb.addWidget(self._rec_path_label)
 
         # 800 ms blink timer for the acquiring dot
         self._acq_pulse_timer = QTimer(self)
@@ -610,10 +726,8 @@ class AffilabsMainWindow(
         content_layout.setSpacing(Dimensions.SPACING_SM)
 
         # Create QSplitter for resizable graph panels (30/70 split)
-        from PySide6.QtWidgets import QSplitter
-
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.setHandleWidth(8)
+        splitter = _GripSplitter(Qt.Orientation.Vertical)
+        splitter.setHandleWidth(10)
         splitter.setChildrenCollapsible(False)
 
         # Top graph (Navigation/Overview) - 30% - with integrated controls
@@ -670,24 +784,8 @@ class AffilabsMainWindow(
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 7)
 
-        # Style the splitter handle
-        splitter.setStyleSheet(
-            "QSplitter {"
-            "  background-color: transparent;"
-            "  spacing: 8px;"
-            "}"
-            "QSplitter::handle {"
-            "  background: rgba(0, 0, 0, 0.1);"
-            "  border-radius: 2px;"
-            "  margin: 0px 16px;"
-            "}"
-            "QSplitter::handle:hover {"
-            "  background: rgba(0, 0, 0, 0.15);"
-            "}"
-            "QSplitter::handle:pressed {"
-            "  background: #1D1D1F;"
-            "}",
-        )
+        # Handle appearance is owned by _GripHandle.paintEvent — no CSS needed here
+        splitter.setStyleSheet("QSplitter { background-color: transparent; }")
 
         content_layout.addWidget(splitter, 1)
 
@@ -1611,7 +1709,7 @@ class AffilabsMainWindow(
         bottom_row = QHBoxLayout()
         char_label = QLabel(f"{len(current_note)}/250")
         char_label.setStyleSheet(
-            f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; "
+            f"font-size: 12px; color: {Colors.SECONDARY_TEXT}; "
             f"background: transparent; border: none;"
         )
         bottom_row.addWidget(char_label)
@@ -2065,16 +2163,17 @@ class AffilabsMainWindow(
 
         # ── header strip ────────────────────────────────────────────────
         header = QFrame()
-        header.setFixedHeight(40)
+        header.setFixedHeight(48)
         header.setStyleSheet(
             "QFrame { background: #EBEBF0; border-bottom: 1px solid #E5E5EA; }"
         )
         hdr_row = QHBoxLayout(header)
-        hdr_row.setContentsMargins(14, 0, 14, 0)
+        hdr_row.setContentsMargins(16, 0, 14, 0)
         title_lbl = QLabel("Run Queue")
         title_lbl.setStyleSheet(
-            "font-size: 12px; font-weight: 600; color: #1D1D1F; background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "font-size: 14px; font-weight: 700; color: #1D1D1F; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            "letter-spacing: -0.3px;"
         )
         hdr_row.addWidget(title_lbl)
         hdr_row.addStretch()
@@ -2283,73 +2382,61 @@ class AffilabsMainWindow(
 
         container = QFrame()
         container.setMinimumHeight(height)
-        container.setStyleSheet(
-            "QFrame {"
-            "  background: {Colors.BACKGROUND_WHITE};"
-            "  border-radius: 12px;"
-            "}",
-        )
-        # Add shadow
-        container.setGraphicsEffect(create_card_shadow())
+        if show_delta_spr:
+            container.setObjectName("ActiveCycleCard")
+            # Active Cycle: elevated white card — more prominent shadow + subtle border
+            container.setStyleSheet(
+                "QFrame#ActiveCycleCard {"
+                "  background: #FFFFFF;"
+                "  border-radius: 12px;"
+                "  border: 1px solid rgba(0, 0, 0, 0.07);"
+                "}",
+            )
+            elevated_shadow = QGraphicsDropShadowEffect()
+            elevated_shadow.setBlurRadius(24)
+            elevated_shadow.setColor(QColor(0, 0, 0, 45))
+            elevated_shadow.setOffset(0, 4)
+            container.setGraphicsEffect(elevated_shadow)
+        else:
+            container.setObjectName("LiveSensogramCard")
+            # Live Sensorgram: standard white card with light shadow
+            container.setStyleSheet(
+                "QFrame#LiveSensogramCard {"
+                "  background: #FFFFFF;"
+                "  border-radius: 12px;"
+                "}",
+            )
+            container.setGraphicsEffect(create_card_shadow())
 
         layout = QVBoxLayout(container)
         if show_delta_spr:
-            # Active Cycle graph — no side/bottom padding; keep 8px top so title sits off the card edge
-            layout.setContentsMargins(0, 8, 0, 0)
+            # Active Cycle: zero side/bottom so the plot bleeds to card edges;
+            # title and controls row get their own 16px side indent via setContentsMargins below.
+            layout.setContentsMargins(0, 20, 0, 0)
         else:
-            layout.setContentsMargins(Dimensions.MARGIN_MD, 8, Dimensions.MARGIN_MD, Dimensions.MARGIN_MD)
-        layout.setSpacing(8)
+            layout.setContentsMargins(Dimensions.MARGIN_MD, 14, Dimensions.MARGIN_MD, 12)
+        layout.setSpacing(6)
 
         # Title row with controls
         title_row = QHBoxLayout()
         title_row.setSpacing(8)
+        if show_delta_spr:
+            # Indent title to match the top-graph 16px left margin
+            title_row.setContentsMargins(Dimensions.MARGIN_MD, 0, Dimensions.MARGIN_MD, 0)
 
         title_label = QLabel(title)
         title_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 20px;"
-            "  font-weight: 600;"
+            "  font-size: 14px;"
+            "  font-weight: 700;"
             "  color: #1D1D1F;"
-            "  background: {Colors.TRANSPARENT};"
+            "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
             "  letter-spacing: -0.2px;"
             "}",
         )
         title_row.addWidget(title_label)
         title_row.addStretch()
-
-        # Small queue toggle button — top-right of Live Sensorgram only
-        if not show_delta_spr:
-            self._live_queue_btn = QPushButton("Q")
-            self._live_queue_btn.setFixedSize(26, 26)
-            self._live_queue_btn.setCheckable(True)
-            self._live_queue_btn.setChecked(False)
-            self._live_queue_btn.setToolTip("Show / hide Run Queue panel")
-            self._live_queue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            self._live_queue_btn.setStyleSheet(
-                "QPushButton {"
-                "  background: rgba(0,0,0,0.06);"
-                "  border: none;"
-                "  border-radius: 6px;"
-                "  font-size: 11px;"
-                "  font-weight: 700;"
-                "  color: rgba(0,0,0,0.35);"
-                "  padding: 0px;"
-                "}"
-                "QPushButton:hover {"
-                "  background: rgba(0,0,0,0.11);"
-                "  color: rgba(0,0,0,0.55);"
-                "}"
-                "QPushButton:checked {"
-                "  background: rgba(46,48,227,0.12);"
-                "  color: rgb(46,48,227);"
-                "}"
-                "QPushButton:checked:hover {"
-                "  background: rgba(46,48,227,0.20);"
-                "}"
-            )
-            self._live_queue_btn.toggled.connect(self._on_toggle_queue_panel)
-            title_row.addWidget(self._live_queue_btn)
 
         # Action buttons — icon-only 28×28, right-aligned in title row (Active Cycle only)
         if show_delta_spr:
@@ -2416,6 +2503,7 @@ class AffilabsMainWindow(
         if show_delta_spr:
             timing_row = QHBoxLayout()
             timing_row.setSpacing(8)
+            timing_row.setContentsMargins(Dimensions.MARGIN_MD, 0, Dimensions.MARGIN_MD, 4)
 
             # Display label
             from affilabs.ui_styles import get_channel_button_style, get_channel_button_ref_style
@@ -2527,6 +2615,13 @@ class AffilabsMainWindow(
             timing_row.addWidget(self.clear_graph_btn)
 
             layout.addLayout(timing_row)
+
+        # ── Section divider (title area → plot) ────────────────────────────
+        _div = QFrame()
+        _div.setFrameShape(QFrame.Shape.HLine)
+        _div.setFixedHeight(1)
+        _div.setStyleSheet("background: #E5E5EA; border: none;")
+        layout.addWidget(_div)
 
         # Create standardized time-series plot
         left_label = "Δ SPR (RU)" if show_delta_spr else "λ (nm)"
@@ -2703,6 +2798,7 @@ class AffilabsMainWindow(
             })
             layout.addWidget(footer)
             plot_widget.intelligence_footer = footer
+            self._cycle_intelligence_footer = footer  # ref for hotkey toggle
 
             # Wire live clocks — use a deferred getter so main.py can register
             # _get_elapsed_time and _get_recording_elapsed after construction.
@@ -2975,6 +3071,16 @@ class AffilabsMainWindow(
     # - Duplicate _create_analyze_left_panel
     # Active definitions are below
 
+    def _toggle_signal_metrics_panel(self) -> None:
+        """Ctrl+Shift+M — toggle the λ/FWHM/p2p/slope metrics strip in the cycle footer.
+
+        Intended for internal/dev use: hide it for customer demos, show it when
+        diagnosing signal quality.  State is not persisted across restarts.
+        """
+        footer = getattr(self, '_cycle_intelligence_footer', None)
+        if footer is not None:
+            footer.toggle_signal_panel()
+
     def update_cycle_intelligence_footer(self, cycle_data: dict | None = None, status_data: dict | None = None) -> None:
         """Update the Cycle Intelligence Footer beneath Active Cycle graph.
 
@@ -3059,12 +3165,40 @@ class AffilabsMainWindow(
         self.is_recording = is_recording
         self.record_btn.setChecked(is_recording)
 
-        # Status bar recording badge
+        # Sync the combined Start & Record button in the sidebar
+        try:
+            sb = getattr(self, 'sidebar', None)
+            srb = getattr(sb, 'start_record_btn', None)
+            if srb is not None:
+                srb.setChecked(is_recording)
+                if is_recording:
+                    srb.setText("■ Stop")
+                    srb.setProperty("mode", "stop")
+                else:
+                    srb.setText("▶ Start & Record")
+                    srb.setProperty("mode", "start")
+                srb.style().unpolish(srb)
+                srb.style().polish(srb)
+        except Exception:
+            pass
+
+        # Status bar recording badge + path label
         if hasattr(self, '_rec_badge_status'):
             if is_recording:
                 self._rec_badge_status.show()
             else:
                 self._rec_badge_status.hide()
+
+        if hasattr(self, '_rec_path_label'):
+            if is_recording and filename:
+                self._rec_path_label.setText(Path(filename).name)
+                self._rec_path_label.setStyleSheet(
+                    "color: #FF3B30; font-size: 12px; margin: 0 8px 0 0; "
+                    "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
+                )
+                self._rec_path_label.show()
+            else:
+                self._rec_path_label.hide()
 
         if is_recording:
             display_name = Path(filename).name if filename else "data.csv"
@@ -3845,7 +3979,7 @@ class AffilabsMainWindow(
         color = "#007AFF" if self._acq_pulse_visible else "rgba(0,122,255,0.25)"
         if hasattr(self, '_acq_dot'):
             self._acq_dot.setStyleSheet(
-                f"color: {color}; font-size: 11px; font-weight: 700; margin: 0 8px; "
+                f"color: {color}; font-size: 12px; font-weight: 700; margin: 0 8px; "
                 "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
             )
 
@@ -4165,6 +4299,15 @@ class AffilabsMainWindow(
         issue_shortcut = QShortcut(QKeySequence("Ctrl+Shift+I"), self)
         issue_shortcut.activated.connect(self._handle_open_issue_tracker)
 
+        # Signal metrics panel toggle (Ctrl+Shift+M) — internal/dev use only
+        # Hides/shows the λ · FWHM · p2p · slope section of the cycle footer
+        sig_metrics_shortcut = QShortcut(QKeySequence("Ctrl+Shift+M"), self)
+        sig_metrics_shortcut.activated.connect(self._toggle_signal_metrics_panel)
+
+        # Queue panel toggle (Ctrl+Q)
+        queue_shortcut = QShortcut(QKeySequence("Ctrl+Q"), self)
+        queue_shortcut.activated.connect(lambda: self._live_queue_btn.toggle())
+
         # Channel selection shortcuts (Alt+A, Alt+B, Alt+C, Alt+D)
         for ch_idx, ch_letter in enumerate(['A', 'B', 'C', 'D']):
             shortcut = QShortcut(QKeySequence(f"Alt+{ch_letter}"), self)
@@ -4290,3 +4433,4 @@ if __name__ == "__main__":
     window = MainWindowPrototype()
     window.show()
     sys.exit(app.exec())
+

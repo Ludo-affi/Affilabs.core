@@ -231,6 +231,15 @@ class FlagManager:
             spr_val: SPR value at flag position
             flag_type: Type of flag ('injection', 'wash', 'spike')
         """
+        # Guard: auto-detection can fire on data from before cycle start,
+        # producing a negative display time. Clamp to 0 rather than crash.
+        if time_val < 0:
+            logger.debug(
+                f"Flag time clamped: {time_val:.3f}s → 0.0s "
+                f"(channel={channel}, type={flag_type})"
+            )
+            time_val = 0.0
+
         # Create Flag domain model instance (determines appearance from type)
         is_reference = False
 
@@ -243,12 +252,19 @@ class FlagManager:
                 self._injection_reference_channel = channel
 
                 # Create vertical alignment line on cycle graph
+                # This marks where auto-detection first triggered — visual guide
+                # for approximately when contact time started.
                 self._injection_alignment_line = pg.InfiniteLine(
                     pos=time_val,
                     angle=90,  # Vertical
-                    pen=pg.mkPen(color=(255, 50, 50, 100), width=2, style=Qt.PenStyle.DashLine),
+                    pen=pg.mkPen(color='#FF3B30', width=2, style=Qt.PenStyle.DashLine),
                     movable=False,
-                    label="Injection Started",
+                    label="▼ Injection",
+                    labelOpts={
+                        "color": "#FF3B30",
+                        "position": 0.92,
+                        "fill": pg.mkBrush(255, 255, 255, 200),
+                    },
                 )
                 self.app.main_window.cycle_of_interest_graph.addItem(self._injection_alignment_line)
 
@@ -795,44 +811,6 @@ class FlagManager:
         except Exception as e:
             logger.debug(f"Could not create auto-marker: {e}")
             return None
-
-    def create_contact_region(self, start: float, end: float) -> None:
-        """Shade the contact window between injection and wash deadline.
-
-        Creates a non-interactive LinearRegionItem with a light blue fill so the
-        user can watch the sensorgram data grow to fill the contact window.
-
-        Args:
-            start: Injection display time (seconds)
-            end:   Wash deadline display time (seconds)
-        """
-        try:
-            if not hasattr(self.app.main_window, "cycle_of_interest_graph"):
-                return
-
-            region = pg.LinearRegionItem(
-                values=[start, end],
-                movable=False,
-                brush=pg.mkBrush(0, 122, 255, 28),   # #007AFF at ~11% opacity
-                pen=pg.mkPen(None),                   # no border lines (InfiniteLines already drawn)
-            )
-            region.setZValue(-10)  # render behind data traces
-
-            self.app.main_window.cycle_of_interest_graph.addItem(region)
-
-            # Store via AutoMarker so clear_auto_markers() removes it automatically
-            self._auto_markers.append(AutoMarker(
-                marker_type='contact_region',
-                time=start,
-                label='',
-                color='#007AFF',
-                marker=region,
-                is_selectable=False,
-            ))
-            logger.debug(f"Contact region shaded: {start:.1f}s → {end:.1f}s")
-
-        except Exception as e:
-            logger.debug(f"Could not create contact region: {e}")
 
     def clear_auto_markers(self):
         """Remove all auto-calculated markers from graph."""

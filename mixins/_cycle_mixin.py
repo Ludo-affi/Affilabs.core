@@ -328,6 +328,14 @@ class CycleMixin:
                     self._emit_cycle_marker_to_timeline(cycle_export_data)
                     logger.info(f"✓ Incomplete cycle added to recording")
 
+                # Score the incomplete cycle
+                try:
+                    from affilabs.services.signal_quality_scorer import SignalQualityScorer
+                    _cid = str(getattr(self._current_cycle, 'cycle_id', ''))
+                    SignalQualityScorer.get_instance().on_cycle_completed(_cid, finished=False)
+                except Exception:
+                    pass
+
                 # Mark as completed in queue presenter
                 if hasattr(self, 'queue_presenter'):
                     self.queue_presenter.mark_cycle_completed(self._current_cycle)
@@ -975,6 +983,14 @@ class CycleMixin:
         if self.recording_mgr.is_recording:
             self.recording_mgr.add_cycle(cycle_export_data)
             self._emit_cycle_marker_to_timeline(cycle_export_data)
+
+        # Score the completed cycle
+        try:
+            from affilabs.services.signal_quality_scorer import SignalQualityScorer
+            _cid = str(getattr(self._current_cycle, 'cycle_id', ''))
+            SignalQualityScorer.get_instance().on_cycle_completed(_cid, finished=True)
+        except Exception:
+            pass
 
         self._current_cycle = None
         self._cycle_end_time = None

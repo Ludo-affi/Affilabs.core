@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QTabWidget, QWidget
 )
 from PySide6.QtCore import Signal, Qt, QTimer, QSize
-from PySide6.QtGui import QKeyEvent, QCursor, QColor, QIcon, QPixmap, QPainter
+from PySide6.QtGui import QKeyEvent, QCursor, QColor, QBrush, QIcon, QPixmap, QPainter
 from PySide6.QtSvg import QSvgRenderer
 from affilabs.domain.cycle import Cycle
 from affilabs.services.queue_preset_storage import QueuePresetStorage
@@ -49,7 +49,7 @@ _SVG_CHEVRON_UP = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org
 
 _SVG_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9l6 6 6-6" stroke="#1D1D1F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 
-_SVG_CLEAR = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#86868B" stroke-width="2"/><path d="M15 9l-6 6M9 9l6 6" stroke="#86868B" stroke-width="2" stroke-linecap="round"/></svg>'
+_SVG_CLEAR = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#6E6E73" stroke-width="2"/><path d="M15 9l-6 6M9 9l6 6" stroke="#6E6E73" stroke-width="2" stroke-linecap="round"/></svg>'
 
 _SVG_PLUS_WHITE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>'
 
@@ -243,7 +243,7 @@ class SparkMethodPopup(QDialog):
         close_btn = QPushButton("Close")
         close_btn.setFixedHeight(32)
         close_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #86868B; border: 1px solid #E5E5EA;"
+            "QPushButton { background: transparent; color: #6E6E73; border: 1px solid #E5E5EA;"
             " border-radius: 6px; padding: 4px 16px; font-size: 12px; }"
             " QPushButton:hover { background: #F5F5F7; }"
         )
@@ -852,7 +852,7 @@ class MethodBuilderDialog(QDialog):
         header_row.addSpacing(12)
 
         _lbl = QLabel("📋")
-        _lbl.setStyleSheet("font-size: 13px; color: #86868B;")
+        _lbl.setStyleSheet("font-size: 13px; color: #6E6E73;")
         header_row.addWidget(_lbl)
 
         self.method_name_input = QLineEdit("Untitled Method")
@@ -866,7 +866,7 @@ class MethodBuilderDialog(QDialog):
         header_row.addWidget(self.method_name_input)
 
         _op_icon = QLabel("👤")
-        _op_icon.setStyleSheet("font-size: 13px; color: #86868B; margin-left: 8px;")
+        _op_icon.setStyleSheet("font-size: 13px; color: #6E6E73; margin-left: 8px;")
         header_row.addWidget(_op_icon)
 
         self.operator_combo = QComboBox()
@@ -887,14 +887,14 @@ class MethodBuilderDialog(QDialog):
             " QComboBox:focus { border-color: #007AFF; }"
             " QComboBox::drop-down { border: none; width: 20px; }"
             " QComboBox::down-arrow { image: none; border-left: 4px solid transparent;"
-            " border-right: 4px solid transparent; border-top: 5px solid #86868B; margin-right: 8px; }"
+            " border-right: 4px solid transparent; border-top: 5px solid #6E6E73; margin-right: 8px; }"
         )
         self.operator_combo.currentTextChanged.connect(self._on_operator_changed)
         header_row.addWidget(self.operator_combo)
         header_row.addStretch()
 
         self.hw_label.setStyleSheet(
-            "font-size: 11px; font-weight: 600; color: #86868B; background: #F2F2F7;"
+            "font-size: 11px; font-weight: 600; color: #6E6E73; background: #F2F2F7;"
             " border-radius: 4px; padding: 2px 8px;"
         )
         header_row.addWidget(self.hw_label)
@@ -905,11 +905,11 @@ class MethodBuilderDialog(QDialog):
         chip_row.setSpacing(8)
 
         _chip_icon = QLabel("🧬")
-        _chip_icon.setStyleSheet("font-size: 13px; color: #86868B;")
+        _chip_icon.setStyleSheet("font-size: 13px; color: #6E6E73;")
         chip_row.addWidget(_chip_icon)
 
         _chip_lbl = QLabel("Surface")
-        _chip_lbl.setStyleSheet("font-size: 12px; color: #86868B;")
+        _chip_lbl.setStyleSheet("font-size: 12px; color: #6E6E73;")
         chip_row.addWidget(_chip_lbl)
 
         self.chip_type_combo = QComboBox()
@@ -924,12 +924,12 @@ class MethodBuilderDialog(QDialog):
             " QComboBox:focus { border-color: #007AFF; }"
             " QComboBox::drop-down { border: none; width: 20px; }"
             " QComboBox::down-arrow { image: none; border-left: 4px solid transparent;"
-            " border-right: 4px solid transparent; border-top: 5px solid #86868B; margin-right: 8px; }"
+            " border-right: 4px solid transparent; border-top: 5px solid #6E6E73; margin-right: 8px; }"
         )
         chip_row.addWidget(self.chip_type_combo)
 
         _lot_icon = QLabel("📦")
-        _lot_icon.setStyleSheet("font-size: 13px; color: #86868B; margin-left: 8px;")
+        _lot_icon.setStyleSheet("font-size: 13px; color: #6E6E73; margin-left: 8px;")
         chip_row.addWidget(_lot_icon)
 
         self.lot_number_input = QLineEdit()
@@ -975,7 +975,7 @@ class MethodBuilderDialog(QDialog):
 
         self._gallery_toggle_btn = QPushButton("Quick start ▴")
         self._gallery_toggle_btn.setStyleSheet(
-            "QPushButton { font-size: 12px; font-weight: 600; color: #86868B;"
+            "QPushButton { font-size: 12px; font-weight: 600; color: #6E6E73;"
             " background: transparent; border: none; text-align: left; padding: 0; }"
             " QPushButton:hover { color: #007AFF; }"
         )
@@ -1077,14 +1077,14 @@ class MethodBuilderDialog(QDialog):
 
             _name_lbl = QLabel(_name_flat)
             _name_lbl.setStyleSheet(
-                "font-size: 11px; font-weight: 600; color: #1D1D1F;"
+                "font-size: 12px; font-weight: 600; color: #1D1D1F;"
                 " background: transparent; border: none;"
             )
             _name_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
             _sub_lbl = QLabel(_sub_flat)
             _sub_lbl.setStyleSheet(
-                "font-size: 10px; color: #86868B;"
+                "font-size: 10px; color: #6E6E73;"
                 " background: transparent; border: none;"
             )
             _sub_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -1112,7 +1112,7 @@ class MethodBuilderDialog(QDialog):
         _more_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         _more_btn.setStyleSheet(
             "QPushButton { background: transparent; border: 1.5px dashed rgba(0,0,0,0.15);"
-            " border-radius: 8px; padding: 8px; font-size: 11px; color: #86868B; }"
+            " border-radius: 8px; padding: 8px; font-size: 12px; color: #6E6E73; }"
             " QPushButton:hover { border-color: #007AFF; color: #007AFF; }"
             " QPushButton:checked { border-style: solid; border-color: #007AFF; color: #007AFF; }"
         )
@@ -1136,7 +1136,7 @@ class MethodBuilderDialog(QDialog):
         browse_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         browse_btn.setStyleSheet(
             "QPushButton { background: transparent; border: 1.5px dashed rgba(0,0,0,0.15);"
-            " border-radius: 8px; padding: 8px; font-size: 11px; color: #86868B; }"
+            " border-radius: 8px; padding: 8px; font-size: 12px; color: #6E6E73; }"
             " QPushButton:hover { border-color: #007AFF; color: #007AFF; }"
         )
         browse_btn.clicked.connect(self._on_browse_templates)
@@ -1168,7 +1168,7 @@ class MethodBuilderDialog(QDialog):
         steps_hdr.addWidget(steps_hdr_lbl)
         steps_hdr.addStretch()
         self.method_exp_time_value = QLabel("0 min")
-        self.method_exp_time_value.setStyleSheet("font-size: 11px; color: #86868B;")
+        self.method_exp_time_value.setStyleSheet("font-size: 12px; color: #6E6E73;")
         steps_hdr.addWidget(self.method_exp_time_value)
         steps_section.addLayout(steps_hdr)
 
@@ -1176,7 +1176,7 @@ class MethodBuilderDialog(QDialog):
             "QTableWidget { background: white; border: 1px solid rgba(0,0,0,0.08);"
             " border-radius: 6px; font-size: 12px; gridline-color: rgba(0,0,0,0.05); }"
             " QHeaderView::section { background: rgba(0,0,0,0.03); padding: 4px 6px;"
-            " border: none; font-size: 11px; font-weight: 600; color: #86868B; }"
+            " border: none; font-size: 11px; font-weight: 600; color: #6E6E73; }"
             " QTableWidget::item { padding: 4px 6px; }"
             " QTableWidget::item:selected { background: #E3EDFF; color: #1D1D1F; }"
         )
@@ -1236,7 +1236,7 @@ class MethodBuilderDialog(QDialog):
         step_footer.addSpacing(8)
 
         _SVG_COG = ('<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
-                    '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="#86868B" stroke-width="2"/>'
+                    '<path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="#6E6E73" stroke-width="2"/>'
                     '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06'
                     'a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65'
                     ' 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06'
@@ -1245,7 +1245,7 @@ class MethodBuilderDialog(QDialog):
                     ' 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0'
                     ' 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65'
                     ' 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"'
-                    ' stroke="#86868B" stroke-width="2"/></svg>')
+                    ' stroke="#6E6E73" stroke-width="2"/></svg>')
 
         _btn_ss = (
             "QPushButton { background: white; color: #1D1D1F; border: 1px solid rgba(0,0,0,0.1);"
@@ -1322,7 +1322,7 @@ class MethodBuilderDialog(QDialog):
         self.clear_method_btn.setIconSize(QSize(14, 14))
         self.clear_method_btn.setFixedHeight(28)
         self.clear_method_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #86868B;"
+            "QPushButton { background: transparent; color: #6E6E73;"
             " border: 1px solid rgba(0,0,0,0.1); border-radius: 4px;"
             " padding: 4px 10px; font-size: 12px; }"
             " QPushButton:hover { background: rgba(0,0,0,0.05); }"
@@ -1331,7 +1331,7 @@ class MethodBuilderDialog(QDialog):
         step_footer.addWidget(self.clear_method_btn)
 
         self.method_count_label = QLabel("0 cycles")
-        self.method_count_label.setStyleSheet("font-size: 11px; color: #86868B;")
+        self.method_count_label.setStyleSheet("font-size: 12px; color: #6E6E73;")
         step_footer.addWidget(self.method_count_label)
         step_footer.addStretch()
 
@@ -1365,9 +1365,9 @@ class MethodBuilderDialog(QDialog):
             " QComboBox:focus { border-color: #007AFF; }"
             " QComboBox::drop-down { border: none; width: 18px; }"
             " QComboBox::down-arrow { image: none; border-left: 3px solid transparent;"
-            " border-right: 3px solid transparent; border-top: 4px solid #86868B; margin-right: 6px; }"
+            " border-right: 3px solid transparent; border-top: 4px solid #6E6E73; margin-right: 6px; }"
         )
-        _lbl_ss = "font-size: 11px; color: #86868B; font-weight: 500;"
+        _lbl_ss = "font-size: 12px; color: #6E6E73; font-weight: 500;"
 
         self._adv_settings_frame = QFrame()
         self._adv_settings_frame.setObjectName("advSettings")
@@ -1419,7 +1419,7 @@ class MethodBuilderDialog(QDialog):
         sparq_row.setContentsMargins(10, 6, 10, 6)
         sparq_row.setSpacing(8)
 
-        sparq_lbl = QLabel("⚡ Sparq:")
+        sparq_lbl = QLabel("⚡ Spark:")
         sparq_lbl.setStyleSheet(
             "font-size: 12px; font-weight: 700; color: #B8860B; background: transparent;"
             " font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
@@ -1465,7 +1465,7 @@ class MethodBuilderDialog(QDialog):
         self._text_mode_toggle.setFlat(True)
         self._text_mode_toggle.setCheckable(True)
         self._text_mode_toggle.setStyleSheet(
-            "QPushButton { background: transparent; color: #86868B; border: none;"
+            "QPushButton { background: transparent; color: #6E6E73; border: none;"
             " font-size: 11px; text-decoration: underline; padding: 0; }"
             " QPushButton:hover { color: #007AFF; }"
             " QPushButton:checked { color: #007AFF; }"
@@ -1481,7 +1481,7 @@ class MethodBuilderDialog(QDialog):
 
         _text_hdr = QHBoxLayout()
         _text_hdr_lbl = QLabel("Power Mode — one cycle per line")
-        _text_hdr_lbl.setStyleSheet("font-size: 11px; color: #86868B;")
+        _text_hdr_lbl.setStyleSheet("font-size: 12px; color: #6E6E73;")
         _text_hdr.addWidget(_text_hdr_lbl)
         _text_hdr.addStretch()
         _help_btn = QPushButton("?")
@@ -1543,7 +1543,7 @@ class MethodBuilderDialog(QDialog):
             pass
         self.overnight_mode_check.stateChanged.connect(self._on_overnight_mode_changed)
         self.overnight_mode_check.setStyleSheet(
-            "QCheckBox { spacing: 4px; font-size: 10px; font-weight: 500; color: #86868B;"
+            "QCheckBox { spacing: 4px; font-size: 10px; font-weight: 500; color: #6E6E73;"
             " font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; }"
             " QCheckBox::indicator { width: 14px; height: 14px; border-radius: 2px;"
             " border: 1px solid rgba(0,0,0,0.15); background: white; }"
@@ -1566,7 +1566,7 @@ class MethodBuilderDialog(QDialog):
         self.close_btn = QPushButton("Cancel")
         self.close_btn.setFixedHeight(40)
         self.close_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #86868B;"
+            "QPushButton { background: transparent; color: #6E6E73;"
             " border: 1px solid rgba(0,0,0,0.1); border-radius: 8px;"
             " padding: 8px 20px; font-size: 13px; font-weight: 600; }"
             " QPushButton:hover { background: rgba(0,0,0,0.05); }"
@@ -2607,7 +2607,7 @@ Binding 5min A:100nM contact 120s partial
             type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.method_table.setItem(row, 0, type_item)
 
-            # Col 1: Duration (formatted)
+            # Col 1: Duration (formatted, editable)
             mins = cycle.length_minutes
             if mins >= 60:
                 dur_str = f"{int(mins // 60)}h {int(mins % 60)}m" if mins % 60 else f"{int(mins // 60)}h"
@@ -2617,7 +2617,8 @@ Binding 5min A:100nM contact 120s partial
                 dur_str = f"{mins:.1f} min"
             dur_item = QTableWidgetItem(dur_str)
             dur_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            dur_item.setFlags(dur_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            dur_item.setBackground(QBrush(QColor("#FFFFFF")))
+            dur_item.setToolTip("Double-click to edit duration (e.g. 5min, 30sec, 2h)")
             self.method_table.setItem(row, 1, dur_item)
 
             # Col 2: Channel
@@ -2631,7 +2632,7 @@ Binding 5min A:100nM contact 120s partial
                 ch_text = "ALL"
             ch_item = QTableWidgetItem(ch_text)
             ch_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            ch_item.setToolTip("Double-click to edit channels (e.g. A, BD, ALL)")
+            ch_item.setFlags(ch_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.method_table.setItem(row, 2, ch_item)
 
             # Col 3: Concentration
@@ -2643,6 +2644,7 @@ Binding 5min A:100nM contact 120s partial
             else:
                 conc_text = "—"
             conc_item = QTableWidgetItem(conc_text)
+            conc_item.setBackground(QBrush(QColor("#FFFFFF")))
             conc_item.setToolTip("Double-click to edit concentration (e.g. 100nM, A:100nM B:50nM)")
             self.method_table.setItem(row, 3, conc_item)
 
@@ -2663,11 +2665,14 @@ Binding 5min A:100nM contact 120s partial
                     col4_text = "—"
             ct_item = QTableWidgetItem(col4_text)
             ct_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            ct_item.setFlags(ct_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            ct_item.setBackground(QBrush(QColor("#FFFFFF")))
+            ct_item.setToolTip("Double-click to edit contact time (e.g. 300s, 5m, 1h)")
             self.method_table.setItem(row, 4, ct_item)
 
             # Col 5: Note (editable)
             note_item = QTableWidgetItem(cycle.note or "")
+            note_item.setBackground(QBrush(QColor("#FFFFFF")))
+            note_item.setToolTip("Double-click to edit note")
             self.method_table.setItem(row, 5, note_item)
 
         # Update labels
@@ -2695,40 +2700,74 @@ Binding 5min A:100nM contact 120s partial
             self.method_table.selectRow(selected_rows[0])
 
     def _on_table_item_edited(self, item: QTableWidgetItem):
-        """Write channel or concentration edits back to the cycle data model."""
+        """Write inline edits back to the cycle data model.
+
+        Editable columns:
+          1 — Duration   (e.g. "5min", "30sec", "2h")
+          2 — Channel    (e.g. "A", "BD", "ALL")
+          3 — Concentration (e.g. "100nM", "A:100nM B:50nM")
+          4 — Contact time (e.g. "300s", "5m", "1h")
+          5 — Note       (free text)
+        """
         row = item.row()
         col = item.column()
         if row < 0 or row >= len(self._local_cycles):
             return
-        if col not in (2, 3):  # Only channel and concentration are editable
+        if col not in (1, 3, 4, 5):
             return
         cycle = self._local_cycles[row]
         text = item.text().strip()
 
-        # Block the signal while we refresh to avoid re-entry
         self.method_table.blockSignals(True)
         try:
-            if col == 2:  # Channel
+            if col == 1:  # Duration — re-parse via existing text parser
+                if text:
+                    probe_line = f"{cycle.type.lower()} {text}"
+                    try:
+                        rebuilt, _ = self._build_cycle_from_text(probe_line)
+                        if rebuilt.length_minutes > 0:
+                            cycle.length_minutes = rebuilt.length_minutes
+                    except Exception:
+                        pass  # Leave existing value if parse fails
+
+            elif col == 2:  # Channel
                 cleaned = text.upper().replace(" ", "").replace("-", "").replace("—", "")
                 if cleaned in ("", "—", "ALL"):
                     cycle.target_channels = ""
                 else:
-                    # Keep only valid channel letters
                     cleaned = "".join(c for c in cleaned if c in "ABCD")
                     cycle.target_channels = cleaned
-            elif col == 3:  # Concentration — re-parse via _build_cycle_from_text
+
+            elif col == 3:  # Concentration
                 if text in ("", "—"):
                     cycle.concentrations = {}
+                    cycle.target_channels = ""
                 else:
-                    # Build a minimal line with the cycle type + new conc tag and re-parse
                     probe_line = f"{cycle.type.lower()} {text}"
                     try:
                         rebuilt, _ = self._build_cycle_from_text(probe_line)
                         if rebuilt.concentrations:
                             cycle.concentrations = rebuilt.concentrations
                             cycle.units = rebuilt.units
+                            cycle.target_channels = "".join(sorted(rebuilt.concentrations.keys()))
                     except Exception:
-                        pass  # Leave existing value if parse fails
+                        pass
+
+            elif col == 4:  # Contact time
+                if text in ("", "—"):
+                    cycle.contact_time = None
+                else:
+                    probe_line = f"{cycle.type.lower()} 5min contact {text}"
+                    try:
+                        rebuilt, _ = self._build_cycle_from_text(probe_line)
+                        if rebuilt.contact_time is not None:
+                            cycle.contact_time = rebuilt.contact_time
+                    except Exception:
+                        pass
+
+            elif col == 5:  # Note — free text, store directly
+                cycle.note = text
+
         finally:
             self.method_table.blockSignals(False)
 
@@ -3394,3 +3433,4 @@ Binding 5min A:100nM contact 120s partial
             "}"
             "QPushButton:hover { background: rgba(0,122,255,0.08); }"
         )
+

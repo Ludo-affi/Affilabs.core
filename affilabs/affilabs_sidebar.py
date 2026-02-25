@@ -428,7 +428,7 @@ class AffilabsSidebar(QWidget):
         self._sparq_tab_index = tab_index
         self._prev_tab_index = 0
         self.tab_widget.addTab(_sparq_placeholder, _sparq_icon, "")
-        self.tab_widget.setTabToolTip(tab_index, "Ask Sparq AI")
+        self.tab_widget.setTabToolTip(tab_index, "Ask Spark AI")
 
         container_layout.addWidget(self.tab_widget)
         # Compatibility alias expected by main code
@@ -512,10 +512,62 @@ class AffilabsSidebar(QWidget):
             self.clear_queue_btn.clicked.connect(self._on_clear_queue_clicked)
         if hasattr(self, "start_run_btn"):
             self.start_run_btn.clicked.connect(self._on_start_run_clicked)
-        if hasattr(self, "start_queue_btn"):
+        if hasattr(self, "start_record_btn"):
+            self.start_record_btn.clicked.connect(self._on_start_record_clicked)
+        elif hasattr(self, "start_queue_btn"):
             self.start_queue_btn.clicked.connect(self._on_start_stop_toggle_clicked)
         if hasattr(self, "next_cycle_btn"):
             self.next_cycle_btn.clicked.connect(self._on_next_cycle_clicked)
+        if hasattr(self, "pause_btn"):
+            self.pause_btn.clicked.connect(self._on_sidebar_pause_clicked)
+
+    def _on_start_record_clicked(self) -> None:
+        """Start cycle queue AND recording in one action.
+
+        - If already running (Stop mode): cancel queue + stop recording.
+        - If not running: start queue, then start recording only if not already recording
+          (append behaviour — recording_start_requested is a no-op when already recording).
+        """
+        btn = getattr(self, 'start_record_btn', None)
+        mode = btn.property("mode") if btn else "start"
+        mw = getattr(self, 'app', None)
+        if mw is None:
+            mw = getattr(self, '_main_window', None)
+        main_win = getattr(mw, 'main_window', mw) if mw else None
+
+        if mode == "stop":
+            self.queue_cancel_requested.emit()
+            if main_win and getattr(main_win, 'is_recording', False):
+                try:
+                    main_win._toggle_recording()
+                except Exception:
+                    pass
+        else:
+            # Start queue
+            self.queued_run_started.emit()
+            # Start recording (no-op if already open → appends)
+            if main_win and not getattr(main_win, 'is_recording', False):
+                try:
+                    main_win._toggle_recording()
+                except Exception:
+                    pass
+
+    def _on_sidebar_pause_clicked(self) -> None:
+        """Delegate pause to main window and keep checked state in sync."""
+        mw = getattr(self, 'app', None)
+        if mw is None:
+            mw = getattr(self, '_main_window', None)
+        if mw is None:
+            return
+        main_win = getattr(mw, 'main_window', mw)
+        # Sync the hidden transport-bar stub's checked state
+        stub = getattr(main_win, 'pause_btn', None)
+        if stub is not None and stub is not self.pause_btn:
+            stub.setChecked(self.pause_btn.isChecked())
+        try:
+            main_win._toggle_pause()
+        except Exception:
+            pass
 
     def _on_start_cycle_clicked(self):
         """Handle start cycle button click - emit high-level signal with config."""

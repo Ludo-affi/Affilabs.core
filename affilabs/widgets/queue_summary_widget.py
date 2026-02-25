@@ -439,6 +439,44 @@ class QueueSummaryWidget(QTableWidget):
             return "Done"
         return "Pending"
 
+    def set_cycle_score(self, score) -> None:
+        """Receive a CycleQualityScore and update the matching row's status cell.
+
+        Called via SignalQualityScorer.cycle_scored signal (Qt main thread).
+        ``score`` is a CycleQualityScore dataclass.
+        """
+        _LABEL = {
+            "excellent": "Good",
+            "good":      "Good",
+            "marginal":  "Concerning",
+            "poor":      "Bad",
+        }
+        _COLOR = {
+            "excellent": "#34C759",   # green
+            "good":      "#34C759",
+            "marginal":  "#FF9500",   # amber
+            "poor":      "#FF3B30",   # red
+        }
+        try:
+            cycle_id = score.cycle_id
+            band     = score.band
+            note     = score.note
+            label    = _LABEL.get(band, "—")
+            color    = _COLOR.get(band, "#9E9E9E")
+            display  = f"● {label}"
+
+            for row in range(self.rowCount()):
+                id_item = self.item(row, self.COL_NUM)
+                if id_item and id_item.data(Qt.ItemDataRole.UserRole) == cycle_id:
+                    status_item = self.item(row, self.COL_STATUS)
+                    if status_item:
+                        status_item.setText(display)
+                        status_item.setForeground(QColor(color))
+                        status_item.setToolTip(f"{label}\n{note}")
+                    break
+        except Exception:
+            pass
+
     def mark_in_edits(self, cycle_id: int) -> None:
         """Mark a cycle as having been sent to the Edits tab.
 

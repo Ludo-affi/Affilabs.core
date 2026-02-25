@@ -47,7 +47,7 @@ This is **not** conventional angular SPR (like Biacore). Key differences:
 - Spectral range: **560–720 nm** (the SPR-active window for gold at this geometry)
 - Channels are **time-multiplexed**: controller fires A, reads spectrum, fires B, reads spectrum, etc.
 - There is **no simultaneous multi-channel acquisition** — each frame captures one channel at a time
-- One full acquisition cycle (all 4 channels × P-pol + S-pol) takes ~1–2 seconds depending on integration time
+- One full acquisition cycle (all 4 channels × P-pol + S-pol) takes **~1 second** (≈250ms per channel at default integration time), giving **~1 Hz per channel**
 
 ### Signal Chain (Raw → Sensorgram)
 ```
@@ -204,16 +204,20 @@ Ignored by Claude Code (use --no-ignore to access):
 | P4PRO fluidic system — KC1/KC2, 6-port loop, 3-way valves, channel mapping | [P4PRO_FLUIDIC_ARCHITECTURE.md](docs/hardware/P4PRO_FLUIDIC_ARCHITECTURE.md) | `affilabs/coordinators/injection_coordinator.py` |
 | Hardware scanning, USB connect flow | [HARDWARE_SCANNING_FRS.md](docs/features/HARDWARE_SCANNING_FRS.md) | `affilabs/core/hardware_manager.py` |
 | Injection flags, AutoMarker, contact timer | [FLAGGING_SYSTEM_GUIDE.md](docs/features/FLAGGING_SYSTEM_GUIDE.md) | `affilabs/managers/flag_manager.py` |
+| Injection workflow — all scenarios (manual/auto, 3-channel, wash, markers) | [INJECTION_WORKFLOW_FRS.md](docs/features/INJECTION_WORKFLOW_FRS.md) | `affilabs/coordinators/injection_coordinator.py`, `affilabs/dialogs/manual_injection_dialog.py`, `affilabs/widgets/injection_action_bar.py`, `mixins/_pump_mixin.py` |
 | Calibration flow, servo auto-cal | [CALIBRATION_ORCHESTRATOR_FRS.md](docs/calibration/CALIBRATION_ORCHESTRATOR_FRS.md) | `affilabs/core/calibration_orchestrator.py` |
 | Signal quality, IQ levels, wavelength zones | [SENSOR_IQ_SYSTEM.md](docs/features/SENSOR_IQ_SYSTEM.md) | `affilabs/utils/sensor_iq.py` |
+| Signal event classifier — pre-inject readiness badge, bubble detection, telemetry logger, per-cycle quality score, run star rating | [SIGNAL_EVENT_CLASSIFIER_FRS.md](docs/features/SIGNAL_EVENT_CLASSIFIER_FRS.md) | `affilabs/utils/signal_event_classifier.py`, `affilabs/services/signal_telemetry_logger.py`, `affilabs/services/signal_quality_scorer.py`, `affilabs/widgets/signal_event_badge.py` (planned) |
+| Sparq account — device registration, Sparq Coach upload, Nutshell CRM integration, failure-pattern upsell pipeline | [SPARQ_ACCOUNT_FRS.md](docs/features/SPARQ_ACCOUNT_FRS.md) | `affilabs/services/sparq_account_service.py`, `affilabs/services/sparq_coach_service.py`, `affilabs/dialogs/sparq_registration_dialog.py` (planned) |
 | Cycle templates, queue presets | [METHOD_PRESETS_SYSTEM.md](docs/features/METHOD_PRESETS_SYSTEM.md) | `affilabs/services/cycle_template_storage.py` |
 | Method Builder UI redesign (3-zone layout, template gallery, Sparq bar) | [METHOD_BUILDER_REDESIGN_FRS.md](docs/features/METHOD_BUILDER_REDESIGN_FRS.md) | `affilabs/widgets/method_builder_dialog.py` |
 | Contact Monitor panel, per-channel contact timers, binding symbols | [MICROFLUIDIC_CHANNELS_PANEL_FRS.md](docs/features/MICROFLUIDIC_CHANNELS_PANEL_FRS.md) | `affilabs/widgets/injection_action_bar.py` |
 | Compression Assistant — guided chip compression, gauge, QC leak check | [COMPRESSION_ASSISTANT_FRS.md](docs/features/COMPRESSION_ASSISTANT_FRS.md) | `standalone_tools/compression_trainer_ui.py` |
-| Injection auto-detection FRS v2 — multi-feature scorer (planned) | [INJECTION_DETECTION_FRS.md](docs/features/INJECTION_DETECTION_FRS.md) | `affilabs/utils/spr_signal_processing.py` |
+| Injection auto-detection FRS v2 — multi-feature scorer, event flags, timing, scoring | [INJECTION_DETECTION_FRS.md](docs/features/INJECTION_DETECTION_FRS.md) | `affilabs/utils/spr_signal_processing.py`, `affilabs/coordinators/injection_coordinator.py` |
 | In-app tips system — tip storage, display triggers, dismissal tracking | [TIPS_SYSTEM.md](docs/features/TIPS_SYSTEM.md) | `affilabs/services/` |
 | Timeline events, CycleMarker, stream API | [TIMELINE_QUICK_START.md](docs/architecture/TIMELINE_QUICK_START.md) | `affilabs/domain/timeline.py`, `affilabs/core/recording_manager.py`, `affilabs/managers/flag_manager.py`, `mixins/_cycle_mixin.py` |
 | Timeline Phase 5+ roadmap, proposed improvements | [TIMELINE_ROADMAP.md](docs/future_plans/TIMELINE_ROADMAP.md) | `affilabs/domain/timeline.py` |
+| Platform strategy — retention layers, revenue streams, data flywheel, competitive positioning, implementation priority | [PLATFORM_STRATEGY.md](docs/future_plans/PLATFORM_STRATEGY.md) | — |
 | 21 CFR Part 11 compliance — gap analysis, implementation order, files to create | [21CFR_PART11_GAP_ANALYSIS.md](docs/future_plans/21CFR_PART11_GAP_ANALYSIS.md) | `affilabs/services/audit_log.py` (planned) |
 | IQ/OQ plan — check IDs, test suites, report format, implementation order | [IQOQ_PLAN.md](docs/future_plans/IQOQ_PLAN.md) | `scripts/validation/`, `tests/oq/` (planned) |
 | TransportBar (toolbar redesign), IconRail (vertical tab strip) | [TRANSPORT_BAR_FRS.md](docs/features/TRANSPORT_BAR_FRS.md) | `affilabs/widgets/transport_bar.py`, `affilabs/widgets/icon_rail.py` |
@@ -376,7 +380,10 @@ When creating or updating documentation:
 
 ## Hardware Models & Development Priority
 
-> **Priority order: P4SPR (1st) → P4PRO (2nd) → P4PROPLUS (3rd)**
+> **Marketing names (docs/UI/comms):** SimplexSPR · SimplexFlow · SimplexPro
+> **Code/firmware identifiers (source code only):** P4SPR · P4PRO · P4PROPLUS — these are `ctrl_type` values from hardware. Do not rename them in code.
+
+> **Priority order: SimplexSPR/P4SPR (1st) → SimplexFlow/P4PRO (2nd) → SimplexPro/P4PROPLUS (3rd)**
 > EzSPR and KNX2 are legacy devices (<5 units in field) — lowest priority, rarely touched.
 
 ### Model Comparison
@@ -473,13 +480,20 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 - Timeline Phase 5 (Presenters: SensogramPresenter + EditsTab query from stream) — ready to start
 - **GuidanceCoordinator Pass B** — Pass A (logging only) complete; Pass B (widget calls: `push_hint`, show/hide rail buttons, update combos) not yet implemented
 - **No wash flag from WashMonitor** — `_WashMonitor.wash_detected` only calls `bar.set_channel_wash(ch)` (visual). Wash flags only from `_timer_mixin._place_automatic_wash_flags()`.
-- **Manual injection auto-detection not firing** — needs live test; if silent check `detection_priority` and `window_start_time` mask
+- **Manual injection auto-detection live test pending** — `_InjectionMonitor` wired + multi-feature scorer now fully active with %T. Needs hardware live test to verify detections fire correctly.
+- **`_InjectionMonitor` wired** ✅ — cycle-scoped, slope-rise detector in `injection_coordinator.py`. v2 scorer fully active (slope + λ onset + step-change + %T). Dialog's check loop is heartbeat-only.
 
 ### Recently Completed
-- **Workspace spring clean** ✅ (Feb 24 2026) — Deleted junk (nul, venv_312_test, build/, generated-files/, icons/, 60+ old logs, 7 obsolete docs). Moved 17 USB diagnostic scripts → `tools/diagnostics/`. Moved calibration dumps → `_data/calibration_data/`. Moved OpticalSystem_QC + led_calibration_official → `_data/`. Moved OEM_Communication → `docs/hardware/`. Moved training/walkthrough docs → `docs/user_guides/`. Moved Spark roadmap + System Intelligence docs → `docs/future_plans/`. Moved CYCLE_RECREATION_GUIDE → `docs/user_guides/`. Removed stale FRS map entries (METHOD_BUILDER_FRS, LEAK_DETECTION, SENSOR_CHIP_METADATA).
-- **Notes tab Phases 1–4** ✅ (Feb 24 2026) — `experiment_index.py` 384 lines; `notes_tab.py` 1253 lines (ELN, star rating, tag pills, sensorgram preview, recording hooks, Kanban stub).
-- **ACCESSIBILITY_PANEL_FRS.md** ✅ (Feb 23 2026) — Full FRS written; `int(pen_style)` → `pen_style.value` crash fixed in `affilabs_core_ui.py`.
-- **TransportBar / Floating Panels / GuidanceCoordinator** ✅ (Feb 23 2026) — FRS docs written; UI_COMPONENT_INVENTORY.md updated.
+- **FRS-compliant multi-feature injection detection** ✅ (this session) — `ChannelBuffer` now stores `transmittance: np.ndarray`; mean %T computed from `transmission_spectrum` in `spectrum_helpers.py` and piped through `append_timeline_point` → `extract_cycle_region` → `update_cycle_data` → `cycle_data[ch].transmittance`; `_InjectionMonitor._poll()` reads `transmittance` and `_fire()` passes it to `score_injection_event()`. All 4 FRS features now active: P2P (Option B std proxy), %T dip+recovery (Option A, 0.40 weight), slope change (0.20), λ onset (0.10).
+- **Legacy dialog detection deleted** ✅ (prior session) — `_scan_channel()`, `_handle_all_detected()`, `_finalize_detection()`, `_first_detection_time` all gone. `ManualInjectionDialog` is heartbeat-only.
+- **SignalTelemetryLogger** ✅ (Feb 25 2026) — `affilabs/services/signal_telemetry_logger.py` (singleton, per-channel CSV, rolling p2p + slope, disk guard). Wired into `spectrum_helpers.py` per-frame + `_acquisition_mixin.py` session lifecycle. `SIGNAL_TELEMETRY_ENABLED` flag in `settings.py`.
+- **Notes tab Phases 1–4** ✅ (Feb 24 2026) — `experiment_index.py` + `notes_tab.py`.
+
+### Planned — Future Milestones
+- **v2.2:** Autosampler integration (Knauer Azura TCP + TTL trigger option) — see `docs/future_plans/AUTOSAMPLER_INTEGRATION_PLAN.md`
+  - TTL trigger path: ~4–5 days (firmware GPIO input + `ControllerHAL.get_pending_trigger_events()` + `InjectionCoordinator.on_external_injection_trigger()`). **Blocked on firmware team confirming P4PRO GPIO pin availability.**
+  - TCP polling path: already designed in plan, no firmware changes needed
+- **v2.3:** SiLA 2 wrapper — gRPC server exposing SPRAcquisition / FluidicControl / RecordingControl features. ~1 week. See `docs/future_plans/ANIML_SILA_IMPLEMENTATION_PLAN.md`.
 
 ### Context Maintenance Workflow
 **At the end of each work session**, update this "Active Context" section:

@@ -280,6 +280,22 @@ class AcquisitionMixin:
 
     def _on_acquisition_started(self):
         """Acquisition has started — enable record and pause buttons."""
+        # Generate a unique session ID for signal telemetry grouping
+        try:
+            import uuid
+            self._telemetry_session_id = str(uuid.uuid4())
+            from affilabs.services.signal_telemetry_logger import SignalTelemetryLogger
+            SignalTelemetryLogger.get_instance().start_session(self._telemetry_session_id)
+        except Exception:
+            pass
+
+        try:
+            from affilabs.services.signal_quality_scorer import SignalQualityScorer
+            planned = len(self.segment_queue) if hasattr(self, 'segment_queue') else 0
+            SignalQualityScorer.get_instance().start_session(cycles_planned=planned)
+        except Exception:
+            pass
+
         self.acquisition_events.on_acquisition_started()
 
         # Reset leak detection state for the new session
@@ -369,7 +385,20 @@ class AcquisitionMixin:
     def _on_acquisition_stopped(self):
         """Acquisition has stopped — disable record and pause buttons."""
         self.acquisition_events.on_acquisition_stopped()
-        
+
+        # Flush and close telemetry files for this session
+        try:
+            from affilabs.services.signal_telemetry_logger import SignalTelemetryLogger
+            SignalTelemetryLogger.get_instance().stop_session()
+        except Exception:
+            pass
+
+        try:
+            from affilabs.services.signal_quality_scorer import SignalQualityScorer
+            SignalQualityScorer.get_instance().end_session()
+        except Exception:
+            pass
+
         # Clear any pending recording marker (acquisition ended before it could be placed)
         if hasattr(self, '_pending_recording_marker'):
             self._pending_recording_marker = False
@@ -438,6 +467,8 @@ class AcquisitionMixin:
         """Recording started — export current experiment state to metadata."""
         self.recording_events.on_recording_started(filename)
         self.recording_mgr.log_event("Recording Started")
+        if hasattr(self, 'main_window') and hasattr(self.main_window, 'stage_bar'):
+            self.main_window.stage_bar.advance_to("record")
 
         if self.recording_mgr.is_recording:
             # device_id: prefer device_config, fall back to hardware_mgr attribute
@@ -500,6 +531,9 @@ class AcquisitionMixin:
     def _on_recording_stopped(self):
         """Recording stopped."""
         self.recording_events.on_recording_stopped()
+        # Advance workflow tracker to "edit" — user has data to review
+        if hasattr(self, 'main_window') and hasattr(self.main_window, 'stage_bar'):
+            self.main_window.stage_bar.advance_to("edit")
 
     def _on_recording_error(self, error: str):
         """Recording error occurred."""
