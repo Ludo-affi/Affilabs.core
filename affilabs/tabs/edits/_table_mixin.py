@@ -778,7 +778,7 @@ class TableMixin:
         dialog.exec()
 
     def _update_details_panel(self):
-        """Show cycle-specific notes below the table when a cycle is selected."""
+        """Show cycle-specific notes and quality score below the table when a cycle is selected."""
         if not hasattr(self, 'details_tab_widget'):
             return
 
@@ -793,13 +793,117 @@ class TableMixin:
             self._cycle_details_data = {}
 
         details = self._cycle_details_data.get(row_idx, {})
-        note = details.get('note', '')
 
-        if note and note.strip():
-            self.details_notes_text.setText(note.strip())
+        # --- Notes tab ---
+        note = details.get('note', '')
+        self.details_notes_text.setText(note.strip() if note else "")
+
+        # --- Quality tab ---
+        score = details.get('quality_score')
+        quality_note = details.get('quality_note', '')
+        self._refresh_quality_tab(score, quality_note)
+
+        # Show panel if there is anything to display
+        has_content = bool(note and note.strip()) or score is not None
+        if has_content:
             self.details_tab_widget.show()
         else:
             self.details_tab_widget.hide()
+
+    def _refresh_quality_tab(self, score, note: str) -> None:
+        """Update the Quality tab widgets with a score (int 0–100) or clear them."""
+        if not hasattr(self, 'details_score_label'):
+            return
+
+        if score is None:
+            self.details_score_dot.setText("●")
+            self.details_score_dot.setStyleSheet(
+                "QLabel { font-size: 14px; color: #C7C7CC; background: transparent; border: none; }"
+            )
+            self.details_score_label.setText("Not yet scored")
+            self.details_score_label.setStyleSheet(
+                "QLabel { font-size: 13px; color: #8E8E93; background: transparent; border: none; }"
+            )
+            self.details_quality_note.setText("")
+            return
+
+        # Colour by band
+        if score >= 80:
+            dot_color = "#34C759"   # green
+            band_label = "Excellent"
+        elif score >= 60:
+            dot_color = "#007AFF"   # blue
+            band_label = "Good"
+        elif score >= 40:
+            dot_color = "#FF9500"   # amber
+            band_label = "Marginal"
+        else:
+            dot_color = "#FF3B30"   # red
+            band_label = "Poor"
+
+        self.details_score_dot.setText("●")
+        self.details_score_dot.setStyleSheet(
+            f"QLabel {{ font-size: 14px; color: {dot_color}; background: transparent; border: none; }}"
+        )
+        self.details_score_label.setText(f"{score}/100 — {band_label}")
+        self.details_score_label.setStyleSheet(
+            "QLabel { font-size: 13px; font-weight: 700; color: #1D1D1F;"
+            " background: transparent; border: none; }"
+        )
+
+        # Encouragement for high scores
+        if score >= 80 and note and not note.startswith("[Incomplete]"):
+            display_note = note + "  Great work — this cycle looks clean."
+        else:
+            display_note = note
+
+        self.details_quality_note.setText(display_note)
+
+    def _on_cycle_scored(self, score_obj) -> None:
+        """Receive a CycleQualityScore and update the table row + details cache."""
+        try:
+            cycle_id = score_obj.cycle_id
+            score = score_obj.score
+            note = score_obj.note
+
+            # Colour dot character for score
+            if score >= 80:
+                dot = "● "
+                dot_color = QColor("#34C759")
+            elif score >= 60:
+                dot = "● "
+                dot_color = QColor("#007AFF")
+            elif score >= 40:
+                dot = "● "
+                dot_color = QColor("#FF9500")
+            else:
+                dot = "● "
+                dot_color = QColor("#FF3B30")
+
+            # Find matching row by cycle_id in _cycle_details_data
+            if not hasattr(self, '_cycle_details_data'):
+                self._cycle_details_data = {}
+
+            for row_idx, details in self._cycle_details_data.items():
+                if details.get('cycle_id') == cycle_id:
+                    # Update details cache
+                    details['quality_score'] = score
+                    details['quality_note'] = note
+
+                    # Update Score column cell
+                    score_item = QTableWidgetItem(f"{dot}{score}")
+                    score_item.setForeground(dot_color)
+                    score_item.setTextAlignment(Qt.AlignCenter)
+                    score_item.setFlags(score_item.flags() & ~Qt.ItemIsEditable)
+                    self.cycle_data_table.setItem(row_idx, self.TABLE_COL_SCORE, score_item)
+
+                    # Refresh details panel if this row is currently selected
+                    selected = self.cycle_data_table.selectionModel().selectedRows()
+                    if selected and selected[0].row() == row_idx:
+                        self._update_details_panel()
+                    break
+        except Exception:
+            pass
 
     def _apply_compact_view_initial(self):
         """Apply initial column visibility based on compact_view flag."""
@@ -816,7 +920,7 @@ class TableMixin:
             self.cycle_data_table.setColumnHidden(self.TABLE_COL_TIME, True)
             self.cycle_data_table.setColumnHidden(self.TABLE_COL_CONC, True)
         else:
-            # Show all columns in expanded view
+            # Show all main columns (0–4) in expanded view; Score (5) keeps its own visibility
             for col in range(5):
                 self.cycle_data_table.setColumnHidden(col, False)
 
@@ -942,12 +1046,13 @@ class TableMixin:
             }
         """)
 
-        # Toggle-able columns: Type(1), Time(2), Conc.(3), ΔSPR(4). Export(0) is not hideable.
+        # Toggle-able columns: Type(1), Time(2), Conc.(3), ΔSPR(4), Score(5). Export(0) is not hideable.
         column_names = [
             ("Type",  self.TABLE_COL_TYPE),
             ("Time",  self.TABLE_COL_TIME),
             ("Conc.", self.TABLE_COL_CONC),
             ("ΔSPR",  self.TABLE_COL_DELTA_SPR),
+            ("Score", self.TABLE_COL_SCORE),
         ]
 
         # Create checkable actions for each column
@@ -1094,7 +1199,7 @@ class TableMixin:
                 f"Failed to save cycles to Excel:\n{str(e)}"
             )
 
-    def _export_post_edit_analysis_with_charts(self):
+    def _export_post_edit_analysis_with_charts(self, graph_images=None):
         """Export comprehensive post-edit analysis workbook with interactive Excel charts.
 
         Creates a complete analysis workbook containing:
@@ -1104,6 +1209,14 @@ class TableMixin:
         - Flag positions (updated marker data)
         - Enhanced cycle metadata
         - Interactive Excel charts (bar charts, timelines, overview)
+        - Optionally embedded graph images (sensorgram PNG, ΔSPR chart PNG)
+
+        All worksheet names are prefixed with ``PE -`` (Post-Edit) for
+        unambiguous identification by downstream consumers (e.g. Notes tab).
+
+        Args:
+            graph_images: Optional dict mapping label → PNG bytes to embed as
+                          image sheets (e.g. ``{'Sensorgram': <bytes>}``).
         """
         from PySide6.QtWidgets import QFileDialog, QMessageBox
         from affilabs.utils.logger import logger
@@ -1218,6 +1331,7 @@ class TableMixin:
                 output_path=Path(file_path),
                 selected_cycles=selected_cycle_indices,
                 binding_fit=binding_fit,
+                graph_images=graph_images,
             )
 
             logger.info(f"✓ Created analysis workbook with charts: {Path(file_path).name}")
@@ -1225,10 +1339,10 @@ class TableMixin:
             QMessageBox.information(
                 self.main_window,
                 "Export Successful",
-                f"Analysis workbook with interactive charts saved successfully!\n\n"
+                f"Post-edit analysis workbook saved successfully!\n\n"
                 f"File: {Path(file_path).name}\n"
-                f"Sheets: Raw Data, Processed Data, Analysis Results, Flag Positions, "
-                f"Cycles Metadata, Export Settings\n"
+                f"Sheets: PE - Raw Data, PE - Processed Data, PE - Analysis Results, "
+                f"PE - Flag Positions, PE - Cycles Metadata, PE - Export Settings\n"
                 f"Charts: Delta SPR bars, Timeline graphs, Flag positions, Overview"
             )
 

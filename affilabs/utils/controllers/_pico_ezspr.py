@@ -219,6 +219,9 @@ class PicoEZSPR(ValveCycleMixin, FlowController):
             elif ch not in {"a", "b", "c", "d"}:
                 msg = "Invalid Channel!"
                 raise ValueError(msg)
+        except (PermissionError, OSError) as e:
+            logger.error(f"Error turning on channel {ch}: {e}")
+            raise ConnectionError(f"Controller disconnected: {e}") from e
         except Exception as e:
             logger.debug(f"error turning off channels {e}")
             return False
@@ -340,6 +343,9 @@ class PicoEZSPR(ValveCycleMixin, FlowController):
             logger.error("pico serial port not valid for batch command")
             return False
 
+        except (PermissionError, OSError) as e:
+            logger.error(f"error while setting batch LED intensities: {e}")
+            raise ConnectionError(f"Controller disconnected: {e}") from e
         except Exception as e:
             logger.error(f"error while setting batch LED intensities: {e}")
             return False

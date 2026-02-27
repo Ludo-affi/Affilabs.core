@@ -114,7 +114,7 @@ class ConcentrationScheduleDialog(QDialog):
         self._hint_label = QLabel(
             "Prepare your sample — injection starts when countdown ends."
         )
-        self._hint_label.setStyleSheet("font-size: 11px; color: #86868B;")
+        self._hint_label.setStyleSheet("font-size: 12px; color: #6E6E73;")
         layout.addWidget(self._hint_label)
 
         # Schedule items (Phase 1 only — hidden in Phase 2)

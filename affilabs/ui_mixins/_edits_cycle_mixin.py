@@ -102,7 +102,10 @@ class EditsCycleMixin:
         import pandas as pd
 
         try:
-            logger.info(f"Loading Excel file: {file_path}")            # Read all sheets
+            logger.info(f"Loading Excel file: {file_path}")
+            # Track source file so exports can pass-through the original XY data unchanged
+            self._edits_source_file = file_path
+            # Read all sheets
             excel_data = pd.read_excel(file_path, sheet_name=None, engine='openpyxl')
 
             # Load metadata from Metadata sheet
@@ -123,8 +126,27 @@ class EditsCycleMixin:
             # Load raw data - try multiple formats in order of preference
             raw_data_rows = []
 
+            # FORMAT 0: "Per-Channel Format" sheet — full experiment, RU values, preferred
+            # Columns: Time_A, SPR_A, Time_B, SPR_B, Time_C, SPR_C, Time_D, SPR_D
+            if 'Per-Channel Format' in excel_data:
+                df_pc = excel_data['Per-Channel Format']
+                logger.info(f"Loading from 'Per-Channel Format' sheet (full experiment, RU)")
+                for ch in ['A', 'B', 'C', 'D']:
+                    time_col = f'Time_{ch}'
+                    spr_col = f'SPR_{ch}'
+                    if time_col in df_pc.columns and spr_col in df_pc.columns:
+                        for _, row in df_pc.iterrows():
+                            if pd.notna(row[time_col]) and pd.notna(row[spr_col]):
+                                raw_data_rows.append({
+                                    'time': float(row[time_col]),
+                                    'channel': ch.lower(),
+                                    'value': float(row[spr_col]),  # already RU
+                                    '_is_ru': True,
+                                })
+                logger.info(f"✓ Loaded {len(raw_data_rows)} data points from 'Per-Channel Format' sheet")
+
             # FORMAT 1: "Raw Data" sheet (current export format - simplest)
-            if 'Raw Data' in excel_data:
+            elif 'Raw Data' in excel_data:
                 df_raw = excel_data['Raw Data']
                 logger.info(f"Loading from 'Raw Data' sheet with columns: {list(df_raw.columns)}")
 
@@ -176,8 +198,21 @@ class EditsCycleMixin:
 
             # Load cycles table and parse time ranges
             cycles_data = []
+            # Accept 'Cycles' or fallback to highest 'Cycles_vN' (version
+            # manager may have rotated the canonical sheet on an earlier save).
+            _cycles_sheet_name: str | None = None
             if 'Cycles' in excel_data:
-                df_cycles = excel_data['Cycles']
+                _cycles_sheet_name = 'Cycles'
+            else:
+                _vn = sorted(
+                    [s for s in excel_data if s.startswith('Cycles_v')],
+                    key=lambda s: int(s.rsplit('_v', 1)[-1]) if s.rsplit('_v', 1)[-1].isdigit() else 0,
+                )
+                if _vn:
+                    _cycles_sheet_name = _vn[-1]  # highest version
+                    logger.info(f"'Cycles' sheet not found — falling back to '{_cycles_sheet_name}'")
+            if _cycles_sheet_name is not None:
+                df_cycles = excel_data[_cycles_sheet_name]
                 logger.info(f"Cycles sheet columns: {list(df_cycles.columns)}")
 
                 # Check for duplicates and deduplicate if needed
@@ -347,6 +382,44 @@ class EditsCycleMixin:
                 if hasattr(self.edits_tab, '_update_selection_view'):
                     self.edits_tab._update_selection_view()
 
+            # Sync ELN fields from Metadata sheet → ExperimentIndex so Notes tab
+            # reflects whatever was saved (rating, tags, notes, kanban_status).
+            # Non-critical: silently skip on any error.
+            try:
+                from pathlib import Path
+                from affilabs.services.experiment_index import ExperimentIndex
+                idx = ExperimentIndex()
+                src_stem = Path(file_path).stem
+                matched_id = None
+                for entry in idx.all_entries():
+                    ef = Path(entry.get("file", ""))
+                    if ef.name == Path(file_path).name or ef.stem == src_stem:
+                        matched_id = entry.get("id")
+                        break
+                if matched_id:
+                    raw_rating = loaded_metadata.get("rating", "")
+                    if raw_rating and raw_rating != "nan":
+                        try:
+                            idx.set_rating(matched_id, int(float(raw_rating)))
+                        except (ValueError, TypeError):
+                            pass
+                    raw_tags = loaded_metadata.get("tags", "")
+                    if raw_tags and raw_tags != "nan":
+                        existing = idx.all_entries()
+                        cur_tags = next((e.get("tags", []) for e in existing if e.get("id") == matched_id), [])
+                        for t in [t.strip() for t in raw_tags.split(",") if t.strip()]:
+                            if t not in cur_tags:
+                                idx.add_tag(matched_id, t)
+                    raw_notes = loaded_metadata.get("notes", "")
+                    if raw_notes and raw_notes != "nan":
+                        idx.update_notes(matched_id, raw_notes)
+                    raw_status = loaded_metadata.get("kanban_status", "")
+                    if raw_status in ("done", "to_repeat", "archived"):
+                        idx.set_status(matched_id, raw_status)
+                    logger.info(f"ELN fields synced from Metadata sheet → ExperimentIndex ({matched_id})")
+            except Exception:
+                pass
+
             if not getattr(self, '_suppress_load_dialog', False):
                 QMessageBox.information(
                     self,
@@ -384,8 +457,10 @@ class EditsCycleMixin:
                 logger.info("No raw data to display in timeline")
                 return
 
-            # Separate data by channel
-            channel_data = {'a': [], 'b': [], 'c': [], 'd': []}
+            # Separate data by channel; track whether each channel's data is already RU.
+            # _is_ru flag lives on the raw_data row dicts — checked BEFORE tuples are built.
+            channel_data: dict[str, list[tuple]] = {'a': [], 'b': [], 'c': [], 'd': []}
+            channel_is_ru: dict[str, bool] = {'a': False, 'b': False, 'c': False, 'd': False}
 
             for row in raw_data:
                 channel = row.get('channel', '')
@@ -394,6 +469,13 @@ class EditsCycleMixin:
 
                 if channel in channel_data and time is not None and value is not None:
                     channel_data[channel].append((time, value))
+                    if row.get('_is_ru'):
+                        channel_is_ru[channel] = True
+
+            # Convert nm wavelength → ΔSPR (RU) per channel before plotting.
+            # "Raw Data" sheet stores raw wavelength (nm); baseline = first valid point.
+            WAVELENGTH_TO_RU = 355.0
+            SPR_RANGE = (560.0, 720.0)
 
             # Plot each channel
             for ch_idx, ch in enumerate(['a', 'b', 'c', 'd']):
@@ -402,6 +484,23 @@ class EditsCycleMixin:
                     channel_data[ch].sort(key=lambda x: x[0])
                     times = np.array([t for t, v in channel_data[ch]])
                     values = np.array([v for t, v in channel_data[ch]])
+
+                    # Detect whether values need nm→RU conversion.
+                    # Per-Channel Format sets channel_is_ru=True; Raw Data doesn't.
+                    # Fallback heuristic: nm clusters around 560–720, RU around -500 to +5000.
+                    already_ru = channel_is_ru[ch]
+                    is_raw_nm = (not already_ru) and float(np.nanmedian(values)) > 400.0
+                    if is_raw_nm:
+                        # Find first valid baseline point in SPR range
+                        baseline = None
+                        for v in values:
+                            if SPR_RANGE[0] <= v <= SPR_RANGE[1]:
+                                baseline = float(v)
+                                break
+                        if baseline is None and len(values):
+                            baseline = float(values[0])
+                        baseline = baseline or 0.0
+                        values = (values - baseline) * WAVELENGTH_TO_RU
 
                     # Plot on timeline graph
                     self.edits_timeline_curves[ch_idx].setData(times, values)
@@ -940,16 +1039,32 @@ class EditsCycleMixin:
                     _leg.setVisible(True)
                     self.edits_tab._position_edits_legend()
 
-            # Style reference channel: dashed light-gray so it reads as background
+            # Style curves — mirror live Active Cycle graph exactly:
+            # • reference channel: dashed, semi-transparent purple (153,102,255,150)
+            # • other channels: palette colour + active line style
             import pyqtgraph as pg
-            colors = [(0, 0, 0), (255, 0, 0), (0, 0, 255), (0, 170, 0)]
+            from PySide6.QtCore import Qt as _Qt
+            from affilabs.settings import settings as _settings
+            _ch_keys = ['a', 'b', 'c', 'd']
+            _pen_style = _Qt.PenStyle(_settings.ACTIVE_LINE_STYLE)
+
+            def _ch_color(i):
+                raw = _settings.ACTIVE_GRAPH_COLORS.get(_ch_keys[i], "#1D1D1F")
+                if isinstance(raw, str) and raw.startswith('#'):
+                    raw = raw.lstrip('#')
+                    return tuple(int(raw[j:j+2], 16) for j in (0, 2, 4))
+                return raw  # already (r,g,b)
+
             for i in range(4):
                 if ref_channel_idx is not None and i == ref_channel_idx:
                     self.edits_graph_curves[i].setPen(
-                        pg.mkPen(color=(180, 180, 180), width=1.5, style=pg.Qt.QtCore.Qt.PenStyle.DashLine)
+                        pg.mkPen(color=(153, 102, 255, 150), width=2,
+                                 style=_Qt.PenStyle.DashLine)
                     )
                 else:
-                    self.edits_graph_curves[i].setPen(pg.mkPen(colors[i], width=2))
+                    self.edits_graph_curves[i].setPen(
+                        pg.mkPen(color=_ch_color(i), width=2, style=_pen_style)
+                    )
 
             logger.info(f"✓ Loaded {valid_cycles_loaded} cycle(s) to edits graph")
 

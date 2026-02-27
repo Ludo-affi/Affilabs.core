@@ -2043,8 +2043,9 @@ class ConvergenceEngine:
             # Check if all per-channel best are from same integration time
             integration_times = set(state.best_per_channel_integration.values())
 
-            if len(integration_times) == 1:
-                # All from same integration time - use per-channel best
+            all_channels_covered = all(ch in state.best_per_channel_leds for ch in recipe.channels)
+            if len(integration_times) == 1 and all_channels_covered:
+                # All from same integration time and all channels measured - use per-channel best
                 best_integration = list(integration_times)[0]
                 final_leds = dict(state.best_per_channel_leds)
                 final_signals = dict(state.best_per_channel_signals)
@@ -2052,8 +2053,13 @@ class ConvergenceEngine:
                 # Boost LED for channels below target
                 # Use OBSERVED signal/LED ratio from THIS channel's data (device-agnostic)
                 for ch in recipe.channels:
-                    sig = final_signals[ch]
-                    led = final_leds[ch]
+                    sig = final_signals.get(ch)
+                    if sig is None:
+                        self._log("warning", f"  ⚠️  {ch.upper()}: No best signal recorded — keeping current LED {state.leds[ch]}")
+                        final_leds[ch] = state.leds[ch]
+                        final_signals[ch] = 0.0
+                        continue
+                    led = final_leds.get(ch, state.leds.get(ch, 128))
 
                     if sig < target_signal * 0.90 and led < 255:  # Only boost if below 90% of target
                         # Calculate needed LED using observed linear relationship
@@ -2073,7 +2079,9 @@ class ConvergenceEngine:
 
                 self._log("info", f"\n📊 Using PER-CHANNEL best brightness (all from {best_integration:.1f}ms, boosted where needed):")
                 for ch in recipe.channels:
-                    pct = (final_signals[ch] / target_signal * 100) if target_signal > 0 else 0
+                    ch_sig = final_signals.get(ch, 0.0)
+                    ch_led = final_leds.get(ch, 0)
+                    pct = (ch_sig / target_signal * 100) if target_signal > 0 else 0
 
                     # Target status descriptor
                     if pct <= 75:
@@ -2087,7 +2095,7 @@ class ConvergenceEngine:
                     else:
                         target_txt = "Off"
 
-                    self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} ({target_txt})")
+                    self._log("info", f"   {ch.upper()}: LED={ch_led:3d}, signal={ch_sig:7.0f} ({target_txt})")
 
                 # Use the integration time from per-channel best
                 final_integration = best_integration
@@ -2108,7 +2116,9 @@ class ConvergenceEngine:
                     self._log("warning", "\n⚠️  Per-channel best from mixed integration times - using final iteration")
                     self._log("info", f"\n📊 Using final iteration LEDs (complete set at {state.integration_ms:.1f}ms):")
                 for ch in recipe.channels:
-                    pct = (final_signals[ch] / target_signal * 100) if target_signal > 0 else 0
+                    ch_sig = final_signals.get(ch, 0.0)
+                    ch_led = final_leds.get(ch, 0)
+                    pct = (ch_sig / target_signal * 100) if target_signal > 0 else 0
 
                     # Target status descriptor
                     if pct <= 75:
@@ -2122,7 +2132,7 @@ class ConvergenceEngine:
                     else:
                         target_txt = "Off"
 
-                    self._log("info", f"   {ch.upper()}: LED={final_leds[ch]:3d}, signal={final_signals[ch]:7.0f} ({target_txt})")
+                    self._log("info", f"   {ch.upper()}: LED={ch_led:3d}, signal={ch_sig:7.0f} ({target_txt})")
 
             # Calculate QC metrics using final combined results
             qc_warnings = []

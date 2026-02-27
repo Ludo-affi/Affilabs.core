@@ -5,9 +5,9 @@ build-backend = "pdm.backend"
 [project]
 # PEP 621 project metadata
 # See https://www.python.org/dev/peps/pep-0621/
-version = "0.1.0"
+version = "2.0.5"
 name = "affilabs-spr-control"
-description = "Affilabs 0.1 - Core SPR measurement and calibration system"
+description = "Affilabs.core v2.0.5 - SPR measurement and calibration system"
 dependencies = [
     "pyqtgraph>=0.13.3",
     "pyserial>=3.5",

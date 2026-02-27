@@ -83,11 +83,19 @@ class AlignmentMixin:
         # ── Graph keyboard navigation ──────────────────────────────────
         if obj is graph and event.type() == QEvent.Type.KeyPress:
             key = event.key()
-            if key == Qt.Key.Key_Left:
-                self._step_cycle_selection(-1)
-                return True
-            if key == Qt.Key.Key_Right:
-                self._step_cycle_selection(1)
+            if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+                legend = getattr(self, 'edits_spr_legend', None)
+                if legend is not None:
+                    from PySide6.QtWidgets import QApplication
+                    fw = QApplication.focusWidget()
+                    if fw is legend or (fw is not None and legend.isAncestorOf(fw)):
+                        # Legend (or a child of it) has focus — route arrows to channel nav
+                        legend.keyPressEvent(event)
+                        return True
+                if key == Qt.Key.Key_Left:
+                    self._step_cycle_selection(-1)
+                else:
+                    self._step_cycle_selection(1)
                 return True
 
         # ── Legend reposition on graph resize ─────────────────────────
@@ -130,13 +138,22 @@ class AlignmentMixin:
         new_ref = None if ch == current_ref else ch
         self._edits_ref_channel = new_ref
         self._update_edits_channel_ref_styles(new_ref)
-        # Sync alignment_ref_combo
+        combo_text = {None: "None", "A": "Ch A", "B": "Ch B", "C": "Ch C", "D": "Ch D"}
+        ref_str = combo_text.get(new_ref, "None")
+        # Persist into _cycle_alignment so _on_cycle_selected_in_table doesn't overwrite it
+        row_idx = self.cycle_data_table.currentRow()
+        if row_idx >= 0:
+            if not hasattr(self.main_window, '_cycle_alignment'):
+                self.main_window._cycle_alignment = {}
+            if row_idx not in self.main_window._cycle_alignment:
+                self.main_window._cycle_alignment[row_idx] = {'channel': 'All', 'shift': 0.0, 'ref': 'Global'}
+            self.main_window._cycle_alignment[row_idx]['ref'] = ref_str
+        # Sync combo (signals blocked — _cycle_alignment is now the source of truth)
         if hasattr(self, 'alignment_ref_combo'):
-            combo_text = {None: "None", "A": "Ch A", "B": "Ch B", "C": "Ch C", "D": "Ch D"}
             self.alignment_ref_combo.blockSignals(True)
-            self.alignment_ref_combo.setCurrentText(combo_text.get(new_ref, "None"))
+            self.alignment_ref_combo.setCurrentText(ref_str)
             self.alignment_ref_combo.blockSignals(False)
-            self._on_reference_changed(combo_text.get(new_ref, "None"))
+        self._on_reference_changed(ref_str)
 
     def _update_edits_channel_ref_styles(self, ref_ch: "str | None") -> None:
         """Apply dotted border to the reference channel button; restore others."""
@@ -149,6 +166,21 @@ class AlignmentMixin:
     # ------------------------------------------------------------------
     # Alignment channel / shift handlers
     # ------------------------------------------------------------------
+    def _on_edits_legend_channel_selected(self, channel: str) -> None:
+        """Handle legend row click → select that channel for time-shift (mirrors live-view)."""
+        ch_upper = channel.upper()  # 'a' → 'A'
+        proxy = getattr(self, 'alignment_channel_combo', None)
+        if proxy is not None:
+            proxy.setCurrentText(ch_upper)
+        # Highlight legend selection
+        legend = getattr(self, 'edits_spr_legend', None)
+        if legend is not None:
+            legend.selected_channel = channel
+            for ch_key in ('a', 'b', 'c', 'd'):
+                legend._update_channel_appearance(ch_key, ch_key == channel)
+        # Trigger graph redraw with the new channel focus
+        self._on_alignment_channel_changed(ch_upper)
+
     def _on_alignment_channel_changed(self, channel):
         """Handle channel change in alignment panel."""
         # Get selected row
@@ -412,7 +444,7 @@ class AlignmentMixin:
             self._delta_spr_cursor_locked = True
 
             # Update button appearance
-            self.delta_spr_lock_btn.setText("\U0001F512 Locked")
+            self.delta_spr_lock_btn.setText(" Lock")
             self.delta_spr_lock_btn.setToolTip(
                 f"Cursors locked at contact_time x 1.1 = {self._delta_spr_lock_distance:.1f}s"
             )
@@ -422,7 +454,7 @@ class AlignmentMixin:
         else:
             # Disable locking
             self._delta_spr_cursor_locked = False
-            self.delta_spr_lock_btn.setText("\U0001F513 Unlock")
+            self.delta_spr_lock_btn.setText(" Unlock")
             self.delta_spr_lock_btn.setToolTip(
                 "Lock cursors to contact_time + 10% for consistent delta SPR measurement"
             )
@@ -716,8 +748,8 @@ class AlignmentMixin:
             return _REF_MAP.get(per_cycle_ref)
 
         # Fall back to global toolbar Ref
-        if hasattr(self, 'edits_ref_combo'):
-            return _REF_MAP.get(self.edits_ref_combo.currentText())
+        if hasattr(self, 'alignment_ref_combo'):
+            return _REF_MAP.get(self.alignment_ref_combo.currentText())
         return None
 
     def _on_cycle_ref_changed(self, text):

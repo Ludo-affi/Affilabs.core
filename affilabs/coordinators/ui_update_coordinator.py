@@ -244,13 +244,10 @@ class AL_UIUpdateCoordinator(QObject):
             return
 
         try:
-            from affilabs.utils.sensor_iq import SENSOR_IQ_COLORS
-
             ch_color_map = self._CH_COLORS_CB if self._colorblind_mode else self._CH_COLORS
 
             for channel, sensor_iq in self._pending_sensor_iq_updates.items():
                 iq_key = sensor_iq.iq_level.value
-                color = SENSOR_IQ_COLORS.get(iq_key, "#C7C7CC")
                 ch_upper = channel.upper()
 
                 # ── Build shared tooltip ───────────────────────────────────
@@ -283,23 +280,13 @@ class AL_UIUpdateCoordinator(QObject):
                         f"  border-radius: 5px;"
                         f"  border: 1px solid {border};"
                         f"  padding: 0px 6px;"
-                        f"  font-size: 10px;"
+                        f"  font-size: 11px;"
                         f"  font-weight: 600;"
                         f"  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                         f"}}"
                     )
 
-                # ── 3. Mirror color to Δ SPR bar dict ─────────────────────
-                if hasattr(self.main_window, 'sensor_iq_colors'):
-                    self.main_window.sensor_iq_colors[ch_upper] = color
-
-                # ── 4. Update interactive legend IQ dot (color + shape) ───
-                graph = getattr(self.main_window, 'cycle_of_interest_graph', None)
-                legend = getattr(graph, 'interactive_spr_legend', None)
-                if legend is not None:
-                    legend.set_iq_state(ch_upper, color, iq_key)
-
-            # ── 5. Update footer signal science panel ─────────────────────
+            # ── 3. Update footer signal science panel ─────────────────────
             # Only send data for the currently selected timing channel so
             # the footer always reflects the channel the scientist is watching.
             graph = getattr(self.main_window, 'cycle_of_interest_graph', None)
@@ -379,7 +366,7 @@ class AL_UIUpdateCoordinator(QObject):
                     "QLabel {"
                     "  background: rgba(52, 199, 89, 0.15);"
                     "  color: #1A7F37;"
-                    "  font-size: 11px;"
+                    "  font-size: 12px;"
                     "  font-weight: 700;"
                     "  border-radius: 5px;"
                     "  border: 1px solid rgba(52, 199, 89, 0.4);"
@@ -396,7 +383,7 @@ class AL_UIUpdateCoordinator(QObject):
                     "QLabel {"
                     "  background: rgba(0,0,0,0.06);"
                     "  color: #86868B;"
-                    "  font-size: 11px;"
+                    "  font-size: 12px;"
                     "  font-weight: 600;"
                     "  border-radius: 5px;"
                     "  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
@@ -424,3 +411,4 @@ class AL_UIUpdateCoordinator(QObject):
         if self._update_timer:
             self._update_timer.stop()
         logger.info("AL_UIUpdateCoordinator cleaned up")
+

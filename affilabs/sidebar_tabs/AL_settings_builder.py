@@ -73,6 +73,9 @@ class SettingsTabBuilder:
         # Phase 5: Hardware Status section (replaces Device Status tab)
         self._build_hardware_status_section(tab_layout)
 
+        # About section — version, support, system info
+        self._build_about_section(tab_layout)
+
         tab_layout.addSpacing(20)
 
     def _build_hardware_status_section(self, tab_layout: QVBoxLayout):
@@ -101,6 +104,68 @@ class SettingsTabBuilder:
 
         tab_layout.addWidget(hw_section)
 
+    def _build_about_section(self, tab_layout: QVBoxLayout):
+        """Build About section showing version info, support contact, and system details."""
+        import platform
+        import sys
+        from affilabs.sections import CollapsibleSection
+
+        try:
+            from version import __version__, __release_date__
+        except ImportError:
+            __version__ = "unknown"
+            __release_date__ = "unknown"
+
+        about_section = CollapsibleSection("About Affilabs.core", is_expanded=False)
+        about_section.content_layout.setSpacing(6)
+
+        # Version card
+        version_card = QFrame()
+        version_card.setStyleSheet(
+            "QFrame { background: #1e2233; border: 1px solid #2a2f45; border-radius: 6px; padding: 12px; }"
+        )
+        card_layout = QVBoxLayout(version_card)
+        card_layout.setContentsMargins(12, 10, 12, 10)
+        card_layout.setSpacing(4)
+
+        title_lbl = QLabel("Affilabs.core")
+        title_lbl.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        title_lbl.setStyleSheet("color: #e0e0e0; border: none; background: transparent;")
+        card_layout.addWidget(title_lbl)
+
+        ver_lbl = QLabel(f"Version {__version__}")
+        ver_lbl.setStyleSheet("color: #8899bb; font-size: 12px; border: none; background: transparent;")
+        card_layout.addWidget(ver_lbl)
+
+        date_lbl = QLabel(f"Released {__release_date__}")
+        date_lbl.setStyleSheet("color: #667799; font-size: 11px; border: none; background: transparent;")
+        card_layout.addWidget(date_lbl)
+
+        about_section.content_layout.addWidget(version_card)
+
+        # System info
+        sys_info = QLabel(
+            f"Python {sys.version.split()[0]}  •  {platform.system()} {platform.release()}"
+        )
+        sys_info.setStyleSheet("color: #556688; font-size: 11px; padding: 4px 0;")
+        about_section.content_layout.addWidget(sys_info)
+
+        # Support contact
+        support_lbl = QLabel(
+            'Support: <a href="mailto:info@affiniteinstruments.com" '
+            'style="color: #5588cc;">info@affiniteinstruments.com</a>'
+        )
+        support_lbl.setOpenExternalLinks(True)
+        support_lbl.setStyleSheet("color: #667799; font-size: 11px; padding: 2px 0;")
+        about_section.content_layout.addWidget(support_lbl)
+
+        # Copyright
+        copyright_lbl = QLabel("© 2026 Affinite Instruments Inc. All rights reserved.")
+        copyright_lbl.setStyleSheet("color: #445566; font-size: 11px; padding: 2px 0;")
+        about_section.content_layout.addWidget(copyright_lbl)
+
+        tab_layout.addWidget(about_section)
+
 
     def _build_user_management(self, tab_layout: QVBoxLayout):
         """Build user management section with progression display."""
@@ -115,7 +180,7 @@ class SettingsTabBuilder:
 
         user_mgmt_help = QLabel("Manage lab users who can run experiments")
         user_mgmt_help.setStyleSheet(
-            "font-size: 11px;"
+            "font-size: 12px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
@@ -159,7 +224,7 @@ class SettingsTabBuilder:
 
         self.sidebar.user_xp_label = QLabel("")
         self.sidebar.user_xp_label.setStyleSheet(
-            f"font-size: 11px;"
+            f"font-size: 12px;"
             f"color: {Colors.SECONDARY_TEXT};"
             f"font-weight: 400;"
             f"background: transparent;"
@@ -169,7 +234,7 @@ class SettingsTabBuilder:
 
         self.sidebar.user_training_label = QLabel("")
         self.sidebar.user_training_label.setStyleSheet(
-            f"font-size: 11px;"
+            f"font-size: 12px;"
             f"color: {Colors.SECONDARY_TEXT};"
             f"font-weight: 400;"
             f"background: transparent;"
@@ -185,7 +250,7 @@ class SettingsTabBuilder:
         # ── User list ──
         users_label = QLabel("Current Users:")
         users_label.setStyleSheet(
-            f"font-size: 12px;"
+            f"font-size: 13px;"
             f"color: {Colors.SECONDARY_TEXT};"
             f"font-weight: 500;"
             f"background: transparent;"
@@ -235,7 +300,7 @@ class SettingsTabBuilder:
             f"  border: none;"
             f"  border-radius: 6px;"
             f"  padding: 4px 12px;"
-            f"  font-size: 12px;"
+            f"  font-size: 13px;"
             f"  font-weight: 600;"
             f"  font-family: {Fonts.SYSTEM};"
             f"}}"
@@ -254,7 +319,7 @@ class SettingsTabBuilder:
             f"  border: 1px solid rgba(0, 122, 255, 0.35);"
             f"  border-radius: 6px;"
             f"  padding: 4px 10px;"
-            f"  font-size: 12px;"
+            f"  font-size: 13px;"
             f"  font-weight: 600;"
             f"  font-family: {Fonts.SYSTEM};"
             f"}}"
@@ -276,7 +341,7 @@ class SettingsTabBuilder:
             f"  border: 1px solid rgba(255, 149, 0, 0.35);"
             f"  border-radius: 6px;"
             f"  padding: 4px 10px;"
-            f"  font-size: 12px;"
+            f"  font-size: 13px;"
             f"  font-weight: 600;"
             f"  font-family: {Fonts.SYSTEM};"
             f"}}"
@@ -297,7 +362,7 @@ class SettingsTabBuilder:
             f"  border: 1px solid rgba(255, 59, 48, 0.3);"
             f"  border-radius: 6px;"
             f"  padding: 4px 12px;"
-            f"  font-size: 12px;"
+            f"  font-size: 13px;"
             f"  font-weight: 600;"
             f"  font-family: {Fonts.SYSTEM};"
             f"}}"
@@ -589,7 +654,7 @@ class SettingsTabBuilder:
 
         spectro_help = QLabel("Plots will load when you open this tab")
         spectro_help.setStyleSheet(
-            "font-size: 11px;"
+            "font-size: 12px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
@@ -617,7 +682,7 @@ class SettingsTabBuilder:
             "Real-time transmission and raw detector spectrum display",
         )
         spectro_help.setStyleSheet(
-            "font-size: 11px;"
+            "font-size: 12px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
@@ -672,7 +737,7 @@ class SettingsTabBuilder:
             "  border: 1px solid #E5E5EA;"
             "  border-radius: 6px;"
             "  padding: 4px 10px;"
-            "  font-size: 11px;"
+            "  font-size: 12px;"
             "  font-weight: normal;"
             "}"
             "QPushButton#baseline_capture_btn:hover {"
@@ -761,7 +826,7 @@ class SettingsTabBuilder:
         self.sidebar.settings_intel_status_label = QLabel("✓ Good")
         self.sidebar.settings_intel_status_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 12px;"
+            "  font-size: 13px;"
             "  color: #34C759;"
             "  background: transparent;"
             "  font-weight: 700;"
@@ -773,7 +838,7 @@ class SettingsTabBuilder:
         # Separator bullet
         self.sidebar.settings_intel_separator = QLabel("•")
         self.sidebar.settings_intel_separator.setStyleSheet(
-            "QLabel { font-size: 12px; color: #86868B; background: transparent; }",
+            "QLabel { font-size: 13px; color: #6E6E73; background: transparent; }",
         )
         intel_bar_layout.addWidget(self.sidebar.settings_intel_separator)
 
@@ -806,7 +871,7 @@ class SettingsTabBuilder:
             "Configure polarizer positions and LED intensity for each channel",
         )
         hardware_help.setStyleSheet(
-            "font-size: 11px;"
+            "font-size: 12px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
@@ -903,7 +968,7 @@ class SettingsTabBuilder:
             "  border: none;"
             "  border-radius: 4px;"
             "  padding: 4px 8px;"
-            "  font-size: 11px;"
+            "  font-size: 12px;"
             "  font-weight: 600;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
@@ -945,7 +1010,7 @@ class SettingsTabBuilder:
             channel_label.setFixedWidth(70)
             channel_label.setStyleSheet(
                 "QLabel {"
-                "  font-size: 12px;"
+                "  font-size: 13px;"
                 "  color: #1D1D1F;"
                 "  background: transparent;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
@@ -1036,82 +1101,61 @@ class SettingsTabBuilder:
             is_expanded=False,
         )
 
-        calibration_help = QLabel(
-            "Perform LED and system calibrations for optimal performance",
-        )
-        calibration_help.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-style: italic;"
-            "margin: 4px 0px 8px 0px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        calibration_section.content_layout.addWidget(calibration_help)
-
         # Card container
         calibration_card = QFrame()
         calibration_card.setStyleSheet(
-            "QFrame {  background: rgba(0, 0, 0, 0.03);  border-radius: 8px;}",
+            "QFrame { background: rgba(0, 0, 0, 0.03); border-radius: 8px; }",
         )
         calibration_card_layout = QVBoxLayout(calibration_card)
-        calibration_card_layout.setContentsMargins(12, 8, 12, 8)
-        calibration_card_layout.setSpacing(6)
+        calibration_card_layout.setContentsMargins(10, 8, 10, 8)
+        calibration_card_layout.setSpacing(4)
 
         # Simple LED Calibration
         self._add_calibration_option(
             calibration_card_layout,
             title="Simple LED Calibration",
             description="Quick LED intensity adjustment for all channels",
-            button_text="Run Simple Calibration",
+            button_text="Run",
             button_ref="simple_led_calibration_btn",
             primary=True,
         )
-
-        calibration_card_layout.addSpacing(12)
 
         # Full System Calibration
         self._add_calibration_option(
             calibration_card_layout,
             title="Full System Calibration",
             description="Complete calibration including dark reference and LED optimization",
-            button_text="Run Full Calibration",
+            button_text="Run",
             button_ref="full_calibration_btn",
             primary=False,
         )
-
-        calibration_card_layout.addSpacing(12)
 
         # Polarizer Calibration
         self._add_calibration_option(
             calibration_card_layout,
             title="Polarizer Calibration",
             description="Find optimal servo positions for S and P modes (~90° apart, 1.4 min)",
-            button_text="Calibrate Polarizer",
+            button_text="Run",
             button_ref="polarizer_calibration_btn",
             primary=False,
         )
-
-        calibration_card_layout.addSpacing(12)
 
         # OEM LED Calibration
         self._add_calibration_option(
             calibration_card_layout,
             title="OEM LED Calibration",
             description="Factory-level calibration for LED driver settings (advanced users)",
-            button_text="Run OEM Calibration",
+            button_text="Run",
             button_ref="oem_led_calibration_btn",
             primary=False,
         )
 
-        calibration_card_layout.addSpacing(12)
-
-        # LED Model Training Only
+        # LED Model Training
         self._add_calibration_option(
             calibration_card_layout,
             title="LED Model Training",
-            description="Rebuild optical model only (10-60ms measurements, ~2 min)",
-            button_text="Train LED Model",
+            description="Rebuild optical model only (~2 min, 10–60 ms measurements)",
+            button_text="Train",
             button_ref="led_model_training_btn",
             primary=False,
         )
@@ -1136,7 +1180,7 @@ class SettingsTabBuilder:
             "Configure data filtering, reference channels, and visual accessibility",
         )
         display_help.setStyleSheet(
-            "font-size: 11px;"
+            "font-size: 12px;"
             "color: #86868B;"
             "background: transparent;"
             "font-style: italic;"
@@ -1190,7 +1234,7 @@ class SettingsTabBuilder:
         radio_style = (
             f"QRadioButton {{"
             f"  color: {Colors.PRIMARY_TEXT};"
-            f"  font-size: 12px;"
+            f"  font-size: 13px;"
             f"  spacing: 6px;"
             f"}}"
             f"QRadioButton::indicator {{"
@@ -1238,7 +1282,7 @@ class SettingsTabBuilder:
         )
         info_label.setStyleSheet(
             f"color: {Colors.SECONDARY_TEXT};"
-            f"font-size: 10px;"
+            f"font-size: 12px;"
             f"font-style: italic;"
             f"padding: 8px;"
             f"background: {Colors.OVERLAY_LIGHT_4};"
@@ -1290,7 +1334,7 @@ class SettingsTabBuilder:
             f"  border: 1px solid {Colors.OVERLAY_LIGHT_10};"
             f"  border-radius: 6px;"
             f"  padding: 4px 8px;"
-            f"  font-size: 12px;"
+            f"  font-size: 13px;"
             f"  color: {Colors.PRIMARY_TEXT};"
             f"  font-family: {Fonts.SYSTEM};"
             f"}}"
@@ -1404,43 +1448,26 @@ class SettingsTabBuilder:
         button_ref: str,
         primary: bool = False,
     ):
-        """Add a calibration option with title, description, and button.
+        """Add a compact calibration option row: label on left, button on right."""
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 2, 0, 2)
+        row.setSpacing(8)
 
-        Args:
-            layout: Layout to add to
-            title: Calibration title
-            description: Calibration description
-            button_text: Button label text
-            button_ref: Attribute name on sidebar to store button reference
-            primary: Whether to use primary (dark) button style
-
-        """
-        # Title
         title_label = QLabel(title)
         title_label.setStyleSheet(
-            "font-size: 12px;"
+            "font-size: 13px;"
             "color: #1D1D1F;"
             "background: transparent;"
-            "font-weight: 600;"
+            "font-weight: 500;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
-        layout.addWidget(title_label)
+        title_label.setToolTip(description)
+        row.addWidget(title_label, 1)
 
-        # Description
-        desc_label = QLabel(description)
-        desc_label.setWordWrap(True)
-        desc_label.setStyleSheet(
-            "font-size: 11px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "margin-bottom: 4px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        layout.addWidget(desc_label)
-
-        # Button
         button = QPushButton(button_text)
-        button.setFixedHeight(36)
+        button.setFixedHeight(28)
+        button.setFixedWidth(60)
+        button.setToolTip(description)
 
         if primary:
             button.setStyleSheet(
@@ -1448,42 +1475,32 @@ class SettingsTabBuilder:
                 "  background: #1D1D1F;"
                 "  color: white;"
                 "  border: none;"
-                "  border-radius: 8px;"
-                "  padding: 8px 16px;"
-                "  font-size: 13px;"
+                "  border-radius: 6px;"
+                "  font-size: 12px;"
                 "  font-weight: 600;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 "}"
-                "QPushButton:hover {"
-                "  background: #3A3A3C;"
-                "}"
-                "QPushButton:pressed {"
-                "  background: #48484A;"
-                "}",
+                "QPushButton:hover { background: #3A3A3C; }"
+                "QPushButton:pressed { background: #48484A; }",
             )
         else:
             button.setStyleSheet(
                 "QPushButton {"
                 "  background: white;"
                 "  color: #1D1D1F;"
-                "  border: 1px solid rgba(0, 0, 0, 0.1);"
-                "  border-radius: 8px;"
-                "  padding: 8px 16px;"
-                "  font-size: 13px;"
-                "  font-weight: 600;"
+                "  border: 1px solid rgba(0, 0, 0, 0.12);"
+                "  border-radius: 6px;"
+                "  font-size: 12px;"
+                "  font-weight: 500;"
                 "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 "}"
-                "QPushButton:hover {"
-                "  background: rgba(0, 0, 0, 0.06);"
-                "}"
-                "QPushButton:pressed {"
-                "  background: rgba(0, 0, 0, 0.1);"
-                "}",
+                "QPushButton:hover { background: rgba(0, 0, 0, 0.06); }"
+                "QPushButton:pressed { background: rgba(0, 0, 0, 0.1); }",
             )
 
-        # Store button reference on sidebar
         setattr(self.sidebar, button_ref, button)
-        layout.addWidget(button)
+        row.addWidget(button)
+        layout.addLayout(row)
 
     # Device config sync methods
 
@@ -1540,8 +1557,8 @@ class SettingsTabBuilder:
         """Return consistent small label stylesheet."""
         return (
             "QLabel {"
-            "  font-size: 12px;"
-            "  color: #86868B;"
+            "  font-size: 13px;"
+            "  color: #6E6E73;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
@@ -1555,7 +1572,7 @@ class SettingsTabBuilder:
             "  border: 1px solid rgba(0, 0, 0, 0.1);"
             "  border-radius: 4px;"
             "  padding: 4px 8px;"
-            "  font-size: 12px;"
+            "  font-size: 13px;"
             "  color: #1D1D1F;"
             "  font-family: -apple-system, 'SF Mono', 'Menlo', monospace;"
             "}"
@@ -1581,11 +1598,11 @@ class SettingsTabBuilder:
         return (
             "QPushButton {"
             "  background: white;"
-            "  color: #86868B;"
+            "  color: #6E6E73;"
             "  border: 1px solid rgba(0, 0, 0, 0.1);"
             f"  {border_radius}"
             "  padding: 4px 16px;"
-            "  font-size: 12px;"
+            "  font-size: 13px;"
             "  font-weight: 500;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"

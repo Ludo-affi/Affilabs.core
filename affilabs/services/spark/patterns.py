@@ -1309,8 +1309,8 @@ PATTERNS = {
             "priority": "high"
         },
         r"version.*software|software.*version|what.*version|affilabs.*version": {
-            "answer": "Check the software version in **Help → About Affilabs** or in the title bar.\n\n"
-            "Current branch: **v2.0.5 beta**\n\n"
+            "answer": "Check the software version in **Settings → About Affilabs.core** at the bottom of the Settings tab, or in the title bar.\n\n"
+            "Current version: **v2.0.5**\n\n"
             "For updates, contact support at info@affiniteinstruments.com.",
             "category": "general",
             "keywords": ["version", "software", "affilabs"],

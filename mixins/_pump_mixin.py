@@ -44,9 +44,6 @@ Internal Pump Control (P4PROPLUS):
     - _on_synced_pump_toggle
     - _on_internal_pump_inject_30s
     - _close_inject_valve
-    - _start_injection_countdown
-    - _stop_injection_countdown
-    - _update_injection_countdown
     - _save_pump_corrections
     - _update_internal_pump_status
     - _sync_pump_button_states
@@ -125,93 +122,66 @@ class PumpMixin:
 
         thread = threading.Thread(target=run_stop, daemon=True, name="StopPumpForCycle")
         thread.start()
-        # Give it a moment to send terminate commands
-        import time
-        time.sleep(0.5)
 
     def _schedule_injection(self, cycle):
-        """Show pre-injection schedule dialog (if applicable) then execute injection.
+        """Pre-announce injection on Contact Monitor then execute on a background thread.
 
-        For binding/kinetic cycles with planned concentrations in manual mode,
-        shows a countdown dialog (20s) so the user can prepare their sample.
-        After countdown, the ManualInjectionDialog handles real-time detection.
-
-        Args:
-            cycle: Cycle object with injection_method and injection_delay
+        For binding cycles in manual mode, shows the Contact Monitor bar with
+        sample info. InjectionCoordinator + _InjectionMonitor handle detection.
+        Always spawns a thread — _execute_manual_injection blocks on done_event.wait()
+        and must never run on the main thread.
         """
-        from PySide6.QtCore import QTimer
-
-        # Check if we should show the "get ready" schedule dialog
-        # For ANY manual injection experiment (Binding/Kinetic/Concentration), with or without concentrations
         is_manual_mode = self.hardware_mgr.requires_manual_injection
-        if (is_manual_mode and
-            cycle.type in ("Binding", "Kinetic", "Concentration") and
-            getattr(cycle, 'injection_count', 0) == 0):
 
-            # Build label once — used for both set_upcoming and show_phase1
+        if (is_manual_mode and
+                cycle.type in ("Binding", "Kinetic", "Concentration") and
+                getattr(cycle, 'injection_count', 0) == 0):
+
+            # Pre-announce on the Contact Monitor bar
             units = getattr(cycle, 'units', 'nM') or 'nM'
             if cycle.concentrations:
-                active_chs = "".join(sorted(cycle.concentrations.keys()))
+                active_chs  = "".join(sorted(cycle.concentrations.keys()))
                 chs_display = ", ".join(sorted(cycle.concentrations.keys()))
-                vals = list(cycle.concentrations.values())
-                _label = f"Ch {chs_display} · {vals[0]}{units}" if vals else f"Ch {chs_display}"
+                vals        = list(cycle.concentrations.values())
+                _label      = f"Ch {chs_display} · {vals[0]}{units}" if vals else f"Ch {chs_display}"
             elif cycle.planned_concentrations:
-                _label = cycle.planned_concentrations[0]
+                _label     = cycle.planned_concentrations[0]
                 active_chs = "ABCD"
             else:
-                _label = cycle.name or "Binding"
+                _label     = cycle.name or "Binding"
                 active_chs = "ABCD"
             if cycle.contact_time:
                 _label += f" · {int(cycle.contact_time)}s"
 
-            # Pre-announce immediately (t=0) so panel shows what will be injected
             _bar = getattr(getattr(self.main_window, 'sidebar', None), 'injection_action_bar', None)
             if _bar is not None:
                 _bar.set_upcoming(_label, active_chs)
 
-            def show_schedule_dialog():
-                """Show inline injection bar 1 second after cycle starts at t=0."""
-                bar = getattr(getattr(self.main_window, 'sidebar', None), 'injection_action_bar', None)
-                if bar is None:
-                    logger.warning("InjectionActionBar not found — proceeding directly")
-                    self._execute_injection(cycle)
-                    return
-
-                def _on_ready():
-                    logger.info("InjectionActionBar ready — executing injection on background thread")
-                    threading.Thread(
-                        target=self._execute_injection,
-                        args=(cycle,),
-                        daemon=True,
-                        name="ManualInjectionExec",
-                    ).start()
-
-                def _on_cancel():
-                    logger.info("InjectionActionBar: injection cancelled by user")
-
-                bar.show_phase1(_label, channels=active_chs, on_ready=_on_ready, on_cancel=_on_cancel,
-                                contact_time=getattr(cycle, 'contact_time', None))
-
-            # Delay phase 1 by 1 second so Active Cycle graph starts at t=0 first
-            logger.info("⏲ Showing injection schedule dialog in 1 second (allows cycle to start at t=0)")
-            QTimer.singleShot(1000, show_schedule_dialog)
+            threading.Thread(
+                target=self._execute_injection,
+                args=(cycle,),
+                daemon=True,
+                name="ManualInjectionExec",
+            ).start()
         else:
-            # Non-binding or automated mode: use standard delay
+            # Delayed injection (automated or 2nd+ binding)
             delay_ms = int(cycle.injection_delay * 1000)
-            logger.info(f"⏲ Injection scheduled in {cycle.injection_delay}s ({cycle.injection_method})")
-            QTimer.singleShot(delay_ms, lambda: self._execute_injection(cycle))
+            logger.info(f"Injection scheduled in {cycle.injection_delay}s ({cycle.injection_method})")
+            def _start_delayed_injection():
+                threading.Thread(
+                    target=self._execute_injection,
+                    args=(cycle,),
+                    daemon=True,
+                    name="ManualInjectionExec",
+                ).start()
+            QTimer.singleShot(delay_ms, _start_delayed_injection)
 
     def _execute_injection(self, cycle):
-        """Execute injection for cycle - delegates to InjectionCoordinator.
+        """Execute injection for cycle — delegates to InjectionCoordinator.
 
-        InjectionCoordinator handles both manual and automated modes:
-        - Manual mode: NON-BLOCKING — updates unified bar, runs detection in background
-        - Automated mode: Runs pump injection in background thread
-
-        Args:
-            cycle: Cycle object with injection parameters
+        Runs on a background thread. InjectionCoordinator.execute_injection blocks
+        on done_event.wait() for the full injection lifecycle (detection + contact time).
         """
-        # Validate pump or manual injection available
         has_affipump = self.pump_mgr.is_available
         has_internal = (
             self.hardware_mgr.ctrl
@@ -239,7 +209,6 @@ class PumpMixin:
                 assay_rate = float(spin.value())
             logger.info(f"Using UI assay rate: {assay_rate} µL/min (no cycle flow_rate set)")
 
-        # Delegate to injection coordinator (non-blocking for manual mode)
         success = self.injection_coordinator.execute_injection(
             cycle, assay_rate, parent_widget=self.main_window
         )
@@ -295,120 +264,8 @@ class PumpMixin:
             self._contact_time_marker = None
 
     def _show_contact_time_marker(self):
-        """Place a 'Contact end' marker on the cycle-of-interest graph.
-
-        Called when injection_coordinator.injection_completed fires.
-        Marker is placed at injection_display_time + contact_time (the predicted
-        end of sample contact). If wash is subsequently detected by _WashMonitor,
-        _on_wash_detected() moves the marker to the actual wash time.
-
-        When no contact timer is configured (timer off), also immediately places
-        wash flags — the timer path won't fire, so we do it here.
-        """
-        try:
-            graph = self.main_window.cycle_of_interest_graph
-
-            # Predicted contact end = injection display time + contact_time from cycle
-            contact_time = (
-                getattr(self._current_cycle, 'contact_time', None)
-                if hasattr(self, '_current_cycle') and self._current_cycle
-                else None
-            )
-            injection_t = getattr(self, '_last_injection_display_time', None)
-            if injection_t is not None and contact_time:
-                marker_pos = injection_t + contact_time
-            else:
-                # Fallback: no injection flag was placed yet — skip marker
-                logger.debug("Contact time marker skipped: no injection display time available")
-                return
-
-            self._place_contact_marker(graph, marker_pos)
-            logger.debug(f"Contact end marker placed at t={marker_pos:.1f}s (injection={injection_t:.1f}s + contact={contact_time:.1f}s)")
-        except Exception as e:
-            logger.debug(f"Could not place contact time marker: {e}")
-
-        # When contact timer is OFF (no contact_time on cycle), place wash flags immediately.
-        # When timer IS running, _place_automatic_wash_flags() fires on timer expiry instead.
-        contact_time = (
-            getattr(self._current_cycle, 'contact_time', None)
-            if hasattr(self, '_current_cycle') and self._current_cycle
-            else None
-        )
-        timer_running = (
-            hasattr(self.main_window, '_manual_timer')
-            and self.main_window._manual_timer is not None
-            and self.main_window._manual_timer.isActive()
-        )
-        if not contact_time and not timer_running:
-            logger.debug("Contact timer OFF — placing wash flags immediately at injection end")
-            if hasattr(self.main_window, '_place_automatic_wash_flags'):
-                self.main_window._place_automatic_wash_flags()
-
-    def _place_contact_marker(self, graph, pos: float) -> None:
-        """Create or move the orange dashed 'Contact end' InfiniteLine on the cycle graph."""
-        import pyqtgraph as pg
-        from PySide6.QtCore import Qt
-
-        if self._contact_time_marker is not None:
-            try:
-                graph.removeItem(self._contact_time_marker)
-            except Exception:
-                pass
-        pen = pg.mkPen(color="#FF9500", width=2, style=Qt.PenStyle.DashLine)
-        self._contact_time_marker = pg.InfiniteLine(
-            pos=pos, angle=90, pen=pen, label="Contact end",
-            labelOpts={"color": "#FF9500", "position": 0.9},
-        )
-        graph.addItem(self._contact_time_marker)
-
-    def _on_wash_detected(self, channel: str, wash_cycle_time: float) -> None:
-        """Move the 'Contact end' marker and place a wash flag at actual wash time.
-
-        Called when InjectionCoordinator.wash_detected fires (WashMonitor confirmed
-        a slope break indicating wash injection). Updates the marker position from
-        the predicted contact end to the real detected wash start, and places a
-        wash flag on the timeline at the detected time.
-        """
-        import numpy as np
-
-        # Move contact marker to actual wash time
-        try:
-            graph = self.main_window.cycle_of_interest_graph
-            self._place_contact_marker(graph, wash_cycle_time)
-            logger.info(
-                f"Contact end marker moved to actual wash time t={wash_cycle_time:.1f}s "
-                f"(channel {channel})"
-            )
-        except Exception as e:
-            logger.debug(f"Could not move contact marker to wash time: {e}")
-
-        # Place wash flag at the detected wash time
-        try:
-            if not hasattr(self, 'flag_mgr') or not self.flag_mgr:
-                return
-            ch = channel.lower()
-            # Look up SPR value at wash time from cycle_data
-            spr_val = 0.0
-            if (hasattr(self, 'buffer_mgr') and self.buffer_mgr
-                    and ch in self.buffer_mgr.cycle_data
-                    and len(self.buffer_mgr.cycle_data[ch].time) > 0):
-                ct = np.asarray(self.buffer_mgr.cycle_data[ch].time)
-                cs = np.asarray(self.buffer_mgr.cycle_data[ch].spr)
-                idx = int(np.argmin(np.abs(ct - wash_cycle_time)))
-                spr_val = float(cs[idx])
-
-            self.flag_mgr.add_flag_marker(
-                channel=ch,
-                time_val=wash_cycle_time,
-                spr_val=spr_val,
-                flag_type='wash',
-            )
-            logger.info(
-                f"🧼 Wash flag placed on Channel {channel} "
-                f"at t={wash_cycle_time:.1f}s (SPR={spr_val:.1f} RU) — WashMonitor detected"
-            )
-        except Exception as e:
-            logger.debug(f"Could not place wash flag from WashMonitor: {e}")
+        """No-op — contact end marker removed. Timer is managed by the Contact Monitor."""
+        pass
 
     def _place_injection_flag(self, channel: str, injection_time: float, confidence: float):
         """Place injection flag directly from dialog's pre-detected result.
@@ -464,8 +321,17 @@ class PumpMixin:
                 spr_val=spr_val,
                 flag_type='injection'
             )
-            # Store for _show_contact_time_marker to use when placing the "Contact end" marker.
+            # Store for binding stats and timer reference
             self._last_injection_display_time = injection_display_time
+
+            # Set ΔSPR baseline on Contact Monitor — spr_val is time-matched to t_fire
+            # so the STATUS column shows 0 RU at injection and grows with binding response
+            try:
+                bar = getattr(self.main_window, 'injection_action_bar', None)
+                if bar is not None:
+                    bar.set_injection_baseline(ch, spr_val)
+            except Exception:
+                pass
             logger.info(
                 f"✓ Injection flag placed on Channel {ch.upper()} "
                 f"at display t={injection_display_time:.2f}s (SPR={spr_val:.1f} RU)"
@@ -481,7 +347,7 @@ class PumpMixin:
                 if (ch in self.buffer_mgr.cycle_data
                         and len(self.buffer_mgr.cycle_data[ch].time) > 0):
                     _ct = np.asarray(self.buffer_mgr.cycle_data[ch].time)
-                    _cs = np.asarray(self.buffer_mgr.cycle_data[ch].spr)
+                    _cs = np.asarray(self.buffer_mgr.cycle_data[ch].wavelength)
                     pre_bl = compute_pre_baseline(_ct, _cs, injection_time)
                 else:
                     pre_bl = None
@@ -514,7 +380,7 @@ class PumpMixin:
                             return
                         if channel in self.buffer_mgr.cycle_data:
                             _t = np.asarray(self.buffer_mgr.cycle_data[channel].time)
-                            _s = np.asarray(self.buffer_mgr.cycle_data[channel].spr)
+                            _s = np.asarray(self.buffer_mgr.cycle_data[channel].wavelength)
                             entry['slope_nm_per_s'] = compute_slope(_t, _s, inj_t)
                         entry['slope_frozen'] = True
                         logger.debug(f"📊 Slope frozen: cycle={c} ch={channel.upper()} "
@@ -533,7 +399,7 @@ class PumpMixin:
                             return
                         if channel in self.buffer_mgr.cycle_data:
                             _t = np.asarray(self.buffer_mgr.cycle_data[channel].time)
-                            _s = np.asarray(self.buffer_mgr.cycle_data[channel].spr)
+                            _s = np.asarray(self.buffer_mgr.cycle_data[channel].wavelength)
                             entry['anchor_nm'] = compute_anchor(_t, _s, inj_t)
                         entry['anchor_frozen'] = True
                         logger.debug(f"📊 Anchor frozen: cycle={c} ch={channel.upper()} "
@@ -563,7 +429,12 @@ class PumpMixin:
                 contact_seconds = int(self._current_cycle.contact_time)
                 logger.info(f"⏱ Starting contact timer: {contact_seconds}s")
 
-                # Contact time is tracked per-channel in InjectionActionBar — no manual timer needed
+                # Drive the inline queue-table countdown
+                try:
+                    tbl = self.sidebar.summary_table
+                    tbl.start_contact_countdown(contact_seconds)
+                except Exception:
+                    pass
 
         except Exception as e:
             logger.error(f"❌ Error placing injection flag: {e}")
@@ -1496,9 +1367,7 @@ class PumpMixin:
                             self._injection_valve_open_time = self.main_window._get_elapsed_time() if hasattr(self.main_window, '_get_elapsed_time') else 0
                             self._injection_start_time = time.time()
                             self._injection_total_time = contact_time_s
-                            # Update status to show valve OPEN with channel and countdown
                             self._update_internal_pump_status(f"VALVE OPEN ({channel_text}) - FLUSH - {contact_time_s}.0s", running=True)
-                            self._start_injection_countdown()
                             logger.info(f"✓ Both 6-port valves → INJECT - {contact_time_s}s contact time started (t={self._injection_valve_open_time:.2f}s)")
                         else:
                             logger.warning("Failed to activate both 6-port valves")
@@ -1511,9 +1380,7 @@ class PumpMixin:
                             self._injection_valve_open_time = self.main_window._get_elapsed_time() if hasattr(self.main_window, '_get_elapsed_time') else 0
                             self._injection_start_time = time.time()
                             self._injection_total_time = contact_time_s
-                            # Update status to show valve OPEN with channel and countdown
                             self._update_internal_pump_status(f"VALVE OPEN ({channel_text}) - FLUSH - {contact_time_s}.0s", running=True)
-                            self._start_injection_countdown()
                             logger.info(f"✓ KC1 6-port valve → INJECT - {contact_time_s}s contact time started (t={self._injection_valve_open_time:.2f}s)")
                         else:
                             logger.warning("Failed to activate KC1 6-port valve")
@@ -1572,7 +1439,6 @@ class PumpMixin:
                     if valve_success:
                         # Record valve close timestamp for wash delta calculation
                         self._wash_valve_close_time = self._get_elapsed_time()
-                        self._stop_injection_countdown()
                         logger.info(f"✓ Both 6-port valves → LOAD - contact time complete (t={self._wash_valve_close_time:.2f}s, pumps still running)")
                     else:
                         logger.warning("Failed to return both 6-port valves to LOAD")
@@ -1582,7 +1448,6 @@ class PumpMixin:
                     if valve_success:
                         # Record valve close timestamp for wash delta calculation
                         self._wash_valve_close_time = self._get_elapsed_time()
-                        self._stop_injection_countdown()
                         logger.info(f"✓ KC1 6-port valve → LOAD - contact time complete (t={self._wash_valve_close_time:.2f}s, pumps still running)")
                     else:
                         logger.warning("Failed to return KC1 6-port valve to LOAD")
@@ -1611,79 +1476,6 @@ class PumpMixin:
 
             # Sync button states with current running flags
             self._sync_pump_button_states()
-
-    def _start_injection_countdown(self):
-        """Start countdown timer for valve injection status."""
-        from PySide6.QtCore import QTimer
-
-        logger.debug(f"Starting injection countdown timer (total={getattr(self, '_injection_total_time', 'NOT SET')}s)")
-
-        # Stop any existing timer
-        if hasattr(self, '_injection_countdown_timer') and self._injection_countdown_timer:
-            logger.debug("Stopping existing countdown timer")
-            self._injection_countdown_timer.stop()
-
-        # Create new timer that updates every 100ms. Attach it to the main
-        # window (GUI thread) so the timeout signal always fires even if this
-        # method is triggered from a worker context.
-        parent = getattr(self, 'main_window', None)
-        logger.debug(f"Creating QTimer with parent={parent}")
-        self._injection_countdown_timer = QTimer(parent)
-        self._injection_countdown_timer.timeout.connect(self._update_injection_countdown)
-        self._injection_countdown_timer.start(100)  # Update 10 times per second
-        logger.debug("Countdown timer started (interval=100ms)")
-
-        # Initial status update
-        self._update_injection_countdown()
-
-    def _stop_injection_countdown(self):
-        """Stop countdown timer and reset valve status."""
-        if hasattr(self, '_injection_countdown_timer') and self._injection_countdown_timer:
-            self._injection_countdown_timer.stop()
-            self._injection_countdown_timer = None
-
-        if hasattr(self, '_injection_start_time'):
-            self._injection_start_time = None
-        if hasattr(self, '_injection_total_time'):
-            self._injection_total_time = 0
-
-        # Reset status to show valve closed
-        self._update_internal_pump_status("Valve Closed", running=False)
-
-    def _update_injection_countdown(self):
-        """Update status bar and inject button with remaining injection time."""
-        import time
-
-        if not hasattr(self, '_injection_start_time') or not self._injection_start_time:
-            logger.debug("Countdown update skipped: _injection_start_time not set")
-            return
-        if not hasattr(self, '_injection_total_time') or self._injection_total_time <= 0:
-            logger.debug("Countdown update skipped: _injection_total_time not set")
-            return
-
-        elapsed = time.time() - self._injection_start_time
-        remaining = max(0, self._injection_total_time - elapsed)
-
-        if remaining <= 0:
-            # Timer expired
-            logger.debug("Countdown complete - stopping timer")
-            if hasattr(self, '_injection_countdown_timer') and self._injection_countdown_timer:
-                self._injection_countdown_timer.stop()
-            return
-
-        # Determine which valve(s) are open for the status text
-        channel_text = getattr(self, '_injection_channel_text', 'KC1')
-        # Update status with countdown in the same style as the initial label
-        logger.debug(f"Countdown update: {remaining:.1f}s remaining")
-        self._update_internal_pump_status(
-            f"VALVE OPEN ({channel_text}) - {remaining:.1f}s",
-            running=True,
-        )
-
-        # Update inject button with countdown
-        if btn := self._sidebar_widget('internal_pump_inject_30s_btn'):
-            btn.setText(f"⏳ Contact: {remaining:.0f}s")
-            btn.setToolTip(f"⏳ Injection in progress - {remaining:.0f}s remaining")
 
     def _save_pump_corrections(self):
         """Save current pump correction factors to device config and controller EEPROM."""

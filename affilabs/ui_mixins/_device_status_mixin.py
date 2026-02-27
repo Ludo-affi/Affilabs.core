@@ -259,7 +259,7 @@ class DeviceStatusMixin:
         for _dot_attr in ("subunit_sensor_dot", "subunit_optics_dot"):
             if hasattr(self, _dot_attr):
                 getattr(self, _dot_attr).setStyleSheet(
-                    "color: #C7C7CC; margin: 0 8px; font-size: 11px;"
+                    "color: #C7C7CC; margin: 0 8px; font-size: 12px;"
                     "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
                 )
 
@@ -519,7 +519,7 @@ class DeviceStatusMixin:
             dot = getattr(self, _dot_map[subunit_name])
             _color = "#34C759" if is_ready else "#FF3B30"
             dot.setStyleSheet(
-                f"color: {_color}; margin: 0 8px; font-size: 11px;"
+                f"color: {_color}; margin: 0 8px; font-size: 12px;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             )
 
@@ -695,3 +695,4 @@ class DeviceStatusMixin:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Issue Tracker", f"Could not open Issue Tracker:\n{e}")
             logger.error(f"Issue tracker open failed: {e}")
+

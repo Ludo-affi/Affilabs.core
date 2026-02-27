@@ -103,11 +103,20 @@ class RecordingEventCoordinator:
             saved_file = self._last_recording_file
             display_name = Path(saved_file).name if saved_file else "recording"
 
-            # Show full path in status bar (persists until next action)
+            # Show full path in the dedicated rec path label (avoids overlap with REC badge)
             if saved_file and saved_file != "memory":
                 try:
-                    sb = self.app.main_window.statusBar()
-                    sb.showMessage(f"Saved: {saved_file}", 30000)  # 30 seconds
+                    mw = self.app.main_window
+                    lbl = getattr(mw, '_rec_path_label', None)
+                    if lbl is not None:
+                        lbl.setText(f"Saved: {saved_file}")
+                        lbl.setStyleSheet(
+                            "color: #34C759; font-size: 12px; margin: 0 8px 0 0; "
+                            "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
+                        )
+                        lbl.show()
+                        from PySide6.QtCore import QTimer
+                        QTimer.singleShot(30000, lambda: lbl.hide() if not mw.is_recording else None)
                 except Exception:
                     pass
 
@@ -354,3 +363,4 @@ class RecordingEventCoordinator:
             title="Recording Error",
         )
         logger.error(f"[X] Baseline recording error - user notified: {error_msg}")
+

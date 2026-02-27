@@ -1337,13 +1337,20 @@ class DataAcquisitionManager(QObject):
 
                         # Stop after too many failures
                         if consecutive_errors >= max_consecutive_errors:
+                            logger.error(
+                                f"[WORKER] {consecutive_errors} consecutive acquisition failures — "
+                                "stopping acquisition (hardware likely disconnected)"
+                            )
                             with contextlib.suppress(queue.Full):
                                 self._emission_queue.put_nowait(
                                     {
-                                        "_error": "Acquisition failed - check hardware and timing",
+                                        "_error": "Acquisition failed - hardware disconnected",
                                     },
                                 )
                             self._stop_acquisition.set()
+                            self._acquiring = False
+                            if self.hardware_mgr:
+                                self.hardware_mgr.hardware_disconnected.emit()
                             break
 
                     # Intelligent delay between cycles:
@@ -1354,14 +1361,29 @@ class DataAcquisitionManager(QObject):
                     else:
                         time.sleep(0.05)  # Throttle mode: no data, prevent CPU spike
 
+                except (ConnectionError, OSError) as hw_err:
+                    logger.error(f"[WORKER] Hardware disconnected during acquisition: {hw_err}")
+                    self._stop_acquisition.set()
+                    self._acquiring = False
+                    if self.hardware_mgr:
+                        self.hardware_mgr.hardware_disconnected.emit()
+                    break
+
                 except Exception as e:
                     consecutive_errors += 1
                     if consecutive_errors >= max_consecutive_errors:
+                        logger.error(
+                            f"[WORKER] {consecutive_errors} consecutive errors — "
+                            "stopping acquisition (hardware likely disconnected)"
+                        )
                         with contextlib.suppress(queue.Full):
                             self._emission_queue.put_nowait(
                                 {"_error": f"Too many errors: {e}"},
                             )
                         self._stop_acquisition.set()
+                        self._acquiring = False
+                        if self.hardware_mgr:
+                            self.hardware_mgr.hardware_disconnected.emit()
                         break
                     time.sleep(0.5)
 
@@ -1561,17 +1583,6 @@ class DataAcquisitionManager(QObject):
                     remaining_time_ms = max(0, led_on_time_ms - elapsed_since_led_on)
                     if remaining_time_ms > 0:
                         time.sleep(remaining_time_ms / 1000.0)
-
-                    # DEBUG: Log what read_roi returned (first time only)
-                    if not hasattr(self, "_read_roi_logged"):
-                        logger.info(
-                            f"[BATCH DEBUG] Ch {ch}: raw_spectrum type={type(raw_spectrum)}, len={len(raw_spectrum) if raw_spectrum is not None else 'None'}"
-                        )
-                        if raw_spectrum is not None and len(raw_spectrum) > 0:
-                            logger.info(
-                                f"[BATCH DEBUG] First 5 values: {raw_spectrum[:5]}, max={max(raw_spectrum):.0f}"
-                            )
-                        self._read_roi_logged = True
 
                     if raw_spectrum is not None and len(raw_spectrum) > 0:
                         # Ensure spectrum length matches calibrated wavelength array length

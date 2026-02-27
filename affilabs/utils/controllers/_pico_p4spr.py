@@ -194,6 +194,9 @@ class PicoP4SPR(StaticController):
                             f"[ERROR] LED {ch.upper()} enable failed - expected b'6' or b'1', got: {response!r}",
                         )
                     return success
+        except (PermissionError, OSError) as e:
+            logger.error(f"Error turning on channel {ch}: {e}")
+            raise ConnectionError(f"Controller disconnected: {e}") from e
         except Exception as e:
             logger.error(f"Error turning on channel {ch}: {e}")
             return False
@@ -601,6 +604,9 @@ class PicoP4SPR(StaticController):
             logger.error("pico serial port not valid for batch command")
             return False
 
+        except (PermissionError, OSError) as e:
+            logger.error(f"error while setting batch LED intensities: {e}")
+            raise ConnectionError(f"Controller disconnected: {e}") from e
         except Exception as e:
             logger.error(f"error while setting batch LED intensities: {e}")
             return False

@@ -19,7 +19,7 @@ class Colors:
 
     # Neutral colors
     PRIMARY_TEXT = "#1D1D1F"
-    SECONDARY_TEXT = "#86868B"
+    SECONDARY_TEXT = "#6E6E73"
     BACKGROUND_WHITE = "#FFFFFF"
     BACKGROUND_LIGHT = "#F5F5F7"
     TRANSPARENT = "transparent"
@@ -27,7 +27,7 @@ class Colors:
     # Surface colors (compatibility with ui/styles.py)
     SURFACE = "#FFFFFF"  # Pure white backgrounds
     ON_SURFACE = "#1D1D1F"  # Text on surface
-    ON_SURFACE_VARIANT = "#86868B"  # Secondary text on surface
+    ON_SURFACE_VARIANT = "#6E6E73"  # Secondary text on surface
 
     # Semantic colors
     SUCCESS = "#34C759"
@@ -48,7 +48,7 @@ class Colors:
     BUTTON_PRIMARY = "#1D1D1F"
     BUTTON_PRIMARY_HOVER = "#3A3A3C"
     BUTTON_PRIMARY_PRESSED = "#48484A"
-    BUTTON_DISABLED = "#86868B"
+    BUTTON_DISABLED = "#6E6E73"
 
 
 # ============================================================================
@@ -183,11 +183,11 @@ def label_style(
     )
 
 
-def section_header_style(font_size: int = 11, uppercase: bool = True) -> str:
+def section_header_style(font_size: int = 12, uppercase: bool = True) -> str:
     """Generate section header stylesheet (like "HARDWARE CONNECTED").
 
     Args:
-        font_size: Font size in pixels (default: 11)
+        font_size: Font size in pixels (default: 12)
         uppercase: Whether text should be uppercase (default: True)
 
     Returns:
@@ -324,7 +324,7 @@ def radio_button_style() -> str:
     """
     return (
         f"QRadioButton {{"
-        f"  font-size: 12px;"
+        f"  font-size: 13px;"
         f"  color: {Colors.PRIMARY_TEXT};"
         f"  background: transparent;"
         f"  spacing: 4px;"

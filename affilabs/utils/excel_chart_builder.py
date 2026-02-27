@@ -51,7 +51,7 @@ class ExcelChartBuilder:
             return
             
         # Create Charts_Delta_SPR sheet
-        chart_sheet = self.workbook.create_sheet("Charts_Delta_SPR")
+        chart_sheet = self.workbook.create_sheet("PE - Charts ΔSPR")
         
         # Write analysis data to sheet for chart reference
         for row_idx, row_data in enumerate(dataframe_to_rows(analysis_data, index=False, header=True)):
@@ -115,7 +115,7 @@ class ExcelChartBuilder:
             return
             
         # Create Charts_Timeline sheet
-        chart_sheet = self.workbook.create_sheet("Charts_Timeline")
+        chart_sheet = self.workbook.create_sheet("PE - Charts Timeline")
         
         # Write processed data to sheet
         for row_idx, row_data in enumerate(dataframe_to_rows(processed_data, index=False, header=True)):
@@ -166,7 +166,7 @@ class ExcelChartBuilder:
             return
             
         # Create Charts_Flags sheet
-        chart_sheet = self.workbook.create_sheet("Charts_Flags")
+        chart_sheet = self.workbook.create_sheet("PE - Charts Flags")
         
         # Map flag types to numeric Y values for scatter chart (openpyxl requires numeric axes)
         flag_types = ['injection', 'wash', 'spike']
@@ -245,7 +245,7 @@ class ExcelChartBuilder:
             cycles_data: Cycle boundary information
         """
         # Create Charts_Overview sheet
-        chart_sheet = self.workbook.create_sheet("Charts_Overview")
+        chart_sheet = self.workbook.create_sheet("PE - Charts Overview")
         
         # Write processed data
         for row_idx, row_data in enumerate(dataframe_to_rows(processed_data, index=False, header=True)):
@@ -304,7 +304,7 @@ class ExcelChartBuilder:
 
         from openpyxl.chart import ScatterChart, Reference, Series as ChartSeries
 
-        sheet = self.workbook.create_sheet("Binding Plot")
+        sheet = self.workbook.create_sheet("PE - Binding Plot")
 
         model   = binding_fit.get('model', 'Unknown')
         channel = binding_fit.get('channel', '?')
@@ -416,8 +416,12 @@ def create_analysis_workbook_with_charts(
     output_path: Path,
     selected_cycles: list = None,
     binding_fit: dict = None,
+    graph_images: Dict[str, bytes] = None,
 ) -> None:
     """Create complete analysis workbook with data sheets and interactive charts.
+
+    All worksheet names are prefixed with ``PE -`` (Post-Edit) so downstream
+    consumers (e.g. Notes tab) can unambiguously identify post-edit data.
 
     Args:
         raw_data: Original untouched XY data
@@ -429,17 +433,19 @@ def create_analysis_workbook_with_charts(
         output_path: Where to save the Excel file
         selected_cycles: List of cycle indices to include in export (None = all)
         binding_fit: Optional dict from BindingPlotMixin._binding_fit_result
+        graph_images: Optional dict mapping label → PNG bytes to embed as image
+                      sheets, e.g. ``{'Sensorgram': <bytes>, 'ΔSPR Chart': <bytes>}``
     """
     if not OPENPYXL_AVAILABLE:
         print("Warning: openpyxl not available. Creating basic Excel file without charts.")
         # Fallback to pandas ExcelWriter
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-            raw_data.to_excel(writer, sheet_name='Raw_Data', index=False)
-            processed_data.to_excel(writer, sheet_name='Processed_Data', index=False)
-            analysis_results.to_excel(writer, sheet_name='Analysis_Results', index=False)
-            flag_data.to_excel(writer, sheet_name='Flag_Positions', index=False)
-            cycles_data.to_excel(writer, sheet_name='Cycles_Metadata', index=False)
-            pd.DataFrame([export_settings]).to_excel(writer, sheet_name='Export_Settings', index=False)
+            raw_data.to_excel(writer, sheet_name='PE - Raw Data', index=False)
+            processed_data.to_excel(writer, sheet_name='PE - Processed Data', index=False)
+            analysis_results.to_excel(writer, sheet_name='PE - Analysis Results', index=False)
+            flag_data.to_excel(writer, sheet_name='PE - Flag Positions', index=False)
+            cycles_data.to_excel(writer, sheet_name='PE - Cycles Metadata', index=False)
+            pd.DataFrame([export_settings]).to_excel(writer, sheet_name='PE - Export Settings', index=False)
         return
     
     # Create workbook with data sheets
@@ -449,14 +455,14 @@ def create_analysis_workbook_with_charts(
     default_sheet = workbook.active
     workbook.remove(default_sheet)
     
-    # Add data sheets
+    # Add data sheets — all prefixed with "PE -" (Post-Edit)
     sheets_data = {
-        'Raw_Data': raw_data,
-        'Processed_Data': processed_data, 
-        'Analysis_Results': analysis_results,
-        'Flag_Positions': flag_data,
-        'Cycles_Metadata': cycles_data,
-        'Export_Settings': pd.DataFrame([export_settings])
+        'PE - Raw Data': raw_data,
+        'PE - Processed Data': processed_data,
+        'PE - Analysis Results': analysis_results,
+        'PE - Flag Positions': flag_data,
+        'PE - Cycles Metadata': cycles_data,
+        'PE - Export Settings': pd.DataFrame([export_settings])
     }
     
     for sheet_name, df in sheets_data.items():
@@ -466,6 +472,22 @@ def create_analysis_workbook_with_charts(
                 for col_idx, value in enumerate(row_data, 1):
                     sheet.cell(row=row_idx + 1, column=col_idx, value=value)
     
+    # Embed graph images as additional sheets (if provided)
+    if graph_images:
+        try:
+            from openpyxl.drawing.image import Image as XLImage
+            import io
+            for label, img_bytes in graph_images.items():
+                if img_bytes:
+                    img_sheet = workbook.create_sheet(f"PE - {label}")
+                    xl_img = XLImage(io.BytesIO(img_bytes))
+                    # Scale to fit nicely — width ~18 cm
+                    xl_img.width = 720
+                    xl_img.height = int(720 * xl_img.height / xl_img.width) if xl_img.width else 400
+                    img_sheet.add_image(xl_img, "A1")
+        except Exception as e:
+            print(f"Warning: Could not embed graph images: {e}")
+
     # Add interactive charts
     try:
         chart_builder = ExcelChartBuilder(workbook)

@@ -36,7 +36,7 @@ class NavigationPresenter:
         """
         nav_widget = QWidget()
         nav_widget.setStyleSheet("QWidget { background: #FFFFFF; }")
-        nav_widget.setFixedHeight(60)
+        nav_widget.setFixedHeight(64)
 
         nav_layout = QHBoxLayout(nav_widget)
         nav_layout.setContentsMargins(20, 10, 20, 10)
@@ -181,7 +181,7 @@ class NavigationPresenter:
         )
 
         self.main_window.spectrum_toggle_btn = QPushButton()
-        self.main_window.spectrum_toggle_btn.setFixedSize(36, 36)
+        self.main_window.spectrum_toggle_btn.setFixedSize(40, 40)
         self.main_window.spectrum_toggle_btn.setCheckable(True)
         self.main_window.spectrum_toggle_btn.setToolTip("Show / hide spectroscopy panel")
 
@@ -189,7 +189,7 @@ class NavigationPresenter:
         icon = QIcon()
         svg_off = _wave_svg.replace("currentColor", "#5AC8FA")
         renderer_off = QSvgRenderer(svg_off.encode("utf-8"))
-        px_off = QPixmap(QSize(20, 20))
+        px_off = QPixmap(QSize(24, 24))
         px_off.fill(Qt.GlobalColor.transparent)
         p_off = QPainter(px_off)
         renderer_off.render(p_off)
@@ -199,7 +199,7 @@ class NavigationPresenter:
         # Checked (On) — blue waveform (matches SpectrumBubble tab accent)
         svg_on = _wave_svg.replace("currentColor", "#0A84FF")
         renderer_on = QSvgRenderer(svg_on.encode("utf-8"))
-        px_on = QPixmap(QSize(20, 20))
+        px_on = QPixmap(QSize(24, 24))
         px_on.fill(Qt.GlobalColor.transparent)
         p_on = QPainter(px_on)
         renderer_on.render(p_on)
@@ -207,7 +207,7 @@ class NavigationPresenter:
         icon.addPixmap(px_on, QIcon.Mode.Normal, QIcon.State.On)
 
         self.main_window.spectrum_toggle_btn.setIcon(icon)
-        self.main_window.spectrum_toggle_btn.setIconSize(QSize(20, 20))
+        self.main_window.spectrum_toggle_btn.setIconSize(QSize(24, 24))
 
         self.main_window.spectrum_toggle_btn.setStyleSheet(
             "QPushButton {"
@@ -243,16 +243,16 @@ class NavigationPresenter:
             robot_svg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/><path d="M9 14h6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/><path d="M3 10v4M21 10v4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>'
 
         self.main_window.spark_toggle_btn = QPushButton()
-        self.main_window.spark_toggle_btn.setFixedSize(36, 36)
+        self.main_window.spark_toggle_btn.setFixedSize(40, 40)
         self.main_window.spark_toggle_btn.setCheckable(True)
-        self.main_window.spark_toggle_btn.setToolTip("Toggle Spark AI assistant")
+        self.main_window.spark_toggle_btn.setToolTip("Toggle Sparq AI assistant")
 
         # Create icon: blue for normal (unchecked Off), white for checked (On)
         icon = QIcon()
         # Unchecked state (Off) — orange robot
         svg_orange = robot_svg.replace('currentColor', '#FF9500')
         renderer = QSvgRenderer(svg_orange.encode('utf-8'))
-        pixmap_off = QPixmap(QSize(20, 20))
+        pixmap_off = QPixmap(QSize(24, 24))
         pixmap_off.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pixmap_off)
         renderer.render(painter)
@@ -262,7 +262,7 @@ class NavigationPresenter:
         # Checked state (On) — blue robot (matches button tint)
         svg_blue = robot_svg.replace('currentColor', '#2E30E3')
         renderer2 = QSvgRenderer(svg_blue.encode('utf-8'))
-        pixmap_on = QPixmap(QSize(20, 20))
+        pixmap_on = QPixmap(QSize(24, 24))
         pixmap_on.fill(Qt.GlobalColor.transparent)
         painter2 = QPainter(pixmap_on)
         renderer2.render(painter2)
@@ -270,7 +270,7 @@ class NavigationPresenter:
         icon.addPixmap(pixmap_on, QIcon.Mode.Normal, QIcon.State.On)
 
         self.main_window.spark_toggle_btn.setIcon(icon)
-        self.main_window.spark_toggle_btn.setIconSize(QSize(20, 20))
+        self.main_window.spark_toggle_btn.setIconSize(QSize(24, 24))
 
         # Style matching pause/record buttons exactly
         self.main_window.spark_toggle_btn.setStyleSheet(
@@ -299,7 +299,7 @@ class NavigationPresenter:
         from affilabs.widgets.timer_button import TimerButton
 
         self.main_window.timer_button = TimerButton(parent=self.main_window)
-        self.main_window.timer_button.setFixedSize(36, 36)
+        self.main_window.timer_button.setFixedSize(40, 40)
         self.main_window.timer_button.set_compact_mode(True)  # Icon-only mode
         self.main_window.timer_button.setToolTip(
             "Manual Timer\n"
@@ -335,7 +335,7 @@ class NavigationPresenter:
         """Create pause button with SVG icon."""
         self.main_window.pause_btn = QPushButton()
         self.main_window.pause_btn.setCheckable(True)
-        self.main_window.pause_btn.setFixedSize(36, 36)
+        self.main_window.pause_btn.setFixedSize(40, 40)
         self.main_window.pause_btn.setEnabled(
             False,
         )  # Disabled until acquisition starts
@@ -377,7 +377,7 @@ class NavigationPresenter:
             # Also register for disabled state so Qt doesn't blank it
             icon.addFile(str(pause_svg), QSize(), QIcon.Mode.Disabled, QIcon.State.Off)
             self.main_window.pause_btn.setIcon(icon)
-            self.main_window.pause_btn.setIconSize(QSize(20, 20))
+            self.main_window.pause_btn.setIconSize(QSize(24, 24))
 
         self.main_window.pause_btn.clicked.connect(self.main_window._toggle_pause)
         layout.addWidget(self.main_window.pause_btn)
@@ -386,7 +386,7 @@ class NavigationPresenter:
         """Create record button."""
         self.main_window.record_btn = QPushButton()
         self.main_window.record_btn.setCheckable(True)
-        self.main_window.record_btn.setFixedSize(36, 36)
+        self.main_window.record_btn.setFixedSize(40, 40)
         self.main_window.record_btn.setEnabled(
             False,
         )  # Disabled until acquisition starts
@@ -429,7 +429,7 @@ class NavigationPresenter:
             # Also register for disabled state so Qt doesn't blank it
             icon.addFile(str(record_svg), QSize(), QIcon.Mode.Disabled, QIcon.State.Off)
             self.main_window.record_btn.setIcon(icon)
-            self.main_window.record_btn.setIconSize(QSize(20, 20))
+            self.main_window.record_btn.setIconSize(QSize(24, 24))
 
         self.main_window.record_btn.clicked.connect(self.main_window._toggle_recording)
         layout.addWidget(self.main_window.record_btn)
@@ -437,14 +437,14 @@ class NavigationPresenter:
     def _create_power_button(self, layout):
         """Create power button with state management."""
         self.main_window.power_btn = QPushButton()
-        self.main_window.power_btn.setFixedSize(36, 36)
+        self.main_window.power_btn.setFixedSize(40, 40)
         self.main_window.power_btn.setProperty("powerState", "disconnected")
 
         # Use SVG icon instead of emoji text
         power_svg = get_affilabs_resource("ui/img/power_icon.svg")
         if power_svg.exists():
             self.main_window.power_btn.setIcon(QIcon(str(power_svg)))
-            self.main_window.power_btn.setIconSize(QSize(24, 24))
+            self.main_window.power_btn.setIconSize(QSize(28, 28))
         else:
             self.main_window.power_btn.setText("⏻")  # Emoji fallback
 
@@ -454,7 +454,7 @@ class NavigationPresenter:
             "  background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(29, 29, 31, 0.4), stop:1 rgba(29, 29, 31, 0.5));"
             "  color: white;"
             "  border: 1px solid rgba(29, 29, 31, 0.2);"
-            "  border-radius: 18px;"
+            "  border-radius: 20px;"
             "  padding: 0px;"
             "  margin: 0px;"
             "}"
@@ -524,6 +524,17 @@ class NavigationPresenter:
                 self.main_window.sidebar.hide()
             else:
                 self.main_window.sidebar.show()
+
+        # Stage progress: Edits tab visit → "edit" stage, only if already past "record"
+        if page_index == 1 and hasattr(self.main_window, 'stage_bar'):
+            try:
+                _chip = self.main_window.transport_bar.step_chip
+                # _STAGES: connect=0, calibrate=1, method=2, record=3, edit=4, export=5
+                # Only advance to "edit" if the user has actually completed recording (index 3)
+                if _chip._completed_idx >= 3:
+                    self.main_window.stage_bar.advance_to("edit")
+            except Exception:
+                pass
 
         # One-time "What is a cycle?" explanation on first Edits tab visit
         if page_index == 1 and not getattr(self.main_window, '_edits_cycle_tooltip_shown', False):

@@ -1,30 +1,8 @@
 """Timer mixin for AffilabsCoreUI.
 
-Extracted from affilabs/affilabs_core_ui.py — manual timer, pop-out timer window,
-alarm loop, wash acknowledgement, and automatic wash flag placement.
-
-Methods included:
-    - update_timer_button
-    - clear_timer_button
-    - _auto_show_timer_window
-    - _on_timer_button_clicked
-    - _on_popout_timer_ready
-    - _show_popout_timer
-    - _on_popout_closed
-    - _on_popout_shown
-    - _on_popout_hidden
-    - _on_pause_manual_timer
-    - _on_resume_manual_timer
-    - _on_timer_time_edited
-    - _start_manual_timer_countdown
-    - _on_manual_timer_tick
-    - _on_wash_acknowledged
-    - _play_timer_sound
-    - _start_alarm_loop
-    - _place_automatic_wash_flags
-    - _stop_alarm_loop
-    - _on_clear_manual_timer
-    - _on_restart_manual_timer
+Manual timer (pop-out window), alarm loop, wash acknowledgement,
+and automatic wash flag placement. Contact-time countdown lives in
+QueueSummaryWidget, not here.
 """
 
 from PySide6.QtCore import QTimer
@@ -307,9 +285,7 @@ class TimerMixin:
         self._manual_timer.timeout.connect(self._on_manual_timer_tick)
         self._manual_timer.start(1000)  # Update every second
 
-        # Auto-open PopOutTimerWindow for contact timers (helps user track critical timing)
-        if "Contact" in label:
-            self._auto_show_timer_window(label, total_seconds)
+        # Contact timers are tracked in InjectionActionBar — no PopOutTimerWindow auto-open
 
     def _on_manual_timer_tick(self):
         """Handle manual timer countdown tick."""
@@ -325,9 +301,6 @@ class TimerMixin:
             if hasattr(self, '_popout_timer') and self._popout_timer and self._popout_timer.isVisible():
                 self._popout_timer.update_countdown(self._manual_timer_label, self._manual_timer_remaining)
 
-            # Update contact timer overlay on cycle graph if active
-            if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr'):
-                self.app.flag_mgr.update_contact_timer_display()
         else:
             # Timer completed
             self._manual_timer.stop()
@@ -341,13 +314,6 @@ class TimerMixin:
             next_action = getattr(self, '_manual_timer_next_action', "")
             if hasattr(self, '_popout_timer') and self._popout_timer and self._popout_timer.isVisible():
                 self._popout_timer.timer_finished(self._manual_timer_label, next_action)
-
-            # Clear contact timer overlay from cycle graph
-            if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr'):
-                self.app.flag_mgr.clear_contact_timer_overlay()
-
-            # Automatically place wash flags for all channels with injection flags
-            self._place_automatic_wash_flags()
 
             # Start looping alarm sound if enabled
             if self._manual_timer_sound:
@@ -558,10 +524,6 @@ class TimerMixin:
         # Clear the timer button display
         self.clear_timer_button()
 
-        # Clear timer overlay from graph
-        if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr'):
-            self.app.flag_mgr.clear_contact_timer_overlay()
-
         # Hide pop-out window
         if hasattr(self, '_popout_timer') and self._popout_timer:
             self._popout_timer.hide()
@@ -587,10 +549,6 @@ class TimerMixin:
 
         # Restart timer with original settings
         self._start_manual_timer_countdown(label, initial_duration, sound_enabled)
-
-        # Recreate contact timer overlay on graph
-        if hasattr(self, 'app') and hasattr(self.app, 'flag_mgr'):
-            self.app.flag_mgr.create_contact_timer_overlay(initial_duration)
 
         # Update display immediately
         self.update_timer_button(label, initial_duration, is_manual=True)

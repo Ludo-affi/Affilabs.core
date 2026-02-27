@@ -1,14 +1,14 @@
-# Affilabs-Core SPR Control System
+# Affilabs.core — SPR Control System
 
-**Version 1.0.1** - Stable Release (December 2025)
+**Version 2.0.5** — Release (February 2026)
 
 ---
 
-## 🚀 New User?
+## New User?
 
-**👉 [Get started in 5 minutes →](QUICK_START.md)**
+**[Get started in 5 minutes →](docs/user_guides/QUICK_START.md)**
 
-The [QUICK_START.md](QUICK_START.md) guide covers installation, hardware connection, and your first measurement. Use this for fast-track onboarding.
+The [Quick Start](docs/user_guides/QUICK_START.md) guide covers installation, hardware connection, and your first measurement.
 
 **Existing user?** Continue below for comprehensive documentation.
 

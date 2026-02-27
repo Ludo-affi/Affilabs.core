@@ -37,8 +37,9 @@ _CONTROL_SLOPE_MAX_NM_S = 8  / _NM_TO_RU    # 8 RU/s on control channel
 
 # Stage 2 bubble detection thresholds
 _BUBBLE_P2P_THRESHOLD_NM  = 20 / _NM_TO_RU   # 20 RU spike
-_BUBBLE_DIP_DEPTH_DROP    = 0.05              # 5% relative drop in dip depth
+_BUBBLE_DIP_DEPTH_DROP    = 0.10              # 10% drop in transmission dip depth required
 _BUBBLE_FWHM_BROADEN_NM   = 3.0              # nm broadening
+_BUBBLE_MIN_FRAMES        = 3                 # must persist for ≥3 consecutive frames (~3 s)
 
 # Scoring thresholds
 _CONTACT_NOISE_MAX_NM     = 12 / _NM_TO_RU   # p2p < 12 RU = clean contact
@@ -110,6 +111,16 @@ class _CycleAccumulator:
 
     # Bubble-free component
     bubble_frames: int = 0             # frames with p2p spike above bubble threshold
+    _bubble_candidate_frames: int = 0  # consecutive frames meeting bubble criteria (not yet confirmed)
+
+    # Leak detection component (FRS §6b.2 override)
+    leak_detected: bool = False         # set externally via notify_leak_detected()
+
+    # Chip degraded — FWHM broadened ≥30% pre/post triage (clamps score to ≤40)
+    chip_degraded: bool = False         # set externally via notify_chip_degraded()
+
+    # Wavelength out-of-range — peak >690nm sustained ≥5 frames (zeroes contact_snr)
+    wavelength_oor: bool = False        # set externally via notify_wavelength_oor()
 
     # Regen component
     regen_start_nm: Optional[float] = None
@@ -276,6 +287,7 @@ class SignalQualityScorer(QObject):
                         acc.contact_clean_frames += 1
 
                 # --- Bubble detection ---
+                # Requires ≥2 of 3 criteria AND sustained for ≥_BUBBLE_MIN_FRAMES consecutive frames (~3 s)
                 if in_contact and p2p_5frame_nm is not None:
                     p2p_spike = p2p_5frame_nm >= _BUBBLE_P2P_THRESHOLD_NM
                     depth_drop = False
@@ -284,10 +296,13 @@ class SignalQualityScorer(QObject):
                         depth_drop = (acc._prev_dip_depth - dip_depth) >= _BUBBLE_DIP_DEPTH_DROP
                     if fwhm_nm is not None and acc._prev_fwhm is not None:
                         fwhm_broad = (fwhm_nm - acc._prev_fwhm) >= _BUBBLE_FWHM_BROADEN_NM
-                    # Two of three criteria
                     hits = sum([p2p_spike, depth_drop, fwhm_broad])
                     if hits >= 2:
-                        acc.bubble_frames += 1
+                        acc._bubble_candidate_frames += 1
+                        if acc._bubble_candidate_frames >= _BUBBLE_MIN_FRAMES:
+                            acc.bubble_frames += 1
+                    else:
+                        acc._bubble_candidate_frames = 0
 
                 # --- Regen component ---
                 if in_regen:
@@ -317,6 +332,24 @@ class SignalQualityScorer(QObject):
         with self._lock:
             if self._current is not None:
                 self._current.wash_detected = True
+
+    def notify_leak_detected(self) -> None:
+        """Called when POSSIBLE_LEAK fires — clamps cycle score to max 20 at finalisation."""
+        with self._lock:
+            if self._current is not None:
+                self._current.leak_detected = True
+
+    def notify_chip_degraded(self) -> None:
+        """Called when CHIP_DEGRADED triage fires — clamps cycle score to max 40."""
+        with self._lock:
+            if self._current is not None:
+                self._current.chip_degraded = True
+
+    def notify_wavelength_oor(self) -> None:
+        """Called when peak wavelength >690nm for ≥5 frames — zeroes contact_snr component."""
+        with self._lock:
+            if self._current is not None:
+                self._current.wavelength_oor = True
 
     # ------------------------------------------------------------------
     # Score computation (called with lock held)
@@ -394,6 +427,24 @@ class SignalQualityScorer(QObject):
         }
         raw = sum(components.get(k, 1.0) * w for k, w in weights.items())
         score = int(round(min(100, max(0, raw * 100))))
+
+        # Wavelength OOR — peak >690nm sustained: contact_snr component zeroed
+        if acc.wavelength_oor:
+            components["contact_snr"] = 0.0
+            # Recompute score with zeroed contact_snr
+            raw = sum(components.get(k, 1.0) * w for k, w in weights.items())
+            score = int(round(min(100, max(0, raw * 100))))
+            notes.insert(0, "Peak wavelength out of range (>690 nm) — solution RI too high. Contact data unreliable.")
+
+        # CHIP_DEGRADED override — clamp to max 40
+        if acc.chip_degraded:
+            score = min(score, 40)
+            notes.insert(0, "Signal broadening detected — sensor chip may be degrading. Verify data in Edits.")
+
+        # POSSIBLE_LEAK override — clamp to max 20 (FRS §6b.2)
+        if acc.leak_detected:
+            score = min(score, 20)
+            notes.insert(0, "Possible leak detected — sustained light loss. Data likely unusable.")
 
         # Band + label
         band, label = _score_to_band(score)

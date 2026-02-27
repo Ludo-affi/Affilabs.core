@@ -395,7 +395,7 @@ Spectrometer (Ocean Optics Flame-T or USB4000)
 - **Blue shift on binding** — Resonance wavelength DECREASES when analyte binds (opposite of angular SPR convention)
 - **P/S ratio** — S-pol is reference (no SPR); P/S ratio cancels LED drift
 - **Time-multiplexed** — 4 LEDs fire one at a time, never simultaneously
-- **Full cycle time** — ~1-2 seconds for 4 channels × 2 polarizations = 8 spectra
+- **Full cycle time** — ~1 second for 4 channels × 2 polarizations = 8 spectra (4 × ~250 ms per channel)
 
 ---
 

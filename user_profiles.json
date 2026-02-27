@@ -8,18 +8,19 @@
   "current_user": "Sandy",
   "user_data": {
     "Sandy": {
-      "experiment_count": 6,
+      "experiment_count": 39,
       "compression_training": {
         "completed": false,
         "score": null,
         "date": null
       },
-      "last_used": "2026-02-22T03:25:47.299898+00:00",
+      "last_used": "2026-02-27T16:41:25.072310+00:00",
       "hints_shown": {
         "hint_connect_shown": true,
         "hint_calibrate_shown": true,
         "hint_acquire_shown": true,
-        "hint_record_shown": true
+        "hint_record_shown": true,
+        "hint_inject_shown": true
       }
     },
     "Ludo": {

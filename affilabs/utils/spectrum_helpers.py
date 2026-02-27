@@ -11,6 +11,7 @@ These are utility functions extracted from the main Application class.
 
 from __future__ import annotations
 
+import numpy as np
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -48,6 +49,17 @@ class SpectrumHelpers:
             elapsed_time = data["elapsed_time"]
             is_preview = data.get("is_preview", False)
 
+            # Leak detection — feed raw spectrum peak into intensity monitor
+            # Uses a minimal stub dict (not a copy) — _handle_intensity_monitoring only reads "intensity"
+            raw_spectrum = data.get("raw_spectrum")
+            if raw_spectrum is not None and hasattr(raw_spectrum, '__len__') and len(raw_spectrum) > 0:
+                try:
+                    raw_peak = float(np.max(raw_spectrum))
+                    if hasattr(app, '_handle_intensity_monitoring'):
+                        app._handle_intensity_monitoring(channel, {"intensity": raw_peak}, timestamp)
+                except Exception:
+                    pass
+
             # Get pipeline-calculated peak from app state (set by ViewModel via signal)
             wavelength = app._latest_peaks.get(channel) if hasattr(app, '_latest_peaks') else None
 
@@ -55,6 +67,16 @@ class SpectrumHelpers:
             # Skip if wavelength is None (first frame before ViewModel calculates peak)
             if wavelength is not None:
                 try:
+                    # Compute mean %T from transmission spectrum for injection detection
+                    mean_t: float | None = None
+                    tx_data = data.get("transmission_spectrum")
+                    if tx_data is not None:
+                        try:
+                            tx_arr = np.asarray(tx_data, dtype=float)
+                            if tx_arr.size > 0:
+                                mean_t = float(np.nanmean(tx_arr))
+                        except Exception:
+                            pass
                     # Pass EMA state and alpha for live display filtering
                     app.buffer_mgr.append_timeline_point(
                         channel,
@@ -63,7 +85,16 @@ class SpectrumHelpers:
                         timestamp,
                         ema_state=app._ema_state,
                         ema_alpha=app._display_filter_alpha,
+                        transmittance=mean_t,
                     )
+                    # Air bubble detection — feed wavelength + mean %T
+                    try:
+                        from affilabs.services.air_bubble_detector import AirBubbleDetector
+                        AirBubbleDetector.get_instance().feed(
+                            channel, float(wavelength), mean_t, timestamp, app
+                        )
+                    except Exception:
+                        pass
                 except Exception:
                     pass  # Silently skip - buffer append is non-critical
             # Queue transmission spectrum update for sidebar (QC/diagnostic display)
@@ -93,6 +124,68 @@ class SpectrumHelpers:
                         channel=channel,
                     )
                     app._update_sensor_iq_display(channel, sensor_iq)
+
+                    # Wavelength out-of-range alert — sustained >690 nm means
+                    # refractive index of solution is too high for this chip geometry.
+                    # Fires once per channel per acquisition session via spark_alert_signal.
+                    try:
+                        _WL_HIGH_THRESHOLD = 690.0  # nm — upper edge of GOOD zone
+                        _wl_alerted = getattr(app, '_wl_high_alerted', set())
+                        if not hasattr(app, '_wl_high_alerted'):
+                            app._wl_high_alerted = set()
+                            _wl_alerted = app._wl_high_alerted
+                        ch_key = channel.lower()
+                        if ch_key not in _wl_alerted and float(wavelength) > _WL_HIGH_THRESHOLD:
+                            # Require 5 consecutive frames above threshold before alerting
+                            _wl_counts = getattr(app, '_wl_high_counts', {})
+                            if not hasattr(app, '_wl_high_counts'):
+                                app._wl_high_counts = {}
+                                _wl_counts = app._wl_high_counts
+                            _wl_counts[ch_key] = _wl_counts.get(ch_key, 0) + 1
+                            if _wl_counts[ch_key] >= 5:
+                                _wl_alerted.add(ch_key)
+                                _msg = (
+                                    f"⚠️ SPR peak out of range — Channel {channel.upper()}\n\n"
+                                    f"Peak position is {float(wavelength):.1f} nm (above 690 nm).\n\n"
+                                    f"This usually means the refractive index of your solution is too "
+                                    f"high for this chip geometry — common causes:\n"
+                                    f"  • Buffer concentration too high (salts, glycerol, DMSO)\n"
+                                    f"  • Wrong running buffer (RI mismatch with sample)\n"
+                                    f"  • Sensor chip not designed for this RI range\n\n"
+                                    f"Dilute your buffer or switch to a lower-RI formulation. "
+                                    f"Data above 690 nm is outside the reliable measurement range."
+                                )
+                                if hasattr(app, 'spark_alert_signal'):
+                                    app.spark_alert_signal.emit(_msg)
+                                try:
+                                    from affilabs.services.signal_quality_scorer import SignalQualityScorer
+                                    SignalQualityScorer.get_instance().notify_wavelength_oor()
+                                except Exception:
+                                    pass
+                        elif ch_key not in _wl_alerted:
+                            # Reset counter if wavelength drops back below threshold
+                            _wl_counts = getattr(app, '_wl_high_counts', {})
+                            if float(wavelength) <= _WL_HIGH_THRESHOLD:
+                                _wl_counts[ch_key] = 0
+                    except Exception:
+                        pass
+
+                    # Signal telemetry logging (classifier calls removed — _InjectionMonitor
+                    # handles readiness/bubble detection independently on its own thread)
+                    try:
+                        from affilabs.services.signal_telemetry_logger import SignalTelemetryLogger
+                        _tlog = SignalTelemetryLogger.get_instance()
+                        _tlog.record(
+                            app=app,
+                            channel=channel,
+                            elapsed_s=float(elapsed_time),
+                            wavelength=float(wavelength),
+                            intensity=float(intensity) if intensity else None,
+                            iq_metrics=iq_metrics,
+                            sensor_iq=sensor_iq,
+                        )
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
@@ -137,13 +230,13 @@ class SpectrumHelpers:
         # Record data point if recording is active
         try:
             if app.recording_mgr.is_recording:
-                # Convert raw elapsed → recording-relative (t=0 at record start)
+                # Convert raw elapsed → recording time (t=0 at record-start)
                 from affilabs.core.experiment_clock import TimeBase
-                relative_time = app.clock.convert(elapsed_time, TimeBase.RAW_ELAPSED, TimeBase.RECORDING)
+                recording_time = app.clock.convert(elapsed_time, TimeBase.RAW_ELAPSED, TimeBase.RECORDING)
 
                 # Record this channel's measurement immediately (simple sequential format)
                 app.recording_mgr.record_data_point({
-                    'time': relative_time,  # Time relative to recording start (t=0)
+                    'time': recording_time,  # Seconds since recording started (t=0 at Record click)
                     'channel': channel,
                     'value': wavelength
                 })

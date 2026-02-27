@@ -57,6 +57,71 @@ def _draw_svg_loading_spinner(painter, x, y, size, rotation):
 
 
 
+def _draw_sparq_robot(painter, cx, cy, size=56):
+    """Draw the Sparq AI robot face, matching sparq_icon.svg geometry.
+
+    The SVG is a 24×24 design scaled to `size` px, centred at (cx, cy).
+    Rendered in soft orange (#FF9500) with a translucent glow behind it.
+
+    SVG geometry (scaled by factor = size / 24):
+      head  : rounded rect x=5,y=6 w=14 h=12 rx=2
+      eye L : circle cx=9,cy=10 r=1.5
+      eye R : circle cx=15,cy=10 r=1.5
+      mouth : line x1=9,y1=14 x2=15,y2=14
+      ears  : left  line x=3,y=10..14   right line x=21,y=10..14
+    """
+    painter.save()
+
+    scale = size / 24.0
+    ox = cx - size / 2   # top-left origin of the 24×24 grid
+    oy = cy - size / 2
+
+    def sx(v): return ox + v * scale
+    def sy(v): return oy + v * scale
+    def ss(v): return v * scale
+
+    orange = QColor(255, 149, 0, 210)     # #FF9500 at 82% opacity
+    glow_c = QColor(255, 149, 0, 40)
+
+    # --- glow halo ---
+    radial = QRadialGradient(cx, cy, size * 0.75)
+    radial.setColorAt(0, glow_c)
+    radial.setColorAt(1, QColor(0, 0, 0, 0))
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QBrush(radial))
+    painter.drawEllipse(int(cx - size), int(cy - size), int(size * 2), int(size * 2))
+
+    pen = QPen(orange, max(1.0, scale * 1.25))
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+
+    # --- head (rounded rect) ---
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(pen)
+    painter.drawRoundedRect(
+        int(sx(5)), int(sy(6)), int(ss(14)), int(ss(12)),
+        ss(2), ss(2)
+    )
+
+    # --- eyes (filled circles) ---
+    painter.setBrush(QBrush(orange))
+    painter.setPen(Qt.NoPen)
+    r = max(1.5, ss(1.5))
+    painter.drawEllipse(QPointF(sx(9), sy(10)), r, r)
+    painter.drawEllipse(QPointF(sx(15), sy(10)), r, r)
+
+    # --- mouth ---
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    painter.drawLine(QPointF(sx(9), sy(14)), QPointF(sx(15), sy(14)))
+
+    # --- antenna ears (side lines) ---
+    painter.drawLine(QPointF(sx(3), sy(10)), QPointF(sx(3), sy(14)))
+    painter.drawLine(QPointF(sx(21), sy(10)), QPointF(sx(21), sy(14)))
+
+    painter.restore()
+
+
 def _draw_svg_logo_badge(painter, x, y, size):
     """Draw a professional badge-style logo using SVG-inspired drawing.
     
@@ -297,6 +362,13 @@ def create_splash_screen():
         # Draw molecular decorations (IgG antibody, globular protein, DNA helix)
         _draw_protein_decorations(painter)
 
+        # Sparq AI branding — bottom-left corner
+        _draw_sparq_robot(painter, cx=52, cy=360, size=52)
+        sparq_font = QFont("Segoe UI", 9)
+        painter.setFont(sparq_font)
+        painter.setPen(QColor(255, 149, 0, 180))
+        painter.drawText(10, 382, 84, 20, Qt.AlignCenter, "Sparq AI")
+
         # Try to load and draw icon
         try:
             icon_path = get_affilabs_resource("ui/img/affinite2.ico")
@@ -319,13 +391,13 @@ def create_splash_screen():
         subtitle_font = QFont("Segoe UI", 13)
         painter.setFont(subtitle_font)
         painter.setPen(QColor(150, 200, 255, 230))
-        painter.drawText(0, 195, 700, 30, Qt.AlignCenter, "Surface Plasmon Resonance Analysis")
+        painter.drawText(0, 195, 700, 30, Qt.AlignCenter, "Label-Free SPR · No Labels. Just Science.")
 
         # Draw inspiring slogan with glow effect
         slogan_font = QFont("Segoe UI", 12, QFont.Medium)
         painter.setFont(slogan_font)
         painter.setPen(QColor(255, 215, 100, 200))
-        painter.drawText(0, 235, 700, 25, Qt.AlignCenter, "Where Light Meets Matter - Science Revealed")
+        painter.drawText(0, 235, 700, 25, Qt.AlignCenter, "Real-time binding kinetics, simplified.")
 
         # Draw animated loading spinner
         rotation = (splash._animation_frame * 6) % 360

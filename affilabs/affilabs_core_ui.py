@@ -498,6 +498,11 @@ class AffilabsMainWindow(
         self.transport_bar = TransportBar(self)
         right_layout.addWidget(self.transport_bar)
 
+        # Demo mode banner — shown when no valid license is present (hidden by default)
+        self._demo_banner = self._build_demo_banner()
+        right_layout.addWidget(self._demo_banner)
+        self._demo_banner.setVisible(False)
+
         # Stage progress bar — kept as object so advance_to() calls don't crash, but hidden from layout
         from affilabs.widgets.stage_progress_bar import StageProgressBar
         self.stage_bar = StageProgressBar(self)
@@ -570,7 +575,21 @@ class AffilabsMainWindow(
         self._queue_right_panel = self._build_queue_right_panel()
         # Populate it with the queue widget now — sidebar is fully built at this point
         if hasattr(self.sidebar, 'queue_panel') and hasattr(self, '_queue_content_layout'):
-            # Contact Monitor — at position 1 (after header at 0), above queue
+            # Queue table first (stretch=1 so it fills available space)
+            self._queue_content_layout.addWidget(self.sidebar.queue_panel, 1)
+
+            # Wire the in-table expand footer to the toggle handler
+            tbl = getattr(self.sidebar, 'summary_table', None)
+            if tbl is not None and hasattr(tbl, 'set_expand_callback'):
+                tbl.set_expand_callback(self._on_toggle_queue_table_collapse)
+
+            # Divider between queue table and Manual Injection Assistant
+            from PySide6.QtWidgets import QFrame as _QFrame2
+            _div = _QFrame2()
+            _div.setFixedHeight(1)
+            _div.setStyleSheet("QFrame { background: #E0E0E5; border: none; }")
+            self._queue_content_layout.addWidget(_div, 0)
+            # Manual Injection Assistant — below the queue table
             if hasattr(self.sidebar, 'injection_action_bar'):
                 bar = self.sidebar.injection_action_bar
                 bar.setParent(self._queue_right_panel)
@@ -578,8 +597,7 @@ class AffilabsMainWindow(
                 bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
                 bar.setMaximumHeight(280)
                 bar.show()
-                self._queue_content_layout.insertWidget(1, bar, 0)
-            self._queue_content_layout.addWidget(self.sidebar.queue_panel, 1)
+                self._queue_content_layout.addWidget(bar, 0)
 
         # Splitter: Sidebar (left) | TransportBar+Content (center) | Run Queue (right)
         self.splitter.addWidget(self.sidebar)
@@ -667,19 +685,12 @@ class AffilabsMainWindow(
             "QStatusBar::item { border: none; }"
         )
 
+        # Sensor/Optics dots — kept as attributes for device_status_mixin but not shown in UI
         self.subunit_sensor_dot = QLabel("● Sensor")
-        self.subunit_sensor_dot.setStyleSheet(
-            "color: #C7C7CC; margin: 0 8px; font-size: 12px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-        )
-        sb.addPermanentWidget(self.subunit_sensor_dot)
-
+        self.subunit_sensor_dot.hide()
         self.subunit_optics_dot = QLabel("● Optics")
-        self.subunit_optics_dot.setStyleSheet(
-            "color: #C7C7CC; margin: 0 8px; font-size: 12px;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
-        )
-        sb.addPermanentWidget(self.subunit_optics_dot)
+        self.subunit_optics_dot.hide()
+
 
         # Acquiring pulse dot — shown + blinks while DAQ is running (left side)
         self._acq_dot = QLabel("● ACQ")
@@ -881,6 +892,53 @@ class AffilabsMainWindow(
             self._connecting_anim_step += 1
         except Exception:
             pass
+
+    def _build_demo_banner(self):
+        """Build the amber demo-mode banner inserted below the transport bar."""
+        from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
+
+        banner = QFrame(self)
+        banner.setObjectName("DemoBanner")
+        banner.setFixedHeight(30)
+        banner.setStyleSheet(
+            "#DemoBanner {"
+            "  background: #FFFBEC;"
+            "  border-bottom: 1px solid #F0C840;"
+            "}"
+        )
+
+        inner = QHBoxLayout(banner)
+        inner.setContentsMargins(16, 0, 16, 0)
+        inner.setSpacing(8)
+
+        icon = QLabel("Demo Mode")
+        icon.setStyleSheet(
+            "font-size: 11px; font-weight: 700; color: #8B6914;"
+            " background: transparent; border: none;"
+        )
+        inner.addWidget(icon)
+
+        msg = QLabel("— hardware connection disabled.")
+        msg.setStyleSheet(
+            "font-size: 11px; color: #8B6914; background: transparent; border: none;"
+        )
+        inner.addWidget(msg, 1)
+
+        activate_link = QPushButton("Enter License Key")
+        activate_link.setObjectName("demo_activate_link")
+        activate_link.setFlat(True)
+        activate_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        activate_link.setStyleSheet(
+            "QPushButton {"
+            "  font-size: 11px; font-weight: 600; color: #007AFF;"
+            "  background: transparent; border: none; text-decoration: underline;"
+            "  padding: 0;"
+            "}"
+            "QPushButton:hover { color: #0051D5; }"
+        )
+        inner.addWidget(activate_link)
+
+        return banner
 
     def _create_sensorgram_placeholder(self):
         """Create lightweight placeholder for sensorgram page during initial load.
@@ -1501,13 +1559,10 @@ class AffilabsMainWindow(
 
         # Build channel displays (vertical stack for better visibility)
         channel_parts = []
-        iq_colors = getattr(self, 'sensor_iq_colors', {})
         for i, ch in enumerate(['a', 'b', 'c', 'd']):
             ch_upper = ch.upper()
-            iq_color = iq_colors.get(ch_upper, '#C7C7CC')
             channel_parts.append(
                 f"<div style='margin: 3px 0; padding: 2px 0;'>"
-                f"<span style='color: {iq_color}; font-size: 11px;'>&#9679;</span> "
                 f"<b style='color: {colors[i]}; font-size: 13px;'>{ch_upper}:</b> "
                 f"<span style='color: {colors[i]}; font-size: 16px; font-weight: 700;'>{delta_values[ch]:.1f}</span>"
                 f"</div>"
@@ -1592,22 +1647,6 @@ class AffilabsMainWindow(
             if hasattr(self.app, '_channel_time_shifts'):
                 self.app._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
                 logger.info("✅ Reset all channel time shifts to 0.0")
-
-            # Clear injection reference if it exists in flag manager
-            if hasattr(self.app, 'flag_mgr') and self.app.flag_mgr:
-                self.app.flag_mgr._injection_reference_time = None
-                self.app.flag_mgr._injection_reference_channel = None
-
-                # Remove injection alignment line from graph
-                if hasattr(self.app.flag_mgr, '_injection_alignment_line') and self.app.flag_mgr._injection_alignment_line:
-                    if hasattr(self, 'cycle_of_interest_graph'):
-                        try:
-                            self.cycle_of_interest_graph.removeItem(self.app.flag_mgr._injection_alignment_line)
-                        except:
-                            pass
-                    self.app.flag_mgr._injection_alignment_line = None
-
-                logger.info("✅ Cleared injection alignment reference")
 
             # Hide shift indicator label
             if hasattr(self, 'channel_shift_label'):
@@ -1893,11 +1932,11 @@ class AffilabsMainWindow(
         for i, ch in enumerate(_ch_keys):
             _settings.ACTIVE_GRAPH_COLORS[ch] = colors[i]
 
-        # Notify legend of colorblind mode for shape encoding (unique to this handler)
+        # Refresh legend value label colors to match new palette
         if hasattr(self, 'cycle_of_interest_graph'):
             legend = getattr(self.cycle_of_interest_graph, 'interactive_spr_legend', None)
             if legend is not None:
-                legend.set_colorblind_mode(enabled)
+                legend.update_colors()
 
         # Update channel visibility toggle buttons
         if hasattr(self, 'channel_toggles'):
@@ -2163,17 +2202,17 @@ class AffilabsMainWindow(
 
         # ── header strip ────────────────────────────────────────────────
         header = QFrame()
-        header.setFixedHeight(48)
+        header.setFixedHeight(52)
         header.setStyleSheet(
-            "QFrame { background: #EBEBF0; border-bottom: 1px solid #E5E5EA; }"
+            "QFrame { background: #FFFFFF; border-bottom: 2px solid #E0E0E5; }"
         )
         hdr_row = QHBoxLayout(header)
         hdr_row.setContentsMargins(16, 0, 14, 0)
-        title_lbl = QLabel("Run Queue")
+        title_lbl = QLabel("Run Experiment")
         title_lbl.setStyleSheet(
-            "font-size: 14px; font-weight: 700; color: #1D1D1F; background: transparent;"
+            "font-size: 16px; font-weight: 700; color: #1D1D1F; background: transparent;"
             "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-            "letter-spacing: -0.3px;"
+            "letter-spacing: -0.4px;"
         )
         hdr_row.addWidget(title_lbl)
         hdr_row.addStretch()
@@ -2194,9 +2233,39 @@ class AffilabsMainWindow(
 
         outer.addWidget(header)
 
+        # ── queue section subtitle ───────────────────────────────────────
+        queue_section = QFrame()
+        queue_section.setStyleSheet(
+            "QFrame { background: transparent; border: none;"
+            " border-bottom: 1px solid #E5E5EA; }"
+        )
+        queue_section_row = QHBoxLayout(queue_section)
+        queue_section_row.setContentsMargins(16, 8, 14, 8)
+        self._queue_section_lbl = QLabel("Cycle Queue")
+        self._queue_section_lbl.setStyleSheet(
+            "font-size: 11px; font-weight: 600; color: #8E8E93;"
+            " font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
+            " background: transparent; border: none; letter-spacing: 0px;"
+        )
+        queue_section_row.addWidget(self._queue_section_lbl)
+        queue_section_row.addStretch()
+
+        # Collapse/expand toggle state — starts expanded
+        self._queue_table_collapsed = False
+
+        outer.addWidget(queue_section)
+
         # ── content area (queue widget inserted here after sidebar builds) ──
         self._queue_content_layout = outer
         return panel
+
+    def _on_toggle_queue_table_collapse(self) -> None:
+        """Toggle the cycle queue table between full view and single-row (running only)."""
+        self._queue_table_collapsed = not self._queue_table_collapsed
+        try:
+            self.sidebar.summary_table.set_collapsed(self._queue_table_collapsed)
+        except Exception:
+            pass
 
     def _on_toggle_queue_panel(self, checked: bool) -> None:
         """Handle queue toggle pill in transport bar — show or hide run queue panel."""
@@ -2522,7 +2591,6 @@ class AffilabsMainWindow(
 
             # Channel visibility toggle buttons (moved from Live Sensorgram header)
             self.channel_toggles = {}
-            self.sensor_iq_colors = {'A': '#C7C7CC', 'B': '#C7C7CC', 'C': '#C7C7CC', 'D': '#C7C7CC'}
             _toggle_colors = {
                 "A": ("#1D1D1F", "Toggle Channel A"),
                 "B": ("#FF3B30", "Toggle Channel B"),
@@ -2767,7 +2835,7 @@ class AffilabsMainWindow(
         # Embed interactive SPR legend inside the Active Cycle graph
         if show_delta_spr:
             from affilabs.widgets.interactive_spr_legend import InteractiveSPRLegend
-            spr_legend = InteractiveSPRLegend(parent=plot_widget, title="Δ SPR (RU)")
+            spr_legend = InteractiveSPRLegend(parent=plot_widget, title="Δ")
             spr_legend.setVisible(True)  # Visible on startup
             spr_legend.channel_timing_selected.connect(
                 lambda ch: self._on_timing_channel_selected(ch)
@@ -2796,6 +2864,8 @@ class AffilabsMainWindow(
                 'flags': 0,
                 'injection': '⚪ Ready',
             })
+            # Signal metrics drop-down — sits between graph and footer, hidden by default
+            layout.addWidget(footer._sig_panel)
             layout.addWidget(footer)
             plot_widget.intelligence_footer = footer
             self._cycle_intelligence_footer = footer  # ref for hotkey toggle
@@ -2822,6 +2892,12 @@ class AffilabsMainWindow(
                 self.recording_stop_requested.connect(
                     lambda: footer.set_recording_active(False)
                 )
+
+            # Wire footer → status bar badge so REC timer shows at the bottom
+            def _update_rec_badge(text: str) -> None:
+                if hasattr(self, '_rec_badge_status'):
+                    self._rec_badge_status.setText(text)
+            footer.set_rec_badge_updater(_update_rec_badge)
 
         # No minimum Y-range enforcement — let the data drive the scale tightly.
 
@@ -3172,7 +3248,7 @@ class AffilabsMainWindow(
             if srb is not None:
                 srb.setChecked(is_recording)
                 if is_recording:
-                    srb.setText("■ Stop")
+                    srb.setText("Stop")
                     srb.setProperty("mode", "stop")
                 else:
                     srb.setText("▶ Start & Record")
@@ -3542,34 +3618,8 @@ class AffilabsMainWindow(
         logger.info("Queue cleared via Clear button")
 
     def _on_expand_queue(self):
-        """Expand queue capacity by 5 cycles and resize the table."""
-        # Increase max queue size
-        self.max_queue_size += 5
-
-        # Resize the summary table
-        current_rows = self.sidebar.summary_table.rowCount()
-        new_rows = current_rows + 5
-        self.sidebar.summary_table.setRowCount(new_rows)
-
-        # Initialize new rows with empty items
-        from PySide6.QtWidgets import QTableWidgetItem
-        from PySide6.QtGui import QColor
-
-        for row in range(current_rows, new_rows):
-            for col in range(5):  # 5 columns: State, Type, Duration, Start, Notes
-                empty_item = QTableWidgetItem("")
-                empty_item.setBackground(QColor(255, 255, 255))
-                self.sidebar.summary_table.setItem(row, col, empty_item)
-
-        # Update table height (40px per row approximately)
-        new_height = min(new_rows * 40 + 40, 600)  # Cap at 600px
-        self.sidebar.summary_table.setMaximumHeight(new_height)
-
-        # Update footer label
-        if hasattr(self.sidebar, 'queue_size_label'):
-            self.sidebar.queue_size_label.setText(f"Showing last {new_rows} cycles")
-
-        logger.info(f"✓ Queue expanded: capacity now {self.max_queue_size}, table shows {new_rows} rows")
+        """Legacy stub — queue expansion is now handled by QueuePresenter."""
+        return
 
         # Re-enable Add to Queue button if it was disabled
         if hasattr(self, 'add_to_queue_btn'):
@@ -3983,6 +4033,7 @@ class AffilabsMainWindow(
                 "font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;"
             )
 
+
     def set_acquiring_pulse(self, active: bool) -> None:
         """Show/hide the status-bar acquiring dot and control its blink timer."""
         if not hasattr(self, '_acq_dot'):
@@ -4162,58 +4213,8 @@ class AffilabsMainWindow(
             logger.error(f"Error setting intel message: {e}")
 
     def _update_queue_display(self):
-        """Update the summary table to reflect current queue state."""
-        if not hasattr(self.sidebar, 'summary_table'):
-            return
-
-        from PySide6.QtGui import QColor
-        from PySide6.QtWidgets import QTableWidgetItem
-
-        # Get current table size (may have been expanded)
-        max_rows = self.sidebar.summary_table.rowCount()
-
-        # Clear table
-        for row in range(max_rows):
-            for col in range(4):
-                self.sidebar.summary_table.setItem(row, col, QTableWidgetItem(""))
-                self.sidebar.summary_table.item(row, col).setBackground(QColor(255, 255, 255))
-
-        # Populate with queue data (up to table capacity)
-        display_count = min(len(self.cycle_queue), max_rows)
-        for row, cycle in enumerate(self.cycle_queue[:display_count]):
-            state = cycle["state"]
-
-            # State indicator with emoji
-            state_text = ""
-            state_color = QColor(255, 255, 255)
-
-            if state == "queued":
-                if row == 0:
-                    # First item is ready to start
-                    state_text = "▶️ Ready"
-                    state_color = QColor(227, 242, 253)  # Light blue
-                else:
-                    state_text = "🟡 Queued"
-                    state_color = QColor(245, 245, 245)  # Light gray
-            elif state == "running":
-                state_text = "🏃 Running"
-                state_color = QColor(255, 243, 205)  # Light yellow/amber
-            elif state == "completed":
-                state_text = "✓ Done"
-                state_color = QColor(232, 245, 233)  # Light green
-
-            # Set cell values
-            state_item = QTableWidgetItem(state_text)
-            state_item.setBackground(state_color)
-            self.sidebar.summary_table.setItem(row, 0, state_item)
-
-            self.sidebar.summary_table.setItem(row, 1, QTableWidgetItem(cycle["type"]))
-            self.sidebar.summary_table.setItem(row, 2, QTableWidgetItem(cycle["start"]))
-            self.sidebar.summary_table.setItem(row, 3, QTableWidgetItem(cycle["notes"]))
-
-            # Apply background color to entire row
-            for col in range(1, 4):
-                self.sidebar.summary_table.item(row, col).setBackground(state_color)
+        """Legacy stub — queue display is now handled by QueueSummaryWidget.refresh()."""
+        return
 
     def _handle_simple_led_calibration(self) -> None:
         """Handle Simple LED Calibration button click (delegates to CalibrationManager)."""

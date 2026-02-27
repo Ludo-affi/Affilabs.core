@@ -148,9 +148,22 @@ class StartupCalibProgressDialog(QDialog):
         _ct_inner = QHBoxLayout(self._calib_tip_card)
         _ct_inner.setContentsMargins(10, 8, 10, 8)
         _ct_inner.setSpacing(8)
-        _ct_icon = QLabel("💡")
-        _ct_icon.setStyleSheet("font-size: 13px;")
-        _ct_icon.setFixedWidth(18)
+        _ct_icon = QLabel()
+        _ct_icon.setFixedSize(18, 18)
+        try:
+            from affilabs.utils.resource_path import get_affilabs_resource
+            from PySide6.QtGui import QPixmap
+            _sparq_path = get_affilabs_resource("ui/img/sparq_icon.svg")
+            _sparq_px = QPixmap(str(_sparq_path)).scaled(
+                16, 16,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            _ct_icon.setPixmap(_sparq_px)
+            _ct_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        except Exception:
+            _ct_icon.setText("✦")
+            _ct_icon.setStyleSheet("font-size: 13px; color: #FF9500;")
         self._calib_tip_label = QLabel()
         self._calib_tip_label.setWordWrap(True)
         self._calib_tip_label.setOpenExternalLinks(False)

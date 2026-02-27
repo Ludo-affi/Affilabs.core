@@ -85,28 +85,20 @@ class AcquisitionEventCoordinator:
         """User clicked Start button - begin live data acquisition."""
         logger.info("User requested start - beginning acquisition")
 
-        # Check if already acquiring - just return (no need to open duplicate dialog)
         if self._data_mgr and self._data_mgr._acquiring:
             logger.info("Acquisition already running")
             return
 
-        # PHASE 1: Validate hardware
         if not self._validate_hardware():
             return
 
-        # PHASE 2: Configure hardware
         integration_time, led_intensities = self._configure_hardware()
 
-        # PHASE 3: Start acquisition
         if not self._start_acquisition():
             return
 
-        # PHASE 4: Update UI
         self._update_ui_after_start()
-
-        logger.info("=" * 80)
-        logger.info("[OK] LIVE ACQUISITION STARTED - View data in dialog")
-        logger.info("=" * 80)
+        logger.info("[OK] Live acquisition started")
 
     def on_acquisition_started(self):
         """Live data acquisition has started - enable record and pause buttons."""

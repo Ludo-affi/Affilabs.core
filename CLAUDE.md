@@ -205,9 +205,12 @@ Ignored by Claude Code (use --no-ignore to access):
 | Hardware scanning, USB connect flow | [HARDWARE_SCANNING_FRS.md](docs/features/HARDWARE_SCANNING_FRS.md) | `affilabs/core/hardware_manager.py` |
 | Injection flags, AutoMarker, contact timer | [FLAGGING_SYSTEM_GUIDE.md](docs/features/FLAGGING_SYSTEM_GUIDE.md) | `affilabs/managers/flag_manager.py` |
 | Injection workflow — all scenarios (manual/auto, 3-channel, wash, markers) | [INJECTION_WORKFLOW_FRS.md](docs/features/INJECTION_WORKFLOW_FRS.md) | `affilabs/coordinators/injection_coordinator.py`, `affilabs/dialogs/manual_injection_dialog.py`, `affilabs/widgets/injection_action_bar.py`, `mixins/_pump_mixin.py` |
+| Kinetic cycle injection — flow-based, valve timing, kobs/ka/kd fitting, dissociation phase | [KINETIC_INJECTION_FRS.md](docs/features/KINETIC_INJECTION_FRS.md) | `affilabs/coordinators/injection_coordinator.py`, `affilabs/services/kinetics_fitter.py` (planned), `affilabs/domain/cycle.py` |
 | Calibration flow, servo auto-cal | [CALIBRATION_ORCHESTRATOR_FRS.md](docs/calibration/CALIBRATION_ORCHESTRATOR_FRS.md) | `affilabs/core/calibration_orchestrator.py` |
 | Signal quality, IQ levels, wavelength zones | [SENSOR_IQ_SYSTEM.md](docs/features/SENSOR_IQ_SYSTEM.md) | `affilabs/utils/sensor_iq.py` |
 | Signal event classifier — pre-inject readiness badge, bubble detection, telemetry logger, per-cycle quality score, run star rating | [SIGNAL_EVENT_CLASSIFIER_FRS.md](docs/features/SIGNAL_EVENT_CLASSIFIER_FRS.md) | `affilabs/utils/signal_event_classifier.py`, `affilabs/services/signal_telemetry_logger.py`, `affilabs/services/signal_quality_scorer.py`, `affilabs/widgets/signal_event_badge.py` (planned) |
+| Optical fault detection — leak (raw intensity drop) + air bubble (wavelength/transmittance transient); all alerts via Sparq bubble | [OPTICAL_FAULT_DETECTION_FRS.md](docs/features/OPTICAL_FAULT_DETECTION_FRS.md) | `mixins/_acquisition_mixin.py`, `affilabs/services/air_bubble_detector.py`, `affilabs/utils/spectrum_helpers.py`, `affilabs/widgets/spark_bubble.py` |
+| Device health dashboard — unified aggregator for all health signals (IQ, P2P, FWHM, faults, run quality); wiring plan + gap analysis | [DEVICE_HEALTH_DASHBOARD_FRS.md](docs/features/DEVICE_HEALTH_DASHBOARD_FRS.md) | `affilabs/coordinators/device_health_coordinator.py` (planned), `affilabs/widgets/device_status.py`, `affilabs/sidebar_tabs/AL_device_status_builder.py` |
 | Sparq account — device registration, Sparq Coach upload, Nutshell CRM integration, failure-pattern upsell pipeline | [SPARQ_ACCOUNT_FRS.md](docs/features/SPARQ_ACCOUNT_FRS.md) | `affilabs/services/sparq_account_service.py`, `affilabs/services/sparq_coach_service.py`, `affilabs/dialogs/sparq_registration_dialog.py` (planned) |
 | Cycle templates, queue presets | [METHOD_PRESETS_SYSTEM.md](docs/features/METHOD_PRESETS_SYSTEM.md) | `affilabs/services/cycle_template_storage.py` |
 | Method Builder UI redesign (3-zone layout, template gallery, Sparq bar) | [METHOD_BUILDER_REDESIGN_FRS.md](docs/features/METHOD_BUILDER_REDESIGN_FRS.md) | `affilabs/widgets/method_builder_dialog.py` |
@@ -416,6 +419,27 @@ When creating or updating documentation:
 - Flow rates, injection volume, and contact time are precisely controlled by software
 - `_update_internal_pump_visibility()` shows/hides P4PROPLUS-specific pump UI
 
+### Live Tab vs Edits Tab — Fundamental Separation of Concerns (P4SPR / Manual Injection)
+
+**Live tab is PURELY about good data acquisition.** Edits tab is for data processing and scientific assessment.
+
+| Live tab concerns | Edits tab concerns |
+|-------------------|-------------------|
+| Bubbles present? | ΔSPR magnitude |
+| Leak detected? | Binding curve shape / Kd fitting |
+| Signal stable and at expected level? | Alignment, baseline subtraction |
+| Contact time adequate? | Export, reporting |
+| Data quality OK — or does the run need to be repeated? | Comparing cycles |
+
+**What Live does NOT do (P4SPR):**
+- No SPR-specific interpretation (binding affinity, on/off rates, Rmax)
+- No assessment of whether the experiment is scientifically meaningful
+- No comparison between channels or concentrations
+
+**Rule:** If a feature tells the user something about their *science*, it belongs in Edits. If it tells the user something about their *instrument or data quality*, it belongs in Live.
+
+---
+
 ### Preset Design Philosophy: Human-as-Autosampler (P4SPR) vs Automated Flow (P4PRO/PROPLUS)
 
 **P4SPR presets: one cycle = one watchable region (~5–10 min).**
@@ -479,15 +503,16 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 - `ApplicationState` migration incomplete — `app_state.py` defines target but `main.py` not yet converted
 - Timeline Phase 5 (Presenters: SensogramPresenter + EditsTab query from stream) — ready to start
 - **GuidanceCoordinator Pass B** — Pass A (logging only) complete; Pass B (widget calls: `push_hint`, show/hide rail buttons, update combos) not yet implemented
-- **No wash flag from WashMonitor** — `_WashMonitor.wash_detected` only calls `bar.set_channel_wash(ch)` (visual). Wash flags only from `_timer_mixin._place_automatic_wash_flags()`.
-- **Manual injection auto-detection live test pending** — `_InjectionMonitor` wired + multi-feature scorer now fully active with %T. Needs hardware live test to verify detections fire correctly.
-- **`_InjectionMonitor` wired** ✅ — cycle-scoped, slope-rise detector in `injection_coordinator.py`. v2 scorer fully active (slope + λ onset + step-change + %T). Dialog's check loop is heartbeat-only.
+- **Injection autodetection live validation pending** — `_InjectionMonitor` fire #1 (injection) + fire #2 (wash) implemented. Needs hardware live test.
+- **No wash flag on early wash** — `_InjectionMonitor` fire #2 → `_handle_wash()` updates bar UI only. No wash flag placed if user washes before contact timer expires. `_place_automatic_wash_flags()` only runs at timer expiry.
+- **Contact marker doesn't move on wash** — marker stays at predicted `injection_time + contact_time`. No code currently moves it to actual wash time.
 
 ### Recently Completed
-- **FRS-compliant multi-feature injection detection** ✅ (this session) — `ChannelBuffer` now stores `transmittance: np.ndarray`; mean %T computed from `transmission_spectrum` in `spectrum_helpers.py` and piped through `append_timeline_point` → `extract_cycle_region` → `update_cycle_data` → `cycle_data[ch].transmittance`; `_InjectionMonitor._poll()` reads `transmittance` and `_fire()` passes it to `score_injection_event()`. All 4 FRS features now active: P2P (Option B std proxy), %T dip+recovery (Option A, 0.40 weight), slope change (0.20), λ onset (0.10).
-- **Legacy dialog detection deleted** ✅ (prior session) — `_scan_channel()`, `_handle_all_detected()`, `_finalize_detection()`, `_first_detection_time` all gone. `ManualInjectionDialog` is heartbeat-only.
-- **SignalTelemetryLogger** ✅ (Feb 25 2026) — `affilabs/services/signal_telemetry_logger.py` (singleton, per-channel CSV, rolling p2p + slope, disk guard). Wired into `spectrum_helpers.py` per-frame + `_acquisition_mixin.py` session lifecycle. `SIGNAL_TELEMETRY_ENABLED` flag in `settings.py`.
-- **Notes tab Phases 1–4** ✅ (Feb 24 2026) — `experiment_index.py` + `notes_tab.py`.
+- **Optical fault detection v2** ✅ (Feb 26 2026) — Thread-safe alert delivery via `spark_alert_signal = Signal(str)` on `Application` (replaces broken `QTimer.singleShot` from worker thread). Leak recovery detection (≥50% baseline → resolved). Auto-recal on recovery: `pause_acquisition()` → quick LED cal → `resume_acquisition()` (recording preserved). Spectrum bubble opens on fault, closes on recovery. Post-recal "redo this cycle" Sparq message. `_leak_recal_was_acquiring` flag distinguishes auto vs manual recal paths. `AirBubbleDetector` also migrated to signal path.
+- **CalibrationQC dialog polish** ✅ (Feb 26 2026) — Graph + table 50:50 side-by-side layout, button bar always visible (stretch=1 on tabs), notes shortened to ≤8 words at 10px, table min/max 120/145px, dialog 900×480.
+- **Interactive ΔSPR legend: integers only** ✅ (Feb 26 2026) — `interactive_spr_legend.py` formats as `int(round(value))`, zero as `"0"`.
+- **RotatingFileHandler double-format fix** ✅ (Feb 26 2026) — `_SafeFormatter` in `logger.py` pre-resolves `record.msg`/`args` before `super().format()` to prevent TypeError from second `getMessage()` call.
+- **Wash detection via `_InjectionMonitor` fire #2** ✅ (Feb 26 2026) — `_fire_counts` dict per channel; fire #1 → `_handle_injection`, fire #2+ → `_handle_wash`; P4SPR keeps monitors alive after injection.
 
 ### Planned — Future Milestones
 - **v2.2:** Autosampler integration (Knauer Azura TCP + TTL trigger option) — see `docs/future_plans/AUTOSAMPLER_INTEGRATION_PLAN.md`

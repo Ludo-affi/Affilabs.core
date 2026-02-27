@@ -1,7 +1,7 @@
 # Injection Workflow — Feature Reference Spec
 
 > **Version**: v2.0.5-beta
-> **Last updated**: 2026-02-24
+> **Last updated**: 2026-02-26
 > **Covers**: Manual injection (P4SPR), automated injection (P4PRO/PROPLUS), contact monitor, wash detection, flag placement, marker lifecycle
 
 ---
@@ -13,18 +13,18 @@ The injection system routes every injection event through `InjectionCoordinator`
 1. Determines mode (manual vs automated) from hardware + cycle settings
 2. Runs the appropriate detection path
 3. Emits flags per detected channel
-4. Monitors for wash injection and moves the contact-end marker
+4. Monitors for wash injection via fire #2 of `_InjectionMonitor`
 
 ### Key files
 
 | File | Role |
 |------|------|
-| `affilabs/coordinators/injection_coordinator.py` | Orchestration, WashMonitor, mode routing |
-| `affilabs/dialogs/manual_injection_dialog.py` | Hidden detection engine (200ms scan loop) |
+| `affilabs/coordinators/injection_coordinator.py` | `_InjectionMonitor`, `_InjectionSession`, `InjectionCoordinator` |
+| `affilabs/dialogs/manual_injection_dialog.py` | **State container only** — holds detection result attributes. No UI, no timers, no detection logic. |
 | `affilabs/widgets/injection_action_bar.py` | Visible contact monitor UI (sidebar / queue panel) |
-| `mixins/_pump_mixin.py` | Flag placement, contact marker, wash flag helpers |
+| `mixins/_pump_mixin.py` | Flag placement, contact marker, ΔSPR baseline snapshot |
 | `affilabs/managers/flag_manager.py` | Flag domain model, timeline annotation |
-| `affilabs/utils/spr_signal_processing.py` | `auto_detect_injection_point`, `detect_injection_all_channels` |
+| `affilabs/utils/spr_signal_processing.py` | `score_injection_event()` (multi-feature scorer called by `_InjectionMonitor`) |
 
 ---
 
@@ -49,9 +49,10 @@ cycle.manual_injection_mode == None        → hardware_mgr.requires_manual_inje
 
 ### 3.1 Participants
 
-- **`ManualInjectionDialog`** — runs hidden off-screen (`dialog.move(-9999, -9999)`). Its `showEvent` triggers the detection engine. It is never visible to the user.
-- **`InjectionActionBar`** — the visible contact monitor panel in the right queue panel. Shows per-channel LED states and the contact countdown.
-- **`_WashMonitor`** — per-channel QObject polling the SPR slope every 2s to detect the wash injection.
+- **`ManualInjectionDialog`** — a **state container** (`QObject`), NOT a visible dialog. Holds `detected_injection_time`, `detected_channel`, `_detected_channels_results`. Created on main thread. No timers, no scan loop.
+- **`_InjectionSession`** — the lifecycle object that owns monitors, session state, and all event routing for a single injection. Runs on background "ManualInjectionExec" thread; all UI callbacks marshalled to main thread via `_invoke_on_main`.
+- **`_InjectionMonitor`** — per-channel background thread. Polls SPR data every 2s, runs multi-feature scorer, fires `injection_detected` signal per channel. Runs for the full cycle duration (not just the dialog window). Fire #1 = injection; fire #2+ = wash.
+- **`InjectionActionBar`** — the visible contact monitor panel. Shows per-channel LED states, ΔSPR in STATUS column, per-channel contact countdown.
 - **Background thread** — blocks on `done_event` while the detection + contact window runs.
 
 ### 3.2 Setup
@@ -61,68 +62,115 @@ cycle.manual_injection_mode == None        → hardware_mgr.requires_manual_inje
    - Keys of `cycle.concentrations` if set (auto-derive from sample map)
    - Otherwise `"ABCD"` for P4SPR, `"AC"` for P4PRO/PROPLUS
 2. For non-P4SPR hardware: `_open_valves_for_manual_injection(channels)` routes 3-way valves
-3. `done_event = threading.Event()` is created; background thread will block on it
-4. On the main thread: `ManualInjectionDialog` is constructed and wired, `InjectionActionBar.show_phase2()` is called, `dialog.show()` fires
+3. `done_event = threading.Event()` is created; background thread blocks on it
+4. On main thread: `ManualInjectionDialog` state container created, `InjectionActionBar.show_monitoring()` called, one `_InjectionMonitor` started per active channel
 
-### 3.3 Detection engine
+### 3.3 Detection engine — `_InjectionMonitor`
 
-`ManualInjectionDialog._start_detection()` runs on `showEvent`:
-
-- Sets `window_start_time = max(times[0], times[-1] - 45s)` — 45-second lookback
-- **Pump transit delay** (P4PRO/PROPLUS only): if `pump_transit_delay_s > 0`, shifts `window_start_time` into the future (`times[-1] + delay`). The scan loop returns empty until real time catches up, preventing false positives on the bulk RI shift from the approaching sample plug.
-- Starts two QTimers: detection every **200ms**, UI status every **1s**
-
-**Per-channel scan** (`_scan_channel`, every 200ms):
+Polls every `POLL_INTERVAL_S` (2s). Per poll:
 
 ```
-Skip if already detected
-Skip if fewer than 10 data points in window
-Convert wavelength → RU: (wl - baseline_wl) × 355
-sensitivity_factor = 0.75 if pump transit delay > 0, else 1.0
-auto_detect_injection_point(times, ru, sensitivity_factor)
-Accept if confidence >= 0.15
+Step 1 — Quality gate:
+    fetch cd.spr from buffer
+    baseline_std = std of early 5 frames → must be < STD_MAX_RU (0.056 nm × 355)
+    skip if std too high (noisy baseline)
+
+Step 2 — Two rolling windows (5 frames each, WINDOW_FRAMES=5):
+    window_prev = spr[-10:-5]   (older)
+    window_now  = spr[-5:]      (recent)
+    delta = mean(window_now) - mean(window_prev)   ← signed, bidirectional
+
+Step 3 — Adaptive threshold:
+    threshold = max(HARD_MIN_RU, SIGMA × baseline_std_ru)
+    HARD_MIN_RU = 5.0 RU, SIGMA = 3.0 (from settings)
+
+Step 4 — Dead zone after each fire:
+    DEAD_ZONE_S = 15s after each fire — skip polls to absorb biphasic bulk-RI artifact
+
+Step 5 — Confirmation:
+    Requires CONFIRM_FRAMES (2) consecutive polls above threshold
+    t_fire = times[-CONFIRM_FRAMES]   ← backtracked to actual onset
+
+Step 6 — Multi-feature scorer (score_injection_event):
+    Runs on buffered data at t_fire. Computes P2P, %T dip+recovery, slope change, λ onset.
+    Score ≥ 0.65 with ≥2 features → INJECTION_DETECTED confirmed
 ```
 
-**Multi-channel timing** (P4SPR, 3-channel example):
+`_fire()` increments `_fire_count` per monitor instance. The DEAD_ZONE_S rearms the same monitor for wash detection (fire #2).
 
-Because the user pipettes manually, channels A/B/C are injected sequentially — typically 2–15 seconds apart. The detector handles this: each channel is scanned independently, and detection can fire at different times.
+### 3.4 Fire routing — injection vs wash
 
+`_InjectionSession._on_detected(ch_upper, approx_t)`:
+
+```python
+_fire_counts[ch_upper] += 1
+fire_num = _fire_counts[ch_upper]
+
+if fire_num == 1:
+    _handle_injection(ch_upper, approx_t)   # first step-change = injection
+else:
+    _handle_wash(ch_upper, approx_t, fire_num)   # subsequent = wash (P4SPR manual buffer flush)
 ```
-t=0s:   Phase 2 opens — all active channels set to PENDING (yellow)
-t=2.1s: Channel A peak detected (conf 0.95) → LED green, WashMonitor[A] starts
-t=3.6s: Channel B detected (conf 0.92)      → LED green, WashMonitor[B] starts
-t=5.3s: Channel C detected (conf 0.88)      → LED green, WashMonitor[C] starts
-t=5.3s: First detection already fired at t=2.1s; contact countdown is already running
-t=20.3s (15s grace after A): D never detected → dialog finalizes with {A, B, C}
-```
 
-### 3.4 Completion paths
+**`_handle_injection`**: stores result in `dialog._detected_channels_results`, calls `bar.update_channel_detected(ch, True)`. On P4SPR: unblocks BG thread after first channel detected (`_on_detection_complete`). Monitors kept alive (P4SPR) or stopped (P4PRO/PROPLUS).
+
+**`_handle_wash`**: calls `bar.set_channel_wash(ch)` + `SignalQualityScorer.notify_wash_detected(ch)`. Fires independently per channel.
+
+**`_on_detection_complete`** behaviour by hardware:
+- P4SPR: does NOT stop monitors — keeps them alive for wash fire #2+
+- P4PRO/PROPLUS: stops all monitors immediately (simultaneous injection, no manual wash step)
+
+### 3.5 ΔSPR in Contact Monitor STATUS column
+
+STATUS column shows:
+- `—` before injection detected on that channel
+- `+N RU` / `-N RU` from injection baseline after detection (live, refreshed every tick)
+- `Wash` after `set_channel_wash()` called on that channel
+
+Baseline is snapshotted in `_pump_mixin._place_injection_flag()` using `spr_val` already time-matched to `t_fire` via `argmin(|cd.time - injection_time|)`. Called via `bar.set_injection_baseline(ch, spr_val)` immediately after flag placement. This gives ΔSPR = 0 RU at injection and grows with the binding response.
+
+### 3.6 Completion paths
 
 | Condition | Path | done_event |
 |-----------|------|-----------|
-| All monitored channels detected within grace | `_handle_all_detected()` → 3s delay → `injection_complete` → `accept()` | Set by `_on_bar_done` (wash) or `_on_dialog_complete` (no contact_time) |
-| Partial detection (some channels), grace expired | `_finalize_detection()` with partial results → `injection_complete` → `accept()` | Same as above |
-| Detection priority = "off" | User clicks "Done Injecting" manually | Set on Done click |
-| User clicks "Done Injecting" (no auto-detect yet) | 10s post-done monitoring, then `_finalize_detection()` | Set same |
-| 80s window expired, no detection | `_on_detection_timeout()` → warning shown 2s → `injection_complete` + `accept()` | `accepted_flag = False` → `injection_cancelled` emitted |
-| 80s window expired, partial detection | `_on_detection_timeout()` → `_finalize_detection()` with partial results | Set by bar/wash |
-| User clicks Cancel | `injection_cancelled` emitted, `reject()` | `accepted_flag = False` |
+| First channel detected (P4SPR) | `_handle_injection` → 300ms delay → `_on_detection_complete` → `done_event.set()` | Set immediately |
+| All expected channels detected (P4PRO) | `_handle_injection` → `_on_detection_complete` | Set when all channels found |
+| Contact timer expires | `_on_bar_done` → `_stop_all_monitors()` + `done_event.set()` (if not already set) | Set by bar done |
+| User cancels | `injection_cancelled` signal → `_on_cancelled` → `_stop_all_monitors()` + `done_event.set()` | Set by cancel |
+| Lifecycle timeout | `_on_timeout` → `_stop_all_monitors()` | Set by timeout |
+| Cycle end (cleanup) | `InjectionCoordinator.cleanup_monitors()` → `session._stop_all_monitors()` | — |
 
-**Grace period**: 15s (`CHANNEL_SCAN_GRACE_SECONDS`) from the moment of **first** channel detection. If remaining channels don't detect within 15s, `_finalize_detection()` is called with whatever was found. This is what makes 3-channel injection work — the 4th (unused) channel doesn't block completion.
+Total timeout: `95s` (no contact_time) or `contact_time + 120 + 95s` (with contact_time).
 
-### 3.5 Contact time: with vs without
+### 3.7 Multi-channel timing (P4SPR sequential pipetting)
+
+Because the user pipettes manually, channels are injected sequentially — typically 2–15s apart. Each channel's `_InjectionMonitor` fires independently. P4SPR unblocks the BG thread after the **first** channel detected (fire #1 on any channel), allowing the cycle contact countdown to start. Remaining channels continue to be monitored and detected independently.
+
+Example with 3 channels:
+```
+t=0s    Phase 2 opens — all active channels set to PENDING (yellow)
+t=3s    Channel A fire #1 → _handle_injection → done_event set, contact timer starts
+t=8s    Channel B fire #1 → _handle_injection (done_event already set, just updates bar)
+t=14s   Channel C fire #1 → _handle_injection
+...
+t=180s+ Wash injected...
+t=195s  Channel A fire #2 → _handle_wash → bar.set_channel_wash("A")
+t=197s  Channel B fire #2 → _handle_wash → bar.set_channel_wash("B")
+t=199s  Channel C fire #2 → _handle_wash → bar.set_channel_wash("C")
+```
+
+### 3.8 Contact time: with vs without
 
 **No contact_time on cycle** (e.g., baseline, equilibration):
-- First detection → `_fire_done()` after 1.5s
-- `_show_contact_time_marker()` places no marker (no `contact_time` to compute from)
-- Wash flags placed immediately at injection end via `_place_automatic_wash_flags()`
+- `_has_contact_time = False`
+- Bar timer does not start on detection
+- Monitors still run for full lifecycle timeout
 
 **contact_time set** (e.g., Binding cycle: 300s):
-- First detection → contact countdown resets to full duration
+- Per-channel independent countdown starts on `update_channel_detected(ch, True)`
 - Marker placed at `injection_display_time + contact_time` (predicted contact end)
-- WashMonitor runs per detected channel
-- When wash detected → marker moves to actual wash time
-- `_fire_done()` fires when all *detected* channels reach WASH state (see §4.3)
+- When contact timer expires → `_on_bar_done` → stops monitors + unblocks BG thread if needed
+- Wash is detected via `_InjectionMonitor` fire #2 (independent of timer expiry)
 
 ---
 
@@ -134,74 +182,34 @@ t=20.3s (15s grace after A): D never detected → dialog finalizes with {A, B, C
 INACTIVE  ○   Grey ring, no dot        — channel not part of this cycle
 PENDING   ●◀  Orange ring, dot left    — monitored, not yet detected
 CONTACT   ●   Green ring, dot center   — sample in contact
-WASH      ▶●  Grey ring, dot right     — wash injection detected
+WASH      ▶●  Grey ring, dot right     — wash detected
 ```
 
 ### 4.2 Phase lifecycle
 
-**Phase 1** (`show_phase1`): "Get Ready" — 10s countdown before monitoring begins. All active channels shown as PENDING. Timer fires `_fire_ready()` → transitions to Phase 2.
+**`show_monitoring(channels, on_done, on_cancel, contact_time, buffer_mgr)`**: Single entry point. All active channels set to PENDING. Bar activates. ΔSPR refresh timer starts. Called by `_InjectionSession._setup()`.
 
-**Phase 2** (`show_phase2`): Contact monitor. Called directly by coordinator (Phase 1 may be skipped for automated flows). Channels start PENDING → CONTACT on detection → WASH on wash detection.
+**`update_channel_detected(ch, True)`**: Transitions channel to CONTACT. Per-channel countdown starts if `contact_time` was set. Role label goes green.
 
-### 4.3 Completion logic
+**`set_channel_wash(ch)`**: Transitions channel to WASH. Stops that channel's countdown timer. Role label goes sky-blue. STATUS shows "Wash".
 
-```python
-# Was: checked _active_channels (all 4 monitored channels)
-# Fixed: checks _detected_channels (only those that actually auto-detected)
-wash_set = _detected_channels if _detected_channels else _active_channels
-all_washed = all(widget[c].state == WASH for c in wash_set)
-if all_washed:
-    QTimer.singleShot(800, _fire_done)
-```
+### 4.3 Per-channel independent countdown
 
-**Why this matters for 3-channel injection**: `_active_channels` is `{"A", "B", "C", "D"}` (all channels are monitored). If only A/B/C detect, D stays PENDING forever. The old code would never call `_fire_done()` via the wash path — it would wait for the 80s fallback timer. The fix: track which channels actually detected (`_detected_channels`), and only require those to wash.
+Each detected channel gets an independent `QTimer` counting from `contact_time` → 0. At 0:00, timer continues into negative (overrun shown in red, capped at −`_OVERRUN_CAP_S` = −120s showing "No wash detected"). Timer stops when `set_channel_wash(ch)` is called.
 
-**Fallback**: If `_first_detection_fired` is still False after `PHASE2_SECONDS` (80s), `_tick()` force-fires `_fire_done()`. This is the safety net for dialog timeout + no detection.
+### 4.4 Completion logic
 
-### 4.4 Per-channel contact countdown
-
-Each detected channel gets an independent QTimer counting from `contact_time` → 0 → negative (overrun). Overrun is intentional — the timer continues past 0 (shown in red) until wash is actually detected on that channel, at which point `_stop_channel_countdown(ch)` is called.
+`_fire_done()` is triggered by `on_done` callback (set to `_on_bar_done` in session). Called when all active-channel countdowns complete or when coordinator explicitly calls `set_panel_active(False)`.
 
 ---
 
-## 5. WashMonitor
-
-**Class**: `_WashMonitor(QObject)` in `injection_coordinator.py`
-
-**Algorithm** (polls every 2s, `POLL_INTERVAL_S`):
-
-```
-1. Guard: skip first 15s after monitor start (MIN_CONTACT_S) — injection transient
-2. Fetch cycle_data[ch].spr (RU) from buffer
-3. Exclude pre-injection data using _injection_cycle_t
-4. Split last 20s into two 10s halves:
-     slope_prev = polyfit(t[-20s..-10s])
-     slope_now  = polyfit(t[-10s..now])
-5. delta = abs(slope_now - slope_prev)
-6. Adaptive threshold = max(0.5 RU/s, 4.0 × std(recent_slope_history))
-7. If delta >= threshold for 2 consecutive polls → wash_detected.emit(ch, t_split)
-   t_split = boundary between prev/now windows = the estimated wash start time
-```
-
-**Signal chain**:
-```
-_WashMonitor.wash_detected(ch, t_split)
-  → _on_wash(ch, t_split) [closure in coordinator]
-      → bar.set_channel_wash(ch)          [UI transition]
-      → self.wash_detected.emit(ch, t)    [InjectionCoordinator signal]
-          → main._on_wash_detected(ch, t) [moves contact marker]
-```
-
-**Known issue**: `_WashMonitor` is initialised with `injection_time=time.time()` (wall-clock). The `MIN_CONTACT_S` guard uses `time.time() - _injection_wall_time`, which is wall-clock elapsed — this works correctly. However, `_injection_cycle_t` (used to exclude pre-injection data) reads the *current* cycle data tail at monitor construction time, which is a cycle-relative time. These two time systems are separate and correct for their respective uses.
-
----
-
-## 6. Contact End Marker Lifecycle
+## 5. Contact End Marker Lifecycle
 
 ```
 1. Injection detected on primary channel
        ↓
    _place_injection_flag() stores self._last_injection_display_time
+   bar.set_injection_baseline(ch, spr_val) — snapshots ΔSPR=0 at injection
        ↓
 2. injection_completed fires
        ↓
@@ -209,22 +217,18 @@ _WashMonitor.wash_detected(ch, t_split)
    marker_pos = _last_injection_display_time + cycle.contact_time
    → orange dashed InfiniteLine placed at predicted contact end
        ↓
-3. WashMonitor detects wash on channel X
+3. Contact timer expires OR wash detected on bar (via _on_bar_done)
        ↓
-   InjectionCoordinator.wash_detected.emit(ch, t_split)
-       ↓
-   main._on_wash_detected(ch, t_split)
-   → _place_contact_marker(graph, t_split)
-   → marker MOVES to actual wash time
+   Monitors stopped. Cycle continues.
 ```
 
-If multiple channels wash at different times, the marker moves on each wash detection. Final position = last channel to wash.
+> **⚠ Known gaps**: When `_InjectionMonitor` fire #2 detects wash, it calls `bar.set_channel_wash(ch)` and notifies `SignalQualityScorer` only. The contact marker does **not** move — it stays at the predicted `injection_time + contact_time`. No wash flag is placed from this path. Wash flags are only placed by the timer-expiry path (`_place_automatic_wash_flags()`). See §10 gap table.
 
 If `contact_time` is not set on the cycle, `_show_contact_time_marker()` returns early (no marker placed).
 
 ---
 
-## 7. Automated Injection Flow (P4PRO / P4PROPLUS)
+## 6. Automated Injection Flow (P4PRO / P4PROPLUS)
 
 `_execute_automated_injection(cycle, flow_rate)` runs on a background thread:
 
@@ -234,11 +238,11 @@ If `contact_time` is not set on the cycle, `_show_contact_time_marker()` returns
    - `"partial"`: `pump_mgr.inject_partial_loop(flow_rate, channels=cycle.channels)`
 3. `injection_completed.emit()` on success
 
-The `ManualInjectionDialog` is not used. Flag placement via `injection_flag_requested` happens through the retroactive scan path or coordinator-driven detection.
+`ManualInjectionDialog` state container is not used. `_InjectionMonitor` runs for detection; monitors stopped immediately after all expected channels detected (P4PRO path in `_on_detection_complete`).
 
 ---
 
-## 8. Flag Placement
+## 7. Flag Placement
 
 **Per detected channel**, the coordinator emits `injection_flag_requested(ch, raw_time, confidence)`.
 
@@ -252,285 +256,101 @@ Guard: if injection_display_time < 0 → clamp to 0.0 (auto-detection before cyc
 Guard (flag_manager): add_flag_marker() also clamps time_val < 0 → 0.0
 
 Stores: self._last_injection_display_time = injection_display_time
+Stores ΔSPR baseline: bar.set_injection_baseline(ch, spr_val)  ← spr_val time-matched to t_fire
 
 Calls: flag_mgr.add_flag_marker(ch, injection_display_time, spr_val, 'injection')
 ```
 
-**Wash flags** (`_place_automatic_wash_flags()`): placed when contact timer expires (timer path) or immediately if no contact_time (via `_show_contact_time_marker`). The WashMonitor path does **not** currently place a flag — it only updates the bar UI and moves the contact marker.
+**Wash flags** (`_place_automatic_wash_flags()`): placed when contact timer expires. The `_InjectionMonitor` fire #2 (wash) path does **not** currently place a wash flag — it only updates the bar UI and `SignalQualityScorer`.
 
 ---
 
-## 9. User-Facing Scenarios
-
-### How much time does the user have?
-
-**Phase 1 (Get Ready)**: `show_phase1` is **not called** by the coordinator. The bar goes directly to Phase 2 (`show_phase2`) when the dialog opens. There is no 10-second pre-countdown in the current flow.
-
-**Phase 2 (Detection window)**: **80 seconds** hard timeout (`INJECTION_WINDOW_SECONDS`). The dialog scans every 200ms. The bar shows "Monitoring A, B, C, D for injection…" with a 1-second status update.
-
-**Total time user has to inject**: **80 seconds** from the moment the injection step starts.
-
-**Urgency feedback**: The dialog status text shows "🔍 Inject within {remaining}s ({elapsed}s used)..." in orange, updated every second. No alarm sound. No bar countdown — the bar timer only starts ticking once the *first* injection is detected (contact time countdown, not detection countdown). A user who hasn't injected yet sees a static "Monitoring…" message with no indication of urgency.
-
-> **Gap**: No visible countdown in the bar for the detection window. Users don't know they have 80s and could miss the window silently.
-
----
-
-### Scenario N — Failed to inject (80s, zero detection)
-
-```
-Bar:      All channels stay YELLOW (PENDING) for 80s
-Dialog:   At 80s: shows "⚠ 60-second window expired — No injection peak detected
-                          Manual adjustment available in Edits tab" (orange, 2s)
-          Auto-closes after 2s
-Bar:      Dismisses, returns to dormant state
-Cycle:    CONTINUES — no halt, no error
-Flags:    NONE placed
-Marker:   NONE placed (no _last_injection_display_time)
-User:     Must add flags manually in Edits tab
-```
-
-**What the user actually sees in the bar**: the panel goes idle with no explanation — the timeout message is only visible inside the hidden dialog for 2 seconds before it auto-closes. The user sees the bar disappear.
-
-> **Gap**: User gets no persistent feedback in the bar that the injection was missed. The bar just vanishes.
-
----
-
-### Scenario O — Injected in wrong channel (expects A/B, user pipettes C/D)
-
-```
-Detector: CHANNEL-AGNOSTIC — scans all channels in detection_channels ("ABCD" for P4SPR)
-          Detects peak on C and D (where user actually injected)
-Bar:      C and D go green (CONTACT), A and B stay yellow (PENDING)
-Flags:    Injection flags placed on C and D
-          A and B get NO injection flags
-Mislabel: anomaly_detected signal exists on dialog but is NEVER emitted
-          No visual warning shown to user in bar or graph
-Cycle:    Continues with wrong-channel flags
-User:     Discovers mislabel later in Edits tab (flags on C/D, not A/B)
-```
-
-> **Gap**: No real-time mislabel warning. The bar LEDs turning green on the wrong channels is the only visual signal — easy to miss if the user isn't watching closely.
-
----
-
-### Scenario P — Forgot to wash (contact timer expires, no wash injection)
-
-```
-Timer:    Contact countdown reaches 0:00
-Bar:      Timer continues counting into NEGATIVE (red): -0:01, -0:02, ...
-          Channels stay GREEN (CONTACT) — no auto-transition to WASH
-Timer mixin: _place_automatic_wash_flags() fires immediately at 0
-          → Wash flags placed on all channels that had injection flags
-          → Flag placed at injection_display_time + contact_time
-          → Logged: "🧼 Automatic wash flag placed on channel {ch}"
-Marker:   "Contact end" stays at injection + contact_time position (unchanged)
-WashMonitor: Keeps polling — still looking for slope break
-Cycle:    CONTINUES — no block at timer = 0
-User:     Sees red negative timer, no further prompts
-          Wash flags placed automatically, so Edits tab analysis is still possible
-```
-
-**Practical impact**: The experiment is recoverable. Delta SPR can still be calculated from the auto-placed wash flags, but the measurement end-time may be slightly off if the user eventually washed much later.
-
----
-
-### Scenario Q — Wash late (washes after contact timer expired)
-
-```
-Timer:    Expired, showing -2:30 (red)
-Auto wash flags: Already placed at injection + contact_time
-WashMonitor: Still running, no timeout
-User washes at contact_time + 150s
-WashMonitor: Detects slope break on each channel → wash_detected.emit(ch, t_split)
-Bar:      Channels transition CONTACT → WASH (sky-blue dot)
-          _fire_done() called when all detected channels reach WASH
-          Bar dismisses cleanly
-Marker:   MOVES from original position to actual wash time (t_split)
-Flags:    Wash flags already placed at contact_time (by auto-path)
-          Actual wash time is later — MISMATCH between flag position and marker
-Cycle:    Completes normally (background thread unblocks via _on_bar_done)
-```
-
-> **Gap**: Wash flags were placed at the predicted time (contact_time expiry); the actual wash happened later. The marker moves but the flag doesn't. In Edits tab the delta SPR measurement endpoint will be wrong.
-
----
-
-### Scenario R — Wash early (before contact timer expires)
-
-```
-contact_time = 300s, user washes at t=45s
-WashMonitor: MIN_CONTACT_S = 15s guard (skip injection transient)
-             At t=15s post-injection: starts polling every 2s
-             At t=45s: detects slope break (2 consecutive confirms)
-             → wash_detected.emit(ch, t_split) where t_split ≈ 45s
-Bar:      Channel immediately transitions CONTACT → WASH (sky-blue)
-          If all detected channels wash: _fire_done() fires immediately
-          Contact timer shows e.g. "3:45" remaining → stops mid-countdown
-Marker:   Moves from injection+300s → actual wash at ~45s
-Flags:    Wash flags NOT placed by WashMonitor (gap — only bar UI updated)
-          Wash flags would only be placed by timer expiry (which hasn't happened)
-Cycle:    ENDS EARLY — background thread unblocks, injection_completed fires
-          The configured 300s contact_time is treated as a target, not a minimum
-```
-
-> **Gap**: Early wash produces no wash flag. The contact marker moves but no flag lands on the timeline at the wash point. User can't see the wash event in Edits tab.
-
-> **Gap**: Cycle ends before configured contact time. For binding kinetics, an early wash may invalidate the measurement. No enforcement of minimum contact duration.
-
----
-
-### Scenario S — Stop cycle mid contact time
-
-```
-User clicks Stop Cycle / Next Cycle while contact timer is running
-
-InjectionActionBar._on_cancel():
-  → Stops all timers (global + per-channel)
-  → Clears _active_channels, _detected_channels
-  → Resets all LEDs to grey (INACTIVE)
-  → Calls _on_cancel_cb() → coordinator._on_dialog_cancelled()
-
-Coordinator._on_dialog_cancelled():
-  → accepted_flag = False
-  → _stop_all_wash_monitors() — all WashMonitor QTimers stopped, dict cleared
-  → done_event.set() — unblocks background thread
-  → dialog.reject()
-
-Background thread:
-  → accepted = False → injection_cancelled.emit()
-  → Valves closed (_close_valves_after_manual_injection)
-
-Flags:    Injection flags already placed (if detection fired before stop) — PERSIST
-          Wash flags NOT placed (timer didn't expire, WashMonitor stopped)
-Marker:   "Contact end" marker STAYS on graph (not removed on cancel) ← stale
-Bar:      Hidden, dormant
-Cycle:    Terminates, moves to next cycle or stops queue
-```
-
-> **Gap**: Contact marker left on graph after cycle stops. Next cycle will show the stale orange line from the previous injection until a new marker overwrites it.
-
----
+## 8. User-Facing Scenarios
 
 ### Scenario A — P4SPR, 4 channels, all detect, contact_time set
 
 ```
-Phase 2 opens → all 4 PENDING
-A, B, C, D detected in sequence within grace window
-All 4 channels CONTACT, 4 WashMonitors running
-All 4 channels wash (slope break detected)
-all_washed = True (_detected_channels = {A,B,C,D}) → _fire_done()
-Contact marker moves to wash time of last channel
+show_monitoring() → all 4 PENDING
+A, B, C, D detected via _InjectionMonitor fire #1 (sequentially, per-channel)
+All 4 CONTACT, per-channel countdowns running
+done_event set on first detection (P4SPR)
+At contact_time expiry: _on_bar_done → _stop_all_monitors
+OR: _InjectionMonitor fire #2 per channel → set_channel_wash(ch)
 ✓ Clean path
 ```
 
 ### Scenario B — P4SPR, 3 channels used (A/B/C), D unused
 
 ```
-Phase 2 opens → all 4 PENDING (detection_channels always "ABCD" for P4SPR)
-A, B, C detected within grace
-15s grace expires → dialog finalizes with {A, B, C}
-D stays PENDING; _detected_channels = {A, B, C}
-A, B, C wash → all_washed checks {A,B,C} only → True → _fire_done()
-✓ Fixed: previously would wait 80s fallback timer
+show_monitoring() → all 4 PENDING
+A, B, C detected via _InjectionMonitor fire #1
+D never detects (monitor stays alive but never fires fire #1)
+Contact timer counts down for A, B, C independently
+At expiry: bar done fires, monitors cleaned up
+D stays PENDING until cleanup
+✓ Works — D's permanent PENDING is visually harmless
 ```
 
-### Scenario C — P4SPR, 2 channels, contact_time set, user-paced wash
+### Scenario C — No auto-detection (very low signal)
 
 ```
-A, B detect. C, D never detect (grace expires).
-_detected_channels = {A, B}
-A washes at t=45s → all_washed = False (B still CONTACT)
-B washes at t=48s → all_washed = True → _fire_done()
-✓ Works correctly
-```
-
-### Scenario D — No auto-detection, user clicks "Done"
-
-```
-80s window: no channel detects (very low signal, or detection_priority="off")
-User clicks "Done Injecting"
-10s post-done monitoring → _finalize_detection() with empty results
-injection_complete emitted; accepted_flag = True
-_process_detection_results: detected_injection_time is None
-→ retroactive scan: detect_injection_all_channels() on full window at min_confidence=0.20
-→ flags emitted for any channels found retroactively (or none if truly undetectable)
-✓ Graceful degradation
-```
-
-### Scenario E — 80s timeout, partial detection (2 of 4 channels)
-
-```
-A, B detect at t=5s and t=8s
-C, D never detect
-80s window expires → _on_detection_timeout() → _finalize_detection({A,B})
-injection_complete emitted; wash monitors running for A, B
-A, B wash → _fire_done()
-✓ Works correctly
-```
-
-### Scenario F — 80s timeout, zero detection
-
-```
-No channel detects in 80s
-_on_detection_timeout(): warning shown 2s
-injection_complete emitted; accepted_flag = False
-Coordinator: injection_cancelled emitted
-No flags placed; no marker placed
+_InjectionMonitor never crosses threshold (baseline too noisy, quality gate blocks)
+After lifecycle timeout (95s no-contact, or contact_time+215s with contact): _on_timeout
+Bar shows dormant — no injection flags placed
 User must add flags manually in Edits tab
-✓ Handled (user informed via warning message)
 ```
 
-### Scenario G — User cancels mid-injection
+### Scenario D — Wash detected early (before contact timer expires)
 
 ```
-Injection dialog showing (hidden)
-User clicks Cancel in bar
-_on_dialog_cancelled(): stop wash monitors, _dismiss_bar(), done_event.set()
-accepted_flag = False → injection_cancelled emitted
-Valves closed
-No flags placed
-✓ Clean cancel path
+contact_time = 300s, user pipettes buffer at t=45s
+_InjectionMonitor DEAD_ZONE_S = 15s after fire #1
+At t=45s post-injection (>15s dead zone): fire #2 → _handle_wash
+bar.set_channel_wash(ch) — ring goes sky-blue, STATUS shows "Wash"
+Contact timer stops for that channel
+Marker: DOES NOT MOVE (no _WashMonitor equivalent — gap, see §5)
+No wash flag placed by this path (only auto-placed at timer expiry — gap, see §5)
 ```
 
-### Scenario H — contact_time NOT set on cycle
+### Scenario E — Contact countdown overrun (user forgets to wash)
 
 ```
-Injection detected
-_show_contact_time_marker(): contact_time is None → returns early (no marker)
-_on_dialog_complete(): contact_time falsy → done_event.set() immediately
-_fire_done() called from bar (first detection → 1.5s → done, since no contact_time)
-_place_automatic_wash_flags() called immediately from _show_contact_time_marker
-No WashMonitors started (_has_contact_time = False)
-✓ Fast path, no waiting
+contact_time = 300s
+All channels detect; per-channel timers count from 5:00
+At t=300s: timers reach 0:00, continue negative (shown red)
+Timer mixin: _place_automatic_wash_flags() fires at expiry
+  → wash flags placed at injection_display_time + contact_time
+  → logged: "🧼 Automatic wash flag placed on channel {ch}"
+_InjectionMonitor keeps polling (fire #2 still possible if user eventually washes)
+At -2:00 cap: timer shows "No wash detected"
 ```
 
-### Scenario I — P4PRO automated injection, AC channels
+### Scenario F — Stop cycle mid-contact time
+
+```
+User clicks Stop Cycle / Next Cycle while contact timer is running
+InjectionCoordinator.cleanup_monitors() called from cycle teardown
+  → session._stop_all_monitors() — all _InjectionMonitor threads stopped
+Bar resets (set_panel_active(False))
+Flags: injection flags already placed (if detection fired before stop) — PERSIST
+Marker: "Contact end" marker STAYS on graph ← stale until next injection overwrites it
+Wash flags: NOT placed (timer didn't expire, auto-path not triggered)
+```
+
+### Scenario G — P4PRO automated injection, AC channels
 
 ```
 _execute_automated_injection() runs on BG thread
+_InjectionMonitor runs on A and C
 pump_mgr.inject_simple(flow_rate, channels="AC")
 6-port valve routes sample; pump dispenses
-injection_completed emits on success
-_place_injection_flag called via injection_flag_requested
+_InjectionMonitor detects on A and C → _handle_injection for each
+_on_detection_complete: stops all monitors (P4PRO path)
+injection_completed emits
 Contact marker placed if contact_time set
-WashMonitor starts on A, C if contact_time set
-✓ No dialog, no user interaction needed
 ```
 
-### Scenario J — Retroactive scan finds injection on unexpected channel
-
-```
-User injected into D, but cycle.channels = "AC"
-Retroactive scan detects D at confidence 0.35
-Mislabel detection: D not in active_channels {"A", "C"}
-injection_mislabel_flags["D"] = 'inactive_channel'
-Warning logged; flag still placed on D
-User informed in log / future triage dialog
-⚠ Handled defensively; user should check Edits tab
-```
-
-### Scenario K — Negative injection display time (auto-detect fires before cycle start)
+### Scenario H — Negative injection display time (auto-detect fires before cycle start)
 
 ```
 Auto-detection fires at raw t=12.2s
@@ -543,66 +363,34 @@ Contact marker placed at 0 + contact_time
 ✓ No crash; flag appears at cycle start
 ```
 
-### Scenario L — WashMonitor false positive suppressed by CONFIRM_POLLS
-
-```
-At t=20s post-injection: sudden noise spike, delta_slope > threshold
-_confirm_count = 1 (need 2 consecutive)
-Next poll (t=22s): delta_slope back to normal → _confirm_count reset to 0
-Wash NOT reported
-At t=45s: actual wash injection — delta_slope high for 2 consecutive polls
-Wash reported correctly
-✓ Debouncing prevents false wash flags
-```
-
-### Scenario M — Contact countdown overrun (wash not detected yet)
-
-```
-contact_time = 300s
-All channels detect; per-channel timers count from 5:00
-At t=300s: timers reach 0:00
-bar._ch_tick(): _ch_remaining[ch] goes negative → shown in red as "-00:15"
-WashMonitor keeps polling; user should wash soon
-When wash detected → _stop_channel_countdown(ch), timer hidden
-If wash never detected: timer counts negative indefinitely until _fire_done() via another path
-⚠ No hard overrun cap; user sees red overrun timer
-```
-
 ---
 
-## 10. Key Constants
+## 9. Key Constants
 
 | Constant | Value | Location | Meaning |
 |----------|-------|----------|---------|
-| `INJECTION_WINDOW_SECONDS` | 80s | `manual_injection_dialog.py:78` | Hard timeout for entire detection window |
-| `CHANNEL_SCAN_GRACE_SECONDS` | 15s | `manual_injection_dialog.py:83` | Grace after first detection to find remaining channels |
-| `PHASE1_SECONDS` | 10s | `injection_action_bar.py:176` | "Get Ready" countdown before Phase 2 |
-| `PHASE2_SECONDS` | 80s | `injection_action_bar.py:177` | Detection window in bar (matches dialog) |
-| `MIN_CONTACT_S` | 15s | `injection_coordinator.py:93` | Ignore first 15s of contact (injection transient) |
-| `HARD_MIN_SLOPE` | 0.5 RU/s | `injection_coordinator.py:94` | Minimum detectable wash slope change |
-| `SIGMA` | 4.0 | `injection_coordinator.py:95` | Noise σ multiplier for adaptive wash threshold |
-| `CONFIRM_POLLS` | 2 | `injection_coordinator.py:96` | Consecutive polls above threshold required to confirm wash |
-| `POLL_INTERVAL_S` | 2s | `injection_coordinator.py:89` | WashMonitor polling rate |
-| `FLUIDIC_PATH_VOLUME_UL` | 8.0 µL | `injection_coordinator.py:61` | Dead volume for pump transit delay calculation |
-| Min confidence (live) | 0.15 | `manual_injection_dialog.py` | Threshold for live per-channel scan |
-| Min confidence (retro) | 0.20 | `injection_coordinator.py` | Threshold for retroactive full-window scan |
-| 355 RU/nm | — | `manual_injection_dialog.py` | Wavelength → RU conversion |
+| `POLL_INTERVAL_S` | 2s | `injection_coordinator.py` (`_InjectionMonitor`) | Monitor polling rate |
+| `WINDOW_FRAMES` | 5 | `injection_coordinator.py` | Frames per rolling window |
+| `HARD_MIN_RU` | 5.0 RU | `injection_coordinator.py` | Minimum detectable delta (floor) |
+| `SIGMA` | 3.0 | `settings.py` (`INJECTION_DETECTION_SIGMA`) | Adaptive threshold multiplier |
+| `CONFIRM_FRAMES` | 2 | `settings.py` (`INJECTION_CONFIRM_FRAMES`) | Consecutive polls required |
+| `STD_MAX_NM` | 0.056 nm | `settings.py` (`INJECTION_STD_MAX_NM`) | Max baseline σ to allow polling |
+| `DEAD_ZONE_S` | 15s | `settings.py` (`INJECTION_DEAD_ZONE_S`) | Post-fire silence window |
+| `FLUIDIC_PATH_VOLUME_UL` | 8.0 µL | `manual_injection_dialog.py` | Dead volume for pump transit delay |
+| 355 RU/nm | — | Throughout | Wavelength → RU conversion |
+| `_OVERRUN_CAP_S` | 120s | `injection_action_bar.py` | Max negative overrun shown before "No wash detected" |
 
 ---
 
-## 11. Known Gaps
+## 10. Known Gaps / Active Issues
 
-> **Status as of v2.0.5-beta (Feb 2026):** All code gaps fixed. Gap 7 and 10 are design decisions — see notes.
+> **Status as of v2.0.5-beta (Feb 2026)**
 
-| # | Gap | Status | Notes |
-|---|-----|--------|-------|
-| 1 | **No detection countdown in bar** | ✅ Fixed | `_tick()` waiting branch shows live countdown with urgency colours (grey → amber ≤ 20s → red ≤ 10s) |
-| 2 | **Bar timeout message not visible** | ✅ Fixed | `show_injection_missed()` called from coordinator on lifecycle timeout; bar shows persistent message, auto-dismisses after 8s |
-| 3 | **No mislabel warning** | ✅ Fixed | `show_mislabel_warning(detected, expected)` called after retroactive scan when `injection_mislabel_flags` is non-empty |
-| 4 | **No wash flag from WashMonitor** | ✅ Fixed | `_on_wash_detected()` in `_pump_mixin` now calls `flag_mgr.add_flag_marker(..., 'wash')` at `t_split` |
-| 5 | **Early wash flag mismatch** | ✅ Fixed | Covered by Gap 4 fix; wash flag placed at `t_split` (actual wash time) |
-| 6 | **Contact marker not removed on cancel** | ✅ Fixed | `_on_injection_cancelled()` removes `_contact_time_marker` from graph |
-| 7 | **No minimum contact time enforcement** | Design decision | `contact_time` is advisory. WashMonitor fires whenever slope breaks, regardless of elapsed time. Enforcing a hard minimum would block the background thread unnecessarily. Document in user guide instead. |
-| 8 | **Overrun cap missing** | ✅ Fixed | `_ch_tick()` stops at `–_OVERRUN_CAP_S` (−120s) and shows "No wash detected" label |
-| 9 | **`measure_delta_spr` NameError** | ✅ Fixed | `start_target` / `end_target` now saved as locals before `_avg_at()` calls in `spr_signal_processing.py` |
-| 10 | **Phase 1 (Get Ready) skipped** | Design decision | `show_phase1()` is dead code — coordinator goes directly to `show_phase2`. Phase 1 (10s settle period) is enforced by the fluidic step, not the bar. Leave as-is; remove if confusing. |
+| # | Gap | Status | Impact |
+|---|-----|--------|--------|
+| 1 | **Contact marker does not move on wash detection** | ⚠ Open | Marker always shows predicted time, not actual wash time. `_WashMonitor` (which moved the marker) was removed when wash detection moved to `_InjectionMonitor` fire #2. |
+| 2 | **No wash flag from `_InjectionMonitor` fire #2** | ⚠ Open | `_handle_wash()` only updates bar UI + scorer. No `flag_mgr.add_flag_marker(..., 'wash')` call. Wash flags are only auto-placed at timer expiry, which may not match actual wash time. |
+| 3 | **No wash flag when wash is early** (before timer expires) | ⚠ Open | If user washes before `contact_time`, `_InjectionMonitor` fire #2 fires but places no flag. `_place_automatic_wash_flags()` never runs (timer didn't expire). Edits tab has no wash marker. |
+| 4 | **Contact marker left on graph after cycle cancel** | ⚠ Open | `_on_injection_cancelled()` does not remove `_contact_time_marker`. Stale orange line persists until next injection. |
+| 5 | **`_InjectionMonitor` wash detection pending live validation** | 🧪 Needs test | Fire #2 routing implemented (Feb 26 2026). Not yet validated on hardware. |
+| 6 | **DEAD_ZONE_S = 15s** | Design decision | If user washes within 15s of injection, it won't be detected. This prevents the biphasic bulk-RI artifact from being flagged as a wash. Acceptable for normal lab use. |

@@ -1,7 +1,7 @@
-# AffiLabs.core v2.0 - Operation Manual
+# Affilabs.core v2.0.5 - Operation Manual
 
-**Software Version:** 2.0
-**Release Date:** January 30, 2026
+**Software Version:** 2.0.5
+**Release Date:** February 24, 2026
 **Status:** Release
 **Device:** FLMT09788 (Flame-T Spectrometer)
 
@@ -1500,18 +1500,19 @@ To capture dissociation kinetics for weak binders:
 ### Current Software Version
 
 ```
-Software Name:        Affilabs-Core
-Version:             2.0
-Release Date:        January 30, 2026
+Software Name:        Affilabs.core
+Version:             2.0.5
+Release Date:        February 24, 2026
 Status:              Production Release
-Device Compatibility: FLMT09788 (Flame-T Spectrometer)
+Device Compatibility: Flame-T (FLMT series), USB4000
 ```
 
 ### Version History
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| **2.0** | 2026-01-30 | Live/Edit two-phase workflow, GLP/GMP organization, auto-save Δ-SPR | Current |
+| **2.0.5** | 2026-02-24 | Notes tab, accessibility panel, binding plot enhancements, Sparq AI tips, experiment index, timeline events, transport bar, icon rail | **Current** |
+| 2.0 | 2026-01-30 | Live/Edit two-phase workflow, GLP/GMP organization, auto-save Δ-SPR | Superseded |
 | 1.06 | 2025-12-15 | Various bug fixes | Deprecated |
 | 1.0 | 2025-10-01 | Initial release | End of Life |
 
@@ -1530,17 +1531,17 @@ Device Compatibility: FLMT09788 (Flame-T Spectrometer)
 
 ### Update Policy
 
-**Check for updates:** Help → About → Check for Updates
+**Check current version:** Settings → About Affilabs.core
 
-- **Automatic**: Minor updates (security patches)
-- **Manual**: Major updates (new features, breaking changes)
-- **Notification**: Optional alert on startup
+- Updates are distributed as new installer packages
+- Contact Affinite Instruments for update availability: info@affiniteinstruments.com
 
 ### Getting Help
 
-- **In-app help**: Click **?** button (top right)
+- **In-app assistant**: Open the Sparq AI sidebar tab for contextual help
 - **Documentation**: `docs/` folder in installation directory
-- **Error logs**: Saved to `~/.affilabs/logs/`
+- **Known issues**: See [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
+- **Hardware compatibility**: See [HARDWARE_COMPATIBILITY.md](HARDWARE_COMPATIBILITY.md)
 - **Contact support**: info@affiniteinstruments.com
 
 ---
@@ -1551,7 +1552,7 @@ Device Compatibility: FLMT09788 (Flame-T Spectrometer)
 
 ### Overview
 
-ezControl includes a built-in user management system to track who runs experiments and help users progress from novice to expert operators.
+Affilabs.core includes a built-in user management system to track who runs experiments and help users progress from novice to expert operators.
 
 **Key Features:**
 - Multiple user profiles for lab sharing
@@ -1873,8 +1874,8 @@ Affilabs.core is continuously improved based on user feedback. If something is c
 
 ---
 
-**Last Updated:** 2026-02-07
-**Manual Version:** 1.0
+**Last Updated:** 2026-02-24
+**Manual Version:** 2.0.5
 **Status:** PRODUCTION - CRITICAL SAFETY REQUIREMENTS
 **For questions or corrections, contact:** info@affiniteinstruments.com
 

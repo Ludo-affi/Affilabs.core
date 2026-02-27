@@ -1,13 +1,19 @@
 # Signal Event Classifier — FRS
 
-**Document Status:** 🔵 Design (not yet implemented)
-**Last Updated:** February 25, 2026
-**Planned source files:**
-- `affilabs/services/signal_telemetry_logger.py` — silent per-frame data recorder
-- `affilabs/utils/signal_event_classifier.py` — readiness + bubble classifier
-- `affilabs/widgets/signal_event_badge.py` — pre-inject readiness badge + bubble alert
-- `affilabs/services/signal_quality_scorer.py` — per-cycle + per-run quality scoring (`SignalQualityScorer`, `CycleQualityScore`, `RunQualityScore`)
-- `affilabs/services/sparq_coach_service.py` — run summary serialisation, Tier 1/2 upload, response handling
+**Document Status:** 🟡 Partially implemented — core scoring done, UI display and Sparq Coach pending
+**Last Updated:** 2026-02-26
+
+### Implementation status by file
+
+| File | Status | Notes |
+|------|--------|-------|
+| `affilabs/services/signal_telemetry_logger.py` | ✅ Implemented | Per-channel CSV, rolling p2p + slope, disk guard. Wired via `spectrum_helpers.py` + `_acquisition_mixin.py` session lifecycle. |
+| `affilabs/utils/signal_event_classifier.py` | ✅ Implemented | `check_readiness()` + `check_bubble()` as static methods. Called per-poll from `_InjectionMonitor._check_bubbles()`. Readiness called from `_InjectionMonitor._poll()` (fire_count == 0 guard). |
+| `affilabs/services/signal_quality_scorer.py` | ✅ Implemented | `SignalQualityScorer` singleton, `CycleQualityScore`, `RunQualityScore`. Wired: `notify_injection_detected`, `notify_wash_detected`, `notify_leak_detected`. `record_frame()` not yet wired from `spectrum_helpers`. |
+| `affilabs/widgets/signal_event_badge.py` | ❌ Not implemented | Pre-inject readiness badge widget. Planned. |
+| `affilabs/services/sparq_coach_service.py` | ❌ Not implemented | Tier 1/2 upload + response handling. Planned. |
+| Queue dot display | ❌ Not wired | `SignalQualityScorer.cycle_scored` signal exists but not connected to `QueueSummaryWidget`. |
+| Edits tab score display | ❌ Not wired | `CycleQualityScore` not yet serialised to session or shown in cycle list. |
 
 ---
 
@@ -254,12 +260,13 @@ Wash detection uses the same adaptive criterion with `baseline_5s` computed from
 
 ## 6. Silent Telemetry Logger
 
-Runs silently every frame during binding cycles. Invisible to the user. Collects data for future interpretation layers (binding guidance, regen effectiveness, concentration context).
+> **Status: ✅ Implemented** (`affilabs/services/signal_telemetry_logger.py`)
 
-Controlled by `SIGNAL_TELEMETRY_ENABLED` in `settings.py` (default `True` dev, `False` shipped).
+Runs silently every frame. Invisible to the user. Collects data for future interpretation layers.
 
-Output: `~/Documents/Affilabs Data/telemetry/signal_telemetry_YYYYMMDD_HHMMSS.csv`
-Max 50 MB per file. Skips writes when disk free < 500 MB.
+Controlled by `SIGNAL_TELEMETRY_ENABLED` in `settings.py`.
+
+Output: Per-channel rolling CSV files in `_data/logs/telemetry/`. Disk guard: skips writes when free space < 500 MB.
 
 ### 6.1 Auto-labelling from existing flags
 
@@ -435,20 +442,23 @@ Dot colours follow §7.3. The dot is advisory only — it does not block cycle p
 
 ### 7.6 Transfer to Edits
 
-When a recording session is loaded in the Edits tab, each cycle row in the cycle list gains a coloured dot (same scheme) and the auto-generated note text appears in a read-only "Signal quality" field in the cycle detail panel.
+> **Status: ❌ Not yet wired.** `CycleQualityScore` objects are produced by `SignalQualityScorer` and emitted via `cycle_scored` signal, but are not currently serialised to session recordings or shown in the Edits tab cycle list.
 
-The score and note are stored in the `CycleQualityScore` dataclass, serialised to the session recording (CSV or JSON sidecar — TBD in implementation). They are not part of the telemetry CSV schema.
+When implemented, each cycle row in the Edits tab cycle list gains a coloured dot and the auto-generated note appears in the cycle detail panel.
+
+**Implemented `CycleQualityScore` dataclass** (in `signal_quality_scorer.py`):
 
 ```python
 @dataclass
 class CycleQualityScore:
     cycle_index: int
+    cycle_id: str                       # ← added (not in original FRS)
+    cycle_type: str
     score: int                          # 0–100
     band: str                           # "excellent" / "good" / "marginal" / "poor"
     note: str                           # auto-generated plain English
     components: dict[str, float]        # per-component raw scores for debugging
-    finished: bool                      # True if cycle reached end of wash sub-phase
-    cycle_type: str                     # "binding" / "baseline" / "regen" / etc.
+    finished: bool                      # True if cycle reached natural end
 
 @dataclass
 class RunQualityScore:

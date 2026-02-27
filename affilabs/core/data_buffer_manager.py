@@ -19,6 +19,7 @@ class ChannelBuffer:
     )  # Absolute timestamp (seconds since epoch)
     wavelength: np.ndarray = field(default_factory=lambda: np.array([]))
     spr: np.ndarray = field(default_factory=lambda: np.array([]))  # Delta SPR in RU
+    transmittance: np.ndarray = field(default_factory=lambda: np.array([]))  # Mean %T (0–100)
 
 
 @dataclass
@@ -88,6 +89,7 @@ class DataBufferManager:
         timestamp: float | None = None,
         ema_state: dict | None = None,
         ema_alpha: float = 0.0,
+        transmittance: float | None = None,
     ) -> float:
         """Append a data point to the timeline buffer with optional EMA filtering.
 
@@ -98,6 +100,7 @@ class DataBufferManager:
             timestamp: Absolute timestamp (seconds since epoch), optional
             ema_state: Dictionary containing previous EMA values per channel
             ema_alpha: EMA smoothing factor (0=no filtering, higher=less smoothing)
+            transmittance: Mean % transmittance (0–100) for this frame, optional
 
         Returns:
             Filtered wavelength value (or raw if ema_alpha=0)
@@ -125,12 +128,20 @@ class DataBufferManager:
             buffer.wavelength = np.insert(buffer.wavelength, insert_idx, display_wavelength)
             if timestamp is not None and len(buffer.timestamp) > 0:
                 buffer.timestamp = np.insert(buffer.timestamp, insert_idx, timestamp)
+            if transmittance is not None:
+                t_val = float(transmittance)
+                if len(buffer.transmittance) > 0:
+                    buffer.transmittance = np.insert(buffer.transmittance, insert_idx, t_val)
+                else:
+                    buffer.transmittance = np.array([t_val])
         else:
             # Normal case - append to end
             buffer.time = np.append(buffer.time, time)
             buffer.wavelength = np.append(buffer.wavelength, display_wavelength)
             if timestamp is not None:
                 buffer.timestamp = np.append(buffer.timestamp, timestamp)
+            if transmittance is not None:
+                buffer.transmittance = np.append(buffer.transmittance, float(transmittance))
 
         return display_wavelength
 
@@ -202,6 +213,7 @@ class DataBufferManager:
         cycle_wavelength: np.ndarray,
         delta_spr: np.ndarray,
         cycle_timestamp: np.ndarray = None,
+        cycle_transmittance: np.ndarray | None = None,
     ) -> None:
         """Update cycle data for a channel.
 
@@ -214,6 +226,7 @@ class DataBufferManager:
             cycle_wavelength: Wavelength array for cycle
             delta_spr: Delta SPR array in RU
             cycle_timestamp: Absolute timestamp array (optional)
+            cycle_transmittance: Mean %T array (0–100) for the cycle region (optional)
 
         """
         buffer = self.cycle_data[channel]
@@ -226,6 +239,11 @@ class DataBufferManager:
         else:
             # Initialize empty timestamp array if not provided or length mismatch
             buffer.timestamp = np.array([])
+        # Transmittance — optional, may be shorter than time array if some frames had no %T
+        if cycle_transmittance is not None and len(cycle_transmittance) == len(cycle_time):
+            buffer.transmittance = cycle_transmittance
+        else:
+            buffer.transmittance = np.array([])
 
     def append_cycle_data(
         self,
@@ -357,7 +375,7 @@ class DataBufferManager:
         channel: str,
         start_time: float,
         stop_time: float,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Extract data within time range from timeline buffer.
 
         Args:
@@ -366,18 +384,24 @@ class DataBufferManager:
             stop_time: Stop time in seconds (elapsed)
 
         Returns:
-            Tuple of (time_array, wavelength_array, timestamp_array) within range
+            Tuple of (time_array, wavelength_array, timestamp_array, transmittance_array)
+            within range.  transmittance_array may be empty if no %T data is stored.
 
         """
         buffer = self.timeline_data[channel]
         if len(buffer.time) == 0:
-            return np.array([]), np.array([]), np.array([])
+            return np.array([]), np.array([]), np.array([]), np.array([])
 
         # Include data points at or after start cursor up to and including stop cursor
         # This ensures cycle starts at t=0 when cursor is placed at a data point
         mask = (buffer.time >= start_time) & (buffer.time <= stop_time)
         timestamps = buffer.timestamp[mask] if len(buffer.timestamp) > 0 else np.array([])
-        return buffer.time[mask], buffer.wavelength[mask], timestamps
+        transmittances = (
+            buffer.transmittance[mask]
+            if len(buffer.transmittance) == len(buffer.time)
+            else np.array([])
+        )
+        return buffer.time[mask], buffer.wavelength[mask], timestamps, transmittances
 
     def clear_all(self) -> None:
         """Clear all buffers (for new experiment)."""

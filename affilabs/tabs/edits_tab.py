@@ -35,6 +35,7 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
     TABLE_COL_TIME = 2
     TABLE_COL_CONC = 3
     TABLE_COL_DELTA_SPR = 4
+    TABLE_COL_SCORE = 5   # Cycle quality score — hidden by default, shown via column menu
 
     def __init__(self, main_window):
         """Initialize Edits tab with reference to main window.
@@ -52,6 +53,7 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
         # Loaded metadata from Excel file (populated when loading file)
         self._loaded_metadata = {}
         self._loaded_file_path = None  # Path to the currently loaded Excel file (for saving)
+        self._current_index_entry: dict | None = None  # Cached ExperimentIndex entry for star/tag ops
 
         # Per-cycle editing state
         self._cycle_alignment = {}  # {row_idx: {'channel': str, 'shift': float}}
@@ -260,7 +262,8 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
         else:
             try:
                 from pathlib import Path as _Path2
-                _rec = getattr(getattr(self.main_window, 'app', None), 'recording_mgr', None)
+                _rec = getattr(self.main_window, 'recording_mgr', None) or \
+                       getattr(getattr(self.main_window, 'app', None), 'recording_mgr', None)
                 if _rec and getattr(_rec, 'current_file', None):
                     trans_str = _Path2(_rec.current_file).name
             except Exception:
@@ -270,13 +273,41 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
 
         # RATING + TAGS: from ExperimentIndex, keyed by loaded file path
         if hasattr(self, 'meta_star_buttons'):
-            entry = self._find_index_entry_for_file(getattr(self, '_loaded_file_path', None))
+            entry = self._find_index_entry_for_file(self._resolve_file_path())
+            self._current_index_entry = entry  # Cache for star/tag click handlers
             rating = entry.get("rating", 0) if entry else 0
             self._set_star_display(rating)
             tags = entry.get("tags", []) if entry else []
             self._refresh_tags_display(tags)
 
     # ── ExperimentIndex integration ───────────────────────────────────────────
+
+    def _resolve_file_path(self) -> str | None:
+        """Return the best available file path for indexing.
+
+        Priority:
+        1. _loaded_file_path (set when user opens an Excel file)
+        2. recording_mgr.current_file on main_window (set during/after a live recording)
+        3. recording_mgr.current_file on main_window.app (legacy path)
+        """
+        if self._loaded_file_path:
+            return self._loaded_file_path
+        try:
+            # Primary: recording_mgr is on main_window directly
+            rec = getattr(self.main_window, 'recording_mgr', None)
+            if rec and getattr(rec, 'current_file', None):
+                return str(rec.current_file)
+            # Fallback: some builds attach it via .app
+            rec = getattr(getattr(self.main_window, 'app', None), 'recording_mgr', None)
+            if rec and getattr(rec, 'current_file', None):
+                return str(rec.current_file)
+            # After recording stops, current_file is cleared — check last recorded file
+            rec_events = getattr(self.main_window, 'recording_events', None)
+            if rec_events and getattr(rec_events, '_last_recording_file', None):
+                return str(rec_events._last_recording_file)
+        except Exception:
+            pass
+        return None
 
     def _find_index_entry_for_file(self, file_path) -> dict | None:
         """Return the ExperimentIndex entry whose 'file' field matches file_path, or None."""
@@ -305,17 +336,45 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
             pass
         return None
 
+    def _get_or_create_index_entry(self, file_path) -> dict | None:
+        """Return existing index entry for file_path, creating a minimal stub if none exists."""
+        entry = self._find_index_entry_for_file(file_path)
+        if entry is not None:
+            return entry
+        if not file_path:
+            return None
+        try:
+            import uuid
+            from datetime import datetime
+            from pathlib import Path as _P
+            from affilabs.services.experiment_index import ExperimentIndex
+            idx = ExperimentIndex()
+            abs_path = _P(file_path).resolve()
+            base = (_P.home() / "Documents" / "Affilabs Data").resolve()
+            try:
+                file_key = str(abs_path.relative_to(base))
+            except ValueError:
+                file_key = str(abs_path)
+            stub = {
+                "id": str(uuid.uuid4()),
+                "file": file_key,
+                "title": abs_path.stem,
+                "date": datetime.now().isoformat(timespec="seconds"),
+                "rating": 0,
+                "tags": [],
+                "notes": "",
+                "description": "",
+                "status": "completed",
+                "type": "recording",
+            }
+            idx.append_entry(stub)
+            return stub
+        except Exception:
+            return None
+
     def _set_star_display(self, rating: int) -> None:
         """Update the 5 star buttons to reflect the given rating (0 = none filled)."""
         for i, btn in enumerate(self.meta_star_buttons, start=1):
-            if i <= rating:
-                btn.setStyleSheet(btn.styleSheet().replace("color: #D1D1D6", "color: #FF9500")
-                                  if "color: #FF9500" not in btn.styleSheet() else btn.styleSheet())
-                # Simpler: set inline color per button
-                btn.setProperty("active", True)
-            else:
-                btn.setProperty("active", False)
-            # Force repaint via individual style
             filled = i <= rating
             btn.setStyleSheet(f"""
                 QPushButton {{
@@ -327,11 +386,16 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
                 }}
                 QPushButton:hover {{ color: #FF9500; }}
             """)
+            btn.update()
 
     def _on_star_clicked(self, n: int) -> None:
         """Toggle or set star rating. Clicking the current rating clears it (sets to 0)."""
-        entry = self._find_index_entry_for_file(getattr(self, '_loaded_file_path', None))
+        entry = self._current_index_entry
+        if entry is None:
+            entry = self._get_or_create_index_entry(self._resolve_file_path())
+            self._current_index_entry = entry
         if not entry:
+            logger.debug("Star click ignored — no index entry for this file")
             return
         try:
             from affilabs.services.experiment_index import ExperimentIndex
@@ -339,9 +403,11 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
             current = entry.get("rating", 0)
             new_rating = 0 if current == n else n
             idx.set_rating(entry["id"], new_rating)
+            # Update cache so next click sees the new rating
+            self._current_index_entry["rating"] = new_rating
             self._set_star_display(new_rating)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"Star rating failed: {exc}")
 
     def _refresh_tags_display(self, tags: list) -> None:
         """Rebuild the tag pills container to show current tags."""
@@ -379,33 +445,55 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
         tag = self.meta_tag_input.text().strip().lower()
         if not tag:
             return
-        entry = self._find_index_entry_for_file(getattr(self, '_loaded_file_path', None))
+        entry = self._current_index_entry
+        if entry is None:
+            entry = self._get_or_create_index_entry(self._resolve_file_path())
+            self._current_index_entry = entry
         if not entry:
+            logger.debug("Tag add ignored — no index entry for this file")
             return
         try:
             from affilabs.services.experiment_index import ExperimentIndex
             idx = ExperimentIndex()
             idx.add_tag(entry["id"], tag)
-            # Re-read to get updated tags
-            updated = self._find_index_entry_for_file(self._loaded_file_path)
-            self._refresh_tags_display(updated.get("tags", []) if updated else [])
+            # Update cache optimistically so display is consistent
+            cached_tags = self._current_index_entry.setdefault("tags", [])
+            if tag not in cached_tags:
+                cached_tags.append(tag)
+            self._refresh_tags_display(list(cached_tags))
             self.meta_tag_input.clear()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"Tag add failed: {exc}")
 
     def _on_tag_removed(self, tag: str) -> None:
         """Remove a tag from the index entry and refresh display."""
-        entry = self._find_index_entry_for_file(getattr(self, '_loaded_file_path', None))
+        entry = self._current_index_entry
         if not entry:
             return
         try:
             from affilabs.services.experiment_index import ExperimentIndex
             idx = ExperimentIndex()
             idx.remove_tag(entry["id"], tag)
-            updated = self._find_index_entry_for_file(self._loaded_file_path)
-            self._refresh_tags_display(updated.get("tags", []) if updated else [])
-        except Exception:
-            pass
+            # Update cache optimistically
+            cached_tags = [t for t in self._current_index_entry.get("tags", []) if t != tag]
+            self._current_index_entry["tags"] = cached_tags
+            self._refresh_tags_display(cached_tags)
+        except Exception as exc:
+            logger.warning(f"Tag remove failed: {exc}")
+
+    def _on_smooth_changed(self) -> None:
+        """Re-render the current graph when the smoothing slider changes.
+
+        Tries two paths in priority order:
+        1. Loaded Excel cycle — re-triggers _on_cycle_selected_in_table on main_window
+        2. Live recording selection view — calls _update_selection_view
+        """
+        mw = self.main_window
+        if hasattr(mw, '_on_cycle_selected_in_table'):
+            # Loaded-file path: re-run the cycle display with the new smoothing value
+            mw._on_cycle_selected_in_table()
+        else:
+            self._update_selection_view()
 
     def _update_selection_view(self):
         """Update active selection graph based on timeline cursor positions."""
@@ -489,10 +577,11 @@ class EditsTab(DataMixin, ExportMixin, UIBuildersMixin, AlignmentMixin, TableMix
 
         # Option 2: From loaded Excel file - preserve raw data sheet
         elif hasattr(self.main_window, '_loaded_raw_data_sheets'):
-            if 'Raw_Data' in self.main_window._loaded_raw_data_sheets:
-                return self.main_window._loaded_raw_data_sheets['Raw_Data'].copy()
-            elif 'Channels XY' in self.main_window._loaded_raw_data_sheets:
-                return self.main_window._loaded_raw_data_sheets['Channels XY'].copy()
+            sheets = self.main_window._loaded_raw_data_sheets
+            # Support both new ("PE - Raw Data") and legacy ("Raw_Data") names
+            for key in ('PE - Raw Data', 'Raw_Data', 'Channels XY'):
+                if key in sheets:
+                    return sheets[key].copy()
 
         # Option 3: Construct from buffer_mgr (live data)
         elif hasattr(self.main_window, 'app') and hasattr(self.main_window.app, 'buffer_mgr'):

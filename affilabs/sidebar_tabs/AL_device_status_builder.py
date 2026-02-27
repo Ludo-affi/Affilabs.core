@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from affilabs.ui_styles import (
     Colors,
     Fonts,
+    section_header_style,
 )
 from affilabs.services.diagnostic_uploader import DiagnosticUploader
 
@@ -125,11 +126,7 @@ class DeviceStatusTabBuilder:
         self.sidebar._hw_dot = hw_dot
 
         hw_label = QLabel("HARDWARE")
-        hw_label.setStyleSheet(
-            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
-            f"letter-spacing: 0.5px; background: transparent;"
-            f"font-family: {Fonts.SYSTEM};"
-        )
+        hw_label.setStyleSheet(section_header_style())
         hw_row.addWidget(hw_label)
         hw_row.addStretch()
 
@@ -206,11 +203,7 @@ class DeviceStatusTabBuilder:
     # ── System Components (LED bars) ──────────────────────────────────
     def _build_components_section(self, layout: QVBoxLayout):
         section_label = QLabel("SYSTEM")
-        section_label.setStyleSheet(
-            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
-            f"letter-spacing: 0.5px; background: transparent;"
-            f"font-family: {Fonts.SYSTEM};"
-        )
+        section_label.setStyleSheet(section_header_style())
         layout.addWidget(section_label)
         layout.addSpacing(10)
 
@@ -272,11 +265,7 @@ class DeviceStatusTabBuilder:
     # ── Operation Modes ───────────────────────────────────────────────
     def _build_modes_section(self, layout: QVBoxLayout):
         section_label = QLabel("MODES")
-        section_label.setStyleSheet(
-            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
-            f"letter-spacing: 0.5px; background: transparent;"
-            f"font-family: {Fonts.SYSTEM};"
-        )
+        section_label.setStyleSheet(section_header_style())
         layout.addWidget(section_label)
         layout.addSpacing(10)
 
@@ -336,11 +325,7 @@ class DeviceStatusTabBuilder:
     # ── Maintenance (compact stats) ───────────────────────────────────
     def _build_maintenance_section(self, layout: QVBoxLayout):
         section_label = QLabel("MAINTENANCE")
-        section_label.setStyleSheet(
-            f"color: {Colors.PRIMARY_TEXT}; font-size: 12px; font-weight: 700;"
-            f"letter-spacing: 0.5px; background: transparent;"
-            f"font-family: {Fonts.SYSTEM};"
-        )
+        section_label.setStyleSheet(section_header_style())
         layout.addWidget(section_label)
         layout.addSpacing(8)
 
@@ -438,36 +423,13 @@ class DeviceStatusTabBuilder:
         btn_row.setSpacing(8)
         btn_row.setContentsMargins(0, 0, 0, 0)
 
-        self.sidebar.debug_log_btn = QPushButton("Debug Log")
-        self.sidebar.debug_log_btn.setFixedHeight(28)
-        self.sidebar.debug_log_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sidebar.debug_log_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  background: {Colors.BUTTON_PRIMARY}; color: white;"
-            f"  border: none;"
-            f"  border-radius: 6px; font-size: 11px; font-weight: 600;"
-            f"  padding: 4px 10px; font-family: {Fonts.SYSTEM};"
-            f"}}"
-            f"QPushButton:hover {{ background: {Colors.BUTTON_PRIMARY_HOVER}; }}"
-        )
-        btn_row.addWidget(self.sidebar.debug_log_btn)
+        # Hidden stubs so existing signal wiring in affilabs_sidebar.py doesn't crash
+        self.sidebar.debug_log_btn = QPushButton()
+        self.sidebar.debug_log_btn.hide()
+        self.sidebar.send_diagnostics_btn = QPushButton()
+        self.sidebar.send_diagnostics_btn.hide()
 
-        self.sidebar.send_diagnostics_btn = QPushButton("Diagnostics")
-        self.sidebar.send_diagnostics_btn.setFixedHeight(28)
-        self.sidebar.send_diagnostics_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.sidebar.send_diagnostics_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  background: #007AFF; color: white;"
-            f"  border: none; border-radius: 6px;"
-            f"  font-size: 11px; font-weight: 600;"
-            f"  padding: 4px 10px; font-family: {Fonts.SYSTEM};"
-            f"}}"
-            f"QPushButton:hover {{ background: #0051D5; }}"
-        )
-        self.sidebar.send_diagnostics_btn.clicked.connect(self._handle_send_diagnostics)
-        btn_row.addWidget(self.sidebar.send_diagnostics_btn)
-
-        self.sidebar.issue_tracker_btn = QPushButton("🐛 Issues")
+        self.sidebar.issue_tracker_btn = QPushButton("Issues")
         self.sidebar.issue_tracker_btn.setFixedHeight(28)
         self.sidebar.issue_tracker_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sidebar.issue_tracker_btn.setToolTip("OEM Issue Tracker — create & view GitHub Issues (Ctrl+Shift+I)")
@@ -484,17 +446,6 @@ class DeviceStatusTabBuilder:
 
         btn_row.addStretch()
         layout.addLayout(btn_row)
-
-        # Version label — explicit and clear
-        layout.addSpacing(12)
-        from version import __version__
-        ver = QLabel(f"Affilabs.core v{__version__}")
-        ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ver.setStyleSheet(
-            f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; background: transparent;"
-            f"font-weight: 500; font-family: {Fonts.SYSTEM};"
-        )
-        layout.addWidget(ver)
 
     # ── Helpers ───────────────────────────────────────────────────────
     def _add_separator(self, layout: QVBoxLayout):

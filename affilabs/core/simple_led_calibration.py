@@ -1,26 +1,35 @@
-"""Simple LED Calibration - Light touch intensity adjustment.
+"""Simple LED Calibration — direct proportional-feedback loop, no convergence engine.
 
-This is a lightweight calibration designed for scenarios where:
-- You already have good LED values from previous calibration
-- LED intensities may have drifted slightly or sensor swapped
-- Just need to bring intensities back to target range (no saturation)
-- Already CLOSE to target, so very quick (~5-10 seconds)
+PURPOSE
+-------
+Quick re-convergence after a sensor chip swap (same device, same optical path).
+The LED model is NOT used — we start from the caller's current LED values and
+iterate with pure physics:  new_led = old_led × (target / measured)
 
-WORKFLOW (LIGHT TOUCH):
-1. Turn on LEDs with current saved values
-2. Measure spectrum to check current intensity
-3. If too bright (>60k counts): scale down LEDs proportionally
-4. If too dim (<40k counts): scale up LEDs proportionally
-5. Verify with one more measurement
-6. Update device config with adjusted LED intensities
+This avoids the engine's model-based initialisation, which fails when the LED
+model is stale (e.g. model says C is weak → maxes C's LED → instant saturation).
 
-This is NOT a full convergence - just a quick proportional adjustment to bring
-intensities back into safe operating range (40k-55k counts).
+ALGORITHM (per polarisation mode)
+----------------------------------
+1. Start from caller-supplied LEDs (or safe defaults: 128 / integration as-is).
+2. For up to MAX_ITERATIONS:
+   a. Fire each channel at its current LED value, read ROI signal.
+   b. Compute ratio = target_counts / measured_signal (clamped to [0.5, 2.0]).
+   c. Scale LED: new_led = clamp(round(old_led × ratio), 1, 255).
+   d. Lock channels already within tolerance (±TOLERANCE_PCT of target).
+   e. Break when all channels locked.
+3. Apply saturation back-off: if measured ≥ 98% of sat_threshold → scale LED
+   down to land at SAT_BACKOFF_PCT of threshold.
+4. Capture S-pol reference spectra with the final LEDs (multi-scan average).
+5. Repeat steps 1-3 for P-mode (start from S-mode LEDs as initial guess).
+6. Capture dark spectrum, run SpectrumPreprocessor, assemble result.
 
-REQUIREMENTS:
-- Hardware connected (ctrl + usb)
-- LED intensities already configured (from previous calibration)
-- Prism installed with water/buffer
+REQUIREMENTS
+------------
+- Hardware connected (ctrl + usb).
+- Previous calibration data available (for starting LED values and integration
+  time).  If not provided, safe defaults are used.
+- Prism installed with buffer/water.
 """
 
 from __future__ import annotations
@@ -30,307 +39,392 @@ from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 
+from affilabs.models.led_calibration_result import LEDCalibrationResult
 from affilabs.utils.logger import logger
 
 if TYPE_CHECKING:
     from affilabs.core.hardware_manager import HardwareManager
 
+# ── Tuning constants ──────────────────────────────────────────────────────────
+MAX_ITERATIONS    = 6        # Proportional loop iterations per mode
+TARGET_PCT        = 0.82     # Aim for 82% of detector max (leaves headroom)
+TOLERANCE_PCT     = 0.12     # ±12% counts is "converged"
+SAT_BACKOFF_PCT   = 0.80     # Back off to 80% of sat_threshold if saturating
+MAX_RATIO         = 2.0      # Cap single-step scale-up
+MIN_RATIO         = 0.35     # Cap single-step scale-down (avoid overcorrection)
+DETECTOR_WINDOW_MS = 180.0
+MAX_NUM_SCANS      = 10
+
+
+# ── Public entry point ────────────────────────────────────────────────────────
 
 def run_simple_led_calibration(
-    hardware_mgr: HardwareManager,
+    hardware_mgr: "HardwareManager",
     progress_callback: Callable[[str, int], None] | None = None,
-) -> bool:
-    """Run simple LED intensity adjustment (light touch).
+    current_s_leds: dict[str, int] | None = None,
+    current_integration_ms: float | None = None,
+) -> LEDCalibrationResult:
+    """Run quick LED re-convergence for sensor chip swaps.
 
-    This function performs a quick proportional adjustment to bring LED intensities
-    back into target range (40k-55k counts). It does NOT run full convergence -
-    just measures current intensity and scales LEDs proportionally if needed.
+    Completely bypasses the convergence engine and LED model.  Uses a direct
+    proportional-feedback loop starting from *current_s_leds* (the LED values
+    that were running before the chip swap).
 
     Args:
-        hardware_mgr: Hardware manager with ctrl and usb
-        progress_callback: Optional callback(message: str, percent: int)
+        hardware_mgr: Connected hardware manager.
+        progress_callback: Optional callback(message: str, percent: int).
+        current_s_leds: S-mode LED intensities from the previous calibration.
+            If None, starts from 128 on every channel.
+        current_integration_ms: Integration time from the previous calibration.
+            If None, uses 4.5 ms (safe minimum).
 
     Returns:
-        True if successful, False otherwise
-
+        LEDCalibrationResult — same schema as full calibration result.
     """
+    result = LEDCalibrationResult()
+
+    ctrl = hardware_mgr.ctrl
+    usb  = hardware_mgr.usb
+    if not ctrl or not usb:
+        result.error = "Hardware not connected"
+        return result
+
+    result.detector_serial = getattr(usb, "serial_number", "UNKNOWN")
+
+    def _prog(msg: str, pct: int) -> None:
+        logger.info(msg)
+        if progress_callback:
+            progress_callback(msg, pct)
+
     try:
-        ctrl = hardware_mgr.ctrl
-        usb = hardware_mgr.usb
-
-        if not ctrl or not usb:
-            logger.error("Hardware not connected")
-            return False
-
-        # Get detector serial and device type
-        detector_serial = getattr(usb, "serial_number", "UNKNOWN")
-        device_type = (
-            ctrl.get_device_type() if hasattr(ctrl, "get_device_type") else type(ctrl).__name__
+        _run_simple_calibration(
+            usb=usb,
+            ctrl=ctrl,
+            hardware_mgr=hardware_mgr,
+            result=result,
+            initial_s_leds=current_s_leds,
+            integration_ms=current_integration_ms,
+            progress_fn=_prog,
         )
-
-        logger.info("=" * 80)
-        logger.info("🔧 SIMPLE LED CALIBRATION - Light Touch Adjustment")
-        logger.info("=" * 80)
-        logger.info(f"Device: {device_type}")
-        logger.info(f"Detector: {detector_serial}")
-        logger.info("Target range: 40k-55k counts (75% of max)")
-        logger.info("=" * 80 + "\n")
-
-        if progress_callback:
-            progress_callback("Reading current LED settings...", 5)
-
-        # ====================================================================
-        # STEP 1: Load current LED settings from device config
-        # ====================================================================
-        logger.info("STEP 1: Loading current LED settings...")
-        logger.info("-" * 80)
-
-        # Get device config object (NOT the dict from get_device_config())
-        device_config = hardware_mgr.device_config
-        if not device_config:
-            logger.error("No device configuration found")
-            return False
-
-        try:
-            # Get current LED intensities using the correct method
-            current_leds = device_config.get_led_intensities()
-
-            # Simple calibration uses same LEDs for both S and P modes
-            # (full calibration would have separate S/P optimization)
-            current_leds_s = current_leds.copy()
-            current_leds_p = current_leds.copy()
-
-            # Get integration times from calibration
-            cal = device_config.config.get("calibration", {})
-            current_integration_s = cal.get("integration_time_ms", 50.0)
-            current_integration_p = cal.get("integration_time_ms", 50.0)
-
-            # Ensure integration times are valid numbers
-            if current_integration_s is None:
-                current_integration_s = 50.0
-            if current_integration_p is None:
-                current_integration_p = 50.0
-
-            logger.info(f"[OK] Current LED intensities: {current_leds}")
-            logger.info(f"     Integration time: {current_integration_s:.2f}ms")
-
-        except Exception as e:
-            logger.error(f"Failed to load device config: {e}")
-            return False
-
-        if progress_callback:
-            progress_callback("Measuring S-mode intensity...", 15)
-
-        # Initialize adjusted LED values (in case of early failure)
-        adjusted_leds_s = current_leds_s.copy()
-        adjusted_leds_p = current_leds_p.copy()
-
-        # ====================================================================
-        # STEP 2: S-mode measurement and adjustment
-        # ====================================================================
-        logger.info("\nSTEP 2: S-mode measurement and light touch adjustment...")
-        logger.info("-" * 80)
-
-        try:
-            # Move servo to S position (if device has servo)
-            if hasattr(ctrl, "set_mode"):
-                positions = device_config.get_servo_positions()
-                if positions:
-                    s_pos = positions["s"]
-                    p_pos = positions["p"]
-                    logger.info(f"Setting servo positions: S={s_pos}, P={p_pos}")
-                    # Set both positions in firmware
-                    ctrl.servo_set(s=s_pos, p=p_pos)
-                    time.sleep(0.1)
-                logger.info("Moving servo to S-mode...")
-                ctrl.set_mode("S")
-                time.sleep(0.3)
-
-            # Set integration time and turn on LEDs with current values
-            usb.set_integration(current_integration_s)
-            time.sleep(0.05)
-
-            for ch, intensity in current_leds_s.items():
-                ctrl.set_intensity(ch, intensity)
-            time.sleep(0.1)  # Let LEDs stabilize
-
-            # Measure spectrum
-            spectrum = usb.read_intensity()
-            max_intensity = float(spectrum.max())
-
-            logger.info(f"[MEASURED] S-mode max intensity: {max_intensity:.0f} counts")
-
-            # Target range: 40k-55k counts (safe operating range, no saturation)
-            target_min = 40000
-            target_max = 55000
-            target_center = 49152  # 75% of 65535
-
-            # Determine if adjustment needed
-            if max_intensity < target_min:
-                # Too dim - scale up
-                scale_factor = target_center / max_intensity
-                action = "SCALE UP"
-            elif max_intensity > target_max:
-                # Too bright - scale down
-                scale_factor = target_center / max_intensity
-                action = "SCALE DOWN"
-            else:
-                # In range - no adjustment needed
-                scale_factor = 1.0
-                action = "NO CHANGE"
-
-            logger.info(f"[ACTION] {action} (scale factor: {scale_factor:.3f})")
-
-            # Apply proportional adjustment
-            adjusted_leds_s = {}
-            for ch, current_val in current_leds_s.items():
-                new_val = int(current_val * scale_factor)
-                adjusted_leds_s[ch] = int(np.clip(new_val, 10, 255))
-
-            logger.info(f"[OK] Adjusted S-mode LEDs: {adjusted_leds_s}")
-
-            # Verify adjustment (optional quick check)
-            if scale_factor != 1.0:
-                for ch, intensity in adjusted_leds_s.items():
-                    ctrl.set_intensity(ch, intensity)
-                time.sleep(0.1)
-
-                verify_spectrum = usb.read_intensity()
-                verify_max = float(verify_spectrum.max())
-                logger.info(f"[VERIFY] New S-mode intensity: {verify_max:.0f} counts ✓")
-
-        except Exception as e:
-            logger.error(f"S-mode adjustment failed: {e}")
-            return False
-
-        if progress_callback:
-            progress_callback("Measuring P-mode intensity...", 50)
-
-        # ====================================================================
-        # STEP 3: P-mode measurement and adjustment
-        # ====================================================================
-        logger.info("\nSTEP 3: P-mode measurement and light touch adjustment...")
-        logger.info("-" * 80)
-
-        try:
-            # Move servo to P position (if device has servo)
-            if hasattr(ctrl, "set_mode"):
-                logger.info("Moving servo to P-mode...")
-                ctrl.set_mode("P")
-                time.sleep(0.3)
-
-            # Set integration time and turn on LEDs with current P-mode values
-            usb.set_integration(current_integration_p)
-            time.sleep(0.05)
-
-            for ch, intensity in current_leds_p.items():
-                ctrl.set_intensity(ch, intensity)
-            time.sleep(0.1)  # Let LEDs stabilize
-
-            # Measure spectrum
-            spectrum = usb.read_intensity()
-            max_intensity = float(spectrum.max())
-
-            logger.info(f"[MEASURED] P-mode max intensity: {max_intensity:.0f} counts")
-
-            # Target range: 40k-55k counts (safe operating range, no saturation)
-            target_min = 40000
-            target_max = 55000
-            target_center = 49152  # 75% of 65535
-
-            # Determine if adjustment needed
-            if max_intensity < target_min:
-                # Too dim - scale up
-                scale_factor = target_center / max_intensity
-                action = "SCALE UP"
-            elif max_intensity > target_max:
-                # Too bright - scale down
-                scale_factor = target_center / max_intensity
-                action = "SCALE DOWN"
-            else:
-                # In range - no adjustment needed
-                scale_factor = 1.0
-                action = "NO CHANGE"
-
-            logger.info(f"[ACTION] {action} (scale factor: {scale_factor:.3f})")
-
-            # Apply proportional adjustment
-            adjusted_leds_p = {}
-            for ch, current_val in current_leds_p.items():
-                new_val = int(current_val * scale_factor)
-                adjusted_leds_p[ch] = int(np.clip(new_val, 10, 255))
-
-            logger.info(f"[OK] Adjusted P-mode LEDs: {adjusted_leds_p}")
-
-            # Verify adjustment (optional quick check)
-            if scale_factor != 1.0:
-                for ch, intensity in adjusted_leds_p.items():
-                    ctrl.set_intensity(ch, intensity)
-                time.sleep(0.1)
-
-                verify_spectrum = usb.read_intensity()
-                verify_max = float(verify_spectrum.max())
-                logger.info(f"[VERIFY] New P-mode intensity: {verify_max:.0f} counts ✓")
-
-        except Exception as e:
-            logger.error(f"P-mode adjustment failed: {e}")
-            # P-mode failure is acceptable - use S-mode values
-            adjusted_leds_p = adjusted_leds_s
-            logger.warning("Using S-mode values for P-mode")
-
-        if progress_callback:
-            progress_callback("Saving adjusted LED values...", 90)
-
-        # ====================================================================
-        # STEP 4: Save adjusted LED values to device config
-        # ====================================================================
-        logger.info("\nSTEP 4: Saving adjusted LED configuration...")
-        logger.info("-" * 80)
-
-        try:
-            # Update LED intensities using proper method
-            # Simple calibration uses same values for both S and P modes
-            led_a = adjusted_leds_s.get("a", 128)
-            led_b = adjusted_leds_s.get("b", 128)
-            led_c = adjusted_leds_s.get("c", 128)
-            led_d = adjusted_leds_s.get("d", 128)
-
-            device_config.set_led_intensities(led_a, led_b, led_c, led_d)
-
-            # Save config
-            device_config.save()
-            logger.info("[OK] Device config updated and saved")
-            logger.info(f"     LED intensities: A={led_a}, B={led_b}, C={led_c}, D={led_d}")
-
-        except Exception as e:
-            logger.error(f"Failed to update device config: {e}")
-            import traceback
-
-            traceback.print_exc()
-            # Non-fatal - calibration still succeeded
-
-        # Turn off LEDs
+    except Exception as exc:
+        logger.error("Simple LED calibration failed: %s", exc, exc_info=True)
+        result.success = False
+        result.error = str(exc)
+    finally:
         try:
             ctrl.turn_off_channels()
         except Exception:
             pass
 
-        if progress_callback:
-            progress_callback("✅ Simple calibration complete!", 100)
+    return result
 
-        logger.info("\n" + "=" * 80)
-        logger.info("✅ SIMPLE LED CALIBRATION COMPLETE")
-        logger.info("=" * 80)
-        logger.info(f"S-mode LEDs: {adjusted_leds_s}")
-        logger.info(f"P-mode LEDs: {adjusted_leds_p}")
-        logger.info("Adjusted LED intensities saved to device config.")
-        logger.info("=" * 80 + "\n")
 
-        return True
+# ── Core implementation ───────────────────────────────────────────────────────
 
+def _run_simple_calibration(
+    usb,
+    ctrl,
+    hardware_mgr,
+    result: LEDCalibrationResult,
+    initial_s_leds: dict[str, int] | None,
+    integration_ms: float | None,
+    progress_fn,
+) -> None:
+    from affilabs.utils.startup_calibration import acquire_raw_spectrum
+    from settings import MIN_WAVELENGTH, MAX_WAVELENGTH
+
+    CH_LIST = ["a", "b", "c", "d"]
+
+    # ── Detector limits ───────────────────────────────────────────────────────
+    max_counts = getattr(usb, "max_counts", 65535)
+    min_int_ms = getattr(usb, "min_integration_time_ms", 4.5)
+    sat_threshold = int(max_counts * 0.95)
+
+    target_counts = max_counts * TARGET_PCT
+    tol_lo = target_counts * (1.0 - TOLERANCE_PCT)
+    tol_hi = target_counts * (1.0 + TOLERANCE_PCT)
+
+    logger.info("=" * 60)
+    logger.info("SIMPLE LED CALIBRATION (proportional loop, no model)")
+    logger.info("  Target: %.0f counts (%.0f%%)", target_counts, TARGET_PCT * 100)
+    logger.info("  Tolerance: ±%.0f%%", TOLERANCE_PCT * 100)
+    logger.info("=" * 60)
+
+    # ── Wavelength ROI ────────────────────────────────────────────────────────
+    wave_data = usb.read_wavelength()
+    if wave_data is None or len(wave_data) == 0:
+        raise RuntimeError("Failed to read wavelength data from detector")
+
+    wmin_i = int(np.argmin(np.abs(wave_data - MIN_WAVELENGTH)))
+    wmax_i = int(np.argmin(np.abs(wave_data - MAX_WAVELENGTH)))
+
+    result.wave_data       = wave_data[wmin_i:wmax_i]
+    result.wavelengths     = result.wave_data
+    result.wave_min_index  = wmin_i
+    result.wave_max_index  = wmax_i
+    result.detector_max_counts        = max_counts
+    result.detector_saturation_threshold = sat_threshold
+
+    # ── Integration time ──────────────────────────────────────────────────────
+    if integration_ms and integration_ms >= min_int_ms:
+        int_ms = float(integration_ms)
+        logger.info("Using caller integration time: %.1f ms", int_ms)
+    else:
+        int_ms = max(min_int_ms, 4.5)
+        logger.info("Using default integration time: %.1f ms", int_ms)
+
+    usb.set_integration(int_ms)
+    time.sleep(0.15)
+
+    # ── Device config for servo positions ─────────────────────────────────────
+    device_config = hardware_mgr.device_config
+    s_pos = getattr(device_config, "servo_s_position", None)
+    p_pos = getattr(device_config, "servo_p_position", None)
+
+    # ── Step 1: Move to S-mode ────────────────────────────────────────────────
+    progress_fn("Simple cal: moving to S-mode…", 10)
+    ctrl.turn_off_channels()
+    time.sleep(0.05)
+
+    if ctrl.supports_polarizer and s_pos is not None:
+        ctrl.set_mode("s")
+        time.sleep(0.5)
+
+    # ── Step 2: S-mode proportional convergence ───────────────────────────────
+    progress_fn("Simple cal: S-mode LED adjustment…", 20)
+
+    s_leds = {ch: int(initial_s_leds.get(ch, 128)) if initial_s_leds else 128
+              for ch in CH_LIST}
+    s_leds = {ch: max(1, min(255, v)) for ch, v in s_leds.items()}
+
+    logger.info("Starting S-mode LEDs: %s", s_leds)
+
+    s_leds, s_signals, s_iters = _proportional_loop(
+        usb=usb, ctrl=ctrl,
+        ch_list=CH_LIST,
+        leds=s_leds,
+        integration_ms=int_ms,
+        target=target_counts,
+        tol_lo=tol_lo,
+        tol_hi=tol_hi,
+        sat_threshold=sat_threshold,
+        acquire_fn=acquire_raw_spectrum,
+        wave_min=wmin_i,
+        wave_max=wmax_i,
+        label="S",
+    )
+
+    result.s_mode_intensity = dict(s_leds)
+    result.ref_intensity    = dict(s_leds)
+    result.s_integration_time = int_ms
+    result.s_iterations = s_iters
+
+    # ── Step 3: Capture S-pol reference spectra ───────────────────────────────
+    progress_fn("Simple cal: capturing S-pol reference…", 45)
+
+    num_scans_s = min(MAX_NUM_SCANS, max(1, int(DETECTOR_WINDOW_MS / int_ms)))
+    result.num_scans = num_scans_s
+
+    usb.set_integration(int_ms)
+    time.sleep(0.05)
+
+    s_raw_data: dict[str, np.ndarray] = {}
+    for ch in CH_LIST:
+        spec = acquire_raw_spectrum(
+            usb=usb, ctrl=ctrl,
+            channel=ch,
+            led_intensity=s_leds[ch],
+            integration_time_ms=int_ms,
+            num_scans=num_scans_s,
+            use_batch_command=True,
+        )
+        if spec is None:
+            raise RuntimeError(f"S-pol reference capture failed for channel {ch.upper()}")
+        roi = spec[wmin_i:wmax_i]
+        # Saturation guard
+        if float(np.max(roi)) >= sat_threshold:
+            # Back off LED and retry once
+            scale = (sat_threshold * SAT_BACKOFF_PCT) / float(np.max(roi))
+            s_leds[ch] = max(1, int(s_leds[ch] * scale))
+            logger.warning("  %s ref saturated → backing LED off to %d, retrying", ch.upper(), s_leds[ch])
+            spec = acquire_raw_spectrum(
+                usb=usb, ctrl=ctrl,
+                channel=ch,
+                led_intensity=s_leds[ch],
+                integration_time_ms=int_ms,
+                num_scans=num_scans_s,
+                use_batch_command=True,
+            )
+            if spec is None:
+                raise RuntimeError(f"S-pol reference retry failed for channel {ch.upper()}")
+            roi = spec[wmin_i:wmax_i]
+        s_raw_data[ch] = roi
+
+    result.s_raw_data = s_raw_data
+
+    # ── Step 4: Move to P-mode ────────────────────────────────────────────────
+    progress_fn("Simple cal: moving to P-mode…", 55)
+    ctrl.turn_off_channels()
+    time.sleep(0.05)
+
+    if ctrl.supports_polarizer and p_pos is not None:
+        ctrl.set_mode("p")
+        time.sleep(0.5)
+
+    # ── Step 5: P-mode proportional convergence ───────────────────────────────
+    progress_fn("Simple cal: P-mode LED adjustment…", 65)
+
+    # Start P-mode from S-mode LEDs (reasonable first guess)
+    p_leds = dict(s_leds)
+
+    p_leds, p_signals, p_iters = _proportional_loop(
+        usb=usb, ctrl=ctrl,
+        ch_list=CH_LIST,
+        leds=p_leds,
+        integration_ms=int_ms,
+        target=target_counts,
+        tol_lo=tol_lo,
+        tol_hi=tol_hi,
+        sat_threshold=sat_threshold,
+        acquire_fn=acquire_raw_spectrum,
+        wave_min=wmin_i,
+        wave_max=wmax_i,
+        label="P",
+    )
+
+    result.p_mode_intensity = dict(p_leds)
+    result.p_integration_time = int_ms
+    result.p_iterations = p_iters
+
+    # ── Step 6: Capture P-pol reference spectra ───────────────────────────────
+    progress_fn("Simple cal: capturing P-pol reference…", 80)
+
+    num_scans_p = num_scans_s
+    usb.set_integration(int_ms)
+    time.sleep(0.05)
+
+    p_raw_data: dict[str, np.ndarray] = {}
+    for ch in CH_LIST:
+        spec = acquire_raw_spectrum(
+            usb=usb, ctrl=ctrl,
+            channel=ch,
+            led_intensity=p_leds[ch],
+            integration_time_ms=int_ms,
+            num_scans=num_scans_p,
+            use_batch_command=True,
+        )
+        if spec is not None:
+            p_raw_data[ch] = spec[wmin_i:wmax_i]
+
+    result.p_raw_data = p_raw_data
+
+    # ── Step 7: Dark frame ────────────────────────────────────────────────────
+    progress_fn("Simple cal: dark frame…", 88)
+    ctrl.turn_off_channels()
+    time.sleep(0.05)
+    usb.set_integration(int_ms)
+    time.sleep(0.05)
+    try:
+        dark_raw = usb.read_intensity()
+        if dark_raw is not None:
+            result.dark_noise = np.array(dark_raw[wmin_i:wmax_i], dtype=float)
     except Exception as e:
-        logger.error(f"Simple LED calibration failed: {e}")
-        import traceback
+        logger.warning("Dark frame failed (non-fatal): %s", e)
 
-        traceback.print_exc()
-        return False
+    # ── Step 8: Build reference spectra via SpectrumPreprocessor ─────────────
+    progress_fn("Simple cal: preprocessing references…", 92)
+
+    dark = result.dark_noise
+    s_pol_ref: dict[str, np.ndarray] = {}
+    p_pol_ref: dict[str, np.ndarray] = {}
+
+    for ch in CH_LIST:
+        if ch in s_raw_data:
+            roi = s_raw_data[ch].astype(float)
+            s_pol_ref[ch] = roi - dark if dark is not None else roi
+        if ch in p_raw_data:
+            roi = p_raw_data[ch].astype(float)
+            p_pol_ref[ch] = roi - dark if dark is not None else roi
+
+    result.s_pol_ref = s_pol_ref
+    result.p_pol_ref = p_pol_ref
+
+    # ── Done ──────────────────────────────────────────────────────────────────
+    result.leds_calibrated = dict(p_leds)
+    result.success = True
+
+    progress_fn("Simple cal: complete ✓", 100)
+    logger.info("Simple LED calibration complete — S-iters=%d  P-iters=%d", s_iters, p_iters)
+    logger.info("  S-LEDs: %s", s_leds)
+    logger.info("  P-LEDs: %s", p_leds)
+
+
+# ── Proportional feedback loop ────────────────────────────────────────────────
+
+def _proportional_loop(
+    usb, ctrl,
+    ch_list: list[str],
+    leds: dict[str, int],
+    integration_ms: float,
+    target: float,
+    tol_lo: float,
+    tol_hi: float,
+    sat_threshold: int,
+    acquire_fn,
+    wave_min: int,
+    wave_max: int,
+    label: str,
+) -> tuple[dict[str, int], dict[str, float], int]:
+    """Proportional-feedback LED adjustment loop.
+
+    Returns (final_leds, final_signals, iterations_used).
+    """
+    leds = dict(leds)
+    locked: set[str] = set()
+    signals: dict[str, float] = {}
+
+    for iteration in range(1, MAX_ITERATIONS + 1):
+        logger.info("--- %s iteration %d/%d @ %.1fms ---", label, iteration, MAX_ITERATIONS, integration_ms)
+
+        # Measure all unlocked channels
+        for ch in ch_list:
+            spec = acquire_fn(
+                usb=usb, ctrl=ctrl,
+                channel=ch,
+                led_intensity=leds[ch],
+                integration_time_ms=integration_ms,
+                num_scans=1,
+                use_batch_command=True,
+            )
+            if spec is None:
+                logger.warning("  %s: read failed", ch.upper())
+                continue
+
+            sig = float(np.mean(spec[wave_min:wave_max]))
+            signals[ch] = sig
+            pct = sig / target * 100.0
+
+            if sig >= sat_threshold * 0.98:
+                # Saturating — scale down hard
+                scale = max(MIN_RATIO, (sat_threshold * SAT_BACKOFF_PCT) / sig)
+                new_led = max(1, int(leds[ch] * scale))
+                logger.info("  %s: SAT (%.0f) → LED %d→%d (scale=%.2f)", ch.upper(), sig, leds[ch], new_led, scale)
+                leds[ch] = new_led
+                locked.discard(ch)
+            elif tol_lo <= sig <= tol_hi:
+                logger.info("  %s: %.0f counts (%.1f%%) ✓ locked", ch.upper(), sig, pct)
+                locked.add(ch)
+            else:
+                ratio = target / sig if sig > 0 else 1.0
+                ratio = max(MIN_RATIO, min(MAX_RATIO, ratio))
+                new_led = max(1, min(255, int(round(leds[ch] * ratio))))
+                logger.info("  %s: %.0f counts (%.1f%%) → LED %d→%d", ch.upper(), sig, pct, leds[ch], new_led)
+                leds[ch] = new_led
+                locked.discard(ch)
+
+        if len(locked) == len(ch_list):
+            logger.info("  All channels locked after %d iterations", iteration)
+            break
+
+    logger.info("%s final LEDs: %s", label, leds)
+    return leds, signals, iteration

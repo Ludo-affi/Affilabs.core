@@ -82,8 +82,9 @@ CH_LIST = ["a", "b", "c", "d"]
 EZ_CH_LIST = ["a", "b"]
 UNIT_LIST = {"nm": 1, "RU": 355}
 
-# Standard color palette
-GRAPH_COLORS = {"a": "k", "b": (255, 0, 81), "c": (0, 122, 255), "d": (0, 230, 65)}
+# Standard color palette — Apple system colors, consistent across all UI surfaces
+# A: near-black, B: Apple Red, C: Apple Blue, D: Apple Green
+GRAPH_COLORS = {"a": "#1D1D1F", "b": "#FF3B30", "c": "#007AFF", "d": "#34C759"}
 
 # Colorblind-friendly palette (ColorBrewer PuOr divergent)
 # Designed to be distinguishable for all types of colorblindness
@@ -222,7 +223,7 @@ P_MAX_INCREASE = 1.33  # max brightness increase factor for P vs S
 S_COUNT_MAX = 64000  # DEPRECATED: Use profile.max_intensity_counts (62,000 for Flame-T)
 P_COUNT_THRESHOLD = 3000  # minimum p-polarized count for successful calibration (adjusted for real hardware sensitivity)
 MIN_INTEGRATION = 5  # DEPRECATED: Use profile.min_integration_time_ms
-CYCLE_TIME = 1.3  # cycle time for all 4 channels
+CYCLE_TIME = 1.0  # cycle time for all 4 channels (A+B+C+D sequential, ~250ms per channel)
 MAX_INTEGRATION = (
     70  # DEPRECATED: Use profile.max_integration_time_ms (70ms for 3-scan budget)
 )
@@ -529,6 +530,41 @@ LIVE_MODE_MAX_BOOST_FACTOR = (
 LIVE_MODE_DISPLAY_DELAY_SECONDS = (
     10.0  # Hide sensorgram for first 10 seconds after live start
 )
+
+# =============================================================================
+# SIGNAL TELEMETRY (developer tool — silent per-frame feature logging)
+# Set False before shipping production builds.
+# Logs raw spectral features to ~/Documents/Affilabs Data/telemetry/ for
+# offline ML model development (see docs/features/SIGNAL_EVENT_CLASSIFIER_FRS.md)
+# =============================================================================
+SIGNAL_TELEMETRY_ENABLED: bool = True
+
+# =============================================================================
+# SIGNAL EVENT CLASSIFIER — injection detection + bubble detection constants
+# See docs/features/SIGNAL_EVENT_CLASSIFIER_FRS.md §5 and §4
+# =============================================================================
+
+# Injection / wash detection (_InjectionMonitor) — single monitor handles both events
+# Fire #1 = injection, Fire #2 = wash. Same threshold, same algorithm.
+INJECTION_DETECTION_SIGMA: float = 5.0   # σ multiplier — p2p > 5σ triggers (injection and wash use same threshold)
+INJECTION_CONFIRM_FRAMES:  int   = 1     # 1 poll sufficient — injection front is 1-2 frames; DEAD_ZONE handles biphasic dip
+INJECTION_STD_MAX_NM:      float = 0.056 # ≈20 RU — above this: warn user, skip detection
+INJECTION_DEAD_ZONE_S:     float = 15.0  # seconds to ignore after each fire (biphasic artifact)
+
+# Pre-inject readiness thresholds (FRS §3.2) — all in RU
+READINESS_SLOPE_READY:   float = 7.0    # |slope_5s| < this → READY
+READINESS_SLOPE_WAIT:    float = 35.0   # |slope_5s| < this → WAIT; ≥ this → CHECK
+READINESS_NOISE_READY:   float = 12.0   # p2p_5frame < this → READY
+READINESS_NOISE_WAIT:    float = 35.0   # p2p_5frame < this → WAIT; ≥ this → CHECK
+READINESS_CTRL_READY:    float = 7.0    # |control_slope_5s| < this → READY
+READINESS_CTRL_WAIT:     float = 18.0   # |control_slope_5s| < this → WAIT; ≥ this → CHECK
+READINESS_REGEN_READY:   float = 18.0   # regen_delta < this → READY
+READINESS_REGEN_WAIT:    float = 53.0   # regen_delta < this → WAIT; ≥ this → CHECK
+
+# Bubble detection thresholds (FRS §4.3)
+BUBBLE_P2P_THRESHOLD:   float = 20.0   # RU — supporting criterion
+BUBBLE_DEPTH_THRESHOLD: float = 0.05   # fractional drop — 5% e.g. 77% → <72%
+BUBBLE_FWHM_THRESHOLD:  float = 3.0    # nm broadening
 
 DEBUG = False  # enable/disable debug mode
 SHOW_PLOT = False  # enable/disable test plotting for grab data

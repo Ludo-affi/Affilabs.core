@@ -34,7 +34,7 @@ class RecordingManager(QObject):
     recording_error = Signal(str)  # Error message
     event_logged = Signal(str, float)  # Event description, timestamp
 
-    def __init__(self, data_mgr, buffer_mgr=None, user_manager=None) -> None:
+    def __init__(self, data_mgr, buffer_mgr=None, user_manager=None, clock=None) -> None:
         super().__init__()
 
         # Reference to data acquisition manager
@@ -45,6 +45,9 @@ class RecordingManager(QObject):
 
         # User profile manager (for experiment count tracking)
         self.user_manager = user_manager
+
+        # Reference to ExperimentClock (for display_offset in exports)
+        self.clock = clock
 
         # Delegate services (Separation of Concerns)
         self.data_collector = DataCollector()  # Handles in-memory data accumulation
@@ -236,9 +239,13 @@ class RecordingManager(QObject):
                 # Build Channels XY sheet for export
                 try:
                     from affilabs.utils.export_helpers import ExportHelpers
+                    _display_offset = self.clock.display_offset if self.clock else 0.0
+                    _recording_offset = self.clock.recording_offset if self.clock else None
                     df_xy = ExportHelpers.build_channels_xy_dataframe(
                         self.buffer_mgr,
-                        channels=["a", "b", "c", "d"]
+                        channels=["a", "b", "c", "d"],
+                        display_offset=_display_offset,
+                        recording_offset=_recording_offset,
                     ) if self.buffer_mgr else None
                 except Exception as e:
                     logger.warning(f"Could not build Channels XY sheet: {e}")

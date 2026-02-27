@@ -215,8 +215,8 @@ The LED timing chain is the fundamental rate constraint of the system:
 | Timing Parameter | Value | Notes |
 |-----------------|-------|-------|
 | **Minimum per-LED dwell time** | 250 ms | Integration time + LED settle + servo travel + readout |
-| **Maximum full-cycle rate (4-channel)** | 1 Hz | 4 × 250 ms = 1000 ms minimum cycle; ~2–3 Hz typical achieved |
-| **LED settle time** | 50 ms | After intensity change; before spectrum acquisition begins |
+| **Full cycle time (4-channel)** | ~1 s | 4 × ~250 ms = 1000 ms = 1 Hz per channel (`CYCLE_TIME = 1.0`) |
+| **LED settle time** | 45 ms | `DETECTOR_WAIT_MS` — after intensity change; before spectrum acquisition |
 | **Servo settle time** | 100 ms | After polarizer rotation; included within the 250 ms per-LED budget |
 | **Dark frame overhead** | ~100 ms | Acquired once per session at calibration; not per-cycle |
 
@@ -229,8 +229,8 @@ The LED timing chain is the fundamental rate constraint of the system:
 4. Fire LED D → (repeat)
 5. Return to LED A (next acquisition cycle)
 
-**Full cycle time:** ~1–2 seconds for all 4 channels × 2 polarizations = 8 spectra per cycle
-**Acquisition rate:** 2–5 Hz for full 4-channel readout (cycle sync mode)
+**Full cycle time:** ~1 second for all 4 channels × 2 polarizations = 8 spectra per cycle (`CYCLE_TIME = 1.0`)
+**Acquisition rate:** 1 Hz per channel (each channel updated once per full cycle)
 
 **No simultaneous multi-channel acquisition** — hardware limitation of single-spectrometer design.
 

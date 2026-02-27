@@ -1,6 +1,6 @@
-# ezControl-AI Quick Start Guide
+# Affilabs.core — Quick Start Guide
 
-**Version 1.0.1** - Stable Release
+**Version 2.0.5** — Release
 ⏱️ **Setup Time**: 5 minutes
 📊 **Target**: Get to first measurement in 5 minutes
 

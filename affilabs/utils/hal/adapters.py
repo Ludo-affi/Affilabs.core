@@ -193,6 +193,8 @@ class OceanSpectrometerAdapter(Spectrometer):
                 usb_read_image(spec, sensor_frame_t_ref)
                 stack[i] = np.frombuffer(sensor_frame_t.pixels, "u2", num, offset)
             return np.mean(stack, axis=0).astype("u4")
+        except (ConnectionError, OSError):
+            raise  # Propagate USB disconnect to caller
         except Exception:
             return None
 

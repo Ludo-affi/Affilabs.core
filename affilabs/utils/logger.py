@@ -98,13 +98,34 @@ class SafeConsoleFormatter(Formatter):
     """Formatter that optionally removes emojis/special chars for Windows console compatibility."""
 
     def format(self, record):
+        # Pre-resolve msg % args onto record so double-format calls (e.g. from
+        # RotatingFileHandler.shouldRollover) don't raise TypeError on second pass.
+        if record.args:
+            try:
+                record.msg = record.getMessage()
+                record.args = None
+            except Exception:
+                pass
         msg = super().format(record)
         if ENABLE_EMOJI_STRIP:
             msg = msg.encode("cp1252", errors="ignore").decode("cp1252")
         return msg
 
 
-log_formatter = Formatter(fmt="%(asctime)s :: %(levelname)s :: %(message)s")
+class _SafeFormatter(Formatter):
+    """Resolve msg % args once so double-format (RotatingFileHandler.shouldRollover) never raises."""
+
+    def format(self, record):
+        if record.args:
+            try:
+                record.msg = record.getMessage()
+                record.args = None
+            except Exception:
+                pass
+        return super().format(record)
+
+
+log_formatter = _SafeFormatter(fmt="%(asctime)s :: %(levelname)s :: %(message)s")
 safe_console_formatter = SafeConsoleFormatter(
     fmt="%(asctime)s :: %(levelname)s :: %(message)s",
 )

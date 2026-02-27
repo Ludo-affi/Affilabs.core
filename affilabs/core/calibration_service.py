@@ -934,6 +934,10 @@ class CalibrationService(QObject):
             cause = 'saturated'
         elif 'timeout' in es or 'timed out' in es:
             cause = 'timeout'
+        elif 'channel imbalance' in es:
+            cause = 'imbalance'
+        elif 'model mismatch' in es or 'model may be stale' in es:
+            cause = 'model_mismatch'
         elif 'convergence' in es:
             cause = 'convergence'
 
@@ -942,11 +946,19 @@ class CalibrationService(QObject):
             'saturated':   'signal saturated',
             'timeout':     'communication timeout',
             'convergence': 'LED convergence failed',
+            'imbalance':   'channel imbalance (some channels OK, others unresponsive)',
+            'model_mismatch': 'LED model does not match measured response',
             'other':       '',
         }[cause]
 
+        # Extract multiple failing channels from enriched error (e.g. "A=19.5% (LED=255), B=21.1%")
+        failing_channels = re.findall(r'\b([A-D])=\d+\.\d+%\s*\(LED=255\)', error_str)
+
         lines = []
-        if channel and cause_text:
+        if failing_channels and len(failing_channels) > 1:
+            ch_str = ", ".join(failing_channels)
+            lines.append(f"Channels {ch_str}: {cause_text}" if cause_text else f"Channels {ch_str} failed")
+        elif channel and cause_text:
             lines.append(f"Channel {channel}: {cause_text}")
         elif channel:
             lines.append(f"Channel {channel} failed")
@@ -966,6 +978,13 @@ class CalibrationService(QObject):
             if cause == 'low_signal':
                 lines.append("→ Likely water in the optical path.")
                 lines.append("  Dry the chip, flush the flow cell, then retry.")
+            elif cause == 'imbalance':
+                lines.append("→ Some channels are working, others are not.")
+                lines.append("  Check: fiber coupling, sensor chip seating, flow cell alignment.")
+                lines.append("  If the chip was recently changed, re-run LED model training.")
+            elif cause == 'model_mismatch':
+                lines.append("→ The LED model no longer matches the measured response.")
+                lines.append("  Re-run LED model training (Phase 1b of oem_calibrate.py).")
             else:
                 lines.append("→ This device has calibrated successfully before.")
                 lines.append("  Check the optical path and retry.")

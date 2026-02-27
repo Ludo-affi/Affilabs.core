@@ -189,6 +189,7 @@ os.environ["QT_NO_GLIB"] = "1"
 # SECTION 4: Qt Core Imports
 # ============================================================================
 from PySide6.QtCore import Qt, QTimer, QtMsgType, Signal, qInstallMessageHandler, QSize
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from affilabs.core.experiment_clock import ExperimentClock, TimeBase
@@ -420,6 +421,8 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
     # Signals for thread-safe communication
     cursor_update_signal = Signal(float)  # elapsed_time from processing thread
+    spark_alert_signal = Signal(str)      # system alert text from processing thread → main thread
+    leak_recalibrate_signal = Signal()   # auto-trigger quick cal after leak resolves
 
     def __init__(self, argv):
         """Initialize application with strict phase ordering to prevent fragile dependencies."""
@@ -669,6 +672,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
         # Experiment tracking — ExperimentClock is the single source of truth for time
         self.clock = ExperimentClock()
+        self.experiment_start_time = None  # Set on first spectrum frame, reset on clear
         self._last_cycle_bounds = None
         self._session_cycles_dir = None
         self._session_epoch = 0  # Increments on clear to invalidate old data
@@ -862,6 +866,8 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
         self.license_mgr = LicenseManager()
         self.features = self.license_mgr.load_license()
+        # Direct reference to the underlying LicenseService (used by demo banner + guards)
+        self.license_service = self.license_mgr._svc
 
         license_info = self.license_mgr.get_license_info()
         logger.debug(f"✓ License: {license_info['tier_name']} tier")
@@ -1366,6 +1372,11 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             QApplication.processEvents()  # Force immediate render
             logger.debug(f"Window visible: {self.main_window.isVisible()}")
 
+            # License gate — show activation dialog if no valid license found
+            self._update_demo_banner()
+            if not self.license_service.is_licensed:
+                self._show_license_activation_dialog()
+
         except Exception as e:
             logger.error(f"Error during deferred loading or window show: {e}", exc_info=True)
             # Fallback: show window anyway so app is responsive
@@ -1410,6 +1421,14 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             # Connect cursor auto-follow signal (thread-safe)
             self.cursor_update_signal.connect(self._update_stop_cursor_position)
             logger.debug("✓ Cursor update signal connected")
+
+            # Connect Sparq alert signal (thread-safe — emitted from processing thread)
+            self.spark_alert_signal.connect(self._on_spark_alert)
+            logger.debug("✓ Spark alert signal connected")
+
+            # Auto-recalibrate after leak resolves
+            self.leak_recalibrate_signal.connect(self._on_simple_led_calibration)
+            logger.debug("✓ Leak recalibrate signal connected")
 
             # Connect polarizer toggle button to servo control
             if hasattr(self.main_window, "polarizer_toggle_btn"):
@@ -1567,7 +1586,11 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             _summary = getattr(getattr(self, 'sidebar', None), 'summary_table', None)
             if _summary is not None:
                 _scorer.cycle_scored.connect(_summary.set_cycle_score, Qt.QueuedConnection)
-            logger.debug("✓ SignalQualityScorer wired to QueueSummaryWidget")
+            # Wire to EditsTab so score appears in table + Quality tab
+            _edits = getattr(self, 'edits_tab', None)
+            if _edits is not None and hasattr(_edits, '_on_cycle_scored'):
+                _scorer.cycle_scored.connect(_edits._on_cycle_scored, Qt.QueuedConnection)
+            logger.debug("✓ SignalQualityScorer wired to QueueSummaryWidget + EditsTab")
         except Exception as e:
             logger.warning(f"SignalQualityScorer wire failed: {e}")
 
@@ -2017,7 +2040,6 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             self.injection_coordinator.injection_completed.connect(self._show_contact_time_marker)
             self.injection_coordinator.injection_flag_requested.connect(self._place_injection_flag)
             self.injection_coordinator.injection_cancelled.connect(self._on_injection_cancelled)
-            self.injection_coordinator.wash_detected.connect(self._on_wash_detected)
 
             logger.debug("✓ InjectionCoordinator signals connected")
 
@@ -2100,26 +2122,25 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
     def _set_start_button_to_stop_mode(self):
         """Change Start Run button to Stop Run mode (red, cancels execution)."""
         if btn := self._sidebar_widget('start_queue_btn'):
-            btn.setText("Stop Cycle Record")
             btn.setToolTip("Stop the running cycle queue")
-
-            # Set stop icon (SVG)
             try:
-                from PySide6.QtGui import QIcon, QPixmap, QPainter
                 from PySide6.QtSvg import QSvgRenderer
-                svg = '''<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="6" y="6" width="12" height="12" fill="white" rx="2"/>
-                </svg>'''
-                svg_renderer = QSvgRenderer(svg.encode('utf-8'))
-                pixmap = QPixmap(18, 18)
-                pixmap.fill(Qt.GlobalColor.transparent)
-                painter = QPainter(pixmap)
-                svg_renderer.render(painter)
-                painter.end()
-                btn.setIcon(QIcon(pixmap))
-                btn.setIconSize(QSize(16, 16))
-            except Exception as e:
-                logger.warning(f"Failed to set stop icon: {e}")
+                from PySide6.QtGui import QPixmap, QPainter, QIcon
+                from affilabs.utils.resource_path import get_affilabs_resource
+                _svg_path = get_affilabs_resource("ui/img/stop_icon.svg")
+                _svg = _svg_path.read_text().replace("currentColor", "#FFFFFF")
+                _renderer = QSvgRenderer(_svg.encode("utf-8"))
+                _px = QPixmap(18, 18)
+                _px.fill(Qt.GlobalColor.transparent)
+                _p = QPainter(_px)
+                _renderer.render(_p)
+                _p.end()
+                btn.setIcon(QIcon(_px))
+                btn.setIconSize(QSize(18, 18))
+                btn.setText("Stop")
+            except Exception:
+                btn.setIcon(QIcon())
+                btn.setText("\u25a0 Stop")
 
             btn.setStyleSheet(
                 "QPushButton {"
@@ -2144,24 +2165,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         if btn := self._sidebar_widget('start_queue_btn'):
             btn.setText("Start Cycle Record")
             btn.setToolTip("Start executing the queued cycles")
-
-            # Set play icon (SVG)
-            try:
-                from PySide6.QtGui import QIcon, QPixmap, QPainter
-                from PySide6.QtSvg import QSvgRenderer
-                svg = '''<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M8 5v14l11-7z" fill="white"/>
-                </svg>'''
-                svg_renderer = QSvgRenderer(svg.encode('utf-8'))
-                pixmap = QPixmap(18, 18)
-                pixmap.fill(Qt.GlobalColor.transparent)
-                painter = QPainter(pixmap)
-                svg_renderer.render(painter)
-                painter.end()
-                btn.setIcon(QIcon(pixmap))
-                btn.setIconSize(QSize(16, 16))
-            except Exception as e:
-                logger.warning(f"Failed to set play icon: {e}")
+            btn.setIcon(QIcon())
 
             btn.setStyleSheet(
                 "QPushButton {"
@@ -2300,10 +2304,25 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             except Exception as _exc:
                 logger.warning(f"Timeline CycleMarker START failed (non-critical): {_exc}")
 
-        # Highlight the running cycle in the queue table
+        # Highlight the running cycle in the queue table + update header label
         if tbl := self._sidebar_widget('summary_table'):
             tbl.set_running_cycle(cycle.cycle_id)
             logger.debug(f"✓ Queue table highlighting cycle #{cycle_num} (ID: {cycle.cycle_id})")
+        # Queue table stays expanded — user wants to see all cycles during a run
+        try:
+            lbl = getattr(self.main_window, '_queue_section_lbl', None)
+            if lbl is not None:
+                lbl.setText(f"Cycle Queue  {cycle_num}/{total_cycles}")
+        except Exception:
+            pass
+
+        # Reset injection action bar for the new cycle (clears WASH/INJECT state from previous)
+        try:
+            bar = getattr(getattr(self.main_window, 'sidebar', None), 'injection_action_bar', None)
+            if bar is not None:
+                bar.reset_for_next_injection()
+        except Exception:
+            pass
 
         # Update status bar operation status
         if hasattr(self.main_window, 'update_status_operation'):
@@ -2348,10 +2367,10 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             logger.warning(f"⚠️ Could not start progress bar: {e}")
 
         # === PUMP ORCHESTRATION FOR THIS CYCLE ===
-        has_pump = self.pump_mgr.is_available if hasattr(self, 'pump_mgr') else False
+        has_pump     = self.pump_mgr.is_available if hasattr(self, 'pump_mgr') else False
         has_internal = (self.hardware_mgr.ctrl and
-                       hasattr(self.hardware_mgr.ctrl, 'has_internal_pumps') and
-                       self.hardware_mgr.ctrl.has_internal_pumps())
+                        hasattr(self.hardware_mgr.ctrl, 'has_internal_pumps') and
+                        self.hardware_mgr.ctrl.has_internal_pumps())
 
         if has_pump:
             # Stop any running pump operation before starting new cycle
@@ -2427,17 +2446,24 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
                 import pyqtgraph as pg
                 timeline = self.main_window.full_timeline_graph
                 marker_pos = timeline.stop_cursor.value() if hasattr(timeline, 'stop_cursor') else self.clock.raw_elapsed_now() - self.clock.display_offset
-                cycle_abbr = {
-                    "Baseline": "BL", "Binding": "Bind.", "Kinetic": "Kin.",
-                    "Concentration": "Bind.", "Immobilization": "Immob.",
-                    "Regeneration": "Regen.", "Wash": "Wash",
-                }.get(cycle.type, cycle.type[:5])
+                is_last_cycle = self.queue_presenter.get_queue_size() == 0
+                if is_last_cycle:
+                    cycle_abbr = "Method END"
+                    marker_color = '#34C759'  # green for method end
+                else:
+                    cycle_abbr = {
+                        "Baseline": "BL", "Binding": "Bind.", "Kinetic": "Kin.",
+                        "Concentration": "Bind.", "Immobilization": "Immob.",
+                        "Regeneration": "Regen.", "Wash": "Wash",
+                        "Auto-read": "AR",
+                    }.get(cycle.type, cycle.type[:5])
+                    marker_color = '#0A84FF'
                 line = pg.InfiniteLine(
                     pos=marker_pos, angle=90,
-                    pen=pg.mkPen(color='#0A84FF', width=2),
+                    pen=pg.mkPen(color=marker_color, width=2),
                     movable=False,
                     label=cycle_abbr,
-                    labelOpts={'position': 0.92, 'color': '#0A84FF',
+                    labelOpts={'position': 0.92, 'color': marker_color,
                                'fill': (255, 255, 255, 180), 'movable': False}
                 )
                 timeline.addItem(line)
@@ -2726,6 +2752,11 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
     def _on_power_on_requested(self):
         """User requested to power on (connect hardware)."""
+        # Demo mode guard — require a valid license before allowing hardware connection
+        if not self.license_service.is_licensed:
+            self._show_license_activation_dialog()
+            if not self.license_service.is_licensed:
+                return  # user dismissed dialog without activating
         try:
             logger.debug("Searching for hardware...")
 
@@ -3616,6 +3647,54 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
     # LICENSE & FEATURE MANAGEMENT
     # ========================================================================
 
+    def _show_license_activation_dialog(self) -> None:
+        """Show the one-time license activation dialog (modal)."""
+        from affilabs.dialogs.license_activation_dialog import LicenseActivationDialog
+        dlg = LicenseActivationDialog(self.license_service, self.main_window)
+        dlg.license_activated.connect(self._on_license_activated)
+        dlg.exec()
+
+    def _on_license_activated(self) -> None:
+        """Called after successful in-dialog activation — reload flags, hide banner."""
+        self.features = self.license_mgr.load_license()
+        self._update_demo_banner()
+        logger.info(f"[License] Activated at runtime — tier={self.license_service.tier}")
+
+    def _update_demo_banner(self) -> None:
+        """Show/hide the demo mode banner and wire its 'Enter License Key' button."""
+        from PySide6.QtWidgets import QPushButton
+        if not hasattr(self.main_window, "_demo_banner"):
+            return
+        is_demo = not self.license_service.is_licensed
+        self.main_window._demo_banner.setVisible(is_demo)
+
+        # Update power button tooltip
+        if hasattr(self.main_window, "power_btn"):
+            if is_demo:
+                self.main_window.power_btn.setToolTip(
+                    "License required to connect hardware.\nClick to enter your license key."
+                )
+            else:
+                self.main_window.power_btn.setToolTip(
+                    "Power On Device (Ctrl+P)\n"
+                    "Red = Disconnected  |  Yellow = Searching  |  Green = Connected"
+                )
+
+        if is_demo:
+            # Wire "Enter License Key" link button (disconnect first to avoid duplicate slots)
+            link_btn = self.main_window._demo_banner.findChild(
+                QPushButton, "demo_activate_link"
+            )
+            if link_btn:
+                try:
+                    link_btn.clicked.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+                link_btn.clicked.connect(self._show_license_activation_dialog)
+
+            # Auto-load demo dataset
+            QTimer.singleShot(500, self._load_demo_data)
+
     def show_license_dialog(self):
         """Open license management dialog."""
         from affilabs.widgets.license_dialog import LicenseDialog
@@ -3707,7 +3786,12 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             return  # Intentional disconnect, not an emergency
 
         logger.warning("Emergency cleanup triggered - forcing resource release")
-        self._cleanup_resources(emergency=True)
+        try:
+            self._cleanup_resources(emergency=True)
+        except (KeyboardInterrupt, SystemExit):
+            pass  # Interrupted during atexit — ignore, process is already exiting
+        except Exception:
+            pass
 
     def __del__(self):
         """Destructor to ensure resources are cleaned up."""
@@ -3860,6 +3944,18 @@ def main():
 
     # Close splash after at least 3 seconds for branding visibility
     QTimer.singleShot(3000, close_splash)
+
+    # Intercept Ctrl+C — route through Qt's normal quit path instead of crashing
+    import signal as _signal
+    def _sigint_handler(sig, frame):
+        logger.info("Ctrl+C received — shutting down gracefully")
+        app.main_window.close()
+    _signal.signal(_signal.SIGINT, _sigint_handler)
+    # Qt blocks Python signal delivery unless the event loop yields periodically
+    _ctrlc_timer = QTimer()
+    _ctrlc_timer.setInterval(200)
+    _ctrlc_timer.timeout.connect(lambda: None)  # wake Python so signal can fire
+    _ctrlc_timer.start()
 
     logger.info("Ready | Starting application")
     exit_code = app.exec()

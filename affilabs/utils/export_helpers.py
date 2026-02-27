@@ -66,26 +66,39 @@ class ExportHelpers:
         return df_cycles
 
     @staticmethod
-    def build_channels_xy_dataframe(buffer_mgr, channels: list[str] | None = None) -> pd.DataFrame:
+    def build_channels_xy_dataframe(
+        buffer_mgr,
+        channels: list[str] | None = None,
+        display_offset: float = 0.0,
+        recording_offset: float | None = None,
+    ) -> pd.DataFrame:
         """Build Channels XY DataFrame for Excel export.
-        
+
         Creates wide-format DataFrame with Time_A, SPR_A, Time_B, SPR_B columns.
         All arrays padded to same length with NaN for alignment.
-        
+
         Uses timeline_data (full experiment) NOT cycle_data (cursor window) so the
         exported sheet always contains the complete recording, not just whatever
         happened to be visible in the "Cycle of Interest" panel at save time.
-        
+
+        Time values are in RECORDING coords (t=0 at Record click) when
+        recording_offset is provided, matching the Raw Data sheet exactly.
+        Falls back to DISPLAY coords (raw - display_offset) when not provided.
+
         SPR (delta from baseline) is computed using baseline_wavelengths if available,
         falling back to the first valid point in each channel's timeline.
-        
+
         This is a shared utility to eliminate duplication across export paths.
         Used by: recording_manager, export_helpers (2 places)
-        
+
         Args:
             buffer_mgr: DataBufferManager instance with timeline_data attribute
             channels: List of channel letters (default: ['a', 'b', 'c', 'd'])
-            
+            display_offset: Seconds to subtract from raw elapsed to get display time
+                           (from ExperimentClock.display_offset). Default 0.
+            recording_offset: When provided, use RECORDING time base (raw - recording_offset)
+                              and trim all pre-recording data. Matches Raw Data sheet time base.
+
         Returns:
             DataFrame with Channels XY data, or empty DataFrame if no data
         """
@@ -93,29 +106,47 @@ class ExportHelpers:
 
         if channels is None:
             channels = ['a', 'b', 'c', 'd']
-        
+
+        # Choose time offset: prefer RECORDING (matches Raw Data sheet), fall back to DISPLAY
+        time_offset = recording_offset if recording_offset is not None else display_offset
+
         # Use timeline_data (full experiment) — cycle_data only holds the cursor
         # window which is at most the last cycle visible in the bottom graph.
         source = buffer_mgr.timeline_data
 
-        # Find max length across all channels
+        # Find max length across all channels (after trimming pre-recording data)
         max_len = 0
         for ch in channels:
             if ch in source and hasattr(source[ch], 'time'):
-                max_len = max(max_len, len(source[ch].time))
-        
+                buf = source[ch]
+                if recording_offset is not None and len(buf.time) > 0:
+                    # Count only samples at or after recording start
+                    idx = int(np.searchsorted(np.array(buf.time), recording_offset, side='left'))
+                    max_len = max(max_len, len(buf.time) - idx)
+                else:
+                    max_len = max(max_len, len(buf.time))
+
         if max_len == 0:
             return pd.DataFrame()  # Empty DataFrame - no channel data
-        
+
         # Build sheet data with Time_X and SPR_X columns for each channel
         sheet_data = {}
         for ch in channels:
             ch_upper = ch.upper()
-            
+
             buf = source.get(ch) if isinstance(source, dict) else getattr(source, ch, None)
             if buf is not None and hasattr(buf, 'time') and len(buf.time) > 0:
-                ch_time = np.array(buf.time)
-                ch_wavelength = np.array(buf.wavelength)
+                raw_time = np.array(buf.time)
+                raw_wavelength = np.array(buf.wavelength)
+
+                # Trim data that predates recording start
+                if recording_offset is not None:
+                    idx = int(np.searchsorted(raw_time, recording_offset, side='left'))
+                    raw_time = raw_time[idx:]
+                    raw_wavelength = raw_wavelength[idx:]
+
+                ch_time = raw_time - time_offset
+                ch_wavelength = raw_wavelength
 
                 # Compute delta SPR from baseline
                 # Prefer calibrated baseline; fall back to first valid wavelength in timeline
@@ -152,15 +183,15 @@ class ExportHelpers:
         """Build Channels XY DataFrame from wide-format DataFrame.
         
         Converts wide-format DataFrame (with columns A, B, C, D representing values)
-        into per-channel format with Time_X and X columns for each channel.
+        into per-channel format with Time_X and SPR_X columns for each channel.
         Used by edits_tab exports to reuse per-channel padding logic.
-        
+
         Args:
             df_wide: Wide-format DataFrame with 'Time' column and channel columns (A, B, C, D)
             channels: List of channel letters (default: ['A', 'B', 'C', 'D'])
-            
+
         Returns:
-            DataFrame with Time_A, A, Time_B, B, Time_C, C, Time_D, D columns
+            DataFrame with Time_A, SPR_A, Time_B, SPR_B, ... columns
         """
         if channels is None:
             channels = ['A', 'B', 'C', 'D']
@@ -179,12 +210,12 @@ class ExportHelpers:
                 times = df_wide.loc[valid_mask, 'Time'].values
                 values = df_wide.loc[valid_mask, ch].values
                 per_channel_dict[f'Time_{ch}'] = list(times)
-                per_channel_dict[ch] = list(values)
+                per_channel_dict[f'SPR_{ch}'] = list(values)
                 max_len = max(max_len, len(times))
             else:
                 # Channel not in data
                 per_channel_dict[f'Time_{ch}'] = []
-                per_channel_dict[ch] = []
+                per_channel_dict[f'SPR_{ch}'] = []
         
         # Pad all arrays to same max length with None (which pandas converts to NaN)
         for key in per_channel_dict:
@@ -601,22 +632,23 @@ class ExportHelpers:
             # Build raw data in LONG format (each channel has its own timestamp)
             # This is critical because channels are measured in SERIES not PARALLEL
             raw_data_rows = []
+            _disp_offset = app.clock.display_offset if hasattr(app, 'clock') else 0.0
 
             for ch in channels:
                 if ch not in app._idx_to_channel:
                     continue
 
-                # Get channel-specific time and wavelength arrays
+                # Raw wavelength (nm) — the downstream export loop and Edits
+                # loader both expect nm and apply the ×355 RU conversion themselves.
                 cycle_time = app.buffer_mgr.cycle_data[ch].time
                 wavelength = app.buffer_mgr.cycle_data[ch].wavelength
 
                 if len(cycle_time) > 0:
-                    # Create one row per measurement (long format)
                     for t, w in zip(cycle_time, wavelength):
                         raw_data_rows.append({
-                            'time': round(t, precision),
+                            'time': round(t - _disp_offset, precision),
                             'channel': ch,
-                            'value': round(w, precision)
+                            'value': round(float(w), precision)
                         })
 
             # Create DataFrame from long format data
@@ -644,7 +676,9 @@ class ExportHelpers:
                     ):
                         try:
                             # Write or replace 'Channels XY' sheet in existing workbook (append mode)
-                            df_xy = ExportHelpers.build_channels_xy_dataframe(app.buffer_mgr, channels)
+                            _offset = app.clock.display_offset if hasattr(app, 'clock') else 0.0
+                            _rec_offset = app.clock.recording_offset if hasattr(app, 'clock') else None
+                            df_xy = ExportHelpers.build_channels_xy_dataframe(app.buffer_mgr, channels, display_offset=_offset, recording_offset=_rec_offset)
                             
                             if not df_xy.empty:
                                 with pd.ExcelWriter(
@@ -685,9 +719,13 @@ class ExportHelpers:
                         # Build Channels XY sheet if buffer_mgr available
                         try:
                             if app.buffer_mgr is not None:
+                                _offset = app.clock.display_offset if hasattr(app, 'clock') else 0.0
+                                _rec_offset = app.clock.recording_offset if hasattr(app, 'clock') else None
                                 channels_xy_df = ExportHelpers.build_channels_xy_dataframe(
                                     app.buffer_mgr,
-                                    channels=channels
+                                    channels=channels,
+                                    display_offset=_offset,
+                                    recording_offset=_rec_offset,
                                 )
                         except Exception as e:
                             print(f"Warning: Could not build Channels XY sheet: {e}")

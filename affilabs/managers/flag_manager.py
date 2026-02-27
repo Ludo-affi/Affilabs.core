@@ -23,6 +23,9 @@ This manager encapsulates all flag-related logic:
 - Exporting flags to recording manager / Excel
 - Clearing flags for new cycles
 
+NOTE: Contact-time countdown display was removed from this manager.
+It now lives in QueueSummaryWidget (queue table STATUS cell).
+
 DEPENDENCIES:
 - main_window.cycle_of_interest_graph (live UI component)
 - main_window.edits_primary_graph (edits UI component)
@@ -119,20 +122,6 @@ class FlagManager:
         self._selected_marker_idx = None
         self._flag_highlight_ring = None
         self._selected_flag_channel = "a"  # Default to Channel A
-
-        # Injection alignment state
-        self._injection_reference_time = None
-        self._injection_reference_channel = None
-        self._injection_alignment_line = None
-        self._injection_snap_tolerance = 10.0  # Seconds
-
-        # Contact time timer overlay
-        self._contact_timer_overlay = None  # Text item for contact time display
-        self._contact_timer_start_time = None  # When contact time started
-        self._contact_timer_duration = None  # Total contact duration (seconds)
-        self._contact_timer_position = (20, 20)  # Default top-left position in pixels
-        self._contact_timer_dragging = False
-        self._contact_timer_drag_offset = (0, 0)
 
         # Edits-context state
         self._edits_highlight_ring = None
@@ -240,96 +229,21 @@ class FlagManager:
             )
             time_val = 0.0
 
-        # Create Flag domain model instance (determines appearance from type)
-        is_reference = False
-
-        # INJECTION ALIGNMENT LOGIC
-        if flag_type == "injection":
-            if self._injection_reference_time is None:
-                # First injection - set as reference
-                is_reference = True
-                self._injection_reference_time = time_val
-                self._injection_reference_channel = channel
-
-                # Create vertical alignment line on cycle graph
-                # This marks where auto-detection first triggered — visual guide
-                # for approximately when contact time started.
-                self._injection_alignment_line = pg.InfiniteLine(
-                    pos=time_val,
-                    angle=90,  # Vertical
-                    pen=pg.mkPen(color='#FF3B30', width=2, style=Qt.PenStyle.DashLine),
-                    movable=False,
-                    label="▼ Injection",
-                    labelOpts={
-                        "color": "#FF3B30",
-                        "position": 0.92,
-                        "fill": pg.mkBrush(255, 255, 255, 200),
-                    },
-                )
-                self.app.main_window.cycle_of_interest_graph.addItem(self._injection_alignment_line)
-
-                logger.info(
-                    f"✓ Injection started at t={time_val:.2f}s (Channel {channel.upper()})"
-                )
-            else:
-                # Subsequent injection - ALWAYS align channel data to reference
-                time_diff = time_val - self._injection_reference_time
-
-                # Shift this channel's data to align with reference
-                shift_amount = -time_diff  # Negative because we shift left to align
-                self.app._channel_time_shifts[channel] = shift_amount
-
-                logger.info(
-                    f"→ Aligning Channel {channel.upper()}: shifting {shift_amount:+.2f}s to match reference"
-                )
-
-                # Export time shift to recording metadata
-                if self.app.recording_mgr.is_recording:
-                    self.app.recording_mgr.update_metadata(
-                        f"channel_{channel}_time_shift", shift_amount
-                    )
-
-                # Trigger graph update to show shifted data
-                self.app._update_cycle_of_interest_graph()
-
-                # Snap flag marker to reference position
-                time_val = self._injection_reference_time
-
         # Create Flag instance using factory
         flag = create_flag(
             flag_type=flag_type,
             channel=channel.upper(),  # Ensure uppercase A/B/C/D
             time=time_val,
             spr=spr_val,
-            is_reference=is_reference,  # Only used for InjectionFlag
+            is_reference=False,
         )
 
-        # Create visual marker using flag's appearance properties
-        # Thicker white outline for better contrast against graph background
-        marker = pg.ScatterPlotItem(
-            [flag.time],
-            [flag.spr],
-            symbol=flag.marker_symbol,
-            size=flag.marker_size,
-            brush=pg.mkBrush(flag.marker_color),
-            pen=pg.mkPen("#FFFFFF", width=3),  # Thicker white outline
-        )
-
-        # Add marker to cycle_of_interest_graph only (cycle-specific feature)
-        # Do NOT display on full_timeline_graph (live sensogram) - flags are for cycle analysis
-        self.app.main_window.cycle_of_interest_graph.addItem(marker)
-
-        # Store marker reference in Flag instance
-        flag.marker = marker
-
-        # Add to flag list
-        self._flag_markers.append(flag)
-
-        # Also add to unified timeline stream (parallel system — keeps old _flag_markers intact)
-        self._add_to_timeline_stream(channel, time_val, spr_val, flag_type, is_reference)
-
-        # Hide "Flat baseline = ready for injection" hint on first injection flag
         if flag_type == "injection":
+            logger.info(
+                f"✓ Injection flag placed at t={time_val:.2f}s (Channel {channel.upper()})"
+            )
+
+            # Hide "Flat baseline = ready for injection" hint
             try:
                 lbl = getattr(self.app.main_window, '_baseline_hint_label', None)
                 if lbl is not None and lbl.isVisible():
@@ -337,49 +251,54 @@ class FlagManager:
             except Exception:
                 pass
 
-        # Flash the marker: briefly enlarge it, then restore, to make it noticeable
-        try:
-            from PySide6.QtCore import QTimer as _QT
-            original_size = flag.marker_size
-            _flash_step = [0]
-            _flash_sizes = [original_size * 2.5, original_size * 1.8, original_size]
-            _flash_timer = _QT()
-            _flash_timer.setInterval(120)
-            def _flash():
-                try:
-                    idx = _flash_step[0]
-                    if idx < len(_flash_sizes):
-                        marker.setSize(_flash_sizes[idx])
-                        _flash_step[0] += 1
-                    else:
-                        _flash_timer.stop()
-                except Exception:
-                    _flash_timer.stop()
-            _flash_timer.timeout.connect(_flash)
-            _flash_timer.start()
-            flag._flash_timer = _flash_timer  # keep reference
-        except Exception:
-            pass
-
-        # One-time "SPR signals decrease on binding" tooltip (injection only, first time ever)
+        # Injection flags: thin dashed InfiniteLine. Other flags: scatter marker.
         if flag_type == "injection":
+            marker = pg.InfiniteLine(
+                pos=flag.time,
+                angle=90,
+                movable=False,
+                pen=pg.mkPen(color=flag.marker_color, width=1, style=Qt.PenStyle.DashLine),
+            )
+        else:
+            marker = pg.ScatterPlotItem(
+                [flag.time],
+                [flag.spr],
+                symbol=flag.marker_symbol,
+                size=flag.marker_size,
+                brush=pg.mkBrush(flag.marker_color),
+                pen=pg.mkPen("#FFFFFF", width=2),
+            )
+        self.app.main_window.cycle_of_interest_graph.addItem(marker)
+        flag.marker = marker
+
+        # Add to flag list
+        self._flag_markers.append(flag)
+
+        # Also add to unified timeline stream
+        self._add_to_timeline_stream(channel, time_val, spr_val, flag_type, False)
+
+        # Flash marker on placement for visibility (scatter-only — InfiniteLines don't support setSize)
+        if flag_type != "injection":
             try:
-                from PySide6.QtWidgets import QToolTip
-                from PySide6.QtCore import QPoint as _QP
-                _shown_key = '_binding_tooltip_shown'
-                if not getattr(self.app, _shown_key, False):
-                    setattr(self.app, _shown_key, True)
-                    mw = self.app.main_window
-                    # Show near the cycle graph
-                    graph = getattr(mw, 'cycle_of_interest_graph', mw)
-                    pos = graph.mapToGlobal(_QP(graph.width() // 2, 40))
-                    QToolTip.showText(
-                        pos,
-                        "SPR signals decrease on binding \u2014 a wavelength drop means your sample is interacting with the sensor.",
-                        graph,
-                        graph.rect(),
-                        8000,  # 8 seconds
-                    )
+                from PySide6.QtCore import QTimer as _QT
+                original_size = flag.marker_size
+                _flash_sizes = [original_size * 2.0, original_size * 1.5, original_size]
+                _flash_step = [0]
+                _flash_timer = _QT()
+                _flash_timer.setInterval(100)
+                def _flash():
+                    try:
+                        idx = _flash_step[0]
+                        if idx < len(_flash_sizes):
+                            marker.setSize(_flash_sizes[idx])
+                            _flash_step[0] += 1
+                        else:
+                            _flash_timer.stop()
+                    except Exception:
+                        _flash_timer.stop()
+                _flash_timer.timeout.connect(_flash)
+                _flash_timer.start()
+                flag._flash_timer = _flash_timer
             except Exception:
                 pass
 
@@ -488,7 +407,8 @@ class FlagManager:
             flag = self._flag_markers[closest_flag_idx]
 
             # Remove from cycle graph only
-            self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
+            if flag.marker is not None:
+                self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
 
             # If this was the selected flag, remove the highlight ring
             if closest_flag_idx == self._selected_flag_idx:
@@ -501,22 +421,6 @@ class FlagManager:
 
             # Remove from storage
             self._flag_markers.pop(closest_flag_idx)
-
-            # If we removed an injection flag, check if we need to clear alignment
-            if isinstance(flag, InjectionFlag):
-                # Count remaining injection flags
-                remaining_injections = [
-                    f for f in self._flag_markers if isinstance(f, InjectionFlag)
-                ]
-                if len(remaining_injections) == 0:
-                    # No more injections - clear alignment line
-                    if self._injection_alignment_line is not None:
-                        self.app.main_window.cycle_of_interest_graph.removeItem(
-                            self._injection_alignment_line
-                        )
-                        self._injection_alignment_line = None
-                    self._injection_reference_time = None
-                    logger.info("✓ Injection alignment cleared")
 
             logger.info(
                 f"🚩 {flag.flag_type.capitalize()} flag removed: Channel {flag.channel.upper()}"
@@ -590,15 +494,24 @@ class FlagManager:
 
         flag = self._flag_markers[flag_idx]
 
-        # Create a ring around the selected flag
-        self._flag_highlight_ring = pg.ScatterPlotItem(
-            [flag.time],
-            [flag.spr],
-            symbol="o",
-            size=25,
-            pen=pg.mkPen("y", width=3),  # Yellow ring
-            brush=None,
-        )
+        if isinstance(flag, InjectionFlag):
+            # InfiniteLine has no y-position — highlight with a bright yellow vertical line
+            self._flag_highlight_ring = pg.InfiniteLine(
+                pos=flag.time,
+                angle=90,
+                pen=pg.mkPen("y", width=3, style=Qt.PenStyle.DashLine),
+                movable=False,
+            )
+        else:
+            # Create a ring around the selected flag
+            self._flag_highlight_ring = pg.ScatterPlotItem(
+                [flag.time],
+                [flag.spr],
+                symbol="o",
+                size=25,
+                pen=pg.mkPen("y", width=3),  # Yellow ring
+                brush=None,
+            )
         self.app.main_window.cycle_of_interest_graph.addItem(self._flag_highlight_ring)
 
     def _highlight_selected_marker(self, auto_marker_idx: int):
@@ -699,18 +612,38 @@ class FlagManager:
         new_spr = cycle_spr_display[new_idx]
 
         # Remove old marker from cycle graph
-        self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
+        if flag.marker is not None:
+            self.app.main_window.cycle_of_interest_graph.removeItem(flag.marker)
 
-        # Create new marker at new position using flag's appearance properties
-        # Thicker white outline for better contrast
-        new_marker = pg.ScatterPlotItem(
-            [new_time],
-            [new_spr],
-            symbol=flag.marker_symbol,
-            size=flag.marker_size,
-            brush=pg.mkBrush(flag.marker_color),
-            pen=pg.mkPen("#FFFFFF", width=3),  # Thicker white outline
-        )
+        # Create new marker at new position
+        if isinstance(flag, InjectionFlag):
+            # Injection flags: vertical InfiniteLine only, no scatter dot
+            is_ref = getattr(flag, "is_reference", False)
+            label_text = "" if is_ref else f"  {flag.channel}"
+            line_style = Qt.PenStyle.SolidLine if is_ref else Qt.PenStyle.DotLine
+            line_width = 2 if is_ref else 1
+            new_marker = pg.InfiniteLine(
+                pos=new_time,
+                angle=90,
+                pen=pg.mkPen(color="#FF3B30", width=line_width, style=line_style),
+                movable=False,
+                label=label_text,
+                labelOpts={
+                    "color": "#FFFFFF",
+                    "position": 0.97 if is_ref else 0.90,
+                    "fill": pg.mkBrush(255, 59, 48, 200),
+                    "border": pg.mkPen("#FF3B30", width=0),
+                },
+            )
+        else:
+            new_marker = pg.ScatterPlotItem(
+                [new_time],
+                [new_spr],
+                symbol=flag.marker_symbol,
+                size=flag.marker_size,
+                brush=pg.mkBrush(flag.marker_color),
+                pen=pg.mkPen("#FFFFFF", width=3),  # Thicker white outline
+            )
 
         self.app.main_window.cycle_of_interest_graph.addItem(new_marker)
 
@@ -721,34 +654,6 @@ class FlagManager:
 
         # Update highlight ring position
         self._highlight_selected_flag(self._selected_flag_idx)
-
-        # If this is an injection flag and NOT the reference, recalculate alignment
-        if isinstance(flag, InjectionFlag) and self._injection_reference_time is not None:
-            if flag.channel != self._injection_reference_channel:
-                time_diff = new_time - self._injection_reference_time
-                shift_amount = -time_diff
-                self.app._channel_time_shifts[channel] = shift_amount
-
-                # Export updated time shift to recording metadata
-                if self.app.recording_mgr.is_recording:
-                    self.app.recording_mgr.update_metadata(
-                        f"channel_{channel}_time_shift", shift_amount
-                    )
-
-                self.app._update_cycle_of_interest_graph()
-                logger.info(
-                    f"→ Moved & realigned Channel {channel.upper()}: shift={shift_amount:+.2f}s"
-                )
-            else:
-                # Moving the reference flag - update reference time
-                old_ref = self._injection_reference_time
-                self._injection_reference_time = new_time
-
-                # Update alignment line
-                if self._injection_alignment_line is not None:
-                    self._injection_alignment_line.setPos(new_time)
-
-                logger.info(f"→ Moved reference flag: {old_ref:.2f}s → {new_time:.2f}s")
 
     def deselect_flag(self):
         """Deselect currently selected flag."""
@@ -823,141 +728,6 @@ class FlagManager:
         except Exception as e:
             logger.debug(f"Could not clear auto-markers: {e}")
 
-    def create_contact_timer_overlay(self, duration: float):
-        """Create draggable contact time timer overlay on cycle graph.
-
-        Args:
-            duration: Contact time duration in seconds
-        """
-        try:
-            if not hasattr(self.app.main_window, "cycle_of_interest_graph"):
-                return
-
-            import time as time_module
-
-            # Store timer state
-            self._contact_timer_start_time = time_module.time()
-            self._contact_timer_duration = duration
-
-            # Create text item with large, bold, easy-to-read font
-            self._contact_timer_overlay = pg.TextItem(
-                text=f"⏱ 0s / {duration:.0f}s",
-                color="#000000",  # Black text
-                anchor=(0, 0),  # Anchor to top-left
-                fill=pg.mkBrush(255, 255, 200, 200),  # Light yellow background, semi-transparent
-            )
-
-            # Set large, bold font
-            font = self._contact_timer_overlay.font()
-            font.setPointSize(14)
-            font.setBold(True)
-            font.setFamily("Monospace")
-            self._contact_timer_overlay.setFont(font)
-
-            # Add shadow/outline for better visibility
-            self._contact_timer_overlay.setDefault()
-
-            # Position at saved location (top-left by default)
-            pixel_pos = self._contact_timer_position
-
-            self._contact_timer_overlay.setPos(pixel_pos[0], pixel_pos[1])
-
-            # Add to graph
-            self.app.main_window.cycle_of_interest_graph.addItem(self._contact_timer_overlay)
-
-            logger.info(f"✓ Contact timer created: {duration:.0f}s")
-
-        except Exception as e:
-            logger.debug(f"Could not create contact timer overlay: {e}")
-
-    def update_contact_timer_display(self):
-        """Update contact timer overlay with current elapsed/remaining time.
-
-        Should be called every second during contact time.
-        """
-        if (
-            self._contact_timer_overlay is None
-            or self._contact_timer_start_time is None
-            or self._contact_timer_duration is None
-        ):
-            return
-
-        try:
-            import time as time_module
-
-            # Calculate elapsed time
-            elapsed = time_module.time() - self._contact_timer_start_time
-
-            # Cap at duration (don't go over)
-            elapsed = min(elapsed, self._contact_timer_duration)
-
-            # Update text with elapsed / total
-            self._contact_timer_overlay.setText(
-                f"⏱ {elapsed:.0f}s / {self._contact_timer_duration:.0f}s"
-            )
-
-        except Exception as e:
-            logger.debug(f"Could not update contact timer: {e}")
-
-    def clear_contact_timer_overlay(self):
-        """Remove and clean up contact timer overlay."""
-        try:
-            if self._contact_timer_overlay is not None:
-                self.app.main_window.cycle_of_interest_graph.removeItem(self._contact_timer_overlay)
-            self._contact_timer_overlay = None
-            self._contact_timer_start_time = None
-            self._contact_timer_duration = None
-            logger.debug("✓ Contact timer cleared")
-        except Exception as e:
-            logger.debug(f"Could not clear contact timer: {e}")
-
-    def make_timer_draggable(self):
-        """Enable dragging for the contact timer overlay.
-
-        Installs mouse event handler on the timer text item.
-        """
-        if self._contact_timer_overlay is None:
-            return
-
-        # Store reference to flag manager for closure
-        flag_mgr = self
-
-        class DraggableTimerHandler:
-            def __init__(self, timer_item):
-                self.timer_item = timer_item
-                self.dragging = False
-                self.drag_offset = (0, 0)
-
-            def mouseDragEvent(self, ev):
-                """Handle mouse drag on timer."""
-                if ev.isStart():
-                    self.dragging = True
-                    self.drag_offset = (
-                        ev.pos().x() - self.timer_item.pos().x(),
-                        ev.pos().y() - self.timer_item.pos().y(),
-                    )
-                elif ev.isFinish():
-                    self.dragging = False
-                    # Save new position
-                    flag_mgr._contact_timer_position = (
-                        int(self.timer_item.pos().x()),
-                        int(self.timer_item.pos().y()),
-                    )
-                    logger.info(f"Timer position saved: {flag_mgr._contact_timer_position}")
-                else:
-                    # Move timer with mouse
-                    new_x = ev.pos().x() - self.drag_offset[0]
-                    new_y = ev.pos().y() - self.drag_offset[1]
-                    self.timer_item.setPos(new_x, new_y)
-
-        # Attach custom mouse handler
-        try:
-            handler = DraggableTimerHandler(self._contact_timer_overlay)
-            self._contact_timer_overlay.mouseDragEvent = handler.mouseDragEvent
-            logger.debug("✓ Timer made draggable")
-        except Exception as e:
-            logger.debug(f"Could not make timer draggable: {e}")
-
     def clear_all_flags(self):
         """Clear all live flags and auto-markers when user clicks Clear Flags button.
 
@@ -984,20 +754,7 @@ class FlagManager:
             # Clear auto-markers
             self.clear_auto_markers()
 
-            # Clear injection alignment line and references
-            self._injection_reference_time = None
-            self._injection_reference_channel = None
-            if self._injection_alignment_line is not None:
-                self.app.main_window.cycle_of_interest_graph.removeItem(
-                    self._injection_alignment_line
-                )
-                self._injection_alignment_line = None
-
-            # Reset channel time shifts to default
-            if hasattr(self.app, "_channel_time_shifts"):
-                self.app._channel_time_shifts = {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
-
-            logger.info("✓ All flags cleared and timing reset")
+            logger.info("✓ All flags cleared")
         except Exception as e:
             logger.error(f"[ERROR] Error clearing flags: {e}", exc_info=True)
 
@@ -1026,24 +783,7 @@ class FlagManager:
             # Clear auto-markers
             self.clear_auto_markers()
 
-            # Clear contact timer overlay
-            self.clear_contact_timer_overlay()
-
-            # Clear injection alignment reference and line
-            self._injection_reference_time = None
-            self._injection_reference_channel = None
-            if self._injection_alignment_line is not None:
-                self.app.main_window.cycle_of_interest_graph.removeItem(
-                    self._injection_alignment_line
-                )
-                self._injection_alignment_line = None
-
-            # Reset channel time shifts to default (live sensorgram timing)
-            # Flags are cycle-specific, so timing adjustments should not persist across cycles
-            if hasattr(self.app, "_channel_time_shifts"):
-                self.app._channel_time_shifts = {"a": 0.0, "b": 0.0, "c": 0.0, "d": 0.0}
-
-            logger.debug("Flags and timing cleared for new cycle")
+            logger.debug("Flags cleared for new cycle")
         except Exception as e:
             logger.debug(f"Error clearing flags for new cycle: {e}")
 
@@ -1091,16 +831,31 @@ class FlagManager:
                 context="edits",
             )
 
-            # Create visual marker with same appearance as live flags
-            marker = pg.ScatterPlotItem(
-                [flag.time],
-                [flag.spr],
-                symbol=flag.marker_symbol,
-                size=flag.marker_size,
-                brush=pg.mkBrush(flag.marker_color),
-                pen=pg.mkPen("#FFFFFF", width=3),
-            )
-            marker.setZValue(100)  # Draw on top of data
+            # Create visual marker — injection flags use InfiniteLine, others use scatter
+            if isinstance(flag, InjectionFlag):
+                marker = pg.InfiniteLine(
+                    pos=flag.time,
+                    angle=90,
+                    pen=pg.mkPen(color="#FF3B30", width=2, style=Qt.PenStyle.SolidLine),
+                    movable=False,
+                    label=f"  {flag.channel}",
+                    labelOpts={
+                        "color": "#FFFFFF",
+                        "position": 0.97,
+                        "fill": pg.mkBrush(255, 59, 48, 200),
+                        "border": pg.mkPen("#FF3B30", width=0),
+                    },
+                )
+            else:
+                marker = pg.ScatterPlotItem(
+                    [flag.time],
+                    [flag.spr],
+                    symbol=flag.marker_symbol,
+                    size=flag.marker_size,
+                    brush=pg.mkBrush(flag.marker_color),
+                    pen=pg.mkPen("#FFFFFF", width=3),
+                )
+                marker.setZValue(100)  # Draw on top of data
 
             # Add to Edits graph
             edits_graph = self._get_edits_graph()
@@ -1212,15 +967,30 @@ class FlagManager:
             edits_graph.removeItem(flag.marker)
 
         # Create new marker at new position
-        new_marker = pg.ScatterPlotItem(
-            [new_time],
-            [new_spr],
-            symbol=flag.marker_symbol,
-            size=flag.marker_size,
-            brush=pg.mkBrush(flag.marker_color),
-            pen=pg.mkPen("#FFFFFF", width=3),
-        )
-        new_marker.setZValue(100)
+        if isinstance(flag, InjectionFlag):
+            new_marker = pg.InfiniteLine(
+                pos=new_time,
+                angle=90,
+                pen=pg.mkPen(color="#FF3B30", width=2, style=Qt.PenStyle.SolidLine),
+                movable=False,
+                label=f"  {flag.channel}",
+                labelOpts={
+                    "color": "#FFFFFF",
+                    "position": 0.97,
+                    "fill": pg.mkBrush(255, 59, 48, 200),
+                    "border": pg.mkPen("#FF3B30", width=0),
+                },
+            )
+        else:
+            new_marker = pg.ScatterPlotItem(
+                [new_time],
+                [new_spr],
+                symbol=flag.marker_symbol,
+                size=flag.marker_size,
+                brush=pg.mkBrush(flag.marker_color),
+                pen=pg.mkPen("#FFFFFF", width=3),
+            )
+            new_marker.setZValue(100)
 
         if edits_graph is not None:
             edits_graph.addItem(new_marker)
@@ -1316,15 +1086,24 @@ class FlagManager:
 
         self._remove_edits_highlight()
 
-        self._edits_highlight_ring = pg.ScatterPlotItem(
-            [flag.time],
-            [flag.spr],
-            symbol="o",
-            size=25,
-            pen=pg.mkPen("y", width=3),  # Yellow ring — same as live
-            brush=None,
-        )
-        self._edits_highlight_ring.setZValue(101)
+        if isinstance(flag, InjectionFlag):
+            # InfiniteLine has no y-position — highlight with bright yellow vertical line
+            self._edits_highlight_ring = pg.InfiniteLine(
+                pos=flag.time,
+                angle=90,
+                pen=pg.mkPen("y", width=3, style=Qt.PenStyle.DashLine),
+                movable=False,
+            )
+        else:
+            self._edits_highlight_ring = pg.ScatterPlotItem(
+                [flag.time],
+                [flag.spr],
+                symbol="o",
+                size=25,
+                pen=pg.mkPen("y", width=3),  # Yellow ring — same as live
+                brush=None,
+            )
+            self._edits_highlight_ring.setZValue(101)
         edits_graph.addItem(self._edits_highlight_ring)
 
     def _remove_edits_highlight(self):

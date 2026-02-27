@@ -1,6 +1,6 @@
 # Affilabs.core — Documentation Index
 
-Last updated: 2026-02-24 (Added missing sections: Hardware, User Guides, Product Requirements, Setup; added Notes tab, Experiment Index/Browser, Transport Bar, Floating Panels, Guidance Coordinator, Accessibility Panel, Method Builder Redesign, Microfluidic Channels Panel, Compression Assistant, Injection Detection, Leak Detection, Tips System, Sensor Chip Metadata FRS docs; added UX_USER_JOURNEY.md to UI section; added all missing future_plans docs; updated EXPERIMENT_INDEX_FRS and NOTES_TAB_FRS to ✅)
+Last updated: 2026-02-25 (Updated INJECTION_DETECTION_FRS, INJECTION_AUTO_DETECTION_FRS, SIGNAL_EVENT_CLASSIFIER_FRS with full timing analysis, bubble physics, signal event registry, per-cycle/run scoring mapping, 3→4σ sensitivity knob, 5pt baseline rule, continuous monitoring design; fixed CYCLE_TIME to 1.0s across all docs; added SIGNAL_EVENT_CLASSIFIER_FRS.md entry to index)
 Add a row whenever a new document is created; update Verified column after each code-verification pass.
 
 **Verification key:**
@@ -18,7 +18,7 @@ Add a row whenever a new document is created; update Verified column after each 
 | [LED_CONVERGENCE_ENGINE.md](architecture/LED_CONVERGENCE_ENGINE.md) | S-pol + P-pol convergence algorithm; ML models; per-channel orchestration | Feb 19 2026 | ✅ |
 | [DEVICE_CONFIGURATION_SYSTEM.md](architecture/DEVICE_CONFIGURATION_SYSTEM.md) | Per-device JSON config lifecycle; EEPROM fallback; OEM calibration workflow | Feb 19 2026 | ✅ |
 | [SPR_SIGNAL_PROCESSING_PIPELINE.md](architecture/SPR_SIGNAL_PROCESSING_PIPELINE.md) | Full pipeline: dark subtraction → P/S ratio → SG filter → Fourier peak detection; QC metrics; pipeline registry | Feb 18 2026 | ✅ |
-| [INJECTION_AUTO_DETECTION_FRS.md](architecture/INJECTION_AUTO_DETECTION_FRS.md) | `auto_detect_injection_point` algorithm; confidence scoring; InjectionCoordinator flow; multi-channel scan; delta SPR; orientation validation | Feb 19 2026 | ✅ |
+| [INJECTION_AUTO_DETECTION_FRS.md](architecture/INJECTION_AUTO_DETECTION_FRS.md) | `auto_detect_injection_point` algorithm; 3 tracked features (position/slope/σ); 5-point baseline rule; 3→4σ sensitivity knob; confidence scoring; InjectionCoordinator flow; multi-channel scan; delta SPR; orientation validation | Feb 25 2026 | ✅ |
 | [MANUAL_INJECTION_STATE_MACHINE.md](architecture/MANUAL_INJECTION_STATE_MACHINE.md) | P4SPR manual injection state machine; channel arm/inject/rinse UI states | Feb 18 2026 | ✅ |
 | [CALIBRATION_ENTRY_EXIT_FLOWS.md](architecture/CALIBRATION_ENTRY_EXIT_FLOWS.md) | 5 calibration types; entry/exit transitions; state machine | Feb 3 2026 | ⚠️ |
 | [CALIBRATION_FLOWS_VISUAL.md](architecture/CALIBRATION_FLOWS_VISUAL.md) | Visual flow diagrams for calibration sequences | unknown | ⚠️ |
@@ -85,7 +85,8 @@ Add a row whenever a new document is created; update Verified column after each 
 | [METHOD_BUILDER_FRS.md](features/METHOD_BUILDER_FRS.md) | Method Builder dialog: cycle editor, template save/load, queue preview | unknown | ⚠️ |
 | [MICROFLUIDIC_CHANNELS_PANEL_FRS.md](features/MICROFLUIDIC_CHANNELS_PANEL_FRS.md) | Contact Monitor panel, per-channel contact timers, binding symbols, wash monitoring | unknown | ⚠️ |
 | [COMPRESSION_ASSISTANT_FRS.md](features/COMPRESSION_ASSISTANT_FRS.md) | Compression Assistant: guided chip compression, gauge display, QC leak check | unknown | ⚠️ |
-| [INJECTION_DETECTION_FRS.md](features/INJECTION_DETECTION_FRS.md) | Live injection detection FRS: threshold triggers, confidence gating, P4SPR vs PRO detection paths | unknown | ⚠️ |
+| [INJECTION_DETECTION_FRS.md](features/INJECTION_DETECTION_FRS.md) | v2 multi-feature injection scorer: 3σ/4σ baseline detection, P2P+%T+slope+λ scoring, bubble/leak/drift/spike event flags, system timing stack (1Hz/250ms/1s cycle), continuous cycle-scoped monitoring design, flag→per-cycle score→run star rating mapping | Feb 25 2026 | ✅ |
+| [SIGNAL_EVENT_CLASSIFIER_FRS.md](features/SIGNAL_EVENT_CLASSIFIER_FRS.md) | Signal event classifier: naïve Bayes multi-feature scorer, pre-inject readiness badge, bubble/leak/drift/spike event flags (§6b), per-cycle score component weights (25+20+20+15+15+5), run star rating, Sparq Coach Tier 1 `signal_events` JSON payload; telemetry logger, signal_quality_scorer, signal_event_badge widget plan | Feb 25 2026 | ✅ |
 | [LEAK_DETECTION_SYSTEM.md](features/LEAK_DETECTION_SYSTEM.md) | Leak detection: pressure monitoring, alert system, fluidic safety | unknown | ⚠️ |
 | [SENSOR_CHIP_METADATA.md](features/SENSOR_CHIP_METADATA.md) | Sensor chip metadata: chip type, lot, chemistry, storage with session data | unknown | ⚠️ |
 | [TIPS_SYSTEM.md](features/TIPS_SYSTEM.md) | In-app tips system: tip storage, display triggers, dismissal tracking | unknown | ⚠️ |
@@ -111,8 +112,13 @@ Add a row whenever a new document is created; update Verified column after each 
 | [INJECT_FUNCTION_README.md](user_guides/INJECT_FUNCTION_README.md) | Inject function usage guide |
 | [KINETIC_METHODS.md](user_guides/KINETIC_METHODS.md) | Kinetic binding experiment design |
 | [TRAINING_GUIDE.md](user_guides/TRAINING_GUIDE.md) | Operator training guide |
-| [DEMO_QUICK_START.md](user_guides/DEMO_QUICK_START.md) | Demo mode quick start |
+| [DEMO_QUICK_START.md](user_guides/DEMO_QUICK_START.md) | Evaluation & demo mode guide |
 | [DEMO_DATA_README.md](user_guides/DEMO_DATA_README.md) | Demo data description and usage |
+| [KNOWN_ISSUES.md](user_guides/KNOWN_ISSUES.md) | Known issues, limitations, and workarounds (v2.0.5) |
+| [INSTALLATION_GUIDE.md](user_guides/INSTALLATION_GUIDE.md) | End-user installation guide (installer, Zadig driver, first launch) |
+| [HARDWARE_COMPATIBILITY.md](user_guides/HARDWARE_COMPATIBILITY.md) | Supported instruments, detectors, firmware, and OS matrix |
+| [SENSOR_CHIP_GUIDE.md](user_guides/SENSOR_CHIP_GUIDE.md) | Sensor chip handling, surface chemistries, storage, regeneration |
+| [EULA.md](user_guides/EULA.md) | End User License Agreement (draft — requires legal review) |
 | [BUILD_INSTALLER.md](user_guides/BUILD_INSTALLER.md) | Build and installer guide for developers |
 | [SHIPPING_GUIDE.md](user_guides/SHIPPING_GUIDE.md) | Device shipping and packaging procedure |
 | [QUICK_SHIP.md](user_guides/QUICK_SHIP.md) | Quick-ship checklist |

@@ -23,39 +23,301 @@ from affilabs.utils.logger import logger
 class ExportMixin:
     """Mixin providing all export functionality for EditsTab."""
 
+    # ── Helpers ──────────────────────────────────────────────────────────────
+
+    def _build_canonical_cycles_df(self, cycle_indices=None):
+        """Return a DataFrame in the canonical 'Cycles' sheet format.
+
+        Column names match what live export (excel_exporter.py) writes and what
+        the Edits loader (_edits_cycle_mixin.py) expects, so files round-trip
+        cleanly.  Pass cycle_indices to restrict to specific rows; None = all.
+        """
+        import pandas as pd
+        cycles = getattr(self.main_window, '_loaded_cycles_data', None)
+        if not cycles:
+            return pd.DataFrame()
+
+        rows = (
+            [cycles[i].copy() for i in cycle_indices if i < len(cycles)]
+            if cycle_indices is not None
+            else [c.copy() for c in cycles]
+        )
+
+        for row in rows:
+            if isinstance(row.get('concentrations'), dict):
+                row['concentrations'] = str(row['concentrations'])
+
+        # Enrich rows with quality score + note from _cycle_details_data
+        details_cache = getattr(self, '_cycle_details_data', {})
+        all_cycles = getattr(self.main_window, '_loaded_cycles_data', []) or []
+        for row in rows:
+            row_cycle_id = row.get('cycle_id', '')
+            # Find the row_idx that corresponds to this cycle_id
+            for row_idx, det in details_cache.items():
+                if det.get('cycle_id') == row_cycle_id:
+                    row['quality_score'] = det.get('quality_score', '')
+                    row['quality_note'] = det.get('quality_note', '')
+                    break
+
+        df = pd.DataFrame(rows)
+        preferred = [
+            'cycle_id', 'cycle_num', 'type', 'name',
+            'start_time_sensorgram', 'end_time_sensorgram', 'duration_minutes',
+            'concentration_value', 'concentration_units', 'concentrations',
+            'note', 'delta_spr', 'delta_spr_by_channel', 'flags', 'timestamp',
+            'quality_score', 'quality_note',
+        ]
+        ec = [c for c in preferred if c in df.columns]
+        oc = [c for c in df.columns if c not in preferred and c != 'shift']
+        return df[ec + oc]
+
+    def _build_metadata_sheet(self, extra: dict | None = None) -> "pd.DataFrame":
+        """Assemble the canonical Metadata sheet DataFrame for an Edits export.
+
+        Pulls data from three sources:
+        - ``data_collector.metadata`` — instrument/session fields set during recording
+        - ``ExperimentIndex`` entry matched by source file path — ELN fields (rating,
+          tags, notes, kanban_status) edited in the Notes tab
+        - ``extra`` dict — caller-supplied override/additional keys
+
+        Returns a DataFrame with columns ``key`` and ``value``, using the same
+        sectioned key-value layout written by the live exporter so the Metadata
+        sheet is identical whether the file comes from a fresh recording or from
+        an Edits re-save.
+        """
+        import pandas as pd
+        from datetime import datetime
+
+        meta: dict = {}
+
+        # --- 1. Recorded metadata (instrument/session) -----------------------
+        try:
+            dc = self.main_window.app.recording_mgr.data_collector
+            meta.update(dc.metadata or {})
+        except Exception:
+            pass
+
+        # --- 2. Loaded metadata (round-tripped from source file) -------------
+        try:
+            loaded = getattr(self.main_window, '_loaded_metadata', None) or {}
+            for k, v in loaded.items():
+                if k not in meta:
+                    meta[k] = v
+        except Exception:
+            pass
+
+        # --- 3. ELN fields from ExperimentIndex (Notes tab) ------------------
+        eln: dict = {}
+        try:
+            from affilabs.services.experiment_index import ExperimentIndex
+            from pathlib import Path
+            source = getattr(self.main_window, '_edits_source_file', None)
+            if source:
+                src_path = Path(source)
+                idx = ExperimentIndex()
+                # Match by file path — entries store relative paths so try stem match too
+                for entry in idx.all_entries():
+                    entry_file = Path(entry.get("file", ""))
+                    if (entry_file == src_path
+                            or entry_file.name == src_path.name
+                            or entry_file.stem == src_path.stem):
+                        eln = entry
+                        break
+        except Exception:
+            pass
+
+        # --- 4. Caller overrides ---------------------------------------------
+        if extra:
+            meta.update(extra)
+
+        # --- Build sectioned rows --------------------------------------------
+        user = eln.get("user") or meta.get("operator") or meta.get("User") or "Unknown"
+        tags_raw = eln.get("tags") or []
+        tags_str = ", ".join(tags_raw) if isinstance(tags_raw, list) else str(tags_raw)
+
+        rows = [
+            # Experiment
+            ("section",           "Experiment"),
+            ("experiment_id",     eln.get("id") or meta.get("experiment_id", "")),
+            ("recording_start",   meta.get("recording_start", "")),
+            ("recording_end",     datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            ("duration",          f"{float(eln['duration_min']):.1f} min" if eln.get("duration_min") else ""),
+            ("cycle_count",       str(eln.get("cycle_count") or len(getattr(getattr(self.main_window, 'app', None), '_loaded_cycles_data', None) or []))),
+            ("method_name",       meta.get("method_name", "")),
+            ("description",       eln.get("description") or meta.get("description", "")),
+            # Instrument
+            ("section",           "Instrument"),
+            ("device_id",         meta.get("device_id") or meta.get("detector_serial", "")),
+            ("hardware_model",    eln.get("hardware_model") or meta.get("hardware_model", "")),
+            ("sensor_type",       meta.get("sensor_type", "")),
+            ("firmware_version",  meta.get("firmware_version", "")),
+            ("software_version",  meta.get("software_version", "")),
+            # Sample
+            ("section",           "Sample"),
+            ("chip_serial",       eln.get("chip_serial") or meta.get("chip_serial") or meta.get("detector_serial", "")),
+            ("ligand",            meta.get("ligand", "")),
+            ("analyte",           meta.get("analyte", "")),
+            ("buffer",            meta.get("buffer", "")),
+            ("temperature_c",     meta.get("temperature_c", "")),
+            # Operator
+            ("section",           "Operator"),
+            ("operator",          user),
+            ("lab",               meta.get("lab", "")),
+            ("project",           meta.get("project", "")),
+            # ELN
+            ("section",           "ELN"),
+            ("rating",            str(eln.get("rating") or "")),
+            ("tags",              tags_str),
+            ("kanban_status",     eln.get("kanban_status", "")),
+            ("notes",             eln.get("notes", "")),
+            # Channel shifts
+            ("section",           "Channel Shifts"),
+            ("channel_a_shift_s", str(meta.get("channel_a_time_shift", meta.get("channel_a_shift", "")))),
+            ("channel_b_shift_s", str(meta.get("channel_b_time_shift", meta.get("channel_b_shift", "")))),
+            ("channel_c_shift_s", str(meta.get("channel_c_time_shift", meta.get("channel_c_shift", "")))),
+            ("channel_d_shift_s", str(meta.get("channel_d_time_shift", meta.get("channel_d_shift", "")))),
+        ]
+
+        # Any extra keys in meta not already covered
+        known = {r[0] for r in rows} | {"section"}
+        leftover = [(k, str(v)) for k, v in meta.items() if k not in known]
+        if leftover:
+            rows.append(("section", "Other"))
+            rows.extend(leftover)
+
+        return pd.DataFrame(rows, columns=["key", "value"])
+
+    def _get_source_xy_sheet(self):
+        """Return the Per-Channel Format DataFrame from the source file, or None.
+
+        Edits never modifies the raw XY signal data — if we have the source file
+        on disk we pass its Per-Channel Format sheet through unchanged rather than
+        reconstructing it from raw_data_rows (which would re-apply the nm→RU
+        conversion and lose the original values).
+        """
+        import pandas as pd
+        source = getattr(self.main_window, '_edits_source_file', None)
+        if not source or not isinstance(source, str):
+            return None
+        try:
+            from pathlib import Path
+            if not Path(source).exists():
+                return None
+            sheets = pd.read_excel(source, sheet_name=['Per-Channel Format'], engine='openpyxl')
+            return sheets.get('Per-Channel Format')
+        except Exception:
+            return None
+
+    def _apply_version_management(
+        self,
+        file_path: str,
+        *,
+        action: str,
+        cycle_indices: list[int] | None = None,
+        fields_changed: str = "",
+        notes: str = "",
+    ) -> None:
+        """Apply ExcelVersionManager to ``file_path`` after a save.
+
+        Only runs when the destination IS the source file (in-place overwrite).
+        Silently skips if the version manager is unavailable.
+
+        Parameters
+        ----------
+        file_path : str
+            Path that was just written.
+        action : str
+            Human-readable description of the save operation.
+        cycle_indices : list[int] | None
+            Row indices of cycles that were exported/modified.
+        fields_changed : str
+            Comma-separated column names that changed (optional).
+        notes : str
+            Extra context (smoothing level, alignment applied, etc.).
+        """
+        try:
+            from affilabs.services.excel_version_manager import ExcelVersionManager
+
+            # Resolve user
+            user = "Unknown"
+            try:
+                user = self.main_window.app.user_profile_manager.get_current_user() or "Unknown"
+            except Exception:
+                pass
+
+            # Build cycles_affected string
+            cycles_affected = ""
+            if cycle_indices is not None:
+                cycles_data = getattr(self.main_window, '_loaded_cycles_data', [])
+                ids = []
+                for i in cycle_indices:
+                    if i < len(cycles_data):
+                        c = cycles_data[i]
+                        ids.append(str(c.get('cycle_id', c.get('cycle_num', i + 1))))
+                cycles_affected = ", ".join(ids)
+
+            ExcelVersionManager.apply(
+                file_path,
+                action=action,
+                user=user,
+                cycles_affected=cycles_affected,
+                fields_changed=fields_changed,
+                notes=notes,
+            )
+        except Exception:
+            pass  # Version management is non-critical — never block a save
+
     # ── Core Export Methods ──────────────────────────────────────────────────
 
     def _export_package(self):
-        """Export Package: Excel+Charts + Sensorgram PNG + ΔSPR Chart PNG in one action."""
+        """Export Package: single workbook with all data + embedded graph images.
+
+        Captures the visible Sensorgram and ΔSPR bar chart as PNG images,
+        then delegates to ``_export_post_edit_analysis_with_charts()`` which
+        creates one ``.xlsx`` file containing data sheets, interactive Excel
+        charts **and** embedded graph images — all in a single workbook.
+        """
         from affilabs.utils.logger import logger
-        from PySide6.QtWidgets import QMessageBox
+        if hasattr(self.main_window, 'stage_bar'):
+            try:
+                _chip = self.main_window.transport_bar.step_chip
+                # Only advance to "export" if the user has already reviewed data (edit=index 4)
+                if _chip._completed_idx >= 4:
+                    self.main_window.stage_bar.advance_to("export")
+            except Exception:
+                self.main_window.stage_bar.advance_to("export")
 
-        errors = []
-
-        try:
-            self._export_post_edit_analysis_with_charts()
-        except Exception as e:
-            logger.warning(f"Export package — Excel+Charts failed: {e}")
-            errors.append(f"Excel: {e}")
-
-        try:
-            self._export_graph_image()
-        except Exception as e:
-            logger.warning(f"Export package — Sensorgram PNG failed: {e}")
-            errors.append(f"Sensorgram PNG: {e}")
+        # ── Capture graph images as PNG bytes ────────────────────────────
+        graph_images: dict[str, bytes] = {}
 
         try:
-            self._export_barchart_image()
+            exporter = pg.exporters.ImageExporter(self.edits_primary_graph.plotItem)
+            exporter.parameters()['width'] = 2400
+            from PySide6.QtCore import QBuffer, QIODevice
+            buf = QBuffer()
+            buf.open(QIODevice.OpenModeFlag.ReadWrite)
+            exporter.export(buf)
+            graph_images['Sensorgram'] = bytes(buf.data())
+            buf.close()
+            logger.debug("Captured sensorgram image for package export")
         except Exception as e:
-            logger.warning(f"Export package — ΔSPR chart PNG failed: {e}")
-            errors.append(f"ΔSPR PNG: {e}")
+            logger.warning(f"Export package — could not capture sensorgram: {e}")
 
-        if errors:
-            QMessageBox.warning(
-                self,
-                "Export Package — Partial Failure",
-                "Some exports failed:\n" + "\n".join(f"  • {e}" for e in errors),
-            )
+        try:
+            exporter = pg.exporters.ImageExporter(self.delta_spr_barchart.plotItem)
+            exporter.parameters()['width'] = 1200
+            from PySide6.QtCore import QBuffer, QIODevice
+            buf = QBuffer()
+            buf.open(QIODevice.OpenModeFlag.ReadWrite)
+            exporter.export(buf)
+            graph_images['ΔSPR Chart'] = bytes(buf.data())
+            buf.close()
+            logger.debug("Captured ΔSPR chart image for package export")
+        except Exception as e:
+            logger.warning(f"Export package — could not capture ΔSPR chart: {e}")
+
+        # ── Create single workbook with embedded images ──────────────────
+        self._export_post_edit_analysis_with_charts(graph_images=graph_images or None)
 
     def _export_selection(self):
         """Export data from Edits tab to Excel.
@@ -253,14 +515,20 @@ class ExportMixin:
                 # Use shared utility to build per-channel format
                 df_per_channel = ExportHelpers.build_channels_xy_from_wide_dataframe(df_wide, channels=self.CHANNELS)
                 if not df_per_channel.empty:
-                    # Reorder columns: Time_A, A, Time_B, B, Time_C, C, Time_D, D
-                    column_order = [col for ch in self.CHANNELS for col in [f'Time_{ch}', ch] if col in df_per_channel.columns]
+                    # Reorder columns: Time_A, SPR_A, Time_B, SPR_B, ...
+                    column_order = [col for ch in self.CHANNELS for col in [f'Time_{ch}', f'SPR_{ch}'] if col in df_per_channel.columns]
                     df_per_channel = df_per_channel[column_order]
                     df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
 
                 # Sheet 3: Metadata
                 df_meta = pd.DataFrame(metadata)
                 df_meta.to_excel(writer, sheet_name='Cycle Metadata', index=False)
+
+                # Sheet 3b: Canonical "Cycles" sheet — matches live export format so this
+                # file can be reloaded into Edits without column-name translation.
+                df_canonical = self._build_canonical_cycles_df(cycle_indices=selected_rows)
+                if not df_canonical.empty:
+                    df_canonical.to_excel(writer, sheet_name='Cycles', index=False)
 
                 # Sheet 4: Alignment settings (for re-loading)
                 if self._cycle_alignment:
@@ -276,26 +544,22 @@ class ExportMixin:
                         df_alignment = pd.DataFrame(alignment_rows)
                         df_alignment.to_excel(writer, sheet_name='Alignment', index=False)
 
-                # Sheet 5: Flags (if any)
-                if self._edits_flags:
-                    flag_rows = []
-                    for flag in self._edits_flags:
-                        flag_rows.append(flag.to_export_dict())
-                    if flag_rows:
-                        df_flags = pd.DataFrame(flag_rows)
-                        df_flags.to_excel(writer, sheet_name='Flags', index=False)
-                        logger.debug(f"Exported {len(flag_rows)} flags")
-
-                # Sheet 6: Export info
-                export_info = pd.DataFrame([{
-                    'Export_Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'Total_Cycles': len(selected_rows),
-                    'Total_Data_Points': len(export_data),
-                    'Description': 'Combined sensorgram with custom channel selection and time alignment'
-                }])
-                export_info.to_excel(writer, sheet_name='Export Info', index=False)
+                # Sheet 5: Export info
+                self._build_metadata_sheet(extra={
+                    'export_type': 'selection',
+                    'total_cycles': str(len(selected_rows)),
+                    'total_data_points': str(len(export_data)),
+                }).to_excel(writer, sheet_name='Metadata', index=False)
 
             logger.info(f"✓ Exported {len(export_data)} data points from {len(selected_rows)} cycles")
+
+            self._apply_version_management(
+                file_path,
+                action=f"Export selection ({len(selected_rows)} cycle(s))",
+                cycle_indices=list(selected_rows),
+                fields_changed="Combined Data (Long), Per-Channel Format, Cycles",
+                notes=f"Alignment applied; {len(export_data)} data points",
+            )
 
             QMessageBox.information(
                 self.main_window,
@@ -403,32 +667,42 @@ class ExportMixin:
             # Sheet 1: Raw data in LONG format (Time, Channel, Value - no NaNs!)
             df_long.to_excel(writer, sheet_name='Raw Data', index=False)
 
-            # Sheet 2: Per-channel format (Time_A, A, Time_B, B, Time_C, C, Time_D, D)
-            # Use shared utility from ExportHelpers to avoid duplication
-            from affilabs.utils.export_helpers import ExportHelpers
-            df_per_channel = ExportHelpers.build_channels_xy_from_wide_dataframe(df_wide, channels=self.CHANNELS)
-            if not df_per_channel.empty:
-                df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+            # Sheet 2: Per-channel format — pass through source file unchanged if available,
+            # otherwise reconstruct from raw_data_rows.
+            df_source_xy = self._get_source_xy_sheet()
+            if df_source_xy is not None:
+                df_source_xy.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+            else:
+                from affilabs.utils.export_helpers import ExportHelpers
+                df_per_channel = ExportHelpers.build_channels_xy_from_wide_dataframe(df_wide, channels=self.CHANNELS)
+                if not df_per_channel.empty:
+                    df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
 
-            # Sheet 3: Cycle Table
+            # Sheet 3: Cycle Table (display columns — human-readable)
             if cycles_table:
                 df_cycles = pd.DataFrame(cycles_table)
                 df_cycles.to_excel(writer, sheet_name='Cycle Table', index=False)
 
+            # Sheet 3b: Canonical "Cycles" sheet — reload-compatible format
+            df_canonical = self._build_canonical_cycles_df()
+            if not df_canonical.empty:
+                df_canonical.to_excel(writer, sheet_name='Cycles', index=False)
+
             # Sheet 4: Export info
-            info_dict = {
-                'Property': ['Export Date', 'Data Points', 'Channels', 'Cycles'],
-                'Value': [
-                    datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    str(len(df_long)),
-                    ', '.join(df_long['Channel'].unique()),
-                    str(len(cycles_table)) if cycles_table else '0'
-                ]
-            }
-            df_info = pd.DataFrame(info_dict)
-            df_info.to_excel(writer, sheet_name='Export Info', index=False)
+            self._build_metadata_sheet(extra={
+                'export_type': 'raw_data_long',
+                'total_data_points': str(len(df_long)),
+                'channels': ', '.join(df_long['Channel'].unique()),
+            }).to_excel(writer, sheet_name='Metadata', index=False)
 
         logger.info(f"[EXPORT] Exported {len(df_long)} rows to: {file_path}")
+
+        self._apply_version_management(
+            file_path,
+            action="Export raw data (long format)",
+            fields_changed="Raw Data, Per-Channel Format, Cycles",
+            notes=f"{len(df_long)} data points",
+        )
 
         # Register file in experiment metadata (if using experiment folder)
         if exp_folder and Path(file_path).is_relative_to(exp_folder):
@@ -488,38 +762,32 @@ class ExportMixin:
                 # Sheet 1: Raw data (Time, A, B, C, D format)
                 df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
 
-                # Sheet 2: Per-channel format (Time_A, A, Time_B, B, Time_C, C, Time_D, D)
-                per_channel_dict = {}
-                for ch in self.CHANNELS:
-                    if ch in df_raw.columns:
-                        # Get non-null values and their corresponding times
-                        valid_mask = df_raw[ch].notna()
-                        times = df_raw.loc[valid_mask, 'Time'].values
-                        values = df_raw.loc[valid_mask, ch].values
-                        per_channel_dict[f'Time_{ch}'] = list(times)
-                        per_channel_dict[ch] = list(values)
-                    else:
-                        per_channel_dict[f'Time_{ch}'] = []
-                        per_channel_dict[ch] = []
-
-                # Find max length for padding
-                max_len = max((len(per_channel_dict[f'Time_{ch}']) for ch in self.CHANNELS), default=0)
-
-                # Pad all to same length
-                for ch in self.CHANNELS:
-                    current_len = len(per_channel_dict[f'Time_{ch}'])
-                    if current_len < max_len:
-                        per_channel_dict[f'Time_{ch}'].extend([None] * (max_len - current_len))
-                        per_channel_dict[ch].extend([None] * (max_len - current_len))
-
-                # Create DataFrame with column order: Time_A, A, Time_B, B, Time_C, C, Time_D, D
-                column_order = []
-                for ch in self.CHANNELS:
-                    column_order.append(f'Time_{ch}')
-                    column_order.append(ch)
-
-                df_per_channel = pd.DataFrame(per_channel_dict)[column_order]
-                df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+                # Sheet 2: Per-channel format — pass through source file unchanged if available.
+                df_source_xy = self._get_source_xy_sheet()
+                if df_source_xy is not None:
+                    df_source_xy.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+                else:
+                    per_channel_dict = {}
+                    for ch in self.CHANNELS:
+                        if ch in df_raw.columns:
+                            valid_mask = df_raw[ch].notna()
+                            times = df_raw.loc[valid_mask, 'Time'].values
+                            values = df_raw.loc[valid_mask, ch].values
+                            per_channel_dict[f'Time_{ch}'] = list(times)
+                            per_channel_dict[f'SPR_{ch}'] = list(values)
+                        else:
+                            per_channel_dict[f'Time_{ch}'] = []
+                            per_channel_dict[f'SPR_{ch}'] = []
+                    max_len = max((len(per_channel_dict[f'Time_{ch}']) for ch in self.CHANNELS), default=0)
+                    for ch in self.CHANNELS:
+                        cur = len(per_channel_dict[f'Time_{ch}'])
+                        if cur < max_len:
+                            per_channel_dict[f'Time_{ch}'].extend([None] * (max_len - cur))
+                            per_channel_dict[f'SPR_{ch}'].extend([None] * (max_len - cur))
+                    column_order = [col for ch in self.CHANNELS for col in [f'Time_{ch}', f'SPR_{ch}']]
+                    pd.DataFrame(per_channel_dict)[column_order].to_excel(
+                        writer, sheet_name='Per-Channel Format', index=False
+                    )
 
                 # Sheet 3: Cycle Table
                 cycles_table = []
@@ -551,19 +819,25 @@ class ExportMixin:
                     df_cycles = pd.DataFrame(cycles_table)
                     df_cycles.to_excel(writer, sheet_name='Cycle Table', index=False)
 
-                # Sheet 4: Export info
-                source_file = getattr(self.main_window, '_edits_source_file', 'Unknown')
-                export_info = pd.DataFrame([{
-                    'Export_Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'Source': source_file,
-                    'Total_Data_Points': len(df_raw),
-                    'Time_Range_s': f"{df_raw['Time'].min():.1f} - {df_raw['Time'].max():.1f}",
-                    'Cycles': str(len(cycles_table)) if cycles_table else '0',
-                    'Description': 'Data exported from Edits tab'
-                }])
-                export_info.to_excel(writer, sheet_name='Export Info', index=False)
+                # Sheet 3b: Canonical "Cycles" sheet — reload-compatible format
+                df_canonical = self._build_canonical_cycles_df()
+                if not df_canonical.empty:
+                    df_canonical.to_excel(writer, sheet_name='Cycles', index=False)
+
+                # Sheet 4: Metadata
+                self._build_metadata_sheet(extra={
+                    'export_type': 'raw_data_direct',
+                    'total_data_points': str(len(df_raw)),
+                }).to_excel(writer, sheet_name='Metadata', index=False)
 
             logger.info(f"✓ Exported {len(df_raw)} data points")
+
+            self._apply_version_management(
+                file_path,
+                action="Export data (direct)",
+                fields_changed="Raw Data, Per-Channel Format, Cycles",
+                notes=f"{len(df_raw)} data points",
+            )
 
             QMessageBox.information(
                 self.main_window,
@@ -621,50 +895,47 @@ class ExportMixin:
                 # Sheet 1: Raw data (Time, A, B, C, D format)
                 df_raw.to_excel(writer, sheet_name='Raw Data', index=False)
 
-                # Sheet 2: Per-channel format (Time_A, A, Time_B, B, Time_C, C, Time_D, D)
-                per_channel_dict = {}
-                for ch in self.CHANNELS:
-                    if ch in df_raw.columns:
-                        # Get non-null values and their corresponding times
-                        valid_mask = df_raw[ch].notna()
-                        times = df_raw.loc[valid_mask, 'Time'].values
-                        values = df_raw.loc[valid_mask, ch].values
-                        per_channel_dict[f'Time_{ch}'] = list(times)
-                        per_channel_dict[ch] = list(values)
-                    else:
-                        per_channel_dict[f'Time_{ch}'] = []
-                        per_channel_dict[ch] = []
+                # Sheet 2: Per-channel format — pass through source file unchanged if available.
+                df_source_xy = self._get_source_xy_sheet()
+                if df_source_xy is not None:
+                    df_source_xy.to_excel(writer, sheet_name='Per-Channel Format', index=False)
+                else:
+                    per_channel_dict = {}
+                    for ch in self.CHANNELS:
+                        if ch in df_raw.columns:
+                            valid_mask = df_raw[ch].notna()
+                            times = df_raw.loc[valid_mask, 'Time'].values
+                            values = df_raw.loc[valid_mask, ch].values
+                            per_channel_dict[f'Time_{ch}'] = list(times)
+                            per_channel_dict[f'SPR_{ch}'] = list(values)
+                        else:
+                            per_channel_dict[f'Time_{ch}'] = []
+                            per_channel_dict[f'SPR_{ch}'] = []
+                    max_len = max((len(per_channel_dict[f'Time_{ch}']) for ch in self.CHANNELS), default=0)
+                    for ch in self.CHANNELS:
+                        cur = len(per_channel_dict[f'Time_{ch}'])
+                        if cur < max_len:
+                            per_channel_dict[f'Time_{ch}'].extend([None] * (max_len - cur))
+                            per_channel_dict[f'SPR_{ch}'].extend([None] * (max_len - cur))
+                    column_order = [col for ch in self.CHANNELS for col in [f'Time_{ch}', f'SPR_{ch}']]
+                    pd.DataFrame(per_channel_dict)[column_order].to_excel(
+                        writer, sheet_name='Per-Channel Format', index=False
+                    )
 
-                # Find max length for padding
-                max_len = max((len(per_channel_dict[f'Time_{ch}']) for ch in self.CHANNELS), default=0)
-
-                # Pad all to same length
-                for ch in self.CHANNELS:
-                    current_len = len(per_channel_dict[f'Time_{ch}'])
-                    if current_len < max_len:
-                        per_channel_dict[f'Time_{ch}'].extend([None] * (max_len - current_len))
-                        per_channel_dict[ch].extend([None] * (max_len - current_len))
-
-                # Create DataFrame with column order: Time_A, A, Time_B, B, Time_C, C, Time_D, D
-                column_order = []
-                for ch in self.CHANNELS:
-                    column_order.append(f'Time_{ch}')
-                    column_order.append(ch)
-
-                df_per_channel = pd.DataFrame(per_channel_dict)[column_order]
-                df_per_channel.to_excel(writer, sheet_name='Per-Channel Format', index=False)
-
-                # Sheet 3: Export info
-                export_info = pd.DataFrame([{
-                    'Export_Date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'Source': getattr(self.main_window, '_edits_source_file', 'Live Data'),
-                    'Total_Data_Points': len(df_raw),
-                    'Time_Range_s': f"{df_raw['Time'].min():.1f} - {df_raw['Time'].max():.1f}",
-                    'Description': 'Live data exported from Edits tab'
-                }])
-                export_info.to_excel(writer, sheet_name='Export Info', index=False)
+                # Sheet 3: Metadata
+                self._build_metadata_sheet(extra={
+                    'export_type': 'raw_data',
+                    'total_data_points': str(len(df_raw)),
+                }).to_excel(writer, sheet_name='Metadata', index=False)
 
             logger.info(f"✓ Exported {len(df_raw)} data points")
+
+            self._apply_version_management(
+                file_path,
+                action="Export raw data",
+                fields_changed="Raw Data, Per-Channel Format, Cycles",
+                notes=f"{len(df_raw)} data points",
+            )
 
             QMessageBox.information(
                 self.main_window,
@@ -1426,31 +1697,50 @@ class ExportMixin:
             return  # User cancelled
 
         try:
-            # Collect visible rows only (respect filter)
+            # Collect visible rows only (respect filter).
+            # Score column (TABLE_COL_SCORE) is always included even if hidden in the UI —
+            # it is analysis data and belongs in every export.
+            score_col = getattr(self, 'TABLE_COL_SCORE', None)
             rows_data = []
             header = []
 
-            # Get column headers
+            # Get column headers — include Score even when hidden
             for col in range(self.cycle_data_table.columnCount()):
-                if not self.cycle_data_table.isColumnHidden(col):
-                    header_item = self.cycle_data_table.horizontalHeaderItem(col)
-                    header.append(header_item.text().replace('\n', ' ') if header_item else f"Column {col}")
+                hidden = self.cycle_data_table.isColumnHidden(col)
+                if hidden and col != score_col:
+                    continue
+                header_item = self.cycle_data_table.horizontalHeaderItem(col)
+                header.append(header_item.text().replace('\n', ' ') if header_item else f"Column {col}")
+
+            # Append Quality Note header after Score
+            if score_col is not None:
+                header.append("Quality Note")
 
             rows_data.append(header)
 
             # Get visible row data
+            details_cache = getattr(self, '_cycle_details_data', {})
             for row in range(self.cycle_data_table.rowCount()):
                 if self.cycle_data_table.isRowHidden(row):
                     continue  # Skip filtered out rows
 
                 row_data = []
                 for col in range(self.cycle_data_table.columnCount()):
-                    if self.cycle_data_table.isColumnHidden(col):
-                        continue  # Skip hidden columns
+                    hidden = self.cycle_data_table.isColumnHidden(col)
+                    if hidden and col != score_col:
+                        continue  # Skip hidden columns except Score
 
                     item = self.cycle_data_table.item(row, col)
                     cell_value = item.text() if item else ""
+                    # Strip the dot prefix from score cells for clean numeric export
+                    if col == score_col and cell_value.startswith("● "):
+                        cell_value = cell_value[2:]
                     row_data.append(cell_value)
+
+                # Append quality note
+                if score_col is not None:
+                    det = details_cache.get(row, {})
+                    row_data.append(det.get('quality_note', ''))
 
                 rows_data.append(row_data)
 
@@ -1501,3 +1791,56 @@ class ExportMixin:
             writer = csv.writer(f)
             writer.writerows(rows_data)
         logger.info(f"✅ Exported {len(rows_data)-1} cycles to CSV: {file_path}")
+
+    def _export_tracedrawer(self):
+        """Open TraceDrawer export dialog.
+
+        Passes the Edits tab's loaded cycle data, raw time-series, and
+        alignment settings directly — no Excel loading needed.
+        """
+        from affilabs.dialogs.tracedrawer_export_dialog import TraceDrawerExportDialog
+
+        # Collect cycles data from Edits tab
+        cycles_data: list[dict] = []
+        if hasattr(self.main_window, '_loaded_cycles_data') and self.main_window._loaded_cycles_data:
+            cycles_data = list(self.main_window._loaded_cycles_data)
+
+        if not cycles_data:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self.main_window,
+                "No Cycle Data",
+                "No cycles loaded in the Edits tab.\n"
+                "Load an experiment first, then open TraceDrawer export.",
+            )
+            return
+
+        # Collect raw data rows
+        raw_data_rows: list[dict] = []
+        try:
+            raw_data_rows = self.main_window.app.recording_mgr.data_collector.raw_data_rows
+        except AttributeError:
+            pass
+
+        if not raw_data_rows:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self.main_window,
+                "No Raw Data",
+                "No raw time-series data available.\n"
+                "Record or load data before exporting.",
+            )
+            return
+
+        # Collect alignment settings
+        alignment: dict[int, dict] = {}
+        if hasattr(self.main_window, '_cycle_alignment') and self.main_window._cycle_alignment:
+            alignment = dict(self.main_window._cycle_alignment)
+
+        dlg = TraceDrawerExportDialog(
+            parent=self.main_window,
+            cycles_data=cycles_data,
+            raw_data_rows=raw_data_rows,
+            alignment=alignment,
+        )
+        dlg.exec()

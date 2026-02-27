@@ -44,8 +44,8 @@ except ImportError:
 
 _ACCENT = "#007AFF"
 _SECTION_FG = "#86868B"
-_NAV_BG = "#F5F5F7"
-_PREVIEW_BG = "#FAFAFA"
+_NAV_BG = "#F8F9FA"
+_PREVIEW_BG = "#F8F9FA"
 _FILTER_ACTIVE_BG = "rgba(0, 122, 255, 0.08)"
 _FILTER_ACTIVE_BORDER = _ACCENT
 _ROW_HOVER = "rgba(0, 122, 255, 0.05)"
@@ -69,11 +69,11 @@ class _StarRatingWidget(QWidget):
         layout.setSpacing(1)
         for i in range(1, 6):
             btn = QPushButton("☆")
-            btn.setFixedSize(26, 26)
+            btn.setFixedSize(22, 22)
             btn.setFlat(True)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(
-                f"QPushButton {{ font-size: 17px; background: transparent; border: none; "
+                f"QPushButton {{ font-size: 14px; background: transparent; border: none; "
                 f"color: {_SECTION_FG}; padding: 0; }}"
                 f"QPushButton:hover {{ color: #FFD700; }}"
             )
@@ -93,14 +93,14 @@ class _StarRatingWidget(QWidget):
             if i < self._rating:
                 btn.setText("★")
                 btn.setStyleSheet(
-                    f"QPushButton {{ font-size: 17px; background: transparent; border: none; "
+                    f"QPushButton {{ font-size: 14px; background: transparent; border: none; "
                     f"color: #FFD700; padding: 0; }}"
                     f"QPushButton:hover {{ color: #FFB800; }}"
                 )
             else:
                 btn.setText("☆")
                 btn.setStyleSheet(
-                    f"QPushButton {{ font-size: 17px; background: transparent; border: none; "
+                    f"QPushButton {{ font-size: 14px; background: transparent; border: none; "
                     f"color: {_SECTION_FG}; padding: 0; }}"
                     f"QPushButton:hover {{ color: #FFD700; }}"
                 )
@@ -127,18 +127,42 @@ class PreviewWorker(QRunnable):
         self.signals = _PreviewSignals()
         self.setAutoDelete(True)
 
+    _DECIMATE = 10  # show every Nth point per channel for preview speed
+
     def run(self) -> None:  # noqa: C901
         try:
+            import numpy as np
             import pandas as pd
 
             xl = pd.ExcelFile(self.path)
-            # Find the sensorgram sheet
+            sheet_set = set(xl.sheet_names)
+
+            # ── Strategy 1: "Raw Data" sheet (long-format: time, channel, value) ──
+            if "Raw Data" in sheet_set:
+                result = self._load_raw_data_long(pd, np, xl)
+                if result is not None:
+                    self.signals.ready.emit(self.entry_id, result)
+                    return
+
+            # ── Strategy 2: "Channels XY" sheet (wide: Time_A, SPR_A, …) ──
+            if "Channels XY" in sheet_set:
+                result = self._load_channels_xy(pd, np, xl)
+                if result is not None:
+                    self.signals.ready.emit(self.entry_id, result)
+                    return
+
+            # ── Strategy 3: legacy fallback — first sheet with sensorgram-ish name ──
             sheet: str | None = None
             for name in xl.sheet_names:
-                nl = name.lower()
-                if any(k in nl for k in ("sensogram", "sensorgram", "wavelength", "spr")):
+                if name == "PE - Processed Data":
                     sheet = name
                     break
+            if sheet is None:
+                for name in xl.sheet_names:
+                    nl = name.lower()
+                    if any(k in nl for k in ("processed", "sensogram", "sensorgram", "wavelength", "spr")):
+                        sheet = name
+                        break
             if sheet is None and xl.sheet_names:
                 sheet = xl.sheet_names[0]
             if sheet is None:
@@ -164,24 +188,84 @@ class PreviewWorker(QRunnable):
                     ):
                         channel_cols[ch] = col
 
-            # Fallback: use column positions
             if time_col is None:
                 time_col = df.columns[0]
             if not channel_cols:
                 for i, col in enumerate(df.columns[1:5]):
                     channel_cols[chr(ord("a") + i)] = col
 
-            times = df[time_col].to_numpy(dtype=float, na_value=float("nan"))
+            step = self._DECIMATE
+            times = df[time_col].to_numpy(dtype=float, na_value=float("nan"))[::step]
             channels: dict[str, Any] = {}
             for ch, col in channel_cols.items():
                 try:
-                    channels[ch] = df[col].to_numpy(dtype=float, na_value=float("nan"))
+                    channels[ch] = df[col].to_numpy(dtype=float, na_value=float("nan"))[::step]
                 except Exception:
                     pass
 
             self.signals.ready.emit(self.entry_id, {"times": times, "channels": channels})
         except Exception as exc:
             self.signals.error.emit(self.entry_id, str(exc))
+
+    # ── Private loaders ────────────────────────────────────────────────────────
+
+    def _load_raw_data_long(self, pd, np, xl) -> dict | None:
+        """Parse long-format Raw Data sheet (time, channel, value) → per-channel arrays."""
+        df = pd.read_excel(self.path, sheet_name="Raw Data")
+        if df.empty:
+            return None
+        cols_lower = {str(c).lower(): c for c in df.columns}
+        t_col = cols_lower.get("time", cols_lower.get("time_s"))
+        ch_col = cols_lower.get("channel")
+        v_col = cols_lower.get("value", cols_lower.get("wavelength"))
+        if t_col is None or ch_col is None or v_col is None:
+            return None
+
+        step = self._DECIMATE
+        channels: dict[str, Any] = {}
+        times_out: Any = None
+        for ch in ("a", "b", "c", "d"):
+            mask = df[ch_col].astype(str).str.lower() == ch
+            sub = df.loc[mask]
+            if sub.empty:
+                continue
+            t_arr = sub[t_col].to_numpy(dtype=float)
+            v_arr = sub[v_col].to_numpy(dtype=float)
+            # Sort by time
+            order = np.argsort(t_arr)
+            t_arr = t_arr[order][::step]
+            v_arr = v_arr[order][::step]
+            channels[ch] = v_arr
+            if times_out is None or len(t_arr) > len(times_out):
+                times_out = t_arr
+
+        if not channels:
+            return None
+        return {"times": times_out, "channels": channels}
+
+    def _load_channels_xy(self, pd, np, xl) -> dict | None:
+        """Parse wide-format Channels XY sheet (Time_A, SPR_A, …) → per-channel arrays."""
+        df = pd.read_excel(self.path, sheet_name="Channels XY")
+        if df.empty:
+            return None
+
+        step = self._DECIMATE
+        channels: dict[str, Any] = {}
+        times_out: Any = None
+        for ch in ("A", "B", "C", "D"):
+            t_col = f"Time_{ch}"
+            v_col = f"SPR_{ch}"
+            if t_col in df.columns and v_col in df.columns:
+                t_arr = df[t_col].dropna().to_numpy(dtype=float)[::step]
+                v_arr = df[v_col].dropna().to_numpy(dtype=float)[::step]
+                n = min(len(t_arr), len(v_arr))
+                channels[ch.lower()] = v_arr[:n]
+                if times_out is None or n > len(times_out):
+                    times_out = t_arr[:n]
+
+        if not channels:
+            return None
+        return {"times": times_out, "channels": channels}
 
 
 # ── Row widget ─────────────────────────────────────────────────────────────────
@@ -511,7 +595,7 @@ class _KanbanCard(QFrame):
             return
         # Start drag
         from PySide6.QtGui import QDrag
-        from PySide6.QtCore import QMimeData
+        from PySide6.QtCore import QMimeData, QPoint
         drag = QDrag(self)
         mime = QMimeData()
         mime.setText(self._entry.get("id", ""))
@@ -522,7 +606,7 @@ class _KanbanCard(QFrame):
         px.fill(Qt.transparent)
         painter = QPainter(px)
         painter.setOpacity(0.8)
-        self.render(painter)
+        self.render(painter, QPoint(0, 0))
         painter.end()
         drag.setPixmap(px)
         drag.setHotSpot(event.position().toPoint())
@@ -747,8 +831,8 @@ def _make_section_header(title: str) -> QLabel:
     lbl = QLabel(title.upper())
     lbl.setFixedHeight(26)
     lbl.setStyleSheet(
-        f"QLabel {{ font-size: 10px; color: {_SECTION_FG}; font-weight: 500; "
-        f"font-family: {Fonts.SYSTEM}; background: {_NAV_BG}; "
+        f"QLabel {{ font-size: 11px; color: {_SECTION_FG}; font-weight: 600; "
+        f"font-family: {Fonts.SYSTEM}; background: transparent; "
         f"padding-left: 12px; padding-top: 6px; }}"
     )
     return lbl
@@ -823,7 +907,7 @@ class NotesTab(QWidget):
         # Section header
         filters_hdr = QLabel("FILTERS")
         filters_hdr.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; font-weight: 600; "
+            f"font-size: 11px; color: {_SECTION_FG}; font-weight: 600; "
             f"font-family: {Fonts.SYSTEM}; padding-left: 14px; padding-top: 4px; "
             f"background: transparent;"
         )
@@ -854,7 +938,7 @@ class NotesTab(QWidget):
         # Tags placeholder
         tags_hdr = QLabel("TAGS")
         tags_hdr.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; font-weight: 600; "
+            f"font-size: 11px; color: {_SECTION_FG}; font-weight: 600; "
             f"font-family: {Fonts.SYSTEM}; padding-left: 14px; padding-top: 4px; "
             f"background: transparent;"
         )
@@ -862,7 +946,7 @@ class NotesTab(QWidget):
 
         coming_lbl = QLabel("Coming in next update")
         coming_lbl.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; font-style: italic; "
+            f"font-size: 11px; color: {_SECTION_FG}; font-style: italic; "
             f"font-family: {Fonts.SYSTEM}; padding-left: 14px; background: transparent;"
         )
         layout.addWidget(coming_lbl)
@@ -899,6 +983,24 @@ class NotesTab(QWidget):
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        # ── Section title bar ──────────────────────────────────────────────
+        _title_row = QHBoxLayout()
+        _title_row.setContentsMargins(16, 14, 16, 10)
+        _title_row.setSpacing(8)
+        _title_lbl = QLabel("Experiments")
+        _title_lbl.setStyleSheet(
+            f"font-size: 14px; font-weight: 700; color: {Colors.PRIMARY_TEXT}; "
+            f"font-family: {Fonts.DISPLAY}; letter-spacing: -0.2px; background: transparent;"
+        )
+        _title_row.addWidget(_title_lbl)
+        _title_row.addStretch()
+        layout.addLayout(_title_row)
+        _title_div = QFrame()
+        _title_div.setFrameShape(QFrame.Shape.HLine)
+        _title_div.setFixedHeight(1)
+        _title_div.setStyleSheet("border: none; background: #E5E5EA;")
+        layout.addWidget(_title_div)
 
         # Search bar
         search_frame = QFrame()
@@ -1008,8 +1110,35 @@ class NotesTab(QWidget):
         frame = QFrame()
         frame.setStyleSheet(f"QFrame {{ background: {_PREVIEW_BG}; }}")
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(16, 12, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ── Section title bar ──────────────────────────────────────────
+        _prev_title_row = QHBoxLayout()
+        _prev_title_row.setContentsMargins(16, 14, 16, 10)
+        _prev_title_row.setSpacing(8)
+        _prev_title_lbl = QLabel("Details")
+        _prev_title_lbl.setStyleSheet(
+            f"font-size: 14px; font-weight: 700; color: {Colors.PRIMARY_TEXT}; "
+            f"font-family: {Fonts.DISPLAY}; letter-spacing: -0.2px; background: transparent;"
+        )
+        _prev_title_row.addWidget(_prev_title_lbl)
+        _prev_title_row.addStretch()
+        layout.addLayout(_prev_title_row)
+        _prev_div = QFrame()
+        _prev_div.setFrameShape(QFrame.Shape.HLine)
+        _prev_div.setFixedHeight(1)
+        _prev_div.setStyleSheet("border: none; background: #E5E5EA;")
+        layout.addWidget(_prev_div)
+
+        # Inner content with margins
+        _content = QWidget()
+        _content.setStyleSheet("background: transparent;")
+        _content_layout = QVBoxLayout(_content)
+        _content_layout.setContentsMargins(16, 12, 16, 16)
+        _content_layout.setSpacing(10)
+        layout.addWidget(_content, stretch=1)
+        layout = _content_layout  # shadow outer layout for rest of method
 
         # ── Sensorgram preview ────────────────────────────────────────────────
         if _HAS_PG:
@@ -1022,10 +1151,22 @@ class NotesTab(QWidget):
             self._preview_plot.showGrid(x=False, y=False)
             self._preview_plot.setMouseEnabled(x=False, y=False)
             self._preview_plot.setMenuEnabled(False)
+            # Disable mouse interaction entirely so hover doesn't spawn ghost cursors
+            self._preview_plot.setFocusPolicy(Qt.NoFocus)
+            vb = self._preview_plot.getViewBox()
+            vb.setMouseEnabled(x=False, y=False)
+            vb.enableAutoRange(enable=False)
+            # Pre-create one curve per channel — reuse via setData, never clear()+plot()
+            _ch_colors = {"a": "#007AFF", "b": "#34C759", "c": "#FF9500", "d": "#FF3B30"}
+            self._preview_curves = {
+                ch: self._preview_plot.plot([], [], pen=pg.mkPen(color, width=1.5))
+                for ch, color in _ch_colors.items()
+            }
             self._preview_plot_placeholder = None
             layout.addWidget(self._preview_plot)
         else:
             self._preview_plot = None
+            self._preview_curves = {}
             self._preview_plot_placeholder = QLabel("Install pyqtgraph for preview")
             self._preview_plot_placeholder.setFixedHeight(50)
             self._preview_plot_placeholder.setAlignment(Qt.AlignCenter)
@@ -1248,15 +1389,6 @@ class NotesTab(QWidget):
                 self.abs_path = c.abs_path
                 self.is_stale = c.is_stale
         self._populate_preview(_CardProxy(card))  # type: ignore[arg-type]
-        self._current_entry_id = card.entry.get("id")
-        self._notes_blocking = True
-        self._notes_edit.setPlainText(card.entry.get("notes") or "")
-        self._notes_blocking = False
-        self._notes_edit.setEnabled(True)
-        self._star_rating.set_rating(int(card.entry.get("rating") or 0))
-        self._star_rating.setEnabled(True)
-        self._add_tag_btn.setEnabled(True)
-        self._refresh_tags_panel(card.entry.get("tags") or [])
 
     def _on_card_dropped(self, entry_id: str, new_status: str) -> None:
         """Card dropped onto a column — save new status and move card."""
@@ -1514,19 +1646,64 @@ class NotesTab(QWidget):
         self._meta_labels["hardware"].setText(e.get("hardware_model") or "—")
 
         # Notes
+        self._notes_blocking = True
         self._notes_edit.setPlainText(e.get("notes") or "")
+        self._notes_blocking = False
+        self._notes_edit.setEnabled(True)
+
+        # Rating
+        self._star_rating.set_rating(int(e.get("rating") or 0))
+        self._star_rating.setEnabled(True)
+
+        # Tags
+        self._add_tag_btn.setEnabled(True)
+        self._refresh_tags_panel(e.get("tags") or [])
+
+        # Current entry ID — must be set before any save callbacks can fire
+        self._current_entry_id = e.get("id")
 
         # Action buttons
         self._load_btn.setEnabled(not row.is_stale)
         self._open_btn.setEnabled(not row.is_stale)
 
+        # Kick off background sensorgram preview load
+        if _HAS_PG and self._preview_plot is not None and not row.is_stale:
+            self._start_preview_load(e.get("id", ""), path)
+        elif self._preview_plot is not None:
+            # Clear plot for stale entries
+            for curve in self._preview_curves.values():
+                curve.setData([], [])
+
+    def _start_preview_load(self, entry_id: str, path: Path) -> None:
+        """Launch a PreviewWorker to load sensorgram data from the Excel file."""
+        # Clear existing curves while loading
+        for curve in self._preview_curves.values():
+            curve.setData([], [])
+        self._preview_entry_id = entry_id
+        worker = PreviewWorker(entry_id, path)
+        worker.signals.ready.connect(self._on_preview_ready)
+        worker.signals.error.connect(self._on_preview_error)
+        QThreadPool.globalInstance().start(worker)
+
     def _clear_preview(self) -> None:
+        self._current_entry_id = None
+        self._preview_entry_id = None
         self._preview_title.setText("Select an experiment")
         for lbl in self._meta_labels.values():
             lbl.setText("—")
+        self._notes_blocking = True
         self._notes_edit.clear()
+        self._notes_blocking = False
+        self._notes_edit.setEnabled(False)
+        self._star_rating.set_rating(0)
+        self._star_rating.setEnabled(False)
+        self._add_tag_btn.setEnabled(False)
+        self._refresh_tags_panel([])
         self._load_btn.setEnabled(False)
         self._open_btn.setEnabled(False)
+        # Clear sensorgram preview
+        for curve in self._preview_curves.values():
+            curve.setData([], [])
 
     def _on_load_in_edits_clicked(self) -> None:
         if self._selected_row and not self._selected_row.is_stale:
@@ -1581,11 +1758,12 @@ class NotesTab(QWidget):
 
     def _refresh_tags_panel(self, tags: list[str]) -> None:
         """Rebuild tag pill chips in the right panel."""
-        # Remove all existing pill widgets (keep add_tag_btn and stretch)
+        # Remove all existing pill widgets BUT preserve _add_tag_btn
         while self._tags_layout.count():
             item = self._tags_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w and w is not self._add_tag_btn:
+                w.deleteLater()
 
         for tag in tags:
             pill = self._make_tag_pill(tag)
@@ -1701,18 +1879,23 @@ class NotesTab(QWidget):
             return
         if entry_id != self._current_entry_id:
             return  # selection changed before worker finished
-        self._preview_plot.clear()
+        # Clear all curves via setData([],[]) — avoids ghost cursor artifacts from clear()+plot()
+        for curve in self._preview_curves.values():
+            curve.setData([], [])
         if data is None:
             return
-        ch_colors = {"a": "#007AFF", "b": "#34C759", "c": "#FF9500", "d": "#FF3B30"}
+        import numpy as np
         times = data.get("times")
+        xs_base = np.array(times) if times is not None and len(times) else None
         for ch, wls in data.get("channels", {}).items():
-            color = ch_colors.get(ch, "#888")
-            if times is not None and len(times):
-                xs = times[:len(wls)]
-            else:
-                xs = list(range(len(wls)))
-            self._preview_plot.plot(xs, wls, pen=pg.mkPen(color, width=1.5))
+            curve = self._preview_curves.get(ch)
+            if curve is None:
+                continue
+            wls_arr = np.array(wls)
+            xs = xs_base[:len(wls_arr)] if xs_base is not None else np.arange(len(wls_arr))
+            curve.setData(xs, wls_arr)
+        # Fit the view to the data now that all curves are updated
+        self._preview_plot.getViewBox().autoRange(padding=0.05)
 
     def _on_preview_error(self, entry_id: str, msg: str) -> None:
         # Silently ignore — preview is best-effort

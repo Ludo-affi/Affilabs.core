@@ -106,7 +106,7 @@ class UIUpdateHelpers:
 
             # Extract data within cursor range for each channel
             for ch_letter, ch_idx in app._channel_pairs:
-                cycle_time, cycle_wavelength, cycle_timestamp = (
+                cycle_time, cycle_wavelength, cycle_timestamp, cycle_transmittance = (
                     app.buffer_mgr.extract_cycle_region(
                         ch_letter,
                         start_time_raw,
@@ -137,13 +137,14 @@ class UIUpdateHelpers:
                 # Convert wavelength shift to RU (Response Units)
                 delta_spr = (cycle_wavelength - baseline) * WAVELENGTH_TO_RU_CONVERSION
 
-                # Store in buffer manager (with timestamps)
+                # Store in buffer manager (with timestamps and transmittance)
                 app.buffer_mgr.update_cycle_data(
                     ch_letter,
                     cycle_time,
                     cycle_wavelength,
                     delta_spr,
                     cycle_timestamp,
+                    cycle_transmittance if len(cycle_transmittance) > 0 else None,
                 )
 
             # Apply reference subtraction if enabled
@@ -174,12 +175,6 @@ class UIUpdateHelpers:
                         display_delta_spr = delta_spr - delta_spr[0]
                     else:
                         display_delta_spr = delta_spr
-
-                    # Apply injection alignment time shift if set (Phase 2)
-                    if hasattr(app, '_channel_time_shifts') and ch_letter in app._channel_time_shifts:
-                        time_shift = app._channel_time_shifts[ch_letter]
-                        if time_shift != 0.0:
-                            display_cycle_time = display_cycle_time + time_shift
 
                     if len(display_cycle_time) > 0:
                         max_cycle_time = max(max_cycle_time, display_cycle_time[-1])
@@ -297,13 +292,5 @@ class UIUpdateHelpers:
                 AttributeError,
                 RuntimeError,
                 KeyError,
-                IndexError,
-                TypeError,
-                ValueError,
-            ) as e:
-                # Log cycle update errors for debugging
-                if (
-                    app._sensorgram_update_counter <= 5
-                    or app._sensorgram_update_counter % 20 == 0
-                ):
-                    print(f"[CYCLE-ERROR]: {type(e).__name__}: {e}")
+            ) as _graph_err:
+                pass

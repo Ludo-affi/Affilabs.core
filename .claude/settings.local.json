@@ -25,7 +25,15 @@
       "Bash(.venv/Scripts/python.exe:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(# Check if qt_material is actually used or just imported - navigation_presenter is shown as using ui_styles grep -rn \"\"qt_material\"\" \"\"c:/Users/lucia/OneDrive/Desktop/ezControl 2.0/Affilabs.core/test/ezControl-AI/affilabs\"\")"
+      "Bash(# Check if qt_material is actually used or just imported - navigation_presenter is shown as using ui_styles grep -rn \"\"qt_material\"\" \"\"c:/Users/lucia/OneDrive/Desktop/ezControl 2.0/Affilabs.core/test/ezControl-AI/affilabs\"\")",
+      "WebFetch(domain:www.manualsdir.com)",
+      "WebFetch(domain:www.ebay.com)",
+      "WebFetch(domain:manualzz.com)",
+      "WebFetch(domain:dn790001.ca.archive.org)",
+      "Read(//c/Users/lucia/**)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

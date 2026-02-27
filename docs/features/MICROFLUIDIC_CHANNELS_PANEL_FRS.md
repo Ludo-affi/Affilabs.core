@@ -1,7 +1,7 @@
 # Contact Monitor Panel — Feature Requirement Specification
 
 **Document Status:** ✅ Phase 1 — P4SPR binding experiments
-**Last Updated:** February 22, 2026
+**Last Updated:** 2026-02-26
 **Source File:** `affilabs/widgets/injection_action_bar.py` (class `InjectionActionBar`)
 **Parent Container:** `AL_method_builder.py` → `InjectionZone` QFrame (30% of queue splitter)
 
@@ -11,13 +11,13 @@
 
 The **Contact Monitor** panel is a persistent sidebar widget showing the real-time state of each physical flow channel (A, B, C, D) during an SPR binding experiment. It answers three questions at a glance:
 
-1. **What role does each channel play?** — Sample / Reference / Buffer
-2. **What phase is each channel in?** — idle / approaching / in contact / washing
+1. **What phase is each channel in?** — idle / approaching / in contact / washing
+2. **How much ΔSPR has accumulated since injection?** — live per-channel STATUS column
 3. **How much contact time remains?** — per-channel independent countdown
 
-**Scope (Phase 1):** P4SPR manual injection with binding experiments only. The panel is **dormant** (greyed out) when no binding cycle is active — it only lights up for binding/kinetic/concentration cycles. Contact time tracking starts on auto-detection per channel. Wash state transitions automatically when the per-channel countdown expires.
+**Scope (Phase 1):** P4SPR manual injection with binding experiments only. The panel is **dormant** (greyed out) when no binding cycle is active — it only lights up for binding/kinetic/concentration cycles. Contact time tracking starts on auto-detection per channel.
 
-**Zero-click design:** The panel has no interactive buttons during injection. Phase 1 shows a non-interactive countdown badge. Phase 2 shows monitoring state only. The user never needs to click anything — injection detection and contact timing are fully automatic.
+**Zero-click design:** The panel has no interactive buttons during injection. The user never needs to click anything — injection detection and contact timing are fully automatic.
 
 ---
 
@@ -41,14 +41,15 @@ The **Contact Monitor** panel is a persistent sidebar widget showing the real-ti
 
 ### Row anatomy (per channel)
 
+Column headers: **CH | STATUS | TIME**
+
 | Element | Widget | Width | Content |
 |---------|--------|-------|---------|
-| Channel letter | `QLabel` | 16px fixed | `A` / `B` / `C` / `D` — always visible |
-| Binding visualizer | `ChannelBindingWidget` | 80px fixed | Custom `QPainter` ring + dot (see §3) |
-| Role label | `QLabel` (stretch=1) | flex | Sample / Reference / Buffer / `—` |
-| Countdown timer | `QLabel` | 38px fixed | `M:SS` — hidden until CONTACT state |
+| Channel letter + binding widget | `ChannelBindingWidget` | 44px fixed | Ring + dot, channel letter inside. State drives color (see §3) |
+| STATUS label | `QLabel` (stretch=1) | flex | `—` before detection; `+N RU` / `-N RU` live ΔSPR from injection baseline after detection; `Wash` in WASH state |
+| TIME label | `QLabel` | 46px fixed | `M:SS` countdown — hidden until CONTACT state |
 
-Row font: 13px. Row padding: 5px top/bottom. Rows are separated by 1px `rgba(0,122,255,0.10)` dividers (last row has no bottom divider).
+Row font: 13px. Rows separated by `1px solid rgba(0,0,0,0.06)` dividers.
 
 ### Legend strip
 
@@ -98,28 +99,29 @@ A custom-painted `QWidget` (80×38–46 px) showing the SPR analyte lifecycle th
 
 | From | To | Trigger | Method |
 |------|----|---------|--------|
-| INACTIVE | PENDING | `show_phase2()` or `set_upcoming()` called with channel in active set | `_set_channel_colors_for_phase1()` |
-| PENDING | CONTACT | `update_channel_detected(ch, True)` — auto-detection engine detects injection on this channel | `update_channel_detected()` |
-| CONTACT | WASH | Per-channel countdown reaches 0:00 | `_auto_wash_channel()` (automatic) |
-| CONTACT | WASH | External call (e.g., pump completes wash cycle) | `set_channel_wash()` (manual) |
+| INACTIVE | PENDING | `show_monitoring()` called with channel in active set | `_set_pending()` |
+| PENDING | CONTACT | `update_channel_detected(ch, True)` — `_InjectionMonitor` fire #1 detected | `update_channel_detected()` |
+| CONTACT | WASH | `set_channel_wash(ch)` called — from `_InjectionMonitor` fire #2 (P4SPR wash detection) | `set_channel_wash()` |
+| CONTACT | WASH | Contact countdown expires → `_auto_wash_channel(ch)` (fallback, not currently called by timer) | `_auto_wash_channel()` |
 | Any | INACTIVE | `set_panel_active(False)` called (cycle end, cancel) | `_reset_all_leds()` |
 
-### Detection-to-WASH is fully automatic for binding cycles
+### Detection-to-CONTACT
 
 When `update_channel_detected(ch, True)` fires:
-1. Symbol transitions to CONTACT (◉)
-2. Role label turns green
-3. If `contact_time` was set on the panel (via `show_phase2(contact_time=N)`), a **per-channel `QTimer`** starts counting down from `N` seconds
-4. Timer label appears right-aligned in the row, showing `M:SS`
-5. At ≤10 seconds remaining, timer label turns amber (#FF9500)
-6. At 0:00 — timer shows `0:00` for 1.2 seconds, then:
-   - Symbol auto-transitions to WASH (○·)
-   - Role label turns sky-blue
-   - Timer label hides
-   - `channel_countdown_complete` signal emits the channel letter
-7. When ALL active channels have completed their countdown → global `_fire_done()` triggers (800ms delay for visual feedback)
+1. Symbol transitions to CONTACT (◉ — green ring, dot center)
+2. STATUS label starts showing live ΔSPR from injection baseline (refreshed by `_refresh_delta_spr()` every tick)
+3. If `contact_time` was set (via `show_monitoring(contact_time=N)`), a **per-channel `QTimer`** starts counting down from `N` seconds
+4. TIME label appears showing `M:SS`
+5. At ≤10s remaining: TIME label turns amber (#FF9500)
+6. At 0:00: timer continues negative (overrun, shown red), capped at −`_OVERRUN_CAP_S` (120s) showing "No wash detected"
 
-**No manual interaction is needed** — the entire flow from detection to wash is driven by the per-channel countdown.
+### CONTACT-to-WASH
+
+Triggered by `set_channel_wash(ch)` called from `_InjectionSession._handle_wash()` when `_InjectionMonitor` fires #2 (user pipettes buffer = second step-change detected on that channel):
+1. Symbol transitions to WASH (○·)
+2. STATUS label shows "Wash"
+3. Per-channel countdown timer stops
+4. `channel_countdown_complete` signal emits the channel letter (downstream consumers can react)
 
 ---
 
@@ -141,20 +143,15 @@ The Contact Monitor is either **dormant** (greyed out) or **active** (blue/green
 
 | Trigger | Result | Method |
 |---------|--------|--------|
-| `set_upcoming()` called (binding cycle starts) | Panel activates | Auto-activate in `set_upcoming()` |
-| `show_phase1()` called (injection prep) | Panel activates | Auto-activate in `show_phase1()` |
-| `show_phase2()` called (injection monitoring) | Panel activates | Auto-activate in `show_phase2()` |
+| `show_monitoring()` called (injection session starts) | Panel activates | `_apply_active_appearance()` |
 | `set_panel_active(True)` called explicitly | Panel activates | `_apply_active_appearance()` |
 | `set_panel_active(False)` called (cycle end or timeout) | Panel goes dormant | `_apply_dormant_appearance()`, stops timers, resets channels |
-| `_fire_done()` (countdown complete) | Panel goes dormant | `_apply_dormant_appearance()` |
 
-**`hide()` is never called on the panel.** Only `set_panel_active(False)` is used for deactivation. The panel stays in its splitter slot at all times.
+**`hide()` is never called on the panel.** Only `set_panel_active(False)` is used for deactivation.
 
 ### Which cycle types activate the panel?
 
-Only cycles that trigger injection flow activate the panel — specifically **Binding**, **Kinetic**, and **Concentration** cycles in manual mode. These are the only cycle types where `_schedule_injection()` calls `set_upcoming()` / `show_phase1()`.
-
-Non-binding cycles (Baseline, Regeneration, Immobilisation, Wash, Auto-read) never call these methods, so the panel stays dormant throughout.
+Only cycles that trigger injection flow activate the panel — specifically **Binding**, **Kinetic**, and **Concentration** cycles in manual mode. Non-binding cycles (Baseline, Regeneration, Immobilisation, Wash, Auto-read) never call `show_monitoring()`, so the panel stays dormant throughout.
 
 ---
 
@@ -180,8 +177,7 @@ Channel A finishes contact at T=183s, channel C finishes at T=194s — an 11-sec
 | `QTimer` (1s interval) | `_ch_timers[ch]` — one per channel | — |
 | Remaining seconds | `_ch_remaining[ch]` — int | — |
 | Timer label | `_ch_timer_labels[ch]` — `QLabel`, hidden by default | — |
-| Contact time duration | — | `_contact_countdown` — set once per `show_phase2()` |
-| "All done" check | — | `_auto_wash_channel()` checks all active channels |
+| Contact time duration | — | `_contact_countdown` — set once per `show_monitoring(contact_time=N)` |
 
 ### Format
 
@@ -192,101 +188,35 @@ Channel A finishes contact at T=183s, channel C finishes at T=194s — an 11-sec
 
 ---
 
-## §6. Role Labels
+## §6. STATUS Column — Live ΔSPR
 
-Each channel row has a persistent role label set by the caller before injection begins.
+The STATUS column (middle column in each row) shows live feedback per channel:
 
-### Valid roles
+| Phase | Status text |
+|-------|-------------|
+| Dormant / INACTIVE | `—` |
+| PENDING (monitoring, not yet detected) | `—` |
+| CONTACT (injection detected) | `+N RU` or `-N RU` — live ΔSPR from injection baseline, updated every tick |
+| WASH | `Wash` |
 
-| Role | Meaning | Set when |
-|------|---------|----------|
-| `Sample` | Channel receiving analyte | Cycle config assigns sample channels |
-| `Reference` | Channel with buffer only (negative control) | Cycle config assigns reference channels |
-| `Buffer` | Channel left in running buffer | Channel not in active set but user wants to label it |
-| `—` | Unassigned / idle | Default state, reset by `set_panel_active(False)` |
-
-### API
-
-```python
-bar.set_channel_role("A", "Sample")
-bar.set_channel_role("B", "Reference")
-bar.set_channel_role("C", "Sample")
-bar.set_channel_role("D", "—")
-```
-
-### Color behavior
-
-Role text does NOT change. Only the label **color** shifts to reflect the channel's phase:
-
-| Channel state | Label color | Token |
-|---------------|------------|-------|
-| INACTIVE | Muted grey | `#86868B` |
-| PENDING | Amber | `#FF9500` |
-| CONTACT | Green | `#34C759` |
-| WASH | Sky-blue | `#5AC8FA` |
+ΔSPR is computed as `cd.spr[-1] - _injection_spr[ch]` where `_injection_spr[ch]` is snapshotted at `t_fire` via `bar.set_injection_baseline(ch, spr_val)`. Refreshed by `_refresh_delta_spr()` on the main-thread tick timer.
 
 ---
 
-## §7. Phase 1 — Injection Prep (non-interactive countdown)
-
-Phase 1 runs for **10 seconds** (`PHASE1_SECONDS = 10`) before the detection window opens.
-
-### Behavior
-
-- `show_phase1()` is called by the coordinator
-- Panel activates (active appearance)
-- Active channels set to PENDING state
-- A **non-interactive blue badge** (`_phase1_badge` QLabel) appears in the lower control area showing the remaining seconds: `"10s"`, `"9s"`, ..., `"1s"`
-- No buttons, no cancel option
-- After 10 seconds, `show_phase2()` is called automatically
-
-### UI elements
-
-| Element | Widget | Notes |
-|---------|--------|-------|
-| Countdown badge | `QLabel` with blue pill style | Non-interactive, shows `Ns` format |
-| Cancel | Not present | Phase 1 cannot be cancelled from this panel |
-
----
-
-## §8. Phase 2 — Injection Monitoring (no buttons)
-
-Phase 2 runs for up to **80 seconds** (`PHASE2_SECONDS = 80`), monitoring for injection detection.
-
-### Behavior
-
-- `show_phase2()` is called by the coordinator (or auto-called after phase 1)
-- Detection window is active in the background (`ManualInjectionDialog`, off-screen)
-- Status label shows: `"Monitoring {channels} for injection…"`
-- No buttons of any kind
-- When injection detected → `update_channel_detected(ch, True)` → channel transitions to CONTACT + per-channel countdown starts
-- When all channels detected or 80s timeout → detection completes automatically
-
-### UI elements
-
-| Element | Widget | Notes |
-|---------|--------|-------|
-| Status label | `QLabel` | Informational only |
-| Action button | Not present | Removed |
-| Cancel button | Not present | Stop via cycle table only |
-
----
-
-## §9. Public API
+## §7. Public API
 
 ### Panel-level
 
 | Method | Args | Effect |
 |--------|------|--------|
-| `set_panel_active(active)` | `bool` | Activate (True) or deactivate (False) the panel. Auto-called by injection methods; can also be called explicitly. `False` = dormant + stops timers + resets channels |
-| `show_phase1(label, channels, on_ready, contact_time?)` | — | Phase 1 prep — auto-activates panel, sets PENDING on active channels, starts 10s non-interactive countdown badge |
-| `show_phase2(channels, on_done, contact_time?)` | — | Phase 2 monitoring — auto-activates panel, sets PENDING, configures contact countdown duration. No cancel callback |
-| `update_channel_detected(channel, detected)` | — | Per-channel detection event. `True` → CONTACT + starts per-channel timer. `False` → reverts to PENDING or INACTIVE |
-| `set_channel_wash(channel)` | — | Force a channel to WASH state + stops its timer |
-| `set_channel_role(channel, role)` | — | Set the role label text for a channel |
-| `set_upcoming(label, channels)` | — | Pre-announce next injection — auto-activates panel |
-| `update_status(text)` | — | Update Phase 2 status line |
-| `hide()` | — | **Not used for normal operation.** Panel is always visible. Use `set_panel_active(False)` instead |
+| `show_monitoring(channels, on_done, on_cancel, contact_time, buffer_mgr)` | — | **Primary entry point.** Activates panel, sets active channels to PENDING, starts ΔSPR refresh timer. `contact_time` (int/float/None) — if set, per-channel countdown starts on detection. `buffer_mgr` — needed for live ΔSPR reads. |
+| `set_panel_active(active)` | `bool` | Activate/deactivate. `False` = dormant + stops all timers + resets all channels. Called by coordinator on cancel/timeout/cycle-end. |
+| `update_channel_detected(channel, detected)` | — | Per-channel detection event. `True` → CONTACT + starts per-channel timer. `False` → reverts to PENDING. |
+| `set_channel_wash(channel)` | — | Transition channel to WASH state, stop its timer. Called from `_InjectionSession._handle_wash()` on `_InjectionMonitor` fire #2. |
+| `set_injection_baseline(channel, spr_at_injection)` | — | Set SPR baseline for ΔSPR display. Called from `_pump_mixin._place_injection_flag()` with time-matched SPR at `t_fire`. ΔSPR = 0 at injection point. |
+| `update_status(text)` | — | Update status label text. |
+| `show_injection_missed()` | — | Called by coordinator on lifecycle timeout with zero detections. Shows persistent "No injection detected" message before auto-dismiss. |
+| `set_channel_role(channel, role)` | — | Exists but not wired — STATUS shows ΔSPR, not role text. |
 
 ### Property
 
@@ -298,7 +228,7 @@ Phase 2 runs for up to **80 seconds** (`PHASE2_SECONDS = 80`), monitoring for in
 
 | Signal | Payload | When |
 |--------|---------|------|
-| `channel_countdown_complete` | `str` (channel letter) | Per-channel countdown reaches 0 and auto-transitions to WASH |
+| `channel_countdown_complete` | `str` (channel letter) | Per-channel countdown auto-transitions to WASH (timer path only — not from `_InjectionMonitor` fire #2) |
 
 ---
 
@@ -306,35 +236,45 @@ Phase 2 runs for up to **80 seconds** (`PHASE2_SECONDS = 80`), monitoring for in
 
 ### Injection Coordinator → Panel
 
-**File:** `affilabs/coordinators/injection_coordinator.py`
+**File:** `affilabs/coordinators/injection_coordinator.py` (`_InjectionSession._setup()`)
 
+```python
+# Called on main thread when session starts:
+bar.show_monitoring(
+    channels     = "ABCD",          # detection channels
+    on_done      = self._on_bar_done,
+    on_cancel    = self._on_cancelled,
+    contact_time = cycle.contact_time,  # None if no contact time
+    buffer_mgr   = self._buffer_mgr,
+)
+
+# On _InjectionMonitor fire #1 (injection detected):
+bar.update_channel_detected("A", True)   # → CONTACT + starts A's countdown
+
+# On _InjectionMonitor fire #2 (wash detected):
+bar.set_channel_wash("A")                # → WASH, stops A's timer
+
+# On timeout / cancel:
+bar.set_panel_active(False)              # → dormant, never hide()
 ```
-_setup_on_main_thread():
-  bar.set_channel_role("A", "Sample")   # from cycle metadata
-  bar.set_channel_role("B", "Reference")
-  bar.show_phase2(channels="AB", contact_time=180, ...)
 
-_on_dialog_detected():
-  bar.update_channel_detected("A", True)  # → CONTACT + starts A's 3:00 countdown
-  bar.update_channel_detected("B", True)  # → CONTACT + starts B's 3:00 countdown
+### Pump Mixin → Panel (ΔSPR baseline)
 
-_on_timeout():
-  QTimer.singleShot(0, lambda: bar.set_panel_active(False))   # dormant, never hide()
+**File:** `mixins/_pump_mixin.py` (`_place_injection_flag()`)
+
+```python
+bar.set_injection_baseline(ch, spr_val)
+# spr_val = cd.spr[argmin(|cd.time - injection_time|)]
+# Called immediately after flag placement — sets ΔSPR = 0 at injection
 ```
 
-### Timer Mixin → Panel (wash auto-placement)
+### Timer Mixin → Panel (wash flag placement at timer expiry)
 
 **File:** `affilabs/ui_mixins/_timer_mixin.py`
 
-When `_place_automatic_wash_flags()` fires (contact timer expiry), it places wash flags on the live sensorgram. The **panel auto-transitions to WASH independently** via its own per-channel countdown — no additional call needed. Both systems (flag placement + panel visual) converge on the same event but are independently timed per channel.
+When `_place_automatic_wash_flags()` fires (contact timer expiry), it places wash flags on the live sensorgram via `flag_mgr`. The panel does **not** auto-transition to WASH at timer expiry — transition only happens via `set_channel_wash()` called from `_InjectionSession._handle_wash()`. Both systems are independent.
 
-### Channel Countdown Complete signal
-
-Consumers can connect to `channel_countdown_complete` to trigger external wash actions when a specific channel's sample contact is done:
-
-```python
-bar.channel_countdown_complete.connect(lambda ch: logger.info(f"Channel {ch} wash due"))
-```
+> **⚠ Gap**: If the user washes before the timer expires, `_InjectionMonitor` fire #2 calls `set_channel_wash(ch)` but does NOT call `_place_automatic_wash_flags()`. No wash flag is placed in that case.
 
 ---
 

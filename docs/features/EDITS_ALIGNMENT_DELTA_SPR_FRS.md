@@ -120,6 +120,8 @@ Thin wrapper over the channel toggle buttons exposing the same API as QComboBox:
 5. Call `legend.update_values({'A': delta_a, ...})`
 6. Call `legend.setVisible(True)`
 
+**Note:** ΔSPR values in the `InteractiveSPRLegend` are displayed as **integers** (no decimal places). `legend.update_values()` receives float values, but the legend formats them as `int(round(value))`. Zero displays as `"0"` (not `"0.0"`). See `affilabs/widgets/interactive_spr_legend.py`.
+
 ### Lock Button
 
 `delta_spr_lock_btn` (checkable) — "🔓 Unlock" / "🔒 Locked":
@@ -215,5 +217,5 @@ All alignment widgets remain as invisible stubs (`_create_alignment_stubs()`) so
 
 ---
 
-**Last Updated:** February 24, 2026
+**Last Updated:** February 26, 2026
 **Codebase Version:** Affilabs.core v2.0.5 beta

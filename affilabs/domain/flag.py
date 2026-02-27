@@ -166,7 +166,7 @@ class InjectionFlag(Flag):
 
     @property
     def marker_symbol(self) -> str:
-        return "t"  # Triangle pointing up
+        return "t1"  # Filled triangle pointing up — solid, high-contrast
 
     @property
     def marker_color(self) -> str:
@@ -174,7 +174,7 @@ class InjectionFlag(Flag):
 
     @property
     def marker_size(self) -> int:
-        return 14  # Consistent moderate size
+        return 18  # Larger for immediate visibility
 
     def to_export_dict(self) -> dict:
         """Include is_reference in export."""

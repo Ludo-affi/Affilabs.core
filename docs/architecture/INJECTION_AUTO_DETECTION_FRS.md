@@ -2,7 +2,7 @@
 
 **Version:** 2.0.5 beta
 **Verified against source:** Yes
-**Last updated:** 2026-02-22
+**Last updated:** 2026-02-25
 **Source files:**
 - `affilabs/utils/spr_signal_processing.py` — algorithm layer
 - `affilabs/coordinators/injection_coordinator.py` — orchestration layer
@@ -17,6 +17,20 @@ Injection auto-detection identifies the moment an analyte enters the flow cell b
 **Signal polarity:** Injection causes a **blue shift** (wavelength decreases) in this system. The detection algorithm is direction-agnostic — it detects any sustained step-jump from baseline, rising or falling.
 
 **Detection philosophy:** An injection is a **step change**, not a slope/drift. Example: baseline 3 RU, sample enters, signal jumps to 9 RU. The algorithm finds the first point where the signal exceeds a threshold above the settled baseline AND stays on the same side of baseline for several consecutive points. Slow baseline drift does not trigger detection.
+
+---
+
+## 1b. Signal Inventory — Three Tracked Features
+
+The detector monitors three independent signals per channel. These are the same features logged by `SignalTelemetryLogger` (see `affilabs/services/signal_telemetry_logger.py`):
+
+| Feature | Symbol | Telemetry column | Description |
+|---------|--------|-----------------|-------------|
+| **Position** | λ | `dip_position_nm` | Current SPR resonance wavelength (nm). The primary measured value. Deviation from baseline position is the core injection signal. |
+| **Slope** | dλ/dt | `slope_5s_nm_per_s` | Rate of change of λ over a 5-second rolling window (linear regression, nm/s). Positive = red shift (binding). Negative = blue shift (injection in this system). |
+| **Noise floor (σ)** | σ | derived from `p2p_5frame_nm` | Standard deviation of λ over the baseline window. Sets the detection threshold. A high-noise baseline raises the threshold, making detection less sensitive — which is correct, because a noisy signal needs a larger step to be unambiguous. |
+
+**Why these three?** Position tells us where we are; slope tells us where we are going; σ tells us how much to trust the position reading. Together, a credible injection event must show: (1) position deviated from baseline, (2) slope changed sign or magnitude at the right moment, (3) the deviation exceeds the noise floor by a meaningful margin.
 
 ---
 
@@ -70,31 +84,55 @@ Requires at least 10 points in each array; returns all-zero/None dict otherwise.
 
 ### 3.2 Step 1 — Baseline Establishment
 
+**Design rule: 5 seconds OR 5 points, whichever gives more data.**
+
+The baseline window is defined as the first N samples at the start of the detection window, where N satisfies both a minimum count and a minimum time coverage:
+
+- **Minimum points:** `baseline_points = 5` (default parameter) — ensures at least 5 measurements regardless of acquisition rate
+- **Minimum time:** equivalent to 5 seconds of data at the current acquisition rate (~1 Hz per channel = 5 points ≈ 5 seconds, consistent)
+- **Maximum:** capped at 25% of total array length so the baseline doesn't consume most of the window
+
 ```python
 baseline_end = min(baseline_points, int(len(values) * 0.25))
 baseline_end = max(baseline_end, min(5, len(values) // 3))
 ```
 
-Uses the first `baseline_end` points (capped at 25% of total data) to compute:
-- `baseline_mean` — mean of baseline window
-- `baseline_noise` — std dev, floored at `0.1` RU (prevents zero-noise threshold)
+Uses the first `baseline_end` points to compute:
+- `baseline_mean` — mean of baseline window (λ position reference)
+- `baseline_noise` — std dev (σ), floored at `0.1` RU (prevents zero-noise threshold)
 
 **No linear trend is fit.** The baseline is a flat mean. Pre-injection drift is tolerated as long as the step-jump is large enough relative to noise.
+
+**Why 5 points is sufficient:** At ~1 Hz acquisition the 5-point window covers 5 seconds of the pre-injection signal. That is long enough to estimate σ representative of real noise (not a single-point spike), and short enough that the signal hasn't drifted significantly from the true pre-injection value.
 
 ### 3.3 Step 2 — Threshold Calculation
 
 ```python
 effective_rise_threshold = max(
     min_rise_threshold * sensitivity_factor,
-    3.0 * baseline_noise,
+    SIGMA_MULTIPLIER * baseline_noise,
 )
 ```
 
 The threshold is the **larger** of:
 - `min_rise_threshold × sensitivity_factor` — absolute minimum rise (default 2.0 RU)
-- `3.0 × baseline_noise` — 3-sigma above the baseline noise floor
+- `SIGMA_MULTIPLIER × baseline_noise` — N-sigma above the baseline noise floor
 
-This ensures the detector never fires on noise (3σ requirement) but always requires at least 2 RU of actual signal change.
+This ensures the detector never fires on noise (σ requirement) but always requires at least 2 RU of actual signal change.
+
+### 3.3a — Sensitivity Knob: σ Multiplier
+
+The σ multiplier is the primary sensitivity control for the injection detector:
+
+| Multiplier | Behaviour | When to use |
+|-----------|-----------|-------------|
+| **3σ** (default) | Standard sensitivity. Fires when signal is 3 standard deviations above baseline. Appropriate for most experiments. | Normal conditions, good SNR |
+| **4σ** (conservative) | Reduced sensitivity. Requires a larger step-jump relative to noise before triggering. Suppresses false positives from noisy baselines or temperature artefacts. | Noisy baseline, frequent false triggers |
+| **2σ** (aggressive) | Increased sensitivity. May fire on smaller signal changes. Use only for very low-concentration analytes where the expected step is small. | Weak binders, high-affinity trace analytes |
+
+**Rule of thumb:** Start at 3σ. If the detector fires during plain buffer flow (no injection), increase to 4σ. If it consistently misses real injections, drop to 2σ or lower the absolute `min_rise_threshold`.
+
+**Current hardcoded value:** `3.0` (see §8 constants). The multiplier is not yet exposed to the user — it is a developer/calibration setting in `auto_detect_injection_point()`. To change it, pass a different value or modify the constant.
 
 ### 3.4 Step 3 — Step-Jump Detection
 
@@ -410,7 +448,7 @@ Valves closed after injection: 3-way resets to `pump_mgr.default_channels` state
 | Constant | Value | Location | Description |
 |----------|-------|----------|-------------|
 | Min noise floor | `0.1` RU | `auto_detect_injection_point` | Prevents zero noise from making threshold zero |
-| Noise sigma multiplier | `3.0` | `auto_detect_injection_point` | Detection threshold = max(min_rise, 3σ noise) |
+| Noise sigma multiplier | `3.0` | `auto_detect_injection_point` | Detection threshold = max(min_rise, Nσ noise). Increase to 4.0 to reduce false positives; decrease to 2.0 for weak-binder sensitivity. |
 | Min rise threshold | `2.0` RU | `auto_detect_injection_point` | Absolute minimum step-jump size |
 | Sustain window | `3–6` points | `auto_detect_injection_point` | Consecutive same-side points required for confirmation |
 | Edge margin | `5%` of array length | `auto_detect_injection_point` | Edge penalty zone for confidence scoring |

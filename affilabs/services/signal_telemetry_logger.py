@@ -31,6 +31,7 @@ _MAX_SESSION_ROWS = 500_000  # hard cap per session (≈8 h at 1 Hz × 4 channel
 # Rolling window sizes for derived features
 _P2P_WINDOW    = 5    # frames for peak-to-peak
 _SLOPE_WINDOW  = 5.0  # seconds for slope (linear regression)
+_OPTICAL_WINDOW = 10  # frames for pre/post triage buffer (5 pre + 5 post)
 
 
 def _get_telemetry_dir() -> Path:
@@ -64,19 +65,39 @@ def _compute_slope(pts: list[tuple[float, float]]) -> float | None:
 
 
 class _ChannelRollingState:
-    """Per-channel rolling buffers for p2p and slope computation."""
+    """Per-channel rolling buffers for p2p, slope, delta_1frame, and optical triage."""
 
     def __init__(self) -> None:
         self._wavelengths: Deque[float] = deque(maxlen=_P2P_WINDOW)
         self._slope_pts: Deque[tuple[float, float]] = deque()  # (t, wl) — time-bounded
+        self._last_wl: float | None = None
+        # 10-frame optical buffer for pre/post event triage
+        # Each entry: (wavelength_nm, transmittance_pct, fwhm_nm, raw_peak_counts)
+        # None values allowed — classifier handles missing data gracefully
+        self.optical_buffer: Deque[tuple[float | None, float | None, float | None, float | None]] = deque(maxlen=_OPTICAL_WINDOW)
 
     def push(self, elapsed_s: float, wavelength: float) -> None:
+        self._last_wl = self._wavelengths[-1] if self._wavelengths else None
         self._wavelengths.append(wavelength)
         self._slope_pts.append((elapsed_s, wavelength))
-        # Prune slope window to last _SLOPE_WINDOW seconds
         cutoff = elapsed_s - _SLOPE_WINDOW
         while self._slope_pts and self._slope_pts[0][0] < cutoff:
             self._slope_pts.popleft()
+
+    def push_optical(
+        self,
+        wavelength: float | None,
+        transmittance: float | None,
+        fwhm: float | None,
+        raw_peak: float | None,
+    ) -> None:
+        """Append one optical frame to the 10-point triage buffer."""
+        self.optical_buffer.append((wavelength, transmittance, fwhm, raw_peak))
+
+    def snapshot_pre(self) -> list[tuple]:
+        """Return the last 5 optical frames as the pre-event snapshot."""
+        buf = list(self.optical_buffer)
+        return buf[-5:] if len(buf) >= 5 else buf
 
     @property
     def p2p(self) -> float | None:
@@ -87,6 +108,13 @@ class _ChannelRollingState:
     @property
     def slope(self) -> float | None:
         return _compute_slope(list(self._slope_pts))
+
+    @property
+    def delta_1frame_ru(self) -> float | None:
+        """Signed 1-frame wavelength change in RU (current − previous, × 355)."""
+        if self._last_wl is None or not self._wavelengths:
+            return None
+        return (self._wavelengths[-1] - self._last_wl) * 355.0
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +210,19 @@ class SignalTelemetryLogger:
         with self._write_lock:
             self._stop_session_locked()
 
+    def get_optical_snapshot(self, channel: str) -> list[tuple]:
+        """Return last 5 optical frames for a channel (pre-event snapshot).
+
+        Safe to call from any thread — reads deque, no lock needed (GIL protects).
+        Returns list of (wavelength_nm, transmittance_pct, fwhm_nm, raw_peak).
+        Returns [] if fewer than 5 frames have been recorded.
+        """
+        ch = channel.lower()
+        rolling = self._rolling.get(ch)
+        if rolling is None:
+            return []
+        return rolling.snapshot_pre()
+
     def _stop_session_locked(self) -> None:
         """Close all open CSV files. Must be called with _write_lock held."""
         for fh in self._csv_files.values():
@@ -209,8 +250,17 @@ class SignalTelemetryLogger:
         intensity: float | None,
         iq_metrics: dict,
         sensor_iq: object | None,
+        stage1_verdict: str = "",
+        bubble_detected: bool = False,
+        positive_front: bool = False,
+        negative_front: bool = False,
+        auto_label: str = "",
+        is_control_channel: bool = False,
+        control_slope_5s_ru: float | None = None,
+        injection_index: int | None = None,
+        cycle_sub_phase: str = "",
     ) -> None:
-        """Record one frame. Called from spectrum_helpers.py per processed frame.
+        """Record one frame per FRS §6.2 schema. Called from spectrum_helpers.py.
 
         This runs in the processing worker thread — keep it fast and never raise.
         """
@@ -227,12 +277,18 @@ class SignalTelemetryLogger:
                 self._rolling[ch] = rolling
 
             rolling.push(elapsed_s, wavelength)
+            rolling.push_optical(
+                wavelength=wavelength,
+                transmittance=iq_metrics.get("transmittance") if iq_metrics else None,
+                fwhm=iq_metrics.get("fwhm") if iq_metrics else None,
+                raw_peak=float(intensity) if intensity is not None else None,
+            )
 
-            # --- Cycle context (best-effort; never raise) ---
-            cycle_type  = ""
+            # --- Cycle context (best-effort) ---
+            cycle_type         = ""
             cycle_elapsed_frac: float | None = None
             try:
-                mw = getattr(app, "main_window", app)  # mixin pattern
+                mw    = getattr(app, "main_window", app)
                 cycle = getattr(mw, "_current_cycle", None)
                 if cycle is not None:
                     cycle_type = getattr(cycle, "type", "") or ""
@@ -253,29 +309,54 @@ class SignalTelemetryLogger:
             iq_level_str = ""
             try:
                 if sensor_iq is not None:
-                    iq_level_str = sensor_iq.iq_level.value if hasattr(sensor_iq.iq_level, "value") else str(sensor_iq.iq_level)
+                    iq_level_str = (
+                        sensor_iq.iq_level.value
+                        if hasattr(sensor_iq.iq_level, "value")
+                        else str(sensor_iq.iq_level)
+                    )
             except Exception:
                 pass
+
+            # --- Derived RU values (nm × 355) ---
+            dip_position_ru = round(wavelength * 355.0, 2)
+            slope_nm        = rolling.slope          # nm/s or None
+            slope_5s_ru     = _fmt(slope_nm * 355.0 if slope_nm is not None else None, 4)
+            p2p_nm          = rolling.p2p            # nm or None
+            p2p_5frame_ru   = _fmt(p2p_nm * 355.0 if p2p_nm is not None else None, 3)
+
+            # delta_1frame: difference vs previous frame stored in rolling buffer
+            delta_1frame_ru = _fmt(rolling.delta_1frame_ru, 3)
+
+            # control slope diff
+            slope_diff_ru: str | float = ""
+            if slope_nm is not None and control_slope_5s_ru is not None:
+                slope_diff_ru = _fmt(slope_nm * 355.0 - control_slope_5s_ru, 4)
 
             row: dict = {
                 "session_id":           self._session_id,
                 "timestamp_utc":        datetime.utcnow().isoformat(timespec="milliseconds"),
                 "elapsed_s":            round(elapsed_s, 3),
-                "channel":              ch,
+                "channel":              ch.upper(),
+                "is_control_channel":   int(is_control_channel),
                 "cycle_type":           cycle_type,
+                "cycle_sub_phase":      cycle_sub_phase,
                 "cycle_elapsed_frac":   round(cycle_elapsed_frac, 4) if cycle_elapsed_frac is not None else "",
-                "dip_position_nm":      round(wavelength, 4),
-                "raw_intensity":        round(float(intensity), 1) if intensity is not None else "",
-                "fwhm_nm":              _fmt(iq_metrics.get("fwhm"), 3),
+                "injection_index":      "" if injection_index is None else injection_index,
+                "dip_position_ru":      dip_position_ru,
+                "delta_1frame_ru":      delta_1frame_ru,
+                "slope_5s_ru_per_s":    slope_5s_ru,
+                "p2p_5frame_ru":        p2p_5frame_ru,
+                "raw_intensity_ratio":  round(float(intensity), 4) if intensity is not None else "",
                 "dip_depth":            _fmt(iq_metrics.get("dip_depth"), 4),
-                "p2p_5frame_nm":        _fmt(rolling.p2p, 5),
-                "slope_5s_nm_per_s":    _fmt(rolling.slope, 6),
+                "fwhm_nm":              _fmt(iq_metrics.get("fwhm"), 3),
+                "control_slope_5s_ru":  _fmt(control_slope_5s_ru, 4),
+                "slope_diff_ru":        slope_diff_ru,
                 "iq_level":             iq_level_str,
-                # Phase 2+ — filled by classifier offline; null at runtime
-                "classifier_top1":      "",
-                "classifier_conf1":     "",
-                "classifier_top2":      "",
-                "classifier_conf2":     "",
+                "stage1_verdict":       stage1_verdict,
+                "bubble_detected":      int(bubble_detected),
+                "positive_front":       int(positive_front),
+                "negative_front":       int(negative_front),
+                "auto_label":           auto_label,
                 "manual_label":         "",
             }
 
@@ -285,11 +366,8 @@ class SignalTelemetryLogger:
                     return
                 writer.writerow(row)
                 self._row_count += 1
-                # Flush periodically for recoverability without hurting throughput
                 if self._row_count % _FLUSH_EVERY == 0:
                     self._csv_files[ch].flush()
-
-                # Disk-space guard — check every 1000 rows
                 if self._row_count % 1000 == 0 and not _has_enough_disk(self._telemetry_dir):
                     self._enabled = False
 
@@ -302,23 +380,37 @@ class SignalTelemetryLogger:
 # ---------------------------------------------------------------------------
 
 _COLUMNS = [
+    # Identity
     "session_id",
     "timestamp_utc",
     "elapsed_s",
     "channel",
+    "is_control_channel",
+    # Cycle context
     "cycle_type",
+    "cycle_sub_phase",
     "cycle_elapsed_frac",
-    "dip_position_nm",
-    "raw_intensity",
-    "fwhm_nm",
+    "injection_index",
+    # Signal features (RU)
+    "dip_position_ru",
+    "delta_1frame_ru",
+    "slope_5s_ru_per_s",
+    "p2p_5frame_ru",
+    "raw_intensity_ratio",
+    # Optical features
     "dip_depth",
-    "p2p_5frame_nm",
-    "slope_5s_nm_per_s",
+    "fwhm_nm",
+    # Control channel comparison
+    "control_slope_5s_ru",
+    "slope_diff_ru",
+    # Quality
     "iq_level",
-    "classifier_top1",
-    "classifier_conf1",
-    "classifier_top2",
-    "classifier_conf2",
+    # Classifier outputs
+    "stage1_verdict",
+    "bubble_detected",
+    "positive_front",
+    "negative_front",
+    "auto_label",
     "manual_label",
 ]
 

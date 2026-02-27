@@ -275,8 +275,8 @@ class Cycle(BaseModel):
 
         Args:
             clock: Optional ExperimentClock instance. When provided, cycle times are
-                   converted from RAW_ELAPSED to RECORDING-relative coords so they
-                   match the raw_data_rows time column in the Excel file.
+                   converted from RAW_ELAPSED to RECORDING coords so they match the
+                   raw_data_rows time column (t=0 at Record click).
 
         Returns:
             Dictionary suitable for Excel export
@@ -288,7 +288,7 @@ class Cycle(BaseModel):
         start_export = self.sensorgram_time
         end_export = self.end_time_sensorgram
 
-        # Convert from RAW_ELAPSED → RECORDING if clock provided
+        # Convert from RAW_ELAPSED → RECORDING so cycle times match raw_data_rows time base
         if clock is not None:
             from affilabs.core.experiment_clock import TimeBase
 

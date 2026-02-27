@@ -453,6 +453,108 @@ If no digital input is available on P4PRO, fall back to TCP polling — no firmw
 
 ---
 
+## Integration Paths — Decision Guide
+
+Two independent approaches. They solve different problems and can be combined.
+
+| Approach | What it does | Effort | When to use |
+|----------|-------------|--------|-------------|
+| **TTL hardware trigger** | Autosampler tells P4PRO exactly when it injects (hardware wire) | ~1 week (firmware + software) | When you need precise injection timestamps with zero latency. Works with ANY autosampler brand. |
+| **SiLA 2 software wrapper** | Software on PC orchestrates both instruments via gRPC over LAN | ~1 week (software only) | When customer has a lab scheduler that speaks SiLA 2, or you want full remote control of the P4PRO from external software. |
+| **TCP polling (current plan)** | Affilabs.core asks Knauer "are you done?" repeatedly | Already in plan above | Simplest. Sufficient for most use cases. ~2s latency on injection timestamp. |
+
+**Recommended for v2.2:** TCP polling (already designed) + TTL trigger as an optional add-on.
+**Recommended for v2.3:** SiLA 2 wrapper (see `ANIML_SILA_IMPLEMENTATION_PLAN.md`).
+
+---
+
+## TTL Hardware Trigger — Specification
+
+### What it does
+
+The Knauer Azura AS 6.1L has a **relay contact output** (TTL OUT) that changes state at the moment the injection loop is loaded and sample starts flowing. Connecting this to a GPIO input on the P4PRO controller lets the firmware timestamp the injection to within one acquisition frame (~100 ms) — far more precise than polling.
+
+```
+Knauer AS 6.1L injects sample
+    → Relay contact output fires (TTL OUT, 3.3V or 5V, momentary pulse ~100ms)
+    → Physical wire to P4PRO GPIO input pin
+    → Firmware detects rising edge
+    → Firmware sends serial event: "TRIGGER:INJECT\n"
+    → controller_hal reads event, emits Python signal
+    → InjectionCoordinator.on_external_trigger() called
+    → Injection flag placed on sensorgram at current elapsed_time
+    → User sees auto-placed marker with channel label
+```
+
+### Hardware requirements
+
+| Item | Spec | Source |
+|------|------|--------|
+| Knauer TTL output | 3.3V or 5V, momentary pulse on injection | Knauer user manual §Trigger I/O |
+| P4PRO GPIO input | Must confirm: is there an exposed input pin on controller board? | → **Firmware team to confirm** |
+| Voltage matching | If Azura outputs 5V and P4PRO expects 3.3V: add voltage divider (2× resistors, 5 min) | → Resolve once both voltages confirmed |
+| Cable | 2-wire (signal + GND), any length ≤ 3m, standard BNC or bare wire to header | Customer-supplied or bundled |
+
+**Key open question:** Does the P4PRO controller board have an exposed digital input GPIO pin? If not, this requires a hardware revision or a cheap USB GPIO board (e.g. FT232H breakout — Python-accessible, no firmware changes needed).
+
+### Firmware changes (if using P4PRO GPIO)
+
+1. Poll GPIO input pin in acquisition loop (already running ~10 Hz)
+2. On rising edge detected: send `TRIGGER:INJECT\n` over serial to PC
+3. Timestamp = firmware clock at detection moment (same clock as LED cycle timestamps)
+
+Effort: ~1 day firmware, straightforward.
+
+### Software changes (Affilabs.core side)
+
+**New method in `ControllerHAL`:**
+```python
+def get_pending_trigger_events(self) -> list[str]:
+    """Poll for any external trigger events received since last call.
+    Returns list of event strings, e.g. ['TRIGGER:INJECT'].
+    Called from acquisition loop worker thread.
+    """
+```
+
+**New handler in `InjectionCoordinator`:**
+```python
+def on_external_injection_trigger(self, elapsed_time: float) -> None:
+    """Called when TTL trigger received from external instrument.
+    Places injection flag at elapsed_time — same path as manual flag placement.
+    Also starts contact timer in InjectionActionBar if a cycle is running.
+    """
+```
+
+**Integration point:** `_acquisition_mixin._on_spectrum_acquired()` — after each frame, call `ctrl.get_pending_trigger_events()` and route any `TRIGGER:INJECT` events to the coordinator. Fast, non-blocking.
+
+**Settings flag to add:**
+```python
+# settings/settings.py
+EXTERNAL_TRIGGER_ENABLED: bool = False  # Set True when TTL wire connected
+EXTERNAL_TRIGGER_DEBOUNCE_S: float = 2.0  # Minimum seconds between triggers
+```
+
+### What the user sees
+
+- Injection flag appears automatically at the exact moment Knauer injects — no button press required
+- Flag label: `"Auto: [well_id]"` if well ID is known from TCP sequence, else `"Auto: External"`
+- If TCP integration also active: cross-check TCP timestamp vs TTL timestamp; log discrepancy if > 3s
+
+### Effort estimate for TTL path
+
+| Task | Where | Effort |
+|------|-------|--------|
+| Confirm P4PRO GPIO pin + voltage | Firmware team | 0.5 day |
+| Firmware: edge detection → serial event | Controller firmware | 1 day |
+| `ControllerHAL.get_pending_trigger_events()` | `controller_hal.py` | 0.5 day |
+| `InjectionCoordinator.on_external_injection_trigger()` | `injection_coordinator.py` | 0.5 day |
+| Wire into acquisition loop | `_acquisition_mixin.py` | 0.5 day |
+| Settings flag + debounce | `settings.py` | 0.5 day |
+| Testing (bench) | — | 1 day |
+| **Total** | | **~4–5 days** |
+
+---
+
 ## Success Criteria
 
 - [ ] Autosampler connects via LAN and responds to status queries

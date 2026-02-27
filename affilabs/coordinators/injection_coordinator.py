@@ -13,11 +13,10 @@ MODES:
    - Overrides hardware defaults
 
 MANUAL INJECTION FLOW:
-- InjectionActionBar Phase 2 is shown inline in the sidebar (non-blocking UI)
-- ManualInjectionDialog runs hidden — its 60-second detection engine stays active
-- Dialog signals (injection_detected, injection_complete) are bridged to the bar
-- Channel LEDs in bar update as each channel is auto-detected (grey→yellow→green)
-- Background thread blocks on threading.Event until dialog completes (max 70s)
+- InjectionActionBar is shown inline in the sidebar (non-blocking UI)
+- One _InjectionMonitor per channel runs until injection is detected, then self-stops
+- Channel LEDs update as each event is detected (yellow → green)
+- Background thread blocks on threading.Event until detection confirmed on expected channels
 - Returns detection results (channel, time, confidence) to coordinator
 
 HARDWARE MODES:
@@ -44,7 +43,7 @@ from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
-from PySide6.QtCore import QMetaObject, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 
 from affilabs.utils.logger import logger
 from affilabs.utils.sample_parser import parse_sample_info
@@ -61,152 +60,689 @@ if TYPE_CHECKING:
 FLUIDIC_PATH_VOLUME_UL = 8.0
 
 
-class _WashMonitor(QObject):
-    """Per-channel wash injection detector running on the main thread.
+class _InjectionMonitor(QObject):
+    """Per-channel injection detector.
 
-    Monitors the SPR signal during contact time using a 10-second moving slope.
-    A sudden break from the contact trend (slope change exceeding threshold) is
-    classified as a wash injection.
+    Runs continuously from cycle start until stopped. Detects a single
+    threshold crossing (injection event) then self-stops.
 
-    Algorithm:
-        Every POLL_INTERVAL_S seconds:
-          1. Fetch the last WINDOW_S seconds of cycle_data[ch].spr (RU) for channel.
-          2. Compute slope of two consecutive 10-second halves:
-               slope_prev  = polyfit(t[-20s..-10s], spr[-20s..-10s])[0]  [RU/s]
-               slope_now   = polyfit(t[-10s..now],  spr[-10s..now])[0]   [RU/s]
-          3. delta_slope = slope_now - slope_prev
-          4. A rolling noise estimate (std of slope_now over several polls) sets
-             the adaptive threshold.
-          5. If abs(delta_slope) > max(HARD_MIN_SLOPE_CHANGE, SIGMA * noise_std)
-             for CONFIRM_POLLS consecutive polls → wash detected.
+    Algorithm (every POLL_INTERVAL_S = 2 seconds):
 
-    The detector ignores the first MIN_CONTACT_S seconds to skip the initial
-    injection transient, which also shows a large slope change.
+    Step 1 — Quality gate:
+        win_pre = spr[-(2*W):-W]  (5-frame window ending 5 frames ago)
+        baseline_std = std(win_pre).  If > STD_MAX_RU (≈20 RU):
+            emit readiness_update("CHECK", "Flush channel — signal unstable")
+            return  ← do not attempt detection on a noisy channel
+
+    Step 2 — Adaptive threshold:
+        threshold = max(HARD_MIN_RU, SIGMA × baseline_std)
+
+    Stage 1 — _detect_spike():
+        p2p = ptp(spr[-(2*W):])   (10-frame window, direction-agnostic)
+        If p2p > max(HARD_MIN_RU, 5σ × baseline_std): confirm_count += 1
+        Confirmed after CONFIRM_FRAMES consecutive polls above threshold.
+
+    Stage 2 — deferred pre/post triage (5 polls = 5s):
+        On spike confirm: snapshot pre-window (last 5 optical frames), collect 5 more.
+        Then compare pre vs post across 4 optical signals (cascade, highest priority first):
+        POSSIBLE_LEAK   — raw_peak collapses ≥75% (intensity wipeout)
+        POSSIBLE_BUBBLE — %T drops ≥10pp AND FWHM broadens ≥30%
+        CHIP_DEGRADED   — FWHM broadens ≥30% without %T drop
+        SIGNAL_SPIKE    — transient: SPR mean returns to pre-spike level
+        INJECTION       — none of the above → sustained binding event → advance fire_count
+
+        fire_count semantics (owned by _InjectionSession, not this class):
+          #1 = sample injection  |  #2 = wash  |  #3+ = stop monitoring
+
+    Parallel — _check_leak():
+        Not spike-triggered. Sustained %T drop >2% for >30s → POSSIBLE_LEAK.
     """
 
-    wash_detected = Signal(str)   # channel letter (upper)
+    injection_detected = Signal(str, float)  # channel (upper), cycle-relative time (s)
+    anomaly_detected   = Signal(str, str)    # flag ('POSSIBLE_BUBBLE'), channel
+    readiness_update   = Signal(str, str)    # verdict ('READY'/'WAIT'/'CHECK'), message
 
-    POLL_INTERVAL_S   = 2         # check every 2 seconds
-    WINDOW_S          = 20        # total lookback for slope pair (2 × 10 s)
-    HALF_S            = 10        # each slope half is 10 seconds
-    MIN_PTS           = 4         # minimum points per half-window (~0.5 Hz → 4 pts in 8-10 s)
-    MIN_CONTACT_S     = 15        # ignore first 15 s after injection (injection transient)
-    HARD_MIN_SLOPE    = 0.5       # RU/s — minimum detectable slope change (~30 RU/min)
-    SIGMA             = 4.0       # how many noise σ above baseline variability
-    CONFIRM_POLLS     = 2         # consecutive detections required to confirm
+    POLL_INTERVAL_S = 1       # seconds between polls (1 Hz data → catch every frame)
+    WINDOW_FRAMES   = 3       # frames per rolling window (~3s at 1 Hz — fast reaction)
+    MIN_PTS         = 6       # need 2 × WINDOW_FRAMES before detecting
+    HARD_MIN_RU     = 10.0    # absolute floor — reject crosstalk (<10 RU) from adjacent channels
 
-    def __init__(self, channel: str, buffer_mgr, injection_time: float, parent=None):
+    # Tunable constants — override via settings.py
+    try:
+        from settings import INJECTION_DETECTION_SIGMA as SIGMA
+        from settings import INJECTION_CONFIRM_FRAMES  as CONFIRM_FRAMES
+        from settings import INJECTION_STD_MAX_NM      as STD_MAX_NM
+        from settings import INJECTION_DEAD_ZONE_S     as DEAD_ZONE_S
+    except ImportError:
+        SIGMA          = 3.0
+        CONFIRM_FRAMES = 2
+        STD_MAX_NM     = 0.056
+        DEAD_ZONE_S    = 15.0
+    # STD_MAX in RU (converted from nm threshold used in readiness check only)
+    STD_MAX_RU = STD_MAX_NM * 355
+
+    def __init__(self, channel: str, buffer_mgr, parent=None, contact_time_s: float | None = None):
         super().__init__(parent)
-        self._ch = channel.lower()
-        self._ch_upper = channel.upper()
-        self._buffer_mgr = buffer_mgr
-        self._injection_wall_time = injection_time   # wall-clock time.time() for elapsed guard
-        # Cycle-relative time of injection: read the latest cycle_data time at start.
-        # Used to exclude pre-injection data points from the slope windows.
-        self._injection_cycle_t: float | None = self._read_current_cycle_t()
-        self._timer = QTimer(self)
-        self._timer.setInterval(self.POLL_INTERVAL_S * 1000)
-        self._timer.timeout.connect(self._poll)
-        self._slope_history: list[float] = []   # rolling slope_now values for noise estimation
+        self._ch           = channel.lower()
+        self._ch_upper     = channel.upper()
+        self._buffer_mgr   = buffer_mgr
+        self._contact_time_s = contact_time_s  # cycle contact time (seconds)
         self._confirm_count = 0
-        self._stopped = False
-
-    def _read_current_cycle_t(self) -> float | None:
-        """Read the latest cycle-relative timestamp from cycle_data at monitor start."""
-        try:
-            data = self._buffer_mgr.cycle_data.get(self._ch)
-            if data is not None and len(data.time) > 0:
-                return float(np.asarray(data.time)[-1])
-        except Exception:
-            pass
-        return None
+        self._stopped       = False
+        self._fire_count    = 0              # 0=idle, 1=injection fired
+        self._last_fire_at  = 0.0           # monotonic time of last fire
+        self._last_anomaly  = ''
+        self._poll_count    = 0
+        self._thread: threading.Thread | None = None
+        # Leak detection: %T drops >2% and stays down >30s
+        self._transmittance_ref: float | None = None   # mean %T from first WINDOW_FRAMES
+        self._leak_polls_below: int = 0                # consecutive polls with %T suppressed
+        self._leak_fired: bool = False
+        # Deferred triage state — pre/post 5-point optical window
+        self._triage_pending: bool = False             # True while collecting post-window
+        self._triage_pre: list = []                    # pre-event optical snapshot (5 frames)
+        self._triage_t_fire: float = 0.0              # onset time captured at spike confirm
+        self._triage_p2p: float = 0.0                 # p2p at spike confirm
+        self._triage_threshold: float = 0.0           # threshold at spike confirm
+        self._triage_post_polls: int = 0              # polls collected since triage started
 
     def start(self) -> None:
-        self._timer.start()
-        logger.debug(f"WashMonitor started for channel {self._ch_upper}")
+        self._stopped = False
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            daemon=True,
+            name=f"InjectionMonitor-{self._ch_upper}",
+        )
+        self._thread.start()
+        logger.debug(f"InjectionMonitor started for channel {self._ch_upper}")
 
     def stop(self) -> None:
         self._stopped = True
-        self._timer.stop()
-        logger.debug(f"WashMonitor stopped for channel {self._ch_upper}")
+        logger.debug(f"InjectionMonitor stopped for channel {self._ch_upper}")
+
+    def _run_loop(self) -> None:
+        import time as _time
+        while not self._stopped:
+            try:
+                self._poll()
+            except Exception:
+                logger.exception(f"InjectionMonitor {self._ch_upper}: unhandled error in _poll")
+            _time.sleep(self.POLL_INTERVAL_S)
 
     def _poll(self) -> None:
         if self._stopped:
             return
 
-        elapsed_since_injection = time.time() - self._injection_wall_time
-        if elapsed_since_injection < self.MIN_CONTACT_S:
-            return   # too early — injection transient still settling
+        import time as _time
+        self._poll_count += 1
 
-        try:
-            data = self._buffer_mgr.cycle_data.get(self._ch)
-        except Exception:
-            return
-        if data is None or len(data.time) < self.MIN_PTS * 2:
-            return
-
-        times = np.asarray(data.time, dtype=float)
-        spr   = np.asarray(data.spr,  dtype=float)
-
-        # Exclude any data points that predate the injection itself.
-        # _injection_cycle_t is the cycle-relative time when the monitor started.
-        # Add MIN_CONTACT_S so the full transient region is skipped.
-        if self._injection_cycle_t is not None:
-            post_inj_t = self._injection_cycle_t + self.MIN_CONTACT_S
-            post_mask = times >= post_inj_t
-            times = times[post_mask]
-            spr   = spr[post_mask]
-            if len(times) < self.MIN_PTS * 2:
+        # Dead zone — skip polls immediately after a fire to absorb biphasic artifact.
+        # After fire #1 (injection), extend dead zone to 80% of the contact time so
+        # binding-kinetics signal changes are not misclassified as wash events.
+        if self._last_fire_at > 0:
+            if self._fire_count >= 1 and self._contact_time_s:
+                wash_deadzone = max(self.DEAD_ZONE_S, 0.80 * self._contact_time_s)
+            else:
+                wash_deadzone = self.DEAD_ZONE_S
+            if _time.monotonic() - self._last_fire_at < wash_deadzone:
                 return
 
-        now = times[-1]
-        t_split = now - self.HALF_S
-        t_start = now - self.WINDOW_S
-
-        # Previous 10-second window: [now-20s .. now-10s]
-        mask_prev = (times >= t_start) & (times < t_split)
-        # Current 10-second window: [now-10s .. now]
-        mask_now  = (times >= t_split)
-
-        if mask_prev.sum() < self.MIN_PTS or mask_now.sum() < self.MIN_PTS:
-            return   # not enough data yet
-
-        t_prev, spr_prev = times[mask_prev], spr[mask_prev]
-        t_now,  spr_now  = times[mask_now],  spr[mask_now]
-
+        # Fetch cycle-relative ΔSPR (RU) — this is what the Active Cycle graph plots.
+        # cycle_data[ch].spr is zeroed at the cycle start cursor, same reference as the graph.
         try:
-            slope_prev = float(np.polyfit(t_prev - t_prev[0], spr_prev, 1)[0])
-            slope_now  = float(np.polyfit(t_now  - t_now[0],  spr_now,  1)[0])
-        except (np.linalg.LinAlgError, ValueError):
+            cd = self._buffer_mgr.cycle_data.get(self._ch)
+        except Exception as _e:
+            logger.debug(f"InjectionMonitor {self._ch_upper}: buffer read error: {_e}")
+            return
+        if cd is None or len(cd.spr) < self.MIN_PTS:
+            if self._poll_count % 5 == 1:
+                n = 0 if cd is None else len(cd.spr)
+                logger.debug(f"InjectionMonitor {self._ch_upper}: waiting for data ({n}/{self.MIN_PTS} pts)")
             return
 
-        # Rolling noise estimate: std of recent slope_now values
-        self._slope_history.append(slope_now)
-        if len(self._slope_history) > 10:
-            self._slope_history.pop(0)
-        noise_std = float(np.std(self._slope_history)) if len(self._slope_history) >= 3 else 0.0
+        spr = np.asarray(cd.spr, dtype=float)  # ΔSPR in RU, zeroed at cycle start
 
-        delta = abs(slope_now - slope_prev)
-        threshold = max(self.HARD_MIN_SLOPE, self.SIGMA * noise_std)
+        W = self.WINDOW_FRAMES
+        win_pre = spr[-(2 * W):-W]
+
+        # Baseline noise from the OLDER half of the 2W window (pre-spike).
+        # Using win_pre instead of spr[-W:] is critical: if the injection
+        # front lands in the last W frames, std(spr[-W:]) would spike and
+        # either block the quality gate or inflate the adaptive threshold,
+        # adding several seconds of detection delay.
+        baseline_std_ru = float(np.std(win_pre))
+        if baseline_std_ru > self.STD_MAX_RU:
+            self.readiness_update.emit("CHECK", "Flush channel — signal unstable")
+            self._confirm_count = 0
+            return
+
+        threshold = max(self.HARD_MIN_RU, self.SIGMA * baseline_std_ru)
+
+        # Stage 1 — spike detector
+        # If a triage is already pending, collect post-window frames instead of
+        # running the spike detector again — avoids re-triggering on the same event.
+        if self._triage_pending:
+            self._triage_post_polls += 1
+            if self._triage_post_polls >= 5:
+                self._resolve_triage(cd)
+            return
+
+        spike_p2p = self._detect_spike(spr, W)
+        exceeded  = spike_p2p > threshold
+
+        if self._poll_count % 15 == 0:
+            logger.debug(
+                f"InjectionMonitor {self._ch_upper}: fire={self._fire_count} "
+                f"pts={len(spr)} spr={spr[-1]:.1f}RU "
+                f"p2p={spike_p2p:.1f}RU thresh={threshold:.1f}RU std={baseline_std_ru:.1f}RU"
+            )
+
+        if exceeded:
+            self._confirm_count += 1
+            if self._confirm_count >= self.CONFIRM_FRAMES:
+                times  = np.asarray(cd.time, dtype=float)
+                t_fire = self._find_onset_time(spr, times, W)
+                # Snapshot pre-window and start collecting post-window (deferred triage)
+                self._start_triage(t_fire, spike_p2p, threshold)
+        else:
+            self._confirm_count = 0
+
+        # Leak monitor — sustained %T suppression, not spike-triggered (FRS §6b.1)
+        self._check_leak(cd)
+
+        # Readiness update — only while waiting for first injection
+        if self._fire_count == 0:
+            try:
+                from affilabs.utils.signal_event_classifier import SignalEventClassifier
+                iq_metrics = getattr(cd, 'iq_metrics_latest', None) or {}
+                _p2p_ru   = float(np.ptp(spr[-5:])) if len(spr) >= 5 else 0.0
+                _slope_ru = float(np.polyfit(np.arange(5), spr[-5:], 1)[0]) if len(spr) >= 5 else 0.0
+                readiness = SignalEventClassifier.check_readiness(
+                    slope_5s_ru=_slope_ru,
+                    p2p_5frame_ru=_p2p_ru,
+                    iq_level=str(iq_metrics.get('iq_level', '')),
+                )
+                self.readiness_update.emit(readiness.verdict, readiness.message)
+            except Exception:
+                pass
+
+    # ── Stage 1: spike detector ───────────────────────────────────────────────
+
+    def _detect_spike(self, spr: np.ndarray, W: int) -> float:
+        """Return p2p of the combined 2W window.
+
+        Pure threshold input — direction-agnostic. Caller compares against
+        adaptive threshold (5σ × baseline_std). No classification here.
+        """
+        return float(np.ptp(spr[-(2 * W):]))
+
+    # ── Onset time finder ─────────────────────────────────────────────────────
+
+    def _find_onset_time(self, spr: np.ndarray, times: np.ndarray, W: int) -> float:
+        """Find the actual injection onset within the 2W detection window.
+
+        Called after _detect_spike confirms p2p > threshold.  Instead of using
+        ``times[-1]`` (the latest frame — causes ~5 s placement delay), scan
+        the 10-frame window to find where the signal first departs from the
+        pre-spike baseline.
+
+        Algorithm:
+            1. Baseline = mean/std of the first W frames in the 2W window
+            2. Determine shift direction (rising = injection, falling = wash)
+            3. Scan forward from frame W to find first frame exceeding
+               base_mean ± onset_threshold
+            4. onset_threshold = max(1.5 × baseline_std, 2.0 RU) — sensitive,
+               because the spike is already confirmed
+
+        Returns cycle-time (same timebase as cd.time) of the estimated onset.
+        """
+        if len(spr) < 2 * W or len(times) < 2 * W:
+            return float(times[-1])
+
+        win_spr = np.asarray(spr[-(2 * W):], dtype=float)
+        win_t   = np.asarray(times[-(2 * W):], dtype=float)
+
+        base_mean = float(np.mean(win_spr[:W]))
+        base_std  = float(np.std(win_spr[:W]))
+
+        post_mean = float(np.mean(win_spr[W:]))
+        onset_delta = max(1.5 * base_std, 2.0)
+
+        if post_mean >= base_mean:
+            # Rising — injection binding (red-shift)
+            for i in range(W, len(win_spr)):
+                if win_spr[i] - base_mean > onset_delta:
+                    return float(win_t[i])
+        else:
+            # Falling — wash or unusual event
+            for i in range(W, len(win_spr)):
+                if base_mean - win_spr[i] > onset_delta:
+                    return float(win_t[i])
+
+        # Fallback — start of post-baseline region
+        return float(win_t[W])
+
+    # ── Stage 2: deferred pre/post triage ────────────────────────────────────
+
+    def _start_triage(self, t_fire: float, p2p: float, threshold: float) -> None:
+        """Snapshot the pre-event optical window and begin collecting post-window.
+
+        Called immediately when CONFIRM_FRAMES consecutive polls exceed threshold.
+        The actual classification fires 5 polls later in _resolve_triage().
+        """
+        try:
+            from affilabs.services.signal_telemetry_logger import SignalTelemetryLogger
+            pre = SignalTelemetryLogger.get_instance().get_optical_snapshot(self._ch)
+        except Exception:
+            pre = []
+
+        self._triage_pending    = True
+        self._triage_pre        = pre
+        self._triage_t_fire     = t_fire
+        self._triage_p2p        = p2p
+        self._triage_threshold  = threshold
+        self._triage_post_polls = 0
+        self._confirm_count     = 0
 
         logger.debug(
-            f"WashMonitor {self._ch_upper}: slope_prev={slope_prev:.4f} "
-            f"slope_now={slope_now:.4f} delta={delta:.4f} threshold={threshold:.4f} "
-            f"confirms={self._confirm_count}"
+            f"[InjectionMonitor] {self._ch_upper} triage started — "
+            f"t={t_fire:.1f}s p2p={p2p:.1f}RU pre_frames={len(pre)}"
         )
 
-        if delta >= threshold:
-            self._confirm_count += 1
-            if self._confirm_count >= self.CONFIRM_POLLS:
-                logger.info(
-                    f"✓ Wash injection detected on channel {self._ch_upper} "
-                    f"(slope Δ={delta:.4f} RU/s, threshold={threshold:.4f}, "
-                    f"contact elapsed={elapsed_since_injection:.0f}s)"
-                )
-                self.stop()
-                self.wash_detected.emit(self._ch_upper)
+    def _resolve_triage(self, cd) -> None:
+        """Collect post-window and run the 4-step triage cascade.
+
+        Called 5 polls after _start_triage(). Compares pre vs post optical
+        windows to distinguish LEAK / BUBBLE / CHIP_DEGRADED / INJECTION.
+        """
+        self._triage_pending = False
+
+        try:
+            from affilabs.services.signal_telemetry_logger import SignalTelemetryLogger
+            from affilabs.utils.signal_event_classifier import check_event_triage
+            post = SignalTelemetryLogger.get_instance().get_optical_snapshot(self._ch)
+            label_triage = check_event_triage(self._triage_pre, post)
+        except Exception:
+            label_triage = "INJECTION"
+
+        label_map = {
+            "LEAK":          "POSSIBLE_LEAK",
+            "BUBBLE":        "POSSIBLE_BUBBLE",
+            "CHIP_DEGRADED": "CHIP_DEGRADED",
+            "INJECTION":     "INJECTION",
+        }
+        label = label_map.get(label_triage, "INJECTION")
+
+        # Transient check — SPR returned to baseline → noise spike, not a real event
+        try:
+            spr_arr = np.asarray(cd.spr, dtype=float)
+            W = self.WINDOW_FRAMES
+            if len(spr_arr) >= 3 * W:
+                pre_mean  = float(np.mean(spr_arr[-(3 * W):-(2 * W)]))
+                post_mean = float(np.mean(spr_arr[-W:]))
+                if abs(post_mean - pre_mean) < self.HARD_MIN_RU:
+                    label = "SIGNAL_SPIKE"
+        except Exception:
+            pass
+
+        logger.info(
+            f"[InjectionMonitor] {self._ch_upper} triage resolved → {label} "
+            f"t={self._triage_t_fire:.1f}s p2p={self._triage_p2p:.1f}RU"
+        )
+        self._fire(self._triage_t_fire, self._triage_p2p, self._triage_threshold, label)
+
+    def _fire(self, t_fire: float, p2p: float, threshold: float, label: str) -> None:
+        import time as _time
+        self._fire_count   += 1
+        self._last_fire_at  = _time.monotonic()
+        self._confirm_count = 0
+
+        logger.info(
+            f"[InjectionMonitor] {self._ch_upper} spike classified={label} "
+            f"t={t_fire:.1f}s p2p={p2p:.1f}RU thresh={threshold:.1f}RU "
+            f"(fire #{self._fire_count})"
+        )
+
+        if label == 'SIGNAL_SPIKE':
+            # Noise — log only, do not advance injection state
+            self._fire_count -= 1   # undo increment — noise doesn't count
+            self.anomaly_detected.emit('SIGNAL_SPIKE', self._ch_upper)
+            return
+
+        if label in ('POSSIBLE_BUBBLE', 'POSSIBLE_LEAK', 'CHIP_DEGRADED'):
+            # Fault — emit anomaly, do not advance injection state
+            self._fire_count -= 1
+            if label != self._last_anomaly:
+                self._last_anomaly = label
+                self.anomaly_detected.emit(label, self._ch_upper)
+            return
+
+        # INJECTION — advance state (fire #1 = sample, fire #2 = wash, #3+ ignored by session)
+        self._last_anomaly = ''
+        self.injection_detected.emit(self._ch_upper, t_fire)
+
+    def _check_leak(self, cd) -> None:
+        """POSSIBLE_LEAK: mean %T drops >2% from reference and stays down >30s."""
+        if self._leak_fired:
+            return
+        try:
+            tx = getattr(cd, 'transmittance', None)
+            if tx is None or len(tx) < self.WINDOW_FRAMES:
+                return
+            tx_arr = np.asarray(tx, dtype=float)
+            if self._transmittance_ref is None:
+                self._transmittance_ref = float(np.mean(tx_arr[:self.WINDOW_FRAMES]))
+                return
+            current_tx = float(np.mean(tx_arr[-self.WINDOW_FRAMES:]))
+            drop_frac = (self._transmittance_ref - current_tx) / max(self._transmittance_ref, 1e-6)
+            # Each poll = POLL_INTERVAL_S=2s; need >30s → >15 consecutive polls below threshold
+            if drop_frac > 0.02:
+                self._leak_polls_below += 1
+                if self._leak_polls_below > (30 // self.POLL_INTERVAL_S):
+                    self._leak_fired = True
+                    logger.warning(
+                        f"[InjectionMonitor] {self._ch_upper} POSSIBLE_LEAK: "
+                        f"%T dropped {drop_frac*100:.1f}% from ref={self._transmittance_ref:.1f}% "
+                        f"sustained >{self._leak_polls_below * self.POLL_INTERVAL_S}s"
+                    )
+                    self.anomaly_detected.emit("POSSIBLE_LEAK", self._ch_upper)
+                    try:
+                        from affilabs.services.signal_quality_scorer import SignalQualityScorer
+                        SignalQualityScorer.get_instance().notify_leak_detected()
+                    except Exception:
+                        pass
+            else:
+                self._leak_polls_below = 0
+        except Exception:
+            pass
+
+
+
+class _InjectionSession:
+    """Owns the full manual-injection lifecycle for one cycle.
+
+    Created by InjectionCoordinator._execute_manual_injection(), run on the
+    background "ManualInjectionExec" thread.  All UI callbacks are marshalled
+    to the main thread via coordinator._invoke_on_main.
+
+    Lifecycle
+    ---------
+    run() → blocks until one of:
+      • all expected channels detected + (wash done or no contact_time)  → accepted=True
+      • user cancels                                                      → accepted=False
+      • timeout                                                           → accepted=True (partial)
+    """
+
+    def __init__(
+        self,
+        coordinator,
+        cycle,
+        sample_info:        dict,
+        bar,
+        parent_widget,
+        injection_num,
+        total_injections,
+        method_mode,
+        pump_transit_delay_s: float,
+    ):
+        self._coord              = coordinator
+        self._cycle              = cycle
+        self._sample_info        = sample_info
+        self._bar                = bar
+        self._parent_widget      = parent_widget
+        self._injection_num      = injection_num
+        self._total_injections   = total_injections
+        self._method_mode        = method_mode
+        self._transit_delay_s    = pump_transit_delay_s
+
+        self._detection_channels: str = coordinator._detection_channels
+        self._is_p4spr: bool          = coordinator._is_p4spr
+        self._buffer_mgr              = coordinator.buffer_mgr
+        self._invoke_on_main          = coordinator._invoke_on_main
+
+        self._has_contact_time = bool(getattr(cycle, 'contact_time', None))
+        self._contact_time_val = getattr(cycle, 'contact_time', None)
+
+        self._done_event  = threading.Event()
+        self._accepted    = False
+
+        self.dialog = None                           # set on main thread in _setup()
+        self._monitors: dict[str, _InjectionMonitor] = {}
+        self._fire_counts: dict[str, int] = {}       # per-channel fire counter (1=injection, 2=wash)
+        self._flags_placed: set[str] = set()         # channels whose flag was already placed (prevents double-placement)
+
+    # ------------------------------------------------------------------
+    # Public
+    # ------------------------------------------------------------------
+
+    def run(self) -> bool:
+        """Block the calling BG thread until the lifecycle completes. Returns accepted flag."""
+        detection_timeout = 95 if self._has_contact_time else 300
+        contact_margin    = (int(self._contact_time_val) + 120) if self._has_contact_time else 0
+        total_timeout     = detection_timeout + contact_margin
+
+        # Wrap _setup so _run_on_main_thread can call _done_event_setter on exception.
+        done_set = self._done_event.set
+        def setup_fn():
+            self._setup()
+        setup_fn._done_event_setter = done_set
+        self._invoke_on_main.emit(setup_fn)
+
+        timed_out = not self._done_event.wait(timeout=total_timeout)
+        if timed_out:
+            logger.warning(
+                f"Injection lifecycle timed out after {total_timeout}s "
+                f"(contact_time={self._contact_time_val}) — forcing cleanup"
+            )
+            bar = self._bar
+            QTimer.singleShot(0, lambda: self._on_timeout(bar))
+
+        return self._accepted
+
+    # ------------------------------------------------------------------
+    # Main-thread setup
+    # ------------------------------------------------------------------
+
+    def _setup(self) -> None:
+        """Create dialog, show bar, start monitors — runs on main thread."""
+        from affilabs.dialogs.manual_injection_dialog import ManualInjectionDialog
+        self.dialog = ManualInjectionDialog(
+            self._sample_info,
+            parent            = self._parent_widget,
+            injection_number  = self._injection_num,
+            total_injections  = self._total_injections,
+            buffer_mgr        = self._buffer_mgr,
+            channels          = self._detection_channels,
+            detection_priority= getattr(self._cycle, 'detection_priority', 'auto'),
+            method_mode       = self._method_mode,
+            pump_transit_delay_s = self._transit_delay_s,
+        )
+        self.dialog.injection_cancelled.connect(self._on_cancelled)
+
+        if self._bar is not None:
+            self._bar.show_monitoring(
+                channels      = self._detection_channels,
+                on_done       = self._on_bar_done,
+                on_cancel     = self._on_cancelled,
+                contact_time  = self._contact_time_val,
+                buffer_mgr    = self._buffer_mgr,
+                keep_alive    = self._is_p4spr,
+                concentrations= getattr(self._cycle, 'concentrations', {}) or {},
+                conc_units    = getattr(self._cycle, 'units', None) or getattr(self._cycle, 'concentration_units', 'nM') or 'nM',
+            )
+
+        for ch in self._detection_channels.upper():
+            self._start_monitor(ch)
+
+    # ------------------------------------------------------------------
+    # Monitor management
+    # ------------------------------------------------------------------
+
+    def _start_monitor(self, ch: str) -> None:
+        if self._buffer_mgr is None or self._bar is None:
+            logger.warning(f"InjectionMonitor {ch}: skipped — buffer_mgr or bar is None")
+            return
+        if ch in self._monitors:
+            return
+        ct_s = None
+        try:
+            ct_s = float(self._contact_time_val) if self._contact_time_val else None
+        except (TypeError, ValueError):
+            pass
+        monitor = _InjectionMonitor(channel=ch, buffer_mgr=self._buffer_mgr, parent=self._bar, contact_time_s=ct_s)
+        inv = self._invoke_on_main
+        monitor.injection_detected.connect(
+            lambda c, t, _inv=inv: _inv.emit(lambda c=c, t=t: self._on_detected(c, t))
+        )
+        monitor.anomaly_detected.connect(
+            lambda flag, c, _inv=inv: _inv.emit(lambda f=flag, c=c: self._on_anomaly(f, c))
+        )
+        monitor.readiness_update.connect(self._bar.update_readiness)
+        self._monitors[ch] = monitor
+        monitor.start()
+
+    def _stop_all_monitors(self) -> None:
+        for m in list(self._monitors.values()):
+            m.stop()
+        self._monitors.clear()
+
+    # ------------------------------------------------------------------
+    # Event handlers — all run on main thread
+    # ------------------------------------------------------------------
+
+    def _on_detected(self, ch_upper: str, approx_t: float) -> None:
+        """Handle monitor fire — route to injection (fire #1) or wash (fire #2+) handler."""
+        if self.dialog is None:
+            logger.warning(f"InjectionMonitor {ch_upper}: fire at t={approx_t:.1f}s dropped — dialog not ready")
+            return
+        self._fire_counts[ch_upper] = self._fire_counts.get(ch_upper, 0) + 1
+        fire_num = self._fire_counts[ch_upper]
+        if fire_num == 1:
+            self._handle_injection(ch_upper, approx_t)
         else:
-            self._confirm_count = 0   # reset — must be consecutive
+            self._handle_wash(ch_upper, approx_t, fire_num)
+
+    def _handle_injection(self, ch_upper: str, approx_t: float) -> None:
+        d = self.dialog
+        if ch_upper not in d._detected_channels_results:
+            d._detected_channels_results[ch_upper] = {'time': approx_t, 'confidence': 0.80}
+        if d.detected_injection_time is None:
+            d.detected_injection_time = approx_t
+            d.detected_channel        = ch_upper.lower()
+            d.detected_confidence     = 0.80
+
+        if self._bar is not None:
+            self._bar.update_channel_detected(ch_upper, detected=True)
+
+        # ── Fast path: place flag + start timer immediately, before BG thread unblocks ──
+        # We are already on the main thread (via _invoke_on_main), so emitting here is safe.
+        # The guard set prevents the later post-_done_event emission from double-placing.
+        if ch_upper not in self._flags_placed:
+            self._flags_placed.add(ch_upper)
+            self._coord.injection_flag_requested.emit(
+                ch_upper.lower(), approx_t, 0.80
+            )
+
+        # Unblock BG thread after first detected channel on P4SPR — cycle timer is already
+        # running, user is still pipetting remaining channels sequentially (up to ~15s apart).
+        # Monitors keep running after _on_detection_complete fires, so subsequent channels
+        # are still detected and stored in _detected_channels_results for flag placement.
+        # P4PRO/PROPLUS: wait for all expected channels before unblocking (simultaneous injection).
+        found    = set(d._detected_channels_results.keys())
+        complete = (len(found) >= 1 if self._is_p4spr
+                    else set(self._detection_channels.upper()).issubset(found))
+        if complete:
+            QTimer.singleShot(0, self._on_detection_complete)
+
+
+    def _handle_wash(self, ch_upper: str, approx_t: float, fire_num: int) -> None:
+        """Handle fire #2+ on P4SPR.
+
+        Fire #2 = wash (buffer flushing sample off) → transition channel to WASH state.
+        Fire #3 = next injection → reset bar to PENDING and treat as a new injection.
+        """
+        if fire_num == 2:
+            logger.info(f"[InjectionSession] {ch_upper} wash detected at t={approx_t:.1f}s")
+            if self._bar is not None:
+                try:
+                    self._bar.set_channel_wash(ch_upper)
+                except Exception:
+                    pass
+            try:
+                from affilabs.services.signal_quality_scorer import SignalQualityScorer
+                SignalQualityScorer.get_instance().notify_wash_detected(ch_upper)
+            except Exception:
+                pass
+        else:
+            # Fire #3+ = next injection after wash — reset bar and treat as fresh injection
+            logger.info(f"[InjectionSession] {ch_upper} next injection at t={approx_t:.1f}s (fire #{fire_num}) — resetting bar")
+            # Reset fire counts so the cycle starts clean (this fire becomes the new #1)
+            for k in list(self._fire_counts.keys()):
+                self._fire_counts[k] = 0
+            self._fire_counts[ch_upper] = 1
+            if self._bar is not None:
+                try:
+                    self._bar.reset_for_next_injection()
+                except Exception:
+                    pass
+            # Now handle this as a fresh injection
+            self._handle_injection(ch_upper, approx_t)
+
+    def _on_anomaly(self, flag: str, ch_upper: str) -> None:
+        # Notify quality scorer so fault impacts cycle score
+        try:
+            from affilabs.services.signal_quality_scorer import SignalQualityScorer
+            scorer = SignalQualityScorer.get_instance()
+            if flag == 'CHIP_DEGRADED':
+                scorer.notify_chip_degraded()
+            elif flag == 'POSSIBLE_LEAK':
+                scorer.notify_leak_detected()
+        except Exception:
+            pass
+
+        try:
+            mw      = getattr(self._parent_widget, 'main_window', self._parent_widget)
+            bar_ref = getattr(mw, 'unified_cycle_bar', None)
+            if bar_ref is None:
+                return
+            from affilabs.widgets.unified_cycle_bar import CycleBarState
+            if bar_ref.state == CycleBarState.INJECT:
+                bar_ref.set_inject_anomaly(flag, ch_upper)
+            else:
+                bar_ref.set_anomaly(flag, ch_upper, restore_fn=None)
+        except Exception:
+            pass
+
+    def _on_detection_complete(self) -> None:
+        """Injection detected — unblock BG thread immediately.
+        P4SPR: keep monitors alive so fire #2 (manual buffer flush = wash) is caught.
+        P4PRO/PROPLUS: stop monitors now — injection is automated, no manual wash step.
+        """
+        self._accepted = True
+        if not self._is_p4spr:
+            self._stop_all_monitors()
+        self._done_event.set()
+
+    def _on_bar_done(self) -> None:
+        self._accepted = True
+        self._stop_all_monitors()
+        if self._bar is not None:
+            self._bar.set_panel_active(False)
+        if not self._done_event.is_set():
+            self._done_event.set()
+
+    def _on_cancelled(self) -> None:
+        self._accepted = False
+        self._stop_all_monitors()
+        if self._bar is not None:
+            self._bar.set_panel_active(False)
+        self._done_event.set()
+
+    def _on_timeout(self, bar) -> None:
+        self._stop_all_monitors()
+        if bar is not None:
+            bar.set_panel_active(False)
+            bar.show_injection_missed()
 
 
 class InjectionCoordinator(QObject):
@@ -230,6 +766,7 @@ class InjectionCoordinator(QObject):
     injection_completed = Signal()
     injection_cancelled = Signal()
     injection_flag_requested = Signal(str, float, float)  # channel, injection_time, confidence
+    _invoke_on_main = Signal(object)  # cross-thread callable invocation
 
     def __init__(
         self,
@@ -251,11 +788,45 @@ class InjectionCoordinator(QObject):
         self.pump_mgr = pump_mgr
         self.buffer_mgr = buffer_mgr
 
+        # Cross-thread invocation: emit from bg thread → runs on main thread
+        self._invoke_on_main.connect(self._run_on_main_thread)
+
         # State for manual injection flow
-        self._window_start_time: Optional[float] = None
         self._detection_channels: str = "ABCD"
         self._current_cycle: Optional[Cycle] = None
         self._is_p4spr: bool = False
+        self._active_session: Optional["_InjectionSession"] = None
+
+    def cleanup_monitors(self) -> None:
+        """Stop any active injection monitors — called from cycle_mixin on cycle end."""
+        s = self._active_session
+        if s is not None:
+            s._stop_all_monitors()
+            self._active_session = None
+
+    def reset_cycle_state(self) -> None:
+        """Full state wipe between cycles — nothing carries over.
+
+        Called from ``_on_cycle_completed`` after ``cleanup_monitors``.
+        Clears detection channels, current-cycle reference, and any
+        session-level artefacts so the next cycle starts fresh.
+        """
+        self.cleanup_monitors()
+        self._detection_channels = "ABCD"
+        self._current_cycle = None
+        self._is_p4spr = False
+
+    def _run_on_main_thread(self, fn) -> None:
+        """Execute a callable on the main thread (slot for _invoke_on_main signal)."""
+        try:
+            fn()
+        except Exception as e:
+            import traceback
+            logger.error(f"_run_on_main_thread failed: {e}\n{traceback.format_exc()}")
+            # fn carries a done_event_setter — call it to prevent the BG thread blocking forever
+            setter = getattr(fn, '_done_event_setter', None)
+            if setter is not None:
+                setter()
 
     def execute_injection(
         self,
@@ -317,295 +888,96 @@ class InjectionCoordinator(QObject):
         return self.hardware_mgr.requires_manual_injection
 
     def _execute_manual_injection(self, cycle: Cycle, parent_widget, flow_rate: float = 0.0) -> bool:
-        """Execute manual injection — shows InjectionActionBar Phase 2 + hidden dialog.
-
-        This method:
-        1. Opens valves for manual injection (non-P4SPR only)
-        2. Shows InjectionActionBar.show_phase2() inline in the sidebar
-        3. Runs ManualInjectionDialog hidden — its detection engine stays active
-        4. Blocks background thread on threading.Event until detection complete (max 70s)
-        5. Processes detection results and updates cycle state
-
-        Args:
-            cycle: Cycle requiring injection
-            parent_widget: Parent widget for dialog positioning
-
-        Returns:
-            True if injection completed (detected or timed out), False if cancelled
-        """
+        """Execute manual injection — delegates to _InjectionSession."""
         logger.info("=== Manual Injection Mode (Non-Blocking) ===")
 
-        # Parse sample information from cycle metadata
         sample_info = parse_sample_info(cycle)
-        logger.info(f"  Sample: {sample_info['sample_id']}")
-
-        # For P4SPR (static optical system), don't show valve channels
         self._is_p4spr = self.hardware_mgr._ctrl_type == "PicoP4SPR"
         if self._is_p4spr:
             sample_info["channels"] = None
-            logger.info(f"  Hardware: P4SPR (no valve routing)")
-        else:
-            logger.info(f"  Channels: {sample_info['channels']}")
+        self._detection_channels = self._resolve_detection_channels(cycle, sample_info)
+        self._current_cycle = cycle
 
-        if sample_info["concentration"]:
-            logger.info(
-                f"  Concentration: {sample_info['concentration']} {sample_info['units']}"
-            )
-
-        # Open valves for manual injection (only if not P4SPR)
+        logger.info(f"  Sample: {sample_info['sample_id']}")
         if not self._is_p4spr:
+            logger.info(f"  Channels: {sample_info['channels']}")
             self._open_valves_for_manual_injection(sample_info["channels"])
+        if sample_info["concentration"]:
+            logger.info(f"  Concentration: {sample_info['concentration']} {sample_info['units']}")
 
-        # For binding/kinetic cycles, show injection number
-        # NOTE: planned_concentrations groups parallel channels into ONE entry,
-        # so len() correctly reflects actual injection events (not channel count)
-        injection_num = None
-        total_injections = None
+        injection_num = total_injections = None
         if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
-            injection_num = cycle.injection_count + 1
+            injection_num    = cycle.injection_count + 1
             total_injections = len(cycle.planned_concentrations)
             logger.info(f"  {cycle.type} Cycle: Injection {injection_num}/{total_injections}")
 
-        self._detection_channels = self._resolve_detection_channels(cycle, sample_info)
-
-        # Save current cycle for detection completion
-        self._current_cycle = cycle
-
-        self.injection_started.emit("manual")
-
-        # Check method mode - only show dialog for manual injections
         method_mode = getattr(cycle, 'method_mode', None)
 
-        # Compute pump transit delay — time for sample to travel from loop outlet to sensor.
-        # Prevents the detector from firing on the bulk RI shift of the approaching plug.
-        _pump_transit_delay_s = 0.0
+        pump_transit_delay_s = 0.0
         if method_mode in ('semi-automated', 'pump'):
-            _active_flow_rate = getattr(cycle, 'flow_rate', None) or flow_rate
-            if _active_flow_rate and _active_flow_rate > 0:
-                _pump_transit_delay_s = FLUIDIC_PATH_VOLUME_UL / _active_flow_rate * 60.0
-                logger.info(
-                    f"Pump transit delay: {FLUIDIC_PATH_VOLUME_UL}µL ÷ {_active_flow_rate}µL/min × 60 "
-                    f"= {_pump_transit_delay_s:.1f}s"
-                )
-        
-        # Skip dialog for pump/semi-automated modes (injection is automatic)
-        if method_mode in ['pump', 'semi-automated']:
-            logger.info(f"Pump mode ({method_mode}) - skipping manual injection dialog")
-            # Auto-complete for pump modes (detection happens in background)
+            active_fr = getattr(cycle, 'flow_rate', None) or flow_rate
+            if active_fr and active_fr > 0:
+                pump_transit_delay_s = FLUIDIC_PATH_VOLUME_UL / active_fr * 60.0
+                logger.info(f"  Pump transit delay: {pump_transit_delay_s:.1f}s")
+
+        if method_mode in ('pump', 'semi-automated'):
+            logger.info(f"  Pump mode ({method_mode}) — skipping detection")
             self._close_valves_after_manual_injection()
             self.injection_completed.emit()
             return True
 
-        # ── Show inline InjectionActionBar Phase 2 (non-blocking detection) ──
-        # ManualInjectionDialog handles the 60-second detection engine (timers,
-        # peak detection, per-channel LED feedback). We run it hidden and bridge
-        # its signals to the InjectionActionBar embedded in the sidebar.
-        # A threading.Event lets this background thread block until the user
-        # finishes or the 60s window expires.
-        done_event = threading.Event()
-        accepted_flag: list[bool] = [False]
-        dialog_holder: list = [None]  # populated on main thread
+        bar = self._resolve_bar(parent_widget)
+        self.injection_started.emit("manual")
 
-        _has_contact_time = bool(getattr(cycle, 'contact_time', None))
-        _contact_time_val = getattr(cycle, 'contact_time', None)
-        _detection_channels = self._detection_channels
-        _detection_priority = getattr(cycle, 'detection_priority', 'auto')
-        _buffer_mgr = self.buffer_mgr
-
-        # Get the sidebar injection bar reference (safe to read from bg thread)
-        bar = None
-        try:
-            sidebar = getattr(parent_widget, 'sidebar', None)
-            if sidebar is None and hasattr(parent_widget, 'main_window'):
-                sidebar = getattr(parent_widget.main_window, 'sidebar', None)
-            bar = getattr(sidebar, 'injection_action_bar', None)
-        except Exception:
-            pass
-
-        def _dismiss_bar():
-            if bar is not None:
-                bar.set_panel_active(False)
-
-        def _on_dialog_complete():
-            accepted_flag[0] = True
-            if _has_contact_time:
-                # Detection finished, but contact window still active.
-                # Do NOT unblock the BG thread yet — wait for _on_bar_done
-                # (triggered when all channels are washed) to set done_event.
-                # This prevents injection_completed from firing prematurely
-                # while contact time is still running.
-                logger.debug(
-                    "Dialog complete with contact_time — waiting for wash "
-                    "(bar done) before unblocking BG thread"
-                )
-            else:
-                # No contact window configured.  Unblock the BG thread so
-                # injection_completed fires, but do NOT dismiss the bar here.
-                # The bar's own QTimer.singleShot(1500, _fire_done) keeps the
-                # green LED visible for ~1.5 s so the user sees the confirmation,
-                # then _fire_done → _on_bar_done → _dismiss_bar handles cleanup.
-                done_event.set()
-
-        def _on_dialog_cancelled():
-            accepted_flag[0] = False
-            _stop_all_wash_monitors()
-            _dismiss_bar()
-            done_event.set()
-            d = dialog_holder[0]
-            if d is not None:
-                d.reject()
-
-        def _on_bar_done():
-            accepted_flag[0] = True
-            _stop_all_wash_monitors()
-            _dismiss_bar()
-            if not done_event.is_set():
-                d = dialog_holder[0]
-                if d is not None:
-                    d.accept()
-                done_event.set()
-
-        def _on_bar_cancel():
-            _on_dialog_cancelled()
-
-        def _on_anomaly(flag: str, channel: str) -> None:
-            try:
-                mw = getattr(parent_widget, 'main_window', parent_widget)
-                cycle_bar = getattr(mw, 'unified_cycle_bar', None)
-                if cycle_bar is not None:
-                    cycle_bar.set_inject_anomaly(flag, channel)
-            except Exception:
-                pass
-
-        # Active wash monitors, keyed by channel letter (upper).
-        # Stored so they can be stopped on cancel/timeout.
-        wash_monitors: dict[str, _WashMonitor] = {}
-
-        def _start_wash_monitor(ch: str) -> None:
-            """Start a wash detector for one channel — runs on the main thread."""
-            if not _has_contact_time or _buffer_mgr is None or bar is None:
-                return
-            if ch in wash_monitors:
-                return   # already started for this channel
-            monitor = _WashMonitor(
-                channel=ch,
-                buffer_mgr=_buffer_mgr,
-                injection_time=time.time(),
-                parent=bar,   # ownership on main-thread QObject tree
-            )
-            def _on_wash(channel: str) -> None:
-                logger.info(f"Wash detected on channel {channel} — transitioning Contact Monitor")
-                bar.set_channel_wash(channel)
-                wash_monitors.pop(channel, None)
-            monitor.wash_detected.connect(_on_wash)
-            wash_monitors[ch] = monitor
-            monitor.start()
-
-        def _stop_all_wash_monitors() -> None:
-            for m in list(wash_monitors.values()):
-                m.stop()
-            wash_monitors.clear()
-
-        def _setup_on_main_thread():
-            """Create dialog, wire signals, show bar Phase 2 — all on main thread."""
-            dialog = ManualInjectionDialog(
-                sample_info,
-                parent=parent_widget,
-                injection_number=injection_num,
-                total_injections=total_injections,
-                buffer_mgr=_buffer_mgr,
-                channels=_detection_channels,
-                detection_priority=_detection_priority,
-                method_mode=method_mode,
-                pump_transit_delay_s=_pump_transit_delay_s,
-            )
-            dialog_holder[0] = dialog
-
-            def _on_dialog_detected():
-                if bar is None:
-                    return
-                for ch in dialog._detected_channels_results:
-                    bar.update_channel_detected(ch, detected=True)
-                    # Start wash monitor for each confirmed channel
-                    if _has_contact_time:
-                        _start_wash_monitor(ch)
-                detected_chs = list(dialog._detected_channels_results.keys())
-                if detected_chs:
-                    chs_str = ', '.join(sorted(detected_chs))
-                    bar.update_status(f"✓ Detected on {chs_str}")
-
-            dialog.injection_detected.connect(_on_dialog_detected)
-            dialog.injection_complete.connect(_on_dialog_complete)
-            dialog.injection_cancelled.connect(_on_dialog_cancelled)
-            dialog.anomaly_detected.connect(_on_anomaly)
-
-            if bar is not None:
-                bar.show_phase2(
-                    channels=_detection_channels,
-                    on_done=_on_bar_done,
-                    on_cancel=_on_bar_cancel,
-                    contact_time=_contact_time_val,
-                )
-
-            # WA_DontShowOnScreen is unreliable on Windows — move dialog
-            # far off-screen instead so showEvent fires (starts detection)
-            # but the dialog is never visible to the user.
-            dialog.move(-9999, -9999)
-            dialog.show()
-
-        # Schedule everything on the main thread, then block background thread.
-        QMetaObject.invokeMethod(
-            parent_widget,
-            "_call_on_main",
-            Qt.ConnectionType.QueuedConnection,
-            _setup_on_main_thread,
-        ) if hasattr(parent_widget, '_call_on_main') else (
-            # Fallback: use QTimer.singleShot which always fires on main thread
-            QTimer.singleShot(0, _setup_on_main_thread)
+        session = _InjectionSession(
+            coordinator      = self,
+            cycle            = cycle,
+            sample_info      = sample_info,
+            bar              = bar,
+            parent_widget    = parent_widget,
+            injection_num    = injection_num,
+            total_injections = total_injections,
+            method_mode      = method_mode,
+            pump_transit_delay_s = pump_transit_delay_s,
         )
+        self._active_session = session
+        accepted = session.run()   # blocks BG thread until lifecycle completes
 
-        # Block background thread until the full injection lifecycle completes:
-        #   - Without contact_time: unblocks after detection dialog finishes (~95s max)
-        #   - With contact_time: unblocks after wash detected on all channels
-        #     (contact_time + 120s margin for late wash + detection overhead)
-        _detection_timeout = 95   # Phase 1 (10s) + Phase 2 detection (80s) + 5s margin
-        _contact_margin = (int(_contact_time_val) + 120) if _has_contact_time else 0
-        _total_timeout = _detection_timeout + _contact_margin
-        timed_out = not done_event.wait(timeout=_total_timeout)
-        if timed_out:
-            logger.warning(
-                f"Injection lifecycle timed out after {_total_timeout}s "
-                f"(contact_time={_contact_time_val}) — forcing cleanup"
-            )
-            if bar is not None:
-                _bar_ref = bar
-                QTimer.singleShot(0, lambda: (_stop_all_wash_monitors(), _bar_ref.set_panel_active(False)))
-
-        accepted = accepted_flag[0]
+        self._close_valves_after_manual_injection()
         if accepted:
-            self._process_detection_results(dialog_holder[0], cycle, timed_out=False)
-            self._close_valves_after_manual_injection()
+            self._process_detection_results(session.dialog, cycle, bar=bar, timed_out=False,
+                                            already_placed=session._flags_placed)
             self.injection_completed.emit()
         else:
             logger.info("❌ Injection cancelled by user")
-            self._close_valves_after_manual_injection()
             self.injection_cancelled.emit()
 
         return accepted
 
-    def _process_detection_results(self, dialog, cycle: Cycle, *, timed_out: bool = False) -> None:
-        """Process detection results from ManualInjectionDialog after it closes.
+    def _resolve_bar(self, parent_widget):
+        """Return the InjectionActionBar from sidebar, or None."""
+        try:
+            sidebar = getattr(parent_widget, 'sidebar', None)
+            if sidebar is None and hasattr(parent_widget, 'main_window'):
+                sidebar = getattr(parent_widget.main_window, 'sidebar', None)
+            return getattr(sidebar, 'injection_action_bar', None)
+        except Exception:
+            return None
 
-        Handles three cases:
-        1. Dialog auto-detected injection → emit flag + store per-channel results
-        2. Dialog detected but no per-channel results → retroactive scan
-        3a. User pressed Done without auto-detection → retroactive scan + fallback flag
-        3b. 60s timeout with no detection → just increment injection count
+    def _process_detection_results(self, dialog, cycle: Cycle, *, bar=None, timed_out: bool = False,
+                                    already_placed: "set[str] | None" = None) -> None:
+        """Process detection results after the injection lifecycle completes.
+
+        Handles two cases:
+        1. _InjectionMonitor detected injection → dialog._detected_channels_results populated
+           → emit flag + store per-channel times + confidences on cycle
+        2. Timed out or cancelled with no detection → increment injection count only
 
         Args:
-            dialog: Closed ManualInjectionDialog instance with detection results
+            dialog: ManualInjectionDialog instance holding detection results
             cycle: Current cycle to update with injection data
-            timed_out: True if the 70s blocking wait expired (genuine timeout, not user Done)
+            bar: InjectionActionBar instance for UI feedback (may be None)
+            timed_out: True if the blocking wait expired without detection
         """
         from affilabs.dialogs.manual_injection_dialog import ManualInjectionDialog
 
@@ -631,24 +1003,23 @@ class InjectionCoordinator(QObject):
                     f"(confidences: {cycle.injection_confidence_by_channel})"
                 )
 
-                # Emit injection flag for EVERY detected channel (not just primary)
+                # Emit injection flag for channels not already placed by the fast path
+                _placed = already_placed or set()
                 for ch, result in dialog._detected_channels_results.items():
+                    if ch in _placed:
+                        logger.debug(f"Flag for ch {ch} already placed via fast path — skipping duplicate")
+                        continue
                     self.injection_flag_requested.emit(
                         ch.lower(),
                         result['time'],
                         result['confidence'],
                     )
             else:
-                # Dialog detected primary channel but _detected_channels_results is empty
-                # (edge case: primary detected but grace-period per-channel scan didn't run).
-                # Run retroactive scan on all planned channels and emit whatever is found.
-                logger.info(
+                # Primary detected but _detected_channels_results is empty — log and move on.
+                logger.warning(
                     f"Primary channel detected ({dialog.detected_channel}) but no per-channel "
-                    f"results — running retroactive scan"
+                    f"results in _detected_channels_results — no flags placed"
                 )
-                self._window_start_time = dialog.window_start_time
-                self._scan_all_channels_for_injection()
-                self._emit_scan_flags(cycle)
 
             # Track injection count for binding/kinetic cycles
             if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
@@ -659,17 +1030,15 @@ class InjectionCoordinator(QObject):
                 )
         else:
             if not timed_out:
-                # User pressed "Done" without auto-detection firing — retroactive scan.
-                logger.info("User pressed Done — no auto-detection; running retroactive scan")
-                self._window_start_time = dialog.window_start_time
-                self._scan_all_channels_for_injection()
-                self._emit_scan_flags(cycle)
-
+                # User pressed "Done" — _InjectionMonitor did not fire.
+                logger.info("User pressed Done — no injection detected by _InjectionMonitor")
+                if bar is not None:
+                    QTimer.singleShot(0, bar.show_injection_missed)
                 if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
                     cycle.injection_count += 1
             else:
                 # Genuine timeout — no injection detected, still count
-                logger.warning("60s window expired — no injection peak detected")
+                logger.warning("Detection window expired — no injection detected")
                 if cycle.type in ("Binding", "Kinetic", "Concentration") and cycle.planned_concentrations:
                     cycle.injection_count += 1
 
@@ -690,89 +1059,6 @@ class InjectionCoordinator(QObject):
         if getattr(cycle, 'concentrations', None):
             return "".join(sorted(cycle.concentrations.keys()))
         return "ABCD" if self._is_p4spr else (sample_info.get("channels") or "AC")
-
-    # ------------------------------------------------------------------
-    # Per-channel injection scan
-    # ------------------------------------------------------------------
-
-    def _scan_all_channels_for_injection(self):
-        """Retroactively scan all 4 channels for injection points.
-
-        Uses the detection window (window_start → now) to find per-channel
-        injection times. Stores results on the current cycle and flags any
-        channels that detected injection but are not in the cycle's active
-        channel set (potential mislabeling).
-        """
-        cycle = self._current_cycle
-        if not cycle or not self.buffer_mgr or self._window_start_time is None:
-            return
-
-        try:
-            from affilabs.utils.spr_signal_processing import detect_injection_all_channels
-
-            # Determine window end = latest timestamp across all channels
-            window_end = self._window_start_time + 60.0  # min window
-            for ch in ['a', 'b', 'c', 'd']:
-                if ch in self.buffer_mgr.timeline_data:
-                    ch_data = self.buffer_mgr.timeline_data[ch]
-                    if ch_data and len(ch_data.time) > 0:
-                        window_end = max(window_end, float(np.array(ch_data.time)[-1]))
-
-            result = detect_injection_all_channels(
-                self.buffer_mgr.timeline_data,
-                self._window_start_time,
-                window_end,
-                min_confidence=0.20,  # Match live dialog threshold (0.15) with small margin
-            )
-
-            # Store per-channel injection times on cycle
-            cycle.injection_time_by_channel = result['times']
-            cycle.injection_confidence_by_channel = result['confidences']
-
-            detected_channels = list(result['times'].keys())
-            logger.info(
-                f"Per-channel injection scan: detected on {detected_channels} "
-                f"(confidences: {result['confidences']})"
-            )
-
-            # --- Mislabel detection ---
-            # Determine expected active channels from cycle settings
-            active_ch_str = (cycle.channels or "ABCD").upper()
-            active_channels = set(active_ch_str)
-
-            mislabel_flags = {}
-            for ch, conf in result['confidences'].items():
-                if ch not in active_channels:
-                    mislabel_flags[ch] = 'inactive_channel'
-                    logger.warning(
-                        f"⚠ Mislabel warning: Channel {ch} detected injection "
-                        f"(confidence: {conf:.0%}) but is not in active set "
-                        f"({active_ch_str}). Signal may be optical artifact."
-                    )
-            cycle.injection_mislabel_flags = mislabel_flags
-
-        except Exception as e:
-            logger.warning(f"Per-channel injection scan failed: {e}")
-
-    def _emit_scan_flags(self, cycle: Cycle) -> None:
-        """Emit injection_flag_requested for each channel found by retroactive scan.
-
-        Logs which planned detection channels were found vs missed — no fallback flags.
-        """
-        planned_chs = set(self._detection_channels.upper()) if self._detection_channels else set()
-        found_chs = set(cycle.injection_time_by_channel.keys()) if cycle.injection_time_by_channel else set()
-
-        if found_chs:
-            for ch, inj_time in cycle.injection_time_by_channel.items():
-                conf = cycle.injection_confidence_by_channel.get(ch, 0.5)
-                self.injection_flag_requested.emit(ch.lower(), inj_time, conf)
-                logger.info(f"  Scan flag: channel {ch} at t={inj_time:.1f}s (conf={conf:.0%})")
-        else:
-            logger.warning("Retroactive scan found no injection on any channel — no flags placed")
-
-        missed = planned_chs - found_chs
-        if missed:
-            logger.warning(f"  Planned channels with NO detected injection: {sorted(missed)}")
 
     def _execute_automated_injection(self, cycle: Cycle, flow_rate: float) -> bool:
         """Execute automated injection via PumpManager (existing logic).

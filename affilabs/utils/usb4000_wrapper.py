@@ -515,7 +515,8 @@ class USB4000:
             return True
         except Exception as e:
             logger.error(f"set_integration error for {time_ms:.1f}ms ({time_us}us, {time_ms/1000:.4f}s): {e}")
-            if "[Errno 19]" in str(e) or "No such device" in str(e):
+            err_str = str(e)
+            if any(tok in err_str for tok in ("[Errno 19]", "[Errno 5]", "[Errno 32]", "No such device", "Pipe error", "Input/Output Error")) or isinstance(e, PermissionError):
                 logger.error("Spectrometer disconnected during operation")
                 self.opened = False
                 self._device = None
@@ -534,7 +535,8 @@ class USB4000:
                 return np.array(self._device.intensities())
         except Exception as e:
             logger.error(f"read_intensity error: {e}")
-            if "[Errno 19]" in str(e) or "No such device" in str(e):
+            err_str = str(e)
+            if any(tok in err_str for tok in ("[Errno 19]", "[Errno 5]", "[Errno 32]", "No such device", "Pipe error", "Input/Output Error")) or isinstance(e, PermissionError):
                 logger.error("Spectrometer disconnected during operation")
                 self.opened = False
                 self._device = None
@@ -568,7 +570,8 @@ class USB4000:
                 return np.mean(scans, axis=0)
         except Exception as e:
             logger.error(f"intensities error: {e}")
-            if "[Errno 19]" in str(e) or "No such device" in str(e):
+            err_str = str(e)
+            if any(tok in err_str for tok in ("[Errno 19]", "[Errno 5]", "[Errno 32]", "No such device", "Pipe error", "Input/Output Error")) or isinstance(e, PermissionError):
                 logger.error("Spectrometer disconnected during operation")
                 self.opened = False
                 self._device = None

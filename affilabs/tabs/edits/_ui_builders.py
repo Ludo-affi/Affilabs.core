@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QSplitter, QLabel, QPushButton,
     QTableWidget, QHeaderView, QAbstractItemView, QSlider,
     QGraphicsDropShadowEffect, QComboBox, QLineEdit, QTableWidgetItem,
-    QWidget, QGridLayout, QScrollArea, QToolButton, QMenu,
+    QWidget, QGridLayout, QScrollArea, QToolButton, QMenu, QTabWidget,
 )
 from PySide6.QtCore import Qt, QSize, QObject, QEvent, QUrl
 from PySide6.QtGui import QColor, QFont, QIcon, QPixmap, QPainter, QDesktopServices
@@ -100,22 +100,25 @@ class UIBuildersMixin:
         self.cycle_filter = "All"  # Default: show all cycle types
         self._cycle_export_selection = {}  # Track checkbox state: {cycle_idx: True/False}
 
-        # Initialize table widget — 5-column layout with export selection checkboxes
+        # Initialize table widget — 6-column layout; Score column hidden by default
         # STARTS EMPTY - will be populated ONLY when cycles complete during live acquisition
-        self.cycle_data_table = QTableWidget(0, 5)
+        self.cycle_data_table = QTableWidget(0, 6)
         self.cycle_data_table.setHorizontalHeaderLabels(
-            ["Export", "Type", "Time", "Conc.", "ΔSPR"]
+            ["Export", "Type", "Time", "Conc.", "ΔSPR", "Score"]
         )
         # Set column widths: stretch to fill available space
         header = self.cycle_data_table.horizontalHeader()
-        header.setStretchLastSection(True)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)       # Export checkbox
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)       # Type icon
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)     # Time
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)     # Conc
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)     # ΔSPR
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)       # Score
+        header.setStretchLastSection(False)
         self.cycle_data_table.setColumnWidth(0, 50)    # Export checkbox (fixed)
         self.cycle_data_table.setColumnWidth(1, 55)    # Type icon (fixed minimum)
+        self.cycle_data_table.setColumnWidth(5, 58)    # Score (fixed)
+        self.cycle_data_table.setColumnHidden(5, True) # Hidden by default — revealed via column menu
 
         # Set compact font for better space utilization
         table_font = QFont("-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif")
@@ -139,6 +142,7 @@ class UIBuildersMixin:
             "Duration (minutes) @ Start time (seconds)",
             "Analyte concentration (if applicable)",
             "Delta SPR response for all channels (in RU): A:val B:val C:val D:val",
+            "Automated cycle quality score (0–100). Select the Quality tab below for details.",
         ]
         for col, tooltip in enumerate(tooltips):
             self.cycle_data_table.horizontalHeaderItem(col).setToolTip(tooltip)
@@ -236,22 +240,37 @@ class UIBuildersMixin:
         table_widget = self._create_table_panel()
         table_details_layout.addWidget(table_widget, 1)
 
-        # Cycle notes panel — shown below table when a cycle is selected
-        self.details_tab_widget = QFrame()
-        self.details_tab_widget.setStyleSheet(
-            "QFrame { background: white; border-radius: 8px; border: 1px solid #E5E5EA; }"
-        )
-        notes_panel_layout = QVBoxLayout(self.details_tab_widget)
-        notes_panel_layout.setContentsMargins(10, 6, 10, 6)
-        notes_panel_layout.setSpacing(2)
+        # Cycle details panel — shown below table when a cycle is selected.
+        # Two tabs: Notes (user notes / flags) and Quality (automated score + reasoning).
+        self.details_tab_widget = QTabWidget()
+        self.details_tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                background: white;
+                border: 1px solid #E5E5EA;
+                border-radius: 6px;
+            }
+            QTabBar::tab {
+                font-size: 11px;
+                padding: 3px 10px;
+                background: #F8F9FA;
+                color: #6E6E73;
+                border: 1px solid #E5E5EA;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background: white;
+                color: #1D1D1F;
+                font-weight: 600;
+            }
+        """)
 
-        notes_header = QLabel("Cycle Notes")
-        notes_header.setStyleSheet(
-            "font-size: 12px; font-weight: 600; color: #6E6E73;"
-            " background: transparent; border: none;"
-        )
-        notes_panel_layout.addWidget(notes_header)
-
+        # --- Tab 1: Notes ---
+        notes_tab = QWidget()
+        notes_tab_layout = QVBoxLayout(notes_tab)
+        notes_tab_layout.setContentsMargins(8, 4, 8, 4)
+        notes_tab_layout.setSpacing(2)
         self.details_notes_text = QLabel("")
         self.details_notes_text.setWordWrap(True)
         self.details_notes_text.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -259,11 +278,41 @@ class UIBuildersMixin:
             "QLabel { color: #1D1D1F; font-size: 12px;"
             " background: transparent; border: none; padding: 2px 0; }"
         )
-        notes_panel_layout.addWidget(self.details_notes_text, 1)
-
+        notes_tab_layout.addWidget(self.details_notes_text, 1)
         self.details_flags_text = QLabel("")
+        self.details_tab_widget.addTab(notes_tab, "Notes")
 
-        self.details_tab_widget.setMaximumHeight(100)
+        # --- Tab 2: Quality ---
+        quality_tab = QWidget()
+        quality_tab_layout = QVBoxLayout(quality_tab)
+        quality_tab_layout.setContentsMargins(8, 4, 8, 4)
+        quality_tab_layout.setSpacing(4)
+
+        score_header_row = QHBoxLayout()
+        self.details_score_dot = QLabel("●")
+        self.details_score_dot.setStyleSheet(
+            "QLabel { font-size: 14px; background: transparent; border: none; }"
+        )
+        self.details_score_label = QLabel("")
+        self.details_score_label.setStyleSheet(
+            "QLabel { font-size: 13px; font-weight: 700; background: transparent; border: none; color: #1D1D1F; }"
+        )
+        score_header_row.addWidget(self.details_score_dot)
+        score_header_row.addWidget(self.details_score_label)
+        score_header_row.addStretch()
+        quality_tab_layout.addLayout(score_header_row)
+
+        self.details_quality_note = QLabel("")
+        self.details_quality_note.setWordWrap(True)
+        self.details_quality_note.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.details_quality_note.setStyleSheet(
+            "QLabel { color: #3C3C43; font-size: 12px;"
+            " background: transparent; border: none; padding: 1px 0; }"
+        )
+        quality_tab_layout.addWidget(self.details_quality_note, 1)
+        self.details_tab_widget.addTab(quality_tab, "Quality")
+
+        self.details_tab_widget.setMaximumHeight(110)
         self.details_tab_widget.hide()
         table_details_layout.addWidget(self.details_tab_widget)
 
@@ -324,7 +373,6 @@ class UIBuildersMixin:
         an_title_layout.addWidget(an_title_lbl)
         an_vbox.addWidget(an_title_strip)
 
-        from PySide6.QtWidgets import QTabWidget
         self.bottom_tab_widget = QTabWidget()
         self.bottom_tab_widget.setStyleSheet("""
             QTabBar::tab { padding: 4px 14px; background: white; color: #1D1D1F; }
@@ -375,7 +423,7 @@ class UIBuildersMixin:
         self.main_window.bottom_tab_widget        = self.bottom_tab_widget
         self.main_window.binding_ch_btns          = self.binding_ch_btns
         self.main_window.binding_scatter_plot     = self.binding_scatter_plot
-        self.main_window.binding_conc_unit_combo  = self.binding_conc_unit_combo
+
 
         return content_widget
 
@@ -467,16 +515,18 @@ class UIBuildersMixin:
         _title_export_menu.addAction("📋  Copy to clipboard",   self._copy_table_to_clipboard)
         _title_export_menu.addAction("🔗  External (Prism / Origin)", self._export_for_external_software)
         _title_export_menu.addAction("📋  Save as Method",     self._save_cycles_as_method)
+        _title_export_menu.addSeparator()
+        _title_export_menu.addAction("📐  TraceDrawer (.zip)",  self._export_tracedrawer)
         title_export_btn.setMenu(_title_export_menu)
         title_row.addWidget(title_export_btn)
 
         # Sparq Coach — waitlist (feature coming soon)
         _SPARQ_WAITLIST_URL = "https://www.affilabs.com/sparq-coach"  # replace with Wix waitlist URL
         sparq_coach_btn = QToolButton()
-        sparq_coach_btn.setText("✦ Spark Coach")
+        sparq_coach_btn.setText("✦ Sparq Coach")
         sparq_coach_btn.setFixedHeight(26)
         sparq_coach_btn.setToolTip(
-            "Spark Coach — Coming Soon\n\n"
+            "Sparq Coach — Coming Soon\n\n"
             "Get a personalised debrief after every run: bubble fixes, regen tips,\n"
             "concentration advice, and product recommendations.\n\n"
             "Click to join the early access list."
@@ -1216,7 +1266,7 @@ class UIBuildersMixin:
             "QPushButton:hover { background: #E5E5EA; border-color: #007AFF; }"
             "QPushButton:checked { background: #34C759; border-color: #28A745; color: white; }"
         )
-        self.delta_spr_lock_btn = QPushButton(" Unlock")
+        self.delta_spr_lock_btn = QPushButton(" Unlock")  # icon is set below; text is icon label only
         self.delta_spr_lock_btn.setCheckable(True)
         self.delta_spr_lock_btn.setFixedHeight(26)
         self.delta_spr_lock_btn.setToolTip(
@@ -1382,6 +1432,13 @@ class UIBuildersMixin:
         self.edits_primary_graph.addItem(self.delta_spr_start_cursor)
         self.edits_primary_graph.addItem(self.delta_spr_stop_cursor)
 
+        # Disable paint caching on cursor lines — prevents ghost traces when dragging.
+        # pyqtgraph InfiniteLine caches its bounding-rect paint; without NoCache the old
+        # painted region is never invalidated when the line moves.
+        from PySide6.QtWidgets import QGraphicsItem
+        self.delta_spr_start_cursor.setCacheMode(QGraphicsItem.CacheMode.NoCache)
+        self.delta_spr_stop_cursor.setCacheMode(QGraphicsItem.CacheMode.NoCache)
+
         # Connect cursor movement to Delta SPR calculation
         self.delta_spr_start_cursor.sigPositionChanged.connect(self._update_delta_spr_barchart)
         self.delta_spr_stop_cursor.sigPositionChanged.connect(self._update_delta_spr_barchart)
@@ -1532,18 +1589,12 @@ class UIBuildersMixin:
         ctrl_bar.addSpacing(12)
         ctrl_bar.addWidget(QLabel("Model:"))
         self.binding_model_combo = QComboBox()
-        self.binding_model_combo.addItems(["Linear", "1:1 Langmuir", "Kinetics (ka/kd)"])
+        self.binding_model_combo.addItems(["Linear", "1:1 Langmuir"])
         self.binding_model_combo.setFixedWidth(160)
         self.binding_model_combo.currentTextChanged.connect(lambda _: self._update_binding_plot())
         ctrl_bar.addWidget(self.binding_model_combo)
 
-        ctrl_bar.addSpacing(12)
-        ctrl_bar.addWidget(QLabel("Units:"))
-        self.binding_conc_unit_combo = QComboBox()
-        self.binding_conc_unit_combo.addItems(["nM", "µM", "pM"])
-        self.binding_conc_unit_combo.setFixedWidth(70)
-        self.binding_conc_unit_combo.currentTextChanged.connect(lambda _: self._update_binding_plot())
-        ctrl_bar.addWidget(self.binding_conc_unit_combo)
+
 
         ctrl_bar.addStretch()
         vbox.addLayout(ctrl_bar)
@@ -1555,13 +1606,14 @@ class UIBuildersMixin:
         self.binding_scatter_plot.setBackground('w')
         self.binding_scatter_plot.setLabel('left', 'ΔSPR (RU)')
         self.binding_scatter_plot.setLabel('bottom', 'Concentration (nM)')
-        self.binding_scatter_plot.showGrid(x=True, y=True, alpha=0.2)
+        self.binding_scatter_plot.showGrid(x=False, y=False)
         hsplit.addWidget(self.binding_scatter_plot)
 
         # Formula panel
         formula_frame = QFrame()
+        formula_frame.setObjectName("BindingFormulaPanel")
         formula_frame.setStyleSheet(
-            "QFrame { background: white; border: 1px solid #E5E5EA; border-radius: 6px; }"
+            "QFrame#BindingFormulaPanel { background: white; border: 1px solid #E5E5EA; border-radius: 6px; }"
         )
         fpanel = QVBoxLayout(formula_frame)
         fpanel.setContentsMargins(10, 10, 10, 10)

@@ -70,6 +70,9 @@ def run_startup_calibration(
     stop_flag=None,
     use_convergence_engine: bool = True,
     force_oem_retrain: bool = False,
+    max_iterations: int = 12,
+    override_initial_leds: dict[str, int] | None = None,
+    override_initial_integration_ms: float | None = None,
 ) -> LEDCalibrationResult:
     """Execute complete 6-step calibration with HAL compliance.
 
@@ -84,6 +87,13 @@ def run_startup_calibration(
         use_convergence_engine: If True, use new convergence engine; If False, use legacy stack
         single_ch: Channel to calibrate in single mode
         stop_flag: Optional threading.Event for cancellation
+        max_iterations: Maximum convergence iterations per mode (default 12;
+            use 4 for quick sensor-swap recalibration)
+        override_initial_leds: When provided, skip model-based LED prediction
+            and start convergence from these S-mode intensities (e.g. the values
+            currently running from the previous calibration).
+        override_initial_integration_ms: When provided, use this integration time
+            instead of calculating from model slopes.
 
     Returns:
         LEDCalibrationResult with calibration data and success status
@@ -594,8 +604,15 @@ def run_startup_calibration(
             else:
                 return np.mean(roi)
 
-        # Calculate initial LED intensities using model if available
-        if model_exists and model_loader.model_data:
+        # Calculate initial LED intensities — prefer caller overrides, then model, then fallback
+        if override_initial_leds and override_initial_integration_ms:
+            # Caller provided known-good starting values (e.g. sensor swap re-cal)
+            initial_leds = {ch: override_initial_leds.get(ch, 150) for ch in ch_list}
+            initial_integration_ms = override_initial_integration_ms
+            logger.info(
+                f"Using caller-provided initial LEDs: {initial_leds}, integration: {initial_integration_ms:.1f}ms"
+            )
+        elif model_exists and model_loader.model_data:
             # Use model loader to calculate initial intensities - EXACT method from led_model_loader.py
             # Target: 85% of max - matches convergence algorithm target
             # Start with target so weakest channel at LED 255 reaches the final convergence goal immediately
@@ -713,7 +730,7 @@ def run_startup_calibration(
             initial_integration_ms=initial_integration_ms,
             target_percent=0.85,
             tolerance_percent=0.15,
-            max_iterations=12,
+            max_iterations=max_iterations,
             # SPEED OPTIMIZATION: Prefer bright LEDs over long integration
             prefer_led_over_integration=True,  # Enable LED-first strategy
             led_optimization_target=200.0,  # Target LED brightness for weakest channel
@@ -734,7 +751,7 @@ def run_startup_calibration(
                 detector_params=detector_params,
                 wave_min_index=int(wave_min_index),
                 wave_max_index=int(wave_max_index),
-                max_iterations=12,  # Optimized - good model guess converges quickly
+                max_iterations=max_iterations,  # Optimized - good model guess converges quickly
                 step_name="Step 4 (S-mode)",
                 use_batch_command=True,
                 model_slopes=model_slopes_s,
@@ -779,27 +796,202 @@ def run_startup_calibration(
                 )
 
         if not s_success:
-            # Provide detailed error message aligned with ACTUAL target percent used in convergence
+            # ── CALIBRATION FAILURE DIAGNOSTIC SUMMARY ────────────────────────
             s_target_percent = 0.85  # Must match the target_percent passed to converge() above
+            _diag_target = detector_params.max_counts * s_target_percent
+            _diag_lines: list[str] = []  # Collects human-readable root-cause hints
+
+            if s_final_signals:
+                # Per-channel summary table
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info("  CALIBRATION FAILURE — DIAGNOSTIC SUMMARY")
+                logger.info("=" * 80)
+                logger.info(f"  Integration: {s_integration_time:.1f}ms | Target: {_diag_target:.0f} counts ({s_target_percent*100:.0f}% of {detector_params.max_counts})")
+                logger.info(f"  {'Ch':<4} {'LED':>5} {'Signal':>8} {'%Target':>9} {'Status':>12} {'Model slope':>13}")
+                logger.info(f"  {'—'*4} {'—'*5} {'—'*8} {'—'*9} {'—'*12} {'—'*13}")
+
+                _ch_ok: list[str] = []
+                _ch_weak: list[str] = []
+                _ch_sat: list[str] = []
+                _ch_maxed_led_weak: list[str] = []  # LED=255 but signal far below target
+
+                for ch in ch_list:
+                    sig = s_final_signals.get(ch, 0)
+                    led = s_converged_leds.get(ch, 0) if s_converged_leds else 0
+                    pct = (sig / _diag_target * 100) if _diag_target > 0 else 0
+                    slope = model_slopes_s.get(ch, 0.0) if model_slopes_s else 0.0
+
+                    if sig >= detector_params.saturation_threshold * 0.95:
+                        status = "SATURATED"
+                        _ch_sat.append(ch)
+                    elif pct >= 85:
+                        status = "OK"
+                        _ch_ok.append(ch)
+                    elif pct >= 50:
+                        status = "LOW"
+                        _ch_weak.append(ch)
+                    else:
+                        status = "VERY LOW"
+                        _ch_weak.append(ch)
+
+                    if led >= 255 and pct < 50:
+                        _ch_maxed_led_weak.append(ch)
+
+                    logger.info(f"  {ch.upper():<4} {led:>5} {sig:>8.0f} {pct:>8.1f}% {status:>12} {slope:>13.1f}")
+
+                logger.info("")
+
+                # ── Pattern detection ──
+                has_imbalance = bool(_ch_ok or _ch_sat) and bool(_ch_weak)
+                has_model_mismatch = False
+                model_mismatch_detail = ""
+
+                if model_slopes_s and s_final_signals and len(ch_list) >= 2:
+                    # Compare model-predicted rank vs actual signal rank
+                    model_rank = sorted(ch_list, key=lambda c: model_slopes_s.get(c, 0), reverse=True)
+                    actual_rank = sorted(ch_list, key=lambda c: s_final_signals.get(c, 0), reverse=True)
+
+                    # Check if model's strongest channel is actually the weakest (or vice versa)
+                    model_strongest = model_rank[0]
+                    actual_strongest = actual_rank[0]
+                    model_weakest = model_rank[-1]
+                    actual_weakest = actual_rank[-1]
+
+                    # Detect severe mismatch: model says X is strongest, but X is actually weakest (or close to)
+                    if model_strongest in _ch_weak or model_strongest == actual_weakest:
+                        has_model_mismatch = True
+                        model_mismatch_detail = (
+                            f"Model predicts {model_strongest.upper()} is strongest "
+                            f"(slope={model_slopes_s.get(model_strongest, 0):.0f}), "
+                            f"but it measured only {s_final_signals.get(model_strongest, 0):.0f} counts"
+                        )
+                    elif actual_strongest in [model_rank[-1], model_rank[-2]] and len(ch_list) >= 3:
+                        # The actually-strongest channel was predicted to be weak
+                        has_model_mismatch = True
+                        model_mismatch_detail = (
+                            f"Model predicts {actual_strongest.upper()} is weak "
+                            f"(slope={model_slopes_s.get(actual_strongest, 0):.0f}), "
+                            f"but it actually measured strongest at {s_final_signals.get(actual_strongest, 0):.0f} counts"
+                        )
+
+                    # Also check per-channel: if any channel with higher model slope
+                    # produces less than 30% of a channel with lower model slope
+                    for i, ch_hi in enumerate(model_rank[:-1]):
+                        for ch_lo in model_rank[i+1:]:
+                            sig_hi = s_final_signals.get(ch_hi, 0)
+                            sig_lo = s_final_signals.get(ch_lo, 0)
+                            if sig_lo > 0 and sig_hi / sig_lo < 0.30:
+                                has_model_mismatch = True
+                                model_mismatch_detail = (
+                                    f"Model says {ch_hi.upper()} (slope={model_slopes_s.get(ch_hi, 0):.0f}) "
+                                    f"should be brighter than {ch_lo.upper()} (slope={model_slopes_s.get(ch_lo, 0):.0f}), "
+                                    f"but {ch_hi.upper()} measured {sig_hi:.0f} vs {ch_lo.upper()} at {sig_lo:.0f} "
+                                    f"({sig_hi/sig_lo*100:.0f}% ratio)"
+                                )
+                                break
+                        if has_model_mismatch:
+                            break
+
+                # ── Root cause hypotheses ──
+                if _ch_maxed_led_weak:
+                    weak_str = ", ".join(c.upper() for c in _ch_maxed_led_weak)
+                    if has_imbalance:
+                        ok_str = ", ".join(c.upper() for c in (_ch_ok + _ch_sat))
+                        _diag_lines.append(
+                            f"Channel imbalance: {weak_str} unresponsive (LED=255, <50% target) "
+                            f"while {ok_str} converged normally"
+                        )
+                        _diag_lines.append(
+                            "→ Likely cause: optical path obstruction on weak channel(s) — "
+                            "check fiber coupling, sensor chip seating, or flow cell alignment"
+                        )
+                    else:
+                        _diag_lines.append(
+                            f"{weak_str}: LED maxed at 255 but signal far below target"
+                        )
+                        _diag_lines.append(
+                            "→ Likely cause: weak LED(s), dirty optics, or wrong sensor chip orientation"
+                        )
+
+                if has_model_mismatch:
+                    _diag_lines.append(f"LED model mismatch: {model_mismatch_detail}")
+                    _diag_lines.append(
+                        "→ The LED calibration model may be stale — consider re-running LED model training "
+                        "(Phase 1b of oem_calibrate.py) if the sensor chip or optical setup changed"
+                    )
+
+                if _ch_sat and not _ch_weak:
+                    sat_str = ", ".join(c.upper() for c in _ch_sat)
+                    _diag_lines.append(
+                        f"Saturation-only failure: {sat_str} saturating — "
+                        "integration time too high or LED too bright for current chip"
+                    )
+
+                if not _diag_lines:
+                    # Generic fallback
+                    _diag_lines.append(
+                        "No specific pattern detected — check optical alignment, "
+                        "LED health, and servo polarizer position"
+                    )
+
+                # Print diagnostic lines
+                logger.info("  DIAGNOSIS:")
+                for dl in _diag_lines:
+                    logger.info(f"    {dl}")
+                logger.info("=" * 80)
+                logger.info("")
+
+            # ── Build error message for dialog ────────────────────────────────
             error_msg = "S-mode convergence failed: "
             if s_final_signals:
-                target = detector_params.max_counts * s_target_percent
+                target = _diag_target
 
                 # Calculate max_signal FIRST (needed for polarizer diagnosis)
                 max_signal = max(s_final_signals.values()) if s_final_signals else 0.0
                 percent = (max_signal / detector_params.max_counts) * 100
 
                 # Check which channels failed (more accurate than just max signal)
+                # Saturation is a hard failure regardless of % distance from target
+                sat_threshold_95 = detector_params.saturation_threshold * 0.97
                 failed_channels = []
+                saturated_channels = []
                 for ch, sig in s_final_signals.items():
-                    error_pct = abs(sig - target) / target * 100
-                    if error_pct > 25.0:  # Relaxed from 15% to 25% tolerance
-                        sig_pct = (sig / target) * 100
-                        led = s_converged_leds.get(ch, 0) if s_converged_leds else 0
-                        failed_channels.append(f"{ch.upper()}={sig_pct:.1f}% (LED={led})")
+                    led = s_converged_leds.get(ch, 0) if s_converged_leds else 0
+                    if sig >= sat_threshold_95:
+                        # Signal is at/near detector ceiling — always a failure
+                        failed_channels.append(f"{ch.upper()}=SAT (LED={led})")
+                        saturated_channels.append(ch)
+                    else:
+                        error_pct = abs(sig - target) / target * 100
+                        if error_pct > 25.0:  # Relaxed from 15% to 25% tolerance
+                            sig_pct = (sig / target) * 100
+                            failed_channels.append(f"{ch.upper()}={sig_pct:.1f}% (LED={led})")
 
-                if failed_channels:
-                    error_msg += f"Channels outside tolerance: {', '.join(failed_channels)}. "
+                all_saturated = len(saturated_channels) == len(s_final_signals)
+
+                if all_saturated:
+                    # All channels saturated — ultra-sensitive device / wrong integration settings
+                    error_msg += (
+                        f"Signal saturated on all channels at {max_signal:.0f} counts "
+                        f"({percent:.1f}% of detector max).\n\n"
+                        f"Integration: {s_integration_time:.1f} ms  |  "
+                        f"Converged after {s_iterations} iterations\n\n"
+                        "The signal cannot be reduced to the 85% target even at minimum "
+                        "LED/integration settings. This chip is producing more reflected light "
+                        "than the LED model was trained on.\n\n"
+                        "→ Re-run LED model training (oem_calibrate.py Phase 1b) "
+                        "at shorter integration times (5–15 ms) with lower LED intensities (10–60). "
+                        "The model will learn the device's sensitivity range and pick correct "
+                        "starting values on the next calibration."
+                    )
+                elif failed_channels:
+                    error_msg += f"Channels outside tolerance: {', '.join(failed_channels)}."
+                    # Append first diagnostic hint to the dialog error
+                    if _diag_lines:
+                        error_msg += f"\n\n{_diag_lines[0]}"
+                        if len(_diag_lines) > 1 and _diag_lines[1].startswith("→"):
+                            error_msg += f"\n{_diag_lines[1]}"
                 else:
                     # Fallback to old message if no specific channel failures
                     error_msg += (
@@ -1013,7 +1205,7 @@ def run_startup_calibration(
             initial_integration_ms=s_integration_time,  # Start at exact S-pol value
             target_percent=0.75,
             tolerance_percent=0.05,
-            max_iterations=12,  # Allow more iterations for empirical convergence without model
+            max_iterations=max_iterations,  # Allow more iterations for empirical convergence without model
             min_signal_for_model=0.95,  # DISABLE model-based predictions (force empirical measurement)
             max_led_change=80,  # Allow large LED changes since we're not using model
             led_small_step=8,  # Larger steps OK since we know direction (always boost for P-pol)
@@ -1049,7 +1241,7 @@ def run_startup_calibration(
                 detector_params=detector_params,
                 wave_min_index=int(wave_min_index),
                 wave_max_index=int(wave_max_index),
-                max_iterations=12,  # More iterations for empirical P-pol convergence without model
+                max_iterations=max_iterations,  # More iterations for empirical P-pol convergence without model
                 step_name="Step 5 (P-mode LED boost)",
                 use_batch_command=True,
                 model_slopes=None,  # DISABLE model slopes - P/S ratios vary too much per channel

@@ -39,11 +39,14 @@ from matplotlib.figure import Figure
 class CalibrationQCDialog(QDialog):
     """Dialog showing calibration QC graphs."""
 
-    def __init__(self, parent=None, calibration_data: dict = None):
+    def __init__(self, parent=None, calibration_data: dict = None, user_manager=None):
         """Initialize the QC dialog.
 
         Args:
             parent: Parent widget
+            user_manager: Shared UserProfileManager instance (optional). When
+                provided, a user selector is shown in the footer so the operator
+                can confirm who is running the session before clicking Start.
             calibration_data: Dictionary containing all calibration results:
                 - s_pol_spectra: dict of {channel: spectrum_array}
                 - p_pol_spectra: dict of {channel: spectrum_array}
@@ -60,6 +63,7 @@ class CalibrationQCDialog(QDialog):
         """
         super().__init__(parent)
         self.calibration_data = calibration_data or {}
+        self._user_manager = user_manager
 
         self.setWindowTitle("Calibration QC Report")
         self.setModal(False)  # Non-modal so it doesn't block and can be moved easily
@@ -68,12 +72,12 @@ class CalibrationQCDialog(QDialog):
         from PySide6.QtGui import QGuiApplication
 
         screen = QGuiApplication.primaryScreen().availableGeometry()
-        # Use 80% of screen size with narrower width for 2x2 layout
-        dialog_width = min(int(screen.width() * 0.8), 1300)
-        dialog_height = min(int(screen.height() * 0.85), 850)
+        # 3-column layout: graph | table | actions — wider than before
+        dialog_width = min(int(screen.width() * 0.78), 1100)
+        dialog_height = min(int(screen.height() * 0.52), 520)
 
         # Set size constraints to prevent dialog from becoming unusable
-        self.setMinimumSize(1000, 650)
+        self.setMinimumSize(680, 380)
         self.setMaximumSize(screen.width(), screen.height() - 50)  # Leave room for taskbar
         self.resize(dialog_width, dialog_height)
 
@@ -121,8 +125,8 @@ class CalibrationQCDialog(QDialog):
     def _setup_ui(self):
         """Setup the UI layout with tabs for graphs and QC parameters."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 10, 15, 10)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 8, 12, 10)
+        layout.setSpacing(6)
 
         # ── Compact single-row header ─────────────────────────────────────
         from datetime import datetime
@@ -136,36 +140,64 @@ class CalibrationQCDialog(QDialog):
         # Build inline stats string (S-POL / P-POL / DARK)
         _stats_html = self._build_header_stats_html()
 
-        # Username
-        try:
-            from affilabs.services.user_profile_manager import UserProfileManager
-            _upm = UserProfileManager()
-            _username = _upm.current_user or ""
-        except Exception:
-            _username = ""
-        _user_html = (
-            f"&nbsp;&nbsp;•&nbsp;&nbsp;<span style='color:#1D1D1F; font-weight:600;'>{_username}</span>"
-            if _username else ""
-        )
+        # Username — prefer shared manager, fall back to fresh instance
+        if self._user_manager is not None:
+            _username = self._user_manager.get_current_user() or ""
+        else:
+            try:
+                from affilabs.services.user_profile_manager import UserProfileManager
+                _upm = UserProfileManager()
+                _username = _upm.current_user or ""
+            except Exception:
+                _username = ""
 
-        header_label = QLabel(
-            f"<span style='font-size:14px; font-weight:700; color:#1D1D1F;'>Calibration QC Report</span>"
-            f"&nbsp;&nbsp;&nbsp;"
-            f"<span style='font-size:11px; color:#86868B;'>📅 {timestamp}&nbsp;&nbsp;{__version__}</span>"
-            f"{_user_html}"
-            f"&nbsp;&nbsp;&nbsp;&nbsp;"
-            f"{_stats_html}"
-        )
-        header_label.setTextFormat(Qt.TextFormat.RichText)
-        header_label.setStyleSheet("padding: 4px 0px;")
-        layout.addWidget(header_label)
+        def _user_html(name: str) -> str:
+            return (
+                f"&nbsp;&nbsp;•&nbsp;&nbsp;<span style='color:#1D1D1F; font-weight:600; font-size:12px;'>{name}</span>"
+                if name else ""
+            )
 
-        # Create tab widget
-        tabs = QTabWidget()
-        tabs.setStyleSheet("""
+        def _header_html(name: str) -> str:
+            return (
+                f"<span style='font-size:13px; font-weight:700; color:#1D1D1F;'>Calibration QC Report</span>"
+                f"&nbsp;&nbsp;"
+                f"<span style='font-size:11px; color:#86868B;'>📅 {timestamp} &nbsp;·&nbsp; v{__version__}</span>"
+                f"{_user_html(name)}"
+                f"&nbsp;&nbsp;&nbsp;"
+                f"<span style='font-size:10px; color:#86868B;'>{_stats_html}</span>"
+            )
+
+        self._header_label = QLabel(_header_html(_username))
+        self._header_label.setTextFormat(Qt.TextFormat.RichText)
+        self._header_label.setStyleSheet("padding: 2px 0px;")
+        self._header_html_fn = _header_html  # keep for live updates
+        layout.addWidget(self._header_label)
+
+        # 3-column content: graph | QC table | actions panel
+        graphs_content = self._create_graphs_content()
+        layout.addWidget(graphs_content, 1)
+
+    def _create_graphs_content(self) -> QWidget:
+        """Create the graphs section: spectra left, QC table right (side by side)."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(8)
+
+        # ── Left panel: Spectra graphs with Transmission / S-Pol / P-Pol tabs ──
+        spectra_frame = QFrame()
+        spectra_frame.setFrameShape(QFrame.Shape.StyledPanel)
+        spectra_frame.setStyleSheet(
+            "QFrame { background: #FFFFFF; border: 1px solid #D1D1D6; border-radius: 8px; }"
+        )
+        spectra_layout = QVBoxLayout(spectra_frame)
+        spectra_layout.setContentsMargins(6, 4, 6, 4)
+        spectra_layout.setSpacing(4)
+
+        spectra_tabs = QTabWidget()
+        spectra_tabs.setStyleSheet("""
             QTabWidget::pane {
-                border: 1px solid #D1D1D6;
-                border-radius: 6px;
+                border: none;
                 background: white;
             }
             QTabBar::tab {
@@ -173,11 +205,12 @@ class CalibrationQCDialog(QDialog):
                 color: #1D1D1F;
                 border: 1px solid #D1D1D6;
                 border-bottom: none;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-                padding: 8px 16px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                padding: 4px 10px;
                 margin-right: 2px;
                 font-weight: 600;
+                font-size: 11px;
             }
             QTabBar::tab:selected {
                 background: white;
@@ -188,107 +221,199 @@ class CalibrationQCDialog(QDialog):
             }
         """)
 
-        # Tab 1: QC graphs and table (single tab - second tab removed as it was empty)
-        tab1 = self._create_graphs_content()
-        tabs.addTab(tab1, "QC Spectra & Validation")
+        transmission_page = self._create_graph_widget("transmission")
+        s_pol_page = self._create_graph_widget("s_pol")
+        p_pol_page = self._create_graph_widget("p_pol")
 
-        layout.addWidget(tabs)
+        spectra_tabs.addTab(transmission_page, "Transmission")
+        spectra_tabs.addTab(s_pol_page, "S-Pol")
+        spectra_tabs.addTab(p_pol_page, "P-Pol")
 
-        # Button layout with export options
-        button_layout = QHBoxLayout()
+        spectra_layout.addWidget(spectra_tabs)
+        layout.addWidget(spectra_frame, stretch=1)
+
+        # ── Centre panel: QC validation table ────────────────────────────────
+        combined_qc_table = self._create_combined_qc_table()
+        layout.addWidget(combined_qc_table, stretch=2)
+
+        # ── Right panel: actions (export + user selector + start/close) ───────
+        actions_panel = self._create_actions_panel()
+        layout.addWidget(actions_panel, stretch=0)
+
+        return widget
+
+    def _create_actions_panel(self) -> QFrame:
+        """Create the right-side actions panel: export button, user selector, start/close."""
+        from PySide6.QtWidgets import QComboBox, QSpacerItem, QSizePolicy
+
+        panel = QFrame()
+        panel.setFixedWidth(170)
+        panel.setFrameShape(QFrame.Shape.StyledPanel)
+        panel.setStyleSheet(
+            "QFrame { background: #F5F5F7; border: 1px solid #D1D1D6; border-radius: 8px; }"
+        )
+
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(12, 14, 12, 14)
+        layout.setSpacing(10)
+
+        # Section label
+        section_lbl = QLabel("Actions")
+        section_lbl.setStyleSheet(
+            "font-size: 11px; font-weight: 700; color: #86868B; letter-spacing: 0.5px;"
+            " background: transparent; border: none;"
+        )
+        layout.addWidget(section_lbl)
 
         # Export PDF button
-        export_pdf_btn = QPushButton(" Export PDF")
+        export_pdf_btn = QPushButton("Export PDF")
         try:
             from affilabs.utils.resource_path import get_affilabs_resource
             _pdf_icon_path = get_affilabs_resource("ui/img/export_pdf.svg")
             if _pdf_icon_path.exists():
                 export_pdf_btn.setIcon(QIcon(str(_pdf_icon_path)))
-                export_pdf_btn.setIconSize(QSize(16, 16))
+                export_pdf_btn.setIconSize(QSize(14, 14))
         except Exception:
             pass
-        export_pdf_btn.setFixedSize(148, 36)
+        export_pdf_btn.setFixedHeight(34)
         export_pdf_btn.setStyleSheet("""
             QPushButton {
-                background: #34C759;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 600;
+                background: #34C759; color: white; border: none;
+                border-radius: 7px; padding: 6px 10px;
+                font-size: 12px; font-weight: 600;
             }
-            QPushButton:hover {
-                background: #2DA84C;
-            }
-            QPushButton:pressed {
-                background: #248A3D;
-            }
+            QPushButton:hover { background: #2DA84C; }
+            QPushButton:pressed { background: #248A3D; }
         """)
         export_pdf_btn.clicked.connect(self._export_to_pdf)
-        button_layout.addWidget(export_pdf_btn)
+        layout.addWidget(export_pdf_btn)
 
-        button_layout.addStretch()
+        layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
-        # Close button
-        close_btn = QPushButton("Close")
-        close_btn.setFixedSize(100, 36)
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background: #007AFF;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background: #0051D5;
-            }
-            QPushButton:pressed {
-                background: #004FC4;
-            }
-        """)
-        close_btn.clicked.connect(self.accept)
-        button_layout.addWidget(close_btn)
+        # ── User selector (only when user_manager provided) ───────────────────
+        if self._user_manager is not None:
+            who_lbl = QLabel("Who's running this?")
+            who_lbl.setWordWrap(True)
+            who_lbl.setStyleSheet(
+                "font-size: 11px; font-weight: 600; color: #1D1D1F;"
+                " background: transparent; border: none;"
+            )
+            layout.addWidget(who_lbl)
 
-        layout.addLayout(button_layout)
+            self._user_combo = QComboBox()
+            self._user_combo.setFixedHeight(32)
+            self._user_combo.setStyleSheet("""
+                QComboBox {
+                    background: #FFFFFF; color: #1D1D1F;
+                    border: 1px solid #D1D1D6; border-radius: 6px;
+                    padding: 4px 8px; font-size: 12px; font-weight: 500;
+                }
+                QComboBox:hover { border-color: #007AFF; }
+                QComboBox::drop-down { border: none; }
+            """)
+            profiles = self._user_manager.get_profiles()
+            self._user_combo.addItems(profiles)
+            current = self._user_manager.get_current_user()
+            if current:
+                idx = self._user_combo.findText(current)
+                if idx >= 0:
+                    self._user_combo.setCurrentIndex(idx)
 
-    def _create_graphs_content(self) -> QWidget:
-        """Create the graphs section with 2x2 quadrant layout and table."""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+            def _on_user_selected(name: str) -> None:
+                self._header_label.setText(self._header_html_fn(name))
 
-        # 2x2 Grid layout for quadrant display
-        from PySide6.QtWidgets import QGridLayout
-        
-        grid_container = QWidget()
-        grid_layout = QGridLayout(grid_container)
-        grid_layout.setSpacing(8)
-        grid_layout.setContentsMargins(0, 0, 0, 0)
+            self._user_combo.currentTextChanged.connect(_on_user_selected)
+            layout.addWidget(self._user_combo)
 
-        # Create graphs and table
-        s_pol_graph = self._create_graph("S-Pol", "s_pol")
-        p_pol_graph = self._create_graph("P-Pol", "p_pol")
-        transmission_graph = self._create_graph("Transmission", "transmission")
-        combined_qc_table = self._create_combined_qc_table()
+            layout.addSpacing(4)
 
-        # Quadrant layout:
-        # Top left: S-Pol
-        # Top right: P-Pol
-        # Bottom left: Transmission
-        # Bottom right: Table
-        grid_layout.addWidget(s_pol_graph, 0, 0)
-        grid_layout.addWidget(p_pol_graph, 0, 1)
-        grid_layout.addWidget(transmission_graph, 1, 0)
-        grid_layout.addWidget(combined_qc_table, 1, 1)
+            start_btn = QPushButton("Start Session →")
+            start_btn.setFixedHeight(36)
+            start_btn.setStyleSheet("""
+                QPushButton {
+                    background: #007AFF; color: white; border: none;
+                    border-radius: 7px; padding: 6px 10px;
+                    font-size: 12px; font-weight: 700;
+                }
+                QPushButton:hover { background: #0051D5; }
+                QPushButton:pressed { background: #004FC4; }
+            """)
 
-        layout.addWidget(grid_container)
+            def _on_start() -> None:
+                selected = self._user_combo.currentText()
+                if selected:
+                    self._user_manager.set_current_user(selected)
+                self.accept()
 
-        return widget
+            start_btn.clicked.connect(_on_start)
+            layout.addWidget(start_btn)
+
+        else:
+            close_btn = QPushButton("Close")
+            close_btn.setFixedHeight(36)
+            close_btn.setStyleSheet("""
+                QPushButton {
+                    background: #007AFF; color: white; border: none;
+                    border-radius: 7px; padding: 6px 10px;
+                    font-size: 12px; font-weight: 700;
+                }
+                QPushButton:hover { background: #0051D5; }
+                QPushButton:pressed { background: #004FC4; }
+            """)
+            close_btn.clicked.connect(self.accept)
+            layout.addWidget(close_btn)
+
+        return panel
+
+    def _create_graph_widget(self, data_type: str) -> QWidget:
+        """Create a bare PlotWidget page for embedding inside the spectra tab widget."""
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(12, 12, 12, 12)
+        page_layout.setSpacing(0)
+
+        plot_widget = pg.PlotWidget()
+        plot_widget.setBackground("w")
+        plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        plot_widget.setMinimumHeight(80)
+
+        plot_widget.setLabel("bottom", "λ", units="nm")
+        if data_type == "transmission":
+            plot_widget.setLabel("left", "Transmission", units="%")
+            plot_widget.enableAutoRange(axis="y")
+        else:
+            plot_widget.setLabel("left", "Intensity", units="counts")
+
+        wavelengths = self.calibration_data.get("wavelengths", None)
+        if wavelengths is not None and len(wavelengths) > 0:
+            try:
+                wavelengths_numeric = [float(w) for w in wavelengths]
+                max_wl = max(wavelengths_numeric)
+                plot_widget.setXRange(570, max_wl, padding=0)
+            except (ValueError, TypeError):
+                plot_widget.setXRange(570, 720, padding=0)
+        else:
+            plot_widget.setXRange(570, 720, padding=0)
+
+        self._plot_data(plot_widget, data_type)
+
+        if data_type == "s_pol":
+            detector_serial = self.calibration_data.get("detector_serial", "")
+            if detector_serial.startswith("ST"):
+                plot_widget.setYRange(0, 5000, padding=0)
+            else:
+                plot_widget.setYRange(0, 70000, padding=0)
+            plot_widget.disableAutoRange(axis="y")
+        elif data_type == "p_pol":
+            detector_serial = self.calibration_data.get("detector_serial", "")
+            if detector_serial.startswith("ST"):
+                plot_widget.setYRange(0, 3000, padding=0)
+            else:
+                plot_widget.setYRange(0, 50000, padding=0)
+            plot_widget.disableAutoRange(axis="y")
+
+        page_layout.addWidget(plot_widget)
+        return page
 
     def _create_metadata_section(self) -> QFrame:
         """Create compact metadata section with timestamp only."""
@@ -477,7 +602,7 @@ class CalibrationQCDialog(QDialog):
             table.setItem(idx, 5, iter_item)
 
         table.resizeColumnsToContents()
-        table.setMaximumHeight(150)
+        table.setMaximumHeight(90)
         layout.addWidget(table)
 
         container_layout.addWidget(frame)
@@ -515,7 +640,7 @@ class CalibrationQCDialog(QDialog):
             [
                 "Ch",
                 "Dip Depth %",
-                "FWHM (nm)",
+                "FWHM",
                 "P-Pol Signal",
                 "Conv Iter",
                 "Status",
@@ -533,12 +658,13 @@ class CalibrationQCDialog(QDialog):
             QHeaderView::section {
                 background: #F5F5F7;
                 color: #1D1D1F;
-                padding: 6px;
+                padding: 2px 4px;
                 border: none;
                 font-weight: 600;
                 font-size: 11px;
             }
         """)
+        table.verticalHeader().setDefaultSectionSize(20)
 
         transmission_validation = self.calibration_data.get("transmission_validation", {})
         p_pol_spectra = self.calibration_data.get("p_pol_spectra", {})
@@ -572,17 +698,21 @@ class CalibrationQCDialog(QDialog):
                 else:
                     table.setItem(idx, 1, QTableWidgetItem("N/A"))
 
-                # FWHM (nm)
+                # FWHM — qualitative label (raw nm tracked in backend)
                 fwhm = ch_data.get("fwhm")
                 if fwhm is not None:
-                    fwhm_item = QTableWidgetItem(f"{fwhm:.1f}")
-                    fwhm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    if fwhm < 80:
-                        fwhm_item.setForeground(QColor("#34C759"))
-                    elif fwhm < 100:
-                        fwhm_item.setForeground(QColor("#FF9500"))
+                    if fwhm < 50:
+                        fwhm_label, fwhm_color = "Narrow", QColor("#34C759")
+                    elif fwhm <= 75:
+                        fwhm_label, fwhm_color = "Normal", QColor("#34C759")
+                    elif fwhm <= 120:
+                        fwhm_label, fwhm_color = "Broad", QColor("#FF3B30")
                     else:
-                        fwhm_item.setForeground(QColor("#FF3B30"))
+                        fwhm_label, fwhm_color = "Poor", QColor("#FF3B30")
+                    fwhm_item = QTableWidgetItem(fwhm_label)
+                    fwhm_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    fwhm_item.setForeground(fwhm_color)
+                    fwhm_item.setToolTip(f"{fwhm:.1f} nm")
                     table.setItem(idx, 2, fwhm_item)
                 else:
                     table.setItem(idx, 2, QTableWidgetItem("N/A"))
@@ -638,19 +768,20 @@ class CalibrationQCDialog(QDialog):
             else:
                 table.setItem(idx, 4, QTableWidgetItem("N/A"))
 
-        # Optimize column widths
-        table.setColumnWidth(0, 50)   # Ch
-        table.setColumnWidth(1, 100)  # Dip Depth %
-        table.setColumnWidth(2, 90)   # FWHM
-        table.setColumnWidth(3, 100)  # P-Pol Signal
-        table.setColumnWidth(4, 90)   # Conv Iter
+        # Fit columns into ~33% panel width
+        table.setColumnWidth(0, 24)   # Ch
+        table.setColumnWidth(1, 64)   # Dip %
+        table.setColumnWidth(2, 56)   # FWHM
+        table.setColumnWidth(3, 66)   # P-Pol
+        table.setColumnWidth(4, 62)   # Iter
+        table.setColumnWidth(5, 48)   # Status — fixed narrow
         table.horizontalHeader().setSectionResizeMode(
             5,
-            table.horizontalHeader().ResizeMode.Stretch,
+            table.horizontalHeader().ResizeMode.Fixed,
         )  # Status
-        table.setMaximumHeight(155)
+        table.setMinimumHeight(80)
 
-        layout.addWidget(table)
+        layout.addWidget(table, stretch=1)
 
         # Calibration notes / reminders
         notes_frame = QFrame()
@@ -662,15 +793,15 @@ class CalibrationQCDialog(QDialog):
             "}"
         )
         notes_layout = QVBoxLayout(notes_frame)
-        notes_layout.setContentsMargins(8, 4, 8, 6)
-        notes_layout.setSpacing(3)
+        notes_layout.setContentsMargins(6, 4, 6, 6)
+        notes_layout.setSpacing(4)
 
         notes = [
-            ("⚠", "Dry sensor will not produce usable data — ensure buffer is flowing before each run."),
-            ("♻", "Reused sensor chips often fail QC — dip depth degrades with each use."),
-            ("✗", "Channels not in use will show poor metrics — this is expected, not a fault."),
-            ("⊘", "Dip depth < 50% on a new chip? Check fiber connection and flow cell seating."),
-            ("~", "QC pass does not guarantee stable data — watch baseline drift in the first 5 min."),
+            ("⚠", "Dry sensor = no usable data. Flow buffer first."),
+            ("♻", "Reused chips degrade — dip depth drops each use."),
+            ("✗", "Unused channels show poor metrics. Normal."),
+            ("⊘", "Dip < 50% on new chip? Check fiber & seating."),
+            ("~", "QC pass ≠ stable baseline. Watch first 5 min."),
         ]
 
         for icon, text in notes:
@@ -679,8 +810,8 @@ class CalibrationQCDialog(QDialog):
             row.setContentsMargins(0, 0, 0, 0)
 
             icon_lbl = QLabel(icon)
-            icon_lbl.setFixedWidth(14)
-            icon_lbl.setStyleSheet("font-size: 11px; color: #86868B; background: transparent; border: none;")
+            icon_lbl.setFixedWidth(16)
+            icon_lbl.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
             row.addWidget(icon_lbl)
 
             text_lbl = QLabel(text)
@@ -693,7 +824,8 @@ class CalibrationQCDialog(QDialog):
 
             notes_layout.addLayout(row)
 
-        layout.addWidget(notes_frame)
+        notes_layout.addStretch()
+        layout.addWidget(notes_frame, stretch=1)
 
         container_layout.addWidget(frame)
 
@@ -799,7 +931,7 @@ class CalibrationQCDialog(QDialog):
             2,
             table.horizontalHeader().ResizeMode.Stretch,
         )  # Conv Iter
-        table.setMaximumHeight(160)
+        table.setMaximumHeight(95)
 
         return table
 
@@ -939,7 +1071,7 @@ class CalibrationQCDialog(QDialog):
         table.setColumnWidth(3, 80)  # Measured
         table.setColumnWidth(4, 60)  # Error
         table.setColumnWidth(5, 80)  # Error %
-        table.setMaximumHeight(240)
+        table.setMaximumHeight(120)
         layout.addWidget(table)
 
         # Summary statistics
@@ -1085,7 +1217,7 @@ class CalibrationQCDialog(QDialog):
                     table.setItem(idx, col, item)
 
         table.resizeColumnsToContents()
-        table.setMaximumHeight(200)
+        table.setMaximumHeight(100)
         layout.addWidget(table)
 
         # Global result
@@ -1252,8 +1384,8 @@ class CalibrationQCDialog(QDialog):
             3,
             table.horizontalHeader().ResizeMode.Stretch,
         )  # Status
-        table.setMinimumHeight(180)
-        table.setMaximumHeight(220)
+        table.setMinimumHeight(80)
+        table.setMaximumHeight(160)
 
         # Create horizontal layout for tables (transmission table + calibration metrics table)
         tables_layout = QHBoxLayout()
@@ -1305,7 +1437,7 @@ class CalibrationQCDialog(QDialog):
                 font-size: 12px;
             }}
         """)
-        result_label.setMinimumHeight(120)
+        result_label.setMinimumHeight(60)
         layout.addWidget(result_label)
 
         return frame
@@ -1432,7 +1564,7 @@ class CalibrationQCDialog(QDialog):
 
         # Resize columns to content
         table.resizeColumnsToContents()
-        table.setMaximumHeight(160)
+        table.setMaximumHeight(95)
 
         return table
 
@@ -1475,8 +1607,7 @@ class CalibrationQCDialog(QDialog):
         plot_widget = pg.PlotWidget()
         plot_widget.setBackground("w")
         plot_widget.showGrid(x=True, y=True, alpha=0.3)
-        plot_widget.setMinimumHeight(200)
-        plot_widget.setMaximumHeight(280)
+        plot_widget.setMinimumHeight(80)
 
         # Configure axes
         plot_widget.setLabel("bottom", "λ", units="nm")

@@ -95,7 +95,7 @@ class PanelBuilderMixin:
                 "  color: white;"
                 "  border: none;"
                 "  border-radius: 12px;"
-                "  font-size: 11px;"
+                "  font-size: 12px;"
                 "  font-weight: 600;"
                 "  font-family: {Fonts.SYSTEM};"
                 "}"
@@ -174,7 +174,7 @@ class PanelBuilderMixin:
             "  color: {Colors.PRIMARY_TEXT};"
             "  border: none;"
             "  border-radius: 14px;"
-            "  font-size: 11px;"
+            "  font-size: 12px;"
             "  font-weight: 500;"
             "  padding: 0px 8px;"
             "  font-family: {Fonts.SYSTEM};"
@@ -579,7 +579,7 @@ class PanelBuilderMixin:
         )
         params_info.setStyleSheet(
             "QLabel {"
-            "  font-size: 11px;"
+            "  font-size: 12px;"
             "  color: {Colors.SECONDARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
             "  line-height: 1.6;"
@@ -673,7 +673,7 @@ class PanelBuilderMixin:
             "  border: none;"
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 600;"
-            "  font-size: 11px;"
+            "  font-size: 12px;"
             "}",
         )
 
@@ -1243,3 +1243,4 @@ class PanelBuilderMixin:
         panel_layout.addStretch()
 
         return panel
+

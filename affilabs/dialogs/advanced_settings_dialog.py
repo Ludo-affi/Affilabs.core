@@ -295,6 +295,34 @@ class AdvancedSettingsDialog(QDialog):
 
         main_layout.addStretch()
 
+        # Keyboard Shortcuts link
+        separator_kb = QFrame()
+        separator_kb.setFrameShape(QFrame.Shape.HLine)
+        separator_kb.setStyleSheet(divider_style())
+        main_layout.addWidget(separator_kb)
+
+        kb_row = QHBoxLayout()
+        kb_label = QLabel("Keyboard Shortcuts")
+        kb_label.setStyleSheet(title_style(15) + "margin-top: 4px;")
+        kb_row.addWidget(kb_label)
+        kb_row.addStretch()
+        kb_btn = QPushButton("View shortcuts")
+        kb_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(0,0,0,0.05);"
+            "  color: #1D1D1F;"
+            "  border: none;"
+            "  border-radius: 8px;"
+            "  padding: 6px 14px;"
+            "  font-size: 13px;"
+            "  font-weight: 500;"
+            "}"
+            "QPushButton:hover { background: rgba(0,0,0,0.10); }"
+        )
+        kb_btn.clicked.connect(self._show_keyboard_shortcuts)
+        kb_row.addWidget(kb_btn)
+        main_layout.addLayout(kb_row)
+
         # Buttons
         button_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -313,6 +341,11 @@ class AdvancedSettingsDialog(QDialog):
 
         # === Add Diagnostics Tab (hidden unless DEV mode) ===
         self._setup_diagnostics_tab()
+
+    def _show_keyboard_shortcuts(self):
+        from affilabs.dialogs.hotkey_cheatsheet_dialog import HotkeyCheatsheetDialog
+        dlg = HotkeyCheatsheetDialog(self)
+        dlg.show_above(self.sender())
 
     def _setup_diagnostics_tab(self):
         """Setup diagnostics tab that shows all QC details and calibration data.
