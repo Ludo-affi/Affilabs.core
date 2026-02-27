@@ -242,7 +242,7 @@ class SpectrumBubble(QFrame):
                 border: 1px solid {_BORDER};
                 border-radius: 7px;
                 padding: 3px 10px;
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: 500;
                 font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
             }}
@@ -286,7 +286,7 @@ class SpectrumBubble(QFrame):
             f"  border: 1px solid {_BORDER};"
             f"  border-radius: 6px;"
             f"  padding: 2px 10px;"
-            f"  font-size: 11px;"
+            f"  font-size: 12px;"
             f"  font-weight: 500;"
             f"  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             f"}}"
@@ -302,7 +302,7 @@ class SpectrumBubble(QFrame):
             f"  border: 1px solid {_ACCENT};"
             f"  border-radius: 6px;"
             f"  padding: 2px 10px;"
-            f"  font-size: 11px;"
+            f"  font-size: 12px;"
             f"  font-weight: 600;"
             f"  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             f"}}"

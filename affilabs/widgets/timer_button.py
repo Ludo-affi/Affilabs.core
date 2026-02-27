@@ -349,7 +349,7 @@ class TimerButton(QPushButton):
                 border: 2px solid #E08600;
                 border-radius: 6px;
                 padding: 6px 14px;
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: 800;
                 color: white;
                 font-family: {Fonts.MONOSPACE};

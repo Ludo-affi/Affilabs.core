@@ -64,6 +64,7 @@ class CycleIntelligenceFooter(QFrame):
         self.status_data: dict[str, str | int] = {}  # kept for compat; not used in right panel
         self._clock_getter: Callable[[], tuple[float, float | None]] | None = None
         self._recording_active: bool = False
+        self._rec_badge_updater: Callable[[str], None] | None = None
         self._full_metadata_text: str = ""
         self._scroll_offset: int = 0
         # Latest signal metrics per channel (lower-case key)
@@ -74,8 +75,10 @@ class CycleIntelligenceFooter(QFrame):
         self.setObjectName("CycleFooter")
         self.setStyleSheet(
             "QFrame#CycleFooter {"
-            "  background: #FAFAFA;"
+            "  background: #F5F5F7;"
             "  border-top: 1px solid #E5E5EA;"
+            "  border-bottom-left-radius: 12px;"
+            "  border-bottom-right-radius: 12px;"
             "}"
         )
 
@@ -97,88 +100,49 @@ class CycleIntelligenceFooter(QFrame):
         root.setContentsMargins(12, 4, 12, 4)
         root.setSpacing(0)
 
-        # ── Left: metadata label ──────────────────────────────────────────────
-        self._metadata_label = QLabel("No cycle loaded")
+        # ── Left: metadata label (hidden when no cycle loaded) ───────────────
+        self._metadata_label = QLabel("")
         self._metadata_label.setStyleSheet(
-            f"font-size: 11px; color: #8E8E93;"
+            f"font-size: 12px; color: #8E8E93;"
             f"font-family: {_FONT}; background: transparent;"
         )
         self._metadata_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._metadata_label.setVisible(False)
         root.addWidget(self._metadata_label, 1)
 
-        root.addSpacing(12)
-        root.addWidget(self._vdiv())
-        root.addSpacing(12)
+        # Signal science panel — built here but parented/inserted by the graph
+        # container after construction so it drops down from the graph edge.
+        self._sig_panel = self._build_sig_panel()
 
-        # ── Centre: clocks ────────────────────────────────────────────────────
-        clocks_row = QHBoxLayout()
-        clocks_row.setSpacing(10)
-        clocks_row.setContentsMargins(0, 0, 0, 0)
-        self._clocks_row_layout = clocks_row  # retained so show_saved_toast can insert into it
+    @staticmethod
+    def _vdiv() -> QFrame:
+        f = QFrame()
+        f.setFixedSize(1, 20)
+        f.setStyleSheet("background: #D1D1D6;")
+        return f
 
-        # Experiment elapsed
-        exp_prefix = QLabel("Exp")
-        exp_prefix.setStyleSheet(
-            f"font-size: 10px; color: #8E8E93; font-family: {_FONT}; background: transparent;"
+    def _build_sig_panel(self) -> QWidget:
+        """Build the λ/FWHM/p2p/slope drop-down panel (hidden by default)."""
+        panel = QWidget()
+        panel.setObjectName("SigPanel")
+        panel.setStyleSheet(
+            "QWidget#SigPanel {"
+            "  background: #F5F5F7;"
+            "  border-top: 1px solid #E5E5EA;"
+            "}"
         )
-        clocks_row.addWidget(exp_prefix)
-
-        self._exp_clock = QLabel("—")
-        self._exp_clock.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: #1D1D1F;"
-            f"font-family: {_MONO}; background: transparent; min-width: 46px;"
-        )
-        self._exp_clock.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        clocks_row.addWidget(self._exp_clock)
-
-        clocks_row.addSpacing(12)
-
-        # Recording elapsed (hidden until recording starts)
-        self._rec_dot = QLabel("●")
-        self._rec_dot.setStyleSheet(
-            f"font-size: 9px; color: {_DOT_RED}; font-family: {_FONT}; background: transparent;"
-        )
-        self._rec_dot.setVisible(False)
-
-        self._rec_label = QLabel("Rec")
-        self._rec_label.setStyleSheet(
-            f"font-size: 10px; color: #8E8E93; font-family: {_FONT}; background: transparent;"
-        )
-        self._rec_label.setVisible(False)
-
-        self._rec_clock = QLabel("00:00")
-        self._rec_clock.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: {_DOT_RED};"
-            f"font-family: {_MONO}; background: transparent; min-width: 38px;"
-        )
-        self._rec_clock.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._rec_clock.setVisible(False)
-
-        clocks_row.addWidget(self._rec_dot)
-        clocks_row.addWidget(self._rec_label)
-        clocks_row.addWidget(self._rec_clock)
-
-        root.addLayout(clocks_row)
-
-        root.addSpacing(12)
-        root.addWidget(self._vdiv())
-        root.addSpacing(12)
-
-        # ── Right: signal science indicators ─────────────────────────────────
-        # λ · FWHM · p2p noise · Baseline stability
-        sig_row = QHBoxLayout()
+        sig_row = QHBoxLayout(panel)
         sig_row.setSpacing(14)
-        sig_row.setContentsMargins(0, 0, 0, 0)
+        sig_row.setContentsMargins(12, 6, 12, 6)
 
         def _metric_pair(prefix: str, value: str, tooltip: str) -> tuple[QLabel, QLabel]:
-            """Return (prefix_label, value_label) added to sig_row."""
             lbl_p = QLabel(prefix)
             lbl_p.setStyleSheet(
                 f"font-size: 10px; color: #8E8E93; font-family: {_FONT}; background: transparent;"
             )
             lbl_v = QLabel(value)
             lbl_v.setStyleSheet(
-                f"font-size: 11px; font-weight: 600; color: #1D1D1F;"
+                f"font-size: 12px; font-weight: 600; color: #1D1D1F;"
                 f"font-family: {_MONO}; background: transparent;"
             )
             lbl_v.setToolTip(tooltip)
@@ -190,21 +154,20 @@ class CycleIntelligenceFooter(QFrame):
             sig_row.addLayout(inner)
             return lbl_p, lbl_v
 
-        _, self._wl_val   = _metric_pair("λ",    "—",  "Resonance wavelength of active channel (nm)")
-        _, self._fwhm_val = _metric_pair("FWHM", "—",  "SPR dip width — narrower = better coupling (nm)")
-        _, self._p2p_val  = _metric_pair("p2p",  "—",  "Baseline noise: peak-to-peak over last ~10 s\n"
-                                                        "<5 nm = stable  ·  5–8 nm = noisy  ·  >8 nm = poor")
-        _, self._slope_val = _metric_pair("slope", "—", "60 s baseline slope (nm/s) — baseline & auto-read only\n"
-                                                        "Drift threshold: 10 RU / 15 min (355 RU = 1 nm → ≈ ±3.1e-5 nm/s)")
+        _, self._wl_val    = _metric_pair("λ",     "—", "Resonance wavelength of active channel (nm)")
+        _, self._fwhm_val  = _metric_pair("FWHM",  "—", "SPR dip width — narrower = better coupling (nm)")
+        _, self._p2p_val   = _metric_pair("p2p",   "—", "Baseline noise: peak-to-peak over last ~10 s\n"
+                                                         "<5 nm = stable  ·  5–8 nm = noisy  ·  >8 nm = poor")
+        _, self._slope_val = _metric_pair("slope", "—", "60 s baseline slope (nm/s)\n"
+                                                         "Drift threshold: 10 RU / 15 min (355 RU = 1 nm)")
 
-        # Baseline stability pill (dot + text)
-        self._stab_dot  = QLabel("●")
+        self._stab_dot = QLabel("●")
         self._stab_dot.setStyleSheet(
             f"font-size: 9px; color: {_DOT_GREY}; font-family: {_FONT}; background: transparent;"
         )
         self._stab_text = QLabel("—")
         self._stab_text.setStyleSheet(
-            f"font-size: 11px; color: #8E8E93; font-family: {_FONT}; background: transparent;"
+            f"font-size: 12px; color: #8E8E93; font-family: {_FONT}; background: transparent;"
         )
         self._stab_text.setToolTip("Baseline stability — green = ready to inject")
         stab_grp = QHBoxLayout()
@@ -213,18 +176,20 @@ class CycleIntelligenceFooter(QFrame):
         stab_grp.addWidget(self._stab_dot)
         stab_grp.addWidget(self._stab_text)
         sig_row.addLayout(stab_grp)
+        sig_row.addStretch()
 
-        root.addLayout(sig_row)
-
-    @staticmethod
-    def _vdiv() -> QFrame:
-        f = QFrame()
-        f.setFrameShape(QFrame.Shape.VLine)
-        f.setFixedWidth(1)
-        f.setStyleSheet("background: #E5E5EA; margin: 4px 0;")
-        return f
+        panel.hide()
+        return panel
 
     # ── Public API ────────────────────────────────────────────────────────────
+
+    def toggle_signal_panel(self) -> None:
+        """Toggle visibility of the signal science metrics panel (λ / FWHM / p2p / slope).
+
+        Hotkey: Ctrl+Shift+M (wired in AffilabsMainWindow._setup_connections).
+        Hidden by default in customer-facing builds; toggled by internal staff.
+        """
+        self._sig_panel.setVisible(not self._sig_panel.isVisible())
 
     def set_clock_getter(self, fn: Callable[[], tuple[float, float | None]]) -> None:
         """Register a callable that returns (exp_elapsed_secs, rec_elapsed_secs | None).
@@ -234,53 +199,41 @@ class CycleIntelligenceFooter(QFrame):
         self._clock_getter = fn
 
     def set_recording_active(self, active: bool) -> None:
-        """Show or hide the recording elapsed clock."""
+        """Track recording state — timer updates pushed to status bar via _rec_badge_updater."""
         self._recording_active = active
-        self._rec_dot.setVisible(active)
-        self._rec_label.setVisible(active)
-        self._rec_clock.setVisible(active)
-        if not active:
-            self._rec_clock.setText("00:00")
+        if not active and hasattr(self, '_rec_badge_updater') and self._rec_badge_updater:
+            # Reset badge to plain "● REC" (shown/hidden by core_ui)
+            self._rec_badge_updater("● REC")
 
     def show_saved_toast(self, filename: str, on_click: Callable[[], None] | None = None) -> None:
-        """Replace the rec clock area with a brief '✓ Saved' notice.
+        """Show a brief '✓ Saved' notice in the metadata area.
 
         The label is clickable (navigates to Edits tab via *on_click*) and
-        auto-hides after 8 seconds, restoring normal empty state.
+        auto-hides after 8 seconds.
 
         Args:
             filename: Just the file basename to display.
             on_click: Optional callable invoked when the user clicks the label.
         """
-        # Hide rec widgets (recording is already stopped at this point)
-        self._rec_dot.setVisible(False)
-        self._rec_label.setVisible(False)
-        self._rec_clock.setVisible(False)
-
         # Create the toast label lazily
         if not hasattr(self, '_saved_toast_label'):
             lbl = QLabel()
             lbl.setTextFormat(Qt.TextFormat.PlainText)
             lbl.setCursor(Qt.CursorShape.PointingHandCursor)
             lbl.setStyleSheet(
-                f"font-size: 11px; font-weight: 600; color: {_DOT_GREEN};"
+                f"font-size: 12px; font-weight: 600; color: {_DOT_GREEN};"
                 f"font-family: {_FONT}; background: transparent;"
                 "text-decoration: underline;"
             )
-            # Insert into the root layout (after rec widgets)
-            if hasattr(self, '_clocks_row_layout'):
-                self._clocks_row_layout.addWidget(lbl)
-            else:
-                self.layout().addWidget(lbl)
+            self.layout().insertWidget(0, lbl)
             self._saved_toast_label = lbl
             self._saved_toast_timer = QTimer(self)
             self._saved_toast_timer.setSingleShot(True)
             self._saved_toast_timer.timeout.connect(self._hide_saved_toast)
 
-        self._saved_toast_label.setText(f"✓ Saved — View results →")
+        self._saved_toast_label.setText("✓ Saved — View results →")
         self._saved_toast_label.setToolTip(filename)
 
-        # Wire click — disconnect any previous connection first
         try:
             self._saved_toast_label.mousePressEvent = None
         except Exception:
@@ -288,6 +241,7 @@ class CycleIntelligenceFooter(QFrame):
         if on_click:
             self._saved_toast_label.mousePressEvent = lambda __e: on_click()
 
+        self._metadata_label.setVisible(False)
         self._saved_toast_label.setVisible(True)
         self._saved_toast_timer.start(8000)
 
@@ -334,6 +288,13 @@ class CycleIntelligenceFooter(QFrame):
         }
         self._refresh_signal_panel(ch)
 
+    def set_rec_badge_updater(self, fn) -> None:
+        """Register a callable(text) that updates the status bar REC badge text.
+
+        Called by AffilabsCoreUI after both widgets exist.
+        """
+        self._rec_badge_updater = fn
+
     # ── Internal: clock tick ──────────────────────────────────────────────────
 
     def _update_clocks(self) -> None:
@@ -344,13 +305,10 @@ class CycleIntelligenceFooter(QFrame):
         except Exception:
             return
 
-        if exp_elapsed is None or exp_elapsed <= 0:
-            self._exp_clock.setText("—")
-        else:
-            self._exp_clock.setText(_fmt_elapsed(exp_elapsed))
-
+        # Push REC elapsed to status bar badge
         if self._recording_active and rec_elapsed is not None and rec_elapsed >= 0:
-            self._rec_clock.setText(_fmt_elapsed(rec_elapsed))
+            if hasattr(self, '_rec_badge_updater') and self._rec_badge_updater:
+                self._rec_badge_updater(f"● REC  {_fmt_elapsed(rec_elapsed)}")
 
     # ── Internal: metadata ────────────────────────────────────────────────────
 
@@ -359,10 +317,8 @@ class CycleIntelligenceFooter(QFrame):
         self._scroll_offset = 0
 
         if not self.cycle_data:
-            self._metadata_label.setText("No cycle loaded")
-            self._metadata_label.setStyleSheet(
-                f"font-size: 11px; color: #8E8E93; font-family: {_FONT}; background: transparent;"
-            )
+            self._metadata_label.setVisible(False)
+            self._metadata_label.setText("")
             self._full_metadata_text = ""
             return
 
@@ -397,8 +353,9 @@ class CycleIntelligenceFooter(QFrame):
 
         self._full_metadata_text = "  ·  ".join(parts)
         self._metadata_label.setText(self._full_metadata_text)
+        self._metadata_label.setVisible(True)
         self._metadata_label.setStyleSheet(
-            f"font-size: 11px; color: #1D1D1F; font-family: {_FONT}; background: transparent;"
+            f"font-size: 12px; color: #1D1D1F; font-family: {_FONT}; background: transparent;"
         )
         QTimer.singleShot(800, self._check_and_start_autoscroll)
 
@@ -444,14 +401,14 @@ class CycleIntelligenceFooter(QFrame):
         # λ
         self._wl_val.setText(f"{wl:.1f} nm" if wl is not None else "—")
         self._wl_val.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: {'#1D1D1F' if wl else '#8E8E93'};"
+            f"font-size: 12px; font-weight: 600; color: {'#1D1D1F' if wl else '#8E8E93'};"
             f"font-family: {_MONO}; background: transparent;"
         )
 
         # FWHM
         self._fwhm_val.setText(f"{fwhm:.1f} nm" if fwhm is not None else "—")
         self._fwhm_val.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: {'#1D1D1F' if fwhm else '#8E8E93'};"
+            f"font-size: 12px; font-weight: 600; color: {'#1D1D1F' if fwhm else '#8E8E93'};"
             f"font-family: {_MONO}; background: transparent;"
         )
 
@@ -470,7 +427,7 @@ class CycleIntelligenceFooter(QFrame):
             p2p_txt = f"±{p2p:.1f} nm"
         self._p2p_val.setText(p2p_txt)
         self._p2p_val.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: {p2p_color};"
+            f"font-size: 12px; font-weight: 600; color: {p2p_color};"
             f"font-family: {_MONO}; background: transparent;"
         )
 
@@ -487,7 +444,7 @@ class CycleIntelligenceFooter(QFrame):
                 slope_color = _DOT_GREEN
         self._slope_val.setText(slope_txt)
         self._slope_val.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: {slope_color};"
+            f"font-size: 12px; font-weight: 600; color: {slope_color};"
             f"font-family: {_MONO}; background: transparent;"
         )
 
@@ -505,3 +462,4 @@ class CycleIntelligenceFooter(QFrame):
         self._stab_text.setStyleSheet(
             f"font-size: 11px; color: {stab_text_color}; font-family: {_FONT}; background: transparent;"
         )
+

@@ -228,8 +228,10 @@ MAX_INTEGRATION = (
     70  # DEPRECATED: Use profile.max_integration_time_ms (70ms for 3-scan budget)
 )
 
-# Percentage-based calibration (NEW APPROACH - Development Mode)
-DEVELOPMENT_MODE = True  # When True, skip validation thresholds to allow testing/fixing
+# Percentage-based calibration
+# DEVELOPMENT_MODE is UNUSED — no calibration code imports or checks this flag.
+# Kept here as a placeholder in case threshold-skipping logic is added in a future pass.
+DEVELOPMENT_MODE = True  # UNUSED — safe to remove in cleanup
 TARGET_WAVELENGTH_MIN = 580  # nm - start of target wavelength range for calibration
 TARGET_WAVELENGTH_MAX = 610  # nm - end of target wavelength range for calibration
 TARGET_INTENSITY_PERCENT = (
@@ -583,7 +585,9 @@ POP_OUT_SPEC = False  # pop out spectroscopy into separate window for debugging
 # When True, QC validation can short-circuit full calibration if it passes.
 # When False, QC is bypassed and the system will run the full calibration flow.
 # You can toggle this at runtime and restart calibration.
-FORCE_FULL_CALIBRATION: bool = True  # Suspend QC and run full calibration
+# NOTE: This constant is UNUSED in v2.0.5 — CalibrationService._evaluate_sensor_ready()
+# always runs unconditionally after full calibration. Wire this up before enabling QC skip.
+FORCE_FULL_CALIBRATION: bool = True  # UNUSED in v2.0.5 — full calibration always runs
 
 # =============================================================================
 # LOGGING CONFIGURATION

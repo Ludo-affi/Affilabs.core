@@ -646,7 +646,7 @@ class SparkHelpWidget(QWidget):
             self.tts_button = QPushButton("\U0001f50a Voice On")
             self.tts_button.setMinimumHeight(28)
             self.tts_button.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.tts_button.setToolTip("Toggle Spark voice")
+            self.tts_button.setToolTip("Toggle Sparq voice")
             self.tts_button.setStyleSheet("""
                 QPushButton {
                     background: #EEEEF0;
@@ -701,9 +701,9 @@ class SparkHelpWidget(QWidget):
                 pass
         
         if user_name:
-            greeting = f"\U0001f44b Hi {user_name}! I'm Spark, your Affilabs assistant."
+            greeting = f"\U0001f44b Hi {user_name}! I'm Sparq, your Affilabs assistant."
         else:
-            greeting = "\U0001f44b Hi! I'm Spark, your Affilabs assistant."
+            greeting = "\U0001f44b Hi! I'm Sparq, your Affilabs assistant."
         
         welcome_text = (
             f"{greeting} "
@@ -1024,10 +1024,10 @@ class SparkHelpWidget(QWidget):
         if hasattr(self, 'tts_button'):
             if self.tts_enabled:
                 self.tts_button.setText("\U0001f50a Voice On")
-                self.tts_button.setToolTip("Mute Spark voice")
+                self.tts_button.setToolTip("Mute Sparq voice")
             else:
                 self.tts_button.setText("\U0001f507 Voice Off")
-                self.tts_button.setToolTip("Unmute Spark voice")
+                self.tts_button.setToolTip("Unmute Sparq voice")
 
     # Maximum characters to send to Piper in one call (prevents buffer overruns)
     _TTS_MAX_CHARS = 400

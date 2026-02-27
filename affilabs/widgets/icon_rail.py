@@ -95,19 +95,19 @@ _ICONS: dict[str, str] = {
     ),
 }
 
-_COLOR_INACTIVE = "#8E8E93"
+_COLOR_INACTIVE = "#6E6E73"
 _COLOR_ACTIVE = "#2E30E3"
 _COLOR_SPECTRUM_OFF = "#5AC8FA"
 _COLOR_SPECTRUM_ON = "#0A84FF"
 _BG = "#F5F5F7"
 _ACTIVE_BG = "rgba(46,48,227,0.10)"
-_WIDTH = 48
+_WIDTH = 60
 
 
 def _make_icon(svg: str, color: str) -> QIcon:
     svg_colored = svg.replace("currentColor", color)
     renderer = QSvgRenderer(svg_colored.encode("utf-8"))
-    px = QPixmap(QSize(22, 22))
+    px = QPixmap(QSize(30, 30))
     px.fill(Qt.GlobalColor.transparent)
     p = QPainter(px)
     renderer.render(p)
@@ -138,14 +138,24 @@ class IconRail(QWidget):
         layout.setSpacing(2)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # ── "A" monogram — fills the transport-bar zone (top-left branding) ──
-        logo = QLabel("A")
+        # ── Favicon logo — fills the transport-bar zone (top-left branding) ──
+        logo = QLabel()
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo.setFixedHeight(56)  # matches TransportBar._HEIGHT
-        logo.setStyleSheet(
-            "font-size: 16px; font-weight: 800; color: #2E30E3; background: transparent;"
-            "font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;"
-        )
+        logo.setStyleSheet("background: transparent;")
+        try:
+            from affilabs.utils.resource_path import get_affilabs_resource
+            _ico = get_affilabs_resource("ui/img/affinite2.ico")
+            if _ico and _ico.exists():
+                from PySide6.QtGui import QPixmap
+                _px = QPixmap(str(_ico))
+                if not _px.isNull():
+                    logo.setPixmap(
+                        _px.scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio,
+                                   Qt.TransformationMode.SmoothTransformation)
+                    )
+        except Exception:
+            pass
         layout.addWidget(logo)
 
         sep_top = QFrame()
@@ -167,36 +177,36 @@ class IconRail(QWidget):
 
         # ── User button (popup, not a sidebar tab) ────────────────────────────
         self._user_btn = QPushButton()
-        self._user_btn.setFixedSize(_WIDTH - 4, 40)
+        self._user_btn.setFixedSize(_WIDTH - 4, 48)
         self._user_btn.setCheckable(True)
         self._user_btn.setToolTip("Users")
         self._user_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._user_btn.setIcon(_make_icon(_ICONS["User"], _COLOR_INACTIVE))
-        self._user_btn.setIconSize(QSize(22, 22))
+        self._user_btn.setIconSize(QSize(28, 28))
         self._user_btn.setStyleSheet(self._btn_style(active=False))
         self._user_btn.clicked.connect(self._on_user_click)
         layout.addWidget(self._user_btn)
 
         # ── Accessibility button (popup panel, not a sidebar tab) ────────────
         self._accessibility_btn = QPushButton()
-        self._accessibility_btn.setFixedSize(_WIDTH - 4, 40)
+        self._accessibility_btn.setFixedSize(_WIDTH - 4, 48)
         self._accessibility_btn.setCheckable(True)
         self._accessibility_btn.setToolTip("Visual Accessibility")
         self._accessibility_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._accessibility_btn.setIcon(_make_icon(_ICONS["Accessibility"], _COLOR_INACTIVE))
-        self._accessibility_btn.setIconSize(QSize(22, 22))
+        self._accessibility_btn.setIconSize(QSize(28, 28))
         self._accessibility_btn.setStyleSheet(self._btn_style(active=False))
         self._accessibility_btn.clicked.connect(self._on_accessibility_click)
         layout.addWidget(self._accessibility_btn)
 
         # ── Timer button (below eye/accessibility) ────────────────────────────
         self._timer_btn = QPushButton()
-        self._timer_btn.setFixedSize(_WIDTH - 4, 40)
+        self._timer_btn.setFixedSize(_WIDTH - 4, 48)
         self._timer_btn.setCheckable(True)
         self._timer_btn.setToolTip("Countdown Timer")
         self._timer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._timer_btn.setIcon(_make_icon(_ICONS["Timer"], _COLOR_INACTIVE))
-        self._timer_btn.setIconSize(QSize(22, 22))
+        self._timer_btn.setIconSize(QSize(28, 28))
         self._timer_btn.setStyleSheet(self._btn_style(active=False))
         self._timer_btn.clicked.connect(self._on_timer_click)
         layout.addWidget(self._timer_btn)
@@ -212,12 +222,12 @@ class IconRail(QWidget):
 
         # ── Spectroscopy button ───────────────────────────────────────────────
         self._spectrum_btn = QPushButton()
-        self._spectrum_btn.setFixedSize(_WIDTH - 4, 40)
+        self._spectrum_btn.setFixedSize(_WIDTH - 4, 48)
         self._spectrum_btn.setCheckable(True)
         self._spectrum_btn.setToolTip("Show / hide spectroscopy panel")
         self._spectrum_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._spectrum_btn.setIcon(_make_icon(_ICONS["Spectrum"], _COLOR_SPECTRUM_OFF))
-        self._spectrum_btn.setIconSize(QSize(22, 22))
+        self._spectrum_btn.setIconSize(QSize(28, 28))
         self._spectrum_btn.setStyleSheet(
             f"QPushButton {{ background: rgba(90,200,250,0.10); border: 1px solid rgba(90,200,250,0.30); border-radius: 8px; margin: 0 2px; }}"
             "QPushButton:hover { background: rgba(90,200,250,0.18); border-color: rgba(90,200,250,0.45); }"
@@ -440,14 +450,14 @@ class IconRail(QWidget):
 
     def _tab_btn(self, name: str, tab_idx: int) -> QPushButton:
         btn = QPushButton()
-        btn.setFixedSize(_WIDTH - 4, 40)
+        btn.setFixedSize(_WIDTH - 4, 48)
         btn.setCheckable(True)
         btn.setChecked(False)
         btn.setToolTip(name)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         if name in _ICONS:
             btn.setIcon(_make_icon(_ICONS[name], _COLOR_INACTIVE))
-            btn.setIconSize(QSize(22, 22))
+            btn.setIconSize(QSize(28, 28))
         btn.setStyleSheet(self._btn_style(active=False))
         btn.clicked.connect(lambda _: self._on_tab_click(name, tab_idx))
         return btn
@@ -504,6 +514,6 @@ class IconRail(QWidget):
     def _btn_style(active: bool) -> str:
         bg = _ACTIVE_BG if active else "transparent"
         return (
-            f"QPushButton {{ background: {bg}; border: none; border-radius: 8px; margin: 0 2px; }}"
+            f"QPushButton {{ background: {bg}; border: none; border-radius: 10px; margin: 0 3px; }}"
             "QPushButton:hover { background: rgba(46,48,227,0.07); }"
         )

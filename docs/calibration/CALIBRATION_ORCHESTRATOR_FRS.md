@@ -469,13 +469,52 @@ With pump (P4PRO): pump progress maps 8–40%; optical maps 40–95% via `adjust
 
 ## 7. Simple LED Calibration
 
-Entry point: `CalibrationManager.handle_simple_led_calibration()` → `app._on_simple_led_calibration()`
+**Source:** `affilabs/core/simple_led_calibration.py` — `run_simple_led_calibration()`
+**Entry point:** `app._on_simple_led_calibration()` in `mixins/_calibration_mixin.py`
+**Also triggered by:** `leak_recalibrate_signal` (optical leak recovery auto-recal)
 
-- Does **not** move the servo
-- Does **not** run the 6-step orchestrator
-- Runs convergence only (fast LED intensity re-optimization)
-- Used post-calibration when signal drifts (e.g., LED aging, temperature change)
-- Referenced in the LED Convergence Engine doc as the "re-convergence" path
+### Purpose
+
+Quick LED re-convergence after a sensor chip swap. Does **not** use the LED model (avoids stale-model saturation). Does **not** move the servo. Completes in ~15–25 seconds.
+
+### Algorithm (8 steps)
+
+1. **Read wavelength ROI** — same 560–720 nm window as full calibration.
+2. **S-mode servo move** — `ctrl.set_mode("s")`, 0.5 s settle.
+3. **S-mode proportional loop** — `_proportional_loop()`, up to 6 iterations:
+   - Target: 82% of detector max counts (±12% tolerance).
+   - `new_led = clamp(round(old_led × target/signal), 1, 255)`, ratio capped at [0.35, 2.0].
+   - Channels locked individually when in tolerance. Saturation back-off to 80% of sat_threshold.
+   - Starting LEDs from caller's `current_s_leds` (previous calibration), or 128 default.
+4. **S-pol reference capture** — multi-scan average; saturation back-off + retry on first read.
+5. **P-mode servo move** — `ctrl.set_mode("p")`, 0.5 s settle.
+6. **P-mode proportional loop** — same algorithm, starts from S-mode LEDs.
+7. **P-pol reference capture** — multi-scan; failed reads silently skipped (no raise).
+8. **Dark frame + SpectrumPreprocessor** — LEDs off, one dark read, dark-subtract S and P refs.
+
+### Post-processing (`_process_simple_calibration_result`)
+
+Runs on Qt main thread after the worker thread completes:
+1. `led_calibration_result_to_domain(cal_result)` → `CalibrationData`
+2. `save_calibration_result_json()` → persists JSON to `OpticalSystem_QC/<serial>/`
+3. Stores on `CalibrationService._current_calibration_data`, sets `_calibration_completed = True`
+4. `SettingsHelpers.on_calibration_complete()` → applies to signal-processing pipeline
+5. `ctrl.set_batch_intensities()` → pushes P-mode LEDs to controller
+6. `data_mgr.wave_data` updated with new wavelengths
+7. Live acquisition resumed (`_restart_acquisition_after_calibration()`) — recording preserved
+
+### Key differences from Full Calibration
+
+| Aspect | Full Cal | Simple LED Cal |
+|--------|----------|---------------|
+| Servo movement | Yes (S then P) | Yes (set_mode only, no raw serial) |
+| LED model | Required (load or train) | Bypassed entirely |
+| Convergence | Production engine (12 iters) | Proportional loop (6 iters) |
+| Reference capture | Yes (full spec) | Yes (same schema) |
+| Dark frame | Yes | Yes |
+| QC transmission calc | Yes | No (QC skipped) |
+| Duration | ~3–5 min | ~15–25 s |
+| Use case | Full session start | Sensor chip swap / leak recovery |
 
 ---
 
@@ -495,7 +534,7 @@ Entry point: `app._on_oem_led_calibration()` → `CalibrationService.start_calib
 |------|------------|--------------|-----------|---------|
 | Full Calibration | "Full Calibration" button | Yes (S then P) | Load or fail | ~3–5 min |
 | OEM Calibration | "OEM LED Calibration" button | Yes | Retrain (~2 min) + load | ~10–15 min |
-| Simple LED Cal | "Simple LED Calibration" button | No | Load (required) | ~30–60 s |
+| Simple LED Cal | "Simple LED Calibration" button + leak recovery | Yes (set_mode only) | Bypassed | ~15–25 s |
 | Servo Calibration | Auto-triggered on block or "Servo Calibration" button | Yes (full scan) | N/A | ~2–3 min |
 
 ---

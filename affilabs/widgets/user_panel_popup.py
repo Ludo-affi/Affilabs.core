@@ -151,7 +151,7 @@ class UserSidebarPanel(QFrame):
 
         self._banner_xp = QLabel("")
         self._banner_xp.setStyleSheet(
-            f"font-size: 11px; color: #86868B; background: transparent; font-family: {_FONT};"
+            f"font-size: 12px; color: #6E6E73; background: transparent; font-family: {_FONT};"
         )
         banner_lay.addWidget(self._banner_xp)
         layout.addWidget(self._banner)
@@ -159,7 +159,7 @@ class UserSidebarPanel(QFrame):
         # ── User list label ───────────────────────────────────────────────────
         users_lbl = QLabel("Lab Users")
         users_lbl.setStyleSheet(
-            f"font-size: 12px; font-weight: 600; color: #86868B;"
+            f"font-size: 13px; font-weight: 600; color: #6E6E73;"
             f" background: transparent; font-family: {_FONT}; margin-top: 4px;"
         )
         layout.addWidget(users_lbl)
@@ -181,7 +181,7 @@ class UserSidebarPanel(QFrame):
 
         hint = QLabel("Double-click to set active")
         hint.setStyleSheet(
-            f"font-size: 10px; color: #AEAEB2; font-family: {_FONT}; background: transparent;"
+            f"font-size: 11px; color: #6E6E73; font-family: {_FONT}; background: transparent;"
         )
         hint.setAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(hint)

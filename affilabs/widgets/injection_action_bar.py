@@ -1,36 +1,29 @@
-"""InjectionActionBar — Contact Monitor panel embedded below the cycle queue table.
+"""InjectionActionBar — Manual Injection Assistant panel embedded below the cycle queue table.
 
 The panel has a PERMANENT 4-channel binding visualizer (A B C D) always visible:
   ○ Grey   — idle / channel inactive (panel dormant during non-binding cycles)
-  ● Yellow — channel expecting injection (Phase 1 "Get Ready")
-  ◉ Green  — injection detected, sample in contact (Phase 2 auto-detect)
+  ● Green  — sensor ready, waiting for injection
+  ◉ Orange — injection detected, sample in contact (spinning dashed ring)
   ○· Wash  — buffer wash phase (sky-blue dot departing ring)
 
-Three states:
+Two states:
 
   Idle (default):
     LEDs shown grey. Subtle placeholder text.
 
-  Phase 1 — "Get Ready":
+  Monitoring:
     ┌──────────────────────────────────────────────────┐
-    │  [Ready 18s]  Ch A · 100nM   A● B○ C○ D○ [✕]   │
-    └──────────────────────────────────────────────────┘
-    Action button left, big and prominent.
-    Active channels lit yellow.
-
-  Phase 2 — "Inject + Detect":
-    ┌──────────────────────────────────────────────────┐
-    │  💉 Injecting   A● B● C○ D○        [Done] [✕]   │
+    │  Sensor Ready — Inject your sample               │
     │  ✓ Detected on A  —  Contact: 02:45 remaining   │
     └──────────────────────────────────────────────────┘
     Channels go green as injection detected.
-    Contact time countdown if provided.
+    Per-channel contact time countdown shown in TIME column.
 
 Public API
 ----------
-show_phase1(label, channels, on_ready, on_cancel)
-show_phase2(channels, on_done, on_cancel, contact_time=None)
-    contact_time: seconds (int/float) to count down after injection starts
+show_monitoring(channels, on_done, on_cancel, contact_time=None)
+    Immediately enter monitoring state — no phase 1 countdown.
+    contact_time: seconds (int/float) to count down per channel after detection
 update_channel_detected(channel, detected)
 update_status(text)
 hide()
@@ -60,11 +53,16 @@ _FONT = "-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif"
 _MONO = "'SF Mono', 'Cascadia Code', 'Consolas', monospace"
 
 _GREEN  = "#34C759"
-_YELLOW = "#FF9500"
+_BINDING = "#AF52DE"   # Purple — used for "Binding" state labels / dot
 _GREY   = "#C7C7CC"
 _TEXT   = "#1D1D1F"
 _MUTED  = "#86868B"
 _BLUE   = "#007AFF"
+
+# Timer urgency colours — must match CycleStatusOverlay contact-time scheme
+_TIMER_OK   = "#34C759"   # green  — comfortable (>30 s)
+_TIMER_WARN = "#FF9500"   # orange — warning (≤30 s)
+_TIMER_CRIT = "#FF3B30"   # red    — critical (≤10 s) / overrun
 
 _BTN_CANCEL = (
     "QPushButton { background: transparent; border: 1px solid rgba(0,0,0,0.15);"
@@ -100,37 +98,64 @@ class ChannelState:
 
 
 class ChannelBindingWidget(QWidget):
-    """Custom-painted ring+dot indicator showing the SPR binding lifecycle.
+    """Colored circle badge with the channel letter inside.
 
-    States:
-      INACTIVE  — open ring, no dot
-      PENDING   — open ring, small dot to the LEFT (approaching the surface)
-      CONTACT   — filled dot snapped INSIDE the ring (sample bound to ligand)
-      WASH      — open ring, small dot to the RIGHT (departing / washing out)
+    The circle color communicates state directly:
+      INACTIVE  — light grey circle, muted letter
+      PENDING   — amber ring (pulsing feel), dark letter
+      CONTACT   — solid green circle, white letter
+      WASH      — sky-blue outlined circle, dark letter
     """
 
-    _RING_R   = 9    # ring radius px
-    _DOT_R    = 4    # analyte dot radius px
-    _DOT_DIST = 18   # px from ring centre when approaching or departing
+    _BADGE_R = 13  # circle radius px — compact to fit row height
 
-    # (ring_color, dot_color) per state
+    # (bg_color, border_color, text_color) per state
+    # Fill is solid/saturated so the channel letter is always legible
     _PALETTE = {
-        ChannelState.INACTIVE: ("#C7C7CC", "#C7C7CC"),
-        ChannelState.PENDING:  ("#FF9500", "#FF9500"),
-        ChannelState.CONTACT:  ("#34C759", "#34C759"),
-        ChannelState.WASH:     ("#86868B", "#5AC8FA"),  # grey ring, sky-blue dot
+        ChannelState.INACTIVE: ("#D1D1D6", "#C7C7CC", "#FFFFFF"),   # mid-grey fill, white letter
+        ChannelState.PENDING:  ("#34C759", "#28A745", "#FFFFFF"),   # solid green, white letter
+        ChannelState.CONTACT:  ("#AF52DE", "#9B3DC8", "#FFFFFF"),   # solid purple, white letter
+        ChannelState.WASH:     ("#5AC8FA", "#32ADE6", "#FFFFFF"),   # solid sky-blue, white letter
     }
+
+    # Shared animation timer for CONTACT spinning dash (class-level, started on demand)
+    _anim_timer: QTimer | None = None
+    _anim_angle: float = 0.0
+    _anim_instances: set = set()  # ChannelBindingWidgets currently in CONTACT
+
+    @classmethod
+    def _ensure_anim_timer(cls) -> None:
+        if cls._anim_timer is None:
+            cls._anim_timer = QTimer()
+            cls._anim_timer.setInterval(40)  # ~25 fps
+            cls._anim_timer.timeout.connect(cls._anim_tick)
+
+    @classmethod
+    def _anim_tick(cls) -> None:
+        cls._anim_angle = (cls._anim_angle + 4.0) % 360.0
+        for w in list(cls._anim_instances):
+            w.update()
 
     def __init__(self, channel: str, parent=None):
         super().__init__(parent)
         self._channel = channel
         self._state   = ChannelState.INACTIVE
-        self.setMinimumHeight(36)
-        self.setMaximumHeight(44)
+        self.setFixedSize(32, 32)   # compact — fits a 44px row without crowding
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
+        self._ensure_anim_timer()
 
     def set_state(self, state: str) -> None:
+        old = self._state
         self._state = state
+        # Manage spinning-dash animation membership
+        if state == ChannelState.CONTACT:
+            self._anim_instances.add(self)
+            if not self._anim_timer.isActive():
+                self._anim_timer.start()
+        elif old == ChannelState.CONTACT:
+            self._anim_instances.discard(self)
+            if not self._anim_instances and self._anim_timer.isActive():
+                self._anim_timer.stop()
         self.update()
 
     @property
@@ -141,43 +166,47 @@ class ChannelBindingWidget(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        w  = self.width()
-        h  = self.height()
+        w = self.width()
+        h = self.height()
+        cx = w / 2.0
         cy = h / 2.0
-        ring_cx = w / 2.0
+        r = self._BADGE_R
 
-        ring_color, dot_color = self._PALETTE.get(
+        bg_color, border_color, text_color = self._PALETTE.get(
             self._state, self._PALETTE[ChannelState.INACTIVE]
         )
 
-        # Ring
-        p.setPen(QPen(QColor(ring_color), 2.0))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        r = self._RING_R
-        p.drawEllipse(QRectF(ring_cx - r, cy - r, r * 2, r * 2))
+        # Circle fill
+        p.setPen(QPen(QColor(border_color), 2.0))
+        p.setBrush(QBrush(QColor(bg_color)))
+        p.drawEllipse(QRectF(cx - r, cy - r, r * 2, r * 2))
 
-        # Dot
-        dr = self._DOT_R
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(QColor(dot_color)))
-        if self._state == ChannelState.PENDING:
-            dot_x = ring_cx - self._DOT_DIST
-            p.drawEllipse(QRectF(dot_x - dr, cy - dr, dr * 2, dr * 2))
-        elif self._state == ChannelState.CONTACT:
-            p.drawEllipse(QRectF(ring_cx - dr, cy - dr, dr * 2, dr * 2))
-        elif self._state == ChannelState.WASH:
-            dot_x = ring_cx + self._DOT_DIST
-            p.drawEllipse(QRectF(dot_x - dr, cy - dr, dr * 2, dr * 2))
-        # INACTIVE: no dot drawn
+        # Spinning dashed orbit ring for CONTACT state (outside the filled circle)
+        if self._state == ChannelState.CONTACT:
+            dash_pen = QPen(QColor("#9B3DC8"), 2.0)
+            dash_pen.setStyle(Qt.PenStyle.CustomDashLine)
+            dash_pen.setDashPattern([4, 3])
+            dash_pen.setDashOffset(-self._anim_angle / 10.0)
+            p.setPen(dash_pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            orbit_r = r + 4
+            p.drawEllipse(QRectF(cx - orbit_r, cy - orbit_r, orbit_r * 2, orbit_r * 2))
+
+        # Channel letter centered inside — always white on solid fill
+        from PySide6.QtGui import QFont
+        font = QFont("SF Pro Text, Segoe UI, system-ui, sans-serif")
+        font.setPixelSize(12)
+        font.setWeight(QFont.Weight.Bold)
+        p.setFont(font)
+        p.setPen(QColor(text_color))
+        p.drawText(QRectF(cx - r, cy - r, r * 2, r * 2),
+                   Qt.AlignmentFlag.AlignCenter, self._channel)
 
         p.end()
 
 
 class InjectionActionBar(QFrame):
-    """Compact two-phase injection bar embedded in the sidebar below the queue table."""
-
-    PHASE1_SECONDS = 10   # Wait 10s before monitoring starts (cycle settle time)
-    PHASE2_SECONDS = 80   # Monitor for 80s (covers t=10s→90s of the binding cycle)
+    """Manual Injection Assistant panel embedded in the sidebar below the queue table."""
 
     # Emitted when a per-channel contact countdown reaches zero.
     # Payload: channel letter (str), e.g. "A"
@@ -197,7 +226,6 @@ class InjectionActionBar(QFrame):
             "}"
         )
 
-        self._on_ready_cb: Callable | None = None
         self._on_done_cb: Callable | None = None
         self._on_cancel_cb: Callable | None = None
 
@@ -207,6 +235,7 @@ class InjectionActionBar(QFrame):
         self._ch_timers: dict[str, QTimer] = {}
         self._ch_remaining: dict[str, int] = {}
         self._ch_timer_labels: dict[str, QLabel] = {}
+        self._ch_conc_labels: dict[str, QLabel] = {}
         for ch in _ALL_CHANNELS:
             t = QTimer(self)
             t.setInterval(1000)
@@ -214,14 +243,16 @@ class InjectionActionBar(QFrame):
             self._ch_timers[ch] = t
             self._ch_remaining[ch] = 0
 
-        self._countdown = 0
-        self._contact_countdown: Optional[int] = None  # Phase 2 contact time
+        self._contact_countdown: Optional[int] = None  # Contact time per channel after detection
         self._window_start: float | None = None
         self._active_channels: set[str] = set()   # All channels being monitored (from cycle)
         self._detected_channels: set[str] = set() # Subset that actually auto-detected
-        self._phase1_done = False
         self._first_detection_fired = False  # True once any channel auto-detected
         self._panel_active: bool = False  # Dormant until a binding cycle activates it
+        self._buffer_mgr = None           # Set by show_monitoring — used for live ΔSPR
+        self._wash_channels: set[str] = set()  # Channels in WASH state
+        self._keep_alive: bool = False    # If True, suppress auto-done after first detection (P4SPR wash mode)
+        self._injection_spr: dict[str, float] = {}  # SPR at injection detection per channel
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -245,16 +276,39 @@ class InjectionActionBar(QFrame):
         )
         header_hlayout = QHBoxLayout(header_row)
         header_hlayout.setContentsMargins(10, 5, 10, 5)
-        self._header_lbl = QLabel("CONTACT MONITOR")
+        self._header_lbl = QLabel("Manual Injection Assistant")
         self._header_lbl.setStyleSheet(
-            f"font-size: 12px; font-weight: 700; color: {_MUTED};"
-            f" font-family: {_FONT}; letter-spacing: 1.4px;"
+            f"font-size: 11px; font-weight: 600; color: {_MUTED};"
+            f" font-family: {_FONT}; letter-spacing: 0px;"
             f" background: transparent; border: none;"
         )
         self._header_lbl.setMinimumWidth(130)
         header_hlayout.addWidget(self._header_lbl)
         header_hlayout.addStretch()
         outer.addWidget(header_row)
+
+        # ── READY BANNER — shown when monitoring and waiting for injection ────
+        # Two-line: large action line + small sub-prompt. Hidden in all other states.
+        self._ready_banner = QFrame()
+        self._ready_banner.setObjectName("ReadyBanner")
+        self._ready_banner.setStyleSheet(
+            "QFrame#ReadyBanner {"
+            "  background: #34C759;"
+            "  border: none;"
+            "}"
+        )
+        _banner_vlayout = QVBoxLayout(self._ready_banner)
+        _banner_vlayout.setContentsMargins(10, 7, 10, 7)
+        _banner_vlayout.setSpacing(1)
+        _banner_title = QLabel("Sensor Ready — Inject your sample")
+        _banner_title.setStyleSheet(
+            f"font-size: 13px; font-weight: 800; color: #FFFFFF;"
+            f" font-family: {_FONT}; letter-spacing: 0.5px;"
+            f" background: transparent; border: none;"
+        )
+        _banner_vlayout.addWidget(_banner_title)
+        self._ready_banner.setVisible(False)
+        outer.addWidget(self._ready_banner)
 
         # ── Vertical channel binding rows — always visible ────────────────
         self._channel_widgets: dict[str, ChannelBindingWidget] = {}
@@ -274,31 +328,32 @@ class InjectionActionBar(QFrame):
         )
         col_hlayout = QHBoxLayout(col_header)
         col_hlayout.setContentsMargins(10, 4, 10, 4)
-        col_hlayout.setSpacing(6)
+        col_hlayout.setSpacing(10)
         _col_style = (
             f"font-size: 10px; font-weight: 700; color: #8E8E93;"
             f" font-family: {_FONT}; letter-spacing: 0.8px;"
             f" border: none; background: transparent;"
         )
-        _cell_h = QLabel("CH")
-        _cell_h.setFixedWidth(28)
-        _cell_h.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-        _cell_h.setStyleSheet(_col_style)
-        col_hlayout.addWidget(_cell_h)
-        _status_h = QLabel("STATE")
-        _status_h.setFixedWidth(72)
-        _status_h.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-        _status_h.setStyleSheet(_col_style)
-        col_hlayout.addWidget(_status_h)
-        _action_h = QLabel("SAMPLE")
-        _action_h.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        _action_h.setStyleSheet(_col_style)
-        col_hlayout.addWidget(_action_h, 1)
         _time_h = QLabel("TIME")
-        _time_h.setFixedWidth(46)
-        _time_h.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        _time_h.setFixedWidth(38)
+        _time_h.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         _time_h.setStyleSheet(_col_style)
         col_hlayout.addWidget(_time_h)
+        _ch_h = QLabel("CH")
+        _ch_h.setFixedWidth(32)
+        _ch_h.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+        _ch_h.setStyleSheet(_col_style)
+        col_hlayout.addWidget(_ch_h)
+        _action_h = QLabel("STATUS")
+        _action_h.setFixedWidth(88)
+        _action_h.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        _action_h.setStyleSheet(_col_style + " margin-left: 8px;")
+        col_hlayout.addWidget(_action_h)
+        _conc_h = QLabel("CONC")
+        _conc_h.setFixedWidth(65)
+        _conc_h.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        _conc_h.setStyleSheet(_col_style)
+        col_hlayout.addWidget(_conc_h)
         channels_vlayout.addWidget(col_header)
 
         for i, ch in enumerate(_ALL_CHANNELS):
@@ -315,60 +370,62 @@ class InjectionActionBar(QFrame):
                 f"}}"
             )
             row_layout = QHBoxLayout(row_frame)
-            row_layout.setContentsMargins(10, 8, 10, 8)
-            row_layout.setSpacing(8)
+            row_layout.setContentsMargins(10, 5, 10, 5)
+            row_layout.setSpacing(10)
 
-            # Channel letter
-            ch_lbl = QLabel(ch)
-            ch_lbl.setFixedWidth(20)
-            ch_lbl.setAlignment(
-                Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
-            )
-            ch_lbl.setStyleSheet(
-                f"font-size: 15px; font-weight: 800; color: #1D1D1F;"
-                f" font-family: {_FONT}; letter-spacing: 0.5px;"
-                f" border: none; background: transparent;"
-            )
-            row_layout.addWidget(ch_lbl)
-
-            # Binding ring+dot visualizer
-            bw = ChannelBindingWidget(ch)
-            bw.setFixedWidth(80)
-            row_layout.addWidget(bw)
-            self._channel_widgets[ch] = bw
-
-            # Role label (left-aligned) — shows Sample / Reference / Buffer / —
-            # Text is set by set_channel_role(); color dims/brightens with state
-            role_lbl = QLabel("\u2014")
-            role_lbl.setAlignment(
+            # Per-channel contact countdown label — always in layout, blank when inactive
+            timer_lbl = QLabel("")
+            timer_lbl.setAlignment(
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
             )
-            role_lbl.setStyleSheet(
-                f"font-size: 12px; font-weight: 600; color: #3A3A3C; font-family: {_FONT};"
-                f" border: none; background: transparent;"
-            )
-            row_layout.addWidget(role_lbl, 1)
-            self._channel_role_labels[ch] = role_lbl
-
-            # Per-channel contact countdown label (hidden until detection)
-            timer_lbl = QLabel()
-            timer_lbl.setAlignment(
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            )
             timer_lbl.setStyleSheet(
-                f"font-size: 14px; font-weight: 800; color: {_GREEN};"
+                f"font-size: 13px; font-weight: 700; color: #AF52DE;"
                 f" font-family: {_MONO};"
                 f" border: none; background: transparent;"
             )
-            timer_lbl.setFixedWidth(52)
-            timer_lbl.setVisible(False)
+            timer_lbl.setFixedWidth(38)
             row_layout.addWidget(timer_lbl)
             self._ch_timer_labels[ch] = timer_lbl
 
+            # Channel badge — circle with letter inside, color = state
+            bw = ChannelBindingWidget(ch)
+            bw.setFixedSize(32, 32)
+            row_layout.addWidget(bw)
+            self._channel_widgets[ch] = bw
+
+            # Status label (left-aligned, stretch) — shows Ready / Contact / Wash / —
+            status_lbl = QLabel("\u2014")
+            status_lbl.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
+            status_lbl.setStyleSheet(
+                f"font-size: 12px; font-weight: 600; color: #3A3A3C; font-family: {_FONT};"
+                f" border: none; background: transparent; margin-left: 8px;"
+            )
+            status_lbl.setFixedWidth(88)
+            row_layout.addWidget(status_lbl)
+            self._channel_role_labels[ch] = status_lbl
+
+            # Concentration label (right-aligned) — always in layout, blank when not set
+            conc_lbl = QLabel("")
+            conc_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            conc_lbl.setStyleSheet(
+                f"font-size: 11px; font-weight: 500; color: {_MUTED}; font-family: {_MONO};"
+                f" border: none; background: transparent;"
+            )
+            conc_lbl.setFixedWidth(65)
+            row_layout.addWidget(conc_lbl)
+            self._ch_conc_labels[ch] = conc_lbl
+
             channels_vlayout.addWidget(row_frame)
 
-        # Legend strip — explains the three symbol states once
-        legend = QLabel("\u00b7\u25cb approaching \u00b7\u25c9 contact \u25cb\u00b7 wash")
+        # Legend strip — explains circle colors
+        legend = QLabel(
+            '<span style="color:#34C759;">\u25cf</span> ready\u2003'
+            '<span style="color:#AF52DE;">\u25cf</span> binding\u2003'
+            '<span style="color:#5AC8FA;">\u25cf</span> wash'
+        )
+        legend.setTextFormat(Qt.TextFormat.RichText)
         legend.setAlignment(Qt.AlignmentFlag.AlignCenter)
         legend.setStyleSheet(
             f"font-size: 11px; color: #AEAEB2; font-family: {_MONO};"
@@ -379,92 +436,27 @@ class InjectionActionBar(QFrame):
 
         outer.addWidget(channels_container)
 
-        # Divider before active controls
-        div = QFrame()
-        div.setFixedHeight(1)
-        div.setStyleSheet("background: rgba(0,0,0,0.08); border: none;")
-        outer.addWidget(div)
+        # Stub attributes — kept so existing call sites don't crash.
+        class _Stub:
+            def __getattr__(self, _): return lambda *a, **kw: None
+        self._stack        = _Stub()
+        self._idle_lbl     = _Stub()
+        self._idle_sub     = _Stub()
+        self._label        = _Stub()
+        self._status_label = _Stub()
+        self._timer_label  = _Stub()
+        self._row2_widget  = _Stub()
 
-        # Stacked content: page 0 = idle, page 1 = active
-        self._stack = QStackedWidget()
-        self._stack.setStyleSheet("background: transparent;")
-        outer.addWidget(self._stack, 1)
-
-        # ── Page 0: Idle ─────────────────────────────────────────────────
-        idle_page = QFrame()
-        idle_page.setStyleSheet("background: transparent; border: none;")
-        idle_layout = QVBoxLayout(idle_page)
-        idle_layout.setContentsMargins(12, 6, 12, 6)
-        idle_layout.addStretch()
-
-        self._idle_lbl = QLabel("No binding cycle active")
-        self._idle_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._idle_lbl.setWordWrap(True)
-        self._idle_lbl.setStyleSheet(
-            f"font-size: 12px; color: {_MUTED}; font-family: {_FONT};"
-        )
-        idle_layout.addWidget(self._idle_lbl)
-
-        self._idle_sub = QLabel()
-        self._idle_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._idle_sub.setWordWrap(True)
-        self._idle_sub.setStyleSheet(
-            f"font-size: 12px; color: #AEAEB2; font-family: {_FONT};"
-        )
-        self._idle_sub.setVisible(False)
-        idle_layout.addWidget(self._idle_sub)
-
-        idle_layout.addStretch()
-        self._stack.addWidget(idle_page)   # index 0
-
-        # ── Page 1: Active ────────────────────────────────────────────────
-        active_page = QFrame()
-        active_page.setStyleSheet("background: transparent; border: none;")
-        active_layout = QVBoxLayout(active_page)
-        active_layout.setContentsMargins(10, 4, 10, 4)
-        active_layout.setSpacing(2)
-
-        # Single compact label — shows inline countdown during phase 1,
-        # plain status text during phase 2.  No badge, no buttons.
-        self._label = QLabel()
-        self._label.setStyleSheet(
-            f"font-size: 13px; font-weight: 600; color: {_TEXT}; font-family: {_FONT};"
-        )
-        self._label.setWordWrap(True)
-        active_layout.addWidget(self._label)
-
-        # Phase 1 badge kept as hidden attribute for backward compat but never shown
-        self._phase1_badge = self._label   # alias — tick updates _label directly
-        self._cancel_btn = None             # no cancel button
-
-        # Row 2: status + contact countdown (Phase 2 only)
-        self._row2_widget = QFrame()
-        self._row2_widget.setStyleSheet("background: transparent; border: none;")
-        row2 = QHBoxLayout(self._row2_widget)
-        row2.setContentsMargins(0, 0, 0, 0)
-        row2.setSpacing(8)
-
-        self._status_label = QLabel()
-        self._status_label.setStyleSheet(
-            f"font-size: 13px; color: {_GREEN}; font-family: {_FONT};"
-        )
-        row2.addWidget(self._status_label, 1)
-
-        self._timer_label = QLabel()
-        self._timer_label.setStyleSheet(
-            f"font-size: 13px; font-weight: 700; color: {_BLUE}; font-family: {_MONO};"
-        )
-        row2.addWidget(self._timer_label)
-
-        active_layout.addWidget(self._row2_widget)
-        self._row2_widget.setVisible(False)
-
-        self._stack.addWidget(active_page)   # index 1
+        # Hidden spacer to preserve layout height
+        _spacer = QFrame()
+        _spacer.setFixedHeight(4)
+        _spacer.setStyleSheet("background: transparent; border: none;")
+        outer.addWidget(_spacer)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     def set_panel_active(self, active: bool) -> None:
-        """Activate or deactivate the Contact Monitor panel.
+        """Activate or deactivate the Manual Injection Assistant panel.
 
         When *active* is True (binding cycle running), the panel shows its
         normal blue/green appearance and responds to injections.
@@ -495,68 +487,41 @@ class InjectionActionBar(QFrame):
         """Whether the panel is currently active (binding cycle in progress)."""
         return bool(self._panel_active)
 
-    def show_phase1(
-        self,
-        label: str,
-        channels: str,
-        on_ready: Callable,
-        on_cancel: Callable,
-        contact_time: Optional[float] = None,
-    ) -> None:
-        """Show Phase 1: Get Ready — tell user exactly when/where/how long."""
-        # Auto-activate panel when an injection phase begins
-        if not self._panel_active:
-            self.set_panel_active(True)
-        self._on_ready_cb = on_ready
-        self._on_cancel_cb = on_cancel
-        self._phase1_done = False
-        self._contact_countdown = int(contact_time) if contact_time else None
-        self._active_channels = set(channels.upper())
-
-        # Build instruction line inline — countdown shown as trailing "· Ns"
-        ch_str = ", ".join(sorted(self._active_channels)) if self._active_channels else channels.upper()
-        self._phase1_ch_str = ch_str          # saved for tick updates
-        self._phase1_hold_str = ""
-        if self._contact_countdown:
-            m, s = divmod(self._contact_countdown, 60)
-            self._phase1_hold_str = f"  ·  Hold {m}m {s:02d}s" if m else f"  ·  Hold {s}s"
-        self._label.setText(
-            f"Inject into {ch_str}{self._phase1_hold_str}  ·  monitoring in {self.PHASE1_SECONDS}s"
-        )
-
-        self._row2_widget.setVisible(False)
-
-        self._set_channel_colors_for_phase1()
-
-        self._countdown = self.PHASE1_SECONDS
-        self._timer.start(1000)
-        self._stack.setCurrentIndex(1)
-
-    def show_phase2(
+    def show_monitoring(
         self,
         channels: str,
         on_done: Callable,
         on_cancel: Callable,
         contact_time: Optional[float] = None,
+        buffer_mgr=None,
+        keep_alive: bool = False,
+        concentrations: dict | None = None,
+        conc_units: str = "nM",
     ) -> None:
-        """Switch to Phase 2: injection monitoring.
+        """Enter monitoring state immediately — no phase 1 countdown.
+
+        The _InjectionMonitor drives detection. This panel just shows state.
 
         Args:
             channels: Uppercase string of channels to monitor, e.g. "ABCD"
-            on_done: Called when Done clicked or timeout
-            on_cancel: Called when Cancel clicked
-            contact_time: Contact time in seconds to count down (optional)
+            on_done: Called when all channels wash or coordinator signals complete
+            on_cancel: Called when coordinator cancels
+            contact_time: Per-channel contact time in seconds (countdown shown after detection)
+            keep_alive: If True, suppress the 1500ms auto-done after first detection.
+                        Use for P4SPR where wash (fire #2) must be detected before completing.
         """
-        # Auto-activate panel when an injection phase begins
         if not self._panel_active:
             self.set_panel_active(True)
         self._on_done_cb = on_done
         self._on_cancel_cb = on_cancel
-        self._phase1_done = True
         self._first_detection_fired = False
         self._active_channels = set(channels.upper())
-        self._detected_channels = set()  # Reset — populated as channels auto-detect
+        self._detected_channels = set()
 
+        self._buffer_mgr = buffer_mgr
+        self._wash_channels = set()
+        self._injection_spr = {}
+        self._keep_alive = keep_alive
         self._timer.stop()
         self._window_start = time.time()
         self._contact_countdown = int(contact_time) if contact_time else None
@@ -564,19 +529,23 @@ class InjectionActionBar(QFrame):
         self._set_channel_colors_for_phase1()
         self._set_bar_idle_appearance()
 
-        ch_str = ", ".join(sorted(self._active_channels)) if self._active_channels else "?"
-        self._label.setText(f"Monitoring {ch_str} for injection…")
+        # Populate per-channel concentration labels
+        concs = concentrations or {}
+        for ch in _ALL_CHANNELS:
+            lbl = self._ch_conc_labels.get(ch)
+            if lbl is None:
+                continue
+            val = concs.get(ch.upper()) or concs.get(ch.lower())
+            if val is not None:
+                try:
+                    fval = float(val)
+                    text = f"{int(fval)} {conc_units}" if fval == int(fval) else f"{fval} {conc_units}"
+                except (ValueError, TypeError):
+                    text = str(val)
+                lbl.setText(text)
+            else:
+                lbl.setText("")
 
-        # Row 2: show monitoring state — contact countdown starts only after
-        # first detection fires via update_channel_detected().
-        self._status_label.setText("Monitoring…")
-        self._status_label.setStyleSheet(
-            f"font-size: 13px; color: {_MUTED}; font-family: {_FONT};"
-        )
-        self._timer_label.setText("")
-        self._row2_widget.setVisible(True)
-
-        self._countdown = self.PHASE2_SECONDS  # detection window only; contact time starts at detection
         self._timer.start(1000)
 
     def update_channel_detected(self, channel: str, detected: bool) -> None:
@@ -591,74 +560,80 @@ class InjectionActionBar(QFrame):
         if bw:
             if detected:
                 bw.set_state(ChannelState.CONTACT)
-                self._set_role_label_color(ch, _GREEN)
+                self._set_role_label_color(ch, _BINDING)  # purple for binding
+                self._set_channel_action(ch, "Binding")
                 self._detected_channels.add(ch)  # Track which channels actually detected
+                # SPR baseline is set externally via set_injection_baseline() from _pump_mixin
+                # when the injection flag is placed (uses time-matched SPR at t_fire, not spr[-1])
                 # Start per-channel countdown if contact_time is configured
                 if self._contact_countdown and self._ch_remaining.get(ch, 0) <= 0:
                     self._start_channel_countdown(ch, self._contact_countdown)
             elif ch in self._active_channels:
                 bw.set_state(ChannelState.PENDING)
-                self._set_role_label_color(ch, _YELLOW)
+                self._set_role_label_color(ch, _GREEN)
             else:
                 bw.set_state(ChannelState.INACTIVE)
                 self._set_role_label_color(ch, _MUTED)
 
-        # First detection in Phase 2
-        # Update ACTION column text for this channel
-        if detected:
-            self._set_channel_action(ch, "Contact")
-        elif ch in self._active_channels:
-            self._set_channel_action(ch, "Waiting")
+        # STATUS column is updated live by _refresh_delta_spr() on each tick
 
-        if detected and self._phase1_done and not self._first_detection_fired:
+        if detected and not self._first_detection_fired:
             self._first_detection_fired = True
-            if self._contact_countdown is not None:
-                # Restart contact countdown from the full duration
-                self._countdown = self._contact_countdown
-                self._window_start = time.time()
-                m, s = divmod(self._contact_countdown, 60)
-                self._timer_label.setText(f"{m:02d}:{s:02d}")
-                self._timer_label.setStyleSheet(
-                    f"font-size: 13px; font-weight: 700; color: {_GREEN};"
-                    f" font-family: {_MONO};"
-                )
-            else:
-                # No contact time — auto-complete after a brief visual confirmation delay
-                self._status_label.setText("✓ Injection detected — continuing…")
-                self._status_label.setStyleSheet(
-                    f"font-size: 13px; color: {_GREEN}; font-family: {_FONT};"
-                )
+            # Hide INJECT NOW banner — injection has happened
+            if hasattr(self, '_ready_banner'):
+                self._ready_banner.setVisible(False)
+            if self._contact_countdown is None and not self._keep_alive:
+                # No contact time and not waiting for wash — auto-complete after brief visual delay
                 QTimer.singleShot(1500, self._fire_done)
 
-    def set_channel_wash(self, channel: str) -> None:
-        """Transition a channel to the WASH state (dot departing right of ring).
+    def set_injection_baseline(self, channel: str, spr_at_injection: float) -> None:
+        """Set the SPR baseline for ΔSPR display for a detected channel.
 
-        Call this when wash injection is detected for a channel.
-        Stops that channel's overrun timer. When all active channels have been
-        washed, stops the global bar timer and fires done.
+        Called from _pump_mixin._place_injection_flag() with the time-matched SPR
+        value at t_fire (backtracked by CONFIRM_FRAMES), so ΔSPR = 0 at injection.
+        """
+        self._injection_spr[channel.upper()] = spr_at_injection
+
+    def set_channel_wash(self, channel: str) -> None:
+        """Transition a channel to the WASH state (sky-blue dot).
+
+        The bar stays in WASH state indefinitely — it does NOT auto-dismiss.
+        The coordinator calls reset_for_next_injection() when fire #3 (next
+        injection) is detected, which resets all channels back to PENDING.
         """
         ch = channel.upper()
         bw = self._channel_widgets.get(ch)
         if bw:
             bw.set_state(ChannelState.WASH)
             self._set_role_label_color(ch, "#5AC8FA")
+        self._wash_channels.add(ch)
         self._set_channel_action(ch, "Wash")
         self._stop_channel_countdown(ch)
 
-        # Check if all *detected* channels are now in WASH state.
-        # Use _detected_channels (not _active_channels) so that channels which
-        # never auto-detected (e.g. D when only A/B/C were used) don't block completion.
-        wash_set = self._detected_channels if self._detected_channels else self._active_channels
-        all_washed = bool(wash_set) and all(
-            self._channel_widgets.get(c) is not None
-            and self._channel_widgets[c].state == ChannelState.WASH
-            for c in wash_set
-        )
-        if all_washed:
-            self._timer.stop()
-            self._clear_overlay_injection()
-            self._set_bar_idle_appearance()
-            QTimer.singleShot(800, self._fire_done)
+    def reset_for_next_injection(self) -> None:
+        """Reset bar from WASH state back to PENDING — ready for next injection.
+
+        Called by coordinator on fire #3 (next sample injection detected after
+        a wash cycle). Clears all ΔSPR baselines and wash state so the Contact
+        Monitor is fresh for the incoming injection.
+        """
+        self._wash_channels.clear()
+        self._injection_spr.clear()
+        self._detected_channels.clear()
+        self._first_detection_fired = False
+        # Reset all active channels to PENDING (yellow), inactive to grey
+        for ch, bw in self._channel_widgets.items():
+            if ch in self._active_channels:
+                bw.set_state(ChannelState.PENDING)
+                self._set_role_label_color(ch, _GREEN)
+                self._set_channel_action(ch, "Ready")
+            else:
+                bw.set_state(ChannelState.INACTIVE)
+                self._set_role_label_color(ch, _MUTED)
+                self._set_channel_action(ch, "\u2014")
+        # Show INJECT NOW banner — ready for next injection
+        if hasattr(self, '_ready_banner'):
+            self._ready_banner.setVisible(True)
 
     def set_upcoming(self, label: str, channels: str) -> None:
         """Pre-announce an upcoming injection in the idle pane.
@@ -688,38 +663,31 @@ class InjectionActionBar(QFrame):
         for ch, bw in self._channel_widgets.items():
             if ch in active:
                 bw.set_state(ChannelState.PENDING)
-                self._set_role_label_color(ch, _YELLOW)
+                self._set_role_label_color(ch, _GREEN)
             else:
                 bw.set_state(ChannelState.INACTIVE)
                 self._set_role_label_color(ch, _MUTED)
 
     def update_status(self, text: str) -> None:
-        """Update the Phase 2 status line."""
+        """Update the Phase 2 status line (neutral colour)."""
         self._status_label.setText(text)
         self._status_label.setStyleSheet(
             f"font-size: 13px; color: {_GREEN}; font-family: {_FONT};"
         )
 
+    def update_readiness(self, verdict: str, message: str) -> None:
+        """No-op - readiness is shown per-channel in the STATUS column."""
+        pass
+
     def set_channel_role(self, channel: str, role: str) -> None:
-        """Set the sample role label for a channel.
-
-        Call this before show_phase2() to annotate each channel with its
-        injection role. Role is displayed persistently until hide() is called.
-
-        Args:
-            channel: 'A', 'B', 'C', or 'D'
-            role:    e.g. 'Sample', 'Reference', 'Buffer', or '\u2014'
-        """
-        ch = channel.upper()
-        self._channel_roles[ch] = role
-        lbl = self._channel_role_labels.get(ch)
-        if lbl:
-            lbl.setText(role)
+        """No-op — kept for backward compat. Status is now purely action-based."""
+        pass
 
     def _set_channel_action(self, channel: str, action: str) -> None:
-        """Update the ACTION column text for a channel.
+        """Update the STATUS column text for a channel.
 
-        Shows contextual state: 'Waiting', 'Contact', 'Wash', or '\u2014'.
+        Always shows the action state: Ready / Contact / Wash / — .
+        This is a pure user-action UI — no sample info shown here.
         """
         ch = channel.upper()
         lbl = self._channel_role_labels.get(ch)
@@ -740,16 +708,12 @@ class InjectionActionBar(QFrame):
                 lbl.setText("\u2014")
             self._stop_channel_countdown(ch)
         self._reset_all_leds()
-        self._idle_sub.setVisible(False)
-        self._stack.setCurrentIndex(0)
         # Return to dormant — panel greys out until next binding cycle
         self._panel_active = False
         self._apply_dormant_appearance()
 
     # ── Internal helpers ───────────────────────────────────────────────────────
 
-    def _blink_ready_button(self) -> None:
-        """No-op — ready button removed (non-interactive phase 1)."""
 
     def _set_role_label_color(self, ch: str, color: str) -> None:
         lbl = self._channel_role_labels.get(ch)
@@ -763,18 +727,24 @@ class InjectionActionBar(QFrame):
         for ch, bw in self._channel_widgets.items():
             if ch in self._active_channels:
                 bw.set_state(ChannelState.PENDING)
-                self._set_role_label_color(ch, _YELLOW)
-                self._set_channel_action(ch, "Waiting")
+                self._set_role_label_color(ch, _GREEN)
+                self._set_channel_action(ch, "Ready")
             else:
                 bw.set_state(ChannelState.INACTIVE)
                 self._set_role_label_color(ch, _MUTED)
                 self._set_channel_action(ch, "\u2014")
+        # Show INJECT NOW banner — all channels waiting
+        if hasattr(self, '_ready_banner'):
+            self._ready_banner.setVisible(True)
 
     def _reset_all_leds(self) -> None:
         for ch, bw in self._channel_widgets.items():
             bw.set_state(ChannelState.INACTIVE)
             self._set_role_label_color(ch, _MUTED)
             self._stop_channel_countdown(ch)
+            lbl = self._ch_conc_labels.get(ch)
+            if lbl:
+                lbl.setText("")
 
     # ── Per-channel countdown logic ───────────────────────────────────────────
 
@@ -784,23 +754,22 @@ class InjectionActionBar(QFrame):
         lbl = self._ch_timer_labels.get(ch)
         if lbl:
             lbl.setText(self._fmt_time(total_seconds))
+            _init_clr = _TIMER_OK if total_seconds > 30 else (_TIMER_WARN if total_seconds > 10 else _TIMER_CRIT)
             lbl.setStyleSheet(
-                f"font-size: 14px; font-weight: 800; color: {_GREEN};"
+                f"font-size: 14px; font-weight: 800; color: {_init_clr};"
                 f" font-family: {_MONO};"
                 f" border: none; background: transparent;"
             )
-            lbl.setVisible(True)
         self._ch_timers[ch].start()
 
     def _stop_channel_countdown(self, ch: str) -> None:
-        """Stop and hide a channel's countdown."""
+        """Stop a channel's countdown and clear the label."""
         timer = self._ch_timers.get(ch)
         if timer:
             timer.stop()
         self._ch_remaining[ch] = 0
         lbl = self._ch_timer_labels.get(ch)
         if lbl:
-            lbl.setVisible(False)
             lbl.setText("")
 
     _OVERRUN_CAP_S: int = 120  # Stop timer after 120 s past contact end if no wash
@@ -817,10 +786,9 @@ class InjectionActionBar(QFrame):
         lbl = self._ch_timer_labels.get(ch)
 
         if remaining == 0:
-            # Contact time just expired — signal upstream and cue the user to wash
+            # Contact time just expired — transition to WASH state and signal upstream
             self.channel_countdown_complete.emit(ch)
-            self._set_channel_action(ch, "Wash now!")
-            self._set_role_label_color(ch, "#FF3B30")
+            self.set_channel_wash(ch)
 
         if remaining <= -self._OVERRUN_CAP_S:
             # Overrun cap hit — wash never came; stop and flag
@@ -834,14 +802,16 @@ class InjectionActionBar(QFrame):
 
         if lbl:
             lbl.setText(self._fmt_time(remaining))
-            if remaining > 10:
-                color = _GREEN
+            if remaining > 30:
+                color = _TIMER_OK        # green — comfortable
+            elif remaining > 10:
+                color = _TIMER_WARN      # orange — getting close
             elif remaining > 0:
-                color = _YELLOW          # last 10 seconds — amber warning
+                color = _TIMER_CRIT      # red — last 10 seconds
             elif remaining == 0:
-                color = _YELLOW          # still amber at the boundary
+                color = _TIMER_CRIT      # red — boundary
             else:
-                color = "#FF3B30"        # red while overrunning (wash not yet done)
+                color = _TIMER_CRIT      # red — overrunning (wash not yet done)
             lbl.setStyleSheet(
                 f"font-size: 14px; font-weight: 800; color: {color};"
                 f" font-family: {_MONO};"
@@ -859,6 +829,23 @@ class InjectionActionBar(QFrame):
             return f"-{m}:{s:02d}"
         m, s = divmod(seconds, 60)
         return f"{m}:{s:02d}"
+
+    def get_max_contact_remaining(self) -> tuple[int, str] | None:
+        """Return (remaining_sec, channel) for the binding channel with the most time left.
+
+        Returns None if no channel has an active countdown (no injection detected yet,
+        or no contact time configured). Negative values indicate overrun.
+        Used by CycleStatusOverlay to show the contact timer as the primary display.
+        The channel letter lets the overlay label which channel the timer belongs to.
+        """
+        if not self._detected_channels:
+            return None
+        pairs = [(self._ch_remaining.get(ch, 0), ch) for ch in self._detected_channels
+                 if self._ch_timers.get(ch) and self._ch_timers[ch].isActive()]
+        if not pairs:
+            return None
+        best = max(pairs, key=lambda x: x[0])
+        return (best[0], best[1])
 
     def _set_bar_detected_appearance(self) -> None:
         """Keep neutral appearance after injection detected (no green overlay)."""
@@ -882,7 +869,7 @@ class InjectionActionBar(QFrame):
         """Grey out the entire panel — used when no binding cycle is active.
 
         Mutes the frame border/bg, header, channel rows, legend, and idle text
-        to signal that the Contact Monitor is inactive.
+        to signal that the Manual Injection Assistant is inactive.
 
         Visual distinction from active: dashed border, lighter text (#C7C7CC
         vs #86868B), no blue tint.  User can tell at a glance that the panel
@@ -911,16 +898,21 @@ class InjectionActionBar(QFrame):
         # Dim header — lighter than active (#C7C7CC vs #86868B)
         if hasattr(self, '_header_lbl'):
             self._header_lbl.setStyleSheet(
-                f"font-size: 12px; font-weight: 700; color: #C7C7CC;"
-                f" font-family: {_FONT}; letter-spacing: 1.4px;"
+                f"font-size: 11px; font-weight: 600; color: #C7C7CC;"
+                f" font-family: {_FONT}; letter-spacing: 0px;"
                 f" background: transparent; border: none;"
             )
-        # Dim idle text
+        # Dim idle text — also hide sub-label to prevent state bleed
         if hasattr(self, '_idle_lbl'):
-            self._idle_lbl.setText("No binding cycle active")
+            self._idle_lbl.setText("Waiting for binding cycle")
             self._idle_lbl.setStyleSheet(
                 f"font-size: 12px; color: #C7C7CC; font-family: {_FONT};"
             )
+        if hasattr(self, '_idle_sub'):
+            self._idle_sub.setVisible(False)
+        # Hide INJECT NOW banner — panel is dormant
+        if hasattr(self, '_ready_banner'):
+            self._ready_banner.setVisible(False)
         # Grey out all channel widgets and role labels
         for ch in _ALL_CHANNELS:
             bw = self._channel_widgets.get(ch)
@@ -964,13 +956,13 @@ class InjectionActionBar(QFrame):
         # Restore header to normal muted color (darker than dormant's #C7C7CC)
         if hasattr(self, '_header_lbl'):
             self._header_lbl.setStyleSheet(
-                f"font-size: 12px; font-weight: 700; color: {_MUTED};"
-                f" font-family: {_FONT}; letter-spacing: 1.4px;"
+                f"font-size: 11px; font-weight: 600; color: {_MUTED};"
+                f" font-family: {_FONT}; letter-spacing: 0px;"
                 f" background: transparent; border: none;"
             )
         # Restore idle label
         if hasattr(self, '_idle_lbl'):
-            self._idle_lbl.setText("Waiting for injection…")
+            self._idle_lbl.setText("Monitoring — awaiting injection")
             self._idle_lbl.setStyleSheet(
                 f"font-size: 12px; color: {_MUTED}; font-family: {_FONT};"
             )
@@ -981,76 +973,47 @@ class InjectionActionBar(QFrame):
     # ── Timer tick ────────────────────────────────────────────────────────────
 
     def _tick(self) -> None:
-        self._countdown -= 1
+        if self._window_start is not None:
+            elapsed = int(time.time() - self._window_start)
+            m, s = divmod(elapsed, 60)
+            self._timer_label.setText(f"{m:02d}:{s:02d}")
 
-        if not self._phase1_done:
-            # Phase 1: count down to auto-ready (non-interactive)
-            if self._countdown <= 0:
-                self._timer.stop()
-                self._fire_ready()
-            else:
-                # Update inline countdown in label text
-                ch_str = getattr(self, '_phase1_ch_str', '?')
-                hold_str = getattr(self, '_phase1_hold_str', '')
-                self._label.setText(f"Inject into {ch_str}{hold_str}  ·  monitoring in {self._countdown}s")
-        else:
-            # Phase 2: contact time countdown or elapsed
-            if self._contact_countdown is not None:
-                if self._first_detection_fired:
-                    # Contact time running from injection — count down through 0 and into
-                    # negative (overrun) until wash is detected externally.
-                    # Timer keeps running; _fire_done() is NOT called here.
-                    remaining = self._countdown   # may go negative
-                    self._sync_overlay_countdown(max(0, remaining))
-                    if remaining <= 0:
-                        # Overrun — show negative time in red
-                        color = "#FF3B30"
-                        self._clear_overlay_injection()
-                    elif remaining <= 10:
-                        color = _YELLOW
-                    else:
-                        color = _GREEN
-                    self._timer_label.setText(self._fmt_time(remaining))
-                    self._timer_label.setStyleSheet(
-                        f"font-size: 11px; font-weight: 700; color: {color};"
-                        f" font-family: {_MONO};"
-                    )
-                else:
-                    # Waiting for injection — show countdown to end of detection window
-                    self._countdown += 1  # undo top decrement; contact time only ticks after detection
-                    if self._window_start is not None:
-                        waiting = int(time.time() - self._window_start)
-                        remaining_detect = max(0, self.PHASE2_SECONDS - waiting)
-                        m, s = divmod(remaining_detect, 60)
-                        if remaining_detect <= 10:
-                            detect_color = "#FF3B30"   # red — urgent
-                        elif remaining_detect <= 20:
-                            detect_color = _YELLOW     # amber — warning
-                        else:
-                            detect_color = _MUTED      # grey — normal
-                        self._timer_label.setText(f"{m:02d}:{s:02d}")
-                        self._timer_label.setStyleSheet(
-                            f"font-size: 11px; font-weight: 700; color: {detect_color};"
-                            f" font-family: {_MONO};"
-                        )
-                        self._status_label.setText(
-                            f"Inject within {remaining_detect}s…" if remaining_detect > 0
-                            else "Window closing…"
-                        )
-                        # Fallback: if waited beyond PHASE2_SECONDS without detection, fire done
-                        if waiting >= self.PHASE2_SECONDS:
-                            self._timer.stop()
-                            self._fire_done()
-            else:
-                # Generic elapsed timer (no contact_time configured)
-                if self._window_start is not None:
-                    elapsed = int(time.time() - self._window_start)
-                    m, s = divmod(elapsed, 60)
-                    self._timer_label.setText(f"{m:02d}:{s:02d}")
+        # Update per-channel ΔSPR in STATUS column
+        self._refresh_delta_spr()
 
-                if self._countdown <= 0:
-                    self._timer.stop()
-                    self._fire_done()
+    def _refresh_delta_spr(self) -> None:
+        """Update STATUS labels for detected channels only.
+
+        PENDING channels (pre-injection) are NOT touched here — their "Ready"
+        text is set by _set_channel_colors_for_phase1 and must persist.
+        Only channels that have had injection baseline set (post-detection)
+        get live ΔSPR updates. Wash channels stay on "Wash".
+        """
+        if self._buffer_mgr is None:
+            return
+        try:
+            cycle_data = getattr(self._buffer_mgr, 'cycle_data', None)
+            if cycle_data is None:
+                return
+            for ch in _ALL_CHANNELS:
+                lbl = self._channel_role_labels.get(ch)
+                if lbl is None:
+                    continue
+                # Wash: static label set by set_channel_wash — don't overwrite
+                if ch in self._wash_channels:
+                    continue
+                # Not detected yet — leave "Ready" label alone
+                if ch not in self._injection_spr:
+                    continue
+                # Post-injection: show live ΔSPR
+                cd = cycle_data.get(ch.lower())
+                if cd is None or not hasattr(cd, 'spr') or len(cd.spr) == 0:
+                    continue
+                delta = float(cd.spr[-1]) - self._injection_spr[ch]
+                sign = "+" if delta >= 0 else ""
+                lbl.setText(f"{sign}{delta:.0f} RU")
+        except Exception:
+            pass
 
     # ── Overlay sync ──────────────────────────────────────────────────────────
 
@@ -1093,15 +1056,6 @@ class InjectionActionBar(QFrame):
         if self._on_cancel_cb:
             self._on_cancel_cb()
 
-    def _fire_ready(self) -> None:
-        if self._phase1_done:
-            return
-        self._phase1_done = True
-        self._timer.stop()
-        cb = self._on_ready_cb
-        if cb:
-            cb()
-
     def _fire_done(self) -> None:
         self._timer.stop()
         # Stop all per-channel timers
@@ -1111,7 +1065,6 @@ class InjectionActionBar(QFrame):
         self._detected_channels.clear()
         self._first_detection_fired = False
         self._reset_all_leds()
-        self._stack.setCurrentIndex(0)
         # Return to dormant
         self._panel_active = False
         self._apply_dormant_appearance()
@@ -1130,15 +1083,10 @@ class InjectionActionBar(QFrame):
         for ch in _ALL_CHANNELS:
             self._stop_channel_countdown(ch)
         self._reset_all_leds()
-        # Stay visible with an explanatory message — user must dismiss
-        self._label.setText("Injection not detected")
-        self._status_label.setText("Add flags manually in Edits tab")
-        self._status_label.setStyleSheet(
-            f"font-size: 11px; color: #FF9500; font-family: {_FONT};"
-        )
-        self._timer_label.setText("")
-        self._row2_widget.setVisible(True)
-        self._stack.setCurrentIndex(1)  # show monitoring page
+        # Show missed message per-channel in STATUS column
+        for ch in self._active_channels:
+            self._set_channel_action(ch, "Not detected")
+            self._set_role_label_color(ch, "#FF9500")
         # Auto-dismiss after 8s so the bar doesn't stay forever
         from PySide6.QtCore import QTimer as _QTimer
         _QTimer.singleShot(8000, lambda: self.set_panel_active(False))
@@ -1150,9 +1098,5 @@ class InjectionActionBar(QFrame):
             detected_channels: e.g. "C, D"
             expected_channels: e.g. "A, B"
         """
-        self._status_label.setText(
-            f"⚠ Detected on {detected_channels} — expected {expected_channels}"
-        )
-        self._status_label.setStyleSheet(
-            f"font-size: 11px; color: #FF9500; font-weight: 600; font-family: {_FONT};"
-        )
+        # Mislabel warning not applicable in per-channel STATUS model
+        pass

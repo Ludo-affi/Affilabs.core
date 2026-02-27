@@ -146,7 +146,7 @@ class UnifiedCycleBar(QFrame):
             QPushButton {
                 background: rgba(255, 255, 255, 0.8);
                 padding: 0px 16px;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: 500;
                 color: #1D1D1F;
                 border-radius: 6px;
@@ -176,7 +176,7 @@ class UnifiedCycleBar(QFrame):
             QPushButton {
                 background: rgba(255, 255, 255, 0.9);
                 padding: 0px 16px;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: 600;
                 color: #FF3B30;
                 border-radius: 6px;
@@ -286,7 +286,7 @@ class UnifiedCycleBar(QFrame):
         if next_warning:
             self.info_label.setText(next_warning)
             self.info_label.setStyleSheet(
-                f"font-size: 12px; color: {Colors.WARNING}; "
+f"font-size: 13px; color: {Colors.WARNING}; "
                 f"font-weight: {Fonts.WEIGHT_SEMIBOLD}; font-family: {Fonts.SYSTEM}; "
                 f"background: transparent;"
             )
@@ -610,7 +610,7 @@ class UnifiedCycleBar(QFrame):
                 QPushButton {
                     background: rgba(0, 122, 255, 0.12);
                     padding: 0px 12px;
-                    font-size: 12px;
+                    font-size: 13px;
                     font-weight: 600;
                     color: #007AFF;
                     border-radius: 6px;
@@ -623,9 +623,9 @@ class UnifiedCycleBar(QFrame):
             QPushButton {
                 background: rgba(0, 0, 0, 0.05);
                 padding: 0px 12px;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: 500;
-                color: #86868B;
+                color: #6E6E73;
                 border-radius: 6px;
                 border: 1px solid #D1D1D6;
             }
@@ -640,7 +640,7 @@ class UnifiedCycleBar(QFrame):
             QPushButton {
                 background: #34C759;
                 padding: 0px 18px;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: 600;
                 color: white;
                 border-radius: 6px;
@@ -659,11 +659,13 @@ class UnifiedCycleBar(QFrame):
         'POSSIBLE_BUBBLE': '🫧',
         'POSSIBLE_LEAK':   '💧',
         'BASELINE_DRIFT':  '📉',
+        'CHIP_DEGRADED':   '⚠️',
     }
     _ANOMALY_MESSAGES = {
-        'POSSIBLE_BUBBLE': 'Possible air bubble — {ch}. Signal may recover.',
-        'POSSIBLE_LEAK':   'Possible leak — {ch}. Check connections.',
+        'POSSIBLE_BUBBLE': 'Bubble trouble — {ch}. Signal may recover.',
+        'POSSIBLE_LEAK':   'Check for leak — {ch}. Check connections.',
         'BASELINE_DRIFT':  'Baseline drifting — {ch}. Re-stabilise before injecting.',
+        'CHIP_DEGRADED':   'Signal broadening — {ch}. Sensor chip may need replacing.',
     }
 
     def set_inject_anomaly(self, flag: str, channel: str) -> None:
@@ -719,7 +721,7 @@ class UnifiedCycleBar(QFrame):
             QPushButton {
                 background: rgba(255,255,255,0.85);
                 padding: 0px 16px;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: 600;
                 color: #FF9500;
                 border-radius: 6px;
@@ -759,7 +761,7 @@ class UnifiedCycleBar(QFrame):
             QPushButton {
                 background: rgba(255, 255, 255, 0.9);
                 padding: 0px 16px;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: 600;
                 color: #FF3B30;
                 border-radius: 6px;

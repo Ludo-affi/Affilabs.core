@@ -78,5 +78,15 @@
     "timestamp": "2026-02-22T13:28:02.147717",
     "question": "the calibration failed, what can i do",
     "answer": "Startup calibration takes 1-2 minutes. If it fails, check for flow path obstructions, verify reagents are loaded, and confirm the detector connection. You can retry or power cycle the device."
+  },
+  {
+    "timestamp": "2026-02-24T12:17:21.506888",
+    "question": "where is my data saved?",
+    "answer": "Data is **auto-saved** during acquisition. If recording stopped unexpectedly:\n\n1. Check `_data/` folder \u2014 raw data files are saved there automatically\n2. Open the **Export** tab \u2192 **Load from file** to recover a session\n3. If you see data in the sensorgram, it can still be exported\n\nFor future sessions: always click **Record** before starting cycles to ensure named saving."
+  },
+  {
+    "timestamp": "2026-02-24T14:21:09.336986",
+    "question": "how start software",
+    "answer": "Affilabs is Affinit\u00e9 Instruments' SPR data acquisition software. To get started:\n\n1. Connect your SPR instrument via USB\n2. Launch Affilabs - it will auto-detect your device\n3. Run OEM LED Calibration (Settings tab)\n4. Start acquiring data using the Start Recording button\n\nFor detailed tutorials, visit the Support section on our website."
   }
 ]

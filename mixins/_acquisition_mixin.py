@@ -15,7 +15,7 @@ from PySide6.QtCore import QTimer
 from affilabs.app_config import LEAK_DETECTION_WINDOW
 
 # Intensity-drop leak detection constants
-_LEAK_DROP_THRESHOLD = 0.15   # Alert if intensity falls to ≤15% of baseline
+_LEAK_DROP_THRESHOLD = 0.25   # Alert if intensity falls to ≤25% of baseline
 _LEAK_BASELINE_WINDOW = 30.0  # Seconds to establish baseline (rolling max)
 _LEAK_CONFIRM_WINDOW = 3.0    # Seconds of sustained low signal before alerting
 
@@ -184,63 +184,82 @@ class AcquisitionMixin:
             if elapsed > _LEAK_BASELINE_WINDOW and self._intensity_baseline.get(channel, 0) > 0:
                 self._intensity_baseline_locked[channel] = True
 
-        # Only check after baseline is established and not already alerted
+        # Only check after baseline is established
         baseline = self._intensity_baseline.get(channel, 0.0)
-        if (
-            baseline > 0
-            and self._intensity_baseline_locked.get(channel, False)
-            and channel not in self._leak_alerted
-        ):
+        if baseline > 0 and self._intensity_baseline_locked.get(channel, False):
             drop_ratio = intensity / baseline
-            if drop_ratio <= _LEAK_DROP_THRESHOLD:
-                # Signal is critically low — track how long it's been low
-                if self._intensity_low_since.get(channel) is None:
-                    self._intensity_low_since[channel] = timestamp
-                low_duration = timestamp - self._intensity_low_since[channel]
-                if low_duration >= _LEAK_CONFIRM_WINDOW:
-                    # Sustained drop — alert user once
-                    self._leak_alerted.add(channel)
-                    logger.warning(
-                        f"⚠ OPTICAL LEAK detected — Channel {channel.upper()}: "
-                        f"intensity dropped to {drop_ratio*100:.1f}% of baseline "
-                        f"({intensity:.0f} / {baseline:.0f} counts), "
-                        f"sustained for {low_duration:.1f}s"
-                    )
-                    self._push_leak_alert(channel, drop_ratio, baseline)
+
+            if channel in self._leak_alerted:
+                # Channel already alerted — watch for recovery (signal back above 50% of baseline)
+                if drop_ratio >= 0.50:
+                    if not hasattr(self, '_leak_recovered'):
+                        self._leak_recovered: set[str] = set()
+                    if channel not in self._leak_recovered:
+                        self._leak_recovered.add(channel)
+                        logger.info(
+                            f"✅ LEAK RESOLVED — Channel {channel.upper()}: "
+                            f"intensity recovered to {drop_ratio*100:.1f}% of baseline"
+                        )
+                        self._push_leak_resolved(channel)
             else:
-                # Signal recovered — reset the low-timer
-                self._intensity_low_since[channel] = None
+                if drop_ratio <= _LEAK_DROP_THRESHOLD:
+                    # Signal is critically low — track how long it's been low
+                    if self._intensity_low_since.get(channel) is None:
+                        self._intensity_low_since[channel] = timestamp
+                    low_duration = timestamp - self._intensity_low_since[channel]
+                    if low_duration >= _LEAK_CONFIRM_WINDOW:
+                        # Sustained drop — alert user once
+                        self._leak_alerted.add(channel)
+                        logger.warning(
+                            f"⚠ OPTICAL LEAK detected — Channel {channel.upper()}: "
+                            f"intensity dropped to {drop_ratio*100:.1f}% of baseline "
+                            f"({intensity:.0f} / {baseline:.0f} counts), "
+                            f"sustained for {low_duration:.1f}s"
+                        )
+                        self._push_leak_alert(channel, drop_ratio, baseline)
+                else:
+                    # Signal normal — reset the low-timer
+                    self._intensity_low_since[channel] = None
 
     def _push_leak_alert(self, channel: str, drop_ratio: float, baseline: float) -> None:
         """Push a Sparq alert when a sudden intensity drop (possible leak) is detected.
 
         Called at most once per channel per session from _handle_intensity_monitoring.
-        Runs on the processing thread — uses QTimer.singleShot to safely update UI.
+        Runs on the processing thread — emits spark_alert_signal for thread-safe UI delivery.
+        Opens the Sparq bubble (top-right) so the user sees the message immediately.
         """
         ch = channel.upper()
         pct = int(drop_ratio * 100)
         msg = (
-            f"**Warning — Possible optical leak on Channel {ch}**\n\n"
-            f"Signal intensity dropped to **{pct}% of normal** "
+            f"⚠️ **Leak detected — Channel {ch}**\n\n"
+            f"Signal dropped to **{pct}% of baseline** "
             f"({int(baseline * drop_ratio):,} vs {int(baseline):,} counts).\n\n"
-            "This usually means liquid has entered the optical path — "
-            "check the flow cell and fiber connections for water or buffer. "
-            "If injections are in progress, pause and inspect the chip."
+            "**What to do:**\n"
+            "1. Pause the experiment if injections are in progress.\n"
+            "2. Check the flow cell window for liquid — dry with a lint-free swab.\n"
+            "3. Re-run calibration once the optical path is dry.\n"
+            "4. If signal doesn't recover after drying, contact **Affinite support**."
         )
 
-        def _do_push():
-            try:
-                sidebar = getattr(self, 'spark_sidebar', None)
-                if sidebar and hasattr(sidebar, 'spark_widget') and sidebar.spark_widget:
-                    sidebar.spark_widget.push_system_message(msg)
-                    # Ensure the sidebar is visible
-                    if hasattr(sidebar, 'show'):
-                        sidebar.show()
-            except Exception as e:
-                logger.warning(f"Leak alert UI push failed: {e}")
+        # Emit signal — thread-safe delivery to main thread via Qt queued connection
+        if hasattr(self, 'spark_alert_signal'):
+            self.spark_alert_signal.emit(msg)
+        else:
+            logger.warning("spark_alert_signal not found — leak alert not delivered to UI")
 
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(0, _do_push)
+    def _push_leak_resolved(self, channel: str) -> None:
+        """Push a Sparq resolved message and auto-trigger quick calibration."""
+        ch = channel.upper()
+        msg = (
+            f"✅ **Leak resolved — Channel {ch}**\n\n"
+            "Signal has recovered — optical path looks clear.\n\n"
+            "Running a quick recalibration to restore the S-pol reference..."
+        )
+        if hasattr(self, 'spark_alert_signal'):
+            self.spark_alert_signal.emit(msg)
+        # Auto-trigger quick calibration on main thread (thread-safe signal)
+        if hasattr(self, 'leak_recalibrate_signal'):
+            self.leak_recalibrate_signal.emit()
 
     def _queue_transmission_update(self, channel: str, data: dict):
         """Queue transmission spectrum update for batch processing."""
@@ -303,6 +322,21 @@ class AcquisitionMixin:
         self._intensity_baseline_locked = {}
         self._intensity_low_since = {}
         self._leak_alerted = set()
+        self._leak_recovered = set()
+
+        # Reset wavelength out-of-range alert state for the new session
+        self._wl_high_alerted = set()
+        self._wl_high_counts = {}
+
+        # Reset air bubble detector and wire it to this window
+        try:
+            from affilabs.services.air_bubble_detector import AirBubbleDetector
+            detector = AirBubbleDetector.get_instance()
+            detector.reset_session()
+            mw = getattr(self, 'main_window', self)
+            detector.set_alert_target(mw)
+        except Exception:
+            pass
         self._acq_start_time = None
 
         # Note: active_cycle_card is shown only when a cycle is actually running
@@ -607,6 +641,34 @@ class AcquisitionMixin:
             stop_cursor.setValue(elapsed_time)
         except (AttributeError, RuntimeError):
             pass
+
+    def _on_spark_alert(self, text: str):
+        """Deliver a system alert to Sparq bubble. Runs on main thread.
+
+        For fault alerts (⚠️): opens spectrum bubble so user can see raw signal.
+        For resolved alerts (✅): closes spectrum bubble — problem is gone.
+        """
+        try:
+            mw = getattr(self, 'main_window', None)
+            if mw is None:
+                return
+            # Push to Sparq bubble
+            bubble = getattr(mw, 'spark_bubble', None)
+            if bubble is not None and hasattr(bubble, 'push_system_message'):
+                bubble.push_system_message(text)
+            else:
+                sidebar = getattr(self, 'spark_sidebar', None)
+                if sidebar and hasattr(sidebar, 'spark_widget') and sidebar.spark_widget:
+                    sidebar.spark_widget.push_system_message(text)
+            # Spectrum bubble: open on fault, close on resolved
+            spec = getattr(mw, 'spectrum_bubble', None)
+            if spec is not None:
+                if text.startswith('✅'):
+                    spec.hide()
+                else:
+                    spec.show()
+        except Exception as e:
+            logger.warning(f"Spark alert delivery failed: {e}")
 
     def _update_cycle_of_interest_graph(self):
         """Update the cycle-of-interest graph based on cursor positions."""

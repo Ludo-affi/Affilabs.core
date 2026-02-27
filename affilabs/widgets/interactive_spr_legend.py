@@ -21,16 +21,6 @@ from PySide6.QtGui import QFont, QColor, QPainter, QPainterPath
 from affilabs.settings import settings
 
 
-# IQ shape symbols — shape encodes quality in colorblind mode
-_IQ_SHAPES = {
-    "excellent":    "●",
-    "good":         "●",
-    "questionable": "▲",
-    "poor":         "■",
-    "critical":     "✕",
-    None:           "●",
-}
-
 _FONT_FAMILY = "-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif"
 _MONO = "'SF Mono', 'Cascadia Code', 'Consolas', monospace"
 
@@ -72,7 +62,11 @@ class _DragHandle(QLabel):
 
 
 class InteractiveSPRLegend(QWidget):
-    """Horizontal interactive legend — drag handle + title + 4 channel cells."""
+    """Horizontal interactive legend — drag handle + title + 4 channel cells.
+
+    Minimizable: click the ▾ button to collapse to a compact pill showing only
+    the drag handle and title.  Click ▸ to expand.
+    """
 
     channel_timing_selected = Signal(str)   # channel letter lower — on click
     channel_visibility_changed = Signal(str, bool)  # kept for backward compat
@@ -82,15 +76,14 @@ class InteractiveSPRLegend(QWidget):
         self.title_text = title
         self.selected_channel = 'a'
         self.channel_values = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
-        self.iq_colors = {'A': '#C7C7CC', 'B': '#C7C7CC', 'C': '#C7C7CC', 'D': '#C7C7CC'}
-        self.iq_levels = {'A': None, 'B': None, 'C': None, 'D': None}
-        self._colorblind_mode = False
         self.channel_labels = {}
         self._drag_pos = None      # QPoint set by drag handle press
         self._user_moved = False   # suppresses auto-repositioning after user drag
+        self._collapsed = False    # minimized state
 
         self.setObjectName("SPRLegend")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self._init_ui()
 
     def paintEvent(self, event):
@@ -144,15 +137,34 @@ class InteractiveSPRLegend(QWidget):
         self._title_label.mouseReleaseEvent = self._title_release
         row.addWidget(self._title_label)
 
+        # ── Minimize / expand toggle ──────────────────────────────────────────
+        self._toggle_btn = QLabel("▾")
+        self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._toggle_btn.setStyleSheet(
+            f"color: #86868B; font-size: 11px; font-family: {_FONT_FAMILY};"
+            " background: transparent; border: none; padding: 0 4px;"
+        )
+        self._toggle_btn.setToolTip("Minimize")
+        self._toggle_btn.mousePressEvent = lambda e: self._toggle_collapse()
+        row.addWidget(self._toggle_btn)
+
+        # ── Collapsible content container ─────────────────────────────────────
+        self._content_widgets = []  # widgets to show/hide on collapse
+
         # ── Vertical separator ────────────────────────────────────────────────
-        row.addWidget(self._make_sep())
+        sep0 = self._make_sep()
+        self._content_widgets.append(sep0)
+        row.addWidget(sep0)
 
         # ── Channel cells ─────────────────────────────────────────────────────
         for i, ch in enumerate(['a', 'b', 'c', 'd']):
             cell = self._create_channel_cell(ch)
+            self._content_widgets.append(cell)
             row.addWidget(cell)
             if i < 3:
-                row.addWidget(self._make_sep())
+                sep = self._make_sep()
+                self._content_widgets.append(sep)
+                row.addWidget(sep)
 
         # Default selection highlight
         self._update_channel_appearance('a', True)
@@ -173,7 +185,7 @@ class InteractiveSPRLegend(QWidget):
         return sep
 
     def _create_channel_cell(self, ch: str) -> QWidget:
-        """Single horizontal channel cell: [ch-letter] [iq-dot] [value]."""
+        """Single horizontal channel cell: [value]."""
         color_str = _color_to_css(settings.ACTIVE_GRAPH_COLORS[ch])
 
         cell = QWidget()
@@ -183,21 +195,6 @@ class InteractiveSPRLegend(QWidget):
         layout = QHBoxLayout(cell)
         layout.setContentsMargins(8, 2, 8, 2)
         layout.setSpacing(4)
-
-        # Channel letter
-        ch_lbl = QLabel(ch.upper())
-        ch_lbl.setStyleSheet(
-            f"color: {color_str}; font-weight: 700; font-size: 11px;"
-            f" font-family: {_FONT_FAMILY}; background: transparent;"
-        )
-        layout.addWidget(ch_lbl)
-
-        # IQ dot
-        iq_dot = QLabel("●")
-        iq_dot.setStyleSheet(
-            f"color: {self.iq_colors[ch.upper()]}; font-size: 12px; background: transparent;"
-        )
-        layout.addWidget(iq_dot)
 
         # Value
         value_lbl = QLabel("0.0")
@@ -210,14 +207,12 @@ class InteractiveSPRLegend(QWidget):
 
         self.channel_labels[ch] = {
             'widget': cell,
-            'ch_lbl': ch_lbl,
             'value': value_lbl,
-            'iq_dot': iq_dot,
-            'iq_color_base': self.iq_colors[ch.upper()],
             'color_str': color_str,
         }
 
         cell.mousePressEvent = lambda e, c=ch: self._on_channel_clicked(c)
+        value_lbl.mousePressEvent = lambda e, c=ch: self._on_channel_clicked(c)
         cell.setStyleSheet("background: transparent; border: none;")
         return cell
 
@@ -245,13 +240,42 @@ class InteractiveSPRLegend(QWidget):
     def _title_release(self, event):
         self._drag_pos = None
 
+    # ── Collapse / expand ─────────────────────────────────────────────────────
+
+    def _toggle_collapse(self):
+        """Toggle between expanded (all channels visible) and collapsed (title only)."""
+        self._collapsed = not self._collapsed
+        for w in self._content_widgets:
+            w.setVisible(not self._collapsed)
+        self._toggle_btn.setText("▸" if self._collapsed else "▾")
+        self._toggle_btn.setToolTip("Expand" if self._collapsed else "Minimize")
+        self.adjustSize()
+
     # ── Channel interaction ───────────────────────────────────────────────────
 
     def _on_channel_clicked(self, channel: str):
+        self.setFocus()
         self.selected_channel = channel
         for ch in self.channel_labels:
             self._update_channel_appearance(ch, ch == channel)
         self.channel_timing_selected.emit(channel)
+
+    _CHANNELS = ['a', 'b', 'c', 'd']
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            try:
+                idx = self._CHANNELS.index(self.selected_channel)
+            except ValueError:
+                idx = 0
+            if key == Qt.Key.Key_Left:
+                idx = max(0, idx - 1)
+            else:
+                idx = min(len(self._CHANNELS) - 1, idx + 1)
+            self._on_channel_clicked(self._CHANNELS[idx])
+        else:
+            super().keyPressEvent(event)
 
     def _update_channel_appearance(self, channel: str, is_selected: bool):
         if channel not in self.channel_labels:
@@ -273,43 +297,7 @@ class InteractiveSPRLegend(QWidget):
         for ch, value in delta_values.items():
             if ch in self.channel_labels:
                 sign = "+" if value >= 0 else ""
-                self.channel_labels[ch]['value'].setText(f"{sign}{value:.1f}")
-
-    def set_iq_state(self, channel: str, hex_color: str, iq_level: str | None = None):
-        """Update IQ dot color and shape for a channel."""
-        ch = channel.lower()
-        if ch not in self.channel_labels:
-            return
-        ch_upper = ch.upper()
-        self.channel_labels[ch]['iq_color_base'] = hex_color
-        self.iq_colors[ch_upper] = hex_color
-        self.iq_levels[ch_upper] = iq_level
-
-        shape = _IQ_SHAPES.get(iq_level, "●") if self._colorblind_mode else "●"
-        iq_dot = self.channel_labels[ch]['iq_dot']
-        iq_dot.setText(shape)
-        iq_dot.setStyleSheet(f"color: {hex_color}; font-size: 12px; background: transparent;")
-
-    def set_iq_color(self, channel: str, hex_color: str):
-        """Backward-compat wrapper — delegates to set_iq_state."""
-        ch = channel.lower()
-        iq_level = self.iq_levels.get(channel.upper())
-        self.set_iq_state(ch, hex_color, iq_level)
-
-    def set_colorblind_mode(self, enabled: bool):
-        """Switch IQ dot shape encoding and refresh value + channel label colors."""
-        self._colorblind_mode = enabled
-        # Refresh IQ dots (shape encoding)
-        for ch_lower in ['a', 'b', 'c', 'd']:
-            ch_upper = ch_lower.upper()
-            color = self.channel_labels[ch_lower]['iq_color_base']
-            iq_level = self.iq_levels.get(ch_upper)
-            shape = _IQ_SHAPES.get(iq_level, "●") if enabled else "●"
-            iq_dot = self.channel_labels[ch_lower]['iq_dot']
-            iq_dot.setText(shape)
-            iq_dot.setStyleSheet(f"color: {color}; font-size: 12px; background: transparent;")
-        # Also update value label colors to match new palette
-        self.update_colors()
+                self.channel_labels[ch]['value'].setText(f"{sign}{int(round(value))}")
 
     def update_colors(self):
         """Refresh channel letter + value label colors from ACTIVE_GRAPH_COLORS.
@@ -322,10 +310,6 @@ class InteractiveSPRLegend(QWidget):
             color_str = _color_to_css(settings.ACTIVE_GRAPH_COLORS[ch])
             info = self.channel_labels[ch]
             info['color_str'] = color_str
-            info['ch_lbl'].setStyleSheet(
-                f"color: {color_str}; font-weight: 700; font-size: 11px;"
-                f" font-family: {_FONT_FAMILY}; background: transparent;"
-            )
             info['value'].setStyleSheet(
                 f"color: {color_str}; font-weight: 600; font-size: 11px;"
                 f" font-family: {_MONO}; background: transparent;"
@@ -340,10 +324,4 @@ class InteractiveSPRLegend(QWidget):
         self.selected_channel = 'a'
         for ch in self.channel_labels:
             self._update_channel_appearance(ch, ch == 'a')
-            self.channel_labels[ch]['value'].setText("0.0")
-            iq_dot = self.channel_labels[ch]['iq_dot']
-            iq_dot.setText("●")
-            iq_dot.setStyleSheet("color: #C7C7CC; font-size: 12px; background: transparent;")
-            self.channel_labels[ch]['iq_color_base'] = '#C7C7CC'
-        self.iq_colors = {'A': '#C7C7CC', 'B': '#C7C7CC', 'C': '#C7C7CC', 'D': '#C7C7CC'}
-        self.iq_levels = {'A': None, 'B': None, 'C': None, 'D': None}
+            self.channel_labels[ch]['value'].setText("0")

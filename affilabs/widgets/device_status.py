@@ -43,7 +43,7 @@ class DeviceStatusWidget(QWidget):
         hw_section.setStyleSheet(
             "font-size: 11px;"
             "font-weight: 700;"
-            "color: #86868B;"
+            "color: #6E6E73;"
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
@@ -81,7 +81,7 @@ class DeviceStatusWidget(QWidget):
         self.hw_no_devices = QLabel("No hardware detected")
         self.hw_no_devices.setStyleSheet(
             "font-size: 13px;"
-            "color: #86868B;"
+            "color: #6E6E73;"
             "background: transparent;"
             "padding: 8px 0px;"
             "font-style: italic;"
@@ -127,7 +127,7 @@ class DeviceStatusWidget(QWidget):
         subunit_section.setStyleSheet(
             "font-size: 11px;"
             "font-weight: 700;"
-            "color: #86868B;"
+            "color: #6E6E73;"
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
@@ -161,7 +161,7 @@ class DeviceStatusWidget(QWidget):
             status_indicator.setFixedWidth(12)
             status_indicator.setStyleSheet(
                 "font-size: 14px;"
-                "color: #86868B;"  # Gray for not ready
+                "color: #6E6E73;"  # Gray for not ready
                 "background: transparent;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
@@ -184,7 +184,7 @@ class DeviceStatusWidget(QWidget):
             status_label = QLabel("Not Ready")
             status_label.setStyleSheet(
                 "font-size: 12px;"
-                "color: #86868B;"
+                "color: #6E6E73;"
                 "background: transparent;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
@@ -221,7 +221,7 @@ class DeviceStatusWidget(QWidget):
         mode_section.setStyleSheet(
             "font-size: 11px;"
             "font-weight: 700;"
-            "color: #86868B;"
+            "color: #6E6E73;"
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
@@ -255,7 +255,7 @@ class DeviceStatusWidget(QWidget):
             mode_indicator.setFixedWidth(12)
             mode_indicator.setStyleSheet(
                 "font-size: 14px;"
-                "color: #86868B;"  # Gray for disabled
+                "color: #6E6E73;"  # Gray for disabled
                 "background: transparent;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
@@ -278,7 +278,7 @@ class DeviceStatusWidget(QWidget):
             mode_status_label = QLabel("Disabled")
             mode_status_label.setStyleSheet(
                 "font-size: 12px;"
-                "color: #86868B;"
+                "color: #6E6E73;"
                 "background: transparent;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
@@ -315,7 +315,7 @@ class DeviceStatusWidget(QWidget):
         led_section.setStyleSheet(
             "font-size: 11px;"
             "font-weight: 700;"
-            "color: #86868B;"
+            "color: #6E6E73;"
             "background: transparent;"
             "letter-spacing: 0.5px;"
             "margin-left: 4px;"
@@ -349,7 +349,7 @@ class DeviceStatusWidget(QWidget):
             status_indicator.setFixedWidth(12)
             status_indicator.setStyleSheet(
                 "font-size: 14px;"
-                "color: #86868B;"  # Gray for off
+                "color: #6E6E73;"  # Gray for off
                 "background: transparent;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
@@ -372,7 +372,7 @@ class DeviceStatusWidget(QWidget):
             intensity_label = QLabel("0")
             intensity_label.setStyleSheet(
                 "font-size: 12px;"
-                "color: #86868B;"
+                "color: #6E6E73;"
                 "background: transparent;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
             )
@@ -490,14 +490,14 @@ class DeviceStatusWidget(QWidget):
                 # Inactive mode - gray indicator
                 mode_widgets["indicator"].setStyleSheet(
                     "font-size: 14px;"
-                    "color: #86868B;"
+                    "color: #6E6E73;"
                     "background: transparent;"
                     "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
                 mode_widgets["status_label"].setText("Disabled")
                 mode_widgets["status_label"].setStyleSheet(
                     "font-size: 12px;"
-                    "color: #86868B;"
+                    "color: #6E6E73;"
                     "background: transparent;"
                     "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
                 )
@@ -561,7 +561,7 @@ class DeviceStatusWidget(QWidget):
             "Ready": "#34C759",  # Green
             "Caution": "#FFCC00",  # Yellow
             "Error": "#FF3B30",  # Red
-            "Not Ready": "#86868B",  # Gray
+            "Not Ready": "#6E6E73",  # Gray
         }
 
         # Status label weight mapping
@@ -683,7 +683,7 @@ class DeviceStatusWidget(QWidget):
                     color = f"rgba(52, 199, 89, {min(alpha, 100)/100})"  # Green
                 else:
                     # LED is OFF - gray
-                    color = "#86868B"
+                    color = "#6E6E73"
 
                 self.led_status[channel_upper]["indicator"].setStyleSheet(
                     f"font-size: 14px; color: {color}; background: transparent; "
@@ -691,7 +691,7 @@ class DeviceStatusWidget(QWidget):
                 )
 
                 # Update intensity label color
-                intensity_color = "#34C759" if intensity > 0 else "#86868B"
+                intensity_color = "#34C759" if intensity > 0 else "#6E6E73"
                 self.led_status[channel_upper]["intensity_label"].setStyleSheet(
                     f"font-size: 12px; color: {intensity_color}; background: transparent; "
                     "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",

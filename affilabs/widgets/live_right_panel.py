@@ -35,7 +35,7 @@ class LiveRightPanel(QFrame):
         self.summary_table = None      # Set by caller
         self.elapsed_time_label = QLabel("Elapsed: --:--")
         self.elapsed_time_label.setStyleSheet(
-            "QLabel { font-size: 11px; color: #86868B; margin-top: 8px; }"
+            "QLabel { font-size: 12px; color: #6E6E73; margin-top: 8px; }"
         )
         
         # Placeholder layout; widgets added by caller via add_widget_ref()

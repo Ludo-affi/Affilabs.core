@@ -67,7 +67,7 @@ class DeltaSPROverlay(QWidget):
         # Delta time label
         self.delta_time_label = QLabel("Δt = --s")
         self.delta_time_label.setStyleSheet(
-            "font-size: 11px;"
+            "font-size: 12px;"
             "font-weight: 500;"
             "color: #A0A0A0;"
             "background: transparent;"
@@ -101,7 +101,7 @@ class DeltaSPROverlay(QWidget):
                 color_str = color
 
             label.setStyleSheet(
-                f"font-size: 12px;"
+                f"font-size: 13px;"
                 f"font-weight: 600;"
                 f"color: {color_str};"
                 f"background: transparent;"

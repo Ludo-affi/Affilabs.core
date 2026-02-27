@@ -51,6 +51,8 @@ _SVG_CHEVRON_DOWN = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.o
 
 _SVG_CLEAR = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#6E6E73" stroke-width="2"/><path d="M15 9l-6 6M9 9l6 6" stroke="#6E6E73" stroke-width="2" stroke-linecap="round"/></svg>'
 
+_SVG_DUPLICATE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="9" width="11" height="11" rx="2" stroke="#1D1D1F" stroke-width="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="#1D1D1F" stroke-width="2" stroke-linecap="round"/></svg>'
+
 _SVG_PLUS_WHITE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>'
 
 _SVG_CLIPBOARD_WHITE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" stroke="white" stroke-width="2" stroke-linecap="round"/><rect x="8" y="2" width="8" height="4" rx="1" stroke="white" stroke-width="2"/><path d="M9 12h6M9 16h4" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>'
@@ -148,7 +150,7 @@ class SparkMethodPopup(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("⚡ Spark — Method Assistant")
+        self.setWindowTitle("⚡ Sparq — Method Assistant")
         self.resize(460, 520)
         self.setModal(False)  # Non-blocking
         self._last_ai_text = ""  # Most recent AI answer (for Insert button)
@@ -164,7 +166,7 @@ class SparkMethodPopup(QDialog):
         root.setSpacing(8)
 
         # Header
-        hdr = QLabel("⚡ Spark — Method Assistant")
+        hdr = QLabel("⚡ Sparq — Method Assistant")
         hdr.setStyleSheet(
             "font-size: 15px; font-weight: 700; color: #1D1D1F;"
             " font-family: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;"
@@ -190,10 +192,10 @@ class SparkMethodPopup(QDialog):
         # Welcome bubble
         self._add_bubble(
             "Hi! I can help you build methods. Try asking:\n\n"
-            "• @spark titration — dose-response series\n"
-            "• @spark amine coupling — full immobilization workflow\n"
+            "• @sparq titration — dose-response series\n"
+            "• @sparq amine coupling — full immobilization workflow\n"
             "• build 5 — generate 5 binding cycles\n"
-            "• @spark regeneration / baseline / immobilization\n\n"
+            "• @sparq regeneration / baseline / immobilization\n\n"
             "I'll suggest cycles you can accept, edit, or reject.",
             is_user=False,
         )
@@ -201,7 +203,7 @@ class SparkMethodPopup(QDialog):
         # Input row
         input_row = QHBoxLayout()
         self._input = QTextEdit()
-        self._input.setPlaceholderText("Ask Spark about methods…")
+        self._input.setPlaceholderText("Ask Sparq about methods…")
         self._input.setMaximumHeight(60)
         self._input.setStyleSheet(
             "QTextEdit { background: white; border: 2px solid #E5E5EA;"
@@ -228,7 +230,7 @@ class SparkMethodPopup(QDialog):
         self._insert_btn = QPushButton("📋 Insert into Method")
         self._insert_btn.setFixedHeight(32)
         self._insert_btn.setEnabled(False)
-        self._insert_btn.setToolTip("Paste Spark's last suggestion into the Note field")
+        self._insert_btn.setToolTip("Paste Sparq's last suggestion into the Note field")
         self._insert_btn.setStyleSheet(
             "QPushButton { background: #007AFF; color: white; border: none;"
             " border-radius: 6px; padding: 4px 16px; font-size: 12px; font-weight: 600; }"
@@ -483,9 +485,9 @@ class NotesTextEdit(QPlainTextEdit):
                 event.accept()
                 return
 
-            # If @spark command, trigger processing immediately
-            if text_stripped.lower().startswith('@spark '):
-                # Trigger Spark AI processing
+            # If @sparq command, trigger processing immediately
+            if text_stripped.lower().startswith('@sparq ') or text_stripped.lower().startswith('@spark '):
+                # Trigger Sparq AI processing
                 self._parent_dialog._on_add_to_method()
                 event.accept()
                 return
@@ -569,6 +571,9 @@ class MethodBuilderDialog(QDialog):
         self._waiting_for_response = False  # Track if we're waiting for user answer
         self._pending_command = None  # Store the command waiting for answer (e.g., "amine_coupling", "build")
         self._answer_engine = None  # Initialized in background thread at startup
+        self._sparq_history = []   # Sparq bar command history (most recent last)
+        self._sparq_hist_idx = -1  # Current browse position (-1 = not browsing)
+        self._sparq_draft = ""     # Store current text when browsing history
 
         # Use shared user manager if provided, otherwise create fallback
         if user_manager:
@@ -604,7 +609,7 @@ class MethodBuilderDialog(QDialog):
         if not text:
             # Show message if empty
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.information(self, "Ask Spark",
+            QMessageBox.information(self, "Ask Sparq",
                 "Type a question or keyword. Examples:\n\n"
                 "• titration — dose-response concentration series\n"
                 "• kinetics — association + dissociation phases\n"
@@ -674,7 +679,7 @@ class MethodBuilderDialog(QDialog):
         preset_list = "\n".join(f"• @{name}" for name in preset_names) if preset_names else ""
         preset_section = f"\n\nSaved Presets:\n{preset_list}" if preset_names else ""
 
-        QMessageBox.information(self, "Spark Says...",
+        QMessageBox.information(self, "Sparq Says...",
             f"I didn't match a pattern for that query.\n\n"
             f"Try these keywords:\n"
             f"• titration / dose response / serial dilution\n"
@@ -706,7 +711,7 @@ class MethodBuilderDialog(QDialog):
         from PySide6.QtGui import QCursor
         QToolTip.showText(
             QCursor.pos(),
-            f"⚡ Spark is asking: {question}",
+            f"⚡ Sparq is asking: {question}",
             self.notes_input,
             self.notes_input.rect(),
             5000
@@ -724,7 +729,7 @@ class MethodBuilderDialog(QDialog):
         self._waiting_for_response = False
         command = self._pending_command
         self._pending_command = None
-        self.notes_input.setPlaceholderText("Type your method or ask Spark...")
+        self.notes_input.setPlaceholderText("Type your method or ask Sparq...")
 
         # Extract number from answer
         number_match = re.search(r'(\d+)', answer)
@@ -732,7 +737,7 @@ class MethodBuilderDialog(QDialog):
             # No number found - show error
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid Answer",
-                "Please type a number (e.g., '5') and press Enter or click Spark button.")
+                "Please type a number (e.g., '5') and press Enter or click Sparq button.")
             self.notes_input.clear()
             return
 
@@ -793,9 +798,9 @@ class MethodBuilderDialog(QDialog):
         )])
         
         if cycle_count >= 3:
-            tooltip_text = "⚡ Spark suggestion! Edit as needed.\n💡 Tip: Type !save my_protocol_name to save this as a preset."
+            tooltip_text = "⚡ Sparq suggestion! Edit as needed.\n💡 Tip: Type !save my_protocol_name to save this as a preset."
         else:
-            tooltip_text = "⚡ Spark suggestion! Edit as needed."
+            tooltip_text = "⚡ Sparq suggestion! Edit as needed."
         
         QToolTip.showText(
             QCursor.pos(),
@@ -1291,6 +1296,21 @@ class MethodBuilderDialog(QDialog):
         self.delete_cycle_btn.clicked.connect(self._on_delete_selected)
         step_footer.addWidget(self.delete_cycle_btn)
 
+        self.duplicate_cycle_btn = QPushButton("Duplicate")
+        self.duplicate_cycle_btn.setIcon(_create_svg_icon(_SVG_DUPLICATE, 14))
+        self.duplicate_cycle_btn.setIconSize(QSize(14, 14))
+        self.duplicate_cycle_btn.setFixedHeight(28)
+        self.duplicate_cycle_btn.setEnabled(False)
+        self.duplicate_cycle_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #007AFF;"
+            " border: 1px solid rgba(0,122,255,0.3); border-radius: 4px;"
+            " padding: 4px 10px; font-size: 12px; }"
+            " QPushButton:hover { background: rgba(0,122,255,0.1); }"
+            " QPushButton:disabled { color: #C7C7CC; border-color: rgba(0,0,0,0.1); }"
+        )
+        self.duplicate_cycle_btn.clicked.connect(self._on_duplicate_selected)
+        step_footer.addWidget(self.duplicate_cycle_btn)
+
         self.move_up_btn = QPushButton()
         self.move_up_btn.setIcon(_create_svg_icon(_SVG_CHEVRON_UP, 16))
         self.move_up_btn.setIconSize(QSize(16, 16))
@@ -1419,7 +1439,19 @@ class MethodBuilderDialog(QDialog):
         sparq_row.setContentsMargins(10, 6, 10, 6)
         sparq_row.setSpacing(8)
 
-        sparq_lbl = QLabel("⚡ Spark:")
+        _sparq_icon_svg = get_affilabs_resource("ui/img/sparq_icon.svg")
+        sparq_icon_lbl = QLabel()
+        sparq_icon_lbl.setStyleSheet("background: transparent;")
+        if _sparq_icon_svg.exists():
+            _sparq_pix = QPixmap(str(_sparq_icon_svg)).scaled(
+                18, 18,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            sparq_icon_lbl.setPixmap(_sparq_pix)
+        sparq_row.addWidget(sparq_icon_lbl)
+
+        sparq_lbl = QLabel("Sparq:")
         sparq_lbl.setStyleSheet(
             "font-size: 12px; font-weight: 700; color: #B8860B; background: transparent;"
             " font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
@@ -1434,9 +1466,10 @@ class MethodBuilderDialog(QDialog):
             "QLineEdit { background: transparent; border: none; font-size: 12px; color: #1D1D1F; }"
         )
         self._sparq_input.returnPressed.connect(self._on_sparq_ask)
+        self._sparq_input.installEventFilter(self)
         sparq_row.addWidget(self._sparq_input, 1)
 
-        self._sparq_ask_btn = QPushButton("Ask")
+        self._sparq_ask_btn = QPushButton("Add")
         self._sparq_ask_btn.setFixedSize(50, 26)
         self._sparq_ask_btn.setAutoDefault(False)
         self._sparq_ask_btn.setDefault(False)
@@ -1574,7 +1607,11 @@ class MethodBuilderDialog(QDialog):
         self.close_btn.clicked.connect(self.reject)
         button_row.addWidget(self.close_btn)
 
-        self.save_btn = QPushButton("💾 Save")
+        self.save_btn = QPushButton(" Save")
+        _save_svg = get_affilabs_resource("ui/img/save_icon.svg")
+        if _save_svg.exists():
+            self.save_btn.setIcon(QIcon(str(_save_svg)))
+            self.save_btn.setIconSize(QSize(14, 14))
         self.save_btn.setFixedHeight(40)
         self.save_btn.setToolTip("Save current method to file")
         self.save_btn.setStyleSheet(
@@ -1622,10 +1659,10 @@ class MethodBuilderDialog(QDialog):
         self.queue_btn.setIconSize(QSize(18, 18))
         self.queue_btn.setFixedHeight(40)
         self.queue_btn.setStyleSheet(
-            "QPushButton { background: #007AFF; color: white; border: none; border-radius: 8px;"
-            " padding: 8px 20px; font-size: 14px; font-weight: 600; }"
-            " QPushButton:hover { background: #0051D5; }"
-            " QPushButton:pressed { background: #003D99; }"
+            "QPushButton { background: #34C759; color: white; border: none; border-radius: 8px;"
+            " padding: 8px 20px; font-size: 14px; font-weight: 700; }"
+            " QPushButton:hover { background: #2DA44E; }"
+            " QPushButton:pressed { background: #238636; }"
         )
         self.queue_btn.clicked.connect(self._on_push_to_queue)
         button_row.addWidget(self.queue_btn)
@@ -1680,6 +1717,31 @@ class MethodBuilderDialog(QDialog):
             if hasattr(self, '_sparq_response_lbl') else None
         ))
 
+    def eventFilter(self, obj, event):
+        """Intercept Up/Down arrow on Sparq input for command history."""
+        if obj is self._sparq_input and event.type() == event.Type.KeyPress:
+            key = event.key()
+            if key == Qt.Key.Key_Up and self._sparq_history:
+                if self._sparq_hist_idx == -1:
+                    # First press — save current draft and start at most recent
+                    self._sparq_draft = self._sparq_input.text()
+                    self._sparq_hist_idx = len(self._sparq_history) - 1
+                elif self._sparq_hist_idx > 0:
+                    self._sparq_hist_idx -= 1
+                self._sparq_input.setText(self._sparq_history[self._sparq_hist_idx])
+                return True
+            if key == Qt.Key.Key_Down:
+                if self._sparq_hist_idx != -1:
+                    if self._sparq_hist_idx < len(self._sparq_history) - 1:
+                        self._sparq_hist_idx += 1
+                        self._sparq_input.setText(self._sparq_history[self._sparq_hist_idx])
+                    else:
+                        # Past the end — restore draft
+                        self._sparq_hist_idx = -1
+                        self._sparq_input.setText(self._sparq_draft)
+                    return True
+        return super().eventFilter(obj, event)
+
     def _on_sparq_ask(self):
         """Handle Sparq bar query — generate cycles (pattern match) or show answer (engine)."""
         # Always ensure button is re-enabled on entry (guards against stuck state)
@@ -1699,8 +1761,15 @@ class MethodBuilderDialog(QDialog):
         self._sparq_ask_btn.setText("⏳")
         self._sparq_ask_btn.setEnabled(False)
 
+        # Store in history for up-arrow recall
+        if not self._sparq_history or self._sparq_history[-1] != query:
+            self._sparq_history.append(query)
+        self._sparq_hist_idx = -1
+        self._sparq_draft = ""
+
         try:
-            # Layer 1: pattern-based cycle generation (returns cycle-syntax lines)
+            # Layer 1: multi-cycle macros (build N, titration, amine coupling)
+            # These generate multiple cycle lines with user-param overrides.
             cycle_lines = self._try_sparq_patterns(query)
             if cycle_lines:
                 lines_added = 0
@@ -1718,7 +1787,26 @@ class MethodBuilderDialog(QDialog):
                     QTimer.singleShot(1500, lambda: self._sparq_ask_btn.setText("Ask"))
                     return
 
-            # Layer 2: answer engine — returns prose, display it (do NOT parse as cycles)
+            # Layer 2: single-cycle — if query contains any cycle type keyword,
+            # parse directly via _build_cycle_from_text (respects all user params).
+            if re.search(
+                r'\b(bl|bn|kn|cn|im|bk|ws|rg|ot|'
+                r'baseline|binding|kinetic|kinetics|immobilization|immobilize|immob|'
+                r'blocking|block|wash|rinse|regeneration|regen|clean|strip|'
+                r'concentration|conc|association|inject|sample|'
+                r'equilibrat|other|custom)\b',
+                query, re.IGNORECASE,
+            ):
+                cycle, _ = self._build_cycle_from_text(query)
+                self._local_cycles.append(cycle)
+                self._refresh_method_table()
+                self._sparq_input.clear()
+                self._sparq_ask_btn.setText("✓ +1")
+                self._sparq_ask_btn.setEnabled(True)
+                QTimer.singleShot(1500, lambda: self._sparq_ask_btn.setText("Ask"))
+                return
+
+            # Layer 3: answer engine — returns prose, display it (do NOT parse as cycles)
             if self._answer_engine is not None:
                 try:
                     answer, _ = self._answer_engine.generate_answer(query, context="method_builder")
@@ -1743,48 +1831,61 @@ class MethodBuilderDialog(QDialog):
         self._sparq_ask_btn.setEnabled(True)
 
     def _try_sparq_patterns(self, text: str):
-        """Method-pattern matching for the Sparq bar.
+        """Multi-cycle macro patterns for the Sparq bar.
 
-        P4SPR / Manual philosophy: one cycle = one watchable region (~5–10 min).
-        Each binding rep is its own short cycle so the user sees a clear signal
-        event per queue step. Alignment and export are done in Edits afterward.
+        Only handles macros that generate MULTIPLE cycles (build N, titration,
+        amine coupling). Single-cycle types are handled by _build_cycle_from_text
+        in the caller — nothing is hardcoded here.
+
+        User-specified duration, concentration, and contact time override defaults.
         """
         t = text.lower().strip()
-        # "build N" → N binding cycles of 8.5min each (no regen/baseline padding)
-        m = re.search(r'build.*?(\d+)', t)
+
+        # ── Extract user overrides (defaults only for values NOT specified) ──
+        # Strip contact/ct portion before searching for standalone duration
+        _t_no_ct = re.sub(r'(?:contact|ct)[:\s]*\d+(?:\.\d+)?\s*(?:s|sec|m|min|h|hr)?\b', '', t)
+        dur_match = re.search(r'(\d+(?:\.\d+)?)\s*(h|hr|hours?|min|m|sec|s)\b', _t_no_ct)
+        dur_str = f"{dur_match.group(1)}{dur_match.group(2)}" if dur_match else "8.5min"
+
+        # Concentration tag — preserve original case from user input
+        conc_match = re.search(r'(\[?(?:[A-Da-d]+|ALL|all):[\d.,]+\s*[a-zA-Z\xb5/]*)\]?', text, re.IGNORECASE)
+        conc_str = conc_match.group(0) if conc_match else "[A:100nM]"
+
+        ct_match = re.search(r'(?:contact|ct)[:\s]*(\d+(?:\.\d+)?)\s*(s|sec|m|min|h|hr)?', t)
+        ct_str = f"contact {ct_match.group(1)}{ct_match.group(2) or 's'}" if ct_match else "contact 300s"
+
+        # ── "build N" → N binding cycles ──────────────────────────────────
+        m = re.search(r'build\s+(\d+)(?!\s*(?:h|hr|hours?|min|m|sec|s)\b)', t)
         if m:
             n = int(m.group(1))
-            lines = []
-            for i in range(n):
-                lines.append(f"Binding 8.5min [A:100nM] contact 300s  # Binding {i + 1}")
-            return "\n".join(lines)
+            return "\n".join(
+                f"Binding {dur_str} {conc_str} {ct_str}  # Binding {i + 1}"
+                for i in range(n)
+            )
+
+        # ── titration / dose-response → concentration series ──────────────
         if re.search(r'titration|dose.?response|serial dilution|concentration series', t):
             return (
-                "Binding 8.5min [A:10nM] contact 300s\n"
-                "Binding 8.5min [A:50nM] contact 300s\n"
-                "Binding 8.5min [A:100nM] contact 300s\n"
-                "Binding 8.5min [A:500nM] contact 300s"
+                f"Binding {dur_str} [A:10nM] {ct_str}\n"
+                f"Binding {dur_str} [A:50nM] {ct_str}\n"
+                f"Binding {dur_str} [A:100nM] {ct_str}\n"
+                f"Binding {dur_str} [A:500nM] {ct_str}"
             )
-        if re.search(r'amine coupling|amine|coupling', t):
-            n_match = re.search(r'(\d+)', t)
-            n = int(n_match.group(1)) if n_match else 5
-            # All prep in one immobilization cycle; each binding rep is its own cycle
-            lines = ["Immobilization 30min  # EDC/NHS → ligand → ethanolamine"]
+
+        # ── amine coupling → immobilization + N binding reps ──────────────
+        if re.search(r'amine\s*coupling|amine|coupling', t):
+            # Count = standalone digit NOT followed by a time unit
+            n = 5  # default
+            for cm in re.finditer(r'(\d+)', _t_no_ct):
+                after = _t_no_ct[cm.end():]
+                if not re.match(r'\s*(?:h|hr|hours?|min|m|sec|s|nm|\xb5m|um|mm|pm)\b', after, re.IGNORECASE):
+                    n = int(cm.group(1))
+                    break
+            lines = ["Immobilization 30min  # EDC/NHS \u2192 ligand \u2192 ethanolamine"]
             for i in range(n):
-                lines.append(f"Binding 8.5min [A:100nM] contact 300s  # Binding {i + 1}")
+                lines.append(f"Binding {dur_str} {conc_str} {ct_str}  # Binding {i + 1}")
             return "\n".join(lines)
-        if re.search(r'baseline|start|equilibrat', t):
-            return "Baseline 5min"
-        if re.search(r'regenerat|regen|clean|strip', t):
-            return "Regeneration 30sec [ALL:50mM]"
-        if re.search(r'binding|association|inject|sample', t):
-            return "Binding 8.5min [A:100nM] contact 300s"
-        if re.search(r'immobiliz|immob|attach|ligand', t):
-            return "Immobilization 30min"
-        if re.search(r'wash|rinse', t):
-            return "Wash 30sec"
-        if re.search(r'block', t):
-            return "Blocking 5min"
+
         return None
 
     def _update_gallery_visibility(self):
@@ -2023,20 +2124,20 @@ Binding 5min A:100nM contact 120s partial
 
 <hr/>
 
-<h4>⚡ Spark AI Shortcuts</h4>
+<h4>⚡ Sparq AI Shortcuts</h4>
 <table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
 <tr style="background:#f0f0f0;"><th>Command</th><th>What it generates</th></tr>
-<tr><td><code>@spark titration</code></td><td>Dose-response series (4 concentrations + regen)</td></tr>
-<tr><td><code>@spark amine coupling</code></td><td>Full amine coupling workflow (asks how many binding cycles)</td></tr>
+<tr><td><code>@sparq titration</code></td><td>Dose-response series (4 concentrations + regen)</td></tr>
+<tr><td><code>@sparq amine coupling</code></td><td>Full amine coupling workflow (asks how many binding cycles)</td></tr>
 <tr><td><code>build 5</code></td><td>5 × (Binding 8.5 min + Regen + Baseline)</td></tr>
 <tr><td><code>build 10</code></td><td>10 × (Binding 8.5 min + Regen + Baseline)</td></tr>
-<tr><td><code>@spark binding</code></td><td>Multi-concentration binding template</td></tr>
-<tr><td><code>@spark regeneration</code></td><td>Single regeneration cycle</td></tr>
-<tr><td><code>@spark immobilization</code></td><td>Single immobilization cycle (30 min freestyle)</td></tr>
-<tr><td><code>@spark baseline</code></td><td>Single baseline cycle</td></tr>
-<tr><td><code>@spark full cycle</code></td><td>Baseline + Binding + Regen</td></tr>
+<tr><td><code>@sparq binding</code></td><td>Multi-concentration binding template</td></tr>
+<tr><td><code>@sparq regeneration</code></td><td>Single regeneration cycle</td></tr>
+<tr><td><code>@sparq immobilization</code></td><td>Single immobilization cycle (30 min freestyle)</td></tr>
+<tr><td><code>@sparq baseline</code></td><td>Single baseline cycle</td></tr>
+<tr><td><code>@sparq full cycle</code></td><td>Baseline + Binding + Regen</td></tr>
 </table>
-<p>Spark suggests cycles in the note field — click <b>✅ Accept</b> to add, <b>✏ Edit</b> to modify, or <b>❌ Reject</b> to discard.</p>
+<p>Sparq suggests cycles in the note field — click <b>✅ Accept</b> to add, <b>✏ Edit</b> to modify, or <b>❌ Reject</b> to discard.</p>
 
 <hr/>
 
@@ -2354,9 +2455,9 @@ Binding 5min A:100nM contact 120s partial
         if not notes_text:
             return
 
-        # Check for Spark AI question: @spark question
-        if notes_text.lower().startswith('@spark '):
-            question = notes_text[7:].strip()  # Remove '@spark ' prefix
+        # Check for Sparq AI question: @sparq question
+        if notes_text.lower().startswith('@sparq ') or notes_text.lower().startswith('@spark '):
+            question = notes_text[7:].strip()  # Remove '@sparq ' prefix
             self.notes_input.setPlainText(question)
             self._detect_and_respond_to_question()
             return
@@ -2782,8 +2883,25 @@ Binding 5min A:100nM contact 120s partial
         selected_row = selected_rows[0] if has_selection else -1
 
         self.delete_cycle_btn.setEnabled(has_selection)
+        self.duplicate_cycle_btn.setEnabled(has_selection)
         self.move_up_btn.setEnabled(has_selection and selected_row > 0)
         self.move_down_btn.setEnabled(has_selection and selected_row < len(self._local_cycles) - 1)
+
+    def _on_duplicate_selected(self):
+        """Duplicate selected cycle and insert the copy right after it."""
+        import copy
+        selected_rows = [item.row() for item in self.method_table.selectedItems()]
+        if not selected_rows:
+            return
+        row = selected_rows[0]
+        if 0 <= row < len(self._local_cycles):
+            original = self._local_cycles[row]
+            duplicate = copy.deepcopy(original)
+            duplicate.status = "pending"
+            duplicate.timestamp = time.time()
+            self._local_cycles.insert(row + 1, duplicate)
+            self._refresh_method_table()
+            self.method_table.selectRow(row + 1)
 
     def _on_delete_selected(self):
         """Delete selected cycle from method."""

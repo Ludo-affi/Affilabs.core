@@ -109,7 +109,7 @@ class GraphContainer(QFrame):
         self.setStyleSheet(
             "QFrame {"
             "  background: #FFFFFF;"
-            "  border: none;"
+            "  border: 1px solid rgba(0, 0, 0, 0.09);"
             "  border-radius: 12px;"
             "}",
         )
@@ -122,7 +122,7 @@ class GraphContainer(QFrame):
         self.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setContentsMargins(20, 14, 20, 14)
         layout.setSpacing(12)
 
         # Title row with controls

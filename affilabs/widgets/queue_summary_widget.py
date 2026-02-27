@@ -31,7 +31,7 @@ USAGE:
 from typing import List, Optional
 from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMenu, QLabel
+    QMenu, QLabel, QPushButton
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QColor, QBrush
@@ -77,6 +77,18 @@ class QueueSummaryWidget(QTableWidget):
         self._running_cycle_id: Optional[str] = None  # Track which cycle is running
         self._refresh_pending = False  # Debounce guard
         self._cycles_in_edits: set = set()  # cycle_ids sent to Edits tab
+
+        # Contact countdown (shown inline in the STATUS cell of the running row)
+        self._countdown_secs: int = 0
+        self._countdown_timer: QTimer = QTimer(self)
+        self._countdown_timer.setInterval(1000)
+        self._countdown_timer.timeout.connect(self._tick_countdown)
+
+        # Collapse state — expanded by default; collapses to running row when cycles execute
+        self._collapsed: bool = False
+
+        # Full-cycle countdown shown in STATUS cell while a cycle runs (seconds remaining)
+        self._cycle_remaining_secs: int = 0
 
         self._setup_ui()
         self._setup_drag_drop()
@@ -146,11 +158,50 @@ class QueueSummaryWidget(QTableWidget):
         self._empty_overlay.setVisible(False)  # Hidden by default
         self._empty_overlay.raise_()
 
+        # Expand footer — overlaid at the bottom of the table when collapsed
+        self._expand_footer = QPushButton("Show all cycles", self.viewport())
+        self._expand_footer.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._expand_footer.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  border: none;"
+            "  color: #8E8E93;"
+            "  font-size: 11px; font-weight: 500;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "  padding: 4px 0;"
+            "  text-align: center;"
+            "}"
+            "QPushButton:hover {"
+            "  color: #007AFF;"
+            "}"
+        )
+        self._expand_footer.setVisible(False)
+        self._expand_footer.raise_()
+        # Signal connected externally by core_ui via set_expand_callback()
+        self._expand_footer_callback = None
+        self._expand_footer.clicked.connect(self._on_expand_footer_clicked)
+
+    def set_expand_callback(self, callback) -> None:
+        """Wire the expand footer button to an external toggle function."""
+        self._expand_footer_callback = callback
+
+    def _on_expand_footer_clicked(self) -> None:
+        if self._expand_footer_callback is not None:
+            self._expand_footer_callback()
+
+    def _reposition_expand_footer(self) -> None:
+        """Pin the expand footer to the bottom edge of the viewport."""
+        vp = self.viewport()
+        h = 28
+        self._expand_footer.setGeometry(0, vp.height() - h, vp.width(), h)
+
     def resizeEvent(self, event):
-        """Keep empty overlay centered."""
+        """Keep overlays positioned correctly."""
         super().resizeEvent(event)
         if hasattr(self, '_empty_overlay'):
             self._empty_overlay.setGeometry(self.viewport().rect())
+        if hasattr(self, '_expand_footer') and self._expand_footer.isVisible():
+            self._reposition_expand_footer()
 
     def wheelEvent(self, event):
         """Handle wheel events — keep scroll inside the table.
@@ -275,6 +326,9 @@ class QueueSummaryWidget(QTableWidget):
         if hasattr(self, '_empty_overlay'):
             self._empty_overlay.setVisible(self.rowCount() == 0)
 
+        # Apply collapse visibility before repaint
+        self._apply_collapse_visibility()
+
         # Force visual repaint; scroll to running row if visible
         self.viewport().update()
         running_row = self._find_running_row()
@@ -305,16 +359,17 @@ class QueueSummaryWidget(QTableWidget):
         abbr, fg_color = CycleTypeStyle.get(cycle.type)
 
         if status == "running":
-            prefix, bg = "", QColor("#1565C0")   # Solid blue background (no arrow)
+            prefix, bg = "", QColor("#1565C0")   # Solid blue background
             bold = True
             fg_color = "#FFFFFF"
         elif status == "completed":
-            prefix, bg = "", QColor("#E8F5E9")    # light green, bold
-            bold = True
-            fg_color = "#4CAF50"
-        else:
             prefix, bg = "", None
             bold = False
+            fg_color = "#C7C7CC"       # Muted gray — done, not interesting
+        else:  # pending
+            prefix, bg = "", None
+            bold = False
+            fg_color = "#C7C7CC"       # Muted gray — waiting
 
         cycle_num = cycle.cycle_num if cycle.cycle_num > 0 else row + 1
 
@@ -329,11 +384,10 @@ class QueueSummaryWidget(QTableWidget):
             if align:
                 item.setTextAlignment(align)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            # Foreground: all cols use fg_color (white for running, gray for others)
+            item.setForeground(QColor(fg_color))
             if col == 1:
-                item.setForeground(QColor(fg_color))
                 item.setToolTip(f"{cycle.type} ({status})")
-            elif status == "running":
-                item.setForeground(QColor("#FFFFFF"))
             if bg:
                 item.setBackground(QBrush(bg))
             if bold:
@@ -358,19 +412,24 @@ class QueueSummaryWidget(QTableWidget):
         bg_color = self._get_type_background(cycle.type)
         is_running = (self._running_cycle_id and cycle.cycle_id == self._running_cycle_id)
 
+        # Default text color (stylesheet no longer sets color)
+        default_fg = "#1D1D1F"
+
         # Column 0: Cycle number
         cycle_num = cycle.cycle_num if cycle.cycle_num > 0 else row + 1
         num_item = QTableWidgetItem(str(cycle_num))
         num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         num_item.setFlags(num_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
-            num_item.setBackground(QBrush(QColor("#1565C0")))  # Solid blue for running
-            num_item.setForeground(QColor("#FFFFFF"))  # White text
+            num_item.setBackground(QBrush(QColor("#1565C0")))
+            num_item.setForeground(QColor("#FFFFFF"))
             font = num_item.font()
             font.setBold(True)
             num_item.setFont(font)
-        elif bg_color:
-            num_item.setBackground(QBrush(QColor(bg_color)))
+        else:
+            num_item.setForeground(QColor(default_fg))
+            if bg_color:
+                num_item.setBackground(QBrush(QColor(bg_color)))
         self.setItem(row, self.COL_NUM, num_item)
 
         # Column 1: Type (color-coded abbreviation)
@@ -379,7 +438,7 @@ class QueueSummaryWidget(QTableWidget):
         type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
             type_item.setBackground(QBrush(QColor("#1565C0")))
-            type_item.setForeground(QColor("#FFFFFF"))  # White text
+            type_item.setForeground(QColor("#FFFFFF"))
             font = type_item.font()
             font.setBold(True)
             type_item.setFont(font)
@@ -395,12 +454,14 @@ class QueueSummaryWidget(QTableWidget):
         duration_item.setFlags(duration_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
             duration_item.setBackground(QBrush(QColor("#1565C0")))
-            duration_item.setForeground(QColor("#FFFFFF"))  # White text
+            duration_item.setForeground(QColor("#FFFFFF"))
             font = duration_item.font()
             font.setBold(True)
             duration_item.setFont(font)
-        elif bg_color:
-            duration_item.setBackground(QBrush(QColor(bg_color)))
+        else:
+            duration_item.setForeground(QColor(default_fg))
+            if bg_color:
+                duration_item.setBackground(QBrush(QColor(bg_color)))
         self.setItem(row, self.COL_DURATION, duration_item)
 
         # Column 3: Status
@@ -417,8 +478,10 @@ class QueueSummaryWidget(QTableWidget):
             font = status_item.font()
             font.setBold(True)
             status_item.setFont(font)
-        elif bg_color:
-            status_item.setBackground(QBrush(QColor(bg_color)))
+        else:
+            status_item.setForeground(QColor(default_fg))
+            if bg_color:
+                status_item.setBackground(QBrush(QColor(bg_color)))
         self.setItem(row, self.COL_STATUS, status_item)
 
         # Store cycle ID in row data
@@ -434,10 +497,36 @@ class QueueSummaryWidget(QTableWidget):
         if cycle_id in self._cycles_in_edits:
             return "In Edits"
         if execution_status == "running":
-            return "Running"
+            # Show full-cycle countdown if available, else "—"
+            return self._fmt_cycle_remaining()
         if execution_status == "completed":
             return "Done"
         return "Pending"
+
+    def _fmt_cycle_remaining(self) -> str:
+        """Format the current cycle remaining seconds as MM:SS."""
+        secs = self._cycle_remaining_secs
+        if secs <= 0:
+            return "—"
+        m, s = divmod(secs, 60)
+        return f"{m:02d}:{s:02d}"
+
+    def update_cycle_remaining(self, remaining_secs: float) -> None:
+        """Update the full-cycle countdown shown in the running row STATUS cell.
+
+        Called every second from _update_cycle_display() in _cycle_mixin.py.
+        Only updates the cell text in-place — no full table rebuild.
+        """
+        self._cycle_remaining_secs = max(0, int(remaining_secs))
+        # Don't overwrite if contact countdown is running (it owns the cell)
+        if self._countdown_timer.isActive():
+            return
+        running_row = self._find_running_row()
+        if running_row < 0:
+            return
+        item = self.item(running_row, self.COL_STATUS)
+        if item is not None:
+            item.setText(self._fmt_cycle_remaining())
 
     def set_cycle_score(self, score) -> None:
         """Receive a CycleQualityScore and update the matching row's status cell.
@@ -523,18 +612,91 @@ class QueueSummaryWidget(QTableWidget):
         return abbr
 
     def set_running_cycle(self, cycle_id: Optional[str]):
-        """Mark a cycle as currently running.
+        """Mark a cycle as currently running."""
+        self._running_cycle_id = cycle_id
+        if cycle_id is None:
+            self.stop_contact_countdown()
+        self._schedule_refresh()
 
-        Updates _running_cycle_id and schedules a debounced refresh so this
-        call (which comes right after advance_method_progress and lock_queue
-        have both already scheduled their own refreshes) is folded into the
-        same single rebuild rather than triggering an additional one.
+    # ── Contact countdown ──────────────────────────────────────────────────────
+
+    def start_contact_countdown(self, total_seconds: int) -> None:
+        """Start a contact-time countdown shown in the STATUS cell of the running row.
 
         Args:
-            cycle_id: ID of running cycle, or None to clear
+            total_seconds: Contact time in seconds (counts down to 0).
         """
-        self._running_cycle_id = cycle_id
-        self._schedule_refresh()
+        self._countdown_secs = max(0, total_seconds)
+        self._countdown_timer.start()
+        self._update_countdown_cell()
+
+    def stop_contact_countdown(self) -> None:
+        """Stop the contact countdown and revert the status cell to cycle countdown."""
+        self._countdown_timer.stop()
+        self._countdown_secs = 0
+        # Revert running row to cycle remaining countdown
+        running_row = self._find_running_row()
+        if running_row >= 0:
+            item = self.item(running_row, self.COL_STATUS)
+            if item:
+                item.setText(self._fmt_cycle_remaining())
+
+    def _tick_countdown(self) -> None:
+        """1-Hz tick — decrement and refresh the status cell."""
+        if self._countdown_secs > 0:
+            self._countdown_secs -= 1
+        self._update_countdown_cell()
+        if self._countdown_secs == 0:
+            self._countdown_timer.stop()
+
+    def _update_countdown_cell(self) -> None:
+        """Write the current countdown into the STATUS cell of the running row."""
+        running_row = self._find_running_row()
+        if running_row < 0:
+            return
+        item = self.item(running_row, self.COL_STATUS)
+        if item is None:
+            return
+        if self._countdown_secs > 0:
+            m, s = divmod(self._countdown_secs, 60)
+            item.setText(f"{m}:{s:02d}")
+        else:
+            item.setText("Wash now")
+
+    @staticmethod
+    def _fmt_countdown(seconds: int) -> str:
+        m, s = divmod(seconds, 60)
+        return f"{m}:{s:02d}"
+
+    # ── Collapse / expand ─────────────────────────────────────────────────────
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        """Show only the running row (collapsed) or all rows (expanded)."""
+        self._collapsed = collapsed
+        self._apply_collapse_visibility()
+
+    def _apply_collapse_visibility(self) -> None:
+        """Hide/show rows according to current collapsed state."""
+        if not self._collapsed:
+            for row in range(self.rowCount()):
+                self.showRow(row)
+            if hasattr(self, '_expand_footer'):
+                self._expand_footer.setVisible(False)
+            return
+        running_row = self._find_running_row()
+        hidden = 0
+        for row in range(self.rowCount()):
+            if row == running_row:
+                self.showRow(row)
+            else:
+                self.hideRow(row)
+                hidden += 1
+        if hasattr(self, '_expand_footer'):
+            word = "cycle" if hidden == 1 else "cycles"
+            self._expand_footer.setText(f"{hidden} more {word}")
+            self._expand_footer.setVisible(True)
+            self._reposition_expand_footer()
+            self._expand_footer.raise_()
 
     # ========================================================================
     # DRAG-DROP IMPLEMENTATION
@@ -661,13 +823,8 @@ class QueueSummaryWidget(QTableWidget):
         self.setDragEnabled(False)
         self.setAcceptDrops(False)
 
-        # Visual feedback: subtle gray background so user knows edits are locked
-        for row in range(self.rowCount()):
-            for col in range(self.columnCount()):
-                item = self.item(row, col)
-                if item:
-                    item.setBackground(QBrush(QColor(235, 235, 235)))
-
+        # No visual override here — row styling is handled by
+        # _add_cycle_row_with_status (running=blue, others=gray).
         logger.debug("Queue table locked (read-only, scrollable)")
 
     @Slot()

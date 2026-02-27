@@ -1166,19 +1166,6 @@ class SegmentGraph(GraphicsLayoutWidget):
             except Exception as e:
                 logger.debug(f"Error updating interactive legend values: {e}")
 
-    def update_interactive_legend_iq_color(self, channel: str, hex_color: str):
-        """Update IQ dot color in the interactive legend.
-        
-        Args:
-            channel: Channel letter ('a', 'b', 'c', 'd', or uppercase)
-            hex_color: Hex color string (e.g., '#34C759')
-        """
-        if hasattr(self, 'interactive_spr_legend') and self.interactive_spr_legend:
-            try:
-                self.interactive_spr_legend.set_iq_color(channel.lower(), hex_color)
-            except Exception as e:
-                logger.debug(f"Error updating IQ color in legend: {e}")
-
     def en_dissoc_cursors(self, en):
         self.dissoc_cursor_en = bool(en)
         for ch in CH_LIST:

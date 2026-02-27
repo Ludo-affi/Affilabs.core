@@ -232,8 +232,8 @@ class CycleTableDialog(QDialog):
             delta_text = f"{cycle.delta_spr:.1f}" if cycle.delta_spr is not None else "—"
             self.ui.data_table.setItem(row, 6, QTableWidgetItem(delta_text))
 
-            # Column 7: Flags - matches flags in export
-            flags_text = ", ".join(cycle.flags) if cycle.flags else "—"
+            # Column 7: Flags - matches flags in export (capitalised for display)
+            flags_text = ", ".join(f.capitalize() for f in cycle.flags) if cycle.flags else "—"
             self.ui.data_table.setItem(row, 7, QTableWidgetItem(flags_text))
 
             # Column 8: Status (pending/running/completed)

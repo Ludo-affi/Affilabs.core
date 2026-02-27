@@ -336,6 +336,13 @@ class CycleMixin:
                 except Exception:
                     pass
 
+                # Stop any running injection monitors (P4SPR wash detection)
+                try:
+                    if hasattr(self, 'injection_coordinator'):
+                        self.injection_coordinator.cleanup_monitors()
+                except Exception:
+                    pass
+
                 # Mark as completed in queue presenter
                 if hasattr(self, 'queue_presenter'):
                     self.queue_presenter.mark_cycle_completed(self._current_cycle)
@@ -362,19 +369,28 @@ class CycleMixin:
         except Exception:
             pass
 
-        # Remove next-cycle warning line from graph
-        if hasattr(self, '_next_cycle_warning_line') and self._next_cycle_warning_line is not None:
-            try:
-                if hasattr(self.main_window, 'cycle_of_interest_graph'):
-                    self.main_window.cycle_of_interest_graph.removeItem(self._next_cycle_warning_line)
-            except Exception:
-                pass
-            self._next_cycle_warning_line = None
+        # Remove next-cycle warning line and method-complete marker from graph
+        cog = getattr(self.main_window, 'cycle_of_interest_graph', None)
+        for attr in ('_next_cycle_warning_line', '_method_complete_cycle_line'):
+            line = getattr(self, attr, None)
+            if line is not None:
+                try:
+                    if cog is not None:
+                        cog.removeItem(line)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
 
         # Clear running cycle highlight from queue table
         if tbl := self._sidebar_widget('summary_table'):
             tbl.set_running_cycle(None)
             logger.debug("✓ Queue table highlight cleared (Cancel)")
+        try:
+            lbl = getattr(self.main_window, '_queue_section_lbl', None)
+            if lbl is not None:
+                lbl.setText("Cycle Queue")
+        except Exception:
+            pass
 
         # Change Stop Run button back to Start Run
         self._set_start_button_to_start_mode()
@@ -442,27 +458,8 @@ class CycleMixin:
 
         logger.info(f"Starting recording to file: {full_path}")
 
-        # Notify user of exact save location before recording starts
-        try:
-            import os
-            from PySide6.QtWidgets import QMessageBox, QPushButton
-            msg = QMessageBox(self.main_window)
-            msg.setWindowTitle("Recording Started")
-            msg.setText(f"Data will be saved to:\n\n{full_path}")
-            msg.setIcon(QMessageBox.Icon.Information)
-            open_btn = msg.addButton("Open Folder", QMessageBox.ButtonRole.ActionRole)
-            msg.addButton("OK", QMessageBox.ButtonRole.AcceptRole)
-            msg.exec()
-            if msg.clickedButton() == open_btn:
-                os.startfile(str(Path(destination)))
-        except Exception:
-            pass
-
-        # Also show in status bar as persistent reminder during recording
-        try:
-            self.main_window.statusBar().showMessage(f"Recording to: {full_path}", 0)
-        except Exception:
-            pass
+        # Log recording destination (no UI message — statusBar overlaps bottom-left widgets).
+        logger.info(f"Recording destination: {full_path}")
 
         # Get the live data front directly from the buffer (RAW_ELAPSED coords).
         # NOTE: clock.raw_elapsed_now() returns 0 because start_experiment() is never
@@ -735,17 +732,46 @@ class CycleMixin:
                 graph = self.main_window.cycle_of_interest_graph
                 overlay = getattr(graph, 'cycle_status_overlay', None)
                 if overlay is not None:
+                    # Detect whether injection contact is active for this cycle
+                    _inj_active = False
+                    _contact_rem: int | None = None
+                    _istats = getattr(self, '_injection_stats', {})
+                    if _istats:
+                        _inj_active = any(c == cycle_num for (c, _ch) in _istats)
+                    # Read contact-timer value from Injection Assistant bar
+                    _contact_ch: str = ""
+                    if _inj_active:
+                        try:
+                            bar = getattr(
+                                getattr(self.main_window, 'sidebar', None),
+                                'injection_action_bar', None
+                            )
+                            if bar is not None:
+                                _result = bar.get_max_contact_remaining()
+                                if _result is not None:
+                                    _contact_rem, _contact_ch = _result
+                        except Exception:
+                            pass
                     overlay.update_status(
                         cycle_type=cycle_type,
                         cycle_num=cycle_num,
                         total_cycles=total_cycles,
                         remaining_sec=remaining_sec,
                         next_label=next_cycle_label,
+                        injection_active=_inj_active,
+                        contact_remaining_sec=_contact_rem,
+                        contact_channel=_contact_ch,
                     )
-                    # ── Live binding quality signal ─────────────────────────────
-                    self._push_binding_signal_to_overlay(overlay, cycle_num)
         except Exception as e:
             logger.warning(f"Could not update cycle status overlay: {e}")
+
+        # Update queue table status cell with remaining cycle time
+        try:
+            tbl = self._sidebar_widget('summary_table')
+            if tbl is not None and hasattr(tbl, 'update_cycle_remaining'):
+                tbl.update_cycle_remaining(remaining_sec)
+        except Exception:
+            pass
 
     def _push_binding_signal_to_overlay(self, overlay, cycle_num: int) -> None:
         """Push live binding quality signal to overlay row 2 if injection stats exist.
@@ -776,8 +802,8 @@ class CycleMixin:
             # Live SPR at the current moment (last point in cycle buffer for this channel)
             current_nm = None
             if (active_ch in self.buffer_mgr.cycle_data
-                    and len(self.buffer_mgr.cycle_data[active_ch].spr) > 0):
-                current_nm = float(self.buffer_mgr.cycle_data[active_ch].spr[-1])
+                    and len(self.buffer_mgr.cycle_data[active_ch].wavelength) > 0):
+                current_nm = float(self.buffer_mgr.cycle_data[active_ch].wavelength[-1])
 
             resp_label, resp_color = classify_binding(pre_bl, current_nm)
 
@@ -785,7 +811,7 @@ class CycleMixin:
             slope = entry.get('slope_nm_per_s')
             if slope is None and active_ch in self.buffer_mgr.cycle_data:
                 _t = np.asarray(self.buffer_mgr.cycle_data[active_ch].time)
-                _s = np.asarray(self.buffer_mgr.cycle_data[active_ch].spr)
+                _s = np.asarray(self.buffer_mgr.cycle_data[active_ch].wavelength)
                 from affilabs.utils.live_binding_stats import compute_slope
                 slope = compute_slope(_t, _s, inj_t)
 
@@ -808,30 +834,50 @@ class CycleMixin:
 
             graph = self.main_window.cycle_of_interest_graph
             warning_time = max(0, total_sec - 10.0)
-            show_warning = remaining_sec <= 10 and remaining_sec > 0 and self.segment_queue
+            has_next = bool(self.segment_queue)
+            show_warning = remaining_sec <= 10 and remaining_sec > 0
 
             if show_warning:
+                if has_next:
+                    # More cycles queued — pink "Next: Xs" marker
+                    _color = '#FF1493'
+                    _fill = (255, 20, 147, 80)
+                    _text = f'Next: {int(remaining_sec)}s'
+                else:
+                    # Final cycle — green "Method Complete" marker
+                    _color = '#34C759'
+                    _fill = (52, 199, 89, 80)
+                    _text = f'Done in {int(remaining_sec)}s'
+
                 if self._next_cycle_warning_line is None:
                     import pyqtgraph as pg
                     from PySide6.QtCore import Qt
                     self._next_cycle_warning_line = pg.InfiniteLine(
                         pos=warning_time,
                         angle=90,
-                        pen=pg.mkPen(color='#FF1493', width=3, style=Qt.PenStyle.DashLine),
+                        pen=pg.mkPen(color=_color, width=3, style=Qt.PenStyle.DashLine),
                         movable=False,
-                        label=f'Next: {int(remaining_sec)}s',
+                        label=_text,
                         labelOpts={
                             'position': 0.95,
-                            'color': (255, 20, 147),
-                            'fill': (255, 20, 147, 80),
+                            'color': _color,
+                            'fill': _fill,
                             'movable': False,
                         }
                     )
                     graph.addItem(self._next_cycle_warning_line)
+                else:
+                    # Update pen colour in case queue emptied mid-countdown
+                    import pyqtgraph as pg
+                    from PySide6.QtCore import Qt
+                    self._next_cycle_warning_line.setPen(
+                        pg.mkPen(color=_color, width=3, style=Qt.PenStyle.DashLine)
+                    )
 
                 self._next_cycle_warning_line.setPos(warning_time)
                 if hasattr(self._next_cycle_warning_line, 'label'):
-                    self._next_cycle_warning_line.label.setText(f'Next: {int(remaining_sec)}s')
+                    self._next_cycle_warning_line.label.setText(_text)
+                    self._next_cycle_warning_line.label.setColor(_color)
                 self._next_cycle_warning_line.show()
             else:
                 if self._next_cycle_warning_line is not None:
@@ -867,7 +913,7 @@ class CycleMixin:
                 post_bl = None
                 if ch in self.buffer_mgr.cycle_data:
                     _t = np.asarray(self.buffer_mgr.cycle_data[ch].time)
-                    _s = np.asarray(self.buffer_mgr.cycle_data[ch].spr)
+                    _s = np.asarray(self.buffer_mgr.cycle_data[ch].wavelength)
                     if len(_t) > 0:
                         post_bl = compute_post_baseline(_t, _s, float(_t[-1]))
 
@@ -984,6 +1030,39 @@ class CycleMixin:
             self.recording_mgr.add_cycle(cycle_export_data)
             self._emit_cycle_marker_to_timeline(cycle_export_data)
 
+        # Stop any running injection monitors (P4SPR wash detection)
+        try:
+            if hasattr(self, 'injection_coordinator'):
+                self.injection_coordinator.cleanup_monitors()
+        except Exception:
+            pass
+
+        # ── FULL inter-cycle state wipe ──────────────────────────────────────
+        # Nothing should carry over: no channel status, no timing, no expectations.
+        try:
+            if hasattr(self, 'injection_coordinator'):
+                self.injection_coordinator.reset_cycle_state()
+        except Exception:
+            pass
+
+        # Reset InjectionActionBar — clear wash/detected/injection_spr state
+        try:
+            bar = None
+            sidebar = getattr(self.main_window, 'sidebar', None)
+            if sidebar is not None:
+                bar = getattr(sidebar, 'injection_action_bar', None)
+            if bar is not None:
+                bar.reset_for_next_injection()
+                bar.set_panel_active(False)
+        except Exception:
+            pass
+
+        # Clear injection stats — already finalised above, safe to wipe
+        try:
+            self._injection_stats = {}
+        except Exception:
+            pass
+
         # Score the completed cycle
         try:
             from affilabs.services.signal_quality_scorer import SignalQualityScorer
@@ -1005,17 +1084,24 @@ class CycleMixin:
             remaining = original_len - progress
         else:
             remaining = len(self.segment_queue)
-        
+
         # Clear running cycle highlight from queue table
         if tbl := self._sidebar_widget('summary_table'):
             tbl.set_running_cycle(None)
-        
+        if remaining == 0:
+            try:
+                lbl = getattr(self.main_window, '_queue_section_lbl', None)
+                if lbl is not None:
+                    lbl.setText("Cycle Queue")
+            except Exception:
+                pass
+
         if remaining > 0:
             # More cycles to run - auto-start next
             next_cycle_type = self.segment_queue[0].type if self.segment_queue else "Unknown"
             logger.info(f"Auto-starting next cycle: {next_cycle_type} ({remaining} cycles remaining)")
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(1000, self._on_start_button_clicked)
+            QTimer.singleShot(100, self._on_start_button_clicked)
         else:
             # Queue completed - show retrieve button and unlock
             logger.info("✓ Queue execution completed - all cycles finished")
@@ -1065,6 +1151,38 @@ class CycleMixin:
             except Exception as _e:
                 logger.debug(f"Could not add completion line to sensorgram: {_e}")
 
+            # ── 4. Active Cycle graph → green "✓ Method Complete" marker ───
+            try:
+                import pyqtgraph as pg
+                from PySide6.QtCore import Qt as _Qt
+                cog = getattr(self.main_window, 'cycle_of_interest_graph', None)
+                if cog is not None:
+                    # Remove the countdown warning line if still present
+                    if self._next_cycle_warning_line is not None:
+                        cog.removeItem(self._next_cycle_warning_line)
+                        self._next_cycle_warning_line = None
+                    # Place completion marker at the cycle end position
+                    _end = getattr(cog, 'cycle_end_time', None) or 0.0
+                    _mc = pg.InfiniteLine(
+                        pos=_end,
+                        angle=90,
+                        pen=pg.mkPen(color='#34C759', width=3,
+                                     style=_Qt.PenStyle.DashLine),
+                        label="✓ Method Complete",
+                        labelOpts={
+                            'color': '#34C759',
+                            'position': 0.92,
+                            'fill': (240, 255, 244, 200),
+                            'movable': False,
+                        },
+                    )
+                    _mc.setMovable(False)
+                    _mc.setZValue(200)
+                    cog.addItem(_mc)
+                    self._method_complete_cycle_line = _mc
+            except Exception as _e:
+                logger.debug(f"Could not add completion line to Active Cycle: {_e}")
+
             # Hide the active cycle card — no more cycles to display
             try:
                 if hasattr(self.main_window.sidebar, 'active_cycle_card'):
@@ -1075,15 +1193,15 @@ class CycleMixin:
             # Unlock the queue
             if hasattr(self, 'queue_presenter'):
                 self.queue_presenter.unlock_queue()
-            
+
             # Show retrieve method button
             if btn := self._sidebar_widget('retrieve_method_btn'):
                 btn.setVisible(True)
                 logger.debug("✓ Retrieve Method button shown")
-            
+
             # Change Stop button back to Start
             self._set_start_button_to_start_mode()
-            
+
             # Start auto-read cycle
             import time
             from affilabs.domain.cycle import Cycle
@@ -1099,7 +1217,7 @@ class CycleMixin:
             self.segment_queue.append(autoread_cycle)
             logger.info("Auto-read cycle created and queued")
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(1000, self._on_start_button_clicked)
+            QTimer.singleShot(100, self._on_start_button_clicked)
 
     def _clear_all_cycle_markers(self):
         """Remove all cycle markers from the Full Sensorgram timeline."""

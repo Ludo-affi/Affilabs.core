@@ -83,7 +83,7 @@ class SparkBubble(QFrame):
         header_row.setContentsMargins(14, 0, 10, 0)
         header_row.setSpacing(8)
 
-        title = QLabel("✦ Spark")
+        title = QLabel("✦ Sparq")
         title.setStyleSheet(
             "font-size: 13px; font-weight: 700; color: #1D1D1F;"
             " background: transparent; border: none;"
@@ -125,7 +125,7 @@ class SparkBubble(QFrame):
             content_layout.addWidget(self._spark_widget)
         except Exception as e:
             logger.error(f"SparkHelpWidget load failed in bubble (non-fatal): {e}")
-            placeholder = QLabel("Spark unavailable")
+            placeholder = QLabel("Sparq unavailable")
             placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
             placeholder.setStyleSheet("color: #6E6E73; font-size: 13px; padding: 40px;")
             content_layout.addWidget(placeholder)
@@ -183,6 +183,31 @@ class SparkBubble(QFrame):
         parent = self.parent()
         if parent and hasattr(parent, 'spark_toggle_btn'):
             parent.spark_toggle_btn.setChecked(False)
+
+    def push_system_message(self, text: str) -> None:
+        """Open bubble and inject a system alert message into the Sparq chat.
+
+        Use for instrument warnings (leaks, bubbles, hardware faults).
+        Runs on the main thread only — call via QTimer.singleShot if coming from a worker.
+        """
+        try:
+            # Always show — use show() not toggle() so we never accidentally hide
+            if not self.isVisible():
+                self._reposition()
+                self.show()
+                self.raise_()
+            else:
+                self.raise_()
+            if self._spark_widget is not None and hasattr(
+                self._spark_widget, 'push_system_message'
+            ):
+                self._spark_widget.push_system_message(text)
+            else:
+                logger.error(
+                    f"SparkBubble: _spark_widget is None — cannot deliver system message: {text[:80]}"
+                )
+        except Exception as e:
+            logger.error(f"SparkBubble system message push failed: {e}", exc_info=True)
 
     def push_troubleshooting(self, diagnosis: dict, controller) -> None:
         """Open bubble and start guided LED troubleshooting flow.
