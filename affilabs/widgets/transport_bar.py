@@ -9,6 +9,7 @@ acquisition_mixin, timer_mixin, etc. find them unchanged.
 """
 
 import logging
+from typing import Optional
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
@@ -47,7 +48,7 @@ _BTN_W = 36   # icon buttons
 _BTN_H = 36
 
 
-def _svg_icon(svg_text: str, color_off: str, color_on: str | None = None) -> QIcon:
+def _svg_icon(svg_text: str, color_off: str, color_on: Optional[str] = None) -> QIcon:
     """Render an inline SVG string into a QIcon with optional checked state."""
     icon = QIcon()
 

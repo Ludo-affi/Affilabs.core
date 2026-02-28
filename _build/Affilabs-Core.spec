@@ -55,7 +55,7 @@ a = Analysis(
         (os.path.join(PROJECT_ROOT, 'affilabs/convergence/models'), 'affilabs/convergence/models'),
         (os.path.join(PROJECT_ROOT, 'affilabs/utils/Sensor64bit.dll'), 'affilabs/utils'),
         (os.path.join(PROJECT_ROOT, 'detector_profiles'), 'detector_profiles'),
-        (os.path.join(PROJECT_ROOT, 'led_calibration_official'), 'led_calibration_official'),
+        (os.path.join(PROJECT_ROOT, '_data', 'led_calibration_official'), 'led_calibration_official'),
         (os.path.join(PROJECT_ROOT, 'settings'), 'settings'),
         (os.path.join(PROJECT_ROOT, 'data'), 'data'),  # Spark tips, QA history, runtime data
         # Piper TTS (if exists) - optional for Spark voice
