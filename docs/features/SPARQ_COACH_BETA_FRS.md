@@ -4,10 +4,10 @@
 **Last Updated:** February 28, 2026  
 **Related FRS:** `SPARQ_ACCOUNT_FRS.md` (account registration, Nutshell CRM baseline)
 
-**Planned source files (client-side, this repo):**
-- `affilabs/services/sparq_coach_service.py` — HTTP client: bug submit, Coach Beta chat
-- `affilabs/services/bug_reporter.py` — extend: add `send_bug_report_auto()` that calls service instead of draft-and-copy
-- `affilabs/widgets/spark_help_widget.py` — UI: bug button SVG, Coach Beta toggle, Sparq Coach chat path
+**Client-side source files (this repo):**
+- `affilabs/services/sparq_coach_service.py` — ✅ Implemented (Phase 1, v2.0.5) — HTTP client: bug submit, Coach Beta chat
+- `affilabs/services/bug_reporter.py` — `send_bug_report_auto()` planned for Phase 1.6
+- `affilabs/widgets/spark_help_widget.py` — ✅ Exists — "Ask Sparq Coach" button wiring pending (Phase 1.6)
 
 **Backend (Cloudflare Worker — separate repo, not in this codebase):**
 - `POST /sparq/bug` — receive bug report, notify engineering, log to Nutshell

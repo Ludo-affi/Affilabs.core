@@ -7,7 +7,7 @@ Uses TinyLM AI with pattern matching fallback for intelligent responses.
 import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QScrollArea, QFrame, QSizePolicy
+    QTextEdit, QScrollArea, QFrame, QSizePolicy, QLineEdit, QFileDialog
 )
 from PySide6.QtCore import Qt, Signal, QTimer, QSize
 from PySide6.QtGui import QKeyEvent, QFont, QPainter, QPixmap, QIcon
@@ -483,7 +483,7 @@ class SparkHelpWidget(QWidget):
 
     # Thread-safe signals — emitted from background threads, connected to UI-thread slots
     _engine_ready_signal = Signal(object)   # carries the SparkAnswerEngine instance
-    _answer_ready_signal = Signal(str, str, int)  # answer_text, question, token
+    _answer_ready_signal = Signal(str, str, int, bool)  # answer_text, question, token, matched
 
     def __init__(self, parent=None, user_manager=None):
         super().__init__(parent)
@@ -644,9 +644,8 @@ class SparkHelpWidget(QWidget):
 
         # Tip button — user-prompted pro-tips
         tip_btn = QPushButton("💡 Tip")
-        tip_btn.setMinimumWidth(60)
-        tip_btn.setMinimumHeight(36)
-        tip_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        tip_btn.setFixedSize(36, 36)
+        tip_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         tip_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         tip_btn.setToolTip("Get a random Sparq pro-tip")
         tip_btn.setStyleSheet("""
@@ -655,7 +654,7 @@ class SparkHelpWidget(QWidget):
                 color: #007AFF;
                 border: 1px solid rgba(0, 122, 255, 0.25);
                 border-radius: 8px;
-                font-size: 13px;
+                font-size: 11px;
                 font-weight: 600;
                 padding: 0px;
             }
@@ -671,9 +670,8 @@ class SparkHelpWidget(QWidget):
 
         # Clear chat button - flexible sizing
         clear_btn = QPushButton("Clear")
-        clear_btn.setMinimumWidth(70)
-        clear_btn.setMinimumHeight(36)
-        clear_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        clear_btn.setFixedSize(36, 36)
+        clear_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         clear_btn.setStyleSheet("""
             QPushButton {
@@ -681,7 +679,7 @@ class SparkHelpWidget(QWidget):
                 color: #8E8E93;
                 border: none;
                 border-radius: 8px;
-                font-size: 13px;
+                font-size: 11px;
                 font-weight: 600;
                 padding: 0px;
             }
@@ -915,13 +913,13 @@ class SparkHelpWidget(QWidget):
             self._log_miss(question)
 
         # Emit signal — thread-safe, queued to UI thread automatically
-        self._answer_ready_signal.emit(answer_text, question, token)
+        self._answer_ready_signal.emit(answer_text, question, token, matched)
 
-    def _on_answer_ready(self, answer_text: str, question: str, token: int):
+    def _on_answer_ready(self, answer_text: str, question: str, token: int, matched: bool = True):
         """Slot called on UI thread when background answer generation completes."""
-        self._display_answer(answer_text, question, token)
+        self._display_answer(answer_text, question, token, matched=matched)
 
-    def _display_answer(self, answer_text: str, question: str = "", token: int = -1):
+    def _display_answer(self, answer_text: str, question: str = "", token: int = -1, matched: bool = True):
         """Display answer on UI thread. token guards against stale threads."""
         # Ignore if a newer query already took over
         if token != -1 and token != self._query_token:
@@ -968,6 +966,13 @@ class SparkHelpWidget(QWidget):
             import logging
             logging.getLogger(__name__).error(f"Spark bubble creation failed: {e}")
             return
+
+        # Show "Send to Support" button when Sparq couldn't answer
+        if question and not matched:
+            try:
+                self._show_support_request_button(question)
+            except Exception:
+                pass
 
         # Save Q&A to per-user history
         if question:
@@ -1079,6 +1084,183 @@ class SparkHelpWidget(QWidget):
             feedback_file.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception:
             pass  # never crash on feedback write
+
+    def _show_support_request_button(self, question: str):
+        """Show a 'Send to Support' button below a fallback answer so the user can escalate."""
+        container = QFrame()
+        container.setFrameShape(QFrame.Shape.NoFrame)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(6)
+
+        label = QLabel("Didn't find what you need?")
+        label.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(label)
+
+        btn = QPushButton("📩 Send to Support")
+        btn.setToolTip("Send your question to Affinité support — we'll get back to you by email")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet(
+            "QPushButton { background: #2563eb; color: white; border: none; border-radius: 4px; "
+            "padding: 6px 14px; font-size: 12px; font-weight: 600; }"
+            "QPushButton:hover { background: #1d4ed8; }"
+        )
+        btn.clicked.connect(lambda: self._prompt_support_email(question, container))
+        layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        self.chat_layout.addWidget(container, alignment=Qt.AlignmentFlag.AlignLeft)
+        QTimer.singleShot(50, self._scroll_to_bottom)
+
+    def _prompt_support_email(self, question: str, button_container: QFrame):
+        """Replace the Send to Support button with an email input + file attach UI."""
+        # Clear the button container
+        while button_container.layout().count():
+            item = button_container.layout().takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # Track attached files for this support request
+        button_container._support_attachments = []
+
+        prompt_label = QLabel("Your email (so we can reply):")
+        prompt_label.setStyleSheet("color: #aaa; font-size: 11px;")
+        button_container.layout().addWidget(prompt_label)
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        email_input = QLineEdit()
+        email_input.setPlaceholderText("you@example.com")
+        email_input.setStyleSheet(
+            "QLineEdit { background: #1e1e2e; color: #e0e0e0; border: 1px solid #555; "
+            "border-radius: 4px; padding: 5px 8px; font-size: 12px; }"
+            "QLineEdit:focus { border-color: #2563eb; }"
+        )
+        email_input.setMinimumWidth(200)
+        row.addWidget(email_input)
+
+        send_btn = QPushButton("Send")
+        send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        send_btn.setStyleSheet(
+            "QPushButton { background: #2563eb; color: white; border: none; border-radius: 4px; "
+            "padding: 5px 14px; font-size: 12px; font-weight: 600; }"
+            "QPushButton:hover { background: #1d4ed8; }"
+        )
+        send_btn.clicked.connect(
+            lambda: self._submit_support_request(
+                question, email_input.text().strip(),
+                button_container, button_container._support_attachments
+            )
+        )
+        email_input.returnPressed.connect(send_btn.click)
+        row.addWidget(send_btn)
+        button_container.layout().addLayout(row)
+
+        # Attachments row
+        attach_row = QHBoxLayout()
+        attach_row.setSpacing(6)
+        attach_btn = QPushButton("📎 Attach files")
+        attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        attach_btn.setToolTip("Attach images or files to your support request")
+        attach_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #888; border: 1px solid #555; "
+            "border-radius: 4px; padding: 4px 10px; font-size: 11px; }"
+            "QPushButton:hover { color: #ccc; border-color: #888; }"
+        )
+        self._support_attach_label = QLabel("")
+        self._support_attach_label.setStyleSheet("color: #6b7; font-size: 11px;")
+
+        def _pick_files():
+            files, _ = QFileDialog.getOpenFileNames(
+                self, "Attach files",
+                "",
+                "Images & Files (*.png *.jpg *.jpeg *.gif *.bmp *.pdf *.txt *.csv *.xlsx);;All Files (*)"
+            )
+            if files:
+                button_container._support_attachments.extend(files)
+                count = len(button_container._support_attachments)
+                self._support_attach_label.setText(f"{count} file{'s' if count != 1 else ''} attached")
+
+        attach_btn.clicked.connect(_pick_files)
+        attach_row.addWidget(attach_btn)
+        attach_row.addWidget(self._support_attach_label)
+        attach_row.addStretch()
+        button_container.layout().addLayout(attach_row)
+
+        email_input.setFocus()
+        QTimer.singleShot(50, self._scroll_to_bottom)
+
+    def _submit_support_request(self, question: str, email: str, container: QFrame,
+                                  attachments: list | None = None):
+        """Submit the user's unanswered question as a support request via the bug reporter.
+
+        Includes auto-screenshot + any user-attached files, same pipeline as bug reports.
+        """
+        import re
+        if not email or not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+            self.push_system_message("⚠️ Please enter a valid email address.")
+            return
+
+        # Capture screenshot on main thread (QWidget.grab is not thread-safe)
+        from affilabs.services.bug_reporter import _take_screenshot
+        screenshot_bytes, _ = _take_screenshot()
+
+        # Collect attachment paths
+        attached_files = list(attachments or [])
+
+        # Remove the email input container
+        try:
+            container.setParent(None)
+            container.deleteLater()
+        except Exception:
+            pass
+
+        file_note = ""
+        if attached_files:
+            count = len(attached_files)
+            file_note = f" with {count} file{'s' if count != 1 else ''}"
+        self.push_system_message(f"⏳ Sending your question to support{file_note}…")
+
+        description = (
+            f"[SUPPORT REQUEST — Sparq Unanswered Question]\n\n"
+            f"User question: {question}\n"
+            f"Contact email: {email}\n"
+        )
+
+        def _send():
+            try:
+                from affilabs.services.bug_reporter import send_bug_report_auto
+                user_name = ""
+                if self._user_manager:
+                    try:
+                        user_name = self._user_manager.get_active_user() or ""
+                    except Exception:
+                        pass
+                auto_submitted, mode, result = send_bug_report_auto(
+                    description,
+                    user_name=user_name,
+                    screenshot_bytes=screenshot_bytes,
+                    additional_images=attached_files,
+                    report_type="support_request",
+                )
+            except Exception as e:
+                auto_submitted, mode, result = False, "draft", f"Error: {e}"
+
+            def show_result():
+                if auto_submitted:
+                    self.push_system_message(
+                        f"✅ Question sent to support! We'll reply to **{email}**."
+                    )
+                elif mode == "limit":
+                    self.push_system_message(f"⚠️ {result}")
+                else:
+                    self.push_system_message(
+                        "⚠️ Couldn't reach the server. Please email your question to:\n"
+                        "**info@affiniteinstruments.com**"
+                    )
+
+            QTimer.singleShot(0, show_result)
+
+        threading.Thread(target=_send, daemon=True).start()
 
     def _log_miss(self, question: str):
         """Append an unmatched question to spark_misses.json for pattern development."""

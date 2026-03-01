@@ -2,13 +2,13 @@
 
 > **Component rename:** Originally scoped as "Experiment History Window" (floating dialog). Redesigned as a permanent **Notes tab** — third tab in the main window tab bar.
 
-**Component:** `affilabs/tabs/notes_tab.py` (new, with sub-modules in `affilabs/tabs/notes/`)
+**Component:** `affilabs/tabs/notes_tab.py` (with sub-modules in `affilabs/tabs/notes/`)
 **Location:** Third tab in main tab bar — Live · Edits · **Notes**
 **Window type:** Permanent `QWidget` tab — not a dialog, not a floating window
 **Keyboard shortcut:** `Ctrl+3` (consistent with Live = `Ctrl+1`, Edits = `Ctrl+2`)
 **Offline:** Fully functional with no hardware connected and no file loaded
 **Depends on:** `affilabs/services/experiment_index.py`, `affilabs/services/cycle_template_storage.py`
-**Version target:** v2.1.0
+**Status:** Implemented (v2.0.5)
 
 ---
 

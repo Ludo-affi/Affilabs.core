@@ -130,7 +130,7 @@
 | Injection Methods | ✅ | `docs/user_guides/INJECTION_METHODS.md` |
 | Injection Quick Reference | ✅ | `docs/user_guides/INJECTION_QUICK_REF.md` |
 | Kinetic Methods | ✅ | `docs/user_guides/KINETIC_METHODS.md` |
-| Training Guide | ⚠️ Version says 1.0 | `docs/user_guides/TRAINING_GUIDE.md` |
+| Training Guide | 🗑️ Deleted — TinyLLaMA replaced by Claude Haiku (see SPARQ_COACH_BETA_FRS.md) | — |
 | Calibration Guide | ✅ (947 lines, thorough) | `docs/calibration/CALIBRATION_GUIDE.md` |
 | Calibration Troubleshooting | ✅ (481 lines) | `docs/calibration/STARTUP_CALIBRATION_TROUBLESHOOTING.md` |
 | Demo Quick Start | ✅ Rewritten as evaluation guide | `docs/user_guides/DEMO_QUICK_START.md` |
@@ -205,7 +205,7 @@ These features are **explicitly deferred** and should NOT be documented as curre
 | License key enforcement | v3.0 | Infrastructure scaffolded, not enforced |
 | Injection auto-detection v2 (multi-feature) | v3.0 | v1 (λ-threshold) ships |
 | AnIML / SiLA 2 | v4.0+ | Plan only |
-| Sparq LLM-based answers | v3.0+ | Pattern matching ships; LLM removed |
+| Sparq Coach (Claude Haiku chat) | v2.0.5 post-ship | Cloudflare Worker deploy pending; client-side complete (SPARQ_COACH_BETA_FRS.md) |
 
 ---
 

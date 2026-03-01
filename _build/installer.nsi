@@ -6,7 +6,7 @@
 
 ; Installer Information
 !define PRODUCT_NAME "Affilabs-Core"
-!define PRODUCT_VERSION "2.0.5"
+!define PRODUCT_VERSION "2.0.5.1"
 !define PRODUCT_PUBLISHER "Affilabs"
 !define PRODUCT_WEB_SITE "https://affinitelabs.com"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
@@ -97,7 +97,8 @@ Would you like to run Zadig now to install the USB driver?" \
 Steps (takes ~30 seconds):$\n\
   1. Connect your spectrometer to USB if not already done$\n\
   2. In Zadig: open the Device menu → tick 'List All Devices'$\n\
-  3. Select your spectrometer (USB4000, Flame-T, OceanOptics...)(4. Make sure 'WinUSB' is selected in the driver dropdown$\n\
+  3. Select your spectrometer (USB4000, Flame-T, OceanOptics...)$\n\
+  4. Make sure 'WinUSB' is selected in the driver dropdown$\n\
   5. Click 'Install Driver' and wait for the green confirmation$\n\
   6. Close Zadig when done, then launch AffiLabs.core$\n$\n\
 Tip: You can re-run Zadig anytime from Start → ${PRODUCT_NAME} → Install USB Driver (Zadig)."
@@ -153,5 +154,4 @@ SectionEnd
 ; Section Descriptions
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecMain} "Install the main Affilabs-Core application"
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecDriver} "Automatically install WinUSB driver for Ocean Optics spectrometer (Flame-T, USB4000) if detected"
 !insertmacro MUI_FUNCTION_DESCRIPTION_END

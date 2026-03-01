@@ -232,6 +232,22 @@ Ignored by Claude Code (use --no-ignore to access):
 | SpectrumBubble, RailTimerPopup, LiveContextPanel, LiveRightPanel | [FLOATING_PANELS_FRS.md](docs/features/FLOATING_PANELS_FRS.md) | `affilabs/widgets/spectrum_bubble.py`, `affilabs/widgets/rail_timer_popup.py`, `affilabs/widgets/live_context_panel.py`, `affilabs/widgets/live_right_panel.py` |
 | GuidanceCoordinator — adaptive contextual hints | [GUIDANCE_COORDINATOR_FRS.md](docs/features/GUIDANCE_COORDINATOR_FRS.md) | `affilabs/coordinators/guidance_coordinator.py` |
 | Accessibility panel — colour palettes, line styles, dark mode, **Large Text (FontScale)** | [ACCESSIBILITY_PANEL_FRS.md](docs/features/ACCESSIBILITY_PANEL_FRS.md) | `affilabs/widgets/accessibility_panel.py`, `affilabs/ui_styles.py` |
+| LED calibration model — 3-stage linear model, per-device JSON, load/calculate intensity | [LED_MODEL_LOADER_FRS.md](docs/features/LED_MODEL_LOADER_FRS.md) | `affilabs/services/led_model_loader.py` |
+| ML QC intelligence — 4 predictive models: calibration failure, LED health, sensor coating, optical alignment | [ML_QC_INTELLIGENCE_FRS.md](docs/features/ML_QC_INTELLIGENCE_FRS.md) | `affilabs/core/ml_qc_intelligence.py` |
+| FMEA system — failure mode tracking across calibration, afterglow, live data; cross-phase correlation | [FMEA_SYSTEM_FRS.md](docs/features/FMEA_SYSTEM_FRS.md) | `affilabs/core/fmea_tracker.py`, `affilabs/core/fmea_integration.py` |
+| Acquisition event coordinator — start/stop lifecycle, hardware config, error handling, UI state | [ACQUISITION_EVENT_COORDINATOR_FRS.md](docs/features/ACQUISITION_EVENT_COORDINATOR_FRS.md) | `affilabs/coordinators/acquisition_event_coordinator.py` |
+| Calibration validator — spectrum quality checks (signal, saturation, SNR), LED + integration time validation | [CALIBRATION_VALIDATOR_FRS.md](docs/features/CALIBRATION_VALIDATOR_FRS.md) | `affilabs/services/calibration_validator.py` |
+| Startup calibration dialog — non-modal progress dialog, thread-safe signals, Start/Retry/Continue buttons | [STARTUP_CALIBRATION_DIALOG_FRS.md](docs/features/STARTUP_CALIBRATION_DIALOG_FRS.md) | `affilabs/dialogs/startup_calib_dialog.py` |
+| Data acquisition manager — DAQ loop, 3-tier fallback (rankbatch/batch/sequential), threading, error recovery | [DATA_ACQUISITION_FRS.md](docs/features/DATA_ACQUISITION_FRS.md) | `affilabs/core/data_acquisition_manager.py` |
+| Spectrum processing pipelines — 9 pipelines (Fourier, centroid, polynomial, hybrid, batch SG, consensus, etc.), PipelineRegistry | [SPECTRUM_PIPELINES_FRS.md](docs/features/SPECTRUM_PIPELINES_FRS.md) | `affilabs/utils/pipelines/`, `affilabs/utils/processing_pipeline.py` |
+| Sensogram presenter — timeline + cycle-of-interest graphs, cursors, flag markers, channel visibility | [SENSOGRAM_PRESENTER_FRS.md](docs/features/SENSOGRAM_PRESENTER_FRS.md) | `affilabs/presenters/sensogram_presenter.py` |
+| Spectroscopy presenter — transmission + raw spectrum plots, wavelength filtering, dual access path | [SPECTROSCOPY_PRESENTER_FRS.md](docs/features/SPECTROSCOPY_PRESENTER_FRS.md) | `affilabs/presenters/spectroscopy_presenter.py` |
+| Queue manager — cycle queue, locking semantics, mid-run append, method snapshot, serialization | [QUEUE_MANAGER_FRS.md](docs/features/QUEUE_MANAGER_FRS.md) | `affilabs/managers/queue_manager.py` |
+| User profiles — multi-user, XP levels, guidance leveling, hint dismissal, compression training | [USER_PROFILES_FRS.md](docs/features/USER_PROFILES_FRS.md) | `affilabs/widgets/user_panel_popup.py`, `affilabs/services/user_profile_manager.py` |
+| Settings system — 22 constant groups (settings.py) + runtime config (app_config.py), local_settings override | [SETTINGS_SYSTEM_FRS.md](docs/features/SETTINGS_SYSTEM_FRS.md) | `settings/settings.py`, `affilabs/app_config.py` |
+| Detector profiles — JSON hardware profiles for Flame-T and USB4000, runtime override of deprecated settings | [DETECTOR_PROFILES_FRS.md](docs/features/DETECTOR_PROFILES_FRS.md) | `detector_profiles/*.json` |
+| Sidebar builders — 7 AL_* builder modules (settings, flow, method, graphic, device status, export, replay) | [SIDEBAR_BUILDERS_FRS.md](docs/features/SIDEBAR_BUILDERS_FRS.md) | `affilabs/sidebar_tabs/` |
+| UI styling — design tokens (Colors, Fonts, Dimensions, Spacing), 26 stylesheet builders, FontScale accessibility | [UI_STYLING_FRS.md](docs/features/UI_STYLING_FRS.md) | `affilabs/ui_styles.py` |
 
 **Rule:** If the task touches a subsystem listed above, read the FRS doc first. Only open the source file if the doc doesn't answer the question.
 

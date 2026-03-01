@@ -4,7 +4,7 @@
 **Planned source:** `affilabs/services/experiment_index.py`  
 **Write trigger:** `RecordingManager.stop_recording()` (file-mode only)  
 **Index file:** `~/Documents/Affilabs Data/experiment_index.json`  
-**Status:** Spec only — not yet implemented  
+**Status:** Implemented (v2.0.5)
 **Version:** Affilabs.core v2.0.5+
 
 ---

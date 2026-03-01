@@ -3973,8 +3973,10 @@ def main():
         if hasattr(app, "splash_screen") and app.splash_screen.isVisible():
             app.update_splash_message("Ready!")
             def _after_splash():
-                app.splash_screen.finish(app.main_window)
-                # User selector is now shown in the QC dialog footer after calibration
+                if hasattr(app.splash_screen, '_animation_timer'):
+                    app.splash_screen._animation_timer.stop()
+                target = getattr(app, 'main_window', None)
+                app.splash_screen.finish(target)
             QTimer.singleShot(300, _after_splash)
 
     # Close splash after at least 3 seconds for branding visibility

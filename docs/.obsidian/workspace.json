@@ -1,0 +1,213 @@
+{
+  "main": {
+    "id": "43825d9d4d675688",
+    "type": "split",
+    "children": [
+      {
+        "id": "84f8a9417c1f1632",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "3af6d273214039e7",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "future_plans/21CFR_PART11_GAP_ANALYSIS.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "21CFR_PART11_GAP_ANALYSIS"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "c5e1041e55113b3c",
+    "type": "split",
+    "children": [
+      {
+        "id": "8d871f9ca06ef3a4",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "e162650b3a183d46",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "bed3c0526a47bfd4",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "manufacturing",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "70f001e4b3d1c0b2",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "13413e05b5f41e5d",
+    "type": "split",
+    "children": [
+      {
+        "id": "727eac3d97e561b8",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d045585ad07d4ec2",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "future_plans/21CFR_PART11_GAP_ANALYSIS.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for 21CFR_PART11_GAP_ANALYSIS"
+            }
+          },
+          {
+            "id": "a52d8804986b3ca2",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "future_plans/21CFR_PART11_GAP_ANALYSIS.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from 21CFR_PART11_GAP_ANALYSIS"
+            }
+          },
+          {
+            "id": "92be61fe2ce4aeb6",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "3766c1c98b0fcdc3",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "1ab91260a205fc3d",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "future_plans/21CFR_PART11_GAP_ANALYSIS.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of 21CFR_PART11_GAP_ANALYSIS"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "bed3c0526a47bfd4",
+  "lastOpenFiles": [
+    "V2_0_5_RELEASE_READINESS.md.tmp.4016.1772396164363",
+    "future_plans/TINYLLAMA_TRAINING_GUIDE.md",
+    "features/UI_STYLING_FRS.md",
+    "features/SIDEBAR_BUILDERS_FRS.md",
+    "features/DETECTOR_PROFILES_FRS.md",
+    "features/SETTINGS_SYSTEM_FRS.md",
+    "features/USER_PROFILES_FRS.md",
+    "user_guides/OPERATION_MANUAL.md.tmp.4016.1772395713189",
+    "features/QUEUE_MANAGER_FRS.md",
+    "user_guides/OPERATION_MANUAL.md.tmp.4016.1772395697651",
+    "features/SPECTROSCOPY_PRESENTER_FRS.md",
+    "features/SENSOGRAM_PRESENTER_FRS.md",
+    "features/SPECTRUM_PIPELINES_FRS.md",
+    "features/DATA_ACQUISITION_FRS.md",
+    "features/STARTUP_CALIBRATION_DIALOG_FRS.md",
+    "features/CALIBRATION_VALIDATOR_FRS.md",
+    "features/ACQUISITION_EVENT_COORDINATOR_FRS.md",
+    "features/FMEA_SYSTEM_FRS.md",
+    "features/ML_QC_INTELLIGENCE_FRS.md",
+    "features/LED_MODEL_LOADER_FRS.md",
+    "validation/# Code Citations.md",
+    "future_plans/WEBSITE_SOFTWARE_PAGE_PLAN.md",
+    "validation/IQ_OQ_PROTOCOL_v2.0.5.html"
+  ]
+}

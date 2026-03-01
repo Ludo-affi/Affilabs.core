@@ -2,15 +2,20 @@
   "_schema_version": "1.0",
   "_description": "Device registry mapping serial numbers to customer, shipping, and calibration metadata. One entry per shipped unit.",
   "devices": {
-    "FLMT09788": {
-      "serial": "FLMT09788",
+    "AFFI09788": {
+      "serial": "AFFI09788",
+      "detector_serial": "FLMT09788",
+      "affinite_number": "OA-B2F-01",
       "device_type": "PicoP4SPR",
+      "device_model": "P4SPR 2.0",
       "detector_model": "USB4000",
+      "power_source": "USB",
+      "build_date": "2026-02-28",
       "status": "shipped",
       "shipped_date": "2026-02-20",
       "customer": {
         "name": "Amit Pandey",
-        "organization": null,
+        "organization": "University of Bern",
         "country": "Switzerland",
         "email": null,
         "phone": null
@@ -33,7 +38,7 @@
       ],
       "latest_calibration": "device_FLMT09788_20260220.json",
       "ml_training_include": true,
-      "notes": null
+      "notes": "OA-B2F-01. Shipped 2026-02-20. USB4000 detector (FLMT09788). LCW LEDs, barrel polarizer."
     },
     "FLMT09116": {
       "serial": "FLMT09116",
@@ -81,20 +86,31 @@
       "ml_training_include": true,
       "notes": "Phase Photonics detector unit. ST-prefix serials are Phase Photonics builds. Detector did not meet manufacturer quality standards \u00e2\u20ac\u201d reverted to Ocean Optics detector."
     },
-    "FLMT09792": {
-      "serial": "FLMT09792",
+    "AFFI09792": {
+      "serial": "AFFI09792",
+      "detector_serial": "FLMT09792",
+      "affinite_number": "OA-B2F-02",
       "device_type": "PicoP4SPR",
+      "device_model": "P4SPR 2.0",
       "detector_model": "Flame-T",
+      "power_source": "USB",
+      "build_date": "2026-02-28",
       "status": "in-house",
       "shipped_date": null,
-      "customer": null,
+      "customer": {
+        "name": null,
+        "organization": "University of Bari",
+        "country": "Italy",
+        "email": null,
+        "phone": null
+      },
       "order": null,
       "calibration_files": [
         "device_FLMT09792_20260228.json"
       ],
       "latest_calibration": "device_FLMT09792_20260228.json",
       "ml_training_include": true,
-      "notes": "Korea distributor demo unit. Barrel polarizer, OWW LEDs (P4SPR 2.0). Previously paired with ST00012 Phase Photonics controller \u00e2\u20ac\u201d detector extracted and re-provisioned as standalone Flame-T unit 2026-02-28. Calibration bug fixed during provisioning: polarizer misclassified as CIRCULAR due to dark_current threshold error \u00e2\u20ac\u201d fixed in calibrate_polarizer.py."
+      "notes": "Device #1 (beige connectors). Production unit OA-B2F-02, built 2026-02-28. P4SPR 2.0, USB powered. Flame-T detector (FLMT09792). Barrel polarizer, OWW LEDs. Ultra-sensitive."
     },
     "ST00014": {
       "serial": "ST00014",
@@ -112,20 +128,31 @@
       "ml_training_include": true,
       "notes": null
     },
-    "FLMT10979": {
-      "serial": "FLMT10979",
+    "AFFI10979": {
+      "serial": "AFFI10979",
+      "detector_serial": "FLMT10979",
+      "affinite_number": "OA-B2F-03",
       "device_type": "PicoP4SPR",
+      "device_model": "P4SPR 2.0",
       "detector_model": "Flame-T",
+      "power_source": "USB",
+      "build_date": "2026-02-28",
       "status": "in-house",
       "shipped_date": null,
-      "customer": null,
+      "customer": {
+        "name": null,
+        "organization": "University of Bari",
+        "country": "Italy",
+        "email": null,
+        "phone": null
+      },
       "order": null,
       "calibration_files": [
         "device_FLMT10979_20260228.json"
       ],
       "latest_calibration": "device_FLMT10979_20260228.json",
       "ml_training_include": true,
-      "notes": "New production unit. Replaces ST00012 (Phase Photonics build \u00e2\u20ac\u201d reverted). FLMT10979 is the previous detector from the Korean distributor demo (FLMT09792 assembly). Detected 2026-02-28. Awaiting OEM calibration (controller not yet flashed with P4SPR firmware at time of detection)."
+      "notes": "Device #2 (blue connectors). Production unit OA-B2F-03, built 2026-02-28. P4SPR 2.0, USB powered. Flame-T detector (FLMT10979). Barrel polarizer, OWW LEDs."
     }
   }
 }

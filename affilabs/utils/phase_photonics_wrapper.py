@@ -13,7 +13,10 @@ detector_factory.create_detector().
 from pathlib import Path
 
 import numpy as np
-from ftd2xx import listDevices
+try:
+    from ftd2xx import listDevices
+except (ImportError, OSError):
+    listDevices = None
 from numpy import all, arange, frombuffer, isnan
 from numpy.polynomial import Polynomial
 

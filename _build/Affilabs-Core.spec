@@ -29,7 +29,6 @@ if not libusb_dll:
     # Fallback: well-known install locations
     possible_paths = [
         os.path.expanduser(r'~\AppData\Local\Programs\Python\Python312\Lib\site-packages\libusb_package\libusb-1.0.dll'),
-        os.path.expanduser(r'~\AppData\Local\Programs\Python\Python311\Lib\site-packages\libusb_package\libusb-1.0.dll'),
     ]
     for path in possible_paths:
         if os.path.exists(path):
@@ -140,26 +139,11 @@ a.datas = [d for d in a.datas
 
 pyz = PYZ(a.pure)
 
-# Native bootloader splash — appears instantly when the .exe is clicked,
-# before Python even starts. Uses Tcl/Tk (bundled with Python) so it
-# requires no Qt startup cost. Dismissed from main.py via pyi_splash.close()
-# once the Qt splash screen is visible.
-splash = Splash(
-    os.path.join(PROJECT_ROOT, 'affilabs', 'ui', 'img', 'affinite-splash.png'),
-    binaries=a.binaries,
-    datas=a.datas,
-    text_pos=None,         # No text overlay — our Qt splash handles status messages
-    minify_script=True,
-    always_on_top=True,
-)
-
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.datas,
-    splash,           # Splash script embedded in the exe
-    splash.binaries,  # Tcl/Tk DLLs needed by the bootloader splash
     [],
     name=f'Affilabs-Core-v{VERSION}',
     debug=False,

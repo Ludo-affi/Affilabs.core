@@ -189,14 +189,14 @@
     },
     {
       "id": "tip_032",
-      "text": "Want kinetics? The P4PRO with AffiPump delivers pulse-free flow — the clean association and dissociation curves you need for reliable kon/koff fitting.",
-      "tags": ["general", "p4pro", "strategy", "hardware"],
+      "text": "Pre-wet your syringe tip with buffer before drawing up sample — this eliminates the tiny air bubble that often forms at the tip and disrupts injection.",
+      "tags": ["p4spr", "injection", "strategy"],
       "source": "device"
     },
     {
       "id": "tip_033",
-      "text": "Go from scouting to screening: use P4SPR for rapid condition scouting (buffer, regeneration, surface chemistry), then move confirmed binders to Flow+ for higher-throughput screening.",
-      "tags": ["general", "p4spr", "strategy"],
+      "text": "SimplexSPR's 4 independent channels let you test 4 concentrations at once — a full dose-response in a single injection cycle.",
+      "tags": ["p4spr", "strategy", "injection"],
       "source": "science"
     },
     {
@@ -267,8 +267,8 @@
     },
     {
       "id": "tip_045",
-      "text": "Set your flow rate before starting the run — flow rate changes made mid-cycle have no effect on the current cycle.",
-      "tags": ["p4pro", "p4proplus", "injection", "calibration"],
+      "text": "Inject all 4 channels within 15 seconds of each other — the software handles the timing skew, but wider gaps make alignment harder in Edits.",
+      "tags": ["p4spr", "injection", "strategy"],
       "source": "device"
     }
   ]

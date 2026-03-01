@@ -123,8 +123,12 @@ class SparqCoachService:
         user_name: str = "",
         screenshot_bytes: bytes | None = None,
         additional_images: list[str] | None = None,
+        report_type: str = "bug",
     ) -> tuple[bool, str]:
-        """Auto-submit a bug report to the Sparq backend.
+        """Auto-submit a bug report or support request to the Sparq backend.
+
+        Args:
+            report_type: 'bug' (default) or 'support_request' for unanswered Sparq questions.
 
         Returns:
             (True, ticket_id)        on success.
@@ -158,6 +162,7 @@ class SparqCoachService:
             "app_version": _app_version(),
             "user_name": user_name,
             "description": description,
+            "report_type": report_type,
             "system_info": _system_info(),
             "screenshot_b64": screenshot_b64,
             "additional_images_b64": extra_b64,

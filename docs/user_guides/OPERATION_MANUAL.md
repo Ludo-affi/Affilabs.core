@@ -1,32 +1,34 @@
-# Affilabs.core v2.0.5 - Operation Manual
+# Affilabs.core v2.0.5.1 - Operation Manual
 
-**Software Version:** 2.0.5
-**Release Date:** February 24, 2026
+**Software Version:** 2.0.5.1
+**Release Date:** March 1, 2026
 **Status:** Release
-**Device:** FLMT09788 (Flame-T Spectrometer)
+**Supported Detectors:** Affi Detector
 
 ---
 
 ## Table of Contents
 
 1. [Quick Start Guide](#quick-start-guide)
+   - [Startup Calibration Failures](#startup-calibration-failures)
 2. [System Overview](#system-overview)
 3. [Software Purpose & Scope](#software-purpose--scope)
-4. [Getting to Auto-Read Section](#getting-to-auto-read-section)
 4. [Creating a Method](#creating-a-method)
 5. [Recording an Experiment](#recording-an-experiment)
 6. [Editing & Analyzing Data](#editing--analyzing-data)
-7. [Data Export Formats](#data-export-formats)
-8. [Manual Operation](#manual-operation)
-   - [Sensor Installation (P4PRO & P4SPR 2.0)](#sensor-installation-p4pro--p4spr-20)
-   - [Channel Addressing & Volume Guidelines](#channel-addressing--volume-guidelines)
-   - [Manual Pump Control](#manual-pump-control)
-9. [User Management](#user-management)
-   - [Creating User Profiles](#creating-user-profiles)
-   - [User Progression System](#user-progression-system)
-   - [Switching Between Users](#switching-between-users)
-10. [Maintenance](#maintenance)
-11. [Software Compatibility](#software-compatibility)
+7. [Notes Tab — Electronic Lab Notebook](#notes-tab--electronic-lab-notebook)
+8. [Data Export Formats](#data-export-formats)
+9. [Accessibility & Display Settings](#accessibility--display-settings)
+10. [Manual Operation](#manual-operation)
+    - [Sensor Installation (P4PRO & P4SPR 2.0)](#sensor-installation-p4pro--p4spr-20)
+    - [Channel Addressing & Volume Guidelines](#channel-addressing--volume-guidelines)
+    - [Manual Pump Control](#manual-pump-control)
+11. [User Management](#user-management)
+    - [Creating User Profiles](#creating-user-profiles)
+    - [User Progression System](#user-progression-system)
+    - [Switching Between Users](#switching-between-users)
+12. [Maintenance](#maintenance)
+13. [Software Compatibility](#software-compatibility)
 
 ---
 
@@ -144,28 +146,70 @@ Before starting, ensure your system is properly powered:
    - Allow 30 seconds for power stabilization
 
 2. **Launch the application**
-   - Double-click `AffiLabs.core v2.0`
-   - Wait for hardware initialization (30-60 seconds)
-   - Status indicator changes from "Searching..." to "Connected"
+   - Double-click the **Affilabs-Core** shortcut on your desktop (or Start Menu → Affilabs-Core)
+   - The main window loads within a few seconds
+   - The Power button (top-right Transport Bar) starts **red** (disconnected)
 
-3. **Select User Profile**
-   - Choose your name from the user dropdown in the Export tab
-   - This tracks who ran each experiment
+3. **Power On — Connect Hardware**
+   - Click the **Power** button (⏻) in the Transport Bar (top-right area)
+   - The button turns **yellow** while scanning for the detector and controller
+   - Once hardware is found, startup calibration begins automatically
+   - A calibration dialog shows LED convergence progress and S-pol reference capture (~30–60 s)
+   - **If calibration passes:** the QC dialog shows pass/fail per channel (FWHM, SNR, convergence iterations) → click **Continue** → Power button turns **green**
+   - **If calibration fails:** see [Startup Calibration Failures](#startup-calibration-failures) below
 
-4. **Power On Device**
-   - Click **Power On** button (top left)
-   - LED indicators illuminate
-   - Spectrometer initializes
+4. **Select User Profile**
+   - Click the **User** icon on the Icon Rail (left sidebar)
+   - Choose your name from the Lab Users panel
+   - This tracks who ran each experiment in exports and logs
 
-4. **Create Your First Method**
+5. **Create Your First Method**
    - Go to **Live tab** → Method Builder (sidebar)
    - Add baseline cycle → binding cycles → regeneration
    - Click **Save Method**
 
-5. **Start Recording**
+6. **Start Recording**
    - Click **Start Run** button
    - Data streams in real-time on the graph
    - Cycles execute automatically
+
+---
+
+### Startup Calibration Failures
+
+If the calibration dialog shows a failure, the software diagnoses the likely root cause based on your device's history.
+
+#### QC pass/fail criteria
+
+| Check | Good | Warning | Fail |
+|-------|------|---------|------|
+| FWHM (nm) | < 60 | 60–100 | > 100 |
+| SNR | > 20 | 10–20 | < 10 |
+| Convergence | < 10 iterations | 10–20 | > 20 or timeout |
+| Signal level | ≥ 7500 counts | 5000–7500 | < 5000 |
+
+Warnings are non-blocking (calibration accepted). Failures block acceptance.
+
+#### Failure triage
+
+The failure message includes a suggested action based on your device's history:
+
+| Scenario | Likely cause | Action |
+|----------|-------------|--------|
+| Device has calibrated successfully before | Water or debris in optical path | Dry or flush the flow cell, then click **Retry** |
+| Device has never calibrated successfully | Hardware issue (fiber, LED, detector) | Contact Affinité Support |
+| Only one channel fails | That LED or flow cell channel | Check the specific channel; flush and retry |
+
+**Most common cause:** Water droplets in the microfluidic cell or on the prism face during calibration. Dry the cell with a flush of dry buffer, wait 10 s, then click **Retry**.
+
+#### Buttons in the failure dialog
+
+| Button | What it does |
+|--------|-------------|
+| **Retry** | Re-runs the full calibration sequence |
+| **Continue Anyway** | Bypasses the failed calibration — instrument enters bypass mode; acquisition is allowed but results may be unreliable |
+
+> **Continue Anyway** is intended for emergency runs only. Acquisition in bypass mode uses default LED intensities and no S-pol reference — ΔSPR values will be inaccurate.
 
 ---
 
@@ -173,13 +217,13 @@ Before starting, ensure your system is properly powered:
 
 ### Hardware Components
 
-| Component | Model | Serial | Status |
-|-----------|-------|--------|--------|
-| Spectrometer | Flame-T | FLMT09788 | ✓ Ready |
-| LED PCB | Luminus Cool White | — | ✓ Ready |
-| Controller | Raspberry Pi Pico P4SPR | V2.4 | ✓ Ready |
-| Servo Motor | HS-55MG | — | ✓ Ready |
-| Optical Fiber | 200 μm diameter | — | ✓ Ready |
+| Component | Model | Notes |
+|-----------|-------|-------|
+| Detector | Affi Detector | Auto-detected on Power On |
+| LED PCB | Luminus Cool White (4 channels) | Time-multiplexed A → B → C → D |
+| Controller | Raspberry Pi Pico (P4SPR / P4PRO) | V2.4 firmware (CYCLE_SYNC mode) |
+| Servo Motor | HS-55MG | Rotates between P-pol and S-pol |
+| Optical Fiber | 200 μm diameter | Connects prism to detector |
 
 ### Power Requirements
 
@@ -201,7 +245,7 @@ Before starting, ensure your system is properly powered:
 
 ### Environmental Operating Conditions
 
-**Flame-T Spectrometer (Ocean Insight):**
+**Affi Detector:**
 
 | Condition | Specification | Notes |
 |-----------|---------------|-------|
@@ -217,14 +261,34 @@ Before starting, ensure your system is properly powered:
 - In cold environments (< 5°C), warm the device before operation
 - In hot environments (> 45°C), ensure adequate ventilation to prevent overheating
 
+### Hardware Models
+
+Affilabs.core supports three instrument models. The software auto-detects which model is connected.
+
+| Feature | **SimplexSPR (P4SPR)** | **SimplexFlow (P4PRO)** | **SimplexPro (P4PROPLUS)** |
+|---------|------------------------|-------------------------|---------------------------|
+| Injection | **Manual syringe** (user pipettes) | **Semi-automated** — 6-port valve + AffiPump | **Semi-automated** — 6-port valve + internal pumps |
+| Fluidic channels | **4 independent** — inject different samples into A, B, C, D simultaneously | **2 per cycle** — valve routes to AC pair or BD pair | **2 per cycle** — same as P4PRO |
+| Power | USB only (5V) | 24V Affinité power bar required | 24V Affinité power bar required |
+| Pump | None (or optional AffiPump) | AffiPump (external syringe pump — pulse-free) | Built-in peristaltic pumps |
+| Mode in software | Manual (locked) | Semi-Automated (default) | Semi-Automated (default) |
+| Flow tab | Hidden | Visible | Visible |
+
+**P4SPR note:** Manual injection means the user physically pipettes sample into each inlet port. Channels A, B, C, D are fully independent — you can inject four different samples in one experiment. Sequential pipetting can introduce up to ~15 s of inter-channel timing offset; the Interactive SPR Legend nudge feature corrects for this in post-analysis.
+
+**P4PRO/PROPLUS note:** The 6-port valve routes sample to one pair of channels at a time (AC or BD). To screen four samples, run two sequential injection cycles. The Flow tab (left sidebar) controls valve routing and pump parameters.
+
+Sections of this manual that are hardware-specific are labelled **(P4SPR)** or **(P4PRO/PROPLUS)** where relevant.
+
 ### Software Architecture
 
-**Two-Phase Workflow:**
+**Three-Tab Workflow:**
 
-| Phase | Tab | Function | Output |
-|-------|-----|----------|--------|
-| **Capture** | Live | Record raw sensor data in real-time | Raw Excel file |
-| **Analysis** | Edit | Process, measure, validate, annotate | Analysis Excel file |
+| Tab | When | Purpose |
+|-----|------|---------|
+| **Live** | During acquisition | Real-time sensorgram, hardware controls, method queue, injection monitoring |
+| **Edits** | After recording | Load, align, fit, measure Δ-SPR, export |
+| **Notes** | Before / during / after | Plan experiments, search history, tag and rate runs, build ELN entries |
 
 ---
 
@@ -235,7 +299,7 @@ Before starting, ensure your system is properly powered:
 **Affilabs.core v2.0** is a specialized software for **high-quality data acquisition and annotation** on the P4SPR surface plasmon resonance system.
 
 **Core Functions:**
-1. **Acquire high-quality sensor data** - Real-time streaming from Flame-T spectrometer (4 independent channels: A, B, C, D)
+1. **Acquire high-quality sensor data** - Real-time streaming from the Affi Detector (4 independent channels: A, B, C, D)
 2. **Execute experimental protocols** - Run predefined method sequences (baseline → concentration → regeneration → wash cycles)
 3. **Annotate during acquisition** - Add flags, notes, and markers in real-time to document events
 4. **Enable basic data editing** - Measure binding response (Δ-SPR), align cycles, validate quality
@@ -243,12 +307,13 @@ Before starting, ensure your system is properly powered:
 
 ### What Affilabs.core Does NOT Do
 
-Affilabs.core intentionally focuses on data capture and annotation. Advanced analysis is delegated to specialized tools:
+Some advanced workflows are out of scope or delegated to external tools:
 
-- ❌ **Curve fitting / kinetic analysis** (use TraceDrawer, Origin, Prism, or Affilabs.analysis — all accept the Affilabs.core Excel export directly)
-- ❌ **Kinetic modeling** (use specialized kinetics software)
-- ❌ **Statistical analysis** (use R, Python, Prism, or GraphPad)
-- ❌ **Advanced image processing** (use external visualization tools)
+- ❌ **Statistical analysis across experiments** (use R, Python, Prism, or GraphPad)
+- ❌ **Publication figure generation** (use Origin, Prism, Python/Matplotlib)
+- ❌ **AnIML / SiLA 2 / LIMS integration** (planned for future versions)
+
+> **Note:** Basic kinetic fitting (ka, kd, KD from association phases) and Langmuir binding curve fitting are available directly in the Edits tab Binding Plot. For complex multi-cycle global fitting, use Prism with the exported Excel data (TraceDrawer compatibility coming soon).
 
 ### Design Philosophy: Separation of Concerns
 
@@ -259,28 +324,28 @@ Affilabs.core follows a **three-phase workflow**:
 │  PHASE 1: CAPTURE (Live Tab)                        │
 │  ─ Acquire raw sensor data                          │
 │  ─ Execute method queue                             │
-│  ─ Real-time visualization & monitoring             │
-│  ─ Add labels, flags, notes                         │
-│  → OUTPUT: Raw_YYYYMMDD_HHMMSS.xlsx                 │
+│  ─ Real-time signal quality monitoring (Sensor IQ)  │
+│  ─ Automatic injection & wash detection             │
+│  ─ Optical fault alerts (leak, bubble)              │
+│  → OUTPUT: Auto-saved .xlsx every 60 s              │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
-│  PHASE 2: ANNOTATION (Edit Tab)                     │
-│  ─ Load raw data or previous analysis               │
-│  ─ Measure binding response (Δ-SPR) using cursors   │
-│  ─ Align cycles for comparison                      │
-│  ─ Validate data quality (QC pass/fail)             │
-│  ─ Enrich with metadata                             │
+│  PHASE 2: ANALYSIS (Edits Tab)                      │
+│  ─ Load raw data                                    │
+│  ─ Measure Δ-SPR with cursors                       │
+│  ─ Fit binding curves (Langmuir / Kinetics)         │
+│  ─ Align cycles, subtract reference channel        │
+│  ─ Validate data quality, annotate                  │
 │  → OUTPUT: Analysis_YYYYMMDD_HHMMSS.xlsx            │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
-│  PHASE 3: ANALYSIS (External Software)              │
-│  ─ Copy Δ-SPR values to Excel / Origin / Prism      │
-│  ─ Perform curve fitting & Kd calculation           │
-│  ─ Generate publication figures                     │
-│  ─ Use Affilabs.analysis for advanced workflows     │
-│  → OUTPUT: Final reports, publications              │
+│  PHASE 3: RECORD & PLAN (Notes Tab)                 │
+│  ─ Tag and rate completed experiments               │
+│  ─ Search experiment history                        │
+│  ─ Plan future runs, attach methods                 │
+│  ─ Build ELN entries                                │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -342,150 +407,93 @@ For users needing advanced analysis capabilities:
 | Annotate cycles | **Affilabs.core** | Add flags, notes, Δ-SPR measurements |
 | Basic export | **Affilabs.core** | Excel with all raw data + annotations |
 | Curve fitting | External tool or **Affilabs.analysis** | Not included in core |
-| Kinetic analysis (Kd, kon, koff) | **TraceDrawer**, Affilabs.analysis | Import the Excel export directly |
-| SPR data visualisation & fitting | **TraceDrawer** | Industry-standard SPR analysis tool; Affilabs.core Excel format is directly compatible |
+| Kinetic analysis (Kd, kon, koff) | **Prism**, Affilabs.analysis | Import the Excel export directly; TraceDrawer compatibility coming soon |
+| SPR data visualisation & fitting | **Prism**, TraceDrawer *(coming soon)* | TraceDrawer compatibility under validation |
 | Statistical tests | Excel, R, Prism, Python | Affilabs.core provides data only |
 | Figure generation | Origin, Prism, Python, Matplotlib | Export data, create figures externally |
 
 ---
 
-## Getting to Auto-Read Section
-
-The **Auto-Read feature** allows automatic baseline acquisition without manual cycle entry.
-
-### Steps to Access Auto-Read
-
-1. **Navigate to Live Tab**
-   - Click "Live" in the main tabs
-   - Right sidebar shows "Method Builder"
-
-2. **Auto-Read Controls** (in Method Builder)
-   - Find "Auto-Read Baseline" section
-   - Set **duration** (minutes): e.g., 5 minutes
-   - Click **Add Auto-Read Cycle**
-
-3. **Configuration Options**
-   - **Duration**: Length of baseline acquisition
-   - **Channels**: Select which channels to monitor (A, B, C, D)
-   - **Reference Channel** (if enabled): Automatic subtraction
-
-4. **Start Auto-Read**
-   - Adjust sensor on chip surface
-   - Click **Start Run**
-   - Software automatically records baseline
-   - Progress shown on timeline graph
-
-### Auto-Read Typical Duration
-
-- **Baseline Stabilization**: 3-5 minutes
-- **Quality Check**: 2-3 minutes
-- **Total**: 5-8 minutes before concentration injection
-
----
 
 ## Creating a Method
 
-A **Method** is a predefined sequence of cycles (baseline → concentration → regeneration → wash).
+A **Method** is a predefined sequence of cycles (baseline → binding → regeneration).
 
 ### Method Builder Interface
 
-**Location:** Live Tab → Right Sidebar → "Method Builder"
+**Open:** Click **Build Method** in the Transport Bar (top), or via the Live tab sidebar.
 
-### Step-by-Step Method Creation
+The Method Builder has three zones:
 
-#### 1. Add a Baseline Cycle
+| Zone | Purpose |
+|------|---------|
+| **Template Gallery** | Start from a built-in template or browse all presets |
+| **Step List** | Edit the cycle sequence — one row per step |
+| **Sparq Bar** | Natural-language method building ("add 5 kinetic cycles") |
 
+### Starting from a Template
+
+Four built-in templates are available:
+
+| Template | Use case |
+|----------|---------|
+| **Binding** | Basic affinity screening — baseline → N×binding |
+| **Kinetics** | Association + dissociation per cycle (P4PRO/PROPLUS) |
+| **Amine Coupling** | Immobilization workflow — activation → ligand → blocking → baseline → binding |
+| **Custom** | Blank canvas |
+
+Click a template to load it into the Step List, then edit individual cycles as needed.
+
+### Editing the Step List
+
+Each row in the Step List is one cycle. Click any cell to edit.
+
+**[+ Add step ▾]** dropdown adds a new cycle of the chosen type at the bottom:
+- **Baseline** — sensor equilibration (typical: 5 min)
+- **Binding** — analyte contact (typical: 8–10 min; sets contact timer, enables injection detection)
+- **Regeneration** — surface clean (typical: 3 min)
+- **Wash** — buffer flush (typical: 2 min)
+- **Custom** — any duration/label
+
+**Cycle parameters:**
 ```
-Cycle Type:     Baseline
-Duration (min): 5
-Temperature:    25°C
-```
-
-- Click **Add Baseline**
-- Adjust duration if needed
-- Baseline stabilizes sensor before experiment
-
-#### 2. Add Binding Cycles
-
-```
-Cycle Type:        Binding
-Concentration:     100 nM (or custom)
-Units:            nM / µM / mg/mL / %
-Duration (min):    10
-Volume (µL):       200
-```
-
-- Click **Add Binding**
-- Enter analyte concentration value
-- Select units (nM, µM, mg/mL, %)
-- **Duration**: Fixed incubation time (typically 5-10 minutes)
-  - Longer duration = approach to equilibrium
-  - Shorter duration = kinetic snapshot
-- **Volume**: 150-300 µL per channel injection
-
-**Add multiple concentrations for affinity mapping:**
-- 1 nM (10 min incubation) → lowest affinity point
-- 10 nM (10 min incubation) → mid-range
-- 100 nM (10 min incubation) → high concentration
-- 1000 nM (10 min incubation) → saturation
-
-Each concentration measured at **same timepoint** (10 min) to estimate Kd (dissociation constant)
-
-#### 3. Add Regeneration Cycle
-
-```
-Cycle Type:     Regeneration
-Duration (min): 3-5
-Regenerant:     0.1 M NaOH (or custom note)
+Cycle Type:     Binding
+Concentration:  100 nM
+Units:          nM / µM / pM / mg/mL / %
+Duration (min): 10
+Volume (µL):    200
+Notes:          (optional label shown on sensorgram)
 ```
 
-- Click **Add Regeneration**
-- Clears surface for next cycle
-- Duration: 3-5 minutes
+> **P4SPR note:** Keep binding cycles to 8–10 min. Longer cycles work but the sensorgram window becomes hard to read while you are also pipetting. Post-run cursor placement and Δ-SPR measurement happen in the Edits tab regardless of cycle length.
 
-#### 4. Add Wash Cycle (Optional)
+### Using the Sparq Bar
 
-```
-Cycle Type:     Wash
-Duration (min): 2-3
-Buffer:         Running Buffer
-```
+Type a natural-language request in the Sparq bar at the bottom of the dialog:
 
-- Stabilizes sensor after regeneration
-- Before next binding cycle
+- `"add 5 binding cycles at 1, 3, 10, 30, 100 nM"`
+- `"amine coupling workflow"`
+- `"kinetics titration"`
 
-### Complete Method Example - Affinity Measurement
+Sparq translates the request into step-list rows. Review and edit before pushing to queue.
 
-This example measures binding affinity across a concentration range using fixed incubation time:
+### Complete Method Example — Affinity Measurement (P4SPR)
 
-| Cycle # | Type | Duration | Concentration | Volume | Notes |
-|---------|------|----------|---|---|---|
-| 1 | Baseline | 5 min | — | — | Initial sensor stabilization |
-| 2 | Binding | 10 min | 1 nM | 200 µL | Low affinity point |
-| 3 | Regeneration | 3 min | — | 500 µL | Surface cleaning |
-| 4 | Wash | 2 min | — | — | Buffer stabilization |
-| 5 | Binding | 10 min | 10 nM | 200 µL | Mid-range affinity |
-| 6 | Regeneration | 3 min | — | 500 µL | Surface cleaning |
-| 7 | Wash | 2 min | — | — | Buffer stabilization |
-| 8 | Binding | 10 min | 100 nM | 200 µL | Higher affinity |
-| 9 | Regeneration | 3 min | — | 500 µL | Surface cleaning |
+| Cycle # | Type | Duration | Concentration | Notes |
+|---------|------|----------|---------------|-------|
+| 1 | Baseline | 10 min | — | Sensor equilibration |
+| 2 | Binding | 8.5 min | 1 nM | Lowest concentration |
+| 3 | Binding | 8.5 min | 10 nM | — |
+| 4 | Binding | 8.5 min | 100 nM | — |
+| 5 | Binding | 8.5 min | 1000 nM | Saturation |
 
-**Result**: Three Δ-SPR measurements at same incubation time (10 min) across 3 concentrations → Kd estimation
+Regeneration between binding cycles is done manually by the user (pipette regenerant, wait, pipette buffer) during the binding incubation window — it does not need its own queue entry for P4SPR. Alignment and baseline subtraction are handled in the Edits tab.
 
-### Save the Method
+### Save and Load Methods
 
-1. **Enter Method Name**
-   - Click **Save Method**
-   - Name: e.g., "Antibody_Binding_Assay"
-
-2. **Method Location**
-   - Automatically saved to: `Documents/Affilabs Methods/[YourName]/`
-   - File format: `.json`
-
-3. **Load Existing Method**
-   - Click **Load Method**
-   - Select from list of previously saved methods
-   - Method queues automatically
+- **Save:** Enter a method name → click **Save Method** → saved as `.json` in `Documents/Affilabs Methods/[YourName]/`
+- **Load:** Click **Load Method** → select from list → method loads into the Step List
+- **Push to Queue:** Click **Add to Queue** — method cycles appear in the queue panel on the Live tab
 
 ---
 
@@ -526,145 +534,318 @@ This example measures binding affinity across a concentration range using fixed 
 
 ### Starting a Recording
 
-1. **Click "Start Run"** (top toolbar)
-   - Queue begins executing
-   - Green "Recording" indicator appears
+1. **Click Record** (⏺) in the Transport Bar
+   - Queue begins executing; green "Recording" indicator appears
    - Timeline graph shows data acquisition
+   - Auto-save runs every 60 s to `Documents/Affilabs Data/`
 
-2. **Real-Time Monitoring**
-   - Watch sensorgram on "Live" graph
-   - Four channels visible (A, B, C, D)
-   - Red/green shift indicates binding events
+2. **Pause/Resume**
+   - **Pause** (⏸) in Transport Bar: temporarily stops acquisition
+   - **Resume**: continue from pause point
+   - Pause/resume markers appear on the timeline graph
 
-3. **Add Flags** (Optional, During Run)
-   - Right-click on graph at injection point
-   - Select flag type: **▲ Injection**, **■ Wash**, **◆ Spike**
-   - Timestamp automatically recorded
+3. **Click Stop** (⏹) when the experiment is complete
+   - Recording stops; final auto-save runs
+   - Data ready to load in the Edits tab
 
-4. **Add Notes** (Optional, Per Cycle)
-   - Enter text in "Cycle Notes" field
-   - Saved with cycle metadata
-   - Visible in Edit tab later
+---
 
-5. **Pause/Resume**
-   - **Pause** button: Temporarily stop acquisition
-   - **Resume** button: Continue from pause
-   - Use for buffer exchanges or troubleshooting
+### Sensor IQ — Real-Time Signal Quality
 
-### Stop Recording
+Affilabs.core classifies signal quality continuously during acquisition. The result is shown as colour-coded dots in the Active Cycle legend.
 
-1. **Click "Stop Run"** when experiment complete
-2. **Data Automatically Saved** to Live tab cycle queue
-3. **Ready to Export** raw data to Excel
+| Colour | IQ Level | Meaning |
+|--------|----------|---------|
+| Green | Excellent / Good | Signal in optimal zone — proceed normally |
+| Yellow | Questionable | Borderline — monitor; investigate if sustained |
+| Red | Poor / Critical | Action needed — see troubleshooting below |
+
+**What sets the IQ level:**
+
+| Metric | Good range | Concern |
+|--------|-----------|---------|
+| Resonance wavelength | 590–690 nm | Edge zones 560–590 / 690–720 nm: acceptable but monitor |
+| FWHM (dip width) | < 60 nm | 60–100 nm: questionable; > 100 nm: critical |
+
+**FWHM > 100 nm typically means:** air bubble in the optical path, sensor running dry, or heavy contamination. Stop the run, purge air, recheck compression.
+
+**FWHM 60–100 nm typically means:** sensor chip ageing or partial contamination. The run can continue; flag affected cycles for review in Edits tab.
+
+---
+
+### Contact Monitor — Live Injection Tracking (Binding cycles)
+
+When a Binding cycle is running, the **Contact Monitor panel** appears at the bottom of the queue area. No setup needed — it activates automatically.
+
+**What it shows:**
+
+```
+  A  ◉  +42 RU   3:12       B  ·○  approaching...
+  C  ○  inactive            D  ○   inactive
+```
+
+| Symbol | State | Meaning |
+|--------|-------|---------|
+| ◉ | CONTACT | Injection detected; binding accumulating; timer counting down |
+| ·○ | APPROACHING | Signal rising; injection not yet confirmed |
+| ○· | WASH | Wash step detected; surface regenerating |
+| ○ | INACTIVE | Channel not injected this cycle |
+
+**ΔSPR value** (e.g., `+42 RU`) shows cumulative binding since injection — live, updating every frame.
+
+**Countdown timer** (e.g., `3:12`) counts down from the cycle's contact time. Channels are independent — each timer starts when that channel's injection is detected. **(P4SPR)** This handles the natural 5–15 s lag between pipetting channel A and then B, C, D.
+
+**Wash detection is automatic.** After injection, the monitor watches for a second step-change (buffer returning to baseline). When detected, the channel transitions to WASH state and a wash flag is placed automatically. No button to click.
+
+---
+
+### Optical Fault Alerts
+
+Affilabs.core monitors the raw optical signal for two fault types during live acquisition:
+
+#### Leak detection
+
+**Trigger:** Raw intensity drops to ≤ 25% of calibration baseline and stays there for ≥ 3 s.
+
+**What happens:**
+1. Sparq chat panel opens automatically with an alert message and remediation steps
+2. Spectrum Bubble (top toolbar) turns red and shows the raw intensity collapse
+3. Recording continues — data is preserved
+
+**When the signal recovers (≥ 50% of baseline):**
+1. A quick LED recalibration runs automatically (acquisition pauses ~5 s, then resumes)
+2. Sparq shows a "signal recovered" message and suggests reviewing the affected cycle in Edits tab
+3. Recording is never interrupted — only a brief acquisition pause during recal
+
+**Remediation:** Check for loose microfluidic cell compression, disconnected tubing, or air introduction. See [Sensor Installation](#sensor-installation-p4pro--p4spr-20) for compression guidance.
+
+#### Air bubble detection
+
+**Trigger:** Simultaneous wavelength noise spike AND transmission drop within a short time window.
+
+**What happens:** Sparq chat opens with a bubble alert. The affected data region is marked; the run continues.
+
+**Remediation:** Purge with 3–5 pulse injections (50–100 µL) at high flow rate until bubble is cleared and baseline returns. See [Air Bubble Pulse Clearing Technique](#air-bubble-pulse-clearing-technique).
+
+---
+
+### Flags & Markers
+
+Flags are placed on the sensorgram timeline to mark injection events, wash steps, and anomalies.
+
+**Automatic flags (software-placed):**
+
+| Flag | When placed |
+|------|------------|
+| ▲ Injection | Injection detection confirms analyte contact |
+| ■ Wash | Contact timer expires OR wash step detected by monitor |
+
+You do not need to manually flag injections or washes — the software places them based on signal detection and the Contact Monitor.
+
+**Manual flags (user-placed during acquisition or in Edits tab):**
+
+| Flag | When to use |
+|------|------------|
+| ◆ Spike | Anomaly — air bubble, noise burst, accidental bump. Marks the region for exclusion in analysis. |
+
+To add a spike flag during a run: right-click on the sensorgram at the anomaly → **Add Spike Flag**.
+
+**AutoMarkers (dashed lines):** The software draws predicted timelines (expected wash deadline, expected injection deadline) as dashed reference lines. These are read-only — they update as the cycle progresses.
+
+**Editing flags in the Edits tab:** Flag positions can be nudged with arrow keys and snap to the nearest data point. See [Editing & Analyzing Data](#editing--analyzing-data).
 
 ---
 
 ## Editing & Analyzing Data
 
-The **Edit Tab** is where you measure, validate, and prepare final results.
+The **Edits Tab** is where you measure, validate, fit, and prepare final results.
 
-### Loading Data into Edit Tab
+### Loading Data
 
-#### Option 1: Load Raw Data File
-
-1. Go to **Edit Tab**
+#### Option 1: Load file directly
+1. Go to **Edits Tab**
 2. Click **Load Data**
-3. Select raw Excel file from:
-   - `Documents/Affilabs_Data/[ExperimentName]/Raw_Data/`
-4. Cycles populate automatically in table
+3. Select an auto-saved `.xlsx` from `Documents/Affilabs Data/`
+4. Cycles populate the table
 
-#### Option 2: From Live Tab Export
+#### Option 2: From Notes tab history
+1. Go to **Notes Tab** → find the experiment in the list
+2. Double-click the row → file loads directly into Edits tab (no file picker)
 
-1. In Live tab, click **Save Raw Data**
-2. Choose save location (defaults to experiment folder)
-3. Switch to Edit tab
-4. Click **Load Data** → select same file
+### Cycle Table
 
-### Cycle Analysis Table
-
-**Columns:**
 | Column | Description | Editable |
 |--------|-------------|----------|
-| Type | Cycle type (BL, CN, RG, WS) | No |
+| Type | BL / BN / RG / WS / Custom | No |
 | Time | Start time & duration | No |
-| Conc | Concentration value | No |
-| ΔSPR | Delta SPR (A:val B:val...) | Yes (via cursors) |
-| Flags | Event markers (▲■◆) | Yes |
-| Notes | User annotations | Yes |
+| Conc | Concentration value | Yes |
+| ΔSPR | Per-channel binding response | Set via cursors |
+| Flags | ▲ ■ ◆ event markers | Yes (nudge with arrow keys) |
+| Notes | Free text per cycle | Yes |
 
-### Measuring Delta SPR (Δ-SPR)
+**Keyboard navigation:** ↑ / ↓ arrows move through the table without clicking; the sensorgram updates to the selected cycle.
 
-**Δ-SPR** = Change in wavelength shift during incubation = **Binding Response at Fixed Timepoint**
-
-**Important**: In P4SPR affinity measurement, you measure the binding response at a **fixed incubation time** (e.g., all at 10 minutes), not the binding kinetics over time.
-
-#### Manual Measurement with Cursors
+### Measuring Δ-SPR with Cursors
 
 1. **Select a binding cycle** in the table
-2. **Place cursors** on sensorgram:
-   - **Left cursor** (green): Start of incubation (injection point)
-   - **Right cursor** (red): End of incubation (at fixed timepoint, typically 10 min)
-3. **Value updates in real-time**:
-   - Channel A, B, C, D Δ-SPR values calculated
-   - Displayed in ΔSPR bar chart (colored bars)
-   - **This is your binding affinity measurement at this concentration**
-4. **Auto-saves** to selected cycle
+2. **Place cursors** on the sensorgram:
+   - **Left cursor** (green): injection start (baseline)
+   - **Right cursor** (red): end of incubation (fixed timepoint, e.g. 10 min)
+3. Δ-SPR values for all four channels update live in the ΔSPR bar chart
+4. Values auto-save to the selected cycle
 
-#### Cursor Tips for Affinity Measurement
+**Lock cursors:** Check the **Lock** checkbox to fix the cursor distance to `contact_time × 1.1`. Both cursors then move together — useful for stepping through cycles at the same timepoint.
 
-- Position left cursor at injection start (baseline level)
-- Position right cursor at **same time offset for all binding cycles** (e.g., always at 10 min)
-- This ensures fair comparison across concentrations
-- Bar chart shows delta for all 4 channels simultaneously
-- Use consistent timepoint for all cycles → build affinity curve
+**Reference channel subtraction:** Ctrl+click a channel button (A / B / C / D) to set it as the reference. Its signal is subtracted from all other channels. The reference channel button shows a dotted border. Ctrl+click again to clear.
 
-#### Building an Affinity Curve
+**Tip (P4SPR):** Use the Interactive SPR Legend to correct inter-channel injection timing before measuring (see below).
 
-After measuring Δ-SPR for each concentration at same timepoint:
-1. Extract Δ-SPR values: [1 nM: 25, 10 nM: 45, 100 nM: 65, 1000 nM: 75]
-2. Plot concentration vs. Δ-SPR in external software (Prism, Origin)
-3. Fit to binding curve (e.g., Langmuir isotherm) to estimate **Kd**
+### Interactive SPR Legend — Channel Selection & Nudge
+
+The **Active Cycle graph** has a floating legend in the top-right corner showing the current Δ-SPR per channel as integers (e.g., `+12`, `−3`).
+
+**Click a channel row** in the legend to select it:
+- That channel's curve thickens (4 px)
+- Other channels dim
+
+**Nudge the selected channel's X-axis:**
+- `←` / `→` arrow keys: ±1 s shift
+- `Shift + ←` / `Shift + →`: ±5 s shift
+
+**When to use nudge (P4SPR):** When you pipette channels A → B → C → D sequentially, each injection is 3–5 s later than the previous one. Nudging shifts each channel's curve so all response onsets align — making the Δ-SPR comparison fair.
+
+### Binding Plot & Kd Fitting
+
+Switch to the **Binding** subtab in the Edits tab to open the binding plot and fit controls.
+
+**The binding plot shows:** concentration (X) vs. Δ-SPR (Y) for all cycles with a concentration value assigned.
+
+**Fitting models:**
+
+| Model | Use case | Output |
+|-------|---------|--------|
+| **Linear** | Low-concentration / screening | Slope (RU/nM) |
+| **Langmuir 1:1** | Equilibrium affinity | KD, Rmax |
+| **Kinetics** | Association + dissociation phases | ka, kd, KD |
+
+**Rmax calculator:** Enter the Δ-SPR from your immobilization cycle → the calculator estimates surface activity % (measured Rmax / theoretical Rmax).
+
+**Concentration units:** Toggle nM / µM / pM from the unit selector — the X-axis rescales automatically.
+
+To use fitted KD values for publication: export to Excel (the fitted parameters are included in the analysis sheet) or copy to clipboard.
 
 ### Alignment & Time Shift
 
-**Use when:** Cycles need time-axis adjustment for overlay comparison
-
-1. **Select Alignment Tab**
-2. **Drag slider** for time shift
-   - Real-time updates to graph
-   - No "Apply" button needed
-3. **Adjustment saved** to cycle metadata
+1. Switch to the **Alignment** subtab
+2. Select the channel to shift
+3. Drag the slider or type an offset (seconds)
+4. Graph updates in real time — no Apply button needed
+5. Shift is saved to the cycle
 
 ### Validation & QC
 
-1. **Mark Cycles** as Pass/Fail/Review
-   - Right-click cycle → QC Status
-   - Filters visible cycles based on status
+- **Right-click a cycle** → set QC status: Pass / Fail / Review
+- Filter the table by QC status using the filter buttons above the table
+- Add notes per cycle to explain exclusions
 
-2. **Flag Low-Quality Data**
-   - Noisy baseline
-   - Incomplete binding
-   - Sensor drift
+### Adjusting Flag Positions
 
-3. **Add QC Notes**
-   - Explain why marked as fail
-   - Reference to raw data issues
+1. Click a flag marker on the sensorgram to select it
+2. Use **← / →** arrow keys to nudge position (snaps to nearest data point)
+3. Shift+arrow for larger steps
 
-### Data Enrichment
+---
 
-**Metadata Panel Shows:**
-- **Date**: Experiment date & time
-- **User**: Who ran the experiment
-- **Device**: Hardware serial (FLMT09788)
-- **Cycles**: Total count
-- **Conc. Range**: Min-Max analyte concentration
-- **Sensor**: Chip type (optional user entry)
+## Notes Tab — Electronic Lab Notebook
+
+The **Notes Tab** (`Ctrl+3`) is the third main tab — always accessible, even without hardware connected or a file loaded.
+
+```
+Live      →   Edits      →   Notes
+Acquire       Analyse        Document / Plan / Search
+```
+
+Use it to rate experiments, write notes, track what to repeat, plan future runs, and search your full experiment history.
+
+### Three-Panel Layout
+
+| Panel | What's here |
+|-------|------------|
+| **Left (filter bar)** | Smart filters (All / Needs Repeat / Planned / Unrated) with live counts; tag browser |
+| **Centre (list / Kanban)** | All experiments as rows; toggle to Kanban for workflow view |
+| **Right (preview + ELN)** | Sensorgram thumbnail, metadata, star rating, tags, notes editor |
+
+### Experiment List
+
+Each row shows: date · description (first line of notes) · star rating · tags · status badge.
+
+- **Single-click** → preview in right panel
+- **Double-click** → load directly into Edits tab (no file picker)
+- **Right-click** → Load · Open Excel · Reveal in Explorer · Edit tags · Delete from index
+
+### Kanban View
+
+Toggle with the `[# Kanban]` button. Four columns:
+
+| Column | What appears here |
+|--------|-----------------|
+| **Planned** | Future experiments you've sketched out |
+| **Running** | Current live recording (auto-populated) |
+| **Done** | Completed experiments, rating ≥ 3 (or unrated) |
+| **Needs Repeat** | Rating 1–2 — runs to redo |
+
+Drag cards between columns to update status. The **Running** column is read-only.
+
+### Rating & Tagging
+
+**Star rating (1–5):** Click the stars in the right panel.
+- Rating 1 or 2 → entry automatically moves to **Needs Repeat** column and gets `#needs-repeat` tag
+- Raising rating above 2 → removes `#needs-repeat` tag
+
+**Tags:** Pill chips in the right panel. Click `[+ Add tag]` to add; tags autocomplete from your full tag history. Click `×` to remove.
+
+**Notes:** Free-text editor (4 visible lines). Auto-saves on focus-out. Supports any plain text — protocol changes, observations, troubleshooting notes.
+
+### Smart Filters
+
+| Filter | Shows |
+|--------|-------|
+| All Experiments | Everything in the index |
+| Needs Repeat | Rating 1–2 |
+| Planned | Entries you've planned but not yet run |
+| Unrated | No rating set yet |
+
+Click any filter label to apply. Counts update live as you rate and tag.
+
+### Search
+
+Type in the search bar at the top of the centre panel. Full-text search across: notes, tags, chip serial, filename, user name, and date range. All filters and tags are applied on top of the search query.
+
+### Planning a Future Run
+
+Select any Done or Needs Repeat entry → click **Plan Next Run** in the right panel.
+
+Fill in:
+- **Description** — what you intend to try
+- **Based on** — reference to a past experiment
+- **Method** — pre-saved cycle template from the Method Builder
+- **Target date** — optional scheduling note
+
+The planned entry appears in the Kanban **Planned** column and in the filtered list.
+
+### Loading Data from Notes
+
+The fastest way to load a past recording into Edits tab:
+
+1. Go to **Notes Tab**
+2. Find the experiment (search or scroll)
+3. **Double-click** → loads directly into Edits tab
 
 ---
 
 ## Data Export Formats
 
-> **Design philosophy:** Affilabs.core is built around a focused workflow — acquire high-quality data, edit it in the Edits tab, then export a single Excel file with all results and charts ready to share. The goal is to get from raw acquisition to a publication-ready summary without touching any other software.
+> **Design philosophy:** Acquire high-quality data, analyse it in the Edits tab, then export one Excel file with all results and embedded charts. Publication-ready output without touching any other software for routine experiments.
 
 ### Workflow: Acquire → Edit → Export
 
@@ -685,7 +866,7 @@ Export (one click from Edits tab)
 
 ### Raw Data Export (from Live Tab)
 
-**When to use:** Backup or re-analysis starting from raw signal data.
+**When to use:** Backup or re-analysis from raw signal.
 **Format:** Excel (.xlsx)
 
 **Contains:**
@@ -696,18 +877,45 @@ Export (one click from Edits tab)
 
 ### Analysis Export (from Edits Tab)
 
-**When to use:** This is the primary export. Use it at the end of every experiment.
-**Format:** Single Excel (.xlsx) with embedded charts — no external tools needed.
+**When to use:** Primary export — use it at the end of every experiment.
+**Format:** Single Excel (.xlsx) with embedded charts.
 
 **Contains:**
-- **Cycle analysis sheet** — full table with Δ-SPR per cycle, per channel, flags, QC status, notes, and concentration
+- **Cycle analysis sheet** — full table with Δ-SPR per cycle, per channel, flags, QC status, notes, concentration
 - **Sensorgram chart** — time-series plot of all channels, aligned and annotated
-- **Δ-SPR bar chart** — per-cycle binding response, ready for presentations
+- **Δ-SPR bar chart** — per-cycle binding response
+- **Binding fit results** (if Kd fitting was run) — KD, ka, kd, Rmax
 - **Metadata sheet** — experiment info, operator, device, sensor type, analysis settings
 
-**Key point:** The charts are generated automatically from your Edits tab data. You do not need to build them manually in Excel. Open the file, go to the chart sheet, and it is done.
+Charts are generated automatically — no manual Excel work required.
 
-**Third-party platform compatibility:** The exported Excel file can be imported directly into **TraceDrawer**, **Prism**, **Origin**, and other SPR data processing platforms. TraceDrawer in particular is well-suited for kinetic fitting (kon, koff, Kd) from Affilabs.core sensorgram data.
+### Graph Image Export
+
+Right-click any graph in the Edits tab (sensorgram or Δ-SPR bar chart) to export:
+
+| Format | Use case |
+|--------|---------|
+| **Copy to clipboard** | Paste directly into PowerPoint, Word, or email |
+| **Save as PNG** | Presentations, quick sharing |
+| **Save as SVG** | Vector — publication-quality, fully scalable |
+
+### Save as Method
+
+In the Edits tab → right-click a cycle row → **Save as Method**. Saves the cycle's step timings, concentrations, and type as a reusable cycle template in the Method Builder.
+
+### External Software Compatibility
+
+The Analysis Export Excel file can be imported into third-party platforms:
+
+| Platform | What it supports |
+|---------|----------------|
+| **TraceDrawer** *(coming soon)* | Kinetic fitting (kon, koff, Kd) from sensorgram data — recommended for multi-analyte global fitting |
+| **GraphPad Prism** | Statistical analysis, dose-response curves from the Δ-SPR table |
+| **Origin** | Custom curve fitting, publication charts |
+
+> **TraceDrawer export is coming soon** — direct compatibility is under validation and not yet officially released. In the meantime, import the Analysis Export Excel file manually if needed.
+
+**When to use external fitting:** For global kinetic fits (simultaneous fit of multiple analyte concentrations), use TraceDrawer or similar. Affilabs.core's in-app Kinetics model fits single curves; TraceDrawer fits all concentrations simultaneously.
 
 ### Export Info Sheet
 
@@ -716,11 +924,56 @@ Both exports include a metadata block:
 ```
 Export Date:    2026-02-07 14:30:00
 Software:       Affilabs-Core v2.0.5
-Device:         FLMT09788
+Device:         AFFI09792
 Total Cycles:   8
 Data Points:    12,450
 Channels:       A, B, C, D
 ```
+
+---
+
+## Accessibility & Display Settings
+
+Open the **Accessibility Panel** by clicking the eye (👁) button in the vertical icon rail on the left edge of the main window. The panel slides in at 380 px wide and collapses the sidebar automatically.
+
+All changes propagate to graphs in real time (except Large Text, which requires restart).
+
+### Colour Palettes
+
+Seven palettes available. All four channels update immediately across all live graphs and the Edits tab.
+
+| Palette | Notes |
+|---------|-------|
+| **Default** | High-contrast dark/red/blue/green — standard |
+| **PuOr (CB-safe)** | Purple–orange — deuteranopia and protanopia safe |
+| **Wong (CB-safe)** | Widely used in scientific publications |
+| **Tol Bright (CB-safe)** | Paul Tol bright — safe for all colorblindness types |
+| **Okabe-Ito (CB-safe)** | Commonly recommended by journals |
+| **IBM (CB-safe)** | IBM Design Language palette |
+| **Pastel** | Low-saturation — reduces eye strain on bright displays |
+
+Click any palette card to apply. The selected palette shows a blue border.
+
+### Line Styles
+
+Three options: **Solid** / **Dashed** / **Dotted**. Click a card to apply. Affects all live sensorgrams and the Active Cycle graph.
+
+### Active Cycle Dark Mode
+
+Pill toggle in the **Appearance** row. When enabled:
+- Active Cycle graph background → near-black (`#0D0D0D`)
+- Channel curves → neon colours (matrix green, neon red, electric cyan, neon yellow)
+- Useful on dark ambient displays or for screencast presentations
+
+Toggling dark mode off restores the current palette and line style.
+
+### Large Text
+
+Pill toggle below Dark Mode. Scales all key UI text by **1.2×** (e.g. 13 px → 16 px, 21 px → 25 px).
+
+> **Requires restart.** After toggling, a Sparq message appears confirming the change. Restart Affilabs.core to apply.
+
+The setting persists in `config/app_prefs.json` — it survives software updates.
 
 ---
 
@@ -1231,11 +1484,11 @@ After completing Regular Cleaning steps 1-5 above, add Sanitization:
        - Color profile shift (signal shifting toward red/infrared)
    - **If LED degradation detected:**
      - Document observed changes (date, intensity values, symptoms)
-     - Order replacement LED PCB from Affinité (specify your device ID: FLMT09788)
+     - Order replacement LED PCB from Affinité (include your device serial number)
      - Keep a spare LED PCB on hand for critical experiments — lead times can be several weeks
      - **DO NOT attempt to repair or adjust LED** — replacement is the standard procedure
 
-2. **Spectrometer Calibration Status**
+2. **Detector Calibration Status**
    - Settings → Calibration
    - Check last calibration date
    - If > 3 months, recommend recalibration
@@ -1285,7 +1538,7 @@ After completing Regular Cleaning steps 1-5 above, add Sanitization:
      - Flow rate decreasing or inconsistent
      - Visible blockages or salt crystallization at joints
    - **For replacement:**
-     - Contact Affinité with device ID (FLMT09788) and component description
+     - Contact Affinité with your device serial number and component description
      - Keep a spare tubing set on hand — tubing is the most frequently replaced component and is easy to swap in the field
      - Pump seals and check valves require technician-level service — contact Affinité
    - **DO NOT attempt to repair** — replacement is the standard procedure
@@ -1484,7 +1737,7 @@ To capture dissociation kinetics for weak binders:
 
 | Condition | Specification | Impact |
 |---|---|---|
-| **Temperature** | -30°C to +70°C (operational) | Flame-T spectrometer detector range |
+| **Temperature** | -30°C to +70°C (operational) | Affi Detector operational range |
 | **Optimal Temperature** | 15°C to 25°C | Best baseline stability and signal quality |
 | **Storage Temperature** | 0°C to +50°C | Long-term storage conditions |
 | **Humidity** | 10-90% (non-condensing) | Prevents moisture damage to optics |
@@ -1504,7 +1757,7 @@ Software Name:        Affilabs.core
 Version:             2.0.5
 Release Date:        February 24, 2026
 Status:              Production Release
-Device Compatibility: Flame-T (FLMT series), USB4000
+Device Compatibility: Affi Detector
 ```
 
 ### Version History
@@ -1874,8 +2127,8 @@ Affilabs.core is continuously improved based on user feedback. If something is c
 
 ---
 
-**Last Updated:** 2026-02-24
-**Manual Version:** 2.0.5
+**Last Updated:** 2026-03-01
+**Manual Version:** 2.0.5.1
 **Status:** PRODUCTION - CRITICAL SAFETY REQUIREMENTS
 **For questions or corrections, contact:** info@affiniteinstruments.com
 

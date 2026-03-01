@@ -250,6 +250,7 @@ def send_bug_report_auto(
     user_name: str = "",
     screenshot_bytes: bytes | None = None,
     additional_images: list[str] = None,
+    report_type: str = "bug",
 ) -> tuple[bool, str, str]:
     """Try to auto-submit bug report via Sparq Coach backend; fall back to draft on failure.
 
@@ -259,6 +260,7 @@ def send_bug_report_auto(
         screenshot_bytes: Pre-captured screenshot PNG bytes (must be taken on main thread).
             If None, attempts to capture here (only safe when called from main thread).
         additional_images: List of extra image file paths to attach.
+        report_type: 'bug' (default) or 'support_request' for Sparq unanswered questions.
 
     Returns:
         (auto_submitted, mode, result)
@@ -280,6 +282,7 @@ def send_bug_report_auto(
                 user_name=user_name,
                 screenshot_bytes=screenshot_bytes,
                 additional_images=additional_images,
+                report_type=report_type,
             )
             if ok:
                 return True, "auto", result

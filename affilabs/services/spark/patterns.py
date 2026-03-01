@@ -240,131 +240,91 @@ PATTERNS = {
     },
 
     "pump": {
-        r"pump.*types|which.*pump|pump.*configuration": {
-            "answer": "ezControl supports two pump types:\n\n"
-            "**AffiPump** — External syringe pumps (2× Tecan Cavro, 1000 µL, 0.001–24,000 µL/min) for precise injections.\n"
-            "**P4PROPLUS** — Internal peristaltic pumps (3 pumps, 5–220 RPM) for continuous flow.\n\n"
-            "Control both from the **Flow** tab.",
+        r"pump.*types|which.*pump|pump.*configuration|do.*i.*need.*pump": {
+            "answer": "**SimplexSPR uses manual syringe injection — no pump required.**\n\n"
+            "You inject samples by hand with a pipette or syringe directly into each flow cell.\n\n"
+            "An optional **AffiPump** accessory is available for automated flow if needed later.",
             "category": "pump",
-            "keywords": ["pump", "types", "which", "configuration"],
+            "keywords": ["pump", "types", "which", "configuration", "need"],
             "priority": "high"
         },
         r"how.*pump|use.*pump|pump.*control|start.*pump": {
-            "answer": "In the **Flow** tab:\n\n"
-            "**AffiPump:** Set flow rate → choose pump (KC1/KC2/Both) → click **Run Buffer** → **Stop** when done.\n"
-            "**P4PROPLUS:** Set RPM (5-220) → choose channel → click **Start**. You can adjust RPM live.\n\n"
-            "Red **Emergency Stop** button halts all pumps immediately.",
+            "answer": "**SimplexSPR is designed for manual injection — no pump needed.**\n\n"
+            "If you have the optional AffiPump accessory:\n"
+            "Set flow rate in the **Flow** tab → choose pump → click **Run Buffer** → **Stop** when done.\n\n"
+            "Most SimplexSPR users work entirely with manual syringe injection.",
             "category": "pump",
             "keywords": ["how", "pump", "use", "control", "start"],
             "priority": "high"
         },
         r"prime.*pump|pump.*priming|how.*prime": {
-            "answer": "Go to **Flow** tab → click **Prime Pump**. It runs 6 cycles to fill tubing with buffer "
+            "answer": "**Priming applies only if you have the optional AffiPump accessory.**\n\n"
+            "Go to **Flow** tab → click **Prime Pump**. It runs 6 cycles to fill tubing with buffer "
             "and remove air bubbles (~2-3 min).\n\n"
-            "Always prime before your first experiment of the day!",
+            "For standard SimplexSPR manual injection, no priming is needed.",
             "category": "pump",
             "keywords": ["prime", "pump", "priming"],
-            "priority": "high"
+            "priority": "medium"
         },
         r"cleanup.*pump|pump.*cleanup|remove.*bubbles": {
-            "answer": "Click **Cleanup** in the Flow tab. It runs a pulse phase (10 rapid cycles to dislodge bubbles) "
-            "then a prime phase (6 cycles to flush) — takes ~3-4 minutes.\n\n"
-            "Use when you see air bubbles, after maintenance, or if the baseline is noisy.",
+            "answer": "**For manual injection (SimplexSPR):** Remove bubbles by gently pushing buffer through "
+            "the flow cell with your syringe. Tilt the instrument slightly to help trapped bubbles escape.\n\n"
+            "**With optional AffiPump:** Click **Cleanup** in the Flow tab — it runs pulse + prime cycles (~3-4 min).",
             "category": "pump",
             "keywords": ["cleanup", "pump", "remove", "bubbles"],
             "priority": "high"
         },
         r"pump.*flush|flush.*pump|flush.*system": {
-            "answer": "Click **Flush** in the Flow tab for a quick 1-minute system rinse (2-3 rapid cycles). "
-            "Good for switching between samples or buffers.\n\n"
-            "For air bubble removal, use **Cleanup** instead.",
+            "answer": "**For manual injection:** Flush by pushing 200-500 µL of fresh buffer through each flow cell with your syringe.\n\n"
+            "**With optional AffiPump:** Click **Flush** in the Flow tab for a quick 1-minute system rinse.",
             "category": "pump",
             "keywords": ["pump", "flush", "system"],
             "priority": "medium"
         },
-        r"pump.*home|home.*pump|initialize.*pump": {
-            "answer": "Click **Home Pumps** in the Flow tab to return syringe plungers to zero (~10-20 sec). "
-            "Do this after errors, blockages, or before switching samples.\n\n"
-            "Pumps also auto-home if a blockage is detected.",
-            "category": "pump",
-            "keywords": ["pump", "home", "initialize"],
-            "priority": "medium"
-        },
         r"pump.*blocked|blockage|pump.*error": {
-            "answer": "The system auto-detects blockages by comparing pump completion times. If blocked:\n\n"
-            "1. Check tubing for kinks or clogs\n"
-            "2. Verify valve positions\n"
-            "3. Remove the obstruction\n"
-            "4. Click **Home Pumps**, then run **Prime Pump** to test",
+            "answer": "**For manual injection:** If flow seems blocked:\n\n"
+            "1. Check for air bubbles at the flow cell inlet\n"
+            "2. Gently push buffer through with steady pressure\n"
+            "3. If blocked, carefully disconnect tubing and check for debris\n"
+            "4. Re-compress the sensor chip and try again\n\n"
+            "**With optional AffiPump:** Click **Home Pumps**, then run **Prime Pump**.",
             "category": "pump",
             "keywords": ["pump", "blocked", "blockage", "error"],
             "priority": "high"
         },
-        r"30.*second.*injection|contact.*time|timed.*injection": {
-            "answer": "Click **30s Inject** in the Flow tab while pumps are running. The valve opens for "
-            "30 seconds of sample contact, then auto-closes.\n\n"
-            "Use **Valve Sync** to control whether one or both valves open.",
-            "category": "pump",
-            "keywords": ["30", "second", "injection", "contact", "time"],
-            "priority": "medium"
-        },
-        r"valve.*control|6.*port.*valve|3.*way.*valve": {
-            "answer": "**6-Port Valves** (KC1/KC2): Switch between LOAD (loop isolated) and INJECT (sample to sensor).\n"
-            "**3-Way Valves** (KC1/KC2): Route flow between channels A/B (KC1) or C/D (KC2).\n\n"
-            "Valves operate automatically during most operations. Manual control is in Advanced mode.",
-            "category": "pump",
-            "keywords": ["valve", "control", "6", "port", "3", "way"],
-            "priority": "medium"
-        },
         r"channel.*routing|channel.*a.*b.*c.*d|sensor.*channels": {
-            "answer": "KC1 routes to **Channel A** (3-way closed) or **B** (open). "
-            "KC2 routes to **Channel C** (closed) or **D** (open).\n\n"
-            "Typical setup: A & C for buffer reference, B & D for samples.",
+            "answer": "SimplexSPR has **4 fully independent channels (A, B, C, D)**.\n\n"
+            "Each channel has its own flow cell inlet — you pipette each one separately.\n"
+            "Use different analytes per channel, or the same analyte at different concentrations.\n\n"
+            "Typical setup: one channel as buffer reference, three for samples.",
             "category": "pump",
             "keywords": ["channel", "routing", "a", "b", "c", "d"],
             "priority": "medium"
         },
         r"flow.*rate|set.*flow|pump.*speed": {
-            "answer": "**AffiPump:** 0.001–24,000 µL/min (typical: 50-200 for experiments). "
-            "**P4PROPLUS:** 5–220 RPM with live adjustment. Set both in the **Flow** tab.\n\n"
-            "Recommendations: 50-100 µL/min for binding, 200-500 for washing, 1000+ for priming.",
+            "answer": "**SimplexSPR uses static injection** — you inject by hand, so flow rate is controlled "
+            "by how fast you push the syringe. Push slowly and steadily (~1 drop/sec).\n\n"
+            "**With optional AffiPump:** Set flow rate in the Flow tab (typical: 50-200 µL/min for experiments).",
             "category": "pump",
             "keywords": ["flow", "rate", "set", "speed"],
             "priority": "medium"
         },
-        r"rpm.*correction|pump.*correction|correction.*factor": {
-            "answer": "The correction factor compensates for tubing wear on peristaltic pumps (default: 1.00). "
-            "Flow too slow? Increase it (e.g. 1.05). Too fast? Decrease (e.g. 0.95). "
-            "Reset to 1.00 after replacing tubing.\n\n"
-            "Set in **Flow** tab → Correction spinbox.",
-            "category": "pump",
-            "keywords": ["rpm", "correction", "factor"],
-            "priority": "low"
-        },
         r"pump.*emergency.*stop|emergency.*stop|stop.*pump": {
-            "answer": "Click the red **Emergency Stop** button — all pumps halt immediately. "
-            "Your settings are preserved so you can restart after fixing the issue.",
+            "answer": "**For manual injection:** Simply stop pushing the syringe.\n\n"
+            "**With optional AffiPump:** Click the red **Emergency Stop** button — all pumps halt immediately.",
             "category": "pump",
             "keywords": ["pump", "emergency", "stop"],
             "priority": "high"
         },
         r"pump.*troubleshoot|pump.*not.*working|pump.*issue": {
-            "answer": "**Won't start:** Check connection in Device Status, verify COM port, try **Home Pumps**.\n"
-            "**No flow:** Check tubing, verify valves, run **Prime Pump**.\n"
-            "**Erratic flow:** Run **Cleanup** for air bubbles, check for kinked tubing.\n"
-            "**Blockage:** Check tubing/valves, **Home Pumps**, then **Prime Pump**.",
+            "answer": "**SimplexSPR manual injection troubleshooting:**\n\n"
+            "**No signal change:** Verify sample is in contact with the sensor — push slowly, check for leaks.\n"
+            "**Bubbles in flow cell:** Tilt instrument, push buffer through gently.\n"
+            "**Uneven signal across channels:** Inject more evenly — try to pipette all 4 channels within 15 seconds.\n\n"
+            "**With optional AffiPump:** Check Device Status for connection, verify COM port, try **Home Pumps**.",
             "category": "pump",
             "keywords": ["pump", "troubleshoot", "not", "working", "issue"],
             "priority": "high"
-        },
-        r"pump.*best.*practice|pump.*maintenance": {
-            "answer": "**Daily:** Prime at startup, check for air bubbles.\n"
-            "**After experiments:** Flush with buffer, stop pumps.\n"
-            "**Weekly:** Inspect tubing, clean pump heads, test with water.\n"
-            "**Storage:** Keep in buffer or 20% ethanol — never leave empty.",
-            "category": "pump",
-            "keywords": ["pump", "best", "practice", "maintenance"],
-            "priority": "medium"
         },
     },
 
@@ -856,6 +816,100 @@ PATTERNS = {
             "category": "p4spr",
             "keywords": ["p4spr", "different", "sample", "channel", "analyte"],
             "priority": "high"
+        },
+        r"chip.*load|insert.*chip|new.*chip|change.*chip|replace.*chip": {
+            "answer": "**Loading a new sensor chip:**\n\n"
+            "1. Open the compression clamp\n"
+            "2. Place the gold-coated chip **gold side down** on the prism\n"
+            "3. Align with the flow cell gasket — the chip sits on top of the prism\n"
+            "4. Close the clamp gently — use the Compression Assistant if available\n"
+            "5. Push buffer through each channel to wet the flow cells and flush air\n"
+            "6. **Always recalibrate** after inserting a new chip\n\n"
+            "⚠️ Never touch the gold surface — fingerprints destroy sensitivity.",
+            "category": "p4spr",
+            "keywords": ["chip", "load", "insert", "new", "change", "replace", "gold"],
+            "priority": "high"
+        },
+        r"which.*buffer|what.*buffer|buffer.*recommend|running.*buffer|pbs|hbs": {
+            "answer": "**Recommended running buffers for SimplexSPR:**\n\n"
+            "• **PBS** (phosphate buffered saline) — most common, good for proteins\n"
+            "• **HBS-EP** (HEPES buffered saline + EDTA + P20) — reduces non-specific binding\n"
+            "• **TBS** (Tris buffered saline) — when phosphate interferes\n\n"
+            "**Tips:**\n"
+            "• Filter and degas your buffer before use\n"
+            "• Use the same buffer batch for the entire experiment\n"
+            "• Keep buffer at room temperature to avoid thermal drift",
+            "category": "p4spr",
+            "keywords": ["buffer", "PBS", "HBS", "running", "recommend"],
+            "priority": "high"
+        },
+        r"read.*sensorgram|understand.*sensorgram|what.*sensorgram.*show|interpret.*graph": {
+            "answer": "**Reading the SimplexSPR sensorgram:**\n\n"
+            "• **X-axis:** Time (seconds or minutes)\n"
+            "• **Y-axis:** SPR wavelength (nm) — higher = more mass on sensor\n"
+            "• **Rising signal:** Analyte is binding (association)\n"
+            "• **Falling signal:** Analyte is leaving (dissociation or wash)\n"
+            "• **Flat line:** Stable baseline — no net change\n\n"
+            "Each colored line is one channel (A, B, C, D). A shift of even 0.5 nm indicates binding.",
+            "category": "p4spr",
+            "keywords": ["sensorgram", "read", "understand", "interpret", "graph", "signal"],
+            "priority": "high"
+        },
+        r"how.*inject.*properly|injection.*technique|pipett.*technique|inject.*without.*bubble": {
+            "answer": "**Manual injection technique for SimplexSPR:**\n\n"
+            "1. Pre-fill sample in a 1 mL syringe or pipette tip (no air gaps!)\n"
+            "2. Touch the tip to the flow cell inlet and push **slowly, steadily**\n"
+            "3. 50-100 µL is typical — enough to fill the flow cell\n"
+            "4. Inject all 4 channels within **15 seconds** of each other\n"
+            "5. Don't jerk the syringe — a pressure spike creates an artifact\n\n"
+            "💡 Pre-wet the syringe tip with buffer to reduce bubble risk.",
+            "category": "p4spr",
+            "keywords": ["inject", "properly", "technique", "pipette", "bubble", "manual"],
+            "priority": "high"
+        },
+        r"how.*many.*sample|sample.*volume|how.*much.*sample|volume.*per.*channel": {
+            "answer": "**Sample volumes for SimplexSPR:**\n\n"
+            "• **Per channel:** 50-100 µL typical injection volume\n"
+            "• **Per experiment:** Prepare ~200 µL per concentration (4 channels × 50 µL + dead volume)\n"
+            "• **Minimum:** ~30 µL fills the flow cell, but 50 µL ensures full contact\n\n"
+            "For a 5-concentration dose-response across 4 channels, prepare ~1 mL total per concentration.",
+            "category": "p4spr",
+            "keywords": ["sample", "volume", "how", "much", "amount", "channel"],
+            "priority": "medium"
+        },
+        r"what.*contact.*time|how.*long.*contact|contact.*time.*recommend": {
+            "answer": "**Contact time = how long sample stays on the sensor before washing.**\n\n"
+            "• **Fast binders** (antibodies): 60-120 seconds\n"
+            "• **Standard proteins:** 180-300 seconds (3-5 min)\n"
+            "• **Slow binders** (small molecules): 300-600 seconds (5-10 min)\n"
+            "• **Immobilization:** 1800 seconds (30 min)\n\n"
+            "Set in Method Builder: `Binding 8.5min A:100nM contact 180s`\n"
+            "The system shows a countdown timer and alerts you when it's time to wash.",
+            "category": "p4spr",
+            "keywords": ["contact", "time", "how", "long", "recommend", "duration"],
+            "priority": "high"
+        },
+        r"signal.*too.*low|no.*signal|weak.*signal|can.*t.*see.*binding": {
+            "answer": "**Weak or no signal on SimplexSPR?**\n\n"
+            "1. **Check concentration** — try 10× higher (e.g. 1 µM instead of 100 nM)\n"
+            "2. **Check the chip** — recalibrate and verify the SPR dip is visible in Spectroscopy tab\n"
+            "3. **Check immobilization** — was ligand successfully attached? Look for the shift during immobilization\n"
+            "4. **Check for bubbles** — air in the flow cell blocks the optical path\n"
+            "5. **Check buffer** — wrong pH or salt can prevent binding\n\n"
+            "A good SPR dip should be 20-40 nm wide in the transmission spectrum.",
+            "category": "p4spr",
+            "keywords": ["signal", "low", "weak", "no", "binding", "can't", "see"],
+            "priority": "high"
+        },
+        r"warmup|warm.*up|how.*long.*before.*experiment|temperature.*stable": {
+            "answer": "**Allow 30-60 minutes of warmup** before starting an experiment.\n\n"
+            "The LED and optical system need time to reach thermal equilibrium. "
+            "During warmup, run buffer through the flow cells and watch the baseline — "
+            "when drift is < 0.5 nm/min, you're ready to go.\n\n"
+            "💡 Calibrate after warmup, not before.",
+            "category": "p4spr",
+            "keywords": ["warmup", "warm", "up", "temperature", "stable", "before"],
+            "priority": "medium"
         },
     },
 
