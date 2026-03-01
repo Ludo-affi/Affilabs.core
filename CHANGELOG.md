@@ -4,6 +4,30 @@ All notable changes to Affilabs.core are documented in this file.
 
 ---
 
+## [2.0.5.1] — 2026-03-01
+
+**Post-release patch.** All fixes from this session — no new features.
+
+### Fixed
+- **Calibration freeze** — live acquisition no longer stalls after a successful calibration (stale `_acquiring` flag reset after thread join timeout)
+- **IconRail collapse gap** — sidebar now fully collapses when clicking an active icon to close it
+- **Optical fault alert delivery** — leak and bubble alerts now delivered via thread-safe Qt signal (replaces broken `QTimer.singleShot` from worker thread)
+- **RotatingFileHandler double-format crash** — `TypeError` from second `getMessage()` call resolved
+
+### Added
+- **Hardware config lock** — LED brightness and servo position controls in Settings are read-only by default; unlock with code
+- **Wash detection** — `_InjectionMonitor` fire #2 routes to wash handler; channel ring transitions to WASH state
+- **Leak recovery detection** — auto-recalibration triggered when signal recovers ≥50% of baseline after a leak
+- **Sparq Coach service** — client-side Phase 1 complete (`sparq_coach_service.py`)
+- **CalibrationQC dialog polish** — 50/50 graph/table layout, always-visible button bar
+- **ΔSPR legend integers** — interactive legend values rounded to nearest integer
+- **IQ/OQ documents** — internal plan + customer-facing protocol HTML (`docs/validation/`)
+- **New FRS docs** — SPARQ_COACH_BETA, INTERACTIVE_SPR_LEGEND, CYCLE_BOUNDARY_ADJUST, SOFTWARE_UPDATE_DELIVERY, POLARIZER_SHIELD_POSITION
+- **Diagnostic tools** — `live_optical_probe.py`, `fiber_servo_probe.py`
+- **FLMT10979** — new device provisioned and registered
+
+---
+
 ## [2.0.5] — 2026-02-24
 
 **Locked release for customer delivery.** Primary target: P4SPR. Compatible: P4PRO + AffiPump.
