@@ -203,6 +203,7 @@ Ignored by Claude Code (use --no-ignore to access):
 | Controller HAL, servo commands, adapters | [CONTROLLER_HAL_FRS.md](docs/features/CONTROLLER_HAL_FRS.md) | `affilabs/utils/hal/controller_hal.py` |
 | Pump HAL, AffiPump, Cavro protocol | [PUMP_HAL_FRS.md](docs/features/PUMP_HAL_FRS.md) | `affilabs/utils/hal/pump_hal.py` |
 | P4PRO fluidic system — KC1/KC2, 6-port loop, 3-way valves, channel mapping | [P4PRO_FLUIDIC_ARCHITECTURE.md](docs/hardware/P4PRO_FLUIDIC_ARCHITECTURE.md) | `affilabs/coordinators/injection_coordinator.py` |
+| **Firmware files** — latest .c and .uf2 for P4SPR/P4PRO/P4PROPLUS, shipped devices, flash instructions | [FIRMWARE_QUICK_REFERENCE.md](docs/hardware/FIRMWARE_QUICK_REFERENCE.md) | `C:\Users\lucia\OneDrive\Desktop\ezControl 2.0\Firmware\CLAUDE.md` (firmware repo) |
 | Hardware scanning, USB connect flow | [HARDWARE_SCANNING_FRS.md](docs/features/HARDWARE_SCANNING_FRS.md) | `affilabs/core/hardware_manager.py` |
 | Injection flags, AutoMarker, contact timer | [FLAGGING_SYSTEM_GUIDE.md](docs/features/FLAGGING_SYSTEM_GUIDE.md) | `affilabs/managers/flag_manager.py` |
 | Injection workflow — all scenarios (manual/auto, 3-channel, wash, markers) | [INJECTION_WORKFLOW_FRS.md](docs/features/INJECTION_WORKFLOW_FRS.md) | `affilabs/coordinators/injection_coordinator.py`, `affilabs/dialogs/manual_injection_dialog.py`, `affilabs/widgets/injection_action_bar.py`, `mixins/_pump_mixin.py` |
@@ -539,11 +540,12 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 - **Contact marker doesn't move on wash** — marker stays at predicted `injection_time + contact_time`. No code currently moves it to actual wash time.
 
 ### Recently Completed
-- **Simple cal servo fix** ✅ (Mar 1 2026) — `simple_led_calibration.py`: `getattr(device_config, "servo_s_position", None)` → `device_config.get_servo_s_position()`. Both S+P moves now: `set_servo_positions()` → `servo_move_raw_pwm(1)` → `set_mode()` → 1.0s settle.
-- **IQ check via `--iq-check` flag** ✅ (Mar 1 2026) — `scripts/validation/iq_check.py` (9 checks) + module-level intercept in `main.py` (lines 33–61, before all imports). Serial auto-detected from `config/devices/<SERIAL>/`. Report: `_data/validation/IQ_report_<SERIAL>_<DATE>.json`. Usage: `python main.py --iq-check [--operator Name] [--no-save]`.
+- **Firmware repo reorg + CLAUDE.md** ✅ (Mar 1 2026) — Firmware repo reorganized into `p4spr/`, `P4PRO/`, `p4proplus/` subfolders. `CLAUDE.md` added to firmware repo root (`d5cde53`). `docs/hardware/FIRMWARE_QUICK_REFERENCE.md` added to app repo. Latest files: P4SPR v2.4.1, P4PRO v2.3, P4PROPLUS v2.3.4.
+- **GitHub app repo reorg** ✅ (Mar 1 2026) — 106 changes committed (`e6d36bf`), 12 stale branches archived+deleted, CI rewritten to safe read-only checks. App repo: `v2.0.5-beta` at `d219cd6`.
+- **Simple cal servo fix** ✅ (Mar 1 2026) — `simple_led_calibration.py`: `getattr(device_config, "servo_s_position", None)` → `device_config.get_servo_s_position()`.
+- **IQ check via `--iq-check` flag** ✅ (Mar 1 2026) — `scripts/validation/iq_check.py` (9 checks) + module-level intercept in `main.py`.
 - **Sparq Coach Beta — fully live** ✅ (Mar 1 2026) — Cloudflare Worker + KV + Discord + Nutshell wired end-to-end.
 - **Active Cycle legend focus persistence** ✅ (Mar 1 2026) — `StrongFocus` + `_user_has_selected` flag.
-- **Optical fault detection v2** ✅ (Feb 26 2026) — Thread-safe `spark_alert_signal`, leak auto-recal, AirBubbleDetector migrated.
 
 ### Next Session
 - **Sparq Coach Beta — Phase 1.6:** Wire "Ask Sparq Coach ✨" button in `spark_help_widget.py` for local engine misses (FRS §11.2). Calls `SparqCoachService.ask_coach()`.
