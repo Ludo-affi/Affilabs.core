@@ -1,7 +1,7 @@
 # Training Guide: Operation Manual for Spark & TinyLLaMA
 
-**Version:** 1.0
-**Date:** 2026-02-07
+**Version:** 2.0.5.1
+**Date:** 2026-03-01
 **Status:** Production Ready
 
 ---

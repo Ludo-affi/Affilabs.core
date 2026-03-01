@@ -1,10 +1,10 @@
 {
     // FORCE PYTHON 3.12 - Do not change!
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv312/Scripts/python.exe",
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
     "python.terminal.activateEnvironment": true,
     "python.terminal.activateEnvInCurrentTerminal": true,
-    "python.venvPath": "${workspaceFolder}/.venv312",
-    "python.pythonPath": "${workspaceFolder}/.venv312/Scripts/python.exe",
+    "python.venvPath": "${workspaceFolder}/.venv",
+    "python.pythonPath": "${workspaceFolder}/.venv/Scripts/python.exe",
     "python.linting.enabled": false,
     "python.linting.pylintEnabled": false,
     "python.linting.flake8Enabled": false,
