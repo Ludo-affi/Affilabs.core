@@ -1,20 +1,18 @@
 {
   "users": [
     "Default User",
-    "Julia",
-    "Ludo",
     "Sandy"
   ],
   "current_user": "Sandy",
   "user_data": {
     "Sandy": {
-      "experiment_count": 39,
+      "experiment_count": 44,
       "compression_training": {
         "completed": false,
         "score": null,
         "date": null
       },
-      "last_used": "2026-02-27T16:41:25.072310+00:00",
+      "last_used": "2026-03-01T19:29:27.331305+00:00",
       "hints_shown": {
         "hint_connect_shown": true,
         "hint_calibrate_shown": true,

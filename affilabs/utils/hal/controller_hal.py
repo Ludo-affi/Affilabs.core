@@ -417,6 +417,18 @@ class PicoP4SPRAdapter:
     def set_intensity(self, ch: str, raw_val: int) -> bool:
         return self._ctrl.set_intensity(ch, raw_val) or False
 
+    def enable_multi_led(self, a=True, b=True, c=True, d=True) -> bool:
+        """Enable LED channels via lm:ABCD firmware command (P4SPR)."""
+        import time
+        try:
+            if self._ser is not None:
+                self._ser.write(b"lm:ABCD\n")
+                time.sleep(0.05)
+                self._ser.read(20)
+            return True
+        except Exception:
+            return False
+
     def set_batch_intensities(
         self,
         a: int = 0,

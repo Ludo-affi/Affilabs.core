@@ -28,7 +28,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from affilabs.ui_styles import Colors, Dimensions, Fonts, create_card_shadow
+from affilabs.ui_styles import Colors, Dimensions, Fonts, FontScale, create_card_shadow
+
+_FS = FontScale
 
 
 class PanelBuilderMixin:
@@ -68,7 +70,7 @@ class PanelBuilderMixin:
         graph_title = QLabel("Primary Cycle View")
         graph_title.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            f"  font-size: {_FS.px(18)}px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
@@ -313,7 +315,7 @@ class PanelBuilderMixin:
         graph_title = QLabel("Processed Data")
         graph_title.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            f"  font-size: {_FS.px(18)}px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
@@ -401,7 +403,7 @@ class PanelBuilderMixin:
         stats_title = QLabel("Goodness of Fit Analysis")
         stats_title.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            f"  font-size: {_FS.px(18)}px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
@@ -487,7 +489,7 @@ class PanelBuilderMixin:
         model_title = QLabel("Mathematical Model")
         model_title.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            f"  font-size: {_FS.px(18)}px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
@@ -609,7 +611,7 @@ class PanelBuilderMixin:
         data_title = QLabel("Kinetic Results")
         data_title.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            f"  font-size: {_FS.px(18)}px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
@@ -712,7 +714,7 @@ class PanelBuilderMixin:
         export_title = QLabel("Export Data")
         export_title.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            f"  font-size: {_FS.px(18)}px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
@@ -939,7 +941,7 @@ class PanelBuilderMixin:
         notes_label = QLabel("Notes:")
         notes_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            "  font-size: 18px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
@@ -1027,7 +1029,7 @@ class PanelBuilderMixin:
         elements_title = QLabel("Insert Elements")
         elements_title.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            "  font-size: 18px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
@@ -1089,7 +1091,7 @@ class PanelBuilderMixin:
         chart_title = QLabel("Chart Builder")
         chart_title.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            "  font-size: 18px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"
@@ -1201,7 +1203,7 @@ class PanelBuilderMixin:
         library_title = QLabel("Content Library")
         library_title.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            "  font-size: 18px;"
             "  font-weight: 600;"
             "  color: {Colors.PRIMARY_TEXT};"
             "  background: {Colors.TRANSPARENT};"

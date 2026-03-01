@@ -39,12 +39,8 @@ import time
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QProgressDialog
 
-# Logger is assumed to be available at module level in main.py context
-try:
-    from loguru import logger
-except ImportError:
-    import logging
-    logger = logging.getLogger(__name__)
+# Use the application logger (same instance as main.py and all other modules)
+from affilabs.utils.logger import logger
 
 
 class CalibrationMixin:
@@ -138,12 +134,16 @@ class CalibrationMixin:
 
             logger.debug("Showing QC report dialog (modal)...")
 
-            # Stop the calibration startup dialog timer (freeze on final elapsed time)
+            # Close the calibration progress dialog from the main thread before opening QC
             if hasattr(self, 'calibration') and hasattr(self.calibration, '_calibration_dialog'):
                 calib_dialog = self.calibration._calibration_dialog
-                if calib_dialog and hasattr(calib_dialog, '_stop_activity_animation'):
-                    logger.debug("Stopping calibration timer display...")
-                    calib_dialog._stop_activity_animation()
+                if calib_dialog:
+                    if hasattr(calib_dialog, '_stop_activity_animation'):
+                        calib_dialog._stop_activity_animation()
+                    try:
+                        calib_dialog.close()
+                    except Exception:
+                        pass
 
             # Create dialog instance — pass shared user manager so the footer
             # shows a user selector + "Start →" instead of a plain Close button
@@ -152,6 +152,11 @@ class CalibrationMixin:
                 parent=self.main_window,
                 calibration_data=qc_data,
                 user_manager=_user_mgr,
+            )
+
+            # Wire accepted (Start Session / Close) → start acquisition
+            dialog.accepted.connect(
+                lambda: QTimer.singleShot(50, self._restart_acquisition_after_calibration)
             )
 
             # Store reference and show modal dialog
@@ -223,14 +228,97 @@ class CalibrationMixin:
             except Exception as e:
                 logger.error(f"Failed to restart live data: {e}")
 
-    def _on_simple_led_calibration(self):
-        """Run quick LED re-convergence for sensor swaps.
+    # ------------------------------------------------------------------
+    # Shared monitoring-gate helper
+    # ------------------------------------------------------------------
 
-        Delegates to the same calibration orchestrator as full startup calibration
-        but with reduced iterations (4 instead of 12). Processes the result through
-        the full pipeline so the live data resumes seamlessly with the new sensor.
+    def _stop_all_monitoring_for_calibration(self, pause_only: bool = False):
+        """Stop acquisition and every monitoring subsystem before any calibration.
+
+        All four calibration entry-points call this so the logic lives in one place:
+          - Joins the acquisition thread (guarantees hardware bus is free)
+          - Stops InjectionMonitors (they poll buffer_mgr independently)
+          - Clears leak-detection baselines/alert sets (LEDs change their output
+            during calibration — old baselines would cause false alerts on restart)
+          - Resets AirBubbleDetector history (polarizer position changes produce
+            wavelength swings that look like bubbles to the rolling-std detector)
+        The restart side (_restart_acquisition_after_calibration) resets all
+        monitoring state again via _on_acquisition_started(), so nothing is lost.
+
+        Args:
+            pause_only: If True, *pause* acquisition instead of stopping it.
+                The thread stays alive so resume_acquisition() can continue the
+                sensorgram without resetting buffers/timers.  Used by simple cal.
         """
+        # 1. Stop (or pause) acquisition
+        if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
+            if pause_only:
+                logger.debug("Pausing live data acquisition before calibration...")
+                self.data_mgr.pause_acquisition()
+                # Wait for the current acquisition cycle to finish so the
+                # hardware bus is idle when the calibration thread starts.
+                import time as _time
+                _time.sleep(1.5)
+                logger.debug("Acquisition paused — hardware bus should be idle")
+            else:
+                logger.debug("Stopping live data acquisition before calibration...")
+                self.data_mgr.stop_acquisition()
+                logger.debug("Acquisition stopped — hardware bus released")
+
+        # 2. Stop injection monitors
+        try:
+            inj_coord = getattr(self, 'injection_coordinator', None)
+            if inj_coord and hasattr(inj_coord, '_stop_all_monitors'):
+                inj_coord._stop_all_monitors()
+                logger.debug("Injection monitors stopped for calibration")
+        except Exception as _e:
+            logger.debug(f"Could not stop injection monitors: {_e}")
+
+        # 3. Clear leak-detection state
+        for _attr in ('_intensity_baseline', '_intensity_baseline_locked',
+                      '_intensity_low_since'):
+            if hasattr(self, _attr):
+                getattr(self, _attr).clear()
+        for _attr in ('_leak_alerted', '_leak_recovered', '_wl_high_alerted'):
+            if hasattr(self, _attr):
+                getattr(self, _attr).clear()
+        if hasattr(self, '_wl_high_counts'):
+            self._wl_high_counts.clear()
+
+        # 4. Reset air bubble detector
+        try:
+            from affilabs.services.air_bubble_detector import AirBubbleDetector
+            AirBubbleDetector.get_instance().reset_session()
+            logger.debug("Air bubble detector reset for calibration")
+        except Exception as _e:
+            logger.debug(f"Could not reset air bubble detector: {_e}")
+
+        # 5. Pause UI spectrum updates
+        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
+            self.ui_updates.set_transmission_updates_enabled(False)
+            self.ui_updates.set_raw_spectrum_updates_enabled(False)
+
+    def _set_live_sensorgram_cal_label(self, calibrating: bool) -> None:
+        """Show/hide a 'Calibrating…' title inside the Live Sensorgram plot."""
+        try:
+            graph = getattr(self.main_window, 'full_timeline_graph', None)
+            if graph is None:
+                return
+            if calibrating:
+                graph.setTitle("⟳  Calibrating…", color="#FF9500", size="11pt")
+            else:
+                graph.setTitle("")
+        except Exception as e:
+            logger.debug(f"Could not update sensorgram cal label: {e}")
+
+    def _on_simple_led_calibration(self):
+        """Run quick LED re-convergence for sensor swaps."""
         logger.info("Starting simple LED calibration...")
+
+        # Double-launch guard — prevent concurrent runs
+        if getattr(self, '_simple_cal_running', False):
+            logger.warning("Simple calibration already in progress — ignoring duplicate request")
+            return
 
         # Check if hardware is connected
         if not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
@@ -243,18 +331,20 @@ class CalibrationMixin:
             )
             return
 
-        # Pause live data (not stop) — preserves recording state and cycle position
-        self._leak_recal_was_acquiring = False
-        if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
-            logger.debug("Pausing live data acquisition for recalibration...")
-            self.data_mgr.pause_acquisition()
-            self._leak_recal_was_acquiring = True
+        self._simple_cal_running = True
+        # Track whether acquisition was live so we can resume (not restart)
+        self._leak_recal_was_acquiring = (
+            hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring
+        )
+        self._stop_all_monitoring_for_calibration(pause_only=self._leak_recal_was_acquiring)
+        self._set_live_sensorgram_cal_label(True)
 
-        # Pause live spectrum updates during calibration
-        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-            logger.debug("Pausing live spectrum updates during calibration...")
-            self.ui_updates.set_transmission_updates_enabled(False)
-            self.ui_updates.set_raw_spectrum_updates_enabled(False)
+        # Wire the thread-safe result signal once (disconnect first to avoid duplicate connections)
+        try:
+            self._simple_cal_result_signal.disconnect(self._process_simple_calibration_result)
+        except Exception:
+            pass
+        self._simple_cal_result_signal.connect(self._process_simple_calibration_result)
 
         # Show progress dialog
         from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
@@ -274,22 +364,15 @@ class CalibrationMixin:
         dialog.show()
         dialog.show_progress_bar()
 
-        # Thread worker
         import threading
 
-        def progress_callback(msg, percent):
-            dialog.update_status(msg)
-            dialog.set_progress(percent, 100)
-
         def run_calibration():
-            from PySide6.QtCore import QTimer
             try:
                 from affilabs.core.simple_led_calibration import run_simple_led_calibration
 
-                # Extract currently running LED values + integration time
-                # from the previous calibration so convergence starts close
                 current_s_leds = None
                 current_integration_ms = None
+                existing_dark = None
                 try:
                     cal_data = (
                         self.calibration._current_calibration_data
@@ -303,26 +386,44 @@ class CalibrationMixin:
                         s_int = getattr(cal_data, 'integration_time_s', None)
                         if s_int and s_int > 0:
                             current_integration_ms = float(s_int)
+                        # Recycle dark from prior calibration
+                        dark_noise = getattr(cal_data, 'dark_noise', None)
+                        if dark_noise is not None and len(dark_noise) > 0:
+                            existing_dark = dark_noise
+                        else:
+                            # Fall back to first channel's S-dark if available
+                            dark_s = getattr(cal_data, 'dark_s', None)
+                            if dark_s:
+                                for _ch_dark in dark_s.values():
+                                    if _ch_dark is not None and len(_ch_dark) > 0:
+                                        existing_dark = _ch_dark
+                                        break
                         logger.debug(
-                            "Starting from current cal: LEDs=%s, integration=%.1fms",
+                            "Starting from current cal: LEDs=%s, integration=%.1fms, dark=%s",
                             current_s_leds,
                             current_integration_ms or 0,
+                            "recycled" if existing_dark is not None else "none",
                         )
                 except Exception as e:
                     logger.debug(f"Could not extract current cal values: {e}")
 
+                def _progress(msg, pct, _d=dialog):
+                    _d.update_status(msg)
+                    _d.set_progress(pct, 100)
+
                 cal_result = run_simple_led_calibration(
                     self.hardware_mgr,
-                    progress_callback=progress_callback,
+                    progress_callback=_progress,
                     current_s_leds=current_s_leds,
                     current_integration_ms=current_integration_ms,
+                    existing_dark=existing_dark,
                 )
             except Exception as e:
                 logger.error(f"Simple calibration error: {e}", exc_info=True)
                 cal_result = None
 
-            # All Qt / pipeline work must happen on the main thread
-            QTimer.singleShot(0, lambda: self._process_simple_calibration_result(cal_result, dialog))
+            # Deliver result to main thread via signal — safe from any thread
+            self._simple_cal_result_signal.emit(cal_result, dialog)
 
         thread = threading.Thread(target=run_calibration, daemon=True, name="SimpleCalibration")
         thread.start()
@@ -332,55 +433,50 @@ class CalibrationMixin:
     # ------------------------------------------------------------------
 
     def _process_simple_calibration_result(self, cal_result, dialog):
-        """Process LEDCalibrationResult from simple calibration on the main thread.
-
-        Mirrors the post-calibration pipeline in CalibrationService:
-        1. Convert to CalibrationData domain model
-        2. Persist JSON for QC history
-        3. Apply calibration to signal-processing pipeline
-        4. Set LED intensities on controller
-        5. Restart live acquisition seamlessly
-        """
+        """Apply simple calibration result and restart live data. Runs on main thread."""
         from PySide6.QtCore import QTimer
 
+        self._simple_cal_running = False
+
         try:
-            # --- Failure path ---
             if not cal_result or not cal_result.success:
-                error_msg = (
-                    getattr(cal_result, 'error', 'Unknown error')
-                    if cal_result else 'Calibration returned None'
-                )
-                logger.error(f"Simple LED calibration failed: {error_msg}")
-                dialog.update_status(f"\u274c Calibration failed: {error_msg}")
+                err = getattr(cal_result, 'error', 'Unknown') if cal_result else 'No result'
+                logger.error(f"Simple calibration failed: {err}")
+                dialog.update_status(f"❌ Calibration failed: {err}")
                 QTimer.singleShot(3000, dialog.close)
-                return  # finally block handles restart
+                return
 
-            # --- Success path ---
-            logger.info("Processing simple calibration result...")
+            # Snapshot existing dark references BEFORE overwriting cal data.
+            # Simple cal does not capture per-channel darks, so the adapter
+            # returns empty dicts — we recycle the ones from the prior full
+            # calibration to avoid losing the dark correction.
+            old_cal = (
+                self.calibration._current_calibration_data
+                if hasattr(self, 'calibration') and self.calibration
+                else None
+            )
 
-            # 1. Convert to domain model
+            # Convert to domain model
             from affilabs.domain import led_calibration_result_to_domain
             calibration_data = led_calibration_result_to_domain(cal_result)
 
-            # 2. Persist calibration JSON
-            try:
-                from affilabs.utils.startup_calibration import save_calibration_result_json
-                device_serial = getattr(self.hardware_mgr.usb, "serial_number", "UNKNOWN")
-                save_calibration_result_json(result=cal_result, device_serial=device_serial)
-            except Exception as e:
-                logger.warning(f"Could not save calibration result JSON: {e}")
+            # Recycle per-channel darks from previous calibration
+            if old_cal is not None:
+                if old_cal.dark_s and not calibration_data.dark_s:
+                    calibration_data.dark_s = old_cal.dark_s
+                if old_cal.dark_p and not calibration_data.dark_p:
+                    calibration_data.dark_p = old_cal.dark_p
 
-            # 3. Store on calibration service so the rest of the app sees it
+            # Store on calibration service
             if hasattr(self, 'calibration') and self.calibration:
                 self.calibration._current_calibration_data = calibration_data
                 self.calibration._calibration_completed = True
 
-            # 4. Apply calibration to signal-processing pipeline (CRITICAL)
-            #    This calls data_mgr.apply_calibration() + saves QC report
-            from affilabs.utils.settings_helpers import SettingsHelpers
-            SettingsHelpers.on_calibration_complete(self, calibration_data)
+            # Apply to acquisition pipeline
+            if hasattr(self, 'data_mgr') and self.data_mgr:
+                self.data_mgr.apply_calibration(calibration_data)
 
-            # 5. Set LED intensities on the controller
+            # Push new LED intensities to controller
             try:
                 intensities = calibration_data.p_mode_intensities
                 self.hardware_mgr.ctrl.set_batch_intensities(
@@ -392,57 +488,37 @@ class CalibrationMixin:
             except Exception as e:
                 logger.warning(f"Could not set LED intensities: {e}")
 
-            # 6. Propagate wavelengths to data manager
-            if (
-                hasattr(self, 'data_mgr')
-                and self.data_mgr
-                and getattr(calibration_data, 'wavelengths', None) is not None
-            ):
-                self.data_mgr.wave_data = calibration_data.wavelengths
-
-            # 7. Update hardware manager calibration status
-            try:
-                channels = calibration_data.get_channels()
-                all_channels = ["a", "b", "c", "d"]
-                ch_errors = [ch for ch in all_channels if ch not in channels]
-                s_ref_qc = getattr(calibration_data, "s_ref_qc_results", {})
-                self.hardware_mgr.update_calibration_status(ch_errors, "full", s_ref_qc)
-            except Exception as e:
-                logger.debug(f"Could not update hw calibration status: {e}")
-
-            logger.info("✅ Simple LED calibration complete — resuming live data")
-            status = "✅ Calibration complete — live data resumed"
-            if getattr(self, '_leak_recal_was_acquiring', False):
-                status = "✅ Recalibration done — your data is intact"
-            dialog.update_status(status)
+            logger.info("Simple calibration complete")
+            dialog.update_status("✅ Calibration complete — live data resumed")
             QTimer.singleShot(1500, dialog.close)
 
-            # If this was a leak-triggered recal, prompt user to redo the current cycle
-            if getattr(self, '_leak_recal_was_acquiring', False):
-                redo_msg = (
-                    "✅ **Recalibration complete — data intact**\n\n"
-                    "Your recording is still running. The S-pol reference has been refreshed.\n\n"
-                    "**Redo this cycle when ready** — the data collected during the leak "
-                    "won't be usable, but everything before and after is fine.\n\n"
-                    "Pipette fresh buffer, wait for baseline to stabilise, then re-inject."
-                )
-                if hasattr(self, 'spark_alert_signal'):
-                    self.spark_alert_signal.emit(redo_msg)
+            # Place a "Simple Cal" marker on the live sensorgram so the user
+            # can see exactly where the recalibration happened.
+            try:
+                if hasattr(self, 'clock') and self.clock is not None:
+                    marker_t = self.clock.raw_elapsed_now()
+                elif hasattr(self, 'experiment_start_time') and self.experiment_start_time:
+                    import time as _time
+                    marker_t = _time.time() - self.experiment_start_time
+                else:
+                    marker_t = None
+                if marker_t is not None and hasattr(self.main_window, 'add_event_marker'):
+                    self.main_window.add_event_marker(marker_t, "Simple Cal", "#FF9500")
+            except Exception as _e:
+                logger.debug(f"Could not place simple-cal marker: {_e}")
 
         except Exception as e:
-            logger.error(f"Failed to process calibration result: {e}", exc_info=True)
-            dialog.update_status(f"\u274c Post-processing failed: {e}")
+            logger.error(f"Simple calibration post-processing failed: {e}", exc_info=True)
+            dialog.update_status(f"❌ Error: {e}")
             QTimer.singleShot(3000, dialog.close)
 
         finally:
-            # Always resume live data — even on failure
-            self._restart_acquisition_after_calibration()
-            # Reset flag so future manual calibrations use start_acquisition
-            self._leak_recal_was_acquiring = False
+            self._set_live_sensorgram_cal_label(False)
+            QTimer.singleShot(50, self._restart_acquisition_after_calibration)
 
     def _on_polarizer_calibration(self):
         """Run servo polarizer calibration using existing hardware connection."""
-        logger.info("🚀 Starting calibration...")
+        logger.info("Starting polarizer calibration...")
 
         # Check if hardware is connected
         if not self.hardware_mgr or not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
@@ -456,19 +532,7 @@ class CalibrationMixin:
             logger.error("Cannot run polarizer calibration - hardware not connected")
             return
 
-        # Stop live data if running
-        if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
-            logger.debug("🛑 Stopping live data acquisition before polarizer calibration...")
-            self.data_mgr.stop_acquisition()
-            import time
-            time.sleep(0.2)
-            logger.debug("Live data stopped")
-
-        # Pause live spectrum updates during calibration
-        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-            logger.debug("Pausing live spectrum updates during calibration...")
-            self.ui_updates.set_transmission_updates_enabled(False)
-            self.ui_updates.set_raw_spectrum_updates_enabled(False)
+        self._stop_all_monitoring_for_calibration()
 
         # Create progress dialog
         from PySide6.QtWidgets import QProgressDialog
@@ -632,11 +696,7 @@ class CalibrationMixin:
             dialog.hide_start_button()
             dialog.show_progress_bar()
 
-            # Pause live spectrum updates during calibration
-            if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-                logger.debug("Pausing live spectrum updates during calibration...")
-                self.ui_updates.set_transmission_updates_enabled(False)
-                self.ui_updates.set_raw_spectrum_updates_enabled(False)
+            self._stop_all_monitoring_for_calibration()
 
             # Clear sensorgram immediately — don't leave stale data visible during 10-15 min run
             if hasattr(self, 'graph') and self.graph:
@@ -692,19 +752,7 @@ class CalibrationMixin:
             )
             return
 
-        # Stop live data if running
-        if hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring:
-            logger.debug("Stopping live data acquisition before LED model training...")
-            self.data_mgr.stop_acquisition()
-            import time
-            time.sleep(0.1)
-            logger.debug("Live data stopped")
-
-        # Pause live spectrum updates during calibration
-        if hasattr(self, 'ui_updates') and self.ui_updates is not None:
-            logger.debug("Pausing live spectrum updates during LED model training...")
-            self.ui_updates.set_transmission_updates_enabled(False)
-            self.ui_updates.set_raw_spectrum_updates_enabled(False)
+        self._stop_all_monitoring_for_calibration()
 
         # Show progress dialog
         dialog = StartupCalibProgressDialog(

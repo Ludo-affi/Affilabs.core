@@ -678,14 +678,14 @@ class EditsCycleMixin:
 
                         self.edits_tab.alignment_flags_display.setText(flag_text)
                         self.edits_tab.alignment_flags_display.setStyleSheet(f"""
-                            font-size: 11px;
+                            font-size: 12px;
                             color: {flag_color};
                             font-weight: 600;
                         """)
                     else:
                         self.edits_tab.alignment_flags_display.setText("✓ None")
                         self.edits_tab.alignment_flags_display.setStyleSheet("""
-                            font-size: 11px;
+                            font-size: 12px;
                             color: #34C759;
                             font-weight: 600;
                         """)
@@ -1562,7 +1562,7 @@ class EditsCycleMixin:
                 self.edits_reference_labels[i].setText("Drag cycle here")
                 self.edits_reference_labels[i].setStyleSheet(
                     "QLabel {"
-                    "  font-size: 10px;"
+                    "  font-size: 12px;"
                     "  color: {Colors.SECONDARY_TEXT};"
                     "  background: {Colors.TRANSPARENT};"
                     "  font-family: {Fonts.SYSTEM};"
@@ -1662,7 +1662,7 @@ class EditsCycleMixin:
             self.edits_reference_labels[ref_index].setText(f"{cycle_type} {cycle_row + 1}")
             self.edits_reference_labels[ref_index].setStyleSheet(
                 "QLabel {"
-                "  font-size: 10px;"
+                "  font-size: 12px;"
                 "  color: {Colors.PRIMARY_TEXT};"
                 "  font-weight: 600;"
                 "  background: {Colors.TRANSPARENT};"

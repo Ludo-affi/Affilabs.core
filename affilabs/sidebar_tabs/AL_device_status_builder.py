@@ -355,7 +355,7 @@ class DeviceStatusTabBuilder:
 
             lbl = QLabel(title)
             lbl.setStyleSheet(
-                f"font-size: 10px; color: {Colors.SECONDARY_TEXT}; font-weight: 500;"
+                f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; font-weight: 500;"
                 f"background: transparent; font-family: {Fonts.SYSTEM};"
                 f"letter-spacing: 0.3px;"
             )
@@ -399,7 +399,7 @@ class DeviceStatusTabBuilder:
 
             lbl = QLabel(title)
             lbl.setStyleSheet(
-                f"font-size: 10px; color: {Colors.SECONDARY_TEXT}; font-weight: 500;"
+                f"font-size: 11px; color: {Colors.SECONDARY_TEXT}; font-weight: 500;"
                 f"background: transparent; font-family: {Fonts.SYSTEM};"
                 f"letter-spacing: 0.3px;"
             )

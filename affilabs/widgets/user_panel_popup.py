@@ -101,39 +101,36 @@ class UserSidebarPanel(QFrame):
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
 
-        header_title = QLabel("USERS")
+        header_title = QLabel("Lab Users")
         header_title.setStyleSheet(
-            f"font-size: 14px; font-weight: 700; color: #1D1D1F;"
-            f" letter-spacing: 1px; font-family: {_FONT}; background: transparent;"
+            f"font-size: 16px; font-weight: 700; color: #1D1D1F;"
+            f" font-family: {_FONT}; background: transparent;"
         )
         header_row.addWidget(header_title)
         header_row.addStretch()
 
         close_btn = QPushButton("✕")
-        close_btn.setFixedSize(24, 24)
+        close_btn.setFixedSize(26, 26)
         close_btn.setStyleSheet(
-            "QPushButton { background: transparent; color: #86868B; border: none;"
-            "  font-size: 14px; font-weight: bold; border-radius: 12px; }"
-            "QPushButton:hover { background: #F5F5F7; color: #1D1D1F; }"
+            "QPushButton { background: #F2F2F7; color: #86868B; border: none;"
+            "  font-size: 13px; font-weight: bold; border-radius: 13px; }"
+            "QPushButton:hover { background: #E5E5EA; color: #1D1D1F; }"
         )
         close_btn.clicked.connect(self.hide)
         header_row.addWidget(close_btn)
         layout.addLayout(header_row)
 
-        # Divider
-        div0 = QFrame()
-        div0.setFrameShape(QFrame.Shape.HLine)
-        div0.setStyleSheet("border: none; background: #E5E5EA; max-height: 1px;")
-        layout.addWidget(div0)
+        layout.addSpacing(4)
 
         # ── Current user banner ───────────────────────────────────────────────
         self._banner = QFrame()
+        self._banner.setObjectName("userBanner")
         self._banner.setStyleSheet(
-            "QFrame { background: rgba(0,122,255,0.06); border-radius: 8px; }"
+            "QFrame#userBanner { background: rgba(0,122,255,0.07); border-radius: 10px; border: 1px solid rgba(0,122,255,0.15); }"
         )
         banner_lay = QVBoxLayout(self._banner)
-        banner_lay.setContentsMargins(10, 8, 10, 8)
-        banner_lay.setSpacing(2)
+        banner_lay.setContentsMargins(12, 10, 12, 10)
+        banner_lay.setSpacing(3)
 
         name_row = QHBoxLayout()
         name_row.setContentsMargins(0, 0, 0, 0)
@@ -151,60 +148,176 @@ class UserSidebarPanel(QFrame):
 
         self._banner_xp = QLabel("")
         self._banner_xp.setStyleSheet(
-            f"font-size: 12px; color: #6E6E73; background: transparent; font-family: {_FONT};"
+            f"font-size: 11px; color: #6E6E73; background: transparent; font-family: {_FONT};"
         )
         banner_lay.addWidget(self._banner_xp)
         layout.addWidget(self._banner)
 
+        layout.addSpacing(12)
+
         # ── User list label ───────────────────────────────────────────────────
-        users_lbl = QLabel("Lab Users")
+        users_lbl = QLabel("Members")
         users_lbl.setStyleSheet(
-            f"font-size: 13px; font-weight: 600; color: #6E6E73;"
-            f" background: transparent; font-family: {_FONT}; margin-top: 4px;"
+            f"font-size: 11px; font-weight: 600; color: #8E8E93; letter-spacing: 0.5px;"
+            f" background: transparent; font-family: {_FONT}; text-transform: uppercase;"
         )
         layout.addWidget(users_lbl)
 
+        layout.addSpacing(4)
+
         # ── User list ─────────────────────────────────────────────────────────
         self.user_list = QListWidget()
-        self.user_list.setMinimumHeight(100)
-        self.user_list.setMaximumHeight(220)
+        self.user_list.setMinimumHeight(80)
+        self.user_list.setMaximumHeight(200)
+        self.user_list.setObjectName("membersList")
         self.user_list.setStyleSheet(
-            f"QListWidget {{ background: #F5F5F7; border: 1px solid rgba(0,0,0,0.08);"
-            f"  border-radius: 8px; padding: 4px;"
-            f"  font-size: 13px; font-family: {_FONT}; }}"
-            "QListWidget::item { padding: 6px 8px; border-radius: 6px; }"
-            "QListWidget::item:selected { background: rgba(0,122,255,0.12); }"
-            "QListWidget::item:hover { background: rgba(0,0,0,0.04); }"
+            f"QListWidget#membersList {{ background: #F5F5F7; border: 1px solid rgba(0,0,0,0.07);"
+            f"  border-radius: 10px; padding: 4px;"
+            f"  font-size: 13px; font-family: {_FONT}; outline: none; }}"
+            "QListWidget#membersList::item { padding: 7px 10px; border-radius: 7px; border: none; }"
+            "QListWidget#membersList::item:selected { background: rgba(0,122,255,0.10); }"
+            "QListWidget#membersList::item:hover:!selected { background: rgba(0,0,0,0.04); }"
         )
         self.user_list.itemDoubleClicked.connect(self._on_set_active)
         layout.addWidget(self.user_list)
 
         hint = QLabel("Double-click to set active")
         hint.setStyleSheet(
-            f"font-size: 11px; color: #6E6E73; font-family: {_FONT}; background: transparent;"
+            f"font-size: 10px; color: #AEAEB2; font-family: {_FONT}; background: transparent;"
         )
         hint.setAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(hint)
 
-        # Divider
-        div1 = QFrame()
-        div1.setFrameShape(QFrame.Shape.HLine)
-        div1.setStyleSheet("border: none; background: #E5E5EA; max-height: 1px;")
-        layout.addWidget(div1)
+        layout.addSpacing(12)
 
-        # ── Action buttons ────────────────────────────────────────────────────
-        self._add_btn    = self._action_btn("+ Add User",   "#34C759")
-        self._rename_btn = self._action_btn("Rename",       "#007AFF")
-        self._active_btn = self._action_btn("Set Active",   "#FF9500")
-        self._del_btn    = self._action_btn("Delete",       "#FF3B30")
-
+        # ── Add user (primary action) ─────────────────────────────────────────
+        self._add_btn = QPushButton("+ Add User")
+        self._add_btn.setFixedHeight(36)
+        self._add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_btn.setStyleSheet(
+            f"QPushButton {{ background: #34C759; color: white; border: none;"
+            f"  border-radius: 9px; font-size: 13px; font-weight: 600;"
+            f"  font-family: {_FONT}; }}"
+            "QPushButton:hover { background: #2DB34A; }"
+            "QPushButton:pressed { background: #28A044; }"
+        )
         self._add_btn.clicked.connect(self._on_add)
-        self._rename_btn.clicked.connect(self._on_rename)
-        self._active_btn.clicked.connect(self._on_set_active)
-        self._del_btn.clicked.connect(self._on_delete)
+        layout.addWidget(self._add_btn)
 
-        for btn in (self._add_btn, self._rename_btn, self._active_btn, self._del_btn):
-            layout.addWidget(btn)
+        layout.addSpacing(6)
+
+        # ── Rename + Set Active (side by side) ───────────────────────────────
+        row2 = QHBoxLayout()
+        row2.setSpacing(6)
+
+        self._rename_btn = QPushButton("Rename")
+        self._rename_btn.setFixedHeight(34)
+        self._rename_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._rename_btn.setStyleSheet(
+            f"QPushButton {{ background: #F2F2F7; color: #007AFF; border: none;"
+            f"  border-radius: 9px; font-size: 13px; font-weight: 500;"
+            f"  font-family: {_FONT}; }}"
+            "QPushButton:hover { background: rgba(0,122,255,0.10); }"
+            "QPushButton:pressed { background: rgba(0,122,255,0.18); }"
+        )
+        self._rename_btn.clicked.connect(self._on_rename)
+        row2.addWidget(self._rename_btn)
+
+        self._active_btn = QPushButton("Set Active")
+        self._active_btn.setFixedHeight(34)
+        self._active_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._active_btn.setStyleSheet(
+            f"QPushButton {{ background: #FFF8EE; color: #FF9500; border: none;"
+            f"  border-radius: 9px; font-size: 13px; font-weight: 500;"
+            f"  font-family: {_FONT}; }}"
+            "QPushButton:hover { background: rgba(255,149,0,0.14); }"
+            "QPushButton:pressed { background: rgba(255,149,0,0.24); }"
+        )
+        self._active_btn.clicked.connect(self._on_set_active)
+        row2.addWidget(self._active_btn)
+
+        layout.addLayout(row2)
+
+        layout.addSpacing(4)
+
+        # ── Delete (danger zone) ──────────────────────────────────────────────
+        self._del_btn = QPushButton("Delete")
+        self._del_btn.setFixedHeight(34)
+        self._del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._del_btn.setStyleSheet(
+            f"QPushButton {{ background: #FFF2F2; color: #FF3B30; border: none;"
+            f"  border-radius: 9px; font-size: 13px; font-weight: 500;"
+            f"  font-family: {_FONT}; }}"
+            "QPushButton:hover { background: rgba(255,59,48,0.12); }"
+            "QPushButton:pressed { background: rgba(255,59,48,0.20); }"
+        )
+        self._del_btn.clicked.connect(self._on_delete)
+        layout.addWidget(self._del_btn)
+
+        layout.addSpacing(16)
+
+        # ── Levels guide ──────────────────────────────────────────────────────
+        levels_lbl = QLabel("Experience Levels")
+        levels_lbl.setStyleSheet(
+            f"font-size: 11px; font-weight: 600; color: #8E8E93; letter-spacing: 0.5px;"
+            f" background: transparent; font-family: {_FONT};"
+        )
+        layout.addWidget(levels_lbl)
+
+        layout.addSpacing(4)
+
+        levels_card = QFrame()
+        levels_card.setObjectName("levelsCard")
+        levels_card.setStyleSheet(
+            "QFrame#levelsCard { background: #F5F5F7; border-radius: 10px; border: 1px solid rgba(0,0,0,0.06); }"
+        )
+        levels_lay = QVBoxLayout(levels_card)
+        levels_lay.setContentsMargins(12, 10, 12, 10)
+        levels_lay.setSpacing(6)
+
+        _LEVEL_ROWS = [
+            ("🌱", "Novice",     "0 exp",   "#6E6E73", "First steps in SPR"),
+            ("🔬", "Operator",   "5 exp",   "#007AFF", "Getting the workflow"),
+            ("⚗️", "Specialist", "20 exp",  "#BF5AF2", "SPR is your thing"),
+            ("🏆", "Expert",     "50 exp",  "#FF9500", "Advanced practitioner"),
+            ("👑", "Master",     "100 exp", "#FF3B30", "SPR legend"),
+        ]
+        for emoji, title, threshold, color, tagline in _LEVEL_ROWS:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(8)
+
+            badge = QLabel(emoji)
+            badge.setFixedWidth(20)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setStyleSheet("background: transparent; font-size: 13px;")
+            row.addWidget(badge)
+
+            name_lbl = QLabel(title)
+            name_lbl.setStyleSheet(
+                f"font-size: 12px; font-weight: 700; color: {color};"
+                f" background: transparent; font-family: {_FONT};"
+            )
+            row.addWidget(name_lbl)
+
+            thresh_lbl = QLabel(threshold)
+            thresh_lbl.setStyleSheet(
+                f"font-size: 11px; color: #AEAEB2; background: transparent; font-family: {_FONT};"
+            )
+            row.addWidget(thresh_lbl)
+
+            row.addStretch()
+
+            tag_lbl = QLabel(tagline)
+            tag_lbl.setStyleSheet(
+                f"font-size: 11px; color: #8E8E93; background: transparent;"
+                f" font-style: italic; font-family: {_FONT};"
+            )
+            row.addWidget(tag_lbl)
+
+            levels_lay.addLayout(row)
+
+        layout.addWidget(levels_card)
 
         layout.addStretch()
 

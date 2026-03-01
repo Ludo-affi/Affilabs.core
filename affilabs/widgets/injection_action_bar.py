@@ -49,6 +49,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from affilabs.ui_styles import FontScale as _FS
+
 _FONT = "-apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif"
 _MONO = "'SF Mono', 'Cascadia Code', 'Consolas', monospace"
 
@@ -136,12 +138,17 @@ class ChannelBindingWidget(QWidget):
         for w in list(cls._anim_instances):
             w.update()
 
+    # Emitted when user manually overrides the state via right-click
+    state_override_requested = Signal(str, str)  # (channel, new_state)
+
     def __init__(self, channel: str, parent=None):
         super().__init__(parent)
         self._channel = channel
         self._state   = ChannelState.INACTIVE
         self.setFixedSize(32, 32)   # compact — fits a 44px row without crowding
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_state_menu)
         self._ensure_anim_timer()
 
     def set_state(self, state: str) -> None:
@@ -204,6 +211,39 @@ class ChannelBindingWidget(QWidget):
 
         p.end()
 
+    def _show_state_menu(self, pos) -> None:
+        """Right-click menu — lets user manually correct the detected channel state."""
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            "QMenu { background: #FFFFFF; border: 1px solid #D1D1D6; border-radius: 8px; "
+            "        padding: 4px 0; font-size: 13px; }"
+            "QMenu::item { padding: 6px 16px; color: #1D1D1F; }"
+            "QMenu::item:selected { background: #F0F0F5; border-radius: 4px; }"
+            "QMenu::item:disabled { color: #AEAEB2; }"
+            "QMenu::separator { height: 1px; background: #E5E5EA; margin: 4px 8px; }"
+        )
+
+        title = menu.addAction(f"Channel {self._channel} — Override Status")
+        title.setEnabled(False)
+        menu.addSeparator()
+
+        _ITEMS = [
+            (ChannelState.PENDING,  "🟢  Waiting (ready to inject)"),
+            (ChannelState.CONTACT,  "🟣  In Contact (injected)"),
+            (ChannelState.WASH,     "🔵  Wash"),
+            (ChannelState.INACTIVE, "⚫  Inactive"),
+        ]
+        for state, label in _ITEMS:
+            act = menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(state == self._state)
+            act.setData(state)
+
+        chosen = menu.exec(self.mapToGlobal(pos))
+        if chosen and chosen.data():
+            self.state_override_requested.emit(self._channel, chosen.data())
+
 
 class InjectionActionBar(QFrame):
     """Manual Injection Assistant panel embedded in the sidebar below the queue table."""
@@ -211,6 +251,10 @@ class InjectionActionBar(QFrame):
     # Emitted when a per-channel contact countdown reaches zero.
     # Payload: channel letter (str), e.g. "A"
     channel_countdown_complete = Signal(str)
+
+    # Emitted when user manually overrides a channel state via right-click.
+    # Payload: (channel: str, new_state: str) — coordinator should sync its internal state.
+    channel_state_override = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -278,7 +322,7 @@ class InjectionActionBar(QFrame):
         header_hlayout.setContentsMargins(10, 5, 10, 5)
         self._header_lbl = QLabel("Manual Injection Assistant")
         self._header_lbl.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: {_MUTED};"
+            f"font-size: {_FS.px(13)}px; font-weight: 600; color: {_MUTED};"
             f" font-family: {_FONT}; letter-spacing: 0px;"
             f" background: transparent; border: none;"
         )
@@ -302,7 +346,7 @@ class InjectionActionBar(QFrame):
         _banner_vlayout.setSpacing(1)
         _banner_title = QLabel("Sensor Ready — Inject your sample")
         _banner_title.setStyleSheet(
-            f"font-size: 13px; font-weight: 800; color: #FFFFFF;"
+            f"font-size: {_FS.px(13)}px; font-weight: 800; color: #FFFFFF;"
             f" font-family: {_FONT}; letter-spacing: 0.5px;"
             f" background: transparent; border: none;"
         )
@@ -330,7 +374,7 @@ class InjectionActionBar(QFrame):
         col_hlayout.setContentsMargins(10, 4, 10, 4)
         col_hlayout.setSpacing(10)
         _col_style = (
-            f"font-size: 10px; font-weight: 700; color: #8E8E93;"
+            f"font-size: {_FS.px(12)}px; font-weight: 700; color: #8E8E93;"
             f" font-family: {_FONT}; letter-spacing: 0.8px;"
             f" border: none; background: transparent;"
         )
@@ -379,7 +423,7 @@ class InjectionActionBar(QFrame):
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
             )
             timer_lbl.setStyleSheet(
-                f"font-size: 13px; font-weight: 700; color: #AF52DE;"
+                f"font-size: {_FS.px(15)}px; font-weight: 700; color: #AF52DE;"
                 f" font-family: {_MONO};"
                 f" border: none; background: transparent;"
             )
@@ -390,6 +434,7 @@ class InjectionActionBar(QFrame):
             # Channel badge — circle with letter inside, color = state
             bw = ChannelBindingWidget(ch)
             bw.setFixedSize(32, 32)
+            bw.state_override_requested.connect(self._on_channel_state_override)
             row_layout.addWidget(bw)
             self._channel_widgets[ch] = bw
 
@@ -399,7 +444,7 @@ class InjectionActionBar(QFrame):
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
             )
             status_lbl.setStyleSheet(
-                f"font-size: 12px; font-weight: 600; color: #3A3A3C; font-family: {_FONT};"
+                f"font-size: {_FS.px(14)}px; font-weight: 600; color: #3A3A3C; font-family: {_FONT};"
                 f" border: none; background: transparent; margin-left: 8px;"
             )
             status_lbl.setFixedWidth(88)
@@ -410,7 +455,7 @@ class InjectionActionBar(QFrame):
             conc_lbl = QLabel("")
             conc_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             conc_lbl.setStyleSheet(
-                f"font-size: 11px; font-weight: 500; color: {_MUTED}; font-family: {_MONO};"
+                f"font-size: {_FS.px(12)}px; font-weight: 500; color: {_MUTED}; font-family: {_MONO};"
                 f" border: none; background: transparent;"
             )
             conc_lbl.setFixedWidth(65)
@@ -428,7 +473,7 @@ class InjectionActionBar(QFrame):
         legend.setTextFormat(Qt.TextFormat.RichText)
         legend.setAlignment(Qt.AlignmentFlag.AlignCenter)
         legend.setStyleSheet(
-            f"font-size: 11px; color: #AEAEB2; font-family: {_MONO};"
+            f"font-size: {_FS.px(13)}px; color: #AEAEB2; font-family: {_MONO};"
             f" border-top: 1px solid rgba(0,0,0,0.06);"
             f" background: transparent; padding: 4px 0 4px 0;"
         )
@@ -594,6 +639,27 @@ class InjectionActionBar(QFrame):
         """
         self._injection_spr[channel.upper()] = spr_at_injection
 
+    def has_injection_baseline(self, channel: str) -> bool:
+        return channel.upper() in self._injection_spr
+
+    def set_injection_baseline_from_current(self, channel: str) -> None:
+        """Snapshot the most recent SPR value as the injection baseline for this channel.
+
+        Used when the user manually overrides a channel to CONTACT state without a
+        hardware-detected injection event. Falls back to 0 if no SPR data available.
+        """
+        ch = channel.upper()
+        try:
+            mw = getattr(self.parent(), 'main_window', self.parent())
+            cycle_data = getattr(mw, '_current_cycle_data', None) or {}
+            cd = cycle_data.get(ch.lower())
+            if cd is not None and hasattr(cd, 'spr') and len(cd.spr) > 0:
+                self._injection_spr[ch] = float(cd.spr[-1])
+                return
+        except Exception:
+            pass
+        self._injection_spr[ch] = 0.0
+
     def set_channel_wash(self, channel: str) -> None:
         """Transition a channel to the WASH state (sky-blue dot).
 
@@ -609,6 +675,44 @@ class InjectionActionBar(QFrame):
         self._wash_channels.add(ch)
         self._set_channel_action(ch, "Wash")
         self._stop_channel_countdown(ch)
+
+    def _on_channel_state_override(self, channel: str, new_state: str) -> None:
+        """Apply a user-requested state override from the right-click menu.
+
+        Updates the badge visual immediately and emits channel_state_override
+        so the InjectionCoordinator can sync its internal tracking state.
+        """
+        ch = channel.upper()
+        bw = self._channel_widgets.get(ch)
+        if not bw:
+            return
+
+        bw.set_state(new_state)
+
+        # Sync supporting UI (role label, wash tracking, countdown)
+        _label_map = {
+            ChannelState.PENDING:  ("Ready",    "#34C759"),
+            ChannelState.CONTACT:  ("Contact",  "#AF52DE"),
+            ChannelState.WASH:     ("Wash",     "#5AC8FA"),
+            ChannelState.INACTIVE: ("—",        "#8E8E93"),
+        }
+        label, color = _label_map.get(new_state, ("—", "#8E8E93"))
+        self._set_channel_action(ch, label)
+        self._set_role_label_color(ch, color)
+
+        if new_state == ChannelState.WASH:
+            self._wash_channels.add(ch)
+            self._stop_channel_countdown(ch)
+        elif new_state == ChannelState.CONTACT:
+            pass  # countdown + baseline managed externally
+        else:  # PENDING or INACTIVE — undo any injection tracking
+            self._wash_channels.discard(ch)
+            self._stop_channel_countdown(ch)
+            self._injection_spr.pop(ch, None)
+            self._detected_channels.discard(ch)
+
+        # Notify coordinator
+        self.channel_state_override.emit(ch, new_state)
 
     def reset_for_next_injection(self) -> None:
         """Reset bar from WASH state back to PENDING — ready for next injection.
@@ -655,7 +759,7 @@ class InjectionActionBar(QFrame):
         )
         self._idle_sub.setText(label)
         self._idle_sub.setStyleSheet(
-            f"font-size: 13px; font-weight: 600; color: {_TEXT}; font-family: {_FONT};"
+            f"font-size: {_FS.px(13)}px; font-weight: 600; color: {_TEXT}; font-family: {_FONT};"
         )
         self._idle_sub.setVisible(True)
         # Pre-light the channels yellow so user sees which channels are active
@@ -672,7 +776,7 @@ class InjectionActionBar(QFrame):
         """Update the Phase 2 status line (neutral colour)."""
         self._status_label.setText(text)
         self._status_label.setStyleSheet(
-            f"font-size: 13px; color: {_GREEN}; font-family: {_FONT};"
+            f"font-size: {_FS.px(13)}px; color: {_GREEN}; font-family: {_FONT};"
         )
 
     def update_readiness(self, verdict: str, message: str) -> None:
@@ -719,7 +823,7 @@ class InjectionActionBar(QFrame):
         lbl = self._channel_role_labels.get(ch)
         if lbl:
             lbl.setStyleSheet(
-                f"font-size: 12px; font-weight: 600; color: {color}; font-family: {_FONT};"
+                f"font-size: {_FS.px(12)}px; font-weight: 600; color: {color}; font-family: {_FONT};"
                 f" border: none; background: transparent;"
             )
 
@@ -756,7 +860,7 @@ class InjectionActionBar(QFrame):
             lbl.setText(self._fmt_time(total_seconds))
             _init_clr = _TIMER_OK if total_seconds > 30 else (_TIMER_WARN if total_seconds > 10 else _TIMER_CRIT)
             lbl.setStyleSheet(
-                f"font-size: 14px; font-weight: 800; color: {_init_clr};"
+                f"font-size: {_FS.px(14)}px; font-weight: 800; color: {_init_clr};"
                 f" font-family: {_MONO};"
                 f" border: none; background: transparent;"
             )
@@ -813,7 +917,7 @@ class InjectionActionBar(QFrame):
             else:
                 color = _TIMER_CRIT      # red — overrunning (wash not yet done)
             lbl.setStyleSheet(
-                f"font-size: 14px; font-weight: 800; color: {color};"
+                f"font-size: {_FS.px(14)}px; font-weight: 800; color: {color};"
                 f" font-family: {_MONO};"
                 f" border: none; background: transparent;"
             )

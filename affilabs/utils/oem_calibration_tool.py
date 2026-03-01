@@ -793,7 +793,7 @@ class DeviceProfileManager:
         polarizer_results: dict | None,
         afterglow_results: dict | None,
         detector_model: str = "Unknown",
-        led_type: str = "LCW",
+        led_type: str = "OWW",
     ) -> Path:
         """Save unified device profile.
 
@@ -1062,7 +1062,7 @@ def main() -> int | None:
         "--led-type",
         type=str,
         choices=["LCW", "OWW"],
-        default="LCW",
+        default="OWW",
         help="LED PCB type: LCW (Luminus Cool White) or OWW (Osram Warm White)",
     )
     parser.add_argument(

@@ -1,0 +1,28 @@
+{
+  "device_serial": "FLMT10979",
+  "device_type": "PicoP4SPR",
+  "detector_model": "USB4000",
+  "led_type": "OWW",
+  "led_type_full": "Osram Warm White",
+  "oem_calibration_version": "1.1",
+  "calibration_date": "2026-02-28T19:00:16.228537",
+  "polarizer": {
+    "s_position": 193,
+    "p_position": 65,
+    "sp_ratio": 2.171003315649867,
+    "polarizer_type": "BARREL",
+    "method": "servo_calibration_barrel_detection",
+    "led_intensity_used": "5%",
+    "s_intensity": 53671.05610797586,
+    "p_intensity": 24721.775282922586,
+    "s_stable_range": [
+      187,
+      199
+    ],
+    "p_stable_range": [
+      58,
+      73
+    ]
+  },
+  "afterglow": {}
+}

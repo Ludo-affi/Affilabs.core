@@ -70,6 +70,7 @@ class InteractiveSPRLegend(QWidget):
 
     channel_timing_selected = Signal(str)   # channel letter lower — on click
     channel_visibility_changed = Signal(str, bool)  # kept for backward compat
+    channel_nudge_requested = Signal(str, float)    # (channel_lower, delta_seconds)
 
     def __init__(self, parent=None, title="Δ SPR (nm)"):
         super().__init__(parent)
@@ -80,10 +81,11 @@ class InteractiveSPRLegend(QWidget):
         self._drag_pos = None      # QPoint set by drag handle press
         self._user_moved = False   # suppresses auto-repositioning after user drag
         self._collapsed = False    # minimized state
+        self._user_has_selected = False  # True after first deliberate channel click
 
         self.setObjectName("SPRLegend")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._init_ui()
 
     def paintEvent(self, event):
@@ -124,7 +126,7 @@ class InteractiveSPRLegend(QWidget):
         self._title_label = QLabel(self.title_text)
         self._title_label.setCursor(Qt.CursorShape.SizeAllCursor)
         title_font = QFont()
-        title_font.setPointSize(9)
+        title_font.setPointSize(11)
         title_font.setBold(True)
         self._title_label.setFont(title_font)
         self._title_label.setStyleSheet(
@@ -141,7 +143,7 @@ class InteractiveSPRLegend(QWidget):
         self._toggle_btn = QLabel("▾")
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.setStyleSheet(
-            f"color: #86868B; font-size: 11px; font-family: {_FONT_FAMILY};"
+            f"color: #86868B; font-size: 13px; font-family: {_FONT_FAMILY};"
             " background: transparent; border: none; padding: 0 4px;"
         )
         self._toggle_btn.setToolTip("Minimize")
@@ -199,7 +201,7 @@ class InteractiveSPRLegend(QWidget):
         # Value
         value_lbl = QLabel("0.0")
         value_lbl.setStyleSheet(
-            f"color: {color_str}; font-weight: 600; font-size: 11px;"
+            f"color: {color_str}; font-weight: 600; font-size: 13px;"
             f" font-family: {_MONO}; background: transparent;"
         )
         value_lbl.setMinimumWidth(38)
@@ -255,6 +257,7 @@ class InteractiveSPRLegend(QWidget):
 
     def _on_channel_clicked(self, channel: str):
         self.setFocus()
+        self._user_has_selected = True
         self.selected_channel = channel
         for ch in self.channel_labels:
             self._update_channel_appearance(ch, ch == channel)
@@ -265,15 +268,11 @@ class InteractiveSPRLegend(QWidget):
     def keyPressEvent(self, event):
         key = event.key()
         if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
-            try:
-                idx = self._CHANNELS.index(self.selected_channel)
-            except ValueError:
-                idx = 0
-            if key == Qt.Key.Key_Left:
-                idx = max(0, idx - 1)
-            else:
-                idx = min(len(self._CHANNELS) - 1, idx + 1)
-            self._on_channel_clicked(self._CHANNELS[idx])
+            # Shift = coarse (5 s), plain = fine (1 s)
+            step = 5.0 if (event.modifiers() & Qt.KeyboardModifier.ShiftModifier) else 1.0
+            delta = -step if key == Qt.Key.Key_Left else step
+            if self.selected_channel:
+                self.channel_nudge_requested.emit(self.selected_channel, delta)
         else:
             super().keyPressEvent(event)
 
@@ -311,7 +310,7 @@ class InteractiveSPRLegend(QWidget):
             info = self.channel_labels[ch]
             info['color_str'] = color_str
             info['value'].setStyleSheet(
-                f"color: {color_str}; font-weight: 600; font-size: 11px;"
+                f"color: {color_str}; font-weight: 600; font-size: 13px;"
                 f" font-family: {_MONO}; background: transparent;"
             )
 

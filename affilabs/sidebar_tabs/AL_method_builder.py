@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from affilabs.ui_styles import card_style
+from affilabs.ui_styles import card_style, FontScale as _FS
 from affilabs.widgets.queue_summary_widget import QueueSummaryWidget
 from affilabs.services.user_profile_manager import UserProfileManager
 
@@ -152,10 +152,10 @@ class MethodTabBuilder:
         running_lbl = QLabel("NOW RUNNING")
         running_lbl.setStyleSheet(
             "QLabel {"
-            "  font-size: 9px;"
+            f"  font-size: {_FS.px(13)}px;"
             "  font-weight: 700;"
             "  color: rgba(46, 48, 227, 0.7);"
-            "  letter-spacing: 0.8px;"
+            "  letter-spacing: 0.5px;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
@@ -173,7 +173,7 @@ class MethodTabBuilder:
             "  color: white;"
             "  border-radius: 5px;"
             "  padding: 2px 8px;"
-            "  font-size: 12px;"
+            f"  font-size: {_FS.px(14)}px;"
             "  font-weight: 700;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
@@ -183,7 +183,7 @@ class MethodTabBuilder:
         self.sidebar.active_cycle_index_label = QLabel("Cycle 1/4")
         self.sidebar.active_cycle_index_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 12px;"
+            f"  font-size: {_FS.px(14)}px;"
             "  color: #6E6E73;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
@@ -195,7 +195,7 @@ class MethodTabBuilder:
         self.sidebar.active_cycle_countdown_label = QLabel("00:00")
         self.sidebar.active_cycle_countdown_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 17px;"
+            f"  font-size: {_FS.px(21)}px;"
             "  font-weight: 700;"
             "  color: #2E30E3;"
             "  background: transparent;"
@@ -234,7 +234,7 @@ class MethodTabBuilder:
         self.sidebar.active_next_cycle_label = QLabel()
         self.sidebar.active_next_cycle_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 10px;"
+            f"  font-size: {_FS.px(13)}px;"
             "  color: #FF9500;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
@@ -247,7 +247,7 @@ class MethodTabBuilder:
         self.sidebar.active_experiment_time_label = QLabel()
         self.sidebar.active_experiment_time_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 10px;"
+            f"  font-size: {_FS.px(13)}px;"
             "  color: #86868B;"
             "  background: transparent;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
@@ -276,7 +276,7 @@ class MethodTabBuilder:
             "  color: white;"
             "  border: none;"
             "  border-radius: 10px;"
-            "  font-size: 15px;"
+            f"  font-size: {_FS.px(15)}px;"
             "  font-weight: 700;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;"
             "  text-align: left;"
@@ -414,7 +414,7 @@ class MethodTabBuilder:
             "  border: 1px solid rgba(0, 0, 0, 0.08);"
             "  border-radius: 6px;"
             "  gridline-color: rgba(0, 0, 0, 0.06);"
-            "  font-size: 12px;"
+            f"  font-size: {_FS.px(14)}px;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"
             "QTableWidget::item {"
@@ -431,7 +431,7 @@ class MethodTabBuilder:
             "  border: none;"
             "  border-bottom: 1px solid rgba(0, 0, 0, 0.08);"
             "  font-weight: 500;"
-            "  font-size: 10px;"
+            f"  font-size: {_FS.px(12)}px;"
             "  text-transform: uppercase;"
             "  letter-spacing: 0.5px;"
             "}"
@@ -544,7 +544,7 @@ class MethodTabBuilder:
 
         self.sidebar.queue_size_label = QLabel("0 cycles queued")
         self.sidebar.queue_size_label.setStyleSheet(
-            "font-size: 11px;"
+            f"font-size: {_FS.px(13)}px;"
             "color: #86868B;"
             "background: transparent;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
@@ -564,7 +564,7 @@ class MethodTabBuilder:
             "  border: 1px solid rgba(0, 122, 255, 0.3);"
             "  border-radius: 6px;"
             "  padding: 4px 12px;"
-            "  font-size: 11px;"
+            f"  font-size: {_FS.px(13)}px;"
             "  font-weight: 600;"
             "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             "}"

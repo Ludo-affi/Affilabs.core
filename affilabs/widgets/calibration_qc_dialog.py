@@ -186,9 +186,10 @@ class CalibrationQCDialog(QDialog):
 
         # ── Left panel: Spectra graphs with Transmission / S-Pol / P-Pol tabs ──
         spectra_frame = QFrame()
+        spectra_frame.setObjectName("qcSpectraFrame")
         spectra_frame.setFrameShape(QFrame.Shape.StyledPanel)
         spectra_frame.setStyleSheet(
-            "QFrame { background: #FFFFFF; border: 1px solid #D1D1D6; border-radius: 8px; }"
+            "QFrame#qcSpectraFrame { background: #FFFFFF; border: 1px solid #D1D1D6; border-radius: 8px; }"
         )
         spectra_layout = QVBoxLayout(spectra_frame)
         spectra_layout.setContentsMargins(6, 4, 6, 4)
@@ -230,7 +231,7 @@ class CalibrationQCDialog(QDialog):
         spectra_tabs.addTab(p_pol_page, "P-Pol")
 
         spectra_layout.addWidget(spectra_tabs)
-        layout.addWidget(spectra_frame, stretch=1)
+        layout.addWidget(spectra_frame, stretch=2)
 
         # ── Centre panel: QC validation table ────────────────────────────────
         combined_qc_table = self._create_combined_qc_table()
@@ -238,7 +239,7 @@ class CalibrationQCDialog(QDialog):
 
         # ── Right panel: actions (export + user selector + start/close) ───────
         actions_panel = self._create_actions_panel()
-        layout.addWidget(actions_panel, stretch=0)
+        layout.addWidget(actions_panel, stretch=1)
 
         return widget
 
@@ -247,10 +248,12 @@ class CalibrationQCDialog(QDialog):
         from PySide6.QtWidgets import QComboBox, QSpacerItem, QSizePolicy
 
         panel = QFrame()
-        panel.setFixedWidth(170)
+        panel.setObjectName("qcActionsPanel")
+        panel.setMinimumWidth(160)
+        panel.setMaximumWidth(260)
         panel.setFrameShape(QFrame.Shape.StyledPanel)
         panel.setStyleSheet(
-            "QFrame { background: #F5F5F7; border: 1px solid #D1D1D6; border-radius: 8px; }"
+            "QFrame#qcActionsPanel { background: #F5F5F7; border: 1px solid #D1D1D6; border-radius: 8px; }"
         )
 
         layout = QVBoxLayout(panel)
@@ -258,39 +261,27 @@ class CalibrationQCDialog(QDialog):
         layout.setSpacing(10)
 
         # Section label
-        section_lbl = QLabel("Actions")
+        section_lbl = QLabel("Calibration Complete ✓")
         section_lbl.setStyleSheet(
-            "font-size: 11px; font-weight: 700; color: #86868B; letter-spacing: 0.5px;"
+            "font-size: 12px; font-weight: 700; color: #34C759; letter-spacing: 0.2px;"
             " background: transparent; border: none;"
         )
         layout.addWidget(section_lbl)
 
-        # Export PDF button
-        export_pdf_btn = QPushButton("Export PDF")
-        try:
-            from affilabs.utils.resource_path import get_affilabs_resource
-            _pdf_icon_path = get_affilabs_resource("ui/img/export_pdf.svg")
-            if _pdf_icon_path.exists():
-                export_pdf_btn.setIcon(QIcon(str(_pdf_icon_path)))
-                export_pdf_btn.setIconSize(QSize(14, 14))
-        except Exception:
-            pass
-        export_pdf_btn.setFixedHeight(34)
-        export_pdf_btn.setStyleSheet("""
-            QPushButton {
-                background: #34C759; color: white; border: none;
-                border-radius: 7px; padding: 6px 10px;
-                font-size: 12px; font-weight: 600;
-            }
-            QPushButton:hover { background: #2DA84C; }
-            QPushButton:pressed { background: #248A3D; }
-        """)
-        export_pdf_btn.clicked.connect(self._export_to_pdf)
-        layout.addWidget(export_pdf_btn)
+        # Warm blurb
+        blurb = QLabel(
+            "Your sensor is dialled in and ready to go. "
+            "Select who's running today's session, then hit "
+            "<b>Start Session</b> to begin collecting data."
+        )
+        blurb.setWordWrap(True)
+        blurb.setStyleSheet(
+            "font-size: 11px; color: #3A3A3C; line-height: 1.4;"
+            " background: transparent; border: none;"
+        )
+        layout.addWidget(blurb)
 
-        layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
-
-        # ── User selector (only when user_manager provided) ───────────────────
+        # ── User selector (top) ───────────────────────────────────────────────
         if self._user_manager is not None:
             who_lbl = QLabel("Who's running this?")
             who_lbl.setWordWrap(True)
@@ -325,11 +316,14 @@ class CalibrationQCDialog(QDialog):
             self._user_combo.currentTextChanged.connect(_on_user_selected)
             layout.addWidget(self._user_combo)
 
-            layout.addSpacing(4)
+        # ── Spacer pushes Close + Export to bottom ────────────────────────────
+        layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
-            start_btn = QPushButton("Start Session →")
-            start_btn.setFixedHeight(36)
-            start_btn.setStyleSheet("""
+        # ── Close / Start Session ─────────────────────────────────────────────
+        if self._user_manager is not None:
+            close_btn = QPushButton("Start Session →")
+            close_btn.setFixedHeight(36)
+            close_btn.setStyleSheet("""
                 QPushButton {
                     background: #007AFF; color: white; border: none;
                     border-radius: 7px; padding: 6px 10px;
@@ -345,9 +339,7 @@ class CalibrationQCDialog(QDialog):
                     self._user_manager.set_current_user(selected)
                 self.accept()
 
-            start_btn.clicked.connect(_on_start)
-            layout.addWidget(start_btn)
-
+            close_btn.clicked.connect(_on_start)
         else:
             close_btn = QPushButton("Close")
             close_btn.setFixedHeight(36)
@@ -361,7 +353,32 @@ class CalibrationQCDialog(QDialog):
                 QPushButton:pressed { background: #004FC4; }
             """)
             close_btn.clicked.connect(self.accept)
-            layout.addWidget(close_btn)
+        layout.addWidget(close_btn)
+
+        layout.addSpacing(6)
+
+        # ── Export PDF (bottom) ───────────────────────────────────────────────
+        export_pdf_btn = QPushButton("Export PDF")
+        try:
+            from affilabs.utils.resource_path import get_affilabs_resource
+            _pdf_icon_path = get_affilabs_resource("ui/img/export_pdf.svg")
+            if _pdf_icon_path.exists():
+                export_pdf_btn.setIcon(QIcon(str(_pdf_icon_path)))
+                export_pdf_btn.setIconSize(QSize(14, 14))
+        except Exception:
+            pass
+        export_pdf_btn.setFixedHeight(34)
+        export_pdf_btn.setStyleSheet("""
+            QPushButton {
+                background: #34C759; color: white; border: none;
+                border-radius: 7px; padding: 6px 10px;
+                font-size: 12px; font-weight: 600;
+            }
+            QPushButton:hover { background: #2DA84C; }
+            QPushButton:pressed { background: #248A3D; }
+        """)
+        export_pdf_btn.clicked.connect(self._export_to_pdf)
+        layout.addWidget(export_pdf_btn)
 
         return panel
 
@@ -485,9 +502,10 @@ class CalibrationQCDialog(QDialog):
         container_layout.setSpacing(4)
 
         frame = QFrame()
+        frame.setObjectName("qcConvergenceCard")
         frame.setFrameShape(QFrame.Shape.StyledPanel)
         frame.setStyleSheet(
-            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
+            "QFrame#qcConvergenceCard { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
         )
 
         layout = QVBoxLayout(frame)
@@ -624,9 +642,10 @@ class CalibrationQCDialog(QDialog):
         container_layout.setSpacing(4)
 
         frame = QFrame()
+        frame.setObjectName("qcValidationCard")
         frame.setFrameShape(QFrame.Shape.StyledPanel)
         frame.setStyleSheet(
-            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
+            "QFrame#qcValidationCard { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
         )
 
         layout = QVBoxLayout(frame)
@@ -653,18 +672,18 @@ class CalibrationQCDialog(QDialog):
                 background: white;
                 border: none;
                 gridline-color: #E5E5EA;
-                font-size: 11px;
+                font-size: 12px;
             }
             QHeaderView::section {
                 background: #F5F5F7;
                 color: #1D1D1F;
-                padding: 2px 4px;
+                padding: 4px 6px;
                 border: none;
                 font-weight: 600;
                 font-size: 11px;
             }
         """)
-        table.verticalHeader().setDefaultSectionSize(20)
+        table.verticalHeader().setDefaultSectionSize(26)
 
         transmission_validation = self.calibration_data.get("transmission_validation", {})
         p_pol_spectra = self.calibration_data.get("p_pol_spectra", {})
@@ -768,18 +787,15 @@ class CalibrationQCDialog(QDialog):
             else:
                 table.setItem(idx, 4, QTableWidgetItem("N/A"))
 
-        # Fit columns into ~33% panel width
-        table.setColumnWidth(0, 24)   # Ch
-        table.setColumnWidth(1, 64)   # Dip %
-        table.setColumnWidth(2, 56)   # FWHM
-        table.setColumnWidth(3, 66)   # P-Pol
-        table.setColumnWidth(4, 62)   # Iter
-        table.setColumnWidth(5, 48)   # Status — fixed narrow
-        table.horizontalHeader().setSectionResizeMode(
-            5,
-            table.horizontalHeader().ResizeMode.Fixed,
-        )  # Status
-        table.setMinimumHeight(80)
+        # Let columns stretch to fill the panel width
+        hh = table.horizontalHeader()
+        hh.setSectionResizeMode(0, hh.ResizeMode.Fixed);    table.setColumnWidth(0, 30)   # Ch
+        hh.setSectionResizeMode(1, hh.ResizeMode.Stretch)   # Dip Depth %
+        hh.setSectionResizeMode(2, hh.ResizeMode.Stretch)   # FWHM
+        hh.setSectionResizeMode(3, hh.ResizeMode.Stretch)   # P-Pol Signal
+        hh.setSectionResizeMode(4, hh.ResizeMode.Stretch)   # Conv Iter
+        hh.setSectionResizeMode(5, hh.ResizeMode.Fixed);    table.setColumnWidth(5, 52)   # Status
+        table.setMinimumHeight(110)
 
         layout.addWidget(table, stretch=1)
 
@@ -793,31 +809,31 @@ class CalibrationQCDialog(QDialog):
             "}"
         )
         notes_layout = QVBoxLayout(notes_frame)
-        notes_layout.setContentsMargins(6, 4, 6, 6)
-        notes_layout.setSpacing(4)
+        notes_layout.setContentsMargins(8, 6, 8, 8)
+        notes_layout.setSpacing(6)
 
         notes = [
-            ("⚠", "Dry sensor = no usable data. Flow buffer first."),
-            ("♻", "Reused chips degrade — dip depth drops each use."),
-            ("✗", "Unused channels show poor metrics. Normal."),
-            ("⊘", "Dip < 50% on new chip? Check fiber & seating."),
-            ("~", "QC pass ≠ stable baseline. Watch first 5 min."),
+            ("⚠", "Dry sensor = no usable data. Always flow buffer before calibrating."),
+            ("♻", "Reused chips degrade — dip depth drops with each use."),
+            ("✗", "Unused channels naturally show poor metrics. This is expected."),
+            ("⊘", "Dip < 50% on a new chip? Check fiber coupling & chip seating."),
+            ("~", "QC pass ≠ stable baseline. Monitor signal for first 5 minutes."),
         ]
 
         for icon, text in notes:
             row = QHBoxLayout()
-            row.setSpacing(6)
+            row.setSpacing(8)
             row.setContentsMargins(0, 0, 0, 0)
 
             icon_lbl = QLabel(icon)
-            icon_lbl.setFixedWidth(16)
-            icon_lbl.setStyleSheet("font-size: 12px; color: #86868B; background: transparent; border: none;")
+            icon_lbl.setFixedWidth(18)
+            icon_lbl.setStyleSheet("font-size: 13px; color: #86868B; background: transparent; border: none;")
             row.addWidget(icon_lbl)
 
             text_lbl = QLabel(text)
             text_lbl.setWordWrap(True)
             text_lbl.setStyleSheet(
-                "font-size: 12px; color: #3A3A3C; background: transparent; border: none;"
+                "font-size: 13px; color: #3A3A3C; background: transparent; border: none;"
                 "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
             )
             row.addWidget(text_lbl, 1)
@@ -825,7 +841,7 @@ class CalibrationQCDialog(QDialog):
             notes_layout.addLayout(row)
 
         notes_layout.addStretch()
-        layout.addWidget(notes_frame, stretch=1)
+        layout.addWidget(notes_frame, stretch=2)
 
         container_layout.addWidget(frame)
 
@@ -938,9 +954,10 @@ class CalibrationQCDialog(QDialog):
     def _create_model_validation_table(self) -> QFrame:
         """Create model validation table showing predicted vs measured LED values."""
         frame = QFrame()
+        frame.setObjectName("qcModelValCard")
         frame.setFrameShape(QFrame.Shape.StyledPanel)
         frame.setStyleSheet(
-            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
+            "QFrame#qcModelValCard { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
         )
 
         layout = QVBoxLayout(frame)
@@ -1102,9 +1119,10 @@ class CalibrationQCDialog(QDialog):
     def _create_orientation_table(self) -> QFrame:
         """Create polarizer orientation validation table."""
         frame = QFrame()
+        frame.setObjectName("qcPolarizerCard")
         frame.setFrameShape(QFrame.Shape.StyledPanel)
         frame.setStyleSheet(
-            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
+            "QFrame#qcPolarizerCard { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
         )
 
         layout = QVBoxLayout(frame)
@@ -1248,9 +1266,10 @@ class CalibrationQCDialog(QDialog):
     def _create_transmission_validation_table(self) -> QFrame:
         """Create transmission dip validation table showing P/S ratio, dip shape, FWHM."""
         frame = QFrame()
+        frame.setObjectName("qcTransmissionCard")
         frame.setFrameShape(QFrame.Shape.StyledPanel)
         frame.setStyleSheet(
-            "QFrame { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
+            "QFrame#qcTransmissionCard { background: white; border: 1px solid #D1D1D6; border-radius: 8px; }",
         )
 
         layout = QVBoxLayout(frame)

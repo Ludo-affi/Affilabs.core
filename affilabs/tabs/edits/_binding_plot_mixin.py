@@ -232,7 +232,7 @@ class BindingPlotMixin:
         self.binding_formula_lbl.setText(formula_text)
         self.binding_params_lbl.setText(params_text)
         self.binding_params_lbl.setStyleSheet(
-            "font-size: 11px; color: #3D3D3D; "
+            "font-size: 12px; color: #3D3D3D; "
             "font-family: 'SF Mono', 'Consolas', 'Courier New', monospace; "
             "background: #F5F5F7; border-radius: 5px; padding: 5px 7px;"
         )

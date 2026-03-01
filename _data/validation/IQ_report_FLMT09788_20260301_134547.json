@@ -1,0 +1,86 @@
+{
+  "report_type": "IQ",
+  "report_revision": "1.0",
+  "software_version": "2.0.5",
+  "instrument_serial": "FLMT09788",
+  "machine_hostname": "DESKTOP-U3QG2EK",
+  "os": "Windows-11-10.0.26200-SP0",
+  "python_version": "3.12.10",
+  "mode": "source",
+  "timestamp_utc": "2026-03-01T18:45:47.243699+00:00",
+  "operator": "Lucia Noe",
+  "summary": {
+    "passed": 9,
+    "failed": 0,
+    "skipped": 2
+  },
+  "overall": "PASS",
+  "checks": [
+    {
+      "id": "IQ-001",
+      "description": "Python version >= 3.12, < 3.13",
+      "result": "PASS",
+      "detail": "3.12.10"
+    },
+    {
+      "id": "IQ-003",
+      "description": "Critical source modules importable",
+      "result": "PASS",
+      "detail": "affilabs.core, affilabs.services, affilabs.hardware, AffiPump"
+    },
+    {
+      "id": "IQ-008",
+      "description": "No conflicting Qt bindings installed",
+      "result": "PASS",
+      "detail": "PyQt5 and PyQt6 absent"
+    },
+    {
+      "id": "IQ-004",
+      "description": "VERSION file present and parseable",
+      "result": "PASS",
+      "detail": "2.0.5"
+    },
+    {
+      "id": "IQ-005",
+      "description": "Required config files present",
+      "result": "PASS",
+      "detail": "2 detector profile(s) found"
+    },
+    {
+      "id": "IQ-006",
+      "description": "Detector profile schema valid",
+      "result": "PASS",
+      "detail": "2 profile(s) OK"
+    },
+    {
+      "id": "IQ-007",
+      "description": "user_profiles.json schema valid",
+      "result": "PASS",
+      "detail": "4 user(s) found"
+    },
+    {
+      "id": "IQ-010",
+      "description": "OS is Windows x86-64",
+      "result": "PASS",
+      "detail": "Windows / AMD64"
+    },
+    {
+      "id": "IQ-011",
+      "description": "Data directory is writable",
+      "result": "PASS",
+      "detail": "C:\\Users\\lucia\\OneDrive\\Desktop\\ezControl 2.0\\Affilabs.core\\test\\ezControl-AI\\_data\\validation"
+    },
+    {
+      "id": "IQ-002",
+      "description": "All dependencies at pinned versions",
+      "result": "SKIP",
+      "detail": "Requires locked requirements file -- deferred to v2"
+    },
+    {
+      "id": "IQ-009",
+      "description": "File integrity manifest (SHA-256)",
+      "result": "SKIP",
+      "detail": "Requires build-time manifest -- deferred to v2"
+    }
+  ]
+}

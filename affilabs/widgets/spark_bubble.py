@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGraphicsDropShadowEffect,
 )
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,26 @@ class SparkBubble(QFrame):
         header_row.setContentsMargins(14, 0, 10, 0)
         header_row.setSpacing(8)
 
-        title = QLabel("✦ Sparq")
+        # Sparq head icon
+        icon_label = QLabel()
+        icon_label.setFixedSize(24, 24)
+        try:
+            from affilabs.utils.resource_path import get_affilabs_resource
+            svg_path = get_affilabs_resource("ui/img/sparq_icon.svg")
+            renderer = QSvgRenderer(str(svg_path))
+            px = QPixmap(24, 24)
+            px.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(px)
+            renderer.render(painter)
+            painter.end()
+            icon_label.setPixmap(px)
+        except Exception as _e:
+            logger.debug(f"Could not load sparq_icon.svg: {_e}")
+            icon_label.setText("✦")
+        icon_label.setStyleSheet("background: transparent; border: none;")
+        header_row.addWidget(icon_label)
+
+        title = QLabel("Sparq")
         title.setStyleSheet(
             "font-size: 13px; font-weight: 700; color: #1D1D1F;"
             " background: transparent; border: none;"
@@ -208,6 +228,27 @@ class SparkBubble(QFrame):
                 )
         except Exception as e:
             logger.error(f"SparkBubble system message push failed: {e}", exc_info=True)
+
+    def push_interactive_message(self, text: str, options: list) -> object:
+        """Open bubble and push an interactive message with clickable option buttons.
+
+        Returns the InteractiveMessageBubble (caller connects .option_selected).
+        Returns None if the inner widget is unavailable.
+        """
+        try:
+            if not self.isVisible():
+                self._reposition()
+                self.show()
+                self.raise_()
+            else:
+                self.raise_()
+            if self._spark_widget is not None and hasattr(
+                self._spark_widget, 'push_interactive_message'
+            ):
+                return self._spark_widget.push_interactive_message(text, options)
+        except Exception as e:
+            logger.error(f"SparkBubble interactive message push failed: {e}", exc_info=True)
+        return None
 
     def push_troubleshooting(self, diagnosis: dict, controller) -> None:
         """Open bubble and start guided LED troubleshooting flow.

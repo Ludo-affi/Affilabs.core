@@ -216,6 +216,60 @@
       "text": "Think we can do better? We'd love to hear from you — info@affiniteinstruments.com",
       "tags": ["general"],
       "source": "software"
+    },
+    {
+      "id": "tip_037",
+      "text": "Build and save methods offline — no hardware needed. Ask Sparq to set one up for your experiment.",
+      "tags": ["general", "software", "calibration"],
+      "source": "software"
+    },
+    {
+      "id": "tip_038",
+      "text": "Each LED channel (A-D) illuminates independently. You can run different analytes in each flow cell in one experiment.",
+      "tags": ["p4spr", "science", "calibration"],
+      "source": "science"
+    },
+    {
+      "id": "tip_039",
+      "text": "After recording, use the Edits tab to align cycles, trim baselines, and export to Excel in one click.",
+      "tags": ["general", "software", "calibration"],
+      "source": "software"
+    },
+    {
+      "id": "tip_040",
+      "text": "Rinse with buffer for at least 2 minutes before calibrating — a stable baseline gives a cleaner S-pol reference.",
+      "tags": ["general", "calibration", "hardware"],
+      "source": "device"
+    },
+    {
+      "id": "tip_041",
+      "text": "The SPR dip shifts to longer wavelengths when analyte binds. A rising sensorgram means binding is happening.",
+      "tags": ["general", "science", "calibration"],
+      "source": "science"
+    },
+    {
+      "id": "tip_042",
+      "text": "P-polarisation couples to surface plasmons; S-polarisation does not. The P/S ratio cancels LED intensity drift automatically.",
+      "tags": ["general", "science", "calibration"],
+      "source": "science"
+    },
+    {
+      "id": "tip_043",
+      "text": "Gold chips are single-use. If you see a noisy or flat signal after regeneration, it is time for a new chip.",
+      "tags": ["p4spr", "hardware", "chip", "calibration"],
+      "source": "device"
+    },
+    {
+      "id": "tip_044",
+      "text": "Use short regeneration pulses (10-15 s) and check the baseline recovery before committing to a full injection cycle.",
+      "tags": ["p4spr", "injection", "science", "calibration"],
+      "source": "science"
+    },
+    {
+      "id": "tip_045",
+      "text": "Set your flow rate before starting the run — flow rate changes made mid-cycle have no effect on the current cycle.",
+      "tags": ["p4pro", "p4proplus", "injection", "calibration"],
+      "source": "device"
     }
   ]
 }

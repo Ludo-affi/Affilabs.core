@@ -38,7 +38,6 @@ class SettingsMixin:
 
     Expects the host class to provide:
         - self.device_config          (DeviceConfig)
-        - self.hardware_mgr           (HardwareManager)
         - self.sidebar                (AffilabsSidebar)
         - self.app                    (Application)
         - self.ru_btn, self.nm_btn    (QRadioButton)
@@ -106,9 +105,10 @@ class SettingsMixin:
 
             # Fallback to current hardware or device config
             if not source:
-                if self.hardware_mgr and self.hardware_mgr.ctrl:
+                _hw = getattr(self, 'hardware_mgr', None)
+                if _hw and _hw.ctrl:
                     try:
-                        led_intensities = self.hardware_mgr.ctrl.get_all_led_intensities()
+                        led_intensities = _hw.ctrl.get_all_led_intensities()
                         source = "hardware"
                     except Exception as e:
                         logger.warning(

@@ -299,7 +299,7 @@ class _ExperimentListRow(QFrame):
         date_lbl = QLabel(date_str)
         date_lbl.setFixedWidth(46)
         date_lbl.setStyleSheet(
-            f"font-size: 11px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
             f"background: transparent;"
         )
         layout.addWidget(date_lbl)
@@ -328,7 +328,7 @@ class _ExperimentListRow(QFrame):
         cycles = self._format_cycles(self._entry.get("cycle_count"))
         meta_lbl = QLabel(f"{chip}  ·  {cycles}")
         meta_lbl.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
             f"background: transparent;"
         )
         centre.addWidget(meta_lbl)
@@ -340,13 +340,13 @@ class _ExperimentListRow(QFrame):
         badge = QLabel("Done")
         badge.setFixedHeight(18)
         badge.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; background: #E5E5EA; "
+            f"font-size: 12px; color: {_SECTION_FG}; background: #E5E5EA; "
             f"border-radius: 9px; padding: 0 7px; font-family: {Fonts.SYSTEM};"
         )
         if self._stale:
             badge.setText("Missing")
             badge.setStyleSheet(
-                f"font-size: 10px; color: #FF3B30; background: rgba(255,59,48,0.10); "
+                f"font-size: 12px; color: #FF3B30; background: rgba(255,59,48,0.10); "
                 f"border-radius: 9px; padding: 0 7px; font-family: {Fonts.SYSTEM};"
             )
         layout.addWidget(badge)
@@ -475,7 +475,7 @@ class _KanbanCard(QFrame):
         name_lbl = QLabel(filename)
         name_lbl.setWordWrap(False)
         name_lbl.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: {name_color}; "
+            f"font-size: 12px; font-weight: 600; color: {name_color}; "
             f"font-family: {Fonts.SYSTEM}; background: transparent;"
         )
         if self._stale:
@@ -487,7 +487,7 @@ class _KanbanCard(QFrame):
         chip = self._entry.get("chip_serial") or "—"
         sub_lbl = QLabel(f"{date_str}  ·  {chip}")
         sub_lbl.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
             f"background: transparent;"
         )
         layout.addWidget(sub_lbl)
@@ -498,7 +498,7 @@ class _KanbanCard(QFrame):
             stars = "★" * rating + "☆" * (5 - rating)
             star_lbl = QLabel(stars)
             star_lbl.setStyleSheet(
-                f"font-size: 11px; color: #FFD700; background: transparent; "
+                f"font-size: 12px; color: #FFD700; background: transparent; "
                 f"font-family: {Fonts.SYSTEM};"
             )
             layout.addWidget(star_lbl)
@@ -512,14 +512,14 @@ class _KanbanCard(QFrame):
             for tag in tags[:2]:
                 pill = QLabel(f"#{tag}")
                 pill.setStyleSheet(
-                    f"font-size: 9px; color: {_ACCENT}; background: rgba(0,122,255,0.10); "
+                    f"font-size: 11px; color: {_ACCENT}; background: rgba(0,122,255,0.10); "
                     f"border-radius: 8px; padding: 1px 5px; font-family: {Fonts.SYSTEM};"
                 )
                 tag_row.addWidget(pill)
             if len(tags) > 2:
                 more = QLabel(f"+{len(tags)-2}")
                 more.setStyleSheet(
-                    f"font-size: 9px; color: {_SECTION_FG}; background: transparent; "
+                    f"font-size: 11px; color: {_SECTION_FG}; background: transparent; "
                     f"font-family: {Fonts.SYSTEM};"
                 )
                 tag_row.addWidget(more)
@@ -662,7 +662,7 @@ class _KanbanColumn(QFrame):
 
         self._header_lbl = QLabel(label)
         self._header_lbl.setStyleSheet(
-            f"font-size: 11px; font-weight: 700; color: {self._color}; "
+            f"font-size: 12px; font-weight: 700; color: {self._color}; "
             f"font-family: {Fonts.SYSTEM}; background: transparent; letter-spacing: 0.5px;"
         )
         h_layout.addWidget(self._header_lbl)
@@ -670,7 +670,7 @@ class _KanbanColumn(QFrame):
 
         self._count_lbl = QLabel("0")
         self._count_lbl.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; background: {Colors.OVERLAY_LIGHT_10}; "
+            f"font-size: 12px; color: {_SECTION_FG}; background: {Colors.OVERLAY_LIGHT_10}; "
             f"border-radius: 8px; padding: 1px 6px; font-family: {Fonts.SYSTEM};"
         )
         h_layout.addWidget(self._count_lbl)
@@ -831,7 +831,7 @@ def _make_section_header(title: str) -> QLabel:
     lbl = QLabel(title.upper())
     lbl.setFixedHeight(26)
     lbl.setStyleSheet(
-        f"QLabel {{ font-size: 11px; color: {_SECTION_FG}; font-weight: 600; "
+        f"QLabel {{ font-size: 12px; color: {_SECTION_FG}; font-weight: 600; "
         f"font-family: {Fonts.SYSTEM}; background: transparent; "
         f"padding-left: 12px; padding-top: 6px; }}"
     )
@@ -848,8 +848,10 @@ class NotesTab(QWidget):
         self._main_window = main_window
         self._all_rows: list[_ExperimentListRow] = []
         self._selected_row: _ExperimentListRow | None = None
-        self._active_filter: str = "all"   # "all" | "needs_repeat" | "planned" | "unrated"
+        self._active_filter: str = "all"   # "all" | "needs_repeat" | "planned" | "unrated" | "tag:<name>"
         self._current_entry_id: str | None = None  # id of entry shown in right panel
+        self._tag_filter_btns: dict[str, QPushButton] = {}
+        self._left_tags_layout: QVBoxLayout | None = None
         self._notes_blocking: bool = False          # suppress save while populating
 
         # Search debounce
@@ -907,7 +909,7 @@ class NotesTab(QWidget):
         # Section header
         filters_hdr = QLabel("FILTERS")
         filters_hdr.setStyleSheet(
-            f"font-size: 11px; color: {_SECTION_FG}; font-weight: 600; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-weight: 600; "
             f"font-family: {Fonts.SYSTEM}; padding-left: 14px; padding-top: 4px; "
             f"background: transparent;"
         )
@@ -935,21 +937,22 @@ class NotesTab(QWidget):
 
         layout.addSpacing(16)
 
-        # Tags placeholder
+        # Tags filter
         tags_hdr = QLabel("TAGS")
         tags_hdr.setStyleSheet(
-            f"font-size: 11px; color: {_SECTION_FG}; font-weight: 600; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-weight: 600; "
             f"font-family: {Fonts.SYSTEM}; padding-left: 14px; padding-top: 4px; "
             f"background: transparent;"
         )
         layout.addWidget(tags_hdr)
 
-        coming_lbl = QLabel("Coming in next update")
-        coming_lbl.setStyleSheet(
-            f"font-size: 11px; color: {_SECTION_FG}; font-style: italic; "
-            f"font-family: {Fonts.SYSTEM}; padding-left: 14px; background: transparent;"
-        )
-        layout.addWidget(coming_lbl)
+        # Dynamic tag button container — rebuilt by _refresh_left_tags()
+        left_tags_container = QWidget()
+        left_tags_container.setStyleSheet("background: transparent;")
+        self._left_tags_layout = QVBoxLayout(left_tags_container)
+        self._left_tags_layout.setContentsMargins(0, 0, 0, 0)
+        self._left_tags_layout.setSpacing(0)
+        layout.addWidget(left_tags_container)
 
         layout.addStretch()
         return frame
@@ -1042,7 +1045,7 @@ class NotesTab(QWidget):
             btn.setFixedHeight(26)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(
-                f"QPushButton {{ font-size: 11px; font-family: {Fonts.SYSTEM}; "
+                f"QPushButton {{ font-size: 12px; font-family: {Fonts.SYSTEM}; "
                 f"border-radius: 5px; padding: 2px 10px; border: none; "
                 f"color: {_SECTION_FG}; background: transparent; }}"
                 f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_10}; }}"
@@ -1096,7 +1099,7 @@ class NotesTab(QWidget):
         footer_layout.setContentsMargins(14, 0, 14, 0)
         self._count_lbl = QLabel("")
         self._count_lbl.setStyleSheet(
-            f"font-size: 11px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
             f"background: transparent; border: none;"
         )
         footer_layout.addWidget(self._count_lbl)
@@ -1171,7 +1174,7 @@ class NotesTab(QWidget):
             self._preview_plot_placeholder.setFixedHeight(50)
             self._preview_plot_placeholder.setAlignment(Qt.AlignCenter)
             self._preview_plot_placeholder.setStyleSheet(
-                f"font-size: 10px; color: {_SECTION_FG}; font-style: italic; "
+                f"font-size: 12px; color: {_SECTION_FG}; font-style: italic; "
                 f"background: transparent;"
             )
             layout.addWidget(self._preview_plot_placeholder)
@@ -1206,11 +1209,11 @@ class NotesTab(QWidget):
             ("hardware", "Hardware", 2, 2),
         ]
         lbl_style = (
-            f"font-size: 11px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-family: {Fonts.SYSTEM}; "
             f"background: transparent;"
         )
         val_style = (
-            f"font-size: 11px; color: {Colors.PRIMARY_TEXT}; font-family: {Fonts.SYSTEM}; "
+            f"font-size: 12px; color: {Colors.PRIMARY_TEXT}; font-family: {Fonts.SYSTEM}; "
             f"background: transparent; font-weight: 500;"
         )
         for key, label, row, col in meta_defs:
@@ -1233,7 +1236,7 @@ class NotesTab(QWidget):
         # ── Notes (editable, auto-saves on focusOut) ──────────────────────────
         notes_hdr = QLabel("NOTES")
         notes_hdr.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; font-weight: 600; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-weight: 600; "
             f"font-family: {Fonts.SYSTEM}; background: transparent;"
         )
         layout.addWidget(notes_hdr)
@@ -1244,7 +1247,7 @@ class NotesTab(QWidget):
         self._notes_edit.setFixedHeight(72)
         self._notes_edit.setStyleSheet(
             f"QTextEdit {{ background: {Colors.BACKGROUND_WHITE}; border: 1px solid {Colors.OVERLAY_LIGHT_20}; "
-            f"border-radius: 6px; font-size: 11px; font-family: {Fonts.SYSTEM}; "
+            f"border-radius: 6px; font-size: 12px; font-family: {Fonts.SYSTEM}; "
             f"color: {Colors.PRIMARY_TEXT}; padding: 4px; }}"
             f"QTextEdit:focus {{ border: 1px solid {_ACCENT}; }}"
             f"QTextEdit:disabled {{ background: {_NAV_BG}; }}"
@@ -1256,7 +1259,7 @@ class NotesTab(QWidget):
         # ── Rating (interactive _StarRatingWidget) ────────────────────────────
         rating_hdr = QLabel("RATING")
         rating_hdr.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; font-weight: 600; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-weight: 600; "
             f"font-family: {Fonts.SYSTEM}; background: transparent;"
         )
         layout.addWidget(rating_hdr)
@@ -1269,7 +1272,7 @@ class NotesTab(QWidget):
         # ── Tags ──────────────────────────────────────────────────────────────
         tags_hdr = QLabel("TAGS")
         tags_hdr.setStyleSheet(
-            f"font-size: 10px; color: {_SECTION_FG}; font-weight: 600; "
+            f"font-size: 12px; color: {_SECTION_FG}; font-weight: 600; "
             f"font-family: {Fonts.SYSTEM}; background: transparent;"
         )
         layout.addWidget(tags_hdr)
@@ -1296,7 +1299,7 @@ class NotesTab(QWidget):
         self._add_tag_btn.setEnabled(False)
         self._add_tag_btn.setStyleSheet(
             f"QPushButton {{ background: transparent; border: 1px dashed {Colors.OVERLAY_LIGHT_20}; "
-            f"border-radius: 12px; font-size: 10px; color: {_SECTION_FG}; "
+            f"border-radius: 12px; font-size: 12px; color: {_SECTION_FG}; "
             f"font-family: {Fonts.SYSTEM}; padding: 0 8px; }}"
             f"QPushButton:hover {{ border-color: {_ACCENT}; color: {_ACCENT}; }}"
             f"QPushButton:disabled {{ opacity: 0.4; }}"
@@ -1318,7 +1321,7 @@ class NotesTab(QWidget):
         self._load_btn.setEnabled(False)
         self._load_btn.setStyleSheet(
             f"QPushButton {{ background: {_ACCENT}; color: white; border: none; "
-            f"border-radius: 6px; font-size: 11px; font-weight: 600; "
+            f"border-radius: 6px; font-size: 12px; font-weight: 600; "
             f"font-family: {Fonts.SYSTEM}; padding: 0 12px; }}"
             f"QPushButton:hover {{ background: #0066CC; }}"
             f"QPushButton:disabled {{ background: {Colors.OVERLAY_LIGHT_20}; color: {_SECTION_FG}; }}"
@@ -1332,7 +1335,7 @@ class NotesTab(QWidget):
         self._open_btn.setStyleSheet(
             f"QPushButton {{ background: {_NAV_BG}; color: {_ACCENT}; "
             f"border: 1px solid {Colors.OVERLAY_LIGHT_20}; border-radius: 6px; "
-            f"font-size: 11px; font-weight: 500; font-family: {Fonts.SYSTEM}; padding: 0 12px; }}"
+            f"font-size: 12px; font-weight: 500; font-family: {Fonts.SYSTEM}; padding: 0 12px; }}"
             f"QPushButton:hover {{ background: rgba(0,122,255,0.08); }}"
             f"QPushButton:disabled {{ color: {_SECTION_FG}; }}"
         )
@@ -1347,12 +1350,12 @@ class NotesTab(QWidget):
     def _switch_to_list_view(self) -> None:
         self._view_stack.setCurrentIndex(0)
         self._list_view_btn.setStyleSheet(
-            f"QPushButton {{ font-size: 11px; font-family: {Fonts.SYSTEM}; "
+            f"QPushButton {{ font-size: 12px; font-family: {Fonts.SYSTEM}; "
             f"border-radius: 5px; padding: 2px 10px; border: none; "
             f"color: white; background: {_ACCENT}; }}"
         )
         self._kanban_view_btn.setStyleSheet(
-            f"QPushButton {{ font-size: 11px; font-family: {Fonts.SYSTEM}; "
+            f"QPushButton {{ font-size: 12px; font-family: {Fonts.SYSTEM}; "
             f"border-radius: 5px; padding: 2px 10px; border: none; "
             f"color: {_SECTION_FG}; background: transparent; }}"
             f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_10}; }}"
@@ -1361,12 +1364,12 @@ class NotesTab(QWidget):
     def _switch_to_kanban_view(self) -> None:
         self._view_stack.setCurrentIndex(1)
         self._kanban_view_btn.setStyleSheet(
-            f"QPushButton {{ font-size: 11px; font-family: {Fonts.SYSTEM}; "
+            f"QPushButton {{ font-size: 12px; font-family: {Fonts.SYSTEM}; "
             f"border-radius: 5px; padding: 2px 10px; border: none; "
             f"color: white; background: {_ACCENT}; }}"
         )
         self._list_view_btn.setStyleSheet(
-            f"QPushButton {{ font-size: 11px; font-family: {Fonts.SYSTEM}; "
+            f"QPushButton {{ font-size: 12px; font-family: {Fonts.SYSTEM}; "
             f"border-radius: 5px; padding: 2px 10px; border: none; "
             f"color: {_SECTION_FG}; background: transparent; }}"
             f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_10}; }}"
@@ -1455,6 +1458,48 @@ class NotesTab(QWidget):
                 self._filter_btns[key], label, count,
                 color, active=(self._active_filter == key)
             )
+        self._refresh_left_tags()
+
+    def _refresh_left_tags(self) -> None:
+        """Rebuild the left-panel tag filter buttons from the ExperimentIndex."""
+        if self._left_tags_layout is None:
+            return
+        from affilabs.services.experiment_index import ExperimentIndex
+        # Clear existing buttons
+        while self._left_tags_layout.count():
+            item = self._left_tags_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._tag_filter_btns.clear()
+        try:
+            tag_counts: dict[str, int] = ExperimentIndex().all_tags()
+        except Exception:
+            tag_counts = {}
+        if not tag_counts:
+            placeholder = QLabel("No tags yet")
+            placeholder.setStyleSheet(
+                f"font-size: 12px; color: {_SECTION_FG}; font-style: italic; "
+                f"font-family: {Fonts.SYSTEM}; padding-left: 14px; background: transparent;"
+            )
+            self._left_tags_layout.addWidget(placeholder)
+            return
+        active_tag = (
+            self._active_filter[4:]
+            if self._active_filter.startswith("tag:")
+            else None
+        )
+        for tag, count in sorted(tag_counts.items()):
+            key = f"tag:{tag}"
+            btn = QPushButton()
+            btn.setFlat(True)
+            btn.setCheckable(False)
+            btn.setFixedHeight(32)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            is_active = (active_tag == tag)
+            self._update_filter_btn_text(btn, f"# {tag}", count, _ACCENT, active=is_active)
+            btn.clicked.connect(lambda checked, k=key: self._on_filter_clicked(k))
+            self._left_tags_layout.addWidget(btn)
+            self._tag_filter_btns[tag] = btn
 
     # ── Filtering ──────────────────────────────────────────────────────────────
 
@@ -1478,6 +1523,10 @@ class NotesTab(QWidget):
                     continue
             elif self._active_filter == "planned":
                 continue  # planned entries not yet in row list
+            elif self._active_filter.startswith("tag:"):
+                active_tag = self._active_filter[4:]
+                if active_tag not in (e.get("tags") or []):
+                    continue
 
             if keyword:
                 haystack = " ".join([
@@ -1574,7 +1623,7 @@ class NotesTab(QWidget):
             vbox.addWidget(title_lbl)
             sub_lbl = QLabel("Try a different search or filter.")
             sub_lbl.setStyleSheet(
-                f"font-size: 11px; color: {_SECTION_FG}; "
+                f"font-size: 12px; color: {_SECTION_FG}; "
                 f"font-family: {Fonts.SYSTEM}; background: transparent; border: none;"
             )
             sub_lbl.setAlignment(Qt.AlignCenter)
@@ -1593,7 +1642,7 @@ class NotesTab(QWidget):
             vbox.addWidget(title_lbl)
             sub_lbl = QLabel("Start recording to build your history.")
             sub_lbl.setStyleSheet(
-                f"font-size: 11px; color: {_SECTION_FG}; "
+                f"font-size: 12px; color: {_SECTION_FG}; "
                 f"font-family: {Fonts.SYSTEM}; background: transparent; border: none;"
             )
             sub_lbl.setAlignment(Qt.AlignCenter)
@@ -1783,7 +1832,7 @@ class NotesTab(QWidget):
         row.setSpacing(2)
         tag_lbl = QLabel(f"#{tag}")
         tag_lbl.setStyleSheet(
-            f"font-size: 10px; font-weight: 500; color: {_ACCENT}; "
+            f"font-size: 12px; font-weight: 500; color: {_ACCENT}; "
             f"font-family: {Fonts.SYSTEM}; background: transparent;"
         )
         row.addWidget(tag_lbl)
@@ -1792,7 +1841,7 @@ class NotesTab(QWidget):
         rm_btn.setFlat(True)
         rm_btn.setCursor(Qt.PointingHandCursor)
         rm_btn.setStyleSheet(
-            f"QPushButton {{ font-size: 11px; color: {_ACCENT}; background: transparent; "
+            f"QPushButton {{ font-size: 12px; color: {_ACCENT}; background: transparent; "
             f"border: none; padding: 0; }}"
             f"QPushButton:hover {{ color: #FF3B30; }}"
         )
@@ -1814,7 +1863,7 @@ class NotesTab(QWidget):
         inp.setStyleSheet(
             f"QLineEdit {{ background: {Colors.BACKGROUND_WHITE}; "
             f"border: 1px solid {_ACCENT}; border-radius: 12px; "
-            f"font-size: 10px; font-family: {Fonts.SYSTEM}; padding: 0 6px; }}"
+            f"font-size: 12px; font-family: {Fonts.SYSTEM}; padding: 0 6px; }}"
         )
         # Autocomplete from known tags
         try:

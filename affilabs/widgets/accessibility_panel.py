@@ -11,6 +11,7 @@ import logging
 from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
+
     QButtonGroup,
     QFrame,
     QHBoxLayout,
@@ -117,6 +118,7 @@ class AccessibilityPanel(QFrame):
     palette_changed = Signal(str, list)   # (palette_id, [hex_A, hex_B, hex_C, hex_D])
     line_style_changed = Signal(str, object)  # (style_id, Qt.PenStyle)
     dark_mode_changed = Signal(bool)       # True = dark active cycle, False = light
+    large_text_changed = Signal(bool)      # True = Large Text (120%), False = Normal
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -133,6 +135,11 @@ class AccessibilityPanel(QFrame):
         self._active_palette_id = "default"
         self._active_line_style_id = "solid"
         self._dark_mode = False
+        try:
+            from affilabs.ui_styles import FontScale
+            self._large_text: bool = FontScale.is_large()
+        except Exception:
+            self._large_text = False
         self._palette_btns: dict[str, QPushButton] = {}
         self._line_btns: dict[str, QPushButton] = {}
 
@@ -183,6 +190,16 @@ class AccessibilityPanel(QFrame):
         div.setFrameShape(QFrame.Shape.HLine)
         div.setStyleSheet("border: none; background: #E5E5EA; max-height: 1px;")
         layout.addWidget(div)
+
+        # ── Saved-per-user notice ──────────────────────────────────────────────
+        self._saved_note = QLabel("💾  Preferences saved to your profile.")
+        self._saved_note.setWordWrap(True)
+        self._saved_note.setStyleSheet(
+            f"font-size: 11px; color: #6E6E73; font-style: italic;"
+            f" background: rgba(0,122,255,0.05); border-radius: 7px;"
+            f" padding: 7px 10px; font-family: {_FONT};"
+        )
+        layout.addWidget(self._saved_note)
 
         # ── Colour Palette section ─────────────────────────────────────────────
         layout.addWidget(self._section_label("Colour Palette"))
@@ -254,6 +271,42 @@ class AccessibilityPanel(QFrame):
         dark_row.addWidget(self._dark_toggle)
 
         layout.addLayout(dark_row)
+
+        # ── Large Text section ─────────────────────────────────────────────────
+        font_div = QFrame()
+        font_div.setFrameShape(QFrame.Shape.HLine)
+        font_div.setStyleSheet("border: none; background: #E5E5EA; max-height: 1px;")
+        layout.addWidget(font_div)
+
+        font_row = QHBoxLayout()
+        font_row.setSpacing(10)
+
+        font_label_col = QVBoxLayout()
+        font_label_col.setSpacing(1)
+        font_title = QLabel("Large Text")
+        font_title.setStyleSheet(
+            f"font-size: 12px; font-weight: 600; color: #1D1D1F;"
+            f" background: transparent; font-family: {_FONT};"
+        )
+        font_desc = QLabel("120% font size — takes effect on restart")
+        font_desc.setStyleSheet(
+            f"font-size: 10px; color: #86868B; background: transparent; font-family: {_FONT};"
+        )
+        font_label_col.addWidget(font_title)
+        font_label_col.addWidget(font_desc)
+        font_row.addLayout(font_label_col)
+        font_row.addStretch()
+
+        self._large_text_toggle = QPushButton("●" if self._large_text else "○")
+        self._large_text_toggle.setCheckable(True)
+        self._large_text_toggle.setChecked(self._large_text)
+        self._large_text_toggle.setFixedSize(44, 26)
+        self._large_text_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._large_text_toggle.setStyleSheet(self._toggle_style(self._large_text))
+        self._large_text_toggle.clicked.connect(self._on_large_text_clicked)
+        font_row.addWidget(self._large_text_toggle)
+
+        layout.addLayout(font_row)
 
         layout.addStretch()
         scroll.setWidget(content)
@@ -386,10 +439,23 @@ class AccessibilityPanel(QFrame):
     def set_sidebar(self, sidebar) -> None:
         self._sidebar = sidebar
 
+    def _refresh_saved_note(self) -> None:
+        """Update the per-user note to show the active username."""
+        try:
+            mgr = getattr(getattr(self, '_sidebar', None), 'user_profile_manager', None)
+            user = mgr.get_current_user() if mgr else None
+        except Exception:
+            user = None
+        if user:
+            self._saved_note.setText(f"💾  Saved to {user}'s profile — colour and font size are personal.")
+        else:
+            self._saved_note.setText("💾  Colour and font size preferences are saved per user profile.")
+
     def toggle(self) -> bool:
         if self.isVisible():
             self.hide()
             return False
+        self._refresh_saved_note()
         self.show()
         return True
 
@@ -407,6 +473,9 @@ class AccessibilityPanel(QFrame):
 
     def is_dark_mode(self) -> bool:
         return self._dark_mode
+
+    def is_large_text(self) -> bool:
+        return self._large_text
 
     # ──────────────────────────────────────────────────────────────────────────
     # Internal
@@ -431,6 +500,17 @@ class AccessibilityPanel(QFrame):
         self._dark_toggle.setText("●" if self._dark_mode else "○")
         self._dark_toggle.setStyleSheet(self._toggle_style(self._dark_mode))
         self.dark_mode_changed.emit(self._dark_mode)
+
+    def _on_large_text_clicked(self) -> None:
+        self._large_text = self._large_text_toggle.isChecked()
+        self._large_text_toggle.setText("●" if self._large_text else "○")
+        self._large_text_toggle.setStyleSheet(self._toggle_style(self._large_text))
+        try:
+            from affilabs.ui_styles import FontScale
+            FontScale.save(self._large_text)
+        except Exception:
+            pass
+        self.large_text_changed.emit(self._large_text)
 
     def _on_palette_selected(self, palette_id: str, colors: list[str]) -> None:
         self._active_palette_id = palette_id

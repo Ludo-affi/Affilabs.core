@@ -1409,6 +1409,14 @@ class CompressionTrainerWindow(QMainWindow):
             QMessageBox.warning(self, "No Data",
                                 "No spectrum available yet. Wait a moment.")
             return
+        if len(self._avg_buf) < self.cfg.capture_avg_frames:
+            QMessageBox.information(
+                self,
+                "Collecting Data",
+                f"Still collecting frames ({len(self._avg_buf)}/{self.cfg.capture_avg_frames}). "
+                "Wait a moment and try again.",
+            )
+            return
 
         self._chip_water_ratio = self._averaged_ratio()
 

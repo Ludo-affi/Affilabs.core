@@ -20,7 +20,7 @@ from PySide6.QtSvg import QSvgRenderer
 from affilabs.utils.resource_path import get_affilabs_resource
 
 from affilabs.utils.logger import logger
-from affilabs.ui_styles import Colors, Fonts
+from affilabs.ui_styles import Colors, Fonts, FontScale as _FS
 
 
 class _AlignChannelProxy:
@@ -50,13 +50,13 @@ class _AlignChannelProxy:
                     btn.setStyleSheet(
                         f"QPushButton {{ background: white; color: {color};"
                         f" border: 2px solid {color}; border-radius: 5px;"
-                        f" font-size: 11px; font-weight: 700; padding: 0 6px; }}"
+                        f" font-size: 12px; font-weight: 700; padding: 0 6px; }}"
                     )
                 else:
                     btn.setStyleSheet(
                         "QPushButton { background: #E5E5EA; color: #808080;"
                         " border: 2px solid #C7C7CC; border-radius: 5px;"
-                        " font-size: 11px; font-weight: 700; padding: 0 6px; }"
+                        " font-size: 12px; font-weight: 700; padding: 0 6px; }"
                     )
 
     def blockSignals(self, block: bool) -> bool:  # noqa: N802  (matches Qt naming)
@@ -250,7 +250,7 @@ class UIBuildersMixin:
                 border-radius: 6px;
             }
             QTabBar::tab {
-                font-size: 11px;
+                font-size: 12px;
                 padding: 3px 10px;
                 background: #F8F9FA;
                 color: #6E6E73;
@@ -360,14 +360,15 @@ class UIBuildersMixin:
 
         # Title strip
         an_title_strip = QFrame()
+        an_title_strip.setObjectName("anTitleStrip")
         an_title_strip.setStyleSheet(
-            "QFrame { background: white; border-bottom: 1px solid #E5E5EA; }"
+            "QFrame#anTitleStrip { background: white; border-bottom: 1px solid #E5E5EA; }"
         )
         an_title_layout = QHBoxLayout(an_title_strip)
         an_title_layout.setContentsMargins(16, 10, 16, 10)
         an_title_lbl = QLabel("Analysis")
         an_title_lbl.setStyleSheet(
-            "font-size: 14px; font-weight: 700; color: #1D1D1F; "
+            f"font-size: {_FS.px(16)}px; font-weight: 700; color: #1D1D1F; "
             "background: transparent; letter-spacing: -0.2px;"
         )
         an_title_layout.addWidget(an_title_lbl)
@@ -456,7 +457,7 @@ class UIBuildersMixin:
         title_row.setSpacing(8)
         title = QLabel("Recorded Cycles")
         title.setStyleSheet(
-            f"font-size: 14px; font-weight: 700; color: {Colors.PRIMARY_TEXT}; "
+            f"font-size: {_FS.px(16)}px; font-weight: 700; color: {Colors.PRIMARY_TEXT}; "
             f"font-family: {Fonts.DISPLAY}; letter-spacing: -0.2px;"
         )
         title_row.addWidget(title)
@@ -485,7 +486,7 @@ class UIBuildersMixin:
         title_export_btn.setStyleSheet("""
             QToolButton {
                 background: #1D1D1F; color: white; border-radius: 7px;
-                font-size: 11px; font-weight: 600; padding: 2px 10px;
+                font-size: 12px; font-weight: 600; padding: 2px 10px;
                 border: none;
             }
             QToolButton:hover { background: #3A3A3C; }
@@ -574,7 +575,7 @@ class UIBuildersMixin:
         load_btn.setStyleSheet(
             f"QPushButton {{ background: {Colors.BACKGROUND_LIGHT}; color: {Colors.PRIMARY_TEXT}; "
             f"border: 1px solid {Colors.OVERLAY_LIGHT_20}; border-radius: 6px; "
-            f"font-size: 11px; font-weight: 500; padding: 4px 10px; font-family: {Fonts.SYSTEM}; }}"
+            f"font-size: 12px; font-weight: 500; padding: 4px 10px; font-family: {Fonts.SYSTEM}; }}"
             f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_10}; border-color: {Colors.INFO}; }}"
         )
         load_btn.clicked.connect(self._load_data_from_excel_with_path_tracking)
@@ -593,7 +594,7 @@ class UIBuildersMixin:
         self.filter_combo.setFixedHeight(28)
         self.filter_combo.setStyleSheet(
             f"QComboBox {{ background: white; border: 1px solid {Colors.OVERLAY_LIGHT_20}; "
-            f"border-radius: 6px; font-size: 11px; padding: 4px 8px; min-width: 120px; "
+            f"border-radius: 6px; font-size: 12px; padding: 4px 8px; min-width: 120px; "
             f"font-family: {Fonts.SYSTEM}; }}"
             f"QComboBox:hover {{ border: 1px solid {Colors.INFO}; }}"
             f"QComboBox::drop-down {{ border: none; }}"
@@ -613,7 +614,7 @@ class UIBuildersMixin:
         self.search_box.setFixedWidth(150)
         self.search_box.setStyleSheet(
             f"QLineEdit {{ background: white; border: 1px solid {Colors.OVERLAY_LIGHT_20}; "
-            f"border-radius: 6px; font-size: 11px; padding: 4px 8px; font-family: {Fonts.SYSTEM}; }}"
+            f"border-radius: 6px; font-size: 12px; padding: 4px 8px; font-family: {Fonts.SYSTEM}; }}"
             f"QLineEdit:focus {{ border: 1px solid {Colors.INFO}; }}"
         )
         self.search_box.setToolTip("Search across all columns")
@@ -649,7 +650,7 @@ class UIBuildersMixin:
         empty_layout.addWidget(empty_icon)
         empty_text = QLabel("No cycles to display")
         empty_text.setStyleSheet(
-            f"font-size: 16px; font-weight: 600; color: {Colors.SECONDARY_TEXT}; "
+            f"font-size: {_FS.px(16)}px; font-weight: 600; color: {Colors.SECONDARY_TEXT}; "
             f"margin-top: 12px; font-family: {Fonts.DISPLAY};"
         )
         empty_text.setAlignment(Qt.AlignCenter)
@@ -688,7 +689,7 @@ class UIBuildersMixin:
         title_row.setContentsMargins(0, 0, 0, 0)
         title = QLabel("Experiment")
         title.setStyleSheet(
-            "font-size: 14px; font-weight: 700; color: #1D1D1F; "
+            "font-size: 16px; font-weight: 700; color: #1D1D1F; "
             "border: none; background: transparent; letter-spacing: -0.2px;"
         )
         title_row.addWidget(title)
@@ -776,7 +777,7 @@ class UIBuildersMixin:
         _sep_dot2 = QLabel("·")
         _sep_dot2.setStyleSheet("font-size: 12px; color: #C7C7CC; background: transparent; border: none;")
         self.meta_calibration = QLabel("-")
-        self.meta_calibration.setStyleSheet("font-size: 11px; color: #AEAEB2; background: transparent; border: none;")
+        self.meta_calibration.setStyleSheet("font-size: 12px; color: #AEAEB2; background: transparent; border: none;")
         self.meta_calibration.setToolTip("Startup calibration file used for this session")
         # Hidden stub — kept as attribute so setText() calls in edits_tab.py don't crash
         self.meta_transmission_file = QLabel("-")
@@ -855,7 +856,7 @@ class UIBuildersMixin:
                 background: #F8F9FA;
                 border: 1px solid #D1D1D6;
                 border-radius: 4px;
-                font-size: 11px;
+                font-size: 12px;
                 padding: 2px 6px;
                 color: #1D1D1F;
             }
@@ -949,10 +950,10 @@ class UIBuildersMixin:
             if checked:
                 return (f"QPushButton {{ background: white; color: {color};"
                         f" border: 2px solid {color}; border-radius: 5px;"
-                        f" font-size: 11px; font-weight: 700; padding: 0 6px; }}")
+                        f" font-size: 12px; font-weight: 700; padding: 0 6px; }}")
             return ("QPushButton { background: #E5E5EA; color: #808080;"
                     " border: 2px solid #C7C7CC; border-radius: 5px;"
-                    " font-size: 11px; font-weight: 700; padding: 0 6px; }")
+                    " font-size: 12px; font-weight: 700; padding: 0 6px; }")
 
         self._alignment_ch_btns = {}
         self.alignment_channel_combo = _AlignChannelProxy()
@@ -1111,12 +1112,12 @@ class UIBuildersMixin:
                 return (
                     f"QPushButton {{ background: white; color: {color};"
                     f" border: 2px solid {color}; border-radius: 5px;"
-                    f" font-size: 11px; font-weight: 700; padding: 0 6px; }}"
+                    f" font-size: 12px; font-weight: 700; padding: 0 6px; }}"
                 )
             return (
                 "QPushButton { background: #E5E5EA; color: #808080;"
                 " border: 2px solid #C7C7CC; border-radius: 5px;"
-                " font-size: 11px; font-weight: 700; padding: 0 6px; }"
+                " font-size: 12px; font-weight: 700; padding: 0 6px; }"
             )
 
         self._alignment_ch_btns = {}
@@ -1207,7 +1208,7 @@ class UIBuildersMixin:
 
         # Hint label
         hint_lbl = QLabel("💡 Drag slider for real-time alignment (±20s)")
-        hint_lbl.setStyleSheet("font-size: 11px; color: #6E6E73; font-style: italic; background: transparent; border: none;")
+        hint_lbl.setStyleSheet("font-size: 12px; color: #6E6E73; font-style: italic; background: transparent; border: none;")
         shift_layout.addWidget(hint_lbl)
 
         layout.addLayout(shift_layout)
@@ -1261,7 +1262,7 @@ class UIBuildersMixin:
         # Lock/Unlock cursor button — two-state SVG icon
         _btn_style = (
             "QPushButton { background: #F2F2F7; border: 1px solid #D1D1D6; "
-            "border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 600; "
+            "border-radius: 6px; padding: 3px 8px; font-size: 12px; font-weight: 600; "
             "color: #3C3C43; }"
             "QPushButton:hover { background: #E5E5EA; border-color: #007AFF; }"
             "QPushButton:checked { background: #34C759; border-color: #28A745; color: white; }"
@@ -1323,12 +1324,12 @@ class UIBuildersMixin:
         sel_title_row.addWidget(_sep)
         _smooth_lbl_hdr = QLabel("Smooth:")
         _smooth_lbl_hdr.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-size: 12px; color: #86868B; background: transparent;"
         )
         sel_title_row.addWidget(_smooth_lbl_hdr)
         self.edits_smooth_label = QLabel("off")
         self.edits_smooth_label.setStyleSheet(
-            "font-size: 11px; color: #86868B; min-width: 24px; background: transparent;"
+            "font-size: 12px; color: #86868B; min-width: 24px; background: transparent;"
         )
         sel_title_row.addWidget(self.edits_smooth_label)
         self.edits_smooth_slider = QSlider(Qt.Horizontal)

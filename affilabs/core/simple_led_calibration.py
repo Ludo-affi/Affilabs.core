@@ -63,6 +63,7 @@ def run_simple_led_calibration(
     progress_callback: Callable[[str, int], None] | None = None,
     current_s_leds: dict[str, int] | None = None,
     current_integration_ms: float | None = None,
+    existing_dark: "np.ndarray | None" = None,
 ) -> LEDCalibrationResult:
     """Run quick LED re-convergence for sensor chip swaps.
 
@@ -77,6 +78,9 @@ def run_simple_led_calibration(
             If None, starts from 128 on every channel.
         current_integration_ms: Integration time from the previous calibration.
             If None, uses 4.5 ms (safe minimum).
+        existing_dark: Dark spectrum (ROI-cropped) from previous calibration.
+            If provided, Step 7 (dark capture) is skipped and this array is
+            reused for reference-spectrum subtraction.
 
     Returns:
         LEDCalibrationResult — same schema as full calibration result.
@@ -104,6 +108,7 @@ def run_simple_led_calibration(
             result=result,
             initial_s_leds=current_s_leds,
             integration_ms=current_integration_ms,
+            existing_dark=existing_dark,
             progress_fn=_prog,
         )
     except Exception as exc:
@@ -128,6 +133,7 @@ def _run_simple_calibration(
     result: LEDCalibrationResult,
     initial_s_leds: dict[str, int] | None,
     integration_ms: float | None,
+    existing_dark: "np.ndarray | None",
     progress_fn,
 ) -> None:
     from affilabs.utils.startup_calibration import acquire_raw_spectrum
@@ -178,17 +184,25 @@ def _run_simple_calibration(
 
     # ── Device config for servo positions ─────────────────────────────────────
     device_config = hardware_mgr.device_config
-    s_pos = getattr(device_config, "servo_s_position", None)
-    p_pos = getattr(device_config, "servo_p_position", None)
+    try:
+        s_pos = device_config.get_servo_s_position() if device_config else None
+        p_pos = device_config.get_servo_p_position() if device_config else None
+    except Exception:
+        s_pos = None
+        p_pos = None
 
     # ── Step 1: Move to S-mode ────────────────────────────────────────────────
     progress_fn("Simple cal: moving to S-mode…", 10)
     ctrl.turn_off_channels()
-    time.sleep(0.05)
+    time.sleep(0.1)
 
-    if ctrl.supports_polarizer and s_pos is not None:
+    if ctrl.supports_polarizer and s_pos is not None and p_pos is not None:
+        ctrl.set_servo_positions(s_pos, p_pos)   # load device PWM values
+        time.sleep(0.2)
+        ctrl.servo_move_raw_pwm(1)               # park to clear backlash
+        time.sleep(0.8)
         ctrl.set_mode("s")
-        time.sleep(0.5)
+        time.sleep(1.0)                          # settle
 
     # ── Step 2: S-mode proportional convergence ───────────────────────────────
     progress_fn("Simple cal: S-mode LED adjustment…", 20)
@@ -246,7 +260,7 @@ def _run_simple_calibration(
             # Back off LED and retry once
             scale = (sat_threshold * SAT_BACKOFF_PCT) / float(np.max(roi))
             s_leds[ch] = max(1, int(s_leds[ch] * scale))
-            logger.warning("  %s ref saturated → backing LED off to %d, retrying", ch.upper(), s_leds[ch])
+            logger.warning("  %s ref saturated -> backing LED off to %d, retrying", ch.upper(), s_leds[ch])
             spec = acquire_raw_spectrum(
                 usb=usb, ctrl=ctrl,
                 channel=ch,
@@ -265,11 +279,15 @@ def _run_simple_calibration(
     # ── Step 4: Move to P-mode ────────────────────────────────────────────────
     progress_fn("Simple cal: moving to P-mode…", 55)
     ctrl.turn_off_channels()
-    time.sleep(0.05)
+    time.sleep(0.1)
 
-    if ctrl.supports_polarizer and p_pos is not None:
+    if ctrl.supports_polarizer and s_pos is not None and p_pos is not None:
+        ctrl.set_servo_positions(s_pos, p_pos)   # reload positions (safe)
+        time.sleep(0.2)
+        ctrl.servo_move_raw_pwm(1)               # park to clear backlash
+        time.sleep(0.8)
         ctrl.set_mode("p")
-        time.sleep(0.5)
+        time.sleep(1.0)                          # settle
 
     # ── Step 5: P-mode proportional convergence ───────────────────────────────
     progress_fn("Simple cal: P-mode LED adjustment…", 65)
@@ -318,18 +336,24 @@ def _run_simple_calibration(
 
     result.p_raw_data = p_raw_data
 
-    # ── Step 7: Dark frame ────────────────────────────────────────────────────
+    # ── Step 7: Recycle dark frame ──────────────────────────────────────────
     progress_fn("Simple cal: dark frame…", 88)
-    ctrl.turn_off_channels()
-    time.sleep(0.05)
-    usb.set_integration(int_ms)
-    time.sleep(0.05)
-    try:
-        dark_raw = usb.read_intensity()
-        if dark_raw is not None:
-            result.dark_noise = np.array(dark_raw[wmin_i:wmax_i], dtype=float)
-    except Exception as e:
-        logger.warning("Dark frame failed (non-fatal): %s", e)
+    if existing_dark is not None:
+        # Recycle the dark from prior full calibration — skip LED-off/read cycle
+        result.dark_noise = np.array(existing_dark, dtype=float)
+        logger.info("Recycled existing dark frame (%d px)", len(result.dark_noise))
+    else:
+        # Fallback: capture a fresh dark frame (only when no prior dark available)
+        ctrl.turn_off_channels()
+        time.sleep(0.05)
+        usb.set_integration(int_ms)
+        time.sleep(0.05)
+        try:
+            dark_raw = usb.read_intensity()
+            if dark_raw is not None:
+                result.dark_noise = np.array(dark_raw[wmin_i:wmax_i], dtype=float)
+        except Exception as e:
+            logger.warning("Dark frame failed (non-fatal): %s", e)
 
     # ── Step 8: Build reference spectra via SpectrumPreprocessor ─────────────
     progress_fn("Simple cal: preprocessing references…", 92)
@@ -353,8 +377,8 @@ def _run_simple_calibration(
     result.leds_calibrated = dict(p_leds)
     result.success = True
 
-    progress_fn("Simple cal: complete ✓", 100)
-    logger.info("Simple LED calibration complete — S-iters=%d  P-iters=%d", s_iters, p_iters)
+    progress_fn("Simple cal: complete", 100)
+    logger.info("Simple LED calibration complete -- S-iters=%d  P-iters=%d", s_iters, p_iters)
     logger.info("  S-LEDs: %s", s_leds)
     logger.info("  P-LEDs: %s", p_leds)
 
@@ -408,17 +432,17 @@ def _proportional_loop(
                 # Saturating — scale down hard
                 scale = max(MIN_RATIO, (sat_threshold * SAT_BACKOFF_PCT) / sig)
                 new_led = max(1, int(leds[ch] * scale))
-                logger.info("  %s: SAT (%.0f) → LED %d→%d (scale=%.2f)", ch.upper(), sig, leds[ch], new_led, scale)
+                logger.info("  %s: SAT (%.0f) -> LED %d->%d (scale=%.2f)", ch.upper(), sig, leds[ch], new_led, scale)
                 leds[ch] = new_led
                 locked.discard(ch)
             elif tol_lo <= sig <= tol_hi:
-                logger.info("  %s: %.0f counts (%.1f%%) ✓ locked", ch.upper(), sig, pct)
+                logger.info("  %s: %.0f counts (%.1f%%) [OK] locked", ch.upper(), sig, pct)
                 locked.add(ch)
             else:
                 ratio = target / sig if sig > 0 else 1.0
                 ratio = max(MIN_RATIO, min(MAX_RATIO, ratio))
                 new_led = max(1, min(255, int(round(leds[ch] * ratio))))
-                logger.info("  %s: %.0f counts (%.1f%%) → LED %d→%d", ch.upper(), sig, pct, leds[ch], new_led)
+                logger.info("  %s: %.0f counts (%.1f%%) -> LED %d->%d", ch.upper(), sig, pct, leds[ch], new_led)
                 leds[ch] = new_led
                 locked.discard(ch)
 

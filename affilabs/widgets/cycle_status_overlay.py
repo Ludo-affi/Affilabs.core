@@ -148,7 +148,7 @@ class CycleStatusOverlay(QWidget):
         # Slope label (right-aligned in row 2)
         self._slope_label = QLabel("")
         self._slope_label.setStyleSheet(
-            f"font-size: 10px; font-weight: 500; color: {_MUTED}; font-family: {_MONO};"
+            f"font-size: 11px; font-weight: 500; color: {_MUTED}; font-family: {_MONO};"
         )
         self._slope_label.setVisible(False)
         row2.addWidget(self._slope_label)
@@ -213,7 +213,7 @@ class CycleStatusOverlay(QWidget):
         if injection_active:
             self._next_label.setText("Contact time → Injection Assistant")
             self._next_label.setStyleSheet(
-                f"font-size: 10px; font-weight: 500; color: #007AFF; font-family: {_FONT};"
+                f"font-size: 11px; font-weight: 500; color: #007AFF; font-family: {_FONT};"
             )
             self._next_label.setVisible(True)
         elif next_label:

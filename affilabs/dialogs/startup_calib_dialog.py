@@ -616,9 +616,7 @@ class StartupCalibProgressDialog(QDialog):
                 self._calibration_running = True
                 self._elapsed_timer.start()
                 self._dot_timer.start(1000)
-                # Start rotating pro tips (already shuffled at init)
-                import random as _random
-                _random.shuffle(self._calib_tips)
+                # Start rotating pro tips (pre-shuffled from TipsManager at init)
                 self._calib_tip_index = 0
                 self._calib_tip_label.setText(self._calib_tips[0])
                 self._calib_tip_card.setVisible(True)

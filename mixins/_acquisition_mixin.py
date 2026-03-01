@@ -15,9 +15,12 @@ from PySide6.QtCore import QTimer
 from affilabs.app_config import LEAK_DETECTION_WINDOW
 
 # Intensity-drop leak detection constants
-_LEAK_DROP_THRESHOLD = 0.25   # Alert if intensity falls to ≤25% of baseline
-_LEAK_BASELINE_WINDOW = 30.0  # Seconds to establish baseline (rolling max)
-_LEAK_CONFIRM_WINDOW = 3.0    # Seconds of sustained low signal before alerting
+_LEAK_DROP_THRESHOLD  = 0.15   # Alert if intensity falls to ≤15% of baseline (was 25% — too sensitive to regen)
+_LEAK_BASELINE_WINDOW = 30.0   # Seconds to establish baseline (rolling max)
+_LEAK_CONFIRM_WINDOW  = 8.0    # Seconds of sustained low signal before alerting (was 3s — regen transiently drops for ~3-5s)
+_LEAK_P2P_FRAMES      = 10     # Number of recent SPR frames used for P2P check
+_LEAK_P2P_MIN_RU      = 8.0    # Minimum SPR P2P (RU) that must co-occur with intensity drop to confirm leak
+                                # Regen causes clean baseline shift (low P2P); real leaks cause wavelength scatter (high P2P)
 
 logger = logging.getLogger(__name__)
 
@@ -203,23 +206,50 @@ class AcquisitionMixin:
                         self._push_leak_resolved(channel)
             else:
                 if drop_ratio <= _LEAK_DROP_THRESHOLD:
-                    # Signal is critically low — track how long it's been low
-                    if self._intensity_low_since.get(channel) is None:
-                        self._intensity_low_since[channel] = timestamp
-                    low_duration = timestamp - self._intensity_low_since[channel]
-                    if low_duration >= _LEAK_CONFIRM_WINDOW:
-                        # Sustained drop — alert user once
-                        self._leak_alerted.add(channel)
-                        logger.warning(
-                            f"⚠ OPTICAL LEAK detected — Channel {channel.upper()}: "
-                            f"intensity dropped to {drop_ratio*100:.1f}% of baseline "
-                            f"({intensity:.0f} / {baseline:.0f} counts), "
-                            f"sustained for {low_duration:.1f}s"
+                    # Intensity is critically low — also require elevated SPR P2P
+                    # to confirm this is a real leak and not a regen transient.
+                    # Regen causes a clean baseline shift (stable P2P); leaks cause
+                    # liquid on the prism face which scatters the SPR signal (high P2P).
+                    p2p_ru = self._get_recent_spr_p2p(channel)
+                    leak_confirmed = (p2p_ru is None) or (p2p_ru >= _LEAK_P2P_MIN_RU)
+
+                    if leak_confirmed:
+                        if self._intensity_low_since.get(channel) is None:
+                            self._intensity_low_since[channel] = timestamp
+                        low_duration = timestamp - self._intensity_low_since[channel]
+                        if low_duration >= _LEAK_CONFIRM_WINDOW:
+                            self._leak_alerted.add(channel)
+                            logger.warning(
+                                f"⚠ OPTICAL LEAK detected — Channel {channel.upper()}: "
+                                f"intensity dropped to {drop_ratio*100:.1f}% of baseline "
+                                f"({intensity:.0f} / {baseline:.0f} counts), "
+                                f"P2P={p2p_ru:.1f}RU, sustained for {low_duration:.1f}s"
+                            )
+                            self._push_leak_alert(channel, drop_ratio, baseline)
+                    else:
+                        # Low intensity but P2P is normal — regen transient, not a leak
+                        logger.debug(
+                            f"Intensity low on {channel.upper()} ({drop_ratio*100:.1f}%) "
+                            f"but P2P={p2p_ru:.1f}RU < {_LEAK_P2P_MIN_RU}RU — regen transient, suppressing leak alert"
                         )
-                        self._push_leak_alert(channel, drop_ratio, baseline)
+                        self._intensity_low_since[channel] = None
                 else:
                     # Signal normal — reset the low-timer
                     self._intensity_low_since[channel] = None
+
+    def _get_recent_spr_p2p(self, channel: str) -> float | None:
+        """Return the peak-to-peak SPR noise (RU) over the last _LEAK_P2P_FRAMES frames.
+
+        Returns None if data is unavailable (caller treats None as 'cannot rule out leak').
+        """
+        try:
+            cd = self.buffer_mgr.cycle_data.get(channel)
+            if cd is None or not hasattr(cd, 'spr') or len(cd.spr) < 2:
+                return None
+            recent = cd.spr[-_LEAK_P2P_FRAMES:]
+            return float(np.ptp(recent))
+        except Exception:
+            return None
 
     def _push_leak_alert(self, channel: str, drop_ratio: float, baseline: float) -> None:
         """Push a Sparq alert when a sudden intensity drop (possible leak) is detected.
@@ -248,18 +278,15 @@ class AcquisitionMixin:
             logger.warning("spark_alert_signal not found — leak alert not delivered to UI")
 
     def _push_leak_resolved(self, channel: str) -> None:
-        """Push a Sparq resolved message and auto-trigger quick calibration."""
+        """Notify user that the optical signal has recovered. No auto-recal."""
         ch = channel.upper()
         msg = (
-            f"✅ **Leak resolved — Channel {ch}**\n\n"
-            "Signal has recovered — optical path looks clear.\n\n"
-            "Running a quick recalibration to restore the S-pol reference..."
+            f"✅ **Signal recovered — Channel {ch}**\n\n"
+            "Optical path looks clear. Monitoring resumed.\n\n"
+            "If the signal looks unstable, run a manual calibration from the toolbar."
         )
         if hasattr(self, 'spark_alert_signal'):
             self.spark_alert_signal.emit(msg)
-        # Auto-trigger quick calibration on main thread (thread-safe signal)
-        if hasattr(self, 'leak_recalibrate_signal'):
-            self.leak_recalibrate_signal.emit()
 
     def _queue_transmission_update(self, channel: str, data: dict):
         """Queue transmission spectrum update for batch processing."""
@@ -502,7 +529,8 @@ class AcquisitionMixin:
         self.recording_events.on_recording_started(filename)
         self.recording_mgr.log_event("Recording Started")
         if hasattr(self, 'main_window') and hasattr(self.main_window, 'stage_bar'):
-            self.main_window.stage_bar.advance_to("record")
+            # Advance to "method" so "Experiment" shows as the active step during recording
+            self.main_window.stage_bar.advance_to("method")
 
         if self.recording_mgr.is_recording:
             # device_id: prefer device_config, fall back to hardware_mgr attribute
@@ -565,9 +593,9 @@ class AcquisitionMixin:
     def _on_recording_stopped(self):
         """Recording stopped."""
         self.recording_events.on_recording_stopped()
-        # Advance workflow tracker to "edit" — user has data to review
+        # Mark experiment (record) as done — chip now shows Analyse as the active next step
         if hasattr(self, 'main_window') and hasattr(self.main_window, 'stage_bar'):
-            self.main_window.stage_bar.advance_to("edit")
+            self.main_window.stage_bar.advance_to("record")
 
     def _on_recording_error(self, error: str):
         """Recording error occurred."""
@@ -748,7 +776,9 @@ class AcquisitionMixin:
         self.ui_control_events.on_reference_changed(text)
 
     def _apply_reference_subtraction(self):
-        """Apply reference channel subtraction to all other channels."""
-        from affilabs.utils.graph_helpers import GraphHelpers
+        """No-op — reference subtraction is now applied at plot time only (display layer).
 
-        GraphHelpers.apply_reference_subtraction(self)
+        Kept to avoid AttributeError on any call sites that haven't been updated.
+        The actual subtraction happens in ui_update_helpers.update_cycle_of_interest_graph
+        via GraphHelpers.subtract_reference(), which never mutates buffer_mgr.
+        """

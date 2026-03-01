@@ -1281,8 +1281,8 @@ PATTERNS = {
             "keywords": ["keyboard", "shortcuts", "hotkeys", "ctrl"],
             "priority": "low"
         },
-        r"what.*spark|who.*spark|spark.*ai|what.*can.*you.*do|what.*can.*spark": {
-            "answer": "I'm **Spark**, your Affilabs AI assistant! 🤖\n\n"
+        r"what.*spark|who.*spark|spark.*ai|what.*can.*you.*do|what.*can.*spark|what.*sparq|who.*sparq|sparq.*ai": {
+            "answer": "I'm **Sparq**, your Affilabs AI assistant! 🤖\n\n"
             "I'm specially trained on:\n"
             "• **Method building** — cycle syntax, abbreviations, templates, examples\n"
             "• **Calibration** — which type to use, troubleshooting\n"
@@ -1292,7 +1292,16 @@ PATTERNS = {
             "• **Data export** — Excel, CSV, AnIML\n\n"
             "Just ask a question in plain language — I'll do my best!",
             "category": "general",
-            "keywords": ["spark", "ai", "what", "can", "do", "assistant"],
+            "keywords": ["sparq", "spark", "ai", "what", "can", "do", "assistant"],
+            "priority": "high"
+        },
+        r"why.*q|sparq.*name|name.*sparq|why.*spelled|why.*spelt|pourquoi.*q|d'où.*nom|vient.*nom": {
+            "answer": "On vient du Québec, man! 🔵⚪\n\n"
+            "The **Q** is a nod to Québec — where Affinité Instruments was founded. "
+            "SPR + Q = Sparq. It also sounds like *spark* — the flash of insight when "
+            "your binding data clicks into place.",
+            "category": "general",
+            "keywords": ["sparq", "name", "why", "q", "quebec", "québec", "spelled"],
             "priority": "high"
         },
         r"contact.*support|email.*support|help.*support|technical.*support": {

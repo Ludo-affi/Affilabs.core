@@ -1,6 +1,11 @@
 """Device Status Widget - Modern grayscale theme matching prototype."""
 
-from PySide6.QtCore import Qt, Signal, Slot
+import os
+import subprocess
+import sys
+
+from PySide6.QtCore import Qt, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -88,6 +93,27 @@ class DeviceStatusWidget(QWidget):
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
         )
         hw_card_layout.addWidget(self.hw_no_devices)
+
+        # Zadig hint — shown when no hardware detected, guides first-time users
+        self.zadig_hint = QPushButton("Spectrometer not found?  Install USB driver (Zadig)")
+        self.zadig_hint.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.zadig_hint.setFlat(True)
+        self.zadig_hint.setVisible(False)  # Hidden until first scan completes with no result
+        self.zadig_hint.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent;"
+            "  color: #A0C8FF;"
+            "  border: none;"
+            "  text-align: left;"
+            "  padding: 2px 0px 6px 0px;"
+            "  font-size: 11px;"
+            "  text-decoration: underline;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover { color: #60AAFF; }",
+        )
+        self.zadig_hint.clicked.connect(self._launch_zadig)
+        hw_card_layout.addWidget(self.zadig_hint)
 
         hw_card_layout.addSpacing(4)
 
@@ -407,7 +433,34 @@ class DeviceStatusWidget(QWidget):
 
         main_layout.addStretch()
 
-    @Slot()
+    @Slot()    def mark_scan_attempted(self) -> None:
+        """Called after the first hardware scan completes. Enables the Zadig hint."""
+        self._scan_attempted = True
+        # Re-evaluate hint visibility immediately
+        if self.hw_no_devices.isVisible():
+            self.zadig_hint.setVisible(True)
+
+    def _launch_zadig(self) -> None:
+        """Launch zadig.exe from the install directory, or open the download page."""
+        # When running as a frozen PyInstaller exe, the install dir is the exe's directory
+        exe_dir = (
+            os.path.dirname(sys.executable)
+            if getattr(sys, 'frozen', False)
+            else None
+        )
+        zadig_path = os.path.join(exe_dir, 'zadig.exe') if exe_dir else None
+
+        if zadig_path and os.path.isfile(zadig_path):
+            try:
+                subprocess.Popen([zadig_path])
+                logger.info(f"Zadig launched from: {zadig_path}")
+                return
+            except Exception as exc:
+                logger.warning(f"Could not launch zadig.exe: {exc}")
+
+        # Fall back: open the Zadig download page in the default browser
+        logger.info("zadig.exe not found locally — opening https://zadig.akeo.ie")
+        QDesktopServices.openUrl(QUrl("https://zadig.akeo.ie"))
     def _on_connect_clicked(self):
         """Handle scan button click."""
         self.connect_requested.emit()
@@ -454,8 +507,14 @@ class DeviceStatusWidget(QWidget):
         for i in range(device_count, 3):
             self.hw_device_labels[i].setVisible(False)
 
-        # Show/hide no devices message
-        self.hw_no_devices.setVisible(device_count == 0)
+        # Show/hide no devices message and Zadig hint
+        no_hw = device_count == 0
+        self.hw_no_devices.setVisible(no_hw)
+        # Show Zadig hint once user has scanned but nothing was found
+        if no_hw and getattr(self, '_scan_attempted', False):
+            self.zadig_hint.setVisible(True)
+        elif not no_hw:
+            self.zadig_hint.setVisible(False)
 
         # Update scan button text and visibility based on connection status
         if device_count > 0:

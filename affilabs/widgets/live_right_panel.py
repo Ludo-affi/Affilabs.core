@@ -18,8 +18,9 @@ class LiveRightPanel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedWidth(220)
+        self.setObjectName("liveRightPanel")
         self.setStyleSheet(
-            "QFrame { background: #F5F5F7; border-left: 1px solid #D5D5D7; }"
+            "QFrame#liveRightPanel { background: #F5F5F7; border-left: 1px solid #D5D5D7; }"
         )
         
         layout = QVBoxLayout(self)

@@ -465,8 +465,13 @@ class DataAcquisitionManager(QObject):
                 return
 
             if self._acquiring:
-                self.acquisition_started.emit()
-                return
+                # If the thread is actually alive, we're genuinely already running
+                if self._acquisition_thread and self._acquisition_thread.is_alive():
+                    self.acquisition_started.emit()
+                    return
+                # Thread is dead but flag is stale — reset and restart
+                logger.warning("_acquiring=True but thread is dead — resetting for restart")
+                self._acquiring = False
 
             logger.info("=" * 80)
             logger.info("🚀 STARTING ACQUISITION")
@@ -677,6 +682,9 @@ class DataAcquisitionManager(QObject):
             else:
                 logger.debug("Acquisition thread stopped cleanly")
 
+        # Always clear the flag — if thread timed out, it's considered dead for
+        # restart purposes. The thread loop will exit on its own via _stop_acquisition.
+        self._acquiring = False
         self._acquisition_thread = None
 
         self.acquisition_stopped.emit()

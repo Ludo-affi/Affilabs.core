@@ -297,9 +297,10 @@ class AffilabsSidebar(QWidget):
         # Pre-build active_cycle_card here (Phase 2) — before tab builders run
         # This widget is relocated to LiveRightPanel during Phase 2; Method tab just adds it to its layout
         self.active_cycle_card = QFrame()
+        self.active_cycle_card.setObjectName("activeCycleCard")
         self.active_cycle_card.setVisible(False)
         self.active_cycle_card.setStyleSheet(
-            "QFrame { background: #F0F4FF; border: 1.5px solid rgba(46,48,227,0.25); border-radius: 10px; }"
+            "QFrame#activeCycleCard { background: #F0F4FF; border: 1.5px solid rgba(46,48,227,0.25); border-radius: 10px; }"
         )
         # Content will be added by MethodTabBuilder._build_active_cycle_card()
 
@@ -397,6 +398,11 @@ class AffilabsSidebar(QWidget):
             self.tab_indices[label] = tab_index
 
             tab_index += 1
+
+        # Hide Flow tab by default — only shown when pump hardware is detected (P4PRO/P4PROPLUS).
+        # P4SPR has no pump, so Flow tab must stay hidden until set_operation_mode_availability(flow=True).
+        if "Flow" in self.tab_indices:
+            self.tab_widget.setTabVisible(self.tab_indices["Flow"], False)
 
         # Set Export as the default tab (index 1, since Flow is 0)
         if "Export" in self.tab_indices:
@@ -726,6 +732,15 @@ class AffilabsSidebar(QWidget):
         # Show/hide the Flow icon in the icon rail
         if hasattr(self, "_icon_rail") and self._icon_rail:
             self._icon_rail.show_flow_tab(flow_available)
+
+        # Also show/hide the Flow tab in the sidebar tab_widget
+        flow_idx = self.tab_indices.get("Flow", -1)
+        if flow_idx >= 0:
+            self.tab_widget.setTabVisible(flow_idx, flow_available)
+            # If Flow tab was active and is now being hidden, switch to Export
+            if not flow_available and self.tab_widget.currentIndex() == flow_idx:
+                export_idx = self.tab_indices.get("Export", 1)
+                self.tab_widget.setCurrentIndex(export_idx)
 
     def switch_to_spark_tab(self):
         """Show Spark sidebar (now handled by main window, kept for compatibility)."""        # This method is now handled by the main window showing the Spark sidebar

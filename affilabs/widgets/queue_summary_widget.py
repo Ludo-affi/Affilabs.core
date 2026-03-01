@@ -31,7 +31,7 @@ USAGE:
 from typing import List, Optional
 from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMenu, QLabel, QPushButton
+    QMenu, QLabel, QPushButton,
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QColor, QBrush
@@ -39,7 +39,7 @@ from PySide6.QtGui import QColor, QBrush
 from affilabs.domain.cycle import Cycle
 from affilabs.presenters.queue_presenter import QueuePresenter
 from affilabs.utils.logger import logger
-from affilabs.widgets.ui_constants import CycleTypeStyle
+from affilabs.widgets.ui_constants import CycleTypeStyle, TableItemDelegate
 
 
 class QueueSummaryWidget(QTableWidget):
@@ -87,6 +87,10 @@ class QueueSummaryWidget(QTableWidget):
         # Collapse state — expanded by default; collapses to running row when cycles execute
         self._collapsed: bool = False
 
+        # Set True between cycles (cycle N ended, cycle N+1 not yet started) so the
+        # next row doesn't prematurely show "running" during the 100ms inter-cycle gap.
+        self._between_cycles: bool = False
+
         # Full-cycle countdown shown in STATUS cell while a cycle runs (seconds remaining)
         self._cycle_remaining_secs: int = 0
 
@@ -98,6 +102,10 @@ class QueueSummaryWidget(QTableWidget):
 
     def _setup_ui(self):
         """Configure table appearance and behavior."""
+        # Install delegate so setBackground() works despite QSS ::item rules (Qt6/Windows)
+        if TableItemDelegate is not None:
+            self.setItemDelegate(TableItemDelegate(self))
+
         # Set columns
         self.setColumnCount(4)
         self.setHorizontalHeaderLabels(["#", "Type", "Duration (min)", "Status"])
@@ -290,7 +298,8 @@ class QueueSummaryWidget(QTableWidget):
                 for row, cycle in enumerate(original):
                     if row < progress:
                         self._add_cycle_row_with_status(row, cycle, "completed")
-                    elif row == progress:
+                    elif row == progress and not self._between_cycles:
+                        # Only show "running" when cycle has actually started
                         self._add_cycle_row_with_status(row, cycle, "running")
                     else:
                         self._add_cycle_row_with_status(row, cycle, "pending")
@@ -345,6 +354,8 @@ class QueueSummaryWidget(QTableWidget):
         """
         if not self._presenter or not self._presenter.has_method_snapshot():
             return -1
+        if self._between_cycles:
+            return -1  # Inter-cycle gap — no row is "running" yet
         return self._presenter.get_method_progress()  # running row == progress index
 
     def _add_cycle_row_with_status(self, row: int, cycle: Cycle, status: str):
@@ -359,17 +370,17 @@ class QueueSummaryWidget(QTableWidget):
         abbr, fg_color = CycleTypeStyle.get(cycle.type)
 
         if status == "running":
-            prefix, bg = "", QColor("#1565C0")   # Solid blue background
+            prefix, bg = "", None   # Background unreliable on this platform — use text color instead
             bold = True
-            fg_color = "#FFFFFF"
+            fg_color = "#007AFF"    # Electric blue — visible on white background
         elif status == "completed":
-            prefix, bg = "", None
+            prefix, bg = "", QColor("#F5F5F5")   # Subtle gray background — visually done
             bold = False
-            fg_color = "#C7C7CC"       # Muted gray — done, not interesting
+            fg_color = "#9E9E9E"       # Darker muted gray — clearly distinct from pending
         else:  # pending
             prefix, bg = "", None
             bold = False
-            fg_color = "#C7C7CC"       # Muted gray — waiting
+            fg_color = "#1D1D1F"       # Full contrast — upcoming, actionable
 
         cycle_num = cycle.cycle_num if cycle.cycle_num > 0 else row + 1
 
@@ -421,8 +432,7 @@ class QueueSummaryWidget(QTableWidget):
         num_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         num_item.setFlags(num_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
-            num_item.setBackground(QBrush(QColor("#1565C0")))
-            num_item.setForeground(QColor("#FFFFFF"))
+            num_item.setForeground(QColor("#007AFF"))
             font = num_item.font()
             font.setBold(True)
             num_item.setFont(font)
@@ -437,8 +447,7 @@ class QueueSummaryWidget(QTableWidget):
         type_item.setToolTip(cycle.type)
         type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
-            type_item.setBackground(QBrush(QColor("#1565C0")))
-            type_item.setForeground(QColor("#FFFFFF"))
+            type_item.setForeground(QColor("#007AFF"))
             font = type_item.font()
             font.setBold(True)
             type_item.setFont(font)
@@ -453,8 +462,7 @@ class QueueSummaryWidget(QTableWidget):
         duration_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         duration_item.setFlags(duration_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         if is_running:
-            duration_item.setBackground(QBrush(QColor("#1565C0")))
-            duration_item.setForeground(QColor("#FFFFFF"))
+            duration_item.setForeground(QColor("#007AFF"))
             font = duration_item.font()
             font.setBold(True)
             duration_item.setFont(font)
@@ -473,8 +481,7 @@ class QueueSummaryWidget(QTableWidget):
         if cycle.note:
             status_item.setToolTip(cycle.note)
         if is_running:
-            status_item.setBackground(QBrush(QColor("#1565C0")))
-            status_item.setForeground(QColor("#FFFFFF"))
+            status_item.setForeground(QColor("#007AFF"))
             font = status_item.font()
             font.setBold(True)
             status_item.setFont(font)
@@ -612,8 +619,13 @@ class QueueSummaryWidget(QTableWidget):
         return abbr
 
     def set_running_cycle(self, cycle_id: Optional[str]):
-        """Mark a cycle as currently running."""
+        """Mark a cycle as currently running.
+
+        Pass None when a cycle ends but before the next one starts.
+        Pass a cycle_id when the new cycle has actually begun.
+        """
         self._running_cycle_id = cycle_id
+        self._between_cycles = (cycle_id is None)
         if cycle_id is None:
             self.stop_contact_countdown()
         self._schedule_refresh()

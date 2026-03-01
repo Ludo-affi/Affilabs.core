@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from affilabs.ui_styles import FontScale as _FS
+
 
 class GraphHeader(QWidget):
     """Graph header with channel toggle controls."""
@@ -163,7 +165,7 @@ class GraphContainer(QFrame):
         title_label = QLabel(self.graph_title)
         title_label.setStyleSheet(
             "QLabel {"
-            "  font-size: 15px;"
+            f"  font-size: {_FS.px(18)}px;"
             "  font-weight: 600;"
             "  color: #1D1D1F;"
             "  background: transparent;"

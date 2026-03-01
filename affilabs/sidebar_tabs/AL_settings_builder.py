@@ -880,6 +880,35 @@ class SettingsTabBuilder:
         )
         hardware_section.content_layout.addWidget(hardware_help)
 
+        # --- Lock bar ---
+        lock_bar = QHBoxLayout()
+        lock_bar.setSpacing(6)
+
+        self.sidebar._hw_config_lock_label = QLabel("🔒 Read-only — unlock to edit")
+        self.sidebar._hw_config_lock_label.setStyleSheet(
+            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+        )
+        lock_bar.addWidget(self.sidebar._hw_config_lock_label)
+        lock_bar.addStretch()
+
+        self.sidebar._hw_config_unlock_btn = QPushButton("Unlock")
+        self.sidebar._hw_config_unlock_btn.setFixedHeight(22)
+        self.sidebar._hw_config_unlock_btn.setFixedWidth(60)
+        self.sidebar._hw_config_unlock_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: rgba(0,0,0,0.06); color: #1D1D1F;"
+            "  border: 1px solid rgba(0,0,0,0.15); border-radius: 4px;"
+            "  font-size: 11px; font-weight: 500;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+            "QPushButton:hover { background: rgba(0,0,0,0.12); }"
+        )
+        self.sidebar._hw_config_unlock_btn.clicked.connect(self._unlock_hardware_config)
+        lock_bar.addWidget(self.sidebar._hw_config_unlock_btn)
+
+        hardware_section.content_layout.addLayout(lock_bar)
+
         # Card container
         polarizer_led_card = QFrame()
         polarizer_led_card.setStyleSheet(
@@ -900,6 +929,9 @@ class SettingsTabBuilder:
 
         hardware_section.add_content_widget(polarizer_led_card)
         tab_layout.addWidget(hardware_section)
+
+        # Apply locked state to all inputs after they are built
+        self._set_hardware_config_locked(True)
 
     def _build_polarizer_settings(self, layout: QVBoxLayout):
         """Build polarizer position settings (S/P positions and toggle button)."""
@@ -1093,6 +1125,64 @@ class SettingsTabBuilder:
         settings_button_row.addWidget(self.sidebar.advanced_settings_btn)
 
         layout.addLayout(settings_button_row)
+
+    # ------------------------------------------------------------------
+    # Hardware config lock / unlock
+    # ------------------------------------------------------------------
+
+    def _set_hardware_config_locked(self, locked: bool) -> None:
+        """Enable or disable all Hardware Configuration inputs and buttons."""
+        self.sidebar._hw_config_locked = locked
+
+        readonly_style = (
+            "QLineEdit {"
+            "  background: rgba(0,0,0,0.04); color: #86868B;"
+            "  border: 1px solid rgba(0,0,0,0.08); border-radius: 4px;"
+            "  padding: 3px 6px; font-size: 13px;"
+            "  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
+            "}"
+        )
+        editable_style = self._lineedit_style()
+
+        inputs = [
+            self.sidebar.s_position_input,
+            self.sidebar.p_position_input,
+        ] + [getattr(self.sidebar, f"channel_{ch}_input") for ch in ("a", "b", "c", "d")]
+
+        for inp in inputs:
+            inp.setReadOnly(locked)
+            inp.setStyleSheet(readonly_style if locked else editable_style)
+
+        self.sidebar.apply_settings_btn.setEnabled(not locked)
+        self.sidebar.polarizer_toggle_btn.setEnabled(not locked)
+
+        if locked:
+            self.sidebar._hw_config_lock_label.setText("🔒 Read-only — unlock to edit")
+            self.sidebar._hw_config_unlock_btn.setText("Unlock")
+        else:
+            self.sidebar._hw_config_lock_label.setText("🔓 Unlocked")
+            self.sidebar._hw_config_unlock_btn.setText("Lock")
+
+    def _unlock_hardware_config(self) -> None:
+        """Prompt for unlock code; toggle locked state."""
+        if not getattr(self.sidebar, "_hw_config_locked", True):
+            # Already unlocked — re-lock immediately
+            self._set_hardware_config_locked(True)
+            return
+
+        code, ok = QInputDialog.getText(
+            self.sidebar,
+            "Hardware Configuration",
+            "Enter unlock code:",
+            QLineEdit.EchoMode.Password,
+        )
+        if not ok:
+            return
+        if code.strip() != "Affinite":
+            QMessageBox.warning(self.sidebar, "Access Denied", "Incorrect code.")
+            return
+
+        self._set_hardware_config_locked(False)
 
     def _build_calibration_controls(self, tab_layout: QVBoxLayout):
         """Build calibration controls section with Simple, Full, and OEM calibrations (collapsible, starts collapsed)."""

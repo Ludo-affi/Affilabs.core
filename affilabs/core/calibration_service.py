@@ -337,6 +337,38 @@ class CalibrationService(QObject):
         # Wait for user to click Start in the dialog
         return True
 
+    def abort_for_reconnect(self) -> None:
+        """Abort any in-progress calibration and reset state for the next connection.
+
+        Called by the application when hardware disconnects (intentional or unexpected)
+        so that the *next* call to start_calibration() is never blocked by a stale
+        _running flag or a ghost dialog from the previous session.
+        """
+        logger.info("Calibration service: resetting for reconnect")
+
+        # Reset running flag so start_calibration() won't be blocked
+        self._running = False
+        self._calibration_completed = False
+        self._current_calibration_data = None
+        self._retry_count = 0
+
+        # Close and discard the old dialog
+        if self._calibration_dialog is not None:
+            try:
+                self._calibration_dialog.close()
+            except Exception:
+                pass
+            self._calibration_dialog = None
+
+        # Disconnect any duplicated per-run signal connections so they don't
+        # accumulate across multiple connect/disconnect cycles.
+        with contextlib.suppress(Exception):
+            self.calibration_progress.disconnect(self._update_dialog_progress)
+        with contextlib.suppress(Exception):
+            self.calibration_failed.disconnect(self._on_calibration_failed_dialog)
+
+        logger.debug("Calibration service reset complete")
+
     @property
     def dialog(self):
         """Get the calibration progress dialog (read-only property for external status updates)."""
@@ -387,12 +419,19 @@ class CalibrationService(QObject):
                 self._on_continue_anyway,
             )
 
+        # Add Compression Assistant button alongside Start (visible only before calibration)
+        self._add_compression_assistant_button()
+
+        # Disconnect any existing per-run connections before re-adding them so
+        # multiple connect/disconnect cycles don't accumulate duplicate callbacks.
+        with contextlib.suppress(Exception):
+            self.calibration_progress.disconnect(self._update_dialog_progress)
+        with contextlib.suppress(Exception):
+            self.calibration_failed.disconnect(self._on_calibration_failed_dialog)
+
         # Connect calibration service signals to update dialog
         self.calibration_progress.connect(self._update_dialog_progress)
         self.calibration_failed.connect(self._on_calibration_failed_dialog)
-
-        # Add Compression Assistant button alongside Start (visible only before calibration)
-        self._add_compression_assistant_button()
 
         self._calibration_dialog.hide_progress_bar()
         self._calibration_dialog.show()
@@ -670,9 +709,10 @@ class CalibrationService(QObject):
         logger.info(f"S-pol baseline captured: mid/low = {no_chip_ratio:.3f}")
 
         # Store baseline for the compression assistant
+        # Pass avg_spectrum so Step 2 live preview can show normalised transmission
         self._compression_baseline = {
             "no_chip_ratio": no_chip_ratio,
-            "no_chip_spectrum": None,  # S-pol ref not useful for P-pol transmission display
+            "no_chip_spectrum": avg_spectrum,
         }
 
         # ── Step 2: Switch to P-pol ────────────────────────────────────
@@ -2055,20 +2095,8 @@ class CalibrationService(QObject):
             else:
                 logger.warning("[WARN]  SENSOR NOT READY: Transmission QC did not pass")
 
-            # Emit completion signal
+            # Emit completion signal — QC dialog is shown by the main-thread slot
             self.calibration_complete.emit(calibration_data)
-
-            # Handle post-calibration UI - KEEP DIALOG OPEN and ENABLE START BUTTON
-            if self._calibration_dialog:
-                self._calibration_dialog.update_title("✅ Calibration Successful!")
-                self._calibration_dialog.update_status(
-                    "Sensor is live and ready.\n\nClick Start to begin acquiring data,\nor open Method Builder to set up your experiment first.",
-                )
-                self._calibration_dialog.set_progress(100, 100)
-                self._calibration_dialog.enable_start_button()
-                logger.debug(
-                    "Calibration dialog updated - Start button enabled for live data",
-                )
 
             # Some builds may not include the UI hook; guard the call
             if hasattr(self, "_on_calibration_complete_ui"):

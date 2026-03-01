@@ -140,11 +140,26 @@ a.datas = [d for d in a.datas
 
 pyz = PYZ(a.pure)
 
+# Native bootloader splash — appears instantly when the .exe is clicked,
+# before Python even starts. Uses Tcl/Tk (bundled with Python) so it
+# requires no Qt startup cost. Dismissed from main.py via pyi_splash.close()
+# once the Qt splash screen is visible.
+splash = Splash(
+    os.path.join(PROJECT_ROOT, 'affilabs', 'ui', 'img', 'affinite-splash.png'),
+    binaries=a.binaries,
+    datas=a.datas,
+    text_pos=None,         # No text overlay — our Qt splash handles status messages
+    minify_script=True,
+    always_on_top=True,
+)
+
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
     a.datas,
+    splash,           # Splash script embedded in the exe
+    splash.binaries,  # Tcl/Tk DLLs needed by the bootloader splash
     [],
     name=f'Affilabs-Core-v{VERSION}',
     debug=False,
@@ -152,7 +167,15 @@ exe = EXE(
     strip=False,
     upx=True,
     upx_exclude=[],
-    runtime_tmpdir=None,
+    # Extract bundle to <exe_dir>/system/ instead of %TEMP%.
+    # Benefits: (1) predictable location — no hidden AppData/Temp clutter;
+    # (2) reused across runs with the same exe (faster subsequent launches);
+    # (3) customer can see exactly what the software unpacks.
+    # Note: PyInstaller does NOT auto-delete this folder on exit when
+    # runtime_tmpdir is set — each build version gets its own _MEIxxxxxx
+    # subfolder and old ones accumulate until manually deleted. The NSIS
+    # uninstaller should rm the system/ tree on uninstall.
+    runtime_tmpdir="system",
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,

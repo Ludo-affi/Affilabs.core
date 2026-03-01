@@ -570,6 +570,7 @@ class _InjectionSession:
                 concentrations= getattr(self._cycle, 'concentrations', {}) or {},
                 conc_units    = getattr(self._cycle, 'units', None) or getattr(self._cycle, 'concentration_units', 'nM') or 'nM',
             )
+            self._bar.channel_state_override.connect(self._on_channel_state_override)
 
         for ch in self._detection_channels.upper():
             self._start_monitor(ch)
@@ -712,6 +713,47 @@ class _InjectionSession:
                 bar_ref.set_anomaly(flag, ch_upper, restore_fn=None)
         except Exception:
             pass
+
+    def _on_channel_state_override(self, channel: str, new_state: str) -> None:
+        """User right-clicked a channel badge and manually selected a state.
+
+        Syncs internal fire_counts / monitor state so the coordinator stays consistent
+        with whatever the user has corrected in the UI.
+        """
+        ch = channel.upper()
+        logger.info(f"[InjectionSession] Manual state override: {ch} → {new_state}")
+
+        if new_state == "CONTACT":
+            # Treat as if injection was just detected on this channel.
+            # Ensure fire_count == 1 so next detection on this channel routes to _handle_wash.
+            self._fire_counts[ch] = 1
+            # If no ΔSPR baseline set yet, snapshot current value as baseline.
+            if self._bar is not None:
+                try:
+                    if not self._bar.has_injection_baseline(ch):
+                        self._bar.set_injection_baseline_from_current(ch)
+                except Exception:
+                    pass
+
+        elif new_state == "WASH":
+            # Treat as if wash was detected — bump fire_count to 2, stop monitor for this channel.
+            self._fire_counts[ch] = 2
+            if ch in self._monitors:
+                try:
+                    self._monitors[ch].stop()
+                except Exception:
+                    pass
+                self._monitors.pop(ch, None)
+
+        elif new_state in ("INACTIVE", "PENDING"):
+            # Cancel tracking for this channel entirely.
+            self._fire_counts.pop(ch, None)
+            if ch in self._monitors:
+                try:
+                    self._monitors[ch].stop()
+                except Exception:
+                    pass
+                self._monitors.pop(ch, None)
 
     def _on_detection_complete(self) -> None:
         """Injection detected — unblock BG thread immediately.

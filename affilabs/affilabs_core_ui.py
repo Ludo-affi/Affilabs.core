@@ -427,7 +427,7 @@ class AffilabsMainWindow(
         )
 
         self.sidebar = AffilabsSidebar()
-        self.sidebar.setMinimumWidth(50)   # ~tab bar width — always keeps icon strip visible
+        self.sidebar.setMinimumWidth(0)    # Icon rail replaces sidebar tab bar — allow full collapse
         self.sidebar.setMaximumWidth(380)  # Fixed panel width — matches UserSidebarPanel
         # Give sidebar reference to device_config for S/P position syncing
         self.sidebar.device_config = self.device_config
@@ -637,6 +637,7 @@ class AffilabsMainWindow(
         self.accessibility_panel.palette_changed.connect(self._on_palette_changed)
         self.accessibility_panel.line_style_changed.connect(self._on_line_style_changed)
         self.accessibility_panel.dark_mode_changed.connect(self._on_dark_mode_toggled)
+        self.accessibility_panel.large_text_changed.connect(self._on_large_text_changed)
 
         main_layout.addWidget(self.splitter)
 
@@ -1643,10 +1644,12 @@ class AffilabsMainWindow(
                 logger.warning("❌ App reference not found")
                 return
 
-            # Clear channel time shifts
+            # Clear legacy channel time shifts (app-level)
             if hasattr(self.app, '_channel_time_shifts'):
                 self.app._channel_time_shifts = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
-                logger.info("✅ Reset all channel time shifts to 0.0")
+
+            # Clear interactive legend nudge offsets (main_window-level)
+            self.reset_channel_time_offsets()
 
             # Hide shift indicator label
             if hasattr(self, 'channel_shift_label'):
@@ -1658,7 +1661,6 @@ class AffilabsMainWindow(
             elif hasattr(self.app, '_refresh_active_cycle_display'):
                 self.app._refresh_active_cycle_display()
 
-            print("✅ Channel timing reset to default")
             logger.info("✅ Channel timing reset complete")
 
         except Exception as e:
@@ -1949,6 +1951,14 @@ class AffilabsMainWindow(
             self.full_timeline_graph.update_colors()
         if hasattr(self, 'cycle_of_interest_graph') and hasattr(self.cycle_of_interest_graph, 'update_colors'):
             self.cycle_of_interest_graph.update_colors()
+            # Re-apply reference curve style (update_colors resets pens to solid)
+            ref_ch = getattr(getattr(self, 'app', None), '_reference_channel', None)
+            if ref_ch is not None:
+                try:
+                    from affilabs.utils.graph_helpers import GraphHelpers
+                    GraphHelpers.apply_reference_curve_styles(self.app, ref_ch)
+                except Exception:
+                    pass
 
         # Update Edits tab bar chart colors
         if hasattr(self, 'edits_tab') and hasattr(self.edits_tab, 'update_barchart_colors'):
@@ -2165,6 +2175,20 @@ class AffilabsMainWindow(
                 width = 4 if selected == i else 2
                 curve.setPen(pg.mkPen(color=c, width=width, style=pen_style))
 
+    def _on_large_text_changed(self, enabled: bool) -> None:
+        """Notify user that a restart is needed to apply the Large Text setting."""
+        try:
+            bubble = getattr(self, "spark_bubble", None)
+            if bubble is not None and hasattr(bubble, "push_system_message"):
+                label = "Large Text enabled" if enabled else "Normal text restored"
+                bubble.push_system_message(
+                    f"✓ {label}. Restart Affilabs.core to apply the change."
+                )
+                if not bubble.isVisible():
+                    bubble.toggle()
+        except Exception:
+            pass
+
     def _toggle_sidebar_collapse(self, collapsed: bool):
         """Collapse left sidebar to icon strip only, or restore to full width."""
         sizes = self.splitter.sizes()
@@ -2202,9 +2226,10 @@ class AffilabsMainWindow(
 
         # ── header strip ────────────────────────────────────────────────
         header = QFrame()
+        header.setObjectName("runExpHeader")
         header.setFixedHeight(52)
         header.setStyleSheet(
-            "QFrame { background: #FFFFFF; border-bottom: 2px solid #E0E0E5; }"
+            "QFrame#runExpHeader { background: #FFFFFF; border-bottom: 2px solid #E0E0E5; }"
         )
         hdr_row = QHBoxLayout(header)
         hdr_row.setContentsMargins(16, 0, 14, 0)
@@ -2362,6 +2387,13 @@ class AffilabsMainWindow(
         # Apply visual immediately — don't wait for coordinator round-trip
         self.app._reference_channel = new_ref
         self._update_channel_btn_ref_styles(new_ref)
+
+        # Style the reference curve: dashed+dim when set, solid when cleared
+        try:
+            from affilabs.utils.graph_helpers import GraphHelpers
+            GraphHelpers.apply_reference_curve_styles(self.app, new_ref)
+        except Exception:
+            pass
 
         # Sync the combo box in Settings / Graphic Control sidebars
         combo_text = {None: "None", "a": "Channel A", "b": "Channel B", "c": "Channel C", "d": "Channel D"}
@@ -2840,6 +2872,9 @@ class AffilabsMainWindow(
             spr_legend.channel_timing_selected.connect(
                 lambda ch: self._on_timing_channel_selected(ch)
             )
+            spr_legend.channel_nudge_requested.connect(
+                lambda ch, delta: self._on_channel_nudge(ch, delta)
+            )
             plot_widget.interactive_spr_legend = spr_legend
             # Position after layout settles
             from PySide6.QtCore import QTimer as _QTimer
@@ -2937,23 +2972,26 @@ class AffilabsMainWindow(
             self.app._selected_flag_channel = channel
 
         # Update curve highlighting (make selected curve thicker)
+        # MUST use settings.ACTIVE_GRAPH_COLORS — the live accessibility palette,
+        # not the static CHANNEL_COLORS lists which ignore colorblind/custom palettes.
         import pyqtgraph as pg
-        from affilabs.plot_helpers import CHANNEL_COLORS, CHANNEL_COLORS_COLORBLIND
+        from PySide6.QtCore import Qt
+        from affilabs.settings import settings as _settings
 
-        # Get channel colors based on colorblind mode setting
-        colorblind_enabled = self.colorblind_check.isChecked() if getattr(self, 'colorblind_check', None) is not None else False
-        color_palette = CHANNEL_COLORS_COLORBLIND if colorblind_enabled else CHANNEL_COLORS
-
-        # Convert hex colors to RGB tuples for pyqtgraph
-        channel_colors = [self._hex_to_rgb(c) for c in color_palette]
+        _ch_keys = ['a', 'b', 'c', 'd']
+        _dark_on = (getattr(self, 'accessibility_panel', None)
+                    and self.accessibility_panel.is_dark_mode())
+        pen_style = Qt.PenStyle(getattr(_settings, 'ACTIVE_LINE_STYLE', 1))
 
         for i, curve in enumerate(self.cycle_of_interest_graph.curves):
-            if i == channel_idx:
-                # Selected curve: thicker line (width 4)
-                curve.setPen(pg.mkPen(color=channel_colors[i], width=4))
+            # Colour source: neon palette when dark mode, else accessibility palette
+            if _dark_on:
+                color = self._NEON_COLORS[i]
             else:
-                # Unselected curves: normal width (width 2)
-                curve.setPen(pg.mkPen(color=channel_colors[i], width=2))
+                c = _settings.ACTIVE_GRAPH_COLORS.get(_ch_keys[i], "#1D1D1F")
+                color = self._hex_to_rgb(c) if isinstance(c, str) and c.startswith('#') else c
+            width = 4 if i == channel_idx else 2
+            curve.setPen(pg.mkPen(color=color, width=width, style=pen_style))
 
         logger.debug(f"Channel {channel.upper()} selected for timing adjustment (curve highlighted)")
 
@@ -2977,6 +3015,42 @@ class AffilabsMainWindow(
 
         if graph_name == "Active Cycle":
             print(f"Channel {channel_letter} selected for timing adjustment")
+
+    def _on_channel_nudge(self, channel: str, delta_seconds: float) -> None:
+        """Shift a channel's cycle curve left/right by delta_seconds (display only).
+
+        Called from InteractiveSPRLegend when user presses Left/Right arrow
+        while a channel is selected.  ±1 s per press, ±5 s with Shift.
+        Offsets are reset when a new cycle region is selected.
+        """
+        if not hasattr(self, "_channel_time_offsets"):
+            self._channel_time_offsets = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
+        ch = channel.lower()
+        if ch not in self._channel_time_offsets:
+            self._channel_time_offsets[ch] = 0.0
+        self._channel_time_offsets[ch] += delta_seconds
+        self._update_nudge_shift_label()
+
+    def reset_channel_time_offsets(self) -> None:
+        """Reset all per-channel time nudge offsets to zero."""
+        self._channel_time_offsets = {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0}
+        self._update_nudge_shift_label()
+
+    def _update_nudge_shift_label(self) -> None:
+        """Show/hide the blue shift-indicator bubble based on current nudge offsets."""
+        if not hasattr(self, 'channel_shift_label'):
+            return
+        offsets = getattr(self, '_channel_time_offsets', {})
+        parts = []
+        for ch in ('a', 'b', 'c', 'd'):
+            v = offsets.get(ch, 0.0)
+            if v != 0.0:
+                parts.append(f"{ch.upper()}: {v:+.1f}s")
+        if parts:
+            self.channel_shift_label.setText("  ".join(parts))
+            self.channel_shift_label.setVisible(True)
+        else:
+            self.channel_shift_label.setVisible(False)
 
     def _on_plot_clicked(self, event, plot_widget):
         """Handle clicks on the Live Sensorgram (top graph).
@@ -4105,7 +4179,15 @@ class AffilabsMainWindow(
 
             # Drive the acquiring pulse dot from the intelligence refresh cycle
             self.set_acquiring_pulse(is_acquiring)
-            queue_count = len(self.segment_queue) if hasattr(self, 'segment_queue') else 0
+            # Count only method cycles — exclude Auto-read which lives in segment_queue
+            # but never enters the QueueManager. Use presenter as the authoritative source.
+            if hasattr(self, 'app') and hasattr(self.app, 'queue_presenter'):
+                queue_count = self.app.queue_presenter.get_queue_size()
+            else:
+                queue_count = sum(
+                    1 for c in self.segment_queue
+                    if getattr(c, 'type', '') != 'Auto-read'
+                ) if hasattr(self, 'segment_queue') else 0
 
             # Check if a cycle is currently running (don't override cycle countdown)
             is_cycle_running = hasattr(self, 'app') and hasattr(self.app, '_current_cycle') and self.app._current_cycle is not None

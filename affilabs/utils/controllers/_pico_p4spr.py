@@ -66,8 +66,15 @@ class PicoP4SPR(StaticController):
                     self._ser.write(cmd.encode())
                     import time
 
-                    time.sleep(0.1)  # Increased delay for Pico to respond
+                    time.sleep(0.3)  # Allow Pico boot splash to clear before reading
                     reply = self._ser.readline()[0:5].decode()
+                    # If we caught a boot splash line (e.g. "=== T"), flush and retry once
+                    if reply and not reply.startswith("P4SPR") and not reply.startswith("P4PRO"):
+                        self._ser.reset_input_buffer()
+                        time.sleep(0.2)
+                        self._ser.write(b"id\n")
+                        time.sleep(0.2)
+                        reply = self._ser.readline()[0:5].decode()
                     print(f"DEBUG: Pico P4SPR ID reply: '{reply}'")
                     logger.info(f"Pico P4SPR ID reply: '{reply}'")
                     if reply == "P4SPR":

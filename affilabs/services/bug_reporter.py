@@ -209,20 +209,20 @@ def send_bug_report(
     additional_images: list[str] = None,
 ) -> tuple[bool, str]:
     """Generate a bug report draft and optionally save a screenshot.
-    
+
     Args:
         description: User's bug description.
         user_name: Display name of the reporter (optional).
         include_screenshot: Whether to save a screenshot.
         additional_images: List of image file paths (saved alongside draft).
-    
+
     Returns:
         (True, draft_text) tuple. Draft text is ready for user to copy and email.
     """
     draft = generate_bug_report_draft(description, user_name)
-    
+
     results = [draft]
-    
+
     # Optionally save screenshot
     if include_screenshot:
         screenshot_path = save_screenshot()
@@ -230,7 +230,7 @@ def send_bug_report(
             results.append(f"\n✅ Screenshot saved: {screenshot_path.relative_to(Path.cwd())}")
         else:
             results.append("\n⚠️ Screenshot could not be captured.")
-    
+
     # Save any additional images
     if additional_images:
         results.append("\nAdditional images provided by user:")
@@ -240,7 +240,62 @@ def send_bug_report(
                 results.append(f"  {i}. {img_path_obj.name}")
             else:
                 results.append(f"  {i}. {img_path} (not found)")
-    
+
     full_output = "\n".join(results)
-    
     return (True, full_output)
+
+
+def send_bug_report_auto(
+    description: str,
+    user_name: str = "",
+    screenshot_bytes: bytes | None = None,
+    additional_images: list[str] = None,
+) -> tuple[bool, str, str]:
+    """Try to auto-submit bug report via Sparq Coach backend; fall back to draft on failure.
+
+    Args:
+        description: User's bug description.
+        user_name: Display name of the reporter (optional).
+        screenshot_bytes: Pre-captured screenshot PNG bytes (must be taken on main thread).
+            If None, attempts to capture here (only safe when called from main thread).
+        additional_images: List of extra image file paths to attach.
+
+    Returns:
+        (auto_submitted, mode, result)
+        - auto_submitted=True,  mode='auto',  result=ticket_id    → cloud submit OK
+        - auto_submitted=False, mode='draft', result=draft_text   → fallback copy-paste
+        - auto_submitted=False, mode='limit', result=message      → rate limited
+    """
+    # Use caller-provided screenshot; only capture here if not provided
+    if screenshot_bytes is None:
+        screenshot_bytes, _ = _take_screenshot()
+
+    # Try cloud submission first
+    try:
+        from affilabs.services.sparq_coach_service import SparqCoachService
+        svc = SparqCoachService()
+        if svc.is_available():
+            ok, result = svc.submit_bug_report(
+                description,
+                user_name=user_name,
+                screenshot_bytes=screenshot_bytes,
+                additional_images=additional_images,
+            )
+            if ok:
+                return True, "auto", result
+            if result == "report_limit_reached":
+                return False, "limit", (
+                    "You've reached today's bug report limit (10/day). "
+                    "Email info@affiniteinstruments.com directly."
+                )
+            if result == "auth_failed":
+                return False, "draft", generate_bug_report_draft(description, user_name)
+            # Any other failure (offline, timeout, server error) → fall through to draft
+    except Exception as e:
+        logger.warning(f"send_bug_report_auto: service call failed: {e}")
+
+    # Fallback: generate a copy-paste draft and also save screenshot to disk
+    draft = generate_bug_report_draft(description, user_name)
+    if screenshot_bytes:
+        save_screenshot()   # saves to _data/ for user to attach manually
+    return False, "draft", draft

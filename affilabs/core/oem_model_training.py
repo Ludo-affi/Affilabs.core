@@ -267,7 +267,7 @@ def train_led_model(
                         raise ModelTrainingError(msg)
                 else:
                     # Insufficient data - check if this is due to ultra-high sensitivity
-                    if saturated_early and time_ms >= 20 and not needs_shorter_times:
+                    if saturated_early and time_ms >= 10 and not needs_shorter_times:
                         logger.warning(
                             f"  LED {led_name} saturated too early at {time_ms}ms - marking for ultra-sensitive restart"
                         )
@@ -354,6 +354,7 @@ def train_led_model(
         "led_models": led_models,
         "training_method": "automatic_oem_workflow",
         "detector_wait_ms": detector_wait_ms,
+        "ultra_sensitive": needs_shorter_times,
     }
 
     # Save to BOTH active location and legacy archive
@@ -603,6 +604,24 @@ def run_oem_model_training_workflow(
         )
 
         logger.info(f"[OK] Model training successful: {model_file.name}")
+
+        # Persist ultra_sensitive flag to device_config.json
+        try:
+            with open(model_file) as f:
+                saved_model = json.load(f)
+            is_ultra = saved_model.get("ultra_sensitive", False)
+            from affilabs.utils.resource_path import get_affilabs_resource
+            config_path = get_affilabs_resource(f"config/devices/{detector_serial}/device_config.json")
+            if config_path.exists():
+                with open(config_path) as f:
+                    cfg = json.load(f)
+                cfg.setdefault("hardware", {})["ultra_sensitive"] = is_ultra
+                with open(config_path, "w") as f:
+                    json.dump(cfg, f, indent=2)
+                logger.info(f"[OK] device_config.json updated: ultra_sensitive={is_ultra}")
+        except Exception as e:
+            logger.warning(f"Could not update ultra_sensitive in device_config.json: {e}")
+
         return True
 
     except Exception as e:

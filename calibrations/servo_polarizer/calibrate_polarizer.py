@@ -13,6 +13,12 @@ Date: December 7, 2025
 
 import csv
 import sys
+
+# Force UTF-8 stdout/stderr on Windows (cp1252 terminal can't render emoji)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import time
 from pathlib import Path
 
@@ -136,6 +142,9 @@ def stage1_bidirectional_sweep(hm):
     print("=" * 70)
     print("Measuring mean of top 20 max points at each position\n")
 
+    # Estimate dark current from detector attribute (no LED toggle — LEDs are already on)
+    measured_dark_current = getattr(hm.usb, 'dark_current', None)
+
     # 5 positions covering full range
     forward_positions = [1, 65, 128, 191, 255]
     # Backward sweep uses intermediate positions for better coverage
@@ -179,6 +188,7 @@ def stage1_bidirectional_sweep(hm):
         "backward": backward_data,
         "forward_positions": forward_positions,
         "backward_positions": backward_positions,
+        "measured_dark_current": measured_dark_current,
         "servo_moved": servo_moved,
     }
 
@@ -205,8 +215,18 @@ def detect_polarizer_type(hm, sweep_data):
     all_data = sweep_data["forward"] + sweep_data["backward"]
     intensities = np.array([d["intensity"] for d in all_data])
 
-    # Get detector-specific dark current
-    dark_current = getattr(hm.usb, 'dark_current', 900)
+    # Get detector-specific dark current — prefer measured value from stage1 sweep,
+    # fall back to sweep minimum (barrel extinction ≈ dark), then hardcoded default.
+    # The old getattr(hm.usb, 'dark_current', 900) default of 900 is wrong for
+    # detectors with a high dark floor (e.g. Flame-T/USB4000 ~2900 counts), causing
+    # barrel polarizers to be misclassified as circular.
+    measured_dark = sweep_data.get("measured_dark_current")
+    min_signal_for_dark = float(np.array([d["intensity"] for d in sweep_data["forward"] + sweep_data["backward"]]).min())
+    if measured_dark is not None:
+        dark_current = measured_dark
+    else:
+        # Estimate: sweep minimum is near extinction for barrel, so use it as dark proxy
+        dark_current = min_signal_for_dark
     DARK_THRESHOLD = int(dark_current * 3.0)  # 3x dark current
     BRIGHT_WINDOW_THRESHOLD = int(dark_current * 30.0)  # BARREL windows significantly above this
     SATURATION_THRESHOLD = 60000  # Detector saturation limit
@@ -324,20 +344,18 @@ def detect_polarizer_type(hm, sweep_data):
 
                 print(f"  Candidates: PWM {candidate1_pwm} or PWM {candidate2_pwm}")
 
-                # Choose candidate further from sparse sampling points
-                sparse_points = [1, 65, 128, 191, 255]
-                dist1 = min(abs(candidate1_pwm - sp) for sp in sparse_points)
-                dist2 = min(abs(candidate2_pwm - sp) for sp in sparse_points)
-
-                if dist1 > dist2:
+                # Choose candidate closest to 90 PWM separation from S (ideal barrel separation)
+                sep1 = abs(abs(candidate1_pwm - found_pwm) - 90)
+                sep2 = abs(abs(candidate2_pwm - found_pwm) - 90)
+                if sep1 <= sep2:
                     p_pwm = candidate1_pwm
                     alternate_p = candidate2_pwm
                 else:
                     p_pwm = candidate2_pwm
                     alternate_p = candidate1_pwm
 
-                print(f"  Choosing P at PWM {p_pwm} (dist from sparse: {max(dist1, dist2)})")
-                print(f"  Alternate P at PWM {alternate_p}")
+                print(f"  Choosing P at PWM {p_pwm} (sep from S: {abs(p_pwm - found_pwm)} PWM)")
+                print(f"  Alternate P at PWM {alternate_p} (sep from S: {abs(alternate_p - found_pwm)} PWM)")
 
                 s_pwm = found_pwm
                 s_intensity = found_signal
@@ -360,22 +378,18 @@ def detect_polarizer_type(hm, sweep_data):
 
             print(f"  Candidates: PWM {candidate1_pwm} or PWM {candidate2_pwm}")
 
-            # Choose candidate that's MORE LIKELY in blind spot (further from sparse sampling points)
-            # Sparse points: 1, 65, 128, 191, 255
-            sparse_points = [1, 65, 128, 191, 255]
-            dist1 = min(abs(candidate1_pwm - sp) for sp in sparse_points)
-            dist2 = min(abs(candidate2_pwm - sp) for sp in sparse_points)
-
-            # Prefer the candidate that's FURTHER from all sparse points (more likely to be in blind spot)
-            if dist1 > dist2:
+            # Choose candidate closest to 90 PWM separation from S (ideal barrel separation)
+            sep1 = abs(abs(candidate1_pwm - found_pwm) - 90)
+            sep2 = abs(abs(candidate2_pwm - found_pwm) - 90)
+            if sep1 <= sep2:
                 p_pwm = candidate1_pwm
                 alternate_p = candidate2_pwm
             else:
                 p_pwm = candidate2_pwm
                 alternate_p = candidate1_pwm
 
-            print(f"  Choosing P at PWM {p_pwm} (dist from sparse: {max(dist1, dist2)})")
-            print(f"  Alternate P at PWM {alternate_p} (dist from sparse: {min(dist1, dist2)})")
+            print(f"  Choosing P at PWM {p_pwm} (sep from S: {abs(p_pwm - found_pwm)} PWM)")
+            print(f"  Alternate P at PWM {alternate_p} (sep from S: {abs(alternate_p - found_pwm)} PWM)")
 
             # Assign strongest as S, blind spot as P
             s_pwm = found_pwm
@@ -481,7 +495,7 @@ def detect_polarizer_type(hm, sweep_data):
     return polarizer_type, info
 
 
-def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
+def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128, sweep_data=None):
     """Stage 3 using sv+sp commands (when servo didn't move in Stage 1).
     
     2-pass converging scan identical to test_stage3_refinement.py:
@@ -505,7 +519,8 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
     ctrl = hm.ctrl
     raw_ctrl = ctrl._ctrl if hasattr(ctrl, '_ctrl') else ctrl
     settle_time = 0.5
-    dark_threshold = int(getattr(hm.usb, 'dark_current', 900) * 1.1)
+    _measured_dark = sweep_data.get("measured_dark_current") if sweep_data else None
+    dark_threshold = int((_measured_dark or getattr(hm.usb, 'dark_current', 2500)) * 1.1)
 
     def move_servo_sv_sp(p_pwm, s_pwm):
         """Move servo using sv + ss/sp commands (working format from test).
@@ -727,7 +742,7 @@ def stage3_sv_converging_scan(hm, wavelengths, s_fixed=128):
     }
 
 
-def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False, alternate_p=None, alternate_s=None, use_sv_mode=False):
+def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False, alternate_p=None, alternate_s=None, use_sv_mode=False, sweep_data=None):
     """Stage 3: Refine positions using ±10 PWM sweep OR sv+sp converging scan.
 
     Uses 10 scans per position with spectral analysis.
@@ -753,7 +768,7 @@ def stage3_refine_positions(hm, wavelengths, p_center, s_center, is_barrel=False
     """
     # If servo didn't move, use sv+sp converging scan instead
     if use_sv_mode:
-        return stage3_sv_converging_scan(hm, wavelengths, s_fixed=128)
+        return stage3_sv_converging_scan(hm, wavelengths, s_fixed=128, sweep_data=sweep_data)
 
     print("\n" + "=" * 70)
     print("STAGE 3: REFINING POSITIONS (+/-10 PWM SWEEP)")
@@ -1130,7 +1145,8 @@ def main():
                 is_barrel=is_barrel,
                 alternate_p=type_info.get("alternate_p"),
                 alternate_s=type_info.get("alternate_s"),
-                use_sv_mode=not servo_moved,  # Use sv+sp if servo didn't move
+                use_sv_mode=not servo_moved,
+                sweep_data=sweep_data,
             )
 
             # Success - break out of retry loop
@@ -1248,7 +1264,7 @@ def main():
                 polarizer_results=polarizer_results,
                 afterglow_results=None,
                 detector_model="USB4000",
-                led_type="LCW",
+                led_type="OWW",
             )
             print(f"✅ Device profile saved: {profile_path}")
 
@@ -1379,7 +1395,8 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
                 is_barrel=is_barrel,
                 alternate_p=type_info.get("alternate_p"),
                 alternate_s=type_info.get("alternate_s"),
-                use_sv_mode=not servo_moved,  # Use sv+sp if servo didn't move
+                use_sv_mode=not servo_moved,
+                sweep_data=sweep_data,
             )
 
             # Success - break out of retry loop
@@ -1400,25 +1417,40 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
         MAX_SEPARATION_DEGREES = 120.0
 
         if polarizer_type == "BARREL" and (separation_degrees < MIN_SEPARATION_DEGREES or separation_degrees > MAX_SEPARATION_DEGREES):
-            print("\n" + "=" * 70)
-            print("❌ CALIBRATION FAILED - INVALID SERVO POSITIONS")
-            print("=" * 70)
-            print(f"S Position: PWM {refinement['s_pwm']} = {s_degrees:.1f}°")
-            print(f"P Position: PWM {refinement['p_pwm']} = {p_degrees:.1f}°")
-            print(f"Separation: {separation_degrees:.1f}° (REQUIRED: {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES}°)")
-            print("")
-            print("BARREL polarizers have two transmission windows that should be")
-            print(f"separated by {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES} degrees (typically ~90 degrees).")
-            print("")
-            print("Possible causes:")
-            print("  1. Polarizer barrel not rotating with servo")
-            print("  2. Mechanical slippage in coupling")
-            print("  3. Wrong polarizer type detected")
-            print("  4. Incorrect window detection (both windows on same quadrant)")
-            print("")
-            print("ACTION REQUIRED: Check mechanical coupling and re-run calibration")
-            print("=" * 70)
-            return False
+            # Try alternate_p before giving up
+            alternate_p = type_info.get("alternate_p")
+            if alternate_p is not None:
+                alt_p_degrees = pwm_to_degrees(alternate_p)
+                alt_separation = abs(s_degrees - alt_p_degrees)
+                if MIN_SEPARATION_DEGREES <= alt_separation <= MAX_SEPARATION_DEGREES:
+                    print(f"\n  Primary P (PWM {refinement['p_pwm']}) gave {separation_degrees:.1f}° separation — out of range.")
+                    print(f"  Trying alternate P at PWM {alternate_p} ({alt_p_degrees:.1f}°) → separation {alt_separation:.1f}° ✅")
+                    refinement['p_pwm'] = alternate_p
+                    p_degrees = alt_p_degrees
+                    separation_degrees = alt_separation
+                else:
+                    print("\n" + "=" * 70)
+                    print("❌ CALIBRATION FAILED - INVALID SERVO POSITIONS")
+                    print("=" * 70)
+                    print(f"S Position: PWM {refinement['s_pwm']} = {s_degrees:.1f}°")
+                    print(f"Primary P: PWM {refinement['p_pwm']} = {p_degrees:.1f}° → {separation_degrees:.1f}° separation")
+                    print(f"Alternate P: PWM {alternate_p} = {alt_p_degrees:.1f}° → {alt_separation:.1f}° separation")
+                    print(f"REQUIRED: {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES}°")
+                    print("")
+                    print("ACTION REQUIRED: Check mechanical coupling and re-run calibration")
+                    print("=" * 70)
+                    return False
+            else:
+                print("\n" + "=" * 70)
+                print("❌ CALIBRATION FAILED - INVALID SERVO POSITIONS")
+                print("=" * 70)
+                print(f"S Position: PWM {refinement['s_pwm']} = {s_degrees:.1f}°")
+                print(f"P Position: PWM {refinement['p_pwm']} = {p_degrees:.1f}°")
+                print(f"Separation: {separation_degrees:.1f}° (REQUIRED: {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES}°)")
+                print("")
+                print("ACTION REQUIRED: Check mechanical coupling and re-run calibration")
+                print("=" * 70)
+                return False
 
         # Print results
         ratio = refinement["s_intensity"] / refinement["p_intensity"]
@@ -1460,7 +1492,7 @@ def run_servo_calibration_from_hardware_mgr(hardware_mgr, progress_callback=None
                 polarizer_results=polarizer_results,
                 afterglow_results=None,
                 detector_model="USB4000",
-                led_type="LCW",
+                led_type="OWW",
             )
             print(f"✅ Device profile saved: {profile_path}")
 
@@ -1635,7 +1667,8 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
             is_barrel=is_barrel,
             alternate_p=type_info.get("alternate_p"),
             alternate_s=type_info.get("alternate_s"),
-            use_sv_mode=not servo_moved,  # Use sv+sp if servo didn't move
+            use_sv_mode=not servo_moved,
+            sweep_data=sweep_data,
         )
 
         # ===== CRITICAL VALIDATION: DEGREE SEPARATION =====
@@ -1653,25 +1686,32 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
         MAX_SEPARATION_DEGREES = 120.0
 
         if is_barrel and (separation_degrees < MIN_SEPARATION_DEGREES or separation_degrees > MAX_SEPARATION_DEGREES):
-            logger.error("\n" + "=" * 70)
-            logger.error("❌ CALIBRATION FAILED - INVALID SERVO POSITIONS")
-            logger.error("=" * 70)
-            logger.error(f"S Position: PWM {refinement['s_pwm']} = {s_degrees:.1f}°")
-            logger.error(f"P Position: PWM {refinement['p_pwm']} = {p_degrees:.1f}°")
-            logger.error(f"Separation: {separation_degrees:.1f}° (REQUIRED: {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES}°)")
-            logger.error("")
-            logger.error("BARREL polarizers have two transmission windows that MUST be")
-            logger.error(f"separated by {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES} degrees (typically ~90 degrees).")
-            logger.error("")
-            logger.error("Possible causes:")
-            logger.error("  1. Polarizer barrel not rotating with servo")
-            logger.error("  2. Mechanical slippage in coupling")
-            logger.error("  3. Wrong polarizer type detected")
-            logger.error("  4. Incorrect window detection (both windows on same quadrant)")
-            logger.error("")
-            logger.error("ACTION REQUIRED: Check mechanical coupling and re-run calibration")
-            logger.error("=" * 70)
-            return False
+            # Try alternate_p before giving up
+            alternate_p = type_info.get("alternate_p")
+            if alternate_p is not None:
+                alt_p_degrees = pwm_to_degrees(alternate_p)
+                alt_separation = abs(s_degrees - alt_p_degrees)
+                if MIN_SEPARATION_DEGREES <= alt_separation <= MAX_SEPARATION_DEGREES:
+                    logger.info(f"Primary P (PWM {refinement['p_pwm']}) gave {separation_degrees:.1f}° separation — out of range.")
+                    logger.info(f"Trying alternate P at PWM {alternate_p} ({alt_p_degrees:.1f}°) → separation {alt_separation:.1f}° OK")
+                    refinement['p_pwm'] = alternate_p
+                    p_degrees = alt_p_degrees
+                    separation_degrees = alt_separation
+                else:
+                    logger.error("❌ CALIBRATION FAILED - INVALID SERVO POSITIONS")
+                    logger.error(f"S Position: PWM {refinement['s_pwm']} = {s_degrees:.1f}°")
+                    logger.error(f"Primary P: PWM {refinement['p_pwm']} = {p_degrees:.1f}° → {separation_degrees:.1f}° separation")
+                    logger.error(f"Alternate P: PWM {alternate_p} = {alt_p_degrees:.1f}° → {alt_separation:.1f}° separation")
+                    logger.error(f"REQUIRED: {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES}°")
+                    logger.error("ACTION REQUIRED: Check mechanical coupling and re-run calibration")
+                    return False
+            else:
+                logger.error("❌ CALIBRATION FAILED - INVALID SERVO POSITIONS")
+                logger.error(f"S Position: PWM {refinement['s_pwm']} = {s_degrees:.1f}°")
+                logger.error(f"P Position: PWM {refinement['p_pwm']} = {p_degrees:.1f}°")
+                logger.error(f"Separation: {separation_degrees:.1f}° (REQUIRED: {MIN_SEPARATION_DEGREES}-{MAX_SEPARATION_DEGREES}°)")
+                logger.error("ACTION REQUIRED: Check mechanical coupling and re-run calibration")
+                return False
 
         # Display results
         ratio = refinement["s_intensity"] / refinement["p_intensity"] if refinement["p_intensity"] > 0 else 0
@@ -1717,7 +1757,7 @@ def run_calibration_with_hardware(hardware_manager, progress_callback=None):
                 polarizer_results=polarizer_results,
                 afterglow_results=None,
                 detector_model="USB4000",
-                led_type="LCW",
+                led_type="OWW",
             )
             logger.info(f"✅ Device profile saved: {profile_path}")
 

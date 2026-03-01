@@ -1195,28 +1195,28 @@ class ExportMixin:
 
         self.export_stats_cycles = QLabel("Cycles: 0")
         self.export_stats_cycles.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-size: 12px; color: #86868B; background: transparent;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         stats_layout.addWidget(self.export_stats_cycles)
 
         self.export_stats_selected = QLabel("Selected: 0")
         self.export_stats_selected.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-size: 12px; color: #86868B; background: transparent;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         stats_layout.addWidget(self.export_stats_selected)
 
         self.export_stats_channels = QLabel("Channels: A, B, C, D")
         self.export_stats_channels.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-size: 12px; color: #86868B; background: transparent;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         stats_layout.addWidget(self.export_stats_channels)
 
         self.export_stats_duration = QLabel("Duration: —")
         self.export_stats_duration.setStyleSheet(
-            "font-size: 11px; color: #86868B; background: transparent;"
+            "font-size: 12px; color: #86868B; background: transparent;"
             "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;"
         )
         stats_layout.addWidget(self.export_stats_duration)

@@ -88,5 +88,10 @@
     "timestamp": "2026-02-24T14:21:09.336986",
     "question": "how start software",
     "answer": "Affilabs is Affinit\u00e9 Instruments' SPR data acquisition software. To get started:\n\n1. Connect your SPR instrument via USB\n2. Launch Affilabs - it will auto-detect your device\n3. Run OEM LED Calibration (Settings tab)\n4. Start acquiring data using the Start Recording button\n\nFor detailed tutorials, visit the Support section on our website."
+  },
+  {
+    "timestamp": "2026-02-28T17:53:39.059479",
+    "question": "how does it work\nwhy small molecule dont work",
+    "answer": "CHANNEL FORMATS:\nchannels A - Single channel\nchannels BD - Multiple channels (B and D)\nchannels ALL - All channels (default)\n\nCONCENTRATION TAGS:\nFormat: Channel:ValueUnit or [Channel:ValueUnit] (brackets optional)\nChannels: A, B, C, D, ALL\nUnits: nM, \u00b5M, pM, mM, M, mg/mL, \u00b5g/mL, ng/mL\n\nEXAMPLES:\nA:100nM - Channel A at 100 nanoM\nB:50\u00b5M - Channel B at 50 microM\nALL:25pM - All channels at 25 picoM\nA:100nM B:50nM - Different concentrations per channel\n\nPURPOSE:\nTags are for documentation and workflow tracking. They don't affect injection volume or flow rate calculations."
   }
 ]

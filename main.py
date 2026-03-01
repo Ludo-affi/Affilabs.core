@@ -29,6 +29,38 @@ from __future__ import annotations
 import os
 import sys
 
+# -- IQ check intercept: MUST be before all other imports -------------------
+import os as _iq_os, sys as _iq_sys
+if '--iq-check' in _iq_sys.argv:
+    _iq_root = _iq_os.path.dirname(_iq_os.path.abspath(__file__))
+    if _iq_root not in _iq_sys.path:
+        _iq_sys.path.insert(0, _iq_root)
+    import argparse as _iq_ap
+    _iq_p = _iq_ap.ArgumentParser(add_help=False)
+    _iq_p.add_argument('--iq-check', action='store_true')
+    _iq_p.add_argument('--operator', '-o', default=_iq_os.environ.get('USERNAME', 'Unknown'))
+    _iq_p.add_argument('--serial', '-s', default=None)
+    _iq_p.add_argument('--no-save', action='store_true')
+    _iq_p.add_argument('--out-dir', default=None)
+    _iq_args, _ = _iq_p.parse_known_args()
+    try:
+        from scripts.validation.iq_check import run_iq, save_report, print_report
+        from pathlib import Path as _IQPath
+        _iq_report = run_iq(operator=_iq_args.operator, instrument_serial=_iq_args.serial)
+        print_report(_iq_report)
+        if not _iq_args.no_save:
+            _iq_out = _IQPath(_iq_args.out_dir) if _iq_args.out_dir else None
+            _iq_saved = save_report(_iq_report, _iq_out)
+            print(f'  Report saved: {_iq_saved}')
+        _iq_code = 0 if _iq_report['overall'] == 'PASS' else 1
+    except Exception as _iq_e:
+        print(f'IQ check failed: {_iq_e}')
+        _iq_code = 2
+    _iq_sys.stdout.flush()
+    _iq_sys.stderr.flush()
+    _iq_os._exit(_iq_code)
+# ---------------------------------------------------------------------------
+
 # Add parent directory to path for imports
 if __name__ == "__main__":
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -423,6 +455,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
     cursor_update_signal = Signal(float)  # elapsed_time from processing thread
     spark_alert_signal = Signal(str)      # system alert text from processing thread → main thread
     leak_recalibrate_signal = Signal()   # auto-trigger quick cal after leak resolves
+    _simple_cal_result_signal = Signal(object, object)  # (LEDCalibrationResult, dialog) — thread-safe delivery to main thread
 
     def __init__(self, argv):
         """Initialize application with strict phase ordering to prevent fragile dependencies."""
@@ -2234,8 +2267,10 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         duration_min = cycle.length_minutes
 
         # Calculate cycle numbers
-        cycle_num = len(self._completed_cycles) + 1
-        total_cycles = cycle_num + self.queue_presenter.get_queue_size()
+        # cycle_num  = position in the full method (1-based)
+        # total_cycles = length of the original method snapshot (fixed at run start)
+        cycle_num = progress + 1  # progress is 0-based index into original_method
+        total_cycles = len(original_method)
 
         logger.info(f"Starting Cycle {cycle_num}/{total_cycles}: {cycle_type}, {duration_min} min")
 

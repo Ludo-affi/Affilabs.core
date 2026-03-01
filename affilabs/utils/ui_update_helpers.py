@@ -92,17 +92,23 @@ class UIUpdateHelpers:
                 cycle_changed = True
             else:
                 last_start, last_stop = app._last_cycle_bounds
-                # Consider it a new cycle if boundaries moved significantly (>5% of duration)
+                # Consider it a new cycle if the START cursor moved significantly (>5% of duration).
+                # Only the start cursor matters — the stop cursor naturally advances during
+                # live acquisition (~1 s per update) and must NOT trigger a cycle change,
+                # otherwise per-channel nudge offsets get wiped on every point update.
                 duration = stop_time_display - start_time_display
-                if (
-                    abs(start_time_display - last_start) > duration * 0.05
-                    or abs(stop_time_display - last_stop) > duration * 0.05
-                ):
+                start_moved = abs(start_time_display - last_start) > max(duration * 0.05, 1.0)
+                if start_moved:
                     cycle_changed = True
                     app._last_cycle_bounds = (start_time_display, stop_time_display)
-                    # New cycle region — reset zoom so axes auto-fit the new data
+                    # New cycle region — reset zoom and per-channel nudge offsets
                     graph = app.main_window.cycle_of_interest_graph
                     graph._user_zoomed = False
+                    if hasattr(app.main_window, "reset_channel_time_offsets"):
+                        app.main_window.reset_channel_time_offsets()
+                else:
+                    # Update stored stop so it tracks live growth without triggering reset
+                    app._last_cycle_bounds = (last_start, stop_time_display)
 
             # Extract data within cursor range for each channel
             for ch_letter, ch_idx in app._channel_pairs:
@@ -147,10 +153,23 @@ class UIUpdateHelpers:
                     cycle_transmittance if len(cycle_transmittance) > 0 else None,
                 )
 
-            # Apply reference subtraction if enabled
-            app._apply_reference_subtraction()
+            # Collect reference channel display data for plot-time subtraction (display only)
+            ref_ch = getattr(app, "_reference_channel", None)
+            ref_display_time = None
+            ref_display_spr = None
+            if ref_ch is not None:
+                ref_cd = app.buffer_mgr.cycle_data.get(ref_ch)
+                if ref_cd is not None and len(ref_cd.time) > 0:
+                    _ref_t = ref_cd.time
+                    _ref_spr = ref_cd.spr
+                    _display_offset = app.clock.display_offset
+                    ref_display_time = _ref_t - _display_offset - start_time_display
+                    if len(_ref_spr) > 0:
+                        ref_display_spr = _ref_spr - _ref_spr[0]
+                    else:
+                        ref_display_spr = _ref_spr
 
-            # Update graph curves with potentially subtracted data
+            # Update graph curves
             max_cycle_time = 0
             for ch_letter, ch_idx in app._channel_pairs:
                 cycle_time = app.buffer_mgr.cycle_data[ch_letter].time
@@ -159,22 +178,30 @@ class UIUpdateHelpers:
                 if len(cycle_time) == 0:
                     continue
 
-                # Use all data points - time relative to START CURSOR position (not first data point)
-                # This ensures Active Cycle time=0 aligns with Start cursor position in Live Sensorgram
-                # CRITICAL: Convert raw cycle times to DISPLAY coordinates to match Live Sensorgram exactly
+                # Convert raw times to display coords, rebase to start cursor (t=0)
                 if len(cycle_time) > 0:
-                    # Convert cycle times from RAW_ELAPSED to DISPLAY: display = raw - display_offset
-                    # Then rebase to start cursor position for Active Cycle graph (time=0 at cursor)
                     display_offset = app.clock.display_offset
                     cycle_time_display = cycle_time - display_offset
                     display_cycle_time = cycle_time_display - start_time_display
-                    
-                    # CRITICAL: Rebase SPR delta to start at 0 when start cursor is moved
-                    # All channels share a common baseline at the start cursor position (0, 0)
+
+                    # Rebase SPR delta so start cursor = 0
                     if len(delta_spr) > 0:
                         display_delta_spr = delta_spr - delta_spr[0]
                     else:
                         display_delta_spr = delta_spr
+
+                    # Reference subtraction — display only, never touches buffer_mgr
+                    if (
+                        ref_ch is not None
+                        and ch_letter.lower() != ref_ch.lower()
+                        and ref_display_time is not None
+                        and ref_display_spr is not None
+                    ):
+                        from affilabs.utils.graph_helpers import GraphHelpers
+                        display_delta_spr = GraphHelpers.subtract_reference(
+                            display_cycle_time, display_delta_spr,
+                            ref_display_time, ref_display_spr,
+                        )
 
                     if len(display_cycle_time) > 0:
                         max_cycle_time = max(max_cycle_time, display_cycle_time[-1])
@@ -182,6 +209,14 @@ class UIUpdateHelpers:
                     # No data points; draw nothing
                     display_cycle_time = []
                     display_delta_spr = []
+
+                # Apply per-channel time nudge offset (display only — set by left/right arrow in legend)
+                time_offsets = getattr(app.main_window, "_channel_time_offsets", None)
+                if time_offsets and len(display_cycle_time) > 0:
+                    nudge = time_offsets.get(ch_letter.lower(), 0.0)
+                    if nudge != 0.0:
+                        import numpy as _np
+                        display_cycle_time = _np.asarray(display_cycle_time) + nudge
 
                 # Update cycle of interest graph
                 curve = app.main_window.cycle_of_interest_graph.curves[ch_idx]
@@ -191,6 +226,12 @@ class UIUpdateHelpers:
             graph = app.main_window.cycle_of_interest_graph
             if not getattr(graph, '_user_zoomed', False):
                 graph.getPlotItem().enableAutoRange()
+
+            # Re-assert focus on the legend so arrow-key nudge keeps working.
+            # Only if user has previously clicked a channel (avoids stealing focus on startup).
+            legend = getattr(graph, 'interactive_spr_legend', None)
+            if legend is not None and getattr(legend, '_user_has_selected', False):
+                legend.setFocus()
 
             # Update Δ SPR display with current cursor-based delta values
             app._update_delta_display()

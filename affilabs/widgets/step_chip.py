@@ -29,7 +29,7 @@ _SHORT:  dict[str, str] = {
     "connect":   "Connect",
     "calibrate": "Calibrate",
     "method":    "Method",
-    "record":    "Record",
+    "record":    "Experiment",
     "edit":      "Analyse",
     "export":    "Export",
 }
@@ -37,7 +37,7 @@ _LABELS: dict[str, str] = {
     "connect":   "Connect hardware",
     "calibrate": "Calibrate sensors",
     "method":    "Build a method",
-    "record":    "Record experiment",
+    "record":    "Run experiment",
     "edit":      "Review & edit data",
     "export":    "Export results",
 }

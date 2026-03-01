@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from affilabs.ui_styles import Colors, Fonts
+from affilabs.widgets.ui_constants import TableItemDelegate
 
 
 class CycleTableDialog(QDialog):
@@ -195,6 +196,8 @@ class CycleTableDialog(QDialog):
         self.cycle_table.setAlternatingRowColors(True)
         self.cycle_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.cycle_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        if TableItemDelegate is not None:
+            self.cycle_table.setItemDelegate(TableItemDelegate(self.cycle_table))
 
         self.cycle_table.setStyleSheet(
             "QTableWidget {"

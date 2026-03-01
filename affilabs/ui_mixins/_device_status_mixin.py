@@ -289,6 +289,9 @@ class DeviceStatusMixin:
         """Called when hardware scan completes - reset scan button."""
         self.sidebar.set_scan_state(False)  # Use encapsulated method
         logger.debug("Hardware scan complete - button reset")
+        # Mark that at least one scan has run so the Zadig hint can appear
+        if hasattr(self.sidebar, 'mark_scan_attempted'):
+            self.sidebar.mark_scan_attempted()
 
     def _handle_add_hardware(self) -> None:
         """Handle Add Hardware button click - scan for peripheral devices only."""
@@ -404,6 +407,13 @@ class DeviceStatusMixin:
 
         # Show/hide "no devices" message
         self.sidebar.hw_no_devices.setVisible(len(devices) == 0)
+
+        # Show Zadig hint after a failed scan
+        if hasattr(self.sidebar, 'zadig_hint'):
+            if len(devices) == 0 and getattr(self.sidebar, '_scan_attempted', False):
+                self.sidebar.zadig_hint.setVisible(True)
+            else:
+                self.sidebar.zadig_hint.setVisible(False)
 
         # Show "Add Hardware" button only when core module is connected (ctrl_type exists)
         # This allows adding peripherals like Affipump after core connection

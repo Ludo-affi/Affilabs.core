@@ -1213,3 +1213,74 @@ def apply_channel_checkbox_style(checkbox, channel: str, inverted: bool = False)
     """
     checkbox.setFont(get_segment_checkbox_font())
     checkbox.setStyleSheet(get_channel_checkbox_style(channel, inverted=inverted))
+
+
+# ============================================================================
+# FONT SCALE  (Accessibility — Normal / Large Text)
+# ============================================================================
+
+class FontScale:
+    """Global 2-tier font scale for accessibility.
+
+    Call ``FontScale.init()`` once at process start (before any widgets are
+    created).  All inline ``font-size`` values should be wrapped with
+    ``FontScale.px(base_px)`` so they are scaled automatically when the user
+    selects "Large Text" mode in the Accessibility panel.
+
+    The preference is persisted in ``config/app_prefs.json``.
+    A restart is required for the change to take effect.
+    """
+
+    _scale: float = 1.0  # 1.0 = Normal  |  1.20 = Large
+    _PREFS_FILENAME: str = "app_prefs.json"
+
+    @classmethod
+    def _prefs_path(cls):
+        """Return Path to the app prefs JSON file (writable in both dev and frozen)."""
+        import sys
+        from pathlib import Path
+        if getattr(sys, 'frozen', False):
+            # Frozen exe: __file__ is inside read-only _MEIPASS.
+            # Write config/ next to the executable instead.
+            return Path(sys.executable).parent / "config" / cls._PREFS_FILENAME
+        return Path(__file__).parent.parent / "config" / cls._PREFS_FILENAME
+
+    @classmethod
+    def init(cls) -> None:
+        """Load font scale from prefs file.  Call once before widget creation."""
+        import json
+        try:
+            p = cls._prefs_path()
+            if p.exists():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                cls._scale = 1.20 if data.get("large_text", False) else 1.0
+        except Exception:
+            pass  # silently fall back to default
+
+    @classmethod
+    def px(cls, base: int) -> int:
+        """Return *base* pixel size scaled by the current font scale factor."""
+        return round(base * cls._scale)
+
+    @classmethod
+    def is_large(cls) -> bool:
+        """Return True when Large Text mode is active."""
+        return cls._scale > 1.0
+
+    @classmethod
+    def save(cls, large: bool) -> None:
+        """Persist the font-scale preference.  Applied on next app restart."""
+        import json
+        try:
+            p = cls._prefs_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            data: dict = {}
+            if p.exists():
+                try:
+                    data = json.loads(p.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            data["large_text"] = large
+            p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except Exception:
+            pass

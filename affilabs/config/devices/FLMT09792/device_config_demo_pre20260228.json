@@ -1,0 +1,90 @@
+{
+  "device_info": {
+    "config_version": "1.0",
+    "created_date": "2026-01-04T18:50:07.789703",
+    "last_modified": "2026-02-22T17:38:34.541274",
+    "device_id": null
+  },
+  "hardware": {
+    "led_pcb_model": "warm_white",
+    "led_type_code": "LWW",
+    "led_pcb_serial": null,
+    "spectrometer_model": "Flame-T",
+    "spectrometer_serial": "FLMT09792",
+    "controller_model": "pico_p4proplus",
+    "controller_serial": null,
+    "optical_fiber_diameter_um": 200,
+    "polarizer_type": "barrel",
+    "servo_model": "HS-55MG",
+    "servo_s_position": 4,
+    "servo_p_position": 127,
+    "firmware_version": "affinite_P4PRO v2.3",
+    "controller_type": "PicoP4PROPLUS"
+  },
+  "timing_parameters": {
+    "pre_led_delay_ms": 35.0,
+    "post_led_delay_ms": 5.0,
+    "led_off_period_ms": 5.0,
+    "detector_wait_before_ms": 35.0,
+    "detector_window_ms": 210.0,
+    "detector_wait_after_ms": 5.0,
+    "led_a_delay_ms": 0,
+    "led_b_delay_ms": 0,
+    "led_c_delay_ms": 0,
+    "led_d_delay_ms": 0,
+    "min_integration_time_ms": 50,
+    "led_rise_fall_time_ms": 5
+  },
+  "frequency_limits": {
+    "4_led_target_hz": 1.0
+  },
+  "calibration": {
+    "dark_calibration_date": null,
+    "s_mode_calibration_date": null,
+    "p_mode_calibration_date": null,
+    "polarizer_calibration_date": null,
+    "polarizer_extinction_ratio_percent": null,
+    "factory_calibrated": false,
+    "user_calibrated": false,
+    "preferred_calibration_mode": "global",
+    "integration_time_ms": 21.06998784192043,
+    "num_scans": null,
+    "led_intensity_a": 255,
+    "led_intensity_b": 255,
+    "led_intensity_c": 110,
+    "led_intensity_d": 108,
+    "spr_model_path": null,
+    "spr_model_calibration_date": null
+  },
+  "maintenance": {
+    "last_maintenance_date": null,
+    "total_measurement_cycles": 0,
+    "led_on_hours": 0.12722226972222223,
+    "next_maintenance_due": null
+  },
+  "device_serial": "FLMT09792",
+  "device_type": "PicoP4PRO",
+  "detector_model": "USB4000",
+  "led_type": "LCW",
+  "led_type_full": "Luminus Cool White",
+  "oem_calibration_version": "1.1",
+  "calibration_date": "2026-01-04T18:50:07.789703",
+  "polarizer": {
+    "s_position": 4,
+    "p_position": 127,
+    "sp_ratio": 1.6637032970049692,
+    "polarizer_type": "BARREL",
+    "method": "servo_calibration_barrel_detection",
+    "led_intensity_used": "20%",
+    "s_intensity": 19525.223635773706,
+    "p_intensity": 11736.001047135862,
+    "s_stable_range": [
+      124,
+      136
+    ],
+    "p_stable_range": [
+      4,
+      4
+    ]
+  }
+}

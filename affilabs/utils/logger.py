@@ -94,18 +94,31 @@ if ENABLE_EMOJI_STRIP:
     )
 
 
+def _resolve_record(record) -> None:
+    """Resolve record.msg % record.args in-place, then clear args.
+
+    Must be called before any format() call so that RotatingFileHandler.shouldRollover()
+    (which calls format() internally) and the actual emit format() call both see a
+    pre-resolved msg with no args — preventing double-format TypeError/ValueError.
+    """
+    if record.args:
+        try:
+            record.msg = str(record.msg) % record.args
+        except Exception:
+            # If formatting fails, stringify everything safely so the message
+            # still appears in the log rather than silently vanishing.
+            try:
+                record.msg = f"{record.msg!r} % {record.args!r}"
+            except Exception:
+                record.msg = repr(record.msg)
+        record.args = None
+
+
 class SafeConsoleFormatter(Formatter):
     """Formatter that optionally removes emojis/special chars for Windows console compatibility."""
 
     def format(self, record):
-        # Pre-resolve msg % args onto record so double-format calls (e.g. from
-        # RotatingFileHandler.shouldRollover) don't raise TypeError on second pass.
-        if record.args:
-            try:
-                record.msg = record.getMessage()
-                record.args = None
-            except Exception:
-                pass
+        _resolve_record(record)
         msg = super().format(record)
         if ENABLE_EMOJI_STRIP:
             msg = msg.encode("cp1252", errors="ignore").decode("cp1252")
@@ -116,12 +129,7 @@ class _SafeFormatter(Formatter):
     """Resolve msg % args once so double-format (RotatingFileHandler.shouldRollover) never raises."""
 
     def format(self, record):
-        if record.args:
-            try:
-                record.msg = record.getMessage()
-                record.args = None
-            except Exception:
-                pass
+        _resolve_record(record)
         return super().format(record)
 
 
@@ -161,8 +169,9 @@ class ConditionalThreadFilterConsoleHandler(logging.StreamHandler):
             return
         try:
             super().emit(record)
-        except (ValueError, OSError):
-            # Stream may be closed during interpreter shutdown; ignore safely
+        except Exception:
+            # Catch all emit errors: UnicodeEncodeError on Windows console,
+            # ValueError/OSError on stream close during shutdown, etc.
             with contextlib.suppress(Exception):
                 self.flush()
 

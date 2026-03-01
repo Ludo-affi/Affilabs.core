@@ -114,9 +114,23 @@ No code changes needed — `TipsManager` reads the file at runtime.
 
 ---
 
-## Future Placements (not implemented)
+## Sparq Integration (live)
 
-- **Spark proactive messages:** `SparkHelpWidget` pushes a tip as a system message when the
-  user has been idle for 30+ seconds in the Method Builder or Edits tab.
+**`SparkHelpWidget.push_tip(tags=None)`** — pushes a `💡 {tip_text}` system message into
+the chat via `push_system_message()`. Called automatically from `showEvent` with a 400 ms
+delay (so the panel finishes animating before the tip appears).
+
+- Tags default to `None` → TipsManager falls back to `"general"` tips
+- Caller can pass hardware-specific tags (e.g. `["p4spr", "general"]`) for targeted tips
+- `self._tips_manager` is lazily created on first call and reused
+- Full exception guard — tip failure never affects Sparq
+
+**`showEvent`** override calls `push_tip()` on every open. Frequency rationale: users
+open Sparq infrequently; a tip on each open is low-noise and adds value.
+
+## Future Placements
+
+- Idle-triggered tips: push when user idle 30+ s in Method Builder or Edits tab
+- Tab-contextual tags: pass `["calibration"]` during startup dialog, `["injection"]` when pump is running
 - **Sidebar ticker:** A rotating `QLabel` strip at the bottom of the Spark sidebar, cycling
   tips every 45 seconds during acquisition.

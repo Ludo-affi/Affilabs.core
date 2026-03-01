@@ -50,11 +50,27 @@
       "ml_training_include": true,
       "notes": null
     },
+    "ST00011": {
+      "serial": "ST00011",
+      "device_type": "PicoP4SPR",
+      "detector_model": "USB4000",
+      "status": "in-house",
+      "shipped_date": null,
+      "customer": null,
+      "order": null,
+      "calibration_files": [
+        "device_ST00011_20260227.json",
+        "device_ST00011_20260228.json"
+      ],
+      "latest_calibration": "device_ST00011_20260228.json",
+      "ml_training_include": true,
+      "notes": "Phase Photonics detector unit. ST-prefix serials are Phase Photonics builds. Detector did not meet manufacturer quality standards \u00e2\u20ac\u201d reverted to Ocean Optics detector."
+    },
     "ST00012": {
       "serial": "ST00012",
       "device_type": "PicoP4SPR",
-      "detector_model": "USB4000",
-      "status": "unknown",
+      "detector_model": "PhasePhotonics",
+      "status": "in-house",
       "shipped_date": null,
       "customer": null,
       "order": null,
@@ -63,7 +79,22 @@
       ],
       "latest_calibration": "device_ST00012_20260126.json",
       "ml_training_include": true,
-      "notes": null
+      "notes": "Phase Photonics detector unit. ST-prefix serials are Phase Photonics builds. Detector did not meet manufacturer quality standards \u00e2\u20ac\u201d reverted to Ocean Optics detector."
+    },
+    "FLMT09792": {
+      "serial": "FLMT09792",
+      "device_type": "PicoP4SPR",
+      "detector_model": "Flame-T",
+      "status": "in-house",
+      "shipped_date": null,
+      "customer": null,
+      "order": null,
+      "calibration_files": [
+        "device_FLMT09792_20260228.json"
+      ],
+      "latest_calibration": "device_FLMT09792_20260228.json",
+      "ml_training_include": true,
+      "notes": "Korea distributor demo unit. Barrel polarizer, OWW LEDs (P4SPR 2.0). Previously paired with ST00012 Phase Photonics controller \u00e2\u20ac\u201d detector extracted and re-provisioned as standalone Flame-T unit 2026-02-28. Calibration bug fixed during provisioning: polarizer misclassified as CIRCULAR due to dark_current threshold error \u00e2\u20ac\u201d fixed in calibrate_polarizer.py."
     },
     "ST00014": {
       "serial": "ST00014",
@@ -80,6 +111,21 @@
       "latest_calibration": "device_ST00014_20260204.json",
       "ml_training_include": true,
       "notes": null
+    },
+    "FLMT10979": {
+      "serial": "FLMT10979",
+      "device_type": "PicoP4SPR",
+      "detector_model": "Flame-T",
+      "status": "in-house",
+      "shipped_date": null,
+      "customer": null,
+      "order": null,
+      "calibration_files": [
+        "device_FLMT10979_20260228.json"
+      ],
+      "latest_calibration": "device_FLMT10979_20260228.json",
+      "ml_training_include": true,
+      "notes": "New production unit. Replaces ST00012 (Phase Photonics build \u00e2\u20ac\u201d reverted). FLMT10979 is the previous detector from the Korean distributor demo (FLMT09792 assembly). Detected 2026-02-28. Awaiting OEM calibration (controller not yet flashed with P4SPR firmware at time of detection)."
     }
   }
 }

@@ -11,13 +11,14 @@
 
 `AccessibilityPanel` is a fixed-width (380 px) `QFrame` injected into the main horizontal layout immediately to the right of the icon rail. Hidden by default, toggled by the eye button. Mutually exclusive with the User panel — opening one closes the other. Opening the panel also collapses the main sidebar via `AffilabsCoreUI.collapse_sidebar()`.
 
-**Three control sections, each propagating to all graphs in real time:**
+**Four control sections, each propagating to all graphs in real time:**
 
 | Section | Controls | Signal emitted |
 |---------|----------|----------------|
 | Colour Palette | 7 named palette card buttons | `palette_changed(str, list[str])` |
 | Line Style | 3 style cards (Solid / Dashed / Dotted) | `line_style_changed(str, Qt.PenStyle)` |
 | Appearance | Active Cycle Dark Mode pill toggle | `dark_mode_changed(bool)` |
+| Appearance | Large Text pill toggle | `large_text_changed(bool)` |
 
 **Graphs affected by palette and line style:**
 - Full Timeline live sensorgram (`SensorgramGraph`)
@@ -124,7 +125,75 @@ Pill toggle (○ off / ● on, 44 × 26 px, checkable `QPushButton`). Emits `dar
 
 ---
 
-## 5. Public API
+## 5. Large Text (Font Scale)
+
+Pill toggle (○ off / ● on, 44 × 26 px, checkable `QPushButton`) in the **Appearance** section, below Active Cycle Dark Mode. Emits `large_text_changed(bool)`. Adds a divider (`QFrame.HLine`) between the two appearance rows.
+
+**Mechanism:** Global `FontScale` singleton in `affilabs/ui_styles.py`. All inline `font-size` values in key UI zones are written as `FontScale.px(base_int)` rather than literal strings.
+
+| Scale | Factor | `FontScale.px(13)` → | `FontScale.px(21)` → |
+|-------|--------|----------------------|----------------------|
+| Normal (off) | 1.00 | 13 px | 21 px |
+| Large (on) | 1.20 | 16 px | 25 px |
+
+**Rules:**
+- Scale is read **once at process start** (before `Application` is constructed) via `FontScale.init()` which reads `config/app_prefs.json`
+- Toggling writes the new value to `config/app_prefs.json` immediately via `FontScale.save(large: bool)`
+- **A restart is required to apply the change.** This is industry-standard behaviour for CSS-defined font sizes — `QApplication.setFont()` does not override explicit `font-size: Npx` strings in stylesheets
+- On toggle, a Sparq bubble message appears: *"✓ Large Text enabled. Restart Affilabs.core to apply the change."* (or disabled equivalent)
+- Toggle state is initialised from `FontScale.is_large()` at panel construction — reflects the _current active_ scale
+
+**`FontScale` API (`affilabs/ui_styles.py`):**
+
+| Method | Description |
+|--------|-------------|
+| `FontScale.init()` | Load `app_prefs.json` and set global scale. Call before widget creation. |
+| `FontScale.px(base: int) → int` | Return `round(base × scale)`. No-op at Normal (returns base unchanged). |
+| `FontScale.is_large() → bool` | True when scale > 1.0. |
+| `FontScale.save(large: bool)` | Persist to `config/app_prefs.json`. Merge-writes; does not clobber other prefs. |
+
+**Prefs file:** `config/app_prefs.json` — key `"large_text": true/false`. Created on first save. Other keys are preserved.
+
+**Widget coverage — zones using `FontScale.px()`:**
+
+| File | Elements scaled |
+|------|-----------------|
+| `affilabs/sidebar_tabs/AL_method_builder.py` | NOW RUNNING badge (13), cycle type badge (14), cycle index (14), countdown (21), next/experiment time labels (13), Build Method button (15), queue table rows (14), column headers (12), footer label (13), Retrieve Method button (13) |
+| `affilabs/widgets/injection_action_bar.py` | Header (13), column headers (12), per-channel countdown (15), status labels (14), concentration labels (12), legend strip (13), upcoming injection labels (13), set_role_label_color inline calls (12), countdown lbl init/tick sizes (14) |
+| `affilabs/ui_mixins/_panel_builder_mixin.py` | 6 section titles (Primary Cycle View, Processed Data, Goodness of Fit, Mathematical Model, Kinetic Results, Export Data) — all at 18 px |
+| `affilabs/widgets/graph_components.py` | `GraphContainer` title label (18 px) |
+| `affilabs/tabs/edits/_ui_builders.py` | Analysis title strip (16), Recorded Cycles title (16), empty-state heading (16) |
+
+**Elements NOT scaled (intentional):**
+- `AccessibilityPanel` internal chrome (header, section labels at 12–14 px) — avoids recursive dependency
+
+---
+
+## 6. Per-User Preferences
+
+### Behaviour
+Colour palette and font size preferences are **saved to and loaded from the active user profile**. Switching users (via the User sidebar panel) will apply that user's stored preferences on next panel open.
+
+A dynamic note at the top of the panel reads:
+> *💾 Saved to {username}'s profile — colour and font size are personal.*
+
+If no user is active (edge case at startup), the note falls back to generic text.
+
+### Implementation
+- `_refresh_saved_note()` — called each time `toggle()` shows the panel. Reads `sidebar.user_profile_manager.get_current_user()` and updates `self._saved_note` (`QLabel`) text.
+- The label is stored as `self._saved_note` (instance var) so it can be updated dynamically without rebuilding the panel.
+
+### Storage
+Currently `config/app_prefs.json` is global (not per-user). The note reflects **intent** — per-user storage is the planned migration target. When `user_profile_manager` gains a `get_pref / set_pref` API, load/save calls in `FontScale` and palette selection should be routed through it keyed by `username`.
+- `accessibility_panel.py` stylesheet text — same reason
+- Spectroscopy / transmission graph axes — pyqtgraph labels, not Qt CSS
+- Graph axis tick labels — also pyqtgraph
+- Calibration QC dialog — modal, short-lived, not a daily-use surface
+- Navigation rail / tab bar labels — compact by design; scaling would break fixed-width layout constraints
+
+---
+
+## 6. Public API
 
 | Method | Returns | Description |
 |--------|---------|-------------|
@@ -132,19 +201,20 @@ Pill toggle (○ off / ● on, 44 × 26 px, checkable `QPushButton`). Emits `dar
 | `get_active_palette()` | `list[str]` | 4-element hex list for current palette |
 | `get_active_line_style()` | `Qt.PenStyle` | Current line style enum |
 | `is_dark_mode()` | `bool` | Whether Active Cycle dark mode is on |
+| `is_large_text()` | `bool` | Whether Large Text mode is currently active (reads live scale from `FontScale.is_large()`) |
 | `set_sidebar(sidebar)` | — | Store sidebar reference (unused internally) |
 
-Internal state: `_active_palette_id: str`, `_active_line_style_id: str`, `_dark_mode: bool`, `_palette_btns: dict[str, QPushButton]`, `_line_btns: dict[str, QPushButton]`.
+Internal state: `_active_palette_id: str`, `_active_line_style_id: str`, `_dark_mode: bool`, `_large_text: bool`, `_palette_btns: dict[str, QPushButton]`, `_line_btns: dict[str, QPushButton]`.
 
 ---
 
-## 6. Backwards Compatibility
+## 7. Backwards Compatibility
 
 `accessibility_panel.colorblind_check` is a `_DummyCheck` instance with no-op shims for `isChecked()`, `setChecked()`, `blockSignals()`, `toggled`, `stateChanged`. Replaces the removed `sidebar.colorblind_check` without breaking `main.py` connections.
 
 ---
 
-## 7. Icon Rail Integration
+## 8. Icon Rail Integration
 
 | Property | Value |
 |----------|-------|
@@ -155,16 +225,19 @@ Internal state: `_active_palette_id: str`, `_active_line_style_id: str`, `_dark_
 
 ---
 
-## 8. Key File References
+## 9. Key File References
 
 | File | Role |
 |------|------|
 | `affilabs/widgets/accessibility_panel.py` | `AccessibilityPanel`, `PALETTES`, `LINE_STYLES`, `_DummyCheck` |
+| `affilabs/ui_styles.py` | `FontScale` singleton — `init()`, `px()`, `is_large()`, `save()` |
 | `affilabs/widgets/icon_rail.py` | Eye button, mutual exclusion wiring |
-| `affilabs/affilabs_core_ui.py` | Signal wiring (lines ~507–509), `_on_palette_changed`, `_on_line_style_changed`, `_on_dark_mode_toggled`, `_NEON_COLORS` |
+| `affilabs/affilabs_core_ui.py` | Signal wiring (lines ~507–512), `_on_palette_changed`, `_on_line_style_changed`, `_on_dark_mode_toggled`, `_on_large_text_changed`, `_NEON_COLORS` |
 | `affilabs/plot_helpers.py` | `_active_channel_colors()`, `add_channel_curves()` — read `ACTIVE_GRAPH_COLORS` at call time |
 | `affilabs/tabs/edits/_alignment_mixin.py` | `update_barchart_colors()` — edits graph curves, labels, channel buttons, bar chart |
 | `affilabs/tabs/edits/_binding_plot_mixin.py` | `_ch_colors()` — reads `ACTIVE_GRAPH_COLORS` at plot time |
 | `affilabs/widgets/graphs.py` | `SensorgramGraph` + `SegmentGraph` — `update_colors()`, `update_line_style()` |
 | `affilabs/tabs/analysis_tab.py` | `overlay_graph_curves` via `_propagate_to_analysis_tab()` |
 | `settings/settings.py` | `ACTIVE_GRAPH_COLORS` (dict), `ACTIVE_LINE_STYLE` (int) |
+| `config/app_prefs.json` | Runtime prefs file — `{"large_text": true/false}`. Created on first Large Text toggle. |
+| `main.py` | `FontScale.init()` called before `Application(sys.argv)` — before any widget is created |

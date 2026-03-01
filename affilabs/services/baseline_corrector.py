@@ -9,8 +9,6 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from scipy import signal
-from scipy.ndimage import minimum_filter1d
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +138,10 @@ class BaselineCorrector:
             # Ensure odd window size
             if window_size % 2 == 0:
                 window_size += 1
+
+        # Lazy imports — avoids deadlock on OneDrive-backed venvs at module load time
+        from scipy import signal  # noqa: PLC0415
+        from scipy.ndimage import minimum_filter1d  # noqa: PLC0415
 
         # Apply minimum filter (baseline estimation)
         baseline = minimum_filter1d(transmission, size=window_size, mode="nearest")

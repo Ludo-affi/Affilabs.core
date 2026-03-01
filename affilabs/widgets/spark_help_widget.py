@@ -9,8 +9,11 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QScrollArea, QFrame, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QKeyEvent, QFont
+from PySide6.QtCore import Qt, Signal, QTimer, QSize
+from PySide6.QtGui import QKeyEvent, QFont, QPainter, QPixmap, QIcon
+from PySide6.QtSvg import QSvgRenderer
+import os
+import time
 from datetime import datetime
 import threading
 import subprocess
@@ -29,6 +32,92 @@ try:
     TTS_AVAILABLE = True
 except ImportError:
     TTS_AVAILABLE = False
+
+
+# ---------------------------------------------------------------------------
+# Module-level cached icons — created once on first use, reused per bubble.
+# ---------------------------------------------------------------------------
+_THUMBS_UP_ICON: QIcon | None = None
+_THUMBS_DOWN_ICON: QIcon | None = None
+_BUG_ICON: QIcon | None = None
+
+
+def _get_bug_icon() -> QIcon:
+    """Return a 16×16 bug QIcon loaded from bug_icon.svg, created once and cached."""
+    global _BUG_ICON
+    if _BUG_ICON is None:
+        try:
+            from affilabs.utils.resource_path import get_affilabs_resource
+            svg_path = get_affilabs_resource("ui/img/bug_icon.svg")
+            renderer = QSvgRenderer(str(svg_path))
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            _BUG_ICON = QIcon(pixmap)
+        except Exception:
+            # Fallback: render an inline SVG so we never get a blank button
+            _svg = (
+                '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
+                '<ellipse cx="12" cy="14" rx="5" ry="6" stroke="#7D5A00" stroke-width="1.5"/>'
+                '<circle cx="12" cy="7" r="3" stroke="#7D5A00" stroke-width="1.5"/>'
+                '<line x1="10" y1="5" x2="8" y2="3" stroke="#7D5A00" stroke-width="1.5" stroke-linecap="round"/>'
+                '<line x1="14" y1="5" x2="16" y2="3" stroke="#7D5A00" stroke-width="1.5" stroke-linecap="round"/>'
+                '</svg>'
+            )
+            renderer = QSvgRenderer(_svg.encode())
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            renderer.render(painter)
+            painter.end()
+            _BUG_ICON = QIcon(pixmap)
+    return _BUG_ICON
+
+
+def _get_thumbs_up_icon() -> QIcon:
+    """Return a 16×16 thumbs-up QIcon, created once and cached."""
+    global _THUMBS_UP_ICON
+    if _THUMBS_UP_ICON is None:
+        _svg = (
+            '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
+            '<path d="M7 10v12l8-1V10l-4-6c-1 0-1.5.5-1.5 1.5S8.5 8 7 10Z"'
+            ' stroke="currentColor" stroke-width="1" fill="none"/>'
+            '<path d="M7 10H4a1 1 0 00-1 1v8a1 1 0 001 1h3"'
+            ' stroke="currentColor" stroke-width="1" fill="none"/>'
+            '</svg>'
+        )
+        renderer = QSvgRenderer(_svg.encode())
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        _THUMBS_UP_ICON = QIcon(pixmap)
+    return _THUMBS_UP_ICON
+
+
+def _get_thumbs_down_icon() -> QIcon:
+    """Return a 16×16 thumbs-down QIcon, created once and cached."""
+    global _THUMBS_DOWN_ICON
+    if _THUMBS_DOWN_ICON is None:
+        _svg = (
+            '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
+            '<path d="M17 14V2l-8 1v11l4 6c1 0 1.5-.5 1.5-1.5S15.5 16 17 14Z"'
+            ' stroke="currentColor" stroke-width="1" fill="none"/>'
+            '<path d="M17 14h3a1 1 0 001-1V5a1 1 0 00-1-1h-3"'
+            ' stroke="currentColor" stroke-width="1" fill="none"/>'
+            '</svg>'
+        )
+        renderer = QSvgRenderer(_svg.encode())
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        _THUMBS_DOWN_ICON = QIcon(pixmap)
+    return _THUMBS_DOWN_ICON
 
 
 def _format_spark_text(text: str) -> str:
@@ -111,7 +200,6 @@ class QuestionInput(QTextEdit):
                     self.attached_images.append(path)
                     # Show feedback in the text input
                     current_text = self.toPlainText()
-                    import os
                     filename = os.path.basename(path)
                     if current_text and not current_text.endswith('\n'):
                         current_text += '\n'
@@ -215,22 +303,7 @@ class MessageBubble(QFrame):
             self.thumbs_up_btn.setFixedSize(24, 24)
             self.thumbs_up_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-            # Create thumbs up SVG icon
-            thumbs_up_svg = """
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M7 10v12l8-1V10l-4-6c-1 0-1.5.5-1.5 1.5S8.5 8 7 10Z" stroke="currentColor" stroke-width="1" fill="none"/>
-                <path d="M7 10H4a1 1 0 00-1 1v8a1 1 0 001 1h3" stroke="currentColor" stroke-width="1" fill="none"/>
-            </svg>
-            """
-            from PySide6.QtSvg import QSvgRenderer
-            from PySide6.QtGui import QPainter, QPixmap, QIcon
-            svg_renderer = QSvgRenderer(thumbs_up_svg.encode())
-            pixmap = QPixmap(16, 16)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            svg_renderer.render(painter)
-            painter.end()
-            self.thumbs_up_btn.setIcon(QIcon(pixmap))
+            self.thumbs_up_btn.setIcon(_get_thumbs_up_icon())
 
             self.thumbs_up_btn.setStyleSheet("""
                 QPushButton {
@@ -255,20 +328,7 @@ class MessageBubble(QFrame):
             self.thumbs_down_btn.setFixedSize(24, 24)
             self.thumbs_down_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-            # Create thumbs down SVG icon
-            thumbs_down_svg = """
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M17 14V2l-8 1v11l4 6c1 0 1.5-.5 1.5-1.5S15.5 16 17 14Z" stroke="currentColor" stroke-width="1" fill="none"/>
-                <path d="M17 14h3a1 1 0 001-1V5a1 1 0 00-1-1h-3" stroke="currentColor" stroke-width="1" fill="none"/>
-            </svg>
-            """
-            svg_renderer = QSvgRenderer(thumbs_down_svg.encode())
-            pixmap = QPixmap(16, 16)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            svg_renderer.render(painter)
-            painter.end()
-            self.thumbs_down_btn.setIcon(QIcon(pixmap))
+            self.thumbs_down_btn.setIcon(_get_thumbs_down_icon())
 
             self.thumbs_down_btn.setStyleSheet("""
                 QPushButton {
@@ -290,13 +350,14 @@ class MessageBubble(QFrame):
 
         layout.addLayout(bottom_layout)
 
-        # Size policies: user bubbles shrink-to-fit with max width, AI bubbles constrained too
+        # Size policies: user bubbles shrink-to-fit, AI bubbles fill panel width
         if is_user:
             self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
-            self.setMaximumWidth(290)  # Give user bubbles more room to expand before wrapping
+            self.setMaximumWidth(280)
         else:
-            self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-            self.setMaximumWidth(310)  # Give AI bubbles more breathing room for text
+            # Expanding forces Qt to give the bubble the full available width,
+            # which in turn gives the inner QLabel a proper width for word-wrap.
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.setMinimumHeight(40)
 
     def update_text(self, text: str):
@@ -395,8 +456,7 @@ class InteractiveMessageBubble(QFrame):
         """)
         layout.addWidget(time_label)
 
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        self.setMaximumWidth(310)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.setMinimumHeight(40)
 
     def _on_option_clicked(self, option: str):
@@ -528,7 +588,6 @@ class SparkHelpWidget(QWidget):
         self.chat_layout.setContentsMargins(4, 8, 4, 8)
 
         # Ensure content stays at top, not centered
-        from PySide6.QtWidgets import QSizePolicy
         self.chat_container.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
         scroll.setWidget(self.chat_container)
@@ -558,19 +617,18 @@ class SparkHelpWidget(QWidget):
         button_layout = QHBoxLayout()
         button_layout.setSpacing(6)
 
-        # Report Bug button - small icon-only, left of Clear
-        bug_btn = QPushButton("🐛")
+        # Report Bug button - SVG icon, left of Clear
+        bug_btn = QPushButton()
+        bug_btn.setIcon(_get_bug_icon())
+        bug_btn.setIconSize(QSize(16, 16))
         bug_btn.setFixedSize(36, 36)
         bug_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        bug_btn.setToolTip("Report a Bug (screenshot + logs included automatically)")
+        bug_btn.setToolTip("Report a Bug — submitted automatically with logs + screenshot")
         bug_btn.setStyleSheet("""
             QPushButton {
                 background: #FFF3CD;
-                color: #7D5A00;
                 border: 1px solid #F0C040;
                 border-radius: 6px;
-                font-size: 16px;
-                font-weight: 600;
                 padding: 0px;
             }
             QPushButton:hover {
@@ -583,6 +641,33 @@ class SparkHelpWidget(QWidget):
         """)
         bug_btn.clicked.connect(self._on_report_bug_clicked)
         button_layout.addWidget(bug_btn)
+
+        # Tip button — user-prompted pro-tips
+        tip_btn = QPushButton("💡 Tip")
+        tip_btn.setMinimumWidth(60)
+        tip_btn.setMinimumHeight(36)
+        tip_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        tip_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        tip_btn.setToolTip("Get a random Sparq pro-tip")
+        tip_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 122, 255, 0.08);
+                color: #007AFF;
+                border: 1px solid rgba(0, 122, 255, 0.25);
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 600;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background: rgba(0, 122, 255, 0.15);
+            }
+            QPushButton:pressed {
+                background: rgba(0, 122, 255, 0.25);
+            }
+        """)
+        tip_btn.clicked.connect(self.push_tip)
+        button_layout.addWidget(tip_btn)
 
         # Clear chat button - flexible sizing
         clear_btn = QPushButton("Clear")
@@ -619,7 +704,7 @@ class SparkHelpWidget(QWidget):
         self.send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4A90D9;
+                background-color: #007AFF;
                 color: #FFFFFF;
                 border: none;
                 border-radius: 8px;
@@ -628,10 +713,10 @@ class SparkHelpWidget(QWidget):
                 padding: 0px;
             }
             QPushButton:hover {
-                background-color: #3A7BC8;
+                background-color: #0066DD;
             }
             QPushButton:pressed {
-                background-color: #2E6BAF;
+                background-color: #005ECB;
             }
         """)
         self.send_btn.clicked.connect(self._handle_question)
@@ -771,7 +856,6 @@ class SparkHelpWidget(QWidget):
 
             # Start animation timer (create fresh each query)
             try:
-                import time
                 self._thinking_start_time = time.time()
                 self._thinking_dots = 0
                 if self._thinking_timer is not None:
@@ -1212,37 +1296,61 @@ class SparkHelpWidget(QWidget):
         self._handle_question_inner()
 
     def _submit_bug_report(self, description: str, attached_images: list = None):
-        """Generate bug report draft and display for user to copy."""
-        self.push_system_message("Generating bug report…")
+        """Submit bug report — auto-uploads via Sparq Coach; falls back to copy-paste draft."""
+        self.push_system_message("⏳ Sending bug report…")
+
+        # Take screenshot on main thread — QWidget.grab() is not thread-safe
+        from affilabs.services.bug_reporter import _take_screenshot
+        screenshot_bytes, _ = _take_screenshot()
 
         def _generate():
             try:
-                from affilabs.services.bug_reporter import send_bug_report
+                from affilabs.services.bug_reporter import send_bug_report_auto
                 user_name = ""
                 if self._user_manager:
                     try:
                         user_name = self._user_manager.get_active_user() or ""
                     except Exception:
                         pass
-                ok, draft_text = send_bug_report(
-                    description, 
-                    user_name=user_name, 
-                    additional_images=attached_images or []
+                auto_submitted, mode, result = send_bug_report_auto(
+                    description,
+                    user_name=user_name,
+                    screenshot_bytes=screenshot_bytes,
+                    additional_images=attached_images or [],
                 )
             except Exception as e:
-                ok, draft_text = False, f"Failed to generate: {e}"
-            
-            def show_draft():
-                if ok:
-                    self.push_system_message("✅ Bug report draft ready! Copy the text below and email it to info@affiniteinstruments.com")
-                    # Push the draft in a code block so it's easy to select/copy
-                    bubble = MessageBubble(f"```\n{draft_text}\n```", is_user=False)
+                auto_submitted, mode, result = False, "draft", f"Error: {e}"
+
+            def show_result():
+                if auto_submitted:
+                    # Success — clean one-liner confirmation
+                    email = ""
+                    try:
+                        import json
+                        from pathlib import Path
+                        acct = json.loads(Path("config/sparq_account.json").read_text())
+                        email = acct.get("owner_email", "")
+                    except Exception:
+                        pass
+                    msg = f"✅ Report submitted (#{result})."
+                    if email:
+                        msg += f" We\'ll follow up at {email}."
+                    self.push_system_message(msg)
+                elif mode == "limit":
+                    self.push_system_message(f"⚠️ {result}")
+                else:
+                    # Draft fallback — show copy-paste block
+                    self.push_system_message(
+                        "⚠️ Couldn't reach Sparq servers — this can happen if you're offline "
+                        "or on a restricted network.\n\n"
+                        "**Please email your report to: info@affiniteinstruments.com**\n"
+                        "Copy the text below and paste it into a new email:"
+                    )
+                    bubble = MessageBubble(f"```\n{result}\n```", is_user=False)
                     self.chat_layout.addWidget(bubble, alignment=Qt.AlignmentFlag.AlignLeft)
                     QTimer.singleShot(50, self._scroll_to_bottom)
-                else:
-                    self.push_system_message(f"❌ {draft_text}")
-            
-            QTimer.singleShot(0, show_draft)
+
+            QTimer.singleShot(0, show_result)
 
         threading.Thread(target=_generate, daemon=True).start()
 
@@ -1255,6 +1363,27 @@ class SparkHelpWidget(QWidget):
         bubble = MessageBubble(text, is_user=False)
         self.chat_layout.addWidget(bubble, alignment=Qt.AlignmentFlag.AlignLeft)
         QTimer.singleShot(50, self._scroll_to_bottom)
+
+    def push_tip(self, tags: list[str] | None = None) -> None:
+        """Push a proactive pro-tip from TipsManager into the chat.
+
+        Called on showEvent each time Sparq is opened (once per show).
+        Tags filter to context-relevant tips; falls back to general tips.
+        """
+        try:
+            from affilabs.services.spark.tips_manager import TipsManager
+            if not hasattr(self, '_tips_manager') or self._tips_manager is None:
+                self._tips_manager = TipsManager()
+            text = self._tips_manager.get_tip_text(tags=tags)
+            if text:
+                self.push_system_message(f"\U0001f4a1 {text}")
+        except Exception:
+            pass  # Tips are non-critical — never block Sparq
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        """Handle Sparq panel becoming visible."""
+        super().showEvent(event)
+        # Tips are now user-prompted via the 💡 Tip button — no auto-push on open.
 
     def push_interactive_message(self, text: str, options: list[str]) -> InteractiveMessageBubble:
         """Push a message with clickable option buttons into the chat.

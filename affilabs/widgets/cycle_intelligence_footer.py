@@ -138,7 +138,7 @@ class CycleIntelligenceFooter(QFrame):
         def _metric_pair(prefix: str, value: str, tooltip: str) -> tuple[QLabel, QLabel]:
             lbl_p = QLabel(prefix)
             lbl_p.setStyleSheet(
-                f"font-size: 10px; color: #8E8E93; font-family: {_FONT}; background: transparent;"
+                f"font-size: 11px; color: #8E8E93; font-family: {_FONT}; background: transparent;"
             )
             lbl_v = QLabel(value)
             lbl_v.setStyleSheet(
@@ -163,7 +163,7 @@ class CycleIntelligenceFooter(QFrame):
 
         self._stab_dot = QLabel("●")
         self._stab_dot.setStyleSheet(
-            f"font-size: 9px; color: {_DOT_GREY}; font-family: {_FONT}; background: transparent;"
+            f"font-size: 11px; color: {_DOT_GREY}; font-family: {_FONT}; background: transparent;"
         )
         self._stab_text = QLabel("—")
         self._stab_text.setStyleSheet(
@@ -456,7 +456,7 @@ class CycleIntelligenceFooter(QFrame):
         else:
             stab_color, stab_txt, stab_text_color = _DOT_ORANGE, "Drifting", _DOT_ORANGE
         self._stab_dot.setStyleSheet(
-            f"font-size: 9px; color: {stab_color}; font-family: {_FONT}; background: transparent;"
+            f"font-size: 11px; color: {stab_color}; font-family: {_FONT}; background: transparent;"
         )
         self._stab_text.setText(stab_txt)
         self._stab_text.setStyleSheet(

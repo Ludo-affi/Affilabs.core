@@ -193,6 +193,7 @@ Ignored by Claude Code (use --no-ignore to access):
 | EditsTab — alignment, delta SPR cursors | [EDITS_ALIGNMENT_DELTA_SPR_FRS.md](docs/features/EDITS_ALIGNMENT_DELTA_SPR_FRS.md) | `affilabs/tabs/edits/_interaction_mixin.py` |
 | EditsTab — binding plot, Kd fitting | [EDITS_BINDING_PLOT_FRS.md](docs/features/EDITS_BINDING_PLOT_FRS.md) | `affilabs/tabs/edits/_binding_plot_mixin.py` |
 | EditsTab — cycle display, graph rendering | [EDITS_CYCLE_DISPLAY_FRS.md](docs/features/EDITS_CYCLE_DISPLAY_FRS.md) | `main.py` (`_display_cycle_in_edits*`) |
+| EditsTab — cycle boundary adjust (Adjust tab, ±20% padding, drag handles, time correction) | [CYCLE_BOUNDARY_ADJUST_FRS.md](docs/features/CYCLE_BOUNDARY_ADJUST_FRS.md) | `affilabs/tabs/edits/_ui_builders.py`, `affilabs/tabs/edits/_adjust_mixin.py` (planned) |
 | EditsTab — data loading utilities | [EDITS_DATA_LOADING_FRS.md](docs/features/EDITS_DATA_LOADING_FRS.md) | `affilabs/tabs/edits/_data_utils.py` |
 | Recording, auto-save, Excel export | [RECORDING_MANAGER_FRS.md](docs/features/RECORDING_MANAGER_FRS.md) | `affilabs/managers/recording_manager.py` |
 | Experiment index — searchable log of all recording sessions | [EXPERIMENT_INDEX_FRS.md](docs/features/EXPERIMENT_INDEX_FRS.md) | `affilabs/services/experiment_index.py` |
@@ -207,11 +208,13 @@ Ignored by Claude Code (use --no-ignore to access):
 | Injection workflow — all scenarios (manual/auto, 3-channel, wash, markers) | [INJECTION_WORKFLOW_FRS.md](docs/features/INJECTION_WORKFLOW_FRS.md) | `affilabs/coordinators/injection_coordinator.py`, `affilabs/dialogs/manual_injection_dialog.py`, `affilabs/widgets/injection_action_bar.py`, `mixins/_pump_mixin.py` |
 | Kinetic cycle injection — flow-based, valve timing, kobs/ka/kd fitting, dissociation phase | [KINETIC_INJECTION_FRS.md](docs/features/KINETIC_INJECTION_FRS.md) | `affilabs/coordinators/injection_coordinator.py`, `affilabs/services/kinetics_fitter.py` (planned), `affilabs/domain/cycle.py` |
 | Calibration flow, servo auto-cal | [CALIBRATION_ORCHESTRATOR_FRS.md](docs/calibration/CALIBRATION_ORCHESTRATOR_FRS.md) | `affilabs/core/calibration_orchestrator.py` |
+| OEM factory provisioning — servo cal, LED model training, startup cal, ultra-sensitive detection | [OEM_OPTICAL_CALIBRATION_GUIDE.md](docs/calibration/OEM_OPTICAL_CALIBRATION_GUIDE.md) | `scripts/provisioning/oem_calibrate.py`, `affilabs/core/oem_model_training.py`, `calibrations/servo_polarizer/calibrate_polarizer.py` |
 | Signal quality, IQ levels, wavelength zones | [SENSOR_IQ_SYSTEM.md](docs/features/SENSOR_IQ_SYSTEM.md) | `affilabs/utils/sensor_iq.py` |
 | Signal event classifier — pre-inject readiness badge, bubble detection, telemetry logger, per-cycle quality score, run star rating | [SIGNAL_EVENT_CLASSIFIER_FRS.md](docs/features/SIGNAL_EVENT_CLASSIFIER_FRS.md) | `affilabs/utils/signal_event_classifier.py`, `affilabs/services/signal_telemetry_logger.py`, `affilabs/services/signal_quality_scorer.py`, `affilabs/widgets/signal_event_badge.py` (planned) |
 | Optical fault detection — leak (raw intensity drop) + air bubble (wavelength/transmittance transient); all alerts via Sparq bubble | [OPTICAL_FAULT_DETECTION_FRS.md](docs/features/OPTICAL_FAULT_DETECTION_FRS.md) | `mixins/_acquisition_mixin.py`, `affilabs/services/air_bubble_detector.py`, `affilabs/utils/spectrum_helpers.py`, `affilabs/widgets/spark_bubble.py` |
 | Device health dashboard — unified aggregator for all health signals (IQ, P2P, FWHM, faults, run quality); wiring plan + gap analysis | [DEVICE_HEALTH_DASHBOARD_FRS.md](docs/features/DEVICE_HEALTH_DASHBOARD_FRS.md) | `affilabs/coordinators/device_health_coordinator.py` (planned), `affilabs/widgets/device_status.py`, `affilabs/sidebar_tabs/AL_device_status_builder.py` |
 | Sparq account — device registration, Sparq Coach upload, Nutshell CRM integration, failure-pattern upsell pipeline | [SPARQ_ACCOUNT_FRS.md](docs/features/SPARQ_ACCOUNT_FRS.md) | `affilabs/services/sparq_account_service.py`, `affilabs/services/sparq_coach_service.py`, `affilabs/dialogs/sparq_registration_dialog.py` (planned) |
+| Sparq Coach Beta — auto bug reporting (Discord + Nutshell), Claude Haiku chat fallback, Cloudflare Worker proxy, rate limiting per device | [SPARQ_COACH_BETA_FRS.md](docs/features/SPARQ_COACH_BETA_FRS.md) | `affilabs/services/sparq_coach_service.py`, `affilabs/services/bug_reporter.py`, `affilabs/widgets/spark_help_widget.py`, `affilabs/ui/img/bug_icon.svg` |
 | Cycle templates, queue presets | [METHOD_PRESETS_SYSTEM.md](docs/features/METHOD_PRESETS_SYSTEM.md) | `affilabs/services/cycle_template_storage.py` |
 | Method Builder UI redesign (3-zone layout, template gallery, Sparq bar) | [METHOD_BUILDER_REDESIGN_FRS.md](docs/features/METHOD_BUILDER_REDESIGN_FRS.md) | `affilabs/widgets/method_builder_dialog.py` |
 | Contact Monitor panel, per-channel contact timers, binding symbols | [MICROFLUIDIC_CHANNELS_PANEL_FRS.md](docs/features/MICROFLUIDIC_CHANNELS_PANEL_FRS.md) | `affilabs/widgets/injection_action_bar.py` |
@@ -223,10 +226,12 @@ Ignored by Claude Code (use --no-ignore to access):
 | Platform strategy — retention layers, revenue streams, data flywheel, competitive positioning, implementation priority | [PLATFORM_STRATEGY.md](docs/future_plans/PLATFORM_STRATEGY.md) | — |
 | 21 CFR Part 11 compliance — gap analysis, implementation order, files to create | [21CFR_PART11_GAP_ANALYSIS.md](docs/future_plans/21CFR_PART11_GAP_ANALYSIS.md) | `affilabs/services/audit_log.py` (planned) |
 | IQ/OQ plan — check IDs, test suites, report format, implementation order | [IQOQ_PLAN.md](docs/future_plans/IQOQ_PLAN.md) | `scripts/validation/`, `tests/oq/` (planned) |
+| Software update delivery — drop-in exe vs full installer, user data safety, USB edge case, auto-update plan | [SOFTWARE_UPDATE_DELIVERY_FRS.md](docs/features/SOFTWARE_UPDATE_DELIVERY_FRS.md) | `_build/installer.nsi`, `_build/Affilabs-Core.spec`, `version.py` |
+| Interactive SPR Legend — floating Δ SPR overlay on Active Cycle graph; channel selection, curve highlighting, left/right nudge (±1 s / ±5 s) for inter-channel injection skew correction | [INTERACTIVE_SPR_LEGEND_FRS.md](docs/features/INTERACTIVE_SPR_LEGEND_FRS.md) | `affilabs/widgets/interactive_spr_legend.py`, `affilabs/affilabs_core_ui.py`, `affilabs/utils/ui_update_helpers.py` |
 | TransportBar (toolbar redesign), IconRail (vertical tab strip) | [TRANSPORT_BAR_FRS.md](docs/features/TRANSPORT_BAR_FRS.md) | `affilabs/widgets/transport_bar.py`, `affilabs/widgets/icon_rail.py` |
 | SpectrumBubble, RailTimerPopup, LiveContextPanel, LiveRightPanel | [FLOATING_PANELS_FRS.md](docs/features/FLOATING_PANELS_FRS.md) | `affilabs/widgets/spectrum_bubble.py`, `affilabs/widgets/rail_timer_popup.py`, `affilabs/widgets/live_context_panel.py`, `affilabs/widgets/live_right_panel.py` |
 | GuidanceCoordinator — adaptive contextual hints | [GUIDANCE_COORDINATOR_FRS.md](docs/features/GUIDANCE_COORDINATOR_FRS.md) | `affilabs/coordinators/guidance_coordinator.py` |
-| Accessibility panel — colour palettes, line styles, dark mode | [ACCESSIBILITY_PANEL_FRS.md](docs/features/ACCESSIBILITY_PANEL_FRS.md) | `affilabs/widgets/accessibility_panel.py`, `affilabs/affilabs_core_ui.py` |
+| Accessibility panel — colour palettes, line styles, dark mode, **Large Text (FontScale)** | [ACCESSIBILITY_PANEL_FRS.md](docs/features/ACCESSIBILITY_PANEL_FRS.md) | `affilabs/widgets/accessibility_panel.py`, `affilabs/ui_styles.py` |
 
 **Rule:** If the task touches a subsystem listed above, read the FRS doc first. Only open the source file if the doc doesn't answer the question.
 
@@ -297,13 +302,23 @@ Detector profiles override deprecated constants in settings.py at runtime via `g
 
 > **This is the canonical approach for tracking all shipped and in-house devices.** Any new device must be added to both databases.
 
+### Serial Number Prefix Rule
+
+| Prefix | Rule |
+|--------|------|
+| **`AFFI`** | **All new devices.** Write `AFFI` for any new serial created from this point forward (e.g. `AFFI09792`, `AFFI10979`). |
+| **`FLMT`** | **Legacy read-only.** Existing `FLMT` serials are kept as-is in the registry and on the physical hardware — do not rename them. Code must accept both prefixes when reading/matching. |
+| **`ST`** | **Legacy read-only.** Phase Photonics prototype builds — treat the same as `FLMT`. |
+
+**Rule in plain terms:** never write a new `FLMT` serial. If `oem_calibrate.py` auto-detects a serial from the hardware, use that. If you are assigning a serial manually (test unit, replacement, new build), use `AFFI`.
+
 | Database | Path | Format | Purpose |
 |----------|------|--------|---------|
 | **device_registry.json** | `_data/calibration_data/device_registry.json` | JSON | Customer + shipping identity (who owns each unit, invoice, country) |
 | **device_history.db** | `tools/ml_training/device_history.db` | SQLite | Per-device calibration performance history for ML training (FWHM, SNR, convergence stats) |
 
 ### device_registry.json (identity/CRM)
-- One entry per serial, keyed by serial string (e.g. `"FLMT09788"`)
+- One entry per serial, keyed by serial string (e.g. `"AFFI09792"` for new units, `"FLMT09788"` for legacy)
 - Fields: `customer.name`, `customer.country`, `order.invoice`, `shipped_date`, `calibration_files[]`, `ml_training_include`
 - Add new device by inserting a new key into the `"devices"` object
 - `ml_training_include: false` to exclude prototypes or returned units
@@ -311,7 +326,7 @@ Detector profiles override deprecated constants in settings.py at runtime via `g
 ### device_history.db (ML training)
 - Managed by `DeviceHistoryDatabase` in `tools/ml_training/device_history.py`
 - Records added via `record_calibration_to_database()` in `tools/ml_training/record_calibration_result.py`
-- Keyed by `detector_serial` (integer — numeric portion of serial, e.g. `9788` for `FLMT09788`)
+- Keyed by `detector_serial` (integer — numeric portion of serial, e.g. `9792` for `AFFI09792`)
 - Schema: one row per calibration run — `success`, `s_mode_iterations`, `p_mode_iterations`, `final_fwhm_avg`, `final_snr_avg`, etc.
 - Used by `train_convergence_predictor.py` to add 17 per-device history features to the ML model
 - Run `tools/ml_training/train_all_models.py` to rebuild all models (includes device history export step)
@@ -508,11 +523,15 @@ When the user writes **`REQ: [one sentence]`**, treat it as a UI change request.
 - **Contact marker doesn't move on wash** — marker stays at predicted `injection_time + contact_time`. No code currently moves it to actual wash time.
 
 ### Recently Completed
-- **Optical fault detection v2** ✅ (Feb 26 2026) — Thread-safe alert delivery via `spark_alert_signal = Signal(str)` on `Application` (replaces broken `QTimer.singleShot` from worker thread). Leak recovery detection (≥50% baseline → resolved). Auto-recal on recovery: `pause_acquisition()` → quick LED cal → `resume_acquisition()` (recording preserved). Spectrum bubble opens on fault, closes on recovery. Post-recal "redo this cycle" Sparq message. `_leak_recal_was_acquiring` flag distinguishes auto vs manual recal paths. `AirBubbleDetector` also migrated to signal path.
-- **CalibrationQC dialog polish** ✅ (Feb 26 2026) — Graph + table 50:50 side-by-side layout, button bar always visible (stretch=1 on tabs), notes shortened to ≤8 words at 10px, table min/max 120/145px, dialog 900×480.
-- **Interactive ΔSPR legend: integers only** ✅ (Feb 26 2026) — `interactive_spr_legend.py` formats as `int(round(value))`, zero as `"0"`.
-- **RotatingFileHandler double-format fix** ✅ (Feb 26 2026) — `_SafeFormatter` in `logger.py` pre-resolves `record.msg`/`args` before `super().format()` to prevent TypeError from second `getMessage()` call.
-- **Wash detection via `_InjectionMonitor` fire #2** ✅ (Feb 26 2026) — `_fire_counts` dict per channel; fire #1 → `_handle_injection`, fire #2+ → `_handle_wash`; P4SPR keeps monitors alive after injection.
+- **Simple cal servo fix** ✅ (Mar 1 2026) — `simple_led_calibration.py`: `getattr(device_config, "servo_s_position", None)` → `device_config.get_servo_s_position()`. Both S+P moves now: `set_servo_positions()` → `servo_move_raw_pwm(1)` → `set_mode()` → 1.0s settle.
+- **IQ check via `--iq-check` flag** ✅ (Mar 1 2026) — `scripts/validation/iq_check.py` (9 checks) + module-level intercept in `main.py` (lines 33–61, before all imports). Serial auto-detected from `config/devices/<SERIAL>/`. Report: `_data/validation/IQ_report_<SERIAL>_<DATE>.json`. Usage: `python main.py --iq-check [--operator Name] [--no-save]`.
+- **Sparq Coach Beta — fully live** ✅ (Mar 1 2026) — Cloudflare Worker + KV + Discord + Nutshell wired end-to-end.
+- **Active Cycle legend focus persistence** ✅ (Mar 1 2026) — `StrongFocus` + `_user_has_selected` flag.
+- **Optical fault detection v2** ✅ (Feb 26 2026) — Thread-safe `spark_alert_signal`, leak auto-recal, AirBubbleDetector migrated.
+
+### Next Session
+- **Sparq Coach Beta — Phase 1.6:** Wire "Ask Sparq Coach ✨" button in `spark_help_widget.py` for local engine misses (FRS §11.2). Calls `SparqCoachService.ask_coach()`.
+- **Cycle Boundary Adjust** — FRS at [CYCLE_BOUNDARY_ADJUST_FRS.md](docs/features/CYCLE_BOUNDARY_ADJUST_FRS.md). Start with §8 steps 1–3.
 
 ### Planned — Future Milestones
 - **v2.2:** Autosampler integration (Knauer Azura TCP + TTL trigger option) — see `docs/future_plans/AUTOSAMPLER_INTEGRATION_PLAN.md`

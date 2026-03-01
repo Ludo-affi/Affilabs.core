@@ -12,8 +12,9 @@ from pathlib import Path
 def get_writable_data_path(filename: str = "") -> Path:
     """Return a writable path for user data files.
 
-    In frozen (PyInstaller) builds, writes go to %LOCALAPPDATA%\\Affilabs
-    so they are never inside the read-only _MEIPASS temp bundle.
+    In frozen (PyInstaller) builds, paths are resolved relative to the
+    directory that contains the .exe so all customer data stays in the
+    install folder (not scattered across AppData).
     In development mode, returns project root (existing behaviour).
 
     Args:
@@ -23,10 +24,11 @@ def get_writable_data_path(filename: str = "") -> Path:
         Absolute writable Path, parent directory is guaranteed to exist.
     """
     if getattr(sys, 'frozen', False):
-        appdata = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
-        base = Path(appdata) / "Affilabs"
+        # Frozen exe: save next to the executable so all customer data lives
+        # in one place (the install folder) — not scattered across AppData.
+        base = Path(sys.executable).parent
     else:
-        base = Path(__file__).parent.parent.parent  # project root
+        base = Path(__file__).parent.parent.parent  # project root (dev)
 
     base.mkdir(parents=True, exist_ok=True)
     return base / filename if filename else base

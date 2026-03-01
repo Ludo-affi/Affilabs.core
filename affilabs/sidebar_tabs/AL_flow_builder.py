@@ -477,7 +477,7 @@ class FlowTabBuilder:
 
         plunger_title = QLabel("Plunger")
         plunger_title.setStyleSheet(
-            "font-size: 10px; color: #86868B; background: transparent;"
+            "font-size: 11px; color: #86868B; background: transparent;"
             f"font-family: {self.FONT_FAMILY_SYSTEM};"
         )
         plunger_row.addWidget(plunger_title)
@@ -509,7 +509,7 @@ class FlowTabBuilder:
 
         contact_title = QLabel("Contact")
         contact_title.setStyleSheet(
-            "font-size: 10px; color: #86868B; background: transparent;"
+            "font-size: 11px; color: #86868B; background: transparent;"
             f"font-family: {self.FONT_FAMILY_SYSTEM};"
         )
         contact_row.addWidget(contact_title)

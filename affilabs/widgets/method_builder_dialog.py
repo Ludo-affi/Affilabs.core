@@ -56,6 +56,7 @@ _SVG_DUPLICATE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/
 _SVG_PLUS_WHITE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 5v14M5 12h14" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>'
 
 _SVG_CLIPBOARD_WHITE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" stroke="white" stroke-width="2" stroke-linecap="round"/><rect x="8" y="2" width="8" height="4" rx="1" stroke="white" stroke-width="2"/><path d="M9 12h6M9 16h4" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>'
+_SVG_CLIPBOARD_BLUE = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" stroke="#007AFF" stroke-width="2" stroke-linecap="round"/><rect x="8" y="2" width="8" height="4" rx="1" stroke="#007AFF" stroke-width="2"/><path d="M9 12h6M9 16h4" stroke="#007AFF" stroke-width="2" stroke-linecap="round"/></svg>'
 
 
 # ---------------------------------------------------------------------------
@@ -1188,7 +1189,7 @@ class MethodBuilderDialog(QDialog):
         self.method_table = DraggableMethodTable(on_row_moved=self._on_row_moved)
         self.method_table.setColumnCount(6)
         self.method_table.setHorizontalHeaderLabels(
-            ["Type", "Duration", "Channel", "Concentration", "Contact time", "Note"]
+            ["Type", "Duration", "Inject In", "Ch:Concentration", "Contact time", "Note"]
         )
         # Header label updated by configure_for_hardware() when hardware is known
         self.method_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -1641,7 +1642,9 @@ class MethodBuilderDialog(QDialog):
 
         button_row.addStretch()
 
-        self._copy_schedule_btn = QPushButton("📋 Copy Schedule")
+        self._copy_schedule_btn = QPushButton("Copy Schedule")
+        self._copy_schedule_btn.setIcon(_create_svg_icon(_SVG_CLIPBOARD_BLUE, 16))
+        self._copy_schedule_btn.setIconSize(QSize(16, 16))
         self._copy_schedule_btn.setFixedHeight(40)
         self._copy_schedule_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_schedule_btn.setToolTip("Copy injection schedule to clipboard")
@@ -1964,7 +1967,7 @@ Each cycle runs for its set duration and auto-advances to the next.</p>
 <li>Reorder with <b>↑ / ↓</b>, delete with <b>🗑 Delete</b>, undo/redo as needed</li>
 <li>Review the <b>Details</b> tab to inspect injection settings per cycle</li>
 <li>Click <b>📋 Push to Queue</b> — cycles move to the main Cycle Queue</li>
-<li>Use <b>📋 Copy Schedule</b> (next to Push) to print a trackable injection checklist</li>
+<li>Use <b>Copy Schedule</b> (next to Push) to print a trackable injection checklist</li>
 <li>Press <b>▶ Start Run</b> in the sidebar — cycles run automatically in order</li>
 <li>After the last cycle, the system enters <b>Auto-Read</b> (continuous 2-hour monitoring)</li>
 </ol>
@@ -2157,7 +2160,7 @@ Binding 5min A:100nM contact 120s partial
 <li><b>Clear All</b> — Remove all cycles from the method</li>
 <li><b>↶ Undo / ↷ Redo</b> — Undo or redo changes (Ctrl+Z / Ctrl+Shift+Z)</li>
 <li><b>↑/↓ arrows</b> in the Note field — Recall previously typed notes</li>
-<li><b>📋 Copy Schedule</b> — Copy a print-friendly injection checklist to clipboard</li>
+<li><b>Copy Schedule</b> — Copy a print-friendly injection checklist to clipboard</li>
 </ul>
 
 <h4>Execution Behavior</h4>
@@ -2805,8 +2808,8 @@ Binding 5min A:100nM contact 120s partial
 
         Editable columns:
           1 — Duration   (e.g. "5min", "30sec", "2h")
-          2 — Channel    (e.g. "A", "BD", "ALL")
-          3 — Concentration (e.g. "100nM", "A:100nM B:50nM")
+          2 — Inject In        (e.g. "A", "BD", "ALL")
+          3 — Ch:Concentration (e.g. "100nM", "A:100nM B:50nM")
           4 — Contact time (e.g. "300s", "5m", "1h")
           5 — Note       (free text)
         """
@@ -2819,19 +2822,33 @@ Binding 5min A:100nM contact 120s partial
         cycle = self._local_cycles[row]
         text = item.text().strip()
 
+        _COL_NAMES = {1: "duration", 2: "inject in", 3: "concentration", 4: "contact time", 5: "note"}
+        _HINTS = {
+            1: 'Try: "5min", "30sec", "2h"',
+            3: 'Try: "100nM" or "A:100nM B:50nM"',
+            4: 'Try: "300s", "5min", "1h"',
+        }
+
+        parse_ok = True
+        fail_msg = ""
+
         self.method_table.blockSignals(True)
         try:
-            if col == 1:  # Duration — re-parse via existing text parser
+            if col == 1:  # Duration
                 if text:
                     probe_line = f"{cycle.type.lower()} {text}"
                     try:
                         rebuilt, _ = self._build_cycle_from_text(probe_line)
                         if rebuilt.length_minutes > 0:
                             cycle.length_minutes = rebuilt.length_minutes
-                    except Exception:
-                        pass  # Leave existing value if parse fails
+                        else:
+                            parse_ok = False
+                            fail_msg = f'"{text}" didn\'t parse as a duration. {_HINTS[1]}'
+                    except Exception as e:
+                        parse_ok = False
+                        fail_msg = f'"{text}" didn\'t parse as a duration. {_HINTS[1]}'
 
-            elif col == 2:  # Channel
+            elif col == 2:  # Channel — always succeeds (filters silently to ABCD chars)
                 cleaned = text.upper().replace(" ", "").replace("-", "").replace("—", "")
                 if cleaned in ("", "—", "ALL"):
                     cycle.target_channels = ""
@@ -2851,8 +2868,12 @@ Binding 5min A:100nM contact 120s partial
                             cycle.concentrations = rebuilt.concentrations
                             cycle.units = rebuilt.units
                             cycle.target_channels = "".join(sorted(rebuilt.concentrations.keys()))
+                        else:
+                            parse_ok = False
+                            fail_msg = f'"{text}" didn\'t parse as a concentration. {_HINTS[3]}'
                     except Exception:
-                        pass
+                        parse_ok = False
+                        fail_msg = f'"{text}" didn\'t parse as a concentration. {_HINTS[3]}'
 
             elif col == 4:  # Contact time
                 if text in ("", "—"):
@@ -2863,16 +2884,32 @@ Binding 5min A:100nM contact 120s partial
                         rebuilt, _ = self._build_cycle_from_text(probe_line)
                         if rebuilt.contact_time is not None:
                             cycle.contact_time = rebuilt.contact_time
+                        else:
+                            parse_ok = False
+                            fail_msg = f'"{text}" didn\'t parse as a contact time. {_HINTS[4]}'
                     except Exception:
-                        pass
+                        parse_ok = False
+                        fail_msg = f'"{text}" didn\'t parse as a contact time. {_HINTS[4]}'
 
-            elif col == 5:  # Note — free text, store directly
+            elif col == 5:  # Note — free text, always succeeds
                 cycle.note = text
 
         finally:
             self.method_table.blockSignals(False)
 
-        # Refresh just this row to reflect normalised values
+        if not parse_ok:
+            # Highlight the cell red so the user sees exactly what failed
+            item.setBackground(QBrush(QColor("#FFEBE8")))
+            item.setForeground(QBrush(QColor("#C0392B")))
+            # Show Sparq validation hint
+            col_name = _COL_NAMES.get(col, "field")
+            self._sparq_show_response(
+                f"⚠ Couldn't update {col_name} — {fail_msg}  "
+                f"Type a valid value or press Esc to revert."
+            )
+            return  # Don't refresh — leave the bad text visible in the cell
+
+        # Refresh row to show normalised value
         self._refresh_method_table()
         self.method_table.selectRow(row)
 
@@ -3522,6 +3559,7 @@ Binding 5min A:100nM contact 120s partial
         QApplication.clipboard().setText("\n".join(lines))
 
         # Flash confirmation on the button itself
+        self._copy_schedule_btn.setIcon(QIcon())
         self._copy_schedule_btn.setText("✓ Copied!")
         self._copy_schedule_btn.setStyleSheet(
             "QPushButton {"
@@ -3538,7 +3576,9 @@ Binding 5min A:100nM contact 120s partial
 
     def _reset_copy_schedule_btn(self):
         """Restore Copy Schedule button to default state."""
-        self._copy_schedule_btn.setText("\U0001F4CB Copy Schedule")
+        self._copy_schedule_btn.setIcon(_create_svg_icon(_SVG_CLIPBOARD_BLUE, 16))
+        self._copy_schedule_btn.setIconSize(QSize(16, 16))
+        self._copy_schedule_btn.setText("Copy Schedule")
         self._copy_schedule_btn.setStyleSheet(
             "QPushButton {"
             "  background: transparent;"

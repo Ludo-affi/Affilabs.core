@@ -10,6 +10,92 @@ from __future__ import annotations
 from typing import Final
 
 # ============================================================================
+# TABLE ITEM DELEGATE — Qt6/Windows QSS fix
+# ============================================================================
+# Import guard: only define when PySide6 is available (not during headless tests
+# that import ui_constants for color constants only).
+try:
+    from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
+    from PySide6.QtCore import QModelIndex, Qt
+    from PySide6.QtGui import QBrush, QPainter
+
+    from PySide6.QtGui import QColor, QFont
+
+    class TableItemDelegate(QStyledItemDelegate):
+        """Delegate that correctly renders item background + foreground on Qt6/Windows.
+
+        Problem: Qt6 on Windows uses QStyleSheetStyle which RE-APPLIES QSS rules
+        *inside* drawControl(), clobbering any backgroundBrush we set on the option
+        after initStyleOption().  Even setting option.backgroundBrush = blue right
+        before super().paint() is overwritten when QSS says
+        ``QTableWidget::item { background: transparent }``, leaving coloured
+        foreground text invisible on a white background.
+
+        Solution: when BackgroundRole data is set on an item, skip super().paint()
+        entirely and manually fill the rect + draw text.  This sidesteps
+        QStyleSheetStyle completely for those rows.  Rows with no custom background
+        still go through super().paint() so normal QSS/hover/selection styling works.
+
+        Usage::
+
+            table.setItemDelegate(TableItemDelegate(table))
+        """
+
+        def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex):
+            self.initStyleOption(option, index)
+
+            bg = index.data(Qt.ItemDataRole.BackgroundRole)
+            fg = index.data(Qt.ItemDataRole.ForegroundRole)
+
+            if bg is None:
+                # No custom background — let QSS / Qt handle normally.
+                if fg is not None:
+                    fg_brush = fg if isinstance(fg, QBrush) else QBrush(fg)
+                    option.palette.setBrush(option.palette.ColorRole.Text, fg_brush)
+                    option.palette.setBrush(option.palette.ColorRole.HighlightedText, fg_brush)
+                super().paint(painter, option, index)
+                return
+
+            # ── Custom-background row: bypass QStyleSheetStyle entirely ──────────
+            bg_brush = bg if isinstance(bg, QBrush) else QBrush(bg)
+
+            # 1. Fill background.
+            painter.save()
+            painter.fillRect(option.rect, bg_brush)
+            painter.restore()
+
+            # 2. Determine text colour.
+            if fg is not None:
+                if isinstance(fg, QBrush):
+                    text_color = fg.color()
+                elif isinstance(fg, QColor):
+                    text_color = fg
+                else:
+                    text_color = QColor(fg)
+            else:
+                text_color = option.palette.color(option.palette.ColorRole.Text)
+
+            # 3. Draw text with correct font, alignment, and padding.
+            text = index.data(Qt.ItemDataRole.DisplayRole)
+            if text is not None:
+                font_data = index.data(Qt.ItemDataRole.FontRole)
+                painter.setFont(font_data if isinstance(font_data, QFont) else option.font)
+
+                raw_align = index.data(Qt.ItemDataRole.TextAlignmentRole)
+                align = raw_align if raw_align is not None else int(
+                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                )
+
+                painter.save()
+                painter.setPen(text_color)
+                # 6 px left/right padding matches QSS `padding: 8px 6px`
+                painter.drawText(option.rect.adjusted(6, 0, -6, 0), align, str(text))
+                painter.restore()
+
+except ImportError:
+    TableItemDelegate = None  # type: ignore
+
+# ============================================================================
 # CYCLE TYPE STYLING
 # ============================================================================
 

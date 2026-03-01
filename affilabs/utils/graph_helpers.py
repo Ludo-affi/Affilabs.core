@@ -54,40 +54,72 @@ class GraphHelpers:
         )
 
     @staticmethod
-    def apply_reference_subtraction(app: Application) -> None:
-        """Apply reference channel subtraction to all other channels.
+    def apply_reference_curve_styles(app: Application, ref_ch: "str | None") -> None:
+        """Style the reference channel curve as dashed+dim; restore all others to solid.
 
         Args:
             app: Application instance
+            ref_ch: Channel letter (lower) that is now the reference, or None to clear all.
 
         """
-        if app._reference_channel is None:
-            # No reference selected - this is normal, user hasn't selected one yet
-            return
+        from affilabs.settings import settings
 
-        ref_time = app.buffer_mgr.cycle_data[app._reference_channel].time
-        ref_spr = app.buffer_mgr.cycle_data[app._reference_channel].spr
+        colorblind = getattr(app.main_window, "colorblind_check", None)
+        colorblind_on = colorblind.isChecked() if colorblind is not None else False
 
-        if len(ref_time) == 0:
-            return
+        _STANDARD_COLORS = ["#1D1D1F", "#FF3B30", "#007AFF", "#34C759"]
 
-        # Subtract reference from all other channels
-        for ch in app._idx_to_channel:
-            if ch == app._reference_channel:
-                continue  # Don't subtract reference from itself
-
-            ch_time = app.buffer_mgr.cycle_data[ch].time
-            ch_spr = app.buffer_mgr.cycle_data[ch].spr
-
-            if len(ch_time) == 0:
+        curves = app.main_window.cycle_of_interest_graph.curves
+        for ch_idx, ch_letter in enumerate(["a", "b", "c", "d"]):
+            if ch_idx >= len(curves):
                 continue
+            curve = curves[ch_idx]
 
-            # Interpolate reference to match channel time points
-            if len(ref_time) > 1:
-                ref_interp = np.interp(ch_time, ref_time, ref_spr)
-                # Update the cycle data with subtracted values
-                subtracted_spr = ch_spr - ref_interp
-                app.buffer_mgr.cycle_data[ch].spr = subtracted_spr
+            # Determine base color
+            if colorblind_on:
+                rgb = settings.GRAPH_COLORS_COLORBLIND[ch_letter]
+                hex_color = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+            else:
+                hex_color = _STANDARD_COLORS[ch_idx]
+
+            if ref_ch is not None and ch_letter == ref_ch.lower():
+                # Reference channel: dashed line, 80% alpha
+                r, g, b = int(hex_color[1:3], 16), int(hex_color[3:5], 16), int(hex_color[5:7], 16)
+                curve.setPen(
+                    pg.mkPen(
+                        color=(r, g, b, 204),  # 204 / 255 ≈ 80%
+                        width=2,
+                        style=pg.QtCore.Qt.PenStyle.DashLine,
+                    )
+                )
+            else:
+                # Normal channel: solid line, full opacity
+                curve.setPen(pg.mkPen(color=hex_color, width=2))
+
+    @staticmethod
+    def subtract_reference(
+        ch_time: "np.ndarray",
+        ch_spr: "np.ndarray",
+        ref_time: "np.ndarray",
+        ref_spr: "np.ndarray",
+    ) -> "np.ndarray":
+        """Return ch_spr with reference interpolated and subtracted — display only, no mutation.
+
+        Args:
+            ch_time: Time array for the channel being plotted
+            ch_spr: SPR (delta) array for the channel being plotted
+            ref_time: Time array for the reference channel
+            ref_spr: SPR (delta) array for the reference channel
+
+        Returns:
+            Subtracted SPR array (same length as ch_spr).  Returns ch_spr unchanged
+            if there are fewer than 2 reference points or arrays are empty.
+
+        """
+        if len(ref_time) < 2 or len(ch_time) == 0:
+            return ch_spr
+        ref_interp = np.interp(ch_time, ref_time, ref_spr)
+        return ch_spr - ref_interp
 
     @staticmethod
     def init_kalman_filters(app: Application) -> None:
