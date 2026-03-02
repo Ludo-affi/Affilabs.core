@@ -728,143 +728,101 @@ class CalibrationMixin:
         dialog.enable_start_button_pre_calib()  # Enable the Start button after dialog is visible
 
     def _on_led_model_training(self):
-        """Run LED model training only (no full calibration).
+        """Run LED model training only (no full calibration)."""
+        logger.info("Starting LED Model Training...")
 
-        Directly trains the 3-stage linear LED model without running the full
-        6-step calibration. Useful for quickly rebuilding the optical model.
-        """
-        logger.info("=" * 80)
-        logger.info("Starting LED Model Training (optical model only)...")
-        logger.info("=" * 80)
+        if getattr(self, '_model_training_running', False):
+            logger.warning("LED model training already in progress — ignoring duplicate request")
+            return
 
-        # Import required modules
-        from affilabs.core.oem_model_training import run_oem_model_training_workflow
+        if not self.hardware_mgr or not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
+            from affilabs.ui.ui_message import error as ui_error
+            ui_error(self.main_window, "Hardware Not Ready",
+                     "Please connect hardware before training the LED model.")
+            return
+
+        self._model_training_running = True
+        self._model_training_was_acquiring = (
+            hasattr(self, 'data_mgr') and self.data_mgr and self.data_mgr._acquiring
+        )
+        self._stop_all_monitoring_for_calibration(pause_only=self._model_training_was_acquiring)
+        self._set_live_sensorgram_cal_label(True)
+
+        # Wire result signal once
+        try:
+            self._model_training_result_signal.disconnect(self._process_model_training_result)
+        except Exception:
+            pass
+        self._model_training_result_signal.connect(self._process_model_training_result)
+
         from affilabs.dialogs.startup_calib_dialog import StartupCalibProgressDialog
         import threading
 
-        # Check hardware
-        if not self.hardware_mgr or not self.hardware_mgr.ctrl or not self.hardware_mgr.usb:
-            from affilabs.ui.ui_message import error as ui_error
-            ui_error(
-                self.main_window,
-                "Hardware Not Ready",
-                "Please connect hardware before training the LED model."
-            )
-            return
-
-        self._stop_all_monitoring_for_calibration()
-
-        # Show progress dialog
         dialog = StartupCalibProgressDialog(
             parent=self.main_window,
-            title="Training LED Model",
+            title="LED Model Training",
             message=(
-                "LED Model Training Process:\n\n"
-                "  1. Servo Polarizer Calibration (if P4SPR)\n"
-                "  2. LED Response Measurement (10-60ms)\n"
-                "  3. 3-Stage Linear Model Fitting\n"
-                "  4. Model File Creation\n\n"
-                "This will take approximately 2-5 minutes.\n\n"
+                "LED Model Training:\n\n"
+                "  \u2022 Servo polarizer calibration\n"
+                "  \u2022 LED response measurement (10\u201360 ms)\n"
+                "  \u2022 3-Stage linear model fitting\n\n"
+                "Duration: ~2\u20135 minutes\n\n"
                 "Click Start to begin."
             ),
             show_start_button=True,
         )
 
-        def progress_callback(message: str, percent: int):
-            """Update progress dialog."""
-            dialog.update_status(message)
-            dialog.set_progress(percent, 100)
-            if not dialog.progress_bar.isVisible():
-                dialog.show_progress_bar()
-
         def run_training():
-            """Run training in background thread."""
+            from affilabs.core.oem_model_training import run_oem_model_training_workflow
+            success = False
+            error_msg = ""
             try:
-                logger.info("🔬 LED Model Training thread started...")
+                def _progress(msg, pct):
+                    dialog.update_status(msg)
 
-                # Run OEM model training workflow
                 success = run_oem_model_training_workflow(
                     hardware_mgr=self.hardware_mgr,
-                    progress_callback=progress_callback,
+                    progress_callback=_progress,
                 )
-
-                if success:
-                    logger.info("[OK] LED model training completed successfully")
-                    dialog.update_title("LED Model Training Complete")
-                    dialog.update_status("✓ Model created successfully!")
-                    dialog.hide_progress_bar()
-
-                    # Clear graphs and restart sensorgram at t=0 (use QTimer for thread safety)
-                    from PySide6.QtCore import QTimer
-
-                    logger.info("📊 Clearing graph and restarting sensorgram...")
-                    QTimer.singleShot(0, self._on_clear_graphs_requested)
-
-                    # Restart live data acquisition (also from main thread)
-                    QTimer.singleShot(100, self._restart_acquisition_after_calibration)
-
-                    # Show success dialog (also from main thread for safety)
-                    from PySide6.QtCore import QMetaObject, Qt as QtCore
-                    import time
-                    time.sleep(0.5)  # Brief delay before showing dialog
-
-                    QMetaObject.invokeMethod(
-                        dialog,
-                        "close",
-                        QtCore.ConnectionType.QueuedConnection
-                    )
-
-                    from affilabs.ui.ui_message import info as ui_info
-                    ui_info(
-                        self.main_window,
-                        "Training Complete",
-                        "LED calibration model created successfully!\n\n"
-                        "The new model is now active and will be used for all calibrations."
-                    )
-                else:
-                    logger.error("[ERROR] LED model training failed")
-                    dialog.update_title("Training Failed")
-                    dialog.update_status("❌ Model training encountered errors")
-                    dialog.hide_progress_bar()
-
-                    from affilabs.ui.ui_message import error as ui_error
-                    from PySide6.QtCore import QMetaObject, Qt as QtCore
-                    import time
-
-                    time.sleep(0.5)  # Brief delay before showing error
-
-                    QMetaObject.invokeMethod(
-                        dialog,
-                        "close",
-                        QtCore.ConnectionType.QueuedConnection
-                    )
-
-                    ui_error(
-                        self.main_window,
-                        "Training Failed",
-                        "LED model training failed.\n\nPlease check the logs for details."
-                    )
-
             except Exception as e:
                 logger.error(f"LED model training error: {e}", exc_info=True)
-                dialog.update_title("Training Error")
-                dialog.update_status(f"Error: {str(e)}")
-                dialog.hide_progress_bar()
+                error_msg = str(e)
+
+            self._model_training_result_signal.emit(success, error_msg, dialog)
 
         def on_start_clicked():
-            """Handle Start button click."""
             dialog.start_button.setEnabled(False)
             dialog.show_progress_bar()
-            dialog.update_status("Initializing LED model training...")
-
-            # Start training thread
+            dialog.update_status("Starting LED model training...")
             thread = threading.Thread(target=run_training, daemon=True, name="LEDModelTraining")
             thread.start()
 
-        # Connect start button
         dialog.start_clicked.connect(on_start_clicked)
         dialog.show()
-        dialog.enable_start_button_pre_calib()  # Enable the Start button after dialog is visible
+        dialog.enable_start_button_pre_calib()
+
+    def _process_model_training_result(self, success: bool, error_msg: str, dialog):
+        """Apply LED model training result. Runs on main thread."""
+        from PySide6.QtCore import QTimer
+
+        self._model_training_running = False
+
+        try:
+            if success:
+                logger.info("[OK] LED model training complete")
+                dialog.update_status("Model created successfully")
+                QTimer.singleShot(1500, dialog.close)
+                QTimer.singleShot(0, self._on_clear_graphs_requested)
+            else:
+                msg = error_msg or "Model training encountered errors"
+                logger.error(f"LED model training failed: {msg}")
+                dialog.update_status(f"Training failed: {msg}")
+                QTimer.singleShot(3000, dialog.close)
+        except Exception as e:
+            logger.error(f"Model training post-processing failed: {e}", exc_info=True)
+        finally:
+            self._set_live_sensorgram_cal_label(False)
+            QTimer.singleShot(100, self._restart_acquisition_after_calibration)
 
     def _on_calibration_failed(self, error_message: str):
         """Handle calibration_failed signal from CalibrationService.

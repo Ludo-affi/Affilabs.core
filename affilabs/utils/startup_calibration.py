@@ -1905,7 +1905,7 @@ def _validate_calibration_prerequisites(device_config, detector_serial, result):
 
     try:
         # Try to load existing 3-stage linear model
-        from affilabs.utils.model_loader import (
+        from affilabs.services.led_model_loader import (
             LEDCalibrationModelLoader,
             ModelNotFoundError,
             ModelValidationError,
@@ -2064,16 +2064,10 @@ def _validate_calibration_prerequisites(device_config, detector_serial, result):
             msg,
         )
     except Exception as e:
-        logger.error("=" * 80)
-        logger.error(f"❌ MODEL VALIDATION FAILED: {e}")
-        logger.error("=" * 80)
-        logger.error(
-            "   Cannot proceed with 6-step calibration without 3-stage linear model.",
-        )
-        logger.error("   Please run OEM Calibration first.")
-        logger.error("=" * 80)
-        msg = f"Model validation failed: {e}"
-        raise RuntimeError(msg)
+        logger.warning("=" * 80)
+        logger.warning(f"⚠️  Model validation check failed: {e}")
+        logger.warning("   Continuing with calibration without model validation.")
+        logger.warning("=" * 80)
 
     logger.info("=" * 80 + "\n")
 

@@ -542,6 +542,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
     spark_alert_signal = Signal(str)      # system alert text from processing thread → main thread
     leak_recalibrate_signal = Signal()   # auto-trigger quick cal after leak resolves
     _simple_cal_result_signal = Signal(object, object)  # (LEDCalibrationResult, dialog) — thread-safe delivery to main thread
+    _model_training_result_signal = Signal(bool, str, object)  # (success, error_msg, dialog) — thread-safe delivery to main thread
 
     def __init__(self, argv):
         """Initialize application with strict phase ordering to prevent fragile dependencies."""
@@ -1495,6 +1496,9 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
             self._update_demo_banner()
             if not self.license_service.is_licensed:
                 self._show_license_activation_dialog()
+
+            # Start periodic update checker (after window is fully visible)
+            self._start_update_checker()
 
         except Exception as e:
             logger.error(f"Error during deferred loading or window show: {e}", exc_info=True)
@@ -3870,6 +3874,54 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
         # Unknown feature - allow by default
         return True
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Software Update Management
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _start_update_checker(self) -> None:
+        """Start the periodic software update checker."""
+        try:
+            from affilabs.services.update_manager import get_update_manager
+            self.update_mgr = get_update_manager()
+            self.update_mgr.update_available.connect(self._on_update_available)
+            self.update_mgr.start_periodic_check()
+            logger.debug("✓ Software update checker started")
+        except Exception as e:
+            logger.warning(f"Could not start update checker: {e}")
+
+    def _on_update_available(self, update_info) -> None:
+        """Handle update available signal — show user the update dialog."""
+        try:
+            from affilabs.dialogs.update_available_dialog import UpdateAvailableDialog
+            
+            dlg = UpdateAvailableDialog(update_info, self.update_mgr, self.main_window)
+            dlg.update_applied.connect(self._on_update_applied)
+            dlg.exec()
+        except Exception as e:
+            logger.error(f"Error showing update dialog: {e}")
+
+    def _on_update_applied(self) -> None:
+        """Called after update is successfully applied — prompt user to restart."""
+        from PySide6.QtWidgets import QMessageBox
+        
+        reply = QMessageBox.information(
+            self.main_window,
+            "Update Installed",
+            "The software update has been installed. Please restart the application to use the new version.",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Ignore
+        )
+        if reply == QMessageBox.StandardButton.Ok:
+            self.quit()
+
+    def _stop_update_checker(self) -> None:
+        """Stop the update checker before shutdown."""
+        if hasattr(self, 'update_mgr'):
+            try:
+                self.update_mgr.stop_periodic_check()
+                logger.debug("Updated checker stopped")
+            except Exception:
+                pass
+
     def _print_profiling_stats(self):
         """Print profiling statistics (called periodically by timer)."""
         if PROFILING_ENABLED:
@@ -3891,6 +3943,7 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
         self.closing = True
         logger.info("Closing application...")
+        self._stop_update_checker()
         self._cleanup_resources(emergency=False)
         result = super().close()
         # Ensure the Qt event loop exits after all timers are stopped.

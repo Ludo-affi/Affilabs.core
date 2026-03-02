@@ -420,6 +420,15 @@ class EditsCycleMixin:
             except Exception:
                 pass
 
+            # Enable Full Run button now that data is loaded
+            try:
+                edits_tab = getattr(self, 'edits_tab', None) or self
+                btn = getattr(edits_tab, 'full_run_btn', None)
+                if btn is not None:
+                    btn.setEnabled(True)
+            except Exception:
+                pass
+
             if not getattr(self, '_suppress_load_dialog', False):
                 QMessageBox.information(
                     self,

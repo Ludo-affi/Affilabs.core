@@ -581,6 +581,21 @@ class UIBuildersMixin:
         load_btn.clicked.connect(self._load_data_from_excel_with_path_tracking)
         controls_layout.addWidget(load_btn)
 
+        # Full Run button — opens standalone sensorgram window
+        self.full_run_btn = QPushButton("Full Run")
+        self.full_run_btn.setFixedHeight(28)
+        self.full_run_btn.setToolTip("Open full experiment timeline with delta cursors")
+        self.full_run_btn.setStyleSheet(
+            f"QPushButton {{ background: {Colors.BACKGROUND_LIGHT}; color: {Colors.PRIMARY_TEXT}; "
+            f"border: 1px solid {Colors.OVERLAY_LIGHT_20}; border-radius: 6px; "
+            f"font-size: 12px; font-weight: 500; padding: 4px 10px; font-family: {Fonts.SYSTEM}; }}"
+            f"QPushButton:hover {{ background: {Colors.OVERLAY_LIGHT_10}; border-color: {Colors.INFO}; }}"
+            f"QPushButton:disabled {{ color: #C7C7CC; }}"
+        )
+        self.full_run_btn.setEnabled(False)  # enabled once data is loaded
+        self.full_run_btn.clicked.connect(self._open_full_run_window)
+        controls_layout.addWidget(self.full_run_btn)
+
         # Filter dropdown
         filter_label = QLabel("Show:")
         filter_label.setStyleSheet(
@@ -1910,3 +1925,22 @@ class UIBuildersMixin:
         layout.addWidget(export_btn)
 
         return container
+
+    def _open_full_run_window(self):
+        """Open the standalone Full Run sensorgram window."""
+        from affilabs.widgets.full_run_window import open_full_run_window
+        source = getattr(self.main_window, '_edits_source_file', None) or \
+                 getattr(self, '_edits_source_file', None)
+        if not source:
+            from affilabs.ui.ui_message import error as ui_error
+            ui_error(self.main_window, "No Data Loaded",
+                     "Please load an experiment file first.")
+            return
+        win = open_full_run_window(source_file=source, parent=self.main_window)
+        if win is not None:
+            # Keep reference so it isn't GC'd
+            if not hasattr(self, '_full_run_windows'):
+                self._full_run_windows = []
+            self._full_run_windows.append(win)
+            win.finished.connect(lambda: self._full_run_windows.remove(win)
+                                 if win in self._full_run_windows else None)
