@@ -24,6 +24,7 @@ CHECKS (frozen mode)
     IQ-007  user_profiles.json has valid schema
     IQ-010  OS is Windows x86-64
     IQ-011  Data directory is writable
+    IQ-012  Ocean Optics USB driver installed (libusb via Zadig)
 
 CHECKS (dev/source mode, additional)
     IQ-001  Python version >= 3.12, < 3.13
@@ -226,6 +227,42 @@ def check_iq010():
     return _fail("IQ-010", "OS is Windows x86-64", f"Got: {detail}")
 
 
+def check_iq012():
+    """IQ-012: Ocean Optics spectrometer detected via USB."""
+    _zadig_fix = (
+        "Fix: (1) Plug in the spectrometer via USB. "
+        "(2) Open Zadig.exe (in this folder). "
+        "(3) In Zadig: Options > List All Devices. "
+        "(4) Select your Ocean Optics / Flame-T / USB4000 device. "
+        "(5) Set driver to 'WinUSB'. "
+        "(6) Click 'Replace Driver' or 'Install Driver'. "
+        "(7) Re-run IQ check to verify."
+    )
+    try:
+        import usb.core
+        import usb.backend.libusb1
+        # Check libusb backend first
+        be = usb.backend.libusb1.get_backend()
+        if be is None:
+            return _fail("IQ-012", "Ocean Optics spectrometer detected",
+                         f"libusb backend not found — WinUSB driver missing. {_zadig_fix}")
+        # Scan for Ocean Optics devices (vendor ID 0x2457)
+        found = usb.core.find(idVendor=0x2457, find_all=True, backend=be)
+        devices = list(found) if found is not None else []
+        if devices:
+            ids = ", ".join(f"PID=0x{d.idProduct:04X}" for d in devices)
+            return _pass("IQ-012", "Ocean Optics spectrometer detected",
+                         f"{len(devices)} device(s) found: {ids}")
+        # Backend OK but no device — not plugged in or wrong driver
+        return _fail("IQ-012", "Ocean Optics spectrometer detected",
+                     f"No Ocean Optics device found (VID=0x2457). "
+                     f"Ensure the spectrometer is plugged in. "
+                     f"If plugged in, the WinUSB driver may not be installed. {_zadig_fix}")
+    except Exception as e:
+        return _fail("IQ-012", "Ocean Optics spectrometer detected",
+                     f"USB check error: {e}. {_zadig_fix}")
+
+
 def check_iq011():
     """IQ-011: Data directory is writable."""
     if IS_FROZEN:
@@ -255,7 +292,7 @@ def run_iq(operator: str, instrument_serial: str | None = None) -> dict:
 
     # Checks that always run (frozen + dev)
     always = [check_iq004, check_iq005, check_iq006,
-               check_iq007, check_iq010, check_iq011]
+               check_iq007, check_iq010, check_iq011, check_iq012]
 
     # Additional checks in dev/source mode only
     dev_only = [check_iq001, check_iq003, check_iq008]

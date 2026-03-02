@@ -57,6 +57,7 @@ a = Analysis(
         (os.path.join(PROJECT_ROOT, '_data', 'led_calibration_official'), 'led_calibration_official'),
         (os.path.join(PROJECT_ROOT, 'settings'), 'settings'),
         (os.path.join(PROJECT_ROOT, 'data'), 'data'),  # Spark tips, QA history, runtime data
+        (os.path.join(PROJECT_ROOT, 'scripts', 'validation'), 'scripts/validation'),  # IQ/OQ checks
         # Piper TTS (if exists) - optional for Spark voice
         # (os.path.join(PROJECT_ROOT, 'piper'), 'piper'),  # Uncomment if you have Piper TTS installed
     ],
@@ -65,7 +66,11 @@ a = Analysis(
         collect_submodules('AffiPump') +
         collect_submodules('mixins') +
         collect_submodules('settings') +
+        collect_submodules('scripts') +
     [
+        'scripts',
+        'scripts.validation',
+        'scripts.validation.iq_check',
         # Only compression_trainer_ui is imported from standalone_tools (calibration_service.py)
         'standalone_tools',
         'standalone_tools.compression_trainer_ui',

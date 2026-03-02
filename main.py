@@ -44,21 +44,107 @@ if '--iq-check' in _iq_sys.argv:
     _iq_p.add_argument('--out-dir', default=None)
     _iq_args, _ = _iq_p.parse_known_args()
     try:
-        from scripts.validation.iq_check import run_iq, save_report, print_report
         from pathlib import Path as _IQPath
-        _iq_report = run_iq(operator=_iq_args.operator, instrument_serial=_iq_args.serial)
-        print_report(_iq_report)
-        if not _iq_args.no_save:
-            _iq_out = _IQPath(_iq_args.out_dir) if _iq_args.out_dir else None
-            _iq_saved = save_report(_iq_report, _iq_out)
-            print(f'  Report saved: {_iq_saved}')
+        import importlib.util as _iq_util
+        import json as _iq_json
+        # Load iq_check.py directly — works both frozen and dev
+        if getattr(_iq_sys, 'frozen', False):
+            _iq_script = _IQPath(_iq_sys._MEIPASS) / 'scripts' / 'validation' / 'iq_check.py'
+        else:
+            _iq_script = _IQPath(_iq_root) / 'scripts' / 'validation' / 'iq_check.py'
+        _iq_spec = _iq_util.spec_from_file_location('iq_check', _iq_script)
+        _iq_mod = _iq_util.module_from_spec(_iq_spec)
+        _iq_spec.loader.exec_module(_iq_mod)
+        _iq_report = _iq_mod.run_iq(operator=_iq_args.operator, instrument_serial=_iq_args.serial)
+        # Save JSON report
+        _iq_out = _IQPath(_iq_args.out_dir) if _iq_args.out_dir else None
+        _iq_saved = _iq_mod.save_report(_iq_report, _iq_out)
+        # Build a plain-text summary and save alongside JSON
+        _iq_lines = [
+            '=' * 64,
+            '  Affilabs.core -- Installation Qualification (IQ)',
+            '=' * 64,
+            f"  Software:  {_iq_report['software_version']}",
+            f"  Serial:    {_iq_report['instrument_serial']}",
+            f"  Operator:  {_iq_report['operator']}",
+            f"  Machine:   {_iq_report['machine_hostname']}",
+            f"  Timestamp: {_iq_report['timestamp_utc']}",
+            '-' * 64,
+        ]
+        _sym = {'PASS': '[PASS]', 'FAIL': '[FAIL]', 'SKIP': '[SKIP]'}
+        for _c in _iq_report['checks']:
+            _iq_lines.append(f"  {_sym.get(_c['result'], '[ ?? ]')}  {_c['id']:<10} {_c['description']}")
+            if _c['result'] != 'PASS' and _c.get('detail'):
+                _iq_lines.append(f"             -> {_c['detail']}")
+        _sm = _iq_report['summary']
+        _iq_lines += [
+            '-' * 64,
+            f"  Passed: {_sm['passed']}   Failed: {_sm['failed']}   Skipped: {_sm['skipped']}",
+            '',
+            f"  OVERALL: {_iq_report['overall']}",
+            '=' * 64,
+            f"\n  Report saved: {_iq_saved}",
+        ]
+        _iq_txt = _iq_saved.with_suffix('.txt')
+        _iq_txt.write_text('\n'.join(_iq_lines), encoding='utf-8')
+        # Open the text report in Notepad so the user can see results
+        _iq_os.startfile(str(_iq_txt))
         _iq_code = 0 if _iq_report['overall'] == 'PASS' else 1
     except Exception as _iq_e:
-        print(f'IQ check failed: {_iq_e}')
+        import traceback as _iq_tb
+        _iq_appdata = _iq_os.environ.get('APPDATA', _iq_root)
+        _iq_err_path = _IQPath(_iq_appdata) / 'Affilabs' / 'validation' / 'IQ_error.txt'
+        _iq_err_path.parent.mkdir(parents=True, exist_ok=True)
+        _iq_err_path.write_text(
+            f'IQ check failed: {_iq_e}\n\n{_iq_tb.format_exc()}', encoding='utf-8'
+        )
+        _iq_os.startfile(str(_iq_err_path))
         _iq_code = 2
-    _iq_sys.stdout.flush()
-    _iq_sys.stderr.flush()
     _iq_os._exit(_iq_code)
+# ---------------------------------------------------------------------------
+
+# -- OQ check intercept: MUST be before all other imports -------------------
+if '--oq-check' in sys.argv:
+    _oq_root = os.path.dirname(os.path.abspath(__file__))
+    if _oq_root not in sys.path:
+        sys.path.insert(0, _oq_root)
+    import argparse as _oq_ap
+    _oq_p = _oq_ap.ArgumentParser(add_help=False)
+    _oq_p.add_argument('--oq-check', action='store_true')
+    _oq_p.add_argument('--operator', '-o', default=os.environ.get('USERNAME', 'Unknown'))
+    _oq_p.add_argument('--serial', '-s', default=None)
+    _oq_p.add_argument('--no-save', action='store_true')
+    _oq_p.add_argument('--out-dir', default=None)
+    _oq_args, _ = _oq_p.parse_known_args()
+    try:
+        from pathlib import Path as _OQPath
+        import importlib.util as _oq_util
+        if getattr(sys, 'frozen', False):
+            _oq_script = _OQPath(sys._MEIPASS) / 'scripts' / 'validation' / 'oq_runner.py'
+        else:
+            _oq_script = _OQPath(_oq_root) / 'scripts' / 'validation' / 'oq_runner.py'
+        _oq_spec = _oq_util.spec_from_file_location('oq_runner', _oq_script)
+        _oq_mod = _oq_util.module_from_spec(_oq_spec)
+        _oq_spec.loader.exec_module(_oq_mod)
+        _oq_out = _OQPath(_oq_args.out_dir) if _oq_args.out_dir else None
+        _oq_report = _oq_mod.run_oq(
+            operator=_oq_args.operator,
+            serial_override=_oq_args.serial,
+            no_save=_oq_args.no_save,
+            out_dir=_oq_out,
+        )
+        _oq_code = 0 if _oq_report['overall'] == 'PASS' else 1
+    except Exception as _oq_e:
+        import traceback as _oq_tb
+        _oq_appdata = os.environ.get('APPDATA', _oq_root)
+        _oq_err_path = _OQPath(_oq_appdata) / 'Affilabs' / 'validation' / 'OQ_error.txt'
+        _oq_err_path.parent.mkdir(parents=True, exist_ok=True)
+        _oq_err_path.write_text(
+            f'OQ check failed: {_oq_e}\n\n{_oq_tb.format_exc()}', encoding='utf-8'
+        )
+        print(f'[OQ] Error: {_oq_e}', file=sys.stderr)
+        _oq_code = 2
+    os._exit(_oq_code)
 # ---------------------------------------------------------------------------
 
 # Add parent directory to path for imports

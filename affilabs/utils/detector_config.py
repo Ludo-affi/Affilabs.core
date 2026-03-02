@@ -16,7 +16,7 @@ class DetectorCharacteristics:
     """Detector specifications with valid wavelength ranges"""
 
     name: str
-    serial_prefix: str  # Serial number prefix for identification
+    serial_prefix: str | tuple  # Serial number prefix(es) for identification
     wavelength_min: float  # nm - Valid data start
     wavelength_max: float  # nm - Valid data end
     spr_wavelength_min: float  # nm - SPR region start (for peak finding)
@@ -49,7 +49,7 @@ DETECTOR_DATABASE = {
     ),
     "FlameT": DetectorCharacteristics(
         name="Ocean Optics Flame-T",
-        serial_prefix="FLMT",
+        serial_prefix=("FLMT", "AFFI"),  # FLMT = legacy OEM serial; AFFI = new Affilabs serial
         wavelength_min=560.0,
         wavelength_max=720.0,
         spr_wavelength_min=560.0,
