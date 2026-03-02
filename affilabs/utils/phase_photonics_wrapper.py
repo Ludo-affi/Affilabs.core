@@ -44,6 +44,9 @@ class PhasePhotonics:
     CALIBRATION_OFFSET = 3072
     CALIBRATION_DEGREE = 4
 
+    # Hardware averaging limit — this detector supports max 15 onboard scans
+    MAX_HARDWARE_AVERAGING = 15
+
     # PhasePhotonics timing characteristics
     # SOFTWARE AVERAGING (hardware averaging ignores integration time!)
     # Total acquisition time = Integration time × TIMING_MULTIPLIER
