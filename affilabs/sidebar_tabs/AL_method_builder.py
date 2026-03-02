@@ -401,6 +401,16 @@ class MethodTabBuilder:
         top_layout.setSpacing(8)
         summary_card_layout.addWidget(top_pane)
 
+        # Cycle count — above the table
+        self.sidebar.queue_size_label = QLabel("0 cycles queued")
+        self.sidebar.queue_size_label.setStyleSheet(
+            f"font-size: {_FS.px(13)}px;"
+            " color: #86868B;"
+            " background: transparent;"
+            " font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
+        )
+        top_layout.addWidget(self.sidebar.queue_size_label)
+
         # NEW: Queue Summary Widget with drag-drop support - styled to match original
         self.sidebar.summary_table = QueueSummaryWidget()
         self.sidebar.summary_table.setMinimumHeight(200)
@@ -542,14 +552,6 @@ class MethodTabBuilder:
         table_footer_row = QHBoxLayout()
         table_footer_row.setSpacing(10)
 
-        self.sidebar.queue_size_label = QLabel("0 cycles queued")
-        self.sidebar.queue_size_label.setStyleSheet(
-            f"font-size: {_FS.px(13)}px;"
-            "color: #86868B;"
-            "background: transparent;"
-            "font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;",
-        )
-        table_footer_row.addWidget(self.sidebar.queue_size_label)
         table_footer_row.addStretch()
 
         # Retrieve Method Button (restore queue after run completion)
@@ -797,6 +799,7 @@ class MethodTabBuilder:
             # Update export destination to user-specific folder
             from pathlib import Path
             if hasattr(self.sidebar, 'export_dest_input'):
-                user_path = str(Path.home() / "Documents" / "Affilabs Data" / user_name / "SPR_data")
+                from affilabs.utils.resource_path import get_writable_data_path
+                user_path = str(get_writable_data_path(f"data/{user_name}/recordings"))
                 Path(user_path).mkdir(parents=True, exist_ok=True)
                 self.sidebar.export_dest_input.setText(user_path)

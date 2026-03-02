@@ -319,11 +319,11 @@ class InjectionActionBar(QFrame):
             " border-bottom: 1px solid rgba(0,0,0,0.08);"
         )
         header_hlayout = QHBoxLayout(header_row)
-        header_hlayout.setContentsMargins(10, 5, 10, 5)
+        header_hlayout.setContentsMargins(10, 8, 10, 8)
         self._header_lbl = QLabel("Manual Injection Assistant")
         self._header_lbl.setStyleSheet(
-            f"font-size: {_FS.px(13)}px; font-weight: 600; color: {_MUTED};"
-            f" font-family: {_FONT}; letter-spacing: 0px;"
+            f"font-size: {_FS.px(15)}px; font-weight: 700; color: #1D1D1F;"
+            f" font-family: {_FONT}; letter-spacing: -0.2px;"
             f" background: transparent; border: none;"
         )
         self._header_lbl.setMinimumWidth(130)
@@ -999,11 +999,11 @@ class InjectionActionBar(QFrame):
                 "  border-radius: 8px;"
                 "}"
             )
-        # Dim header — lighter than active (#C7C7CC vs #86868B)
+        # Header stays visible in dormant — only colour dims slightly
         if hasattr(self, '_header_lbl'):
             self._header_lbl.setStyleSheet(
-                f"font-size: 11px; font-weight: 600; color: #C7C7CC;"
-                f" font-family: {_FONT}; letter-spacing: 0px;"
+                f"font-size: {_FS.px(15)}px; font-weight: 700; color: #86868B;"
+                f" font-family: {_FONT}; letter-spacing: -0.2px;"
                 f" background: transparent; border: none;"
             )
         # Dim idle text — also hide sub-label to prevent state bleed
@@ -1057,11 +1057,11 @@ class InjectionActionBar(QFrame):
             "  background: transparent;"
             "}"
         )
-        # Restore header to normal muted color (darker than dormant's #C7C7CC)
+        # Restore header — full dark when active
         if hasattr(self, '_header_lbl'):
             self._header_lbl.setStyleSheet(
-                f"font-size: 11px; font-weight: 600; color: {_MUTED};"
-                f" font-family: {_FONT}; letter-spacing: 0px;"
+                f"font-size: {_FS.px(15)}px; font-weight: 700; color: #1D1D1F;"
+                f" font-family: {_FONT}; letter-spacing: -0.2px;"
                 f" background: transparent; border: none;"
             )
         # Restore idle label

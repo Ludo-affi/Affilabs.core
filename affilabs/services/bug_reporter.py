@@ -24,9 +24,9 @@ SUPPORT_EMAIL = "info@affiniteinstruments.com"
 
 def _find_latest_log() -> Path | None:
     """Return path to the most recently modified .log file under logs/."""
-    log_dir = Path("logs")
+    from affilabs.utils.resource_path import get_writable_data_path
+    log_dir = get_writable_data_path("system/logs")
     if not log_dir.exists():
-        # Fallback: root directory
         candidates = list(Path(".").glob("*.log"))
     else:
         candidates = list(log_dir.glob("*.log"))
@@ -123,7 +123,8 @@ def save_screenshot(output_dir: Path | None = None) -> Path | None:
         return None
     
     if output_dir is None:
-        output_dir = Path("_data")
+        from affilabs.utils.resource_path import get_writable_data_path
+        output_dir = get_writable_data_path("system/screenshots")
     else:
         output_dir = Path(output_dir)
     

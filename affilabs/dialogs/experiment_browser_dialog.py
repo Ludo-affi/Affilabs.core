@@ -393,7 +393,8 @@ class ExperimentBrowserDialog(QDialog):
         index = ExperimentIndex()
         entries = index.all_entries()
 
-        base = Path.home() / "Documents" / "Affilabs Data"
+        from affilabs.utils.resource_path import get_writable_data_path
+        base = get_writable_data_path("data")
         rows: list[ExperimentRowWidget] = []
 
         for entry in entries:

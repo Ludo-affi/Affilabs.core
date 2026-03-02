@@ -325,8 +325,13 @@ class AlignmentMixin:
                 )
                 return
 
-            # Save to Excel
-            output_dir = Path('data_results/processing_cycles')
+            # Save to Excel — user Documents folder, same root as recording output
+            try:
+                from affilabs.core.recording_manager import RecordingManager
+                _mgr = getattr(self, 'recording_mgr', None) or getattr(getattr(self, 'app', None), 'recording_mgr', None)
+                output_dir = _mgr.get_user_output_directory() / "Processing" if _mgr else Path.home() / "Documents" / "Affilabs Data" / "Processing"
+            except Exception:
+                output_dir = Path.home() / "Documents" / "Affilabs Data" / "Processing"
             output_dir.mkdir(parents=True, exist_ok=True)
 
             safe_name = "".join(c for c in cycle_name if c.isalnum() or c in (' ', '-', '_')).strip()

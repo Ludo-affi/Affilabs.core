@@ -64,26 +64,28 @@ class RecordingManager(QObject):
 
         # Recording settings
         # Default output directory — updated to user-specific path by _get_user_output_directory()
-        self.output_directory = Path.home() / "Documents" / "Affilabs Data"
+        from affilabs.utils.resource_path import get_writable_data_path
+        self.output_directory = get_writable_data_path("data")
         self.auto_save_interval = 60  # seconds
         self.last_save_time = 0
 
     def get_user_output_directory(self) -> Path:
-        """Get user-specific output directory: Documents/Affilabs Data/<username>/SPR_data/.
+        """Get user-specific output directory: <exe_dir>/data/<username>/recordings/.
 
-        Always resolves the current user dynamically (same logic as Edits tab).
-        Falls back to generic Affilabs Data if no user is set.
+        Always resolves the current user dynamically.
+        Falls back to data/recordings/ if no user is set.
 
         Returns:
             Path to user-specific export directory
         """
+        from affilabs.utils.resource_path import get_writable_data_path
         username = ""
         if self.user_manager:
             username = self.user_manager.get_current_user() or ""
         if username:
-            user_dir = Path.home() / "Documents" / "Affilabs Data" / username / "SPR_data"
+            user_dir = get_writable_data_path(f"data/{username}/recordings")
         else:
-            user_dir = self.output_directory
+            user_dir = get_writable_data_path("data/recordings")
         user_dir.mkdir(parents=True, exist_ok=True)
         return user_dir
 

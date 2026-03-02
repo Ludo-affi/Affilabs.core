@@ -71,11 +71,11 @@ if TARGET == "win":
         _base_dir = os.path.dirname(sys.executable)
     else:
         _base_dir = os.getcwd()
-    ROOT_DIR = os.path.join(_base_dir, "generated-files")
+    ROOT_DIR = os.path.join(_base_dir, "system")
     os.makedirs(ROOT_DIR, exist_ok=True)
 
 elif TARGET == "mac":
-    ROOT_DIR = "generated-files"
+    ROOT_DIR = "system"
     os.makedirs(ROOT_DIR, exist_ok=True)
 
 CH_LIST = ["a", "b", "c", "d"]
@@ -154,7 +154,7 @@ POL_WAVELENGTH = 620  # index for auto polarization
 # - WAVELENGTH_CACHE_ENABLED: master on/off for using cached wavelengths
 # - WAVELENGTH_CACHE_MAX_AGE_DAYS: maximum age for cache to be considered valid
 # You can also invalidate via env var EZ_WL_CACHE_INVALIDATE=1 or by creating
-# the flag file generated-files/calibration_data/invalidate_wavelength_cache.flag
+# the flag file system/calibration_data/invalidate_wavelength_cache.flag
 WAVELENGTH_CACHE_ENABLED: bool = True
 WAVELENGTH_CACHE_MAX_AGE_DAYS: float = 7.0  # tighten from 30 → 7 days by default
 

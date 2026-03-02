@@ -162,7 +162,8 @@ class DataMixin:
             self.user_manager = self.main_window.app.user_profile_manager
             username = self.user_manager.get_current_user() or "Default"
 
-        user_dir = Path.home() / "Documents" / "Affilabs Data" / username / subfolder
+        from affilabs.utils.resource_path import get_writable_data_path
+        user_dir = get_writable_data_path(f"data/{username}/{subfolder}")
         user_dir.mkdir(parents=True, exist_ok=True)
         return user_dir
 

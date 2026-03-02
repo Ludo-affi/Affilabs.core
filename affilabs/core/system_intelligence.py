@@ -146,7 +146,8 @@ class SystemIntelligence:
             data_dir: Directory for storing intelligence data and models
 
         """
-        self.data_dir = data_dir or Path("generated-files/system_intelligence")
+        from affilabs.utils.resource_path import get_writable_data_path
+        self.data_dir = data_dir or get_writable_data_path("system/intelligence")
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
         # System state

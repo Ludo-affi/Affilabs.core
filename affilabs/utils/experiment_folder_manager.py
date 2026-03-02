@@ -28,7 +28,8 @@ class ExperimentFolderManager:
                           Defaults to ~/Documents/Affilabs_Data/
         """
         if base_directory is None:
-            self.base_directory = Path.home() / "Documents" / "Affilabs_Data"
+            from affilabs.utils.resource_path import get_writable_data_path
+            self.base_directory = get_writable_data_path("data/experiments")
         else:
             self.base_directory = Path(base_directory)
 

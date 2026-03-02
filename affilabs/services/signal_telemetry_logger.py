@@ -35,8 +35,8 @@ _OPTICAL_WINDOW = 10  # frames for pre/post triage buffer (5 pre + 5 post)
 
 
 def _get_telemetry_dir() -> Path:
-    docs = Path.home() / "Documents"
-    telemetry = docs / "Affilabs Data" / "telemetry"
+    from affilabs.utils.resource_path import get_writable_data_path
+    telemetry = get_writable_data_path("data/telemetry")
     telemetry.mkdir(parents=True, exist_ok=True)
     return telemetry
 

@@ -26,14 +26,18 @@ from affilabs.utils.logger import logger
 class QCReportManager:
     """Manages persistent storage and retrieval of calibration QC reports."""
 
-    def __init__(self, base_qc_dir: str = "OpticalSystem_QC"):
+    def __init__(self, base_qc_dir: str | None = None):
         """Initialize QC report manager.
 
         Args:
-            base_qc_dir: Base directory for all QC data (default: OpticalSystem_QC)
+            base_qc_dir: Base directory for all QC data (default: system/qc)
 
         """
-        self.base_qc_dir = Path(base_qc_dir)
+        if base_qc_dir is None:
+            from affilabs.utils.resource_path import get_writable_data_path
+            self.base_qc_dir = get_writable_data_path("system/qc")
+        else:
+            self.base_qc_dir = Path(base_qc_dir)
 
     def _get_reports_dir(self, device_serial: str) -> Path:
         """Get validation_reports directory for device.

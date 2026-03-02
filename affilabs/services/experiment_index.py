@@ -1,7 +1,7 @@
 """Experiment Index — searchable log of all recording sessions.
 
 Appends one entry per completed file-mode recording to:
-    ~/Documents/Affilabs Data/experiment_index.json
+    <exe_dir>/data/experiment_index.json
 
 Entries are written atomically (temp-file + os.replace) so a crash
 mid-write never corrupts the existing index.
@@ -25,13 +25,14 @@ _SCHEMA_VERSION = 2
 
 
 class ExperimentIndex:
-    """Read/write the experiment index at ~/Documents/Affilabs Data/experiment_index.json."""
+    """Read/write the experiment index at <exe_dir>/data/experiment_index.json."""
 
     def __init__(self, index_path: Path | None = None) -> None:
         if index_path is not None:
             self._path = index_path
         else:
-            self._path = Path.home() / "Documents" / "Affilabs Data" / _INDEX_FILENAME
+            from affilabs.utils.resource_path import get_writable_data_path
+            self._path = get_writable_data_path("data") / _INDEX_FILENAME
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -351,7 +352,8 @@ def record_experiment(
         analyte_suggestion: Tag/analyte name inferred at recording_stopped (may be empty).
     """
     try:
-        base = Path.home() / "Documents" / "Affilabs Data"
+        from affilabs.utils.resource_path import get_writable_data_path
+        base = get_writable_data_path("data")
         abs_file = Path(current_file)
         try:
             rel_file = str(abs_file.relative_to(base))

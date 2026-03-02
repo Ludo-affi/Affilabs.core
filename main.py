@@ -1070,12 +1070,8 @@ class Application(PumpMixin, FlagMixin, CalibrationMixin, CycleMixin, Acquisitio
 
         # Set default export path in sidebar (user-specific)
         if hasattr(self.main_window, 'sidebar') and (w := self._sidebar_widget('export_dest_input')):
-            # Use user-specific directory: Documents/Affilabs Data/<username>/SPR_data/
-            current_user = self._get_current_user()
-            if current_user:
-                default_path = str(Path.home() / "Documents" / "Affilabs Data" / current_user / "SPR_data")
-            else:
-                default_path = str(self.recording_mgr.output_directory)
+            # Use user-specific directory: <exe_dir>/data/<username>/recordings/
+            default_path = str(self.recording_mgr.get_user_output_directory())
             Path(default_path).mkdir(parents=True, exist_ok=True)
             w.setText(default_path)
             w.setPlaceholderText(default_path)

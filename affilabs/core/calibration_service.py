@@ -1330,11 +1330,10 @@ class CalibrationService(QObject):
 
             from affilabs.utils.time_utils import for_filename
 
-            os.makedirs("logs", exist_ok=True)
-            logfile = os.path.join(
-                "logs",
-                for_filename(prefix="calibration_", ext="log"),
-            )
+            from affilabs.utils.resource_path import get_writable_data_path
+            logs_dir = get_writable_data_path("system/logs")
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            logfile = str(logs_dir / for_filename(prefix="calibration_", ext="log"))
             log_handler = logging.FileHandler(logfile, encoding="utf-8")
             log_handler.setLevel(logging.INFO)
             formatter = logging.Formatter("%(asctime)s :: %(levelname)s :: %(message)s")

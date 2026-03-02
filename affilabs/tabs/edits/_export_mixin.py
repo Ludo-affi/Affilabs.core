@@ -1437,7 +1437,8 @@ class ExportMixin:
             username = "Default"
 
         # Default save directory
-        default_dir = Path.home() / "Documents" / "Affilabs Methods" / username
+        from affilabs.utils.resource_path import get_writable_data_path
+        default_dir = get_writable_data_path(f"data/{username}/methods")
         default_dir.mkdir(parents=True, exist_ok=True)
 
         # Sanitize filename

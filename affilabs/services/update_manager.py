@@ -85,7 +85,8 @@ class UpdateManager(QObject):
         else:
             exe_path = Path(os.sys.executable)
 
-        backup_dir = Path.home() / ".affilabs" / "update_backups"
+        from affilabs.utils.resource_path import get_writable_data_path
+        backup_dir = get_writable_data_path("system/update_backups")
         backup_dir.mkdir(parents=True, exist_ok=True)
 
         return VersionInfo(
